@@ -2746,6 +2746,11 @@ object GalaxySSIMqttClient {
                 val route = desktopLink?.routes ?: phoneRoutes ?: return@forEach
                 if (desktopLink != null && !desktopLink.paired) return@forEach
                 if (route.clientRouteId != attachment.scope.clientRouteId) return@forEach
+                // Reconnects reuse the durable declaration and its retry schedule.
+                if (GalaxySSILinkDeliveryStore.hasPendingAttachmentManifest(context, route, attachment.transferId)) {
+                    scheduleOutboxRetries()
+                    return@forEach
+                }
                 publishJsonResult(
                     attachment.manifestPayload(resume = true),
                     route.up,

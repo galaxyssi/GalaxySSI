@@ -82,6 +82,27 @@ internal class GalaxySSILinkOutboxDatabase(
     }
 
     @Synchronized
+    fun hasAttachmentManifest(routeScope: String, transferId: String): Boolean =
+        transferId.isNotBlank() && readableDatabase.rawQuery(
+            "SELECT 1 FROM outbox_messages WHERE route_scope = ? AND attachment_transfer_id = ? " +
+                "AND payload_type = 'input_attachment_manifest' AND status <> 'held_unclassified' LIMIT 1",
+            arrayOf(routeScope, transferId)
+        ).use { it.moveToFirst() }
+
+    /** Keep the earliest declaration; never retire a row already attempted on the wire. */
+    @Synchronized
+    fun redundantUnsentAttachmentManifests(): List<String> = readableDatabase.rawQuery(
+        "SELECT newer.message_id FROM outbox_messages newer WHERE " +
+            "newer.payload_type = 'input_attachment_manifest' AND newer.attachment_transfer_id <> '' " +
+            "AND newer.attempts = 0 AND newer.status = 'queued' AND newer.blocked_dependency_count = 0 " +
+            "AND EXISTS (SELECT 1 FROM outbox_messages older WHERE " +
+            "older.payload_type = newer.payload_type AND older.attachment_transfer_id = newer.attachment_transfer_id " +
+            "AND older.route_scope = newer.route_scope AND older.client_source_message_id = newer.client_source_message_id " +
+            "AND older.status <> 'held_unclassified' AND (older.created_at < newer.created_at OR " +
+            "(older.created_at = newer.created_at AND older.message_id < newer.message_id)))", null
+    ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0)) } }
+
+    @Synchronized
     fun insert(item: JSONObject): Boolean {
         val messageId = item.optString(KEY_MESSAGE_ID)
         if (messageId.isBlank()) return false

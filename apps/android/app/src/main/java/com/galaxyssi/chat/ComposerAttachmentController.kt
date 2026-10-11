@@ -69,12 +69,40 @@ internal fun MainActivity.previewPickedAttachments(uris: List<Uri>, camera: Bool
             val activity = owner.get()?.takeUnless { it.isFinishing || it.isDestroyed } ?: return@runOnUiThread
             if (importFailed) Toast.makeText(activity, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
             if (files.isEmpty()) return@runOnUiThread
-            val combined = (base + files).distinctBy { it.uri }.take(limit)
-            if (combined.size < (base + files).distinctBy { it.uri }.size || uris.distinct().size > limit) {
+            if (uris.distinct().size > limit) {
                 Toast.makeText(activity, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
             }
-            activity.launchComposerEditor(combined, route, target, combined.indexOfFirst { it.id == files[0].id }.coerceAtLeast(0), camera)
+            activity.acceptPickedAttachments(files, base, route, target, camera)
         }
+    }
+}
+
+internal fun MainActivity.acceptPickedAttachments(files: List<ComposerAttachmentItem>,
+    base: List<ComposerAttachmentItem>, route: String, target: String, camera: Boolean = false) {
+    val documents = files.filterNot { it.isImage }
+    if (route == ROUTE_PEER && documents.isNotEmpty()) {
+        val contact = storedContacts().firstOrNull { it.id == target }
+        if (contact == null) {
+            Toast.makeText(this, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
+            return
+        }
+        sendPeerAttachments(contact, emptyList(), attachmentsOverride = documents.map { it.inputAttachment() })
+    }
+    val pending = if (route == ROUTE_PEER) files.filter { it.isImage } else files
+    if (pending.isEmpty()) return
+    val limit = if (route == ROUTE_AGENT) MAX_AGENT_ATTACHMENTS else 12
+    val combined = (base + pending).distinctBy { it.uri }.take(limit)
+    if (combined.size < (base + pending).distinctBy { it.uri }.size) {
+        Toast.makeText(this, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
+    }
+    if (pending.none { it.isImage }) {
+        handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_OK,
+            Intent().putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(combined))
+                .putExtra(ComposerAttachmentEditorActivity.ROUTE, route)
+                .putExtra(ComposerAttachmentEditorActivity.TARGET, target))
+    } else {
+        launchComposerEditor(combined, route, target,
+            combined.indexOfFirst { it.id == pending.first { file -> file.isImage }.id }.coerceAtLeast(0), camera)
     }
 }
 

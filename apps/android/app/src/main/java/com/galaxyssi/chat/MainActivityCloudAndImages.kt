@@ -817,7 +817,7 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>,
             )
         }
     )
-    addMessage(message)
+    addMessage(message, outgoingContact = contact)
     val topic = AppStore.outgoingTopicForContact(this, contact.id)
     if (topic == null) {
         updateMessageStatus(message.id, contact.id, getString(R.string.delivery_status_failed))

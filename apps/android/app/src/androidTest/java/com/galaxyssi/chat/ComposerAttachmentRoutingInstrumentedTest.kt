@@ -51,6 +51,12 @@ class ComposerAttachmentRoutingInstrumentedTest {
                 assertTrue(activity.handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_OK, result))
                 assertEquals(listOf(item.uri), activity.agentInputAttachments.map { it.uri.toString() })
                 assertEquals(goal, activity.agentGoalInput.text.toString())
+                val document = item.copy(id = "document-fixture", uri = item.uri + "?document-fixture",
+                    name = "fixture.pdf", mime = "application/pdf")
+                activity.acceptPickedAttachments(listOf(document), listOf(item), "agent", target)
+                assertEquals(listOf(item.id, document.id), activity.agentInputAttachments.map { it.id })
+                assertEquals(goal, activity.agentGoalInput.text.toString())
+                activity.handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_OK, result)
                 assertTrue(activity.handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_CANCELED, null))
                 assertEquals(1, activity.agentInputAttachments.size)
 
