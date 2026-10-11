@@ -7,12 +7,13 @@ internal object CollaborationRecallNativeTool {
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
-            id = ID, version = "1.10.0", title = context.getString(R.string.collaboration_recall_title),
-            description = context.getString(R.string.collaboration_recall_description) + " " + CollaborationPeerUpdates.INSTRUCTIONS + " " + CollaborationWorkflowCheck.INSTRUCTIONS + " " + CollaborationSourceAccess.INSTRUCTIONS,
+            id = ID, version = "1.11.0", title = context.getString(R.string.collaboration_recall_title),
+            description = context.getString(R.string.collaboration_recall_description) + " " + CollaborationPeerUpdates.INSTRUCTIONS + " " + CollaborationWorkflowCheck.INSTRUCTIONS + " " + CollaborationSourceAccess.INSTRUCTIONS + " " + CollaborationMethodEvaluations.INSTRUCTIONS,
             location = AgentNativeToolLocation.PHONE,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
                 "query" to AgentNativeJsonSchema.string(maxLength = 1000),
                 "mode" to AgentNativeJsonSchema.string(maxLength = 16),
+                "view" to AgentNativeJsonSchema.string(maxLength = 16),
                 "work_id" to AgentNativeJsonSchema.string(maxLength = 160),
                 "topic" to AgentNativeJsonSchema.string(maxLength = 32),
                 "case_filter" to AgentNativeJsonSchema.string(maxLength = 32),
@@ -30,6 +31,8 @@ internal object CollaborationRecallNativeTool {
             risk = AgentNativeToolRisk.LOW, capabilities = setOf("collaboration.recall"),
             timeoutMillis = 20_000, idempotency = AgentNativeToolIdempotency.IDEMPOTENT),
         executor = AgentNativeToolExecutor { call ->
+            if (call.input.containsKey("view") && (call.input["mode"] != "method_history" || call.input["view"] != CollaborationMethodEvaluations.VIEW))
+                return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "View is only supported for method_history evaluations.")
             if (call.input.containsKey("inputs") && call.input["mode"] != CollaborationWorkflowCheck.MODE)
                 return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("invalid_arguments", "Inputs are only supported for workflow checks.")
             if (call.input.containsKey("work_id") && call.input["mode"] != CollaborationCoordinatorUpdates.MODE)

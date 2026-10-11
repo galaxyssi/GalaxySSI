@@ -51,6 +51,10 @@ def tool_spec():
         "read returned record_id/offset for original conditions, errors and delivery. Tool releases instead return native observations; "
         "follow their read_original selectors for exact parameters, outputs and errors. Replays are not new executions and failed requests "
         "may precede execution. Follow empty pages. These are not quality measurements. "
+        "For workflow methods, add view=evaluations to find registered comparisons and reviews, including inconclusive, regressed, "
+        "rejected and earlier results. Follow next_cursor even after empty pages and read_original for full conditions and measurements. "
+        "Several records can describe one experiment, not independent trials. No records means unknown evaluation history. "
+        "Use the evidence to choose reuse, revision, further testing or rejection; recall neither adopts a method nor proves causality. "
         "Use mode=numeric_cases with exact trial object_id/revision/sha256, optional case_filter (default failed) and cursor "
         "to inspect host-computed counterexamples or regressions. Follow next_cursor using the same trial and case_filter; "
         "concatenate content pages before decoding cases. Use mode=workspace for the full model and original trial. "
@@ -73,6 +77,7 @@ def tool_spec():
             "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "source_access", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates", "peer_updates", "workflow_check"]},
             "inputs": {"type": "object", "additionalProperties": True},
             "query": {"type": "string", "maxLength": 1000},
+            "view": {"type": "string", "maxLength": 16, "enum": ["evaluations"]},
             "work_id": {"type": "string", "maxLength": 160},
             "case_filter": {"type": "string", "maxLength": 32, "enum": list(NUMERIC_CASE_FILTERS)},
             "topic": {"type": "string", "maxLength": 32, "enum": list(RULE_TOPICS)},
@@ -142,11 +147,13 @@ def validate_arguments(arguments):
             raise ValueError("Archive recall requires an exact record_id and optional offset")
     if arguments["mode"] == "method_history":
         reading = "record_id" in arguments
-        allowed = {"mode", "record_id", "offset"} if reading else {"mode", "object_id", "revision", "sha256", "cursor"}
+        allowed = {"mode", "record_id", "offset"} if reading else {"mode", "object_id", "revision", "sha256", "cursor", "view"}
         ids = ("record_id",) if reading else ("object_id", "sha256")
         if (set(arguments) - allowed or (not reading and "revision" not in arguments)
                 or any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key]) for key in ids)):
             raise ValueError("Method history requires exact method identity or record_id/offset")
+    if "view" in arguments and (arguments["mode"] != "method_history" or arguments["view"] != "evaluations"):
+        raise ValueError("View is only supported for method_history evaluations")
     if arguments["mode"] == "source_access":
         if (set(arguments) - {"mode", "object_id", "revision", "sha256", "cursor"}
                 or "revision" not in arguments

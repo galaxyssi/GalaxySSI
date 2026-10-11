@@ -8,7 +8,7 @@ import org.json.JSONObject
 /** Read-only group capability, advertised only for an already bound managed cloud assignment. */
 internal object CollaborationCloudRecall {
     const val NAME = CloudGoalPageProtocol.RECALL_TOOL
-    private val fields = setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter", "work_id", "inputs")
+    private val fields = setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter", "work_id", "inputs", "view")
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
@@ -22,6 +22,7 @@ internal object CollaborationCloudRecall {
         }
         properties.getJSONObject("topic").put("enum", JSONArray(CollaborationEvolutionProtocol.topicIds()))
         properties.getJSONObject("case_filter").put("enum", JSONArray(CollaborationNumericFeedback.filters))
+        properties.getJSONObject("view").put("enum", JSONArray(listOf(CollaborationMethodEvaluations.VIEW)))
         val schema = JSONObject().put("type", "object").put("properties", properties)
             .put("required", JSONArray(listOf("mode"))).put("additionalProperties", false)
         val function = JSONObject().put("name", NAME)
@@ -35,6 +36,7 @@ internal object CollaborationCloudRecall {
                 "then topic=<id>/offset reads the chosen schema. Omitted topic reads all; retain the same topic when paging. " +
                 "mode=capabilities takes query and cursor to find task-related saved methods, tools and failure lessons; follow next_cursor even after an empty page. " +
                 "mode=method_history takes exact method object_id/revision/sha256 and cursor; read returned record_id/offset for prior usage conditions, failures and delivery. These are not quality measurements. " +
+                CollaborationMethodEvaluations.INSTRUCTIONS + " " +
                 "mode=problems takes cursor and lists original tool failures for evidence-based gap diagnosis. " +
                 "mode=numeric_cases takes exact trial object_id/revision/sha256, case_filter and cursor to inspect host-computed counterexamples or regressions. " +
                 "Returned output is not proof of a claim.")

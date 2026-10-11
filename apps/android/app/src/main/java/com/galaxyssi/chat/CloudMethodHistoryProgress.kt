@@ -16,8 +16,29 @@ internal class CloudMethodHistoryProgress {
         runCatching {
             require(arguments.optString("mode") == "method_history")
             val output = JSONObject(encoded)
-            require(output.optString("status") == "returned" && output.isNull("error") &&
-                output.optString("trust") == "host_execution_observation_not_method_effectiveness")
+            require(output.optString("status") == "returned" && output.isNull("error"))
+            if (arguments.optString("view") == CollaborationMethodEvaluations.VIEW) {
+                require(arguments.keys().asSequence().all { it in setOf("mode", "view", "object_id", "revision", "sha256", "cursor") })
+                require(output.optString("trust") == CollaborationMethodEvaluations.TRUST &&
+                    output.optString("view") == CollaborationMethodEvaluations.VIEW &&
+                    CollaborationResearchCandidates.same(arguments, output.getJSONObject("method")))
+                val method = arguments.getString("sha256").also { require(it.matches(HASH)) }
+                require(output.has("next_cursor") && output.opt("scan_complete") is Boolean)
+                require(output.getBoolean("scan_complete") == output.isNull("next_cursor"))
+                if (!output.isNull("next_cursor")) require(output.opt("next_cursor") is String &&
+                    output.getString("next_cursor").isNotBlank() && output.getString("next_cursor") != arguments.optString("cursor"))
+                val records = output.getJSONArray("records")
+                val ids = (0 until records.length()).map { index ->
+                    val ref = records.getJSONObject(index)
+                    require(ref.getString("object_id").matches(HASH) && ref.getString("sha256").matches(HASH) &&
+                        (CollaborationRemoteEvidenceProtocol.integer(ref, "revision") ?: 0) > 0)
+                    "evaluation:${ref.getString("object_id")}:${ref.getInt("revision")}:${ref.getString("sha256")}"
+                }.toSet()
+                // A valid bounded scan can advance without a match. Re-reading it is not new progress.
+                directories[encoded] = ids + "evaluation-scan:$method:${arguments.optString("cursor")}"
+                return
+            }
+            require(output.optString("trust") == "host_execution_observation_not_method_effectiveness")
             if (arguments.has("record_id")) {
                 require(arguments.keys().asSequence().all { it in setOf("mode", "record_id", "offset") })
                 val id = arguments.getString("record_id")

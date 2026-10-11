@@ -658,12 +658,24 @@ internal class CollaborationResearchWorkspace(
             return@synchronized requireNotNull(toolExperience) { "Native tool history is unavailable" }
                 .invoke(access, CollaborationResearchCandidates.reference(method).put("kind", method.getString("kind")), cursor)
         }
-        CollaborationMethodExperience(rows, access.groupId).browse(access, CollaborationResearchCandidates.reference(method), cursor)
+        CollaborationMethodExperience(rows, access.groupId).browse(access, CollaborationResearchCandidates.reference(method), cursor).apply {
+            if (method.getString("kind") == CollaborationWorkflowMethod.KIND)
+                put("evaluation_recall", CollaborationMethodEvaluations.selector(method))
+        }
     }
 
     fun methodHistoryRecord(access: CollaborationWorkspaceAccess, id: String): JSONObject? = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         CollaborationMethodExperience(rows, access.groupId).read(access, id)
+    }
+
+    fun methodEvaluations(access: CollaborationWorkspaceAccess, ref: JSONObject, cursor: String = ""): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        val method = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Method is missing or isolated" }
+        require(method.getString("kind") == CollaborationWorkflowMethod.KIND && CollaborationResearchCandidates.same(method, ref)) {
+            "Evaluations require an exact workflow method revision"
+        }
+        CollaborationMethodEvaluations.page(rows, prefix(access.groupId), access, method, cursor) { id, revision -> read(access, id, revision) }
     }
 
     fun searchCapabilities(access: CollaborationWorkspaceAccess, query: String, cursor: String = ""): JSONObject = synchronized(LOCK) {
@@ -708,6 +720,8 @@ internal class CollaborationResearchWorkspace(
                         match.put("usage_recall", JSONObject().put("mode", "method_history").put("object_id", original.getString("object_id"))
                             .put("revision", original.getInt("revision")).put("sha256", original.getString("sha256")))
                     found.add(match)
+                    if (original.getString("kind") == CollaborationWorkflowMethod.KIND)
+                        match.put("evaluation_recall", CollaborationMethodEvaluations.selector(original))
                 }
             }
             if (found.size == CollaborationCapabilityRecall.RESULT_PAGE) break
