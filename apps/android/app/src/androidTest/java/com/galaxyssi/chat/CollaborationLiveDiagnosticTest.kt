@@ -52,6 +52,28 @@ class CollaborationLiveDiagnosticTest {
                 .put("session_metadata", JSONObject(session?.lastActionResult?.metadata.orEmpty())))
         }
         report.put("recovery", recovery)
+        val transcript = AgentTranscriptStore(context)
+        val storedPage = AgentTranscriptEntryDatabase(context).listConversationPage(group, pageSize = 40)
+        report.put("foreign_projection_count", storedPage.entries.count { entry ->
+            entry.turnId.isNotBlank() && transcript.conversationIdForTurn(entry.turnId)?.let {
+                transcript.resolveMergedConversationId(it) != transcript.resolveMergedConversationId(group)
+            } == true
+        })
+        report.put("transcript", JSONArray(transcript.page(group, pageSize = 40).entries.map { entry ->
+            JSONObject().put("id", entry.id).put("role", entry.role).put("conversation", entry.conversationId)
+                .put("turn", entry.turnId).put("task", entry.taskId).put("key", entry.dedupeKey)
+                .put("at", entry.timestampMillis).put("text", entry.text.take(2000))
+                .put("collaboration", entry.collaborationJson)
+        }))
+        val mailbox = EncryptedAgentTeamMailbox(context)
+        report.put("mailbox", JSONArray(records.flatMap { record ->
+            mailbox.recentMessages(record.getJSONObject("request").getString("run_id"), 40)
+        }.map { message ->
+            JSONObject().put("id", message.messageId).put("run", message.supervisorRunId)
+                .put("conversation", message.conversationId).put("to", message.toInstanceId)
+                .put("from", message.fromInstanceId).put("state", message.state).put("kind", message.kind)
+                .put("text", message.text.take(2000)).put("at", message.createdAtMillis)
+        }))
         val workspaces = EncryptedAgentWorkspaceStore(context).list().filter { it.conversationId == group }
         report.put("workspaces", JSONArray(workspaces.map { workspace ->
             val saved = SharedPreferencesAgentSessionStore(context, "task:${workspace.workspaceId}").load()

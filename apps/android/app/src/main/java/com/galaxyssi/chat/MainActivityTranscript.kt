@@ -546,6 +546,15 @@ internal fun Context.persistAgentTranscript(
         taskId = state.sessionId,
         turnIdForTask = agentTranscriptStore::turnIdForTask
     )
+    val owners = listOf(
+        transcriptTurnId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::conversationIdForTurn),
+        state.sessionId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::conversationIdForTask),
+        state.lastActionResult?.metadata?.get("conversation_id")
+    )
+    if (!AgentTranscriptOwnership.accepts(conversationId, owners, agentTranscriptStore::resolveMergedConversationId)) {
+        Log.w("GalaxySSIAgent", "Rejected transcript projection with conflicting conversation ownership")
+        return
+    }
     state.plan?.selectedAgentOrModel
         ?.takeIf { it.isNotBlank() }
         ?.let(::agentTraceTargetLabel)
@@ -753,7 +762,8 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
     selectConversationOutputPage(collaboration)
     val liveEntries = liveAgentConnectorStreams.values
         .filter { it.conversationId == activeConversationId }
-    val hydratedEntries = AgentConnectorStreamPresentationPolicy.merge(entries, liveEntries)
+    val hydratedEntries = AgentConnectorStreamPresentationPolicy.merge(
+        entries.filter { it.conversationId == activeConversationId }, liveEntries)
         .map(::expandedAgentTranscriptEntry)
     val cleanupEntryIds = mutableListOf<String>()
     val filteredEntries = hydratedEntries.filterNot { entry ->

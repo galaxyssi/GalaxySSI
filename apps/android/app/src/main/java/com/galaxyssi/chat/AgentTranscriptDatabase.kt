@@ -493,10 +493,10 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     fun conversationIdForTurn(turnId: String): String? =
-        scalarId("turn_id = ?", arrayOf(turnId), "conversation_id")
+        scalarId("turn_id = ?", arrayOf(turnId), "conversation_id", oldestFirst = true)
 
     fun conversationIdForTask(taskId: String): String? =
-        scalarId("task_id = ?", arrayOf(taskId), "conversation_id")
+        scalarId("task_id = ?", arrayOf(taskId), "conversation_id", oldestFirst = true)
 
     fun turnIdForTask(taskId: String): String? =
         scalarId("task_id = ? AND turn_id != ''", arrayOf(taskId), "turn_id")
@@ -605,7 +605,7 @@ internal class AgentTranscriptEntryDatabase(
             if (cursor.moveToFirst()) decodeEntry(cursor) else null
         }
 
-    private fun scalarId(selection: String, arguments: Array<String>, column: String): String? =
+    private fun scalarId(selection: String, arguments: Array<String>, column: String, oldestFirst: Boolean = false): String? =
         readableDatabase.query(
             TABLE_ENTRIES,
             arrayOf(column),
@@ -613,7 +613,7 @@ internal class AgentTranscriptEntryDatabase(
             arguments,
             null,
             null,
-            "sequence DESC",
+            if (oldestFirst) "sequence ASC" else "sequence DESC",
             "1"
         ).use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0).takeIf(String::isNotBlank) else null

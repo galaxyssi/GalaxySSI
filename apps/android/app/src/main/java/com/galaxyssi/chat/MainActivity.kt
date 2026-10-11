@@ -1339,9 +1339,9 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             }
         }
         if (activeMainTab == PAGE_AGENT && !initialAgentHydrationPending && restoredAgentState != null) {
-            renderAgentState(restoredAgentState)
+            renderAgentState(restoredAgentState, syncTranscript = false)
         } else if (restoredRuntimePlaintext && activeMainTab == PAGE_AGENT && !initialAgentHydrationPending) {
-            renderAgentState(mobileNativeAgent.reloadSession())
+            renderAgentState(mobileNativeAgent.reloadSession(), syncTranscript = false)
         }
         traceResume("agent_render")
         if (featurePage.visibility == View.VISIBLE && controlCenterDestination != null) {

@@ -1144,7 +1144,10 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     }
 
     fun list(conversationId: String = activeConversation().id): List<AgentTranscriptEntry> =
-        entryDatabase.listConversation(conversationId)
+        ownedEntries(entryDatabase.listConversation(conversationId))
+
+    private fun ownedEntries(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> =
+        AgentTranscriptOwnership.filter(entries, ::conversationIdForTurn, ::resolveMergedConversationId)
 
     internal fun latestEntriesByConversation(): Map<String, AgentTranscriptEntry> =
         entryDatabase.latestEntriesByConversation()
@@ -1182,8 +1185,15 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         conversationId: String = activeConversation().id,
         beforeSequenceExclusive: Long? = null,
         pageSize: Int = 100
-    ): AgentTranscriptPage =
-        entryDatabase.listConversationPage(conversationId, beforeSequenceExclusive, pageSize)
+    ): AgentTranscriptPage {
+        var before = beforeSequenceExclusive
+        while (true) {
+            val page = entryDatabase.listConversationPage(conversationId, before, pageSize)
+            val entries = ownedEntries(page.entries)
+            if (entries.isNotEmpty() || !page.hasMore) return page.copy(entries = entries)
+            before = requireNotNull(page.nextBeforeSequence)
+        }
+    }
 
     internal fun clearRuntimeDecodeCache() {
         entryDatabase.clearRuntimeDecodeCache()
@@ -1196,6 +1206,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         pageSize: Int = 100
     ): AgentTranscriptDelta =
         entryDatabase.listConversationAfter(conversationId, afterSequenceExclusive, pageSize)
+            .let { it.copy(entries = ownedEntries(it.entries)) }
 
     internal fun entriesForTurn(turnId: String): List<AgentTranscriptEntry> {
         val cleanTurnId = turnId.trim()
@@ -1355,7 +1366,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         excludeTurnId: String
     ): AgentConversationContext {
         val window = unsummarizedDialogue(conversation)
-        val dialogue = window.dialogue.filterNot {
+        val dialogue = ownedEntries(window.dialogue).filterNot {
             excludeTurnId.isNotBlank() && it.turnId == excludeTurnId
         }
         val compacted = compileContext(window.conversation, dialogue)
@@ -1791,7 +1802,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
                 beforeSequenceExclusive = beforeSequence,
                 pageSize = MAX_PREVIEW_BACKFILL_PAGE_SIZE
             )
-            page.entries.lastOrNull { it.role != AgentTranscriptRole.PROCESS }?.let { return it }
+            ownedEntries(page.entries).lastOrNull { it.role != AgentTranscriptRole.PROCESS }?.let { return it }
             beforeSequence = page.nextBeforeSequence
         } while (page.hasMore && beforeSequence != null)
         return null
@@ -1885,7 +1896,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             return AgentContextWindow(
                 conversation = conversation,
                 dialogue = AgentFinalResponseIdentity.coalesce(
-                    entryDatabase.listConversation(conversation.id)
+                    ownedEntries(entryDatabase.listConversation(conversation.id))
                 ).filter {
                     it.role != AgentTranscriptRole.PROCESS &&
                         !AgentVoiceTranscriptPolicy.isPending(it)
@@ -1899,7 +1910,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         if (recent != null) {
             return AgentContextWindow(
                 conversation = conversation,
-                dialogue = AgentFinalResponseIdentity.coalesce(recent)
+                dialogue = AgentFinalResponseIdentity.coalesce(ownedEntries(recent))
                     .filter {
                         it.role != AgentTranscriptRole.PROCESS &&
                             !AgentVoiceTranscriptPolicy.isPending(it)
@@ -1921,7 +1932,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return AgentContextWindow(
             conversation = reset,
             dialogue = AgentFinalResponseIdentity.coalesce(
-                entryDatabase.listConversation(conversation.id)
+                ownedEntries(entryDatabase.listConversation(conversation.id))
             ).filter {
                 it.role != AgentTranscriptRole.PROCESS &&
                     !AgentVoiceTranscriptPolicy.isPending(it)

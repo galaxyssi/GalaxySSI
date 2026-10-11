@@ -12,11 +12,13 @@ internal fun MainActivity.routeCollaborationFollowup(
     agentRoutingExecutor.execute {
         if (cancelled()) return@execute
         val outcome = runCatching {
-            val active = globalSuperAgentRuntime.agentTeamSnapshots().firstOrNull { snapshot ->
+            val active = globalSuperAgentRuntime.agentTeamSnapshots().filter { snapshot ->
                 snapshot.conversationId == conversationId && (!snapshot.state.isTerminal || snapshot.paused ||
                     snapshot.state == AgentTeamExecutionState.INTERRUPTED) &&
                     snapshot.members.any { it.collaborationGroupId == conversationId }
-            } ?: return@runCatching null
+            }.maxWithOrNull(compareBy<AgentTeamExecutionSnapshot> {
+                it.members.any { member -> member.researchStage.isNotBlank() }
+            }.thenBy { it.createdAtMillis }) ?: return@runCatching null
             when (AgentTeamControlIntent.parse(goal)) {
                 AgentTeamUserControl.PAUSE -> {
                     globalSuperAgentRuntime.pauseAgentTeam(active.supervisorRunId)
@@ -32,30 +34,32 @@ internal fun MainActivity.routeCollaborationFollowup(
                 }
                 null -> Unit
             }
-            val selected = AgentTurnMentionRegistry.peek(turnId).mapTo(hashSetOf()) { it.instanceId }
-            if (selected.isEmpty()) active.members.firstOrNull { it.memberId == active.primaryMemberId }
-                ?.personId?.let(selected::add)
+            val group = requireNotNull(CollaborationGroupStore(this).load(conversationId))
+            val respondents = CollaborationFollowupPolicy.respondents(group, goal, AgentTurnMentionRegistry.peek(turnId))
+            val selected = respondents.mapTo(hashSetOf()) { it.instanceId }
             val recipients = active.members.filter {
                 (it.memberId in selected || it.personId in selected) && it.canReceiveTeamMessage(active.state)
             }.groupBy { it.personId }.values.map { stages ->
                 stages.firstOrNull { it.status == AgentSubagentStatus.RUNNING } ?: stages.first()
             }.ifEmpty { if (active.goalDisposition in setOf("continue", "blocked"))
                 active.members.filter { it.memberId == active.primaryMemberId } else emptyList() }
-            var delivered = 0
-            var queued = 0
             runBlocking {
                 recipients.forEach { recipient ->
                     if (cancelled()) return@forEach
-                    val result = globalSuperAgentRuntime.sendAgentTeamMessage(active.supervisorRunId, recipient.memberId, goal)
-                    if (result.state == AgentTeamMessageState.PENDING) queued++ else delivered++
+                    globalSuperAgentRuntime.sendAgentTeamMessage(active.supervisorRunId, recipient.memberId, goal)
                 }
             }
             if (active.goalDisposition == "blocked" && recipients.isNotEmpty())
                 globalSuperAgentRuntime.resumeAgentTeam(active.supervisorRunId)
-            if (recipients.isEmpty()) getString(R.string.collaboration_member_finished)
-            else getString(R.string.collaboration_update_receipt, delivered, queued)
+            if (cancelled()) return@execute
+            val base = agentContextBeforeTurn[turnId]
+                ?: agentTranscriptStore.context(conversationId, excludeTurnId = turnId)
+            agentContextBeforeTurn[turnId] = CollaborationFollowupPolicy.context(base, active)
+            AgentTurnMentionRegistry.put(turnId, respondents)
+            null
         }
-        val receipt = outcome.getOrElse { getString(R.string.collaboration_update_failed) }
+        val receipt = outcome.getOrElse { it.message?.takeIf(String::isNotBlank)
+            ?: getString(R.string.collaboration_update_failed) }
         if (receipt == null) {
             runOnUiThread { if (!isFinishing && !isDestroyed && !cancelled()) continueNewTask() }
             return@execute
