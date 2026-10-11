@@ -11,6 +11,8 @@ internal object CollaborationToolProtocol {
         Plan build/test/review/reuse as ordinary dependent work; unrelated members continue. Recall evolution_rules for the schema.
         Pure numeric candidates can use numeric_model_trial for host-side case replay and exact failed-case feedback before final acceptance.
         Compare revised tools with tool_test_comparison on the same preserved cases; inspect improvements AND regressions before choosing the next action.
+        Search mode=capabilities for unreleased candidates and their test plans as well as releases. Follow usage_recall and read_original
+        to resume unfinished work or inspect failed tests before reinventing a tool. Candidate discovery is not approval to execute or release it.
     """.trimIndent()
 
     fun rules() = """
@@ -28,6 +30,9 @@ internal object CollaborationToolProtocol {
         executable_tool: {name,purpose,language:"python",source:"Python defining run(parameters) returning JSON",
           input_schema:<existing Skill parameter schema>,applies_when,avoid_when,environment,dependencies,side_effects}.
         Sources are immutable, group-scoped candidates. Correct code by publishing a new linked tool, never overwrite a tested version.
+        Candidates and test plans are searchable with mode=capabilities. Their usage_recall selects exact method_history, including
+        failed tests; source/test originals remain separately paginated. No transcript replay is needed to discover earlier attempts.
+        History for a candidate needs a runtime-resolved source; pre-execution rejections remain visible under the exact test plan.
         input_schema uses type object/array/string/integer/number/boolean, properties, required, additional_properties, items,
         enum, min_length/max_length, minimum/maximum, min_items/max_items. No unknown schema keywords. Root type is object.
         Python uses the existing on-device Linux runtime and its permissions/network/timeout/cancellation gates. It is NOT a new

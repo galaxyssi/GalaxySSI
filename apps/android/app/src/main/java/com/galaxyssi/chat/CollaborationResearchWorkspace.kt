@@ -644,11 +644,11 @@ internal class CollaborationResearchWorkspace(
     fun methodHistory(access: CollaborationWorkspaceAccess, ref: JSONObject, cursor: String = ""): JSONObject = synchronized(LOCK) {
         checkAcceptanceAccess(access)
         val method = requireNotNull(read(access, ref.getString("object_id"), ref.getInt("revision"))) { "Method is missing or isolated" }
-        require(method.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL, CollaborationExecutableTool.RELEASE) &&
+        require(method.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL) + CollaborationToolExperience.KINDS &&
             CollaborationResearchCandidates.same(method, ref)) { "Method revision or digest changed" }
-        if (method.getString("kind") == CollaborationExecutableTool.RELEASE) {
+        if (method.getString("kind") in CollaborationToolExperience.KINDS) {
             return@synchronized requireNotNull(toolExperience) { "Native tool history is unavailable" }
-                .invoke(access, CollaborationResearchCandidates.reference(method), cursor)
+                .invoke(access, CollaborationResearchCandidates.reference(method).put("kind", method.getString("kind")), cursor)
         }
         CollaborationMethodExperience(rows, access.groupId).browse(access, CollaborationResearchCandidates.reference(method), cursor)
     }
@@ -696,7 +696,7 @@ internal class CollaborationResearchWorkspace(
                     if (!linked.containsKey(id)) linked[id] = read(access, ref.getString("object_id"), ref.getInt("revision"))
                     linked[id]
                 }?.let { match ->
-                    if (original.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL, CollaborationExecutableTool.RELEASE))
+                    if (original.getString("kind") in setOf(CollaborationWorkflowMethod.KIND, CollaborationProceduralMemory.SKILL) + CollaborationToolExperience.KINDS)
                         match.put("usage_recall", JSONObject().put("mode", "method_history").put("object_id", original.getString("object_id"))
                             .put("revision", original.getInt("revision")).put("sha256", original.getString("sha256")))
                     found.add(match)
