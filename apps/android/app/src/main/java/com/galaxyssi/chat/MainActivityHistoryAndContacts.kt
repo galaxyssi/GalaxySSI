@@ -224,8 +224,8 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = false) {
-    val targetContact = if (msg.isMine) selectedContact else msg.contact
+internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = false, outgoingContact: Contact? = null) {
+    val targetContact = if (msg.isMine) outgoingContact ?: selectedContact else msg.contact
     val list = messages.getOrPut(targetContact?.id ?: msg.contact.id) { mutableListOf() }
     val stored = if (msg.contact.id == (targetContact?.id ?: msg.contact.id)) msg else msg.copy(contact = targetContact ?: msg.contact)
     stored.deliveryTrace.add(newTraceEvent("persisted", "local_history"))
