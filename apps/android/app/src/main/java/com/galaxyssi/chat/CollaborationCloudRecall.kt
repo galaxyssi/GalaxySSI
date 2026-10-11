@@ -8,13 +8,17 @@ import org.json.JSONObject
 /** Read-only group capability, advertised only for an already bound managed cloud assignment. */
 internal object CollaborationCloudRecall {
     const val NAME = CloudGoalPageProtocol.RECALL_TOOL
-    private val fields = setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter", "work_id")
+    private val fields = setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter", "work_id", "inputs")
 
     fun install(prepared: PreparedCloudConversationStream) {
         val properties = JSONObject().put("mode", JSONObject().put("type", "string")
-            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE))))
+            .put("enum", JSONArray(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE, CollaborationWorkflowCheck.MODE))))
         fields.filterNot { it == "mode" }.forEach { field ->
-            properties.put(field, JSONObject().put("type", if (field in setOf("revision", "offset")) "integer" else "string"))
+            properties.put(field, JSONObject().put("type", when (field) {
+                "revision", "offset" -> "integer"
+                "inputs" -> "object"
+                else -> "string"
+            }))
         }
         properties.getJSONObject("topic").put("enum", JSONArray(CollaborationEvolutionProtocol.topicIds()))
         properties.getJSONObject("case_filter").put("enum", JSONArray(CollaborationNumericFeedback.filters))
@@ -36,7 +40,7 @@ internal object CollaborationCloudRecall {
                 "Returned output is not proof of a claim.")
             .apply { put("description", getString("description") + " Active incremental coordinators may use mode=team_updates/cursor to discover newly published exact versions. " +
                 "Follow next_cursor to an empty page and reuse it later. Alternatively, mode=team_updates with work_id (without cursor) reads one complete current work contract before a dependency revision. " +
-                "Other members cannot use this mode; original goal snapshots remain unchanged. " + CollaborationPeerUpdates.INSTRUCTIONS) }
+                "Other members cannot use this mode; original goal snapshots remain unchanged. " + CollaborationPeerUpdates.INSTRUCTIONS + " " + CollaborationWorkflowCheck.INSTRUCTIONS) }
         val tools = prepared.body.optJSONArray("tools") ?: JSONArray().also { prepared.body.put("tools", it) }
         when (prepared.provider) {
             ModelStreamProvider.OPENAI_COMPATIBLE -> tools.put(JSONObject().put("type", "function")
@@ -51,7 +55,7 @@ internal object CollaborationCloudRecall {
                 recordCoverage: Boolean = true): String {
         val result = try {
             require(input.keys().asSequence().all { it in fields }) { "Unexpected recall argument" }
-            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE)) { "Invalid recall mode" }
+            require(input.optString("mode") in setOf("workspace", "evidence", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", CollaborationNumericFeedback.MODE, CollaborationCoordinatorUpdates.MODE, CollaborationPeerUpdates.MODE, CollaborationWorkflowCheck.MODE)) { "Invalid recall mode" }
             require(CollaborationGroupStore(context).load(access.groupId)?.members?.any { it.id == access.personId } == true) {
                 "Member access was removed"
             }
@@ -60,13 +64,16 @@ internal object CollaborationCloudRecall {
                     it in (if (key == "revision") 1L else 0L)..Int.MAX_VALUE.toLong()
                 } == true) { "Invalid page number" }
             }
-            fields.minus(setOf("offset", "revision")).filter(input::has).forEach { key ->
+            fields.minus(setOf("offset", "revision", "inputs")).filter(input::has).forEach { key ->
                 require(input.opt(key) is String && input.getString(key).length <= (if (key == "query") 1000 else 512)) { "Invalid reference" }
             }
             require(!input.has("query") || input.optString("mode") == "capabilities") { "Query is only supported for capability search" }
             require(!input.has("topic") || input.optString("mode") == "evolution_rules") { "Topic is only supported for evolution rules" }
             require(!input.has("case_filter") || input.optString("mode") == CollaborationNumericFeedback.MODE) { "Case filter is only supported for numeric feedback" }
             require(!input.has("section") || input.optString("mode") == "goal_contract") { "Section is only supported for goal/context recall" }
+            require(!input.has("inputs") || input.optString("mode") == CollaborationWorkflowCheck.MODE && input.opt("inputs") is JSONObject) {
+                "Inputs must be a JSON object and are only supported for workflow checks"
+            }
             CollaborationScopedRecall.read(context, input.keys().asSequence().associateWith { input.get(it) }, access, recordCoverage)
         } catch (_: IllegalArgumentException) {
             AgentNativeToolExecutionResult.failure("recall_unavailable", "Invalid arguments or revoked member access.")

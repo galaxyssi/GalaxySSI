@@ -18,7 +18,22 @@ internal object CollaborationScopedRecall {
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Section is only supported for goal/context recall.")
         if (input.containsKey("work_id") && input["mode"] != CollaborationCoordinatorUpdates.MODE)
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Work ID is only supported for coordinator updates.")
+        if (input.containsKey("inputs") && input["mode"] != CollaborationWorkflowCheck.MODE)
+            return AgentNativeToolExecutionResult.failure("invalid_arguments", "Inputs are only supported for workflow checks.")
         return when (input["mode"]) {
+            CollaborationWorkflowCheck.MODE -> {
+                try {
+                    val reads = CollaborationPeerUpdates.combinedReadAccess(context, access)
+                    val saved = CollaborationWorkflowCheck.inspect(input, CollaborationResearchWorkspace(context), reads)
+                    val offset = (input["offset"] as? Number)?.toInt() ?: 0
+                    require(offset <= saved.toString().length) { "Offset is outside this check; keep inputs and reference unchanged while paging" }
+                    page(saved, input, "host_predicate_check_of_declared_inputs_not_method_validation")
+                } catch (invalid: IllegalArgumentException) {
+                    AgentNativeToolExecutionResult.failure("workflow_check_unavailable", invalid.message.orEmpty())
+                } catch (_: org.json.JSONException) {
+                    AgentNativeToolExecutionResult.failure("invalid_arguments", "Workflow check requires valid JSON inputs and an exact saved rule.")
+                }
+            }
             CollaborationPeerUpdates.MODE -> {
                 if (input.keys.any { it !in setOf("mode", "cursor") } || input.containsKey("cursor") && input["cursor"] !is String)
                     return AgentNativeToolExecutionResult.failure("invalid_arguments", "Peer updates accept mode and cursor only.")
@@ -178,7 +193,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, evolution_rules, numeric_cases, team_updates, peer_updates or problems for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, workflow_check, evolution_rules, numeric_cases, team_updates, peer_updates or problems for scoped recall.")
         }
     }
 
