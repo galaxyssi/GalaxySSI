@@ -3,10 +3,11 @@ package com.galaxyssi.chat
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Retrieval aids for learned methods, never automatic adoption or additional authority. */
+/** Retrieval aids for candidate and retained methods, never automatic adoption or additional authority. */
 internal object CollaborationCapabilityRecall {
     val KINDS = setOf("procedure_skill", "failure_experience", "capability_lesson", "workflow_method",
-        "tool_release", "capability_channel", CollaborationWorkflowSelection.KIND, CollaborationToolComparison.KIND)
+        "tool_release", "executable_tool", "tool_test_plan", "capability_channel",
+        CollaborationWorkflowSelection.KIND, CollaborationToolComparison.KIND)
     const val SCAN_PAGE = 100
     const val RESULT_PAGE = 12
 
@@ -26,13 +27,25 @@ internal object CollaborationCapabilityRecall {
         val fields = linkedMapOf("title" to saved.getString("title"))
         listOf("name", "purpose", "domain", "keywords", "applies_when", "avoid_when", "limitations",
             "observed_issue", "interpretation", "avoid_repetition", "reconsider_when", "procedure",
-            "bottleneck", "change_rationale", "risks").forEach { field ->
+            "bottleneck", "change_rationale", "risks", "environment", "dependencies", "side_effects", "coverage_gaps", "oracle_basis").forEach { field ->
             when (val value = body.opt(field)) {
                 is String -> fields[field] = value
                 is JSONArray -> fields[field] = (0 until value.length()).mapNotNull { value.opt(it) as? String }.joinToString(" ")
             }
         }
         val sources = JSONArray()
+        if (kind == CollaborationExecutableTool.TEST) {
+            saved.optJSONObject(CollaborationEvolutionContract.HOST)?.optJSONObject(CollaborationExecutableTool.TOOL)?.let { ref ->
+                val tool = read(ref)?.takeIf { it.optString("kind") == CollaborationExecutableTool.TOOL &&
+                    CollaborationResearchCandidates.same(it, ref) }
+                tool?.getJSONObject("body")?.getJSONObject(CollaborationExecutableTool.TOOL)?.let { value ->
+                    val names = listOf("name", "purpose", "environment", "dependencies", "applies_when", "avoid_when", "side_effects")
+                    names.forEach { field -> fields["tool_$field"] = value.getString(field) }
+                    sources.put(JSONObject().put("source", CollaborationResearchCandidates.reference(tool))
+                        .put("field_prefix", "tool_").put("fields", JSONArray(names)).put("complete_read", false))
+                }
+            }
+        }
         if (kind == CollaborationProceduralMemory.SKILL) {
             body.optJSONArray("inputs")?.let { inputs ->
                 fields["inputs"] = (0 until inputs.length()).map { inputs.getJSONObject(it) }
@@ -89,6 +102,10 @@ internal object CollaborationCapabilityRecall {
             .put("reported_state", saved.optJSONObject(CollaborationEvolutionContract.HOST)?.optString("state").orEmpty())
             .put("matched_terms", JSONArray(matches)).put("lexical_score", score).put("excerpts", snippets)
             .put("linked_sources", sources)
+            .apply {
+                if (kind in setOf(CollaborationExecutableTool.TOOL, CollaborationExecutableTool.TEST))
+                    put("reuse_status", "candidate_requires_testing_and_independent_release")
+            }
             .put("requires_scope_and_lineage_check", true).put("grants_permissions", false)
     }
 
@@ -106,8 +123,11 @@ internal object CollaborationCapabilityRecall {
             "Read exact workspace originals and their evidence, conditions and counterexamples before reuse. " +
             "Procedure matches can include their exact retained lesson; linked_sources identifies excerpt origins, not a full-read receipt. " +
             "Tool releases can include exact source metadata under tool_*; both source and review conditions apply, and code/tests require separate reads. " +
+            "Unreleased tools/tests remain candidates; reported_state is publication-time, not a live verdict. " +
+            "Inspect original tests before choosing repairs or alternatives; retrieval never releases a candidate. " +
             "Follow usage_recall to inspect prior conditions, failures and delivery. Tool releases return original native observations with " +
-            "read_original selectors for inputs, runtime reports and errors; follow empty pages and distinguish replays from executions. " +
+            "read_original selectors for inputs, runtime reports and errors; candidates and test plans also expose test observations. " +
+            "Follow empty pages and distinguish replays from executions. " +
             "Execution success is not a quality gain. " +
             "Check current lineage using the existing procedure/workflow/tool/channel admission; retrieval does not approve adoption.")
 
