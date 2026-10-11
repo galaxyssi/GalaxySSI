@@ -1724,6 +1724,22 @@ class AgentProductionTeamController(
             return 0
         }
         if (closed.get()) return 0
+        val contacts = lazy { AgentConnectorContactSnapshot.from(AppStore.contacts(evidenceContext)) }
+        val restored = store.snapshots().sumOf { team ->
+            if (team.state != AgentTeamExecutionState.INTERRUPTED ||
+                durableControl.get(team.supervisorRunId) != AgentTeamUserControl.RUN || !parentRecovery.canResume(team)) 0
+            else store.deliveryCheckpoint(team.supervisorRunId)?.let { checkpoint ->
+                AgentTeamReplyRecovery.restore(team, checkpoint, managedResponses, durableControl.get(team.supervisorRunId),
+                    dispatchCheckpoint::wasNotDispatched) { member, source ->
+                    contacts.value.matchingContactIds(member.agentId).mapNotNull { contact ->
+                        AgentTaskIdentityStore.find(evidenceContext, contact, source)?.let { identity ->
+                            AgentPendingDelivery(source, identity.conversationId, identity.turnId, identity.taskId, contact)
+                        }
+                    }.singleOrNull()
+                }
+            } ?: 0
+        }
+        if (restored > 0) AndroidAgentRecoveryWake.request(evidenceContext)
         val count = managedResponses.completedUnapplied().count { response ->
             runCatching { applyLateResponse(response) }
                 .onFailure { android.util.Log.w("GalaxySSICollaboration", "Saved result remains pending", it) }

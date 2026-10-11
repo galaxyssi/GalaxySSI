@@ -374,7 +374,7 @@ private class ActionExecutorAgentTransport(
         val item = prepared.remove(request.runId)
             ?: throw IllegalStateException("No prepared connector action for Run ${request.runId}")
         emit(request, item.registration, AgentRunControlEventType.AGENT_CONNECTED, 1L)
-        val result = delegate.execute(item.action, item.screen)
+        val result = delegate.execute(AgentManagedDispatchIntent.bind(item.action, request, agentId), item.screen)
         results[request.runId] = result
         val awaitingResponse = result.metadata["awaiting_response"] == "true"
         val sourceMessageId = result.metadata["source_message_id"]?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L

@@ -24,6 +24,7 @@ data class AgentManagedResponseRecord(
 )
 
 interface AgentManagedResponseLedger {
+    fun findOwner(ownerRunId: String): AgentManagedResponseRecord?
     fun register(record: AgentManagedResponseRecord)
     fun complete(response: AgentConnectorResponse): AgentManagedResponseRecord?
     fun acknowledge(response: AgentConnectorResponse): AgentManagedResponseRecord?
@@ -38,9 +39,12 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
     private val records = linkedMapOf<String, AgentManagedResponseRecord>()
 
     @Synchronized
+    override fun findOwner(ownerRunId: String): AgentManagedResponseRecord? = records[ownerRunId]
+
+    @Synchronized
     override fun register(record: AgentManagedResponseRecord) {
         require(record.ownerRunId.isNotBlank() && record.sourceMessageId > 0L)
-        records[record.ownerRunId] = record
+        records[record.ownerRunId] = records[record.ownerRunId]?.preserveRegistration(record) ?: record
         compact()
     }
 
@@ -112,6 +116,10 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
 class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedResponseLedger {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
 
+    override fun findOwner(ownerRunId: String): AgentManagedResponseRecord? = synchronized(PROCESS_LOCK) {
+        load().firstOrNull { it.ownerRunId == ownerRunId }
+    }
+
     internal fun ownsRecordedSource(source: Long, conversation: String, turn: String): Boolean = synchronized(PROCESS_LOCK) {
         source > 0 && conversation.isNotBlank() && turn.isNotBlank() && load().any {
             it.sourceMessageId == source && it.conversationId == conversation && it.turnId == turn
@@ -120,6 +128,10 @@ class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedRespon
 
     internal fun pendingRecoveryDeliveries(): List<AgentPendingDelivery> = synchronized(PROCESS_LOCK) {
         load().mapNotNull { it.pendingRecoveryDelivery() }.distinct()
+    }
+
+    internal fun pendingOwner(delivery: AgentPendingDelivery): AgentManagedResponseRecord? = synchronized(PROCESS_LOCK) {
+        load().singleOrNull { it.pendingRecoveryDelivery() == delivery }
     }
 
     internal fun pendingRecoveryDelivery(source: Long, contact: String, conversation: String,
@@ -134,8 +146,9 @@ class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedRespon
 
     override fun register(record: AgentManagedResponseRecord) = synchronized(PROCESS_LOCK) {
         require(record.ownerRunId.isNotBlank() && record.sourceMessageId > 0L)
-        val next = load().filterNot { it.ownerRunId == record.ownerRunId }
-            .plus(record)
+        val records = load()
+        val next = records.filterNot { it.ownerRunId == record.ownerRunId }
+            .plus(records.firstOrNull { it.ownerRunId == record.ownerRunId }?.preserveRegistration(record) ?: record)
         save(next)
     }
 
@@ -260,6 +273,13 @@ object AgentLateManagedResponseBus {
     fun publish(record: AgentManagedResponseRecord) {
         listeners.forEach { it.onLateResponse(record) }
     }
+}
+
+private fun AgentManagedResponseRecord.preserveRegistration(next: AgentManagedResponseRecord): AgentManagedResponseRecord {
+    require(supervisorRunId == next.supervisorRunId && agentId == next.agentId && deliveryMode == next.deliveryMode &&
+        sourceMessageId == next.sourceMessageId && contactId == next.contactId && conversationId == next.conversationId &&
+        turnId == next.turnId && taskId == next.taskId) { "Managed response owner already belongs to another execution" }
+    return this
 }
 
 private fun AgentManagedResponseRecord.correlates(response: AgentConnectorResponse): Boolean =
