@@ -21,6 +21,16 @@ internal object CollaborationScopedRecall {
         if (input.containsKey("inputs") && input["mode"] != CollaborationWorkflowCheck.MODE)
             return AgentNativeToolExecutionResult.failure("invalid_arguments", "Inputs are only supported for workflow checks.")
         return when (input["mode"]) {
+            CollaborationSourceAccess.MODE -> {
+                try {
+                    val reads = CollaborationPeerUpdates.combinedReadAccess(context, access)
+                    AgentNativeToolExecutionResult.success(CollaborationResearchWorkspace(context).sourceAccess(reads, input).toNativeObject())
+                } catch (invalid: IllegalArgumentException) {
+                    AgentNativeToolExecutionResult.failure("source_access_unavailable", invalid.message.orEmpty())
+                } catch (_: org.json.JSONException) {
+                    AgentNativeToolExecutionResult.failure("source_access_unavailable", "Saved source references are invalid; original access is unchanged.")
+                }
+            }
             CollaborationWorkflowCheck.MODE -> {
                 try {
                     val reads = CollaborationPeerUpdates.combinedReadAccess(context, access)
@@ -195,7 +205,7 @@ internal object CollaborationScopedRecall {
                         "next_cursor" to result.next, "trust" to "member_reported_not_verified"))
                 }
             }
-            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, archive, evolution, capabilities, method_history, workflow_check, evolution_rules, numeric_cases, team_updates, peer_updates or problems for scoped recall.")
+            else -> AgentNativeToolExecutionResult.failure("invalid_mode", "Use goal_contract, evidence, workspace, source_access, archive, evolution, capabilities, method_history, workflow_check, evolution_rules, numeric_cases, team_updates, peer_updates or problems for scoped recall.")
         }
     }
 

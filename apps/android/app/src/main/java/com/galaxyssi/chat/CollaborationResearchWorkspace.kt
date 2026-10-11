@@ -436,6 +436,14 @@ internal class CollaborationResearchWorkspace(
         readRevision(access.groupId, objectId, revision)?.takeIf(access::canRead)
     }
 
+    fun sourceAccess(access: CollaborationWorkspaceAccess, input: Map<String, Any?>): JSONObject = synchronized(LOCK) {
+        checkAcceptanceAccess(access)
+        val reads = peerReadAccess(access)
+        CollaborationSourceAccess.read(input, reads,
+            { id, revision -> read(reads, id, revision) },
+            { ref -> evidenceOriginal?.invoke(reads, ref) })
+    }
+
     private fun readRevision(group: String, objectId: String, revision: Int): JSONObject? =
         rows.read(revisionKey(prefix(group), objectId, revision))?.let(::JSONObject)?.also { saved ->
             val hash = saved.getString("sha256")

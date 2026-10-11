@@ -37,6 +37,10 @@ def tool_spec():
         "and cursor='' to recover omitted material directly. Keep section unchanged while following next_cursor until null; "
         "null ends that section, not the full snapshot. Omit section to browse all pinned material. "
         "Use mode=workspace to browse exact revisions, then object_id/revision/offset to read them. "
+        "Use mode=source_access with exact workspace object_id/revision/sha256 and optional cursor to inspect direct parent and tool-evidence availability. "
+        "Follow next_cursor with the same root. Available means readable now, not read or verified. Read relevant originals; "
+        "for unavailable sources coordinate explicit input changes or report the evidence gap, not repeated unchanged reads. "
+        "This does not grant access or choose which evidence is sufficient. "
         "Use mode=evidence to browse originals, then evidence_id/sha256/offset; follow next_offset. "
         "Use mode=archive with record_id/offset to read complete dependency handoffs; follow next_offset. "
         "Use mode=evolution/cursor for scoped learning records. Use evolution_rules with topic=catalog to discover typed contracts, "
@@ -66,7 +70,7 @@ def tool_spec():
         "all revisions and their observations in that milestone are shared with eligible recipients. No extra model is started. "
         "Read-only, no web search, phone UI access or task execution."),
         "inputSchema": {"type": "object", "properties": {
-            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates", "peer_updates", "workflow_check"]},
+            "mode": {"type": "string", "enum": ["goal_contract", "workspace", "evidence", "source_access", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates", "peer_updates", "workflow_check"]},
             "inputs": {"type": "object", "additionalProperties": True},
             "query": {"type": "string", "maxLength": 1000},
             "work_id": {"type": "string", "maxLength": 160},
@@ -143,6 +147,12 @@ def validate_arguments(arguments):
         if (set(arguments) - allowed or (not reading and "revision" not in arguments)
                 or any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key]) for key in ids)):
             raise ValueError("Method history requires exact method identity or record_id/offset")
+    if arguments["mode"] == "source_access":
+        if (set(arguments) - {"mode", "object_id", "revision", "sha256", "cursor"}
+                or "revision" not in arguments
+                or any(len(arguments.get(key, "")) != 64 or any(c not in "0123456789abcdef" for c in arguments[key])
+                       for key in ("object_id", "sha256"))):
+            raise ValueError("Source access requires exact workspace object_id/revision/sha256 and optional cursor")
     if arguments["mode"] == "numeric_cases":
         if (set(arguments) - {"mode", "object_id", "revision", "sha256", "case_filter", "cursor"}
                 or "revision" not in arguments
