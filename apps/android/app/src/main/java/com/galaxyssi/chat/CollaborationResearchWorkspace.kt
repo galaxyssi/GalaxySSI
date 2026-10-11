@@ -39,7 +39,8 @@ internal data class CollaborationWorkspaceAccess(
             runId = execution.request.parentRunId, turnId = execution.request.messageId,
             round = execution.request.context[CollaborationGoalLoop.ROUND]?.toString()?.toLongOrNull() ?: 0L,
             nodeId = execution.member.memberId,
-            personId = execution.member.context[CollaborationResearchWorkflow.PERSON].orEmpty(),
+            personId = execution.member.context[CollaborationResearchWorkflow.PERSON].orEmpty()
+                .ifBlank { execution.member.memberId },
             dependencyNodes = execution.member.dependsOnAgentIds,
             pinnedReads = CollaborationMilestoneDispatch.strings(execution.member.context[CollaborationMilestoneDispatch.GRANTS]))
     }
