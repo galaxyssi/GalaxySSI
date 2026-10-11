@@ -26,7 +26,9 @@ internal class CollaborationEvidenceLedger(
 
     fun bind(source: Long, access: CollaborationWorkspaceAccess) = synchronized(LOCK) {
         require(source > 0 && access.nodeId.isNotBlank() && access.personId.isNotBlank() &&
-            access.runId.isNotBlank() && access.turnId.isNotBlank())
+            access.runId.isNotBlank() && access.turnId.isNotBlank()) {
+            "Collaboration evidence binding requires a valid source and complete run, turn, node and member identities"
+        }
         if (!authorized(access.groupId)) throw CollaborationEvidenceAccessRevoked()
         val key = prefix(access.groupId) + "binding:$source"
         val value = bindingIdentity(access)
