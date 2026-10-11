@@ -26,8 +26,8 @@ internal object PeerImageThumbnailPolicy {
             .ifBlank { "${attachment.name}:${attachment.sizeBytes}" }
 }
 
-internal object PeerImageThumbnailRepository {
-    private const val CACHE_TTL_MILLIS = 30_000L
+internal object PeerImageThumbnailRepository : RuntimeSensitiveCache {
+    private const val CACHE_TTL_MILLIS = RuntimeCachePolicy.SENSITIVE_TTL_MILLIS
     private const val MIN_CACHE_BYTES = 4 * 1024 * 1024
     private const val MAX_CACHE_BYTES = 24 * 1024 * 1024
     private const val MAX_STORED_THUMBNAIL_BYTES = 100_000
@@ -124,8 +124,19 @@ internal object PeerImageThumbnailRepository {
                 bitmap?.recycle()
                 return@execute
             }
-            bitmap?.let { cache.put(key, CacheEntry(it, expiryTime())) }
-            mainHandler.post { callbacks.forEach { it(bitmap) } }
+            synchronized(pendingLock) {
+                if (generation.get() != currentGeneration) {
+                    bitmap?.recycle()
+                    return@execute
+                }
+                bitmap?.let {
+                    cache.put(key, CacheEntry(it, expiryTime()))
+                    RuntimeSensitiveCaches.track(this)
+                }
+            }
+            mainHandler.post {
+                if (generation.get() == currentGeneration) callbacks.forEach { it(bitmap) }
+            }
         }
     }
 
@@ -140,9 +151,21 @@ internal object PeerImageThumbnailRepository {
     }
 
     fun clearRuntimeCache() {
-        generation.incrementAndGet()
-        cache.evictAll()
-        synchronized(pendingLock) { pending.clear() }
+        synchronized(pendingLock) {
+            generation.incrementAndGet()
+            cache.evictAll()
+            pending.clear()
+        }
+    }
+
+    override fun clearSensitive() = clearRuntimeCache()
+
+    override fun pruneExpired(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        synchronized(cache) {
+            cache.snapshot().filterValues { it.expiresAt <= now }.keys.forEach(cache::remove)
+            return cache.size() > 0
+        }
     }
 
     private fun cacheKey(attachment: PeerChatAttachment, maxWidth: Int, maxHeight: Int): String =
@@ -150,7 +173,7 @@ internal object PeerImageThumbnailRepository {
 
     private fun cached(key: String): Bitmap? {
         val entry = cache.get(key) ?: return null
-        if (entry.expiresAt >= SystemClock.elapsedRealtime()) return entry.bitmap
+        if (entry.expiresAt > SystemClock.elapsedRealtime()) return entry.bitmap
         cache.remove(key)
         return null
     }

@@ -63,6 +63,13 @@ data class AgentInvocationProfile(
 object AgentInvocationProfileJsonCodec {
     fun decode(value: JSONObject?): AgentInvocationProfile {
         val root = value ?: return AgentInvocationProfile()
+        return AgentInvocationMetadataCache.shared.get(
+            AgentNativeJsonCodec.sha256(root.toString()),
+            "${BuildConfig.VERSION_CODE}:${BuildConfig.VERSION_NAME}"
+        ) { decodeUncached(root) }
+    }
+
+    private fun decodeUncached(root: JSONObject): AgentInvocationProfile {
         val models = buildList<AgentModelOption> {
             val values = root.optJSONArray("models") ?: return@buildList
             for (index in 0 until values.length()) {
@@ -323,6 +330,7 @@ object AgentModelSelectionSettings {
     }
 
     fun clearConversation(context: Context, conversationId: String) {
+        AgentInvocationMetadataCache.shared.invalidate()
         AgentStableAutoRouteStore.clear(context, listOf(conversationId))
         val scope = normalizedConversationId(conversationId)
         if (scope.isBlank()) return
@@ -340,6 +348,7 @@ object AgentModelSelectionSettings {
     }
 
     fun clearConversations(context: Context, conversationIds: Collection<String>) {
+        AgentInvocationMetadataCache.shared.invalidate()
         AgentStableAutoRouteStore.clear(context, conversationIds)
         val scopes = conversationIds.map(::normalizedConversationId)
             .filter(String::isNotBlank)
@@ -383,6 +392,7 @@ object AgentModelSelectionSettings {
         keyFor: (String) -> String,
         selection: AgentModelSelection
     ): SharedPreferences.Editor {
+        AgentInvocationMetadataCache.shared.invalidate()
         editor.putString(keyFor(KEY_MODE), selection.mode.name)
         if (selection.mode == AgentModelSelectionMode.AUTO) {
             return editor

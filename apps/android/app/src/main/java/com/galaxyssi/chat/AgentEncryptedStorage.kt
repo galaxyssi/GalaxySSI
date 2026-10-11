@@ -75,7 +75,7 @@ class AgentEncryptedPreferences(context: Context, private val preferencesName: S
 
 }
 
-internal object AgentEncryptedPreferenceCache {
+internal object AgentEncryptedPreferenceCache : RuntimeSensitiveCache {
     private data class CachedValue(
         val encryptedValue: String,
         val plaintext: CharArray,
@@ -111,6 +111,7 @@ internal object AgentEncryptedPreferenceCache {
             val eldest = values.entries.firstOrNull() ?: break
             values.remove(eldest.key)?.wipe()
         }
+        RuntimeSensitiveCaches.track(this)
     }
 
     @Synchronized
@@ -130,6 +131,14 @@ internal object AgentEncryptedPreferenceCache {
         values.values.forEach { cached -> cached.wipe() }
         values.clear()
     }
+
+    @Synchronized
+    override fun pruneExpired(): Boolean {
+        pruneExpired(clockNanos())
+        return values.isNotEmpty()
+    }
+
+    override fun clearSensitive() = clearAll()
 
     @Synchronized
     internal fun clearForTest() {
@@ -158,7 +167,7 @@ internal object AgentEncryptedPreferenceCache {
     }
 
     private const val MAX_CACHE_ENTRIES = 128
-    internal const val CACHE_TTL_NANOS = 30L * 1_000_000_000L
+    internal const val CACHE_TTL_NANOS = RuntimeCachePolicy.SENSITIVE_TTL_NANOS
 }
 
 internal fun ByteArray.wipeSensitive() {
@@ -194,6 +203,17 @@ class AgentEncryptedDatabase(
                 readEncryptedValue(database.readableDatabase, key)
                     ?.let { encrypted -> decodeValue(key, encrypted) }
                     ?.let { value -> put(key, value) }
+            }
+        }
+    }
+
+    /** A decoder may reuse a typed value only after comparing the current stored ciphertext. */
+    internal fun <T : Any> readDecodedRows(keys: Collection<String>,
+        decode: (String, String, () -> String?) -> T?): Map<String, T> = withStorage {
+        buildMap {
+            keys.distinct().forEach { key ->
+                val encrypted = readEncryptedValue(database.readableDatabase, key) ?: return@forEach
+                decode(key, encrypted) { decodeValue(key, encrypted) }?.let { put(key, it) }
             }
         }
     }

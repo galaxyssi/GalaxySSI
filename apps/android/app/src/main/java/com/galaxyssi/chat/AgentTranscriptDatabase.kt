@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class AgentTranscriptPage(
     val entries: List<AgentTranscriptEntry>,
@@ -893,6 +894,16 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     companion object {
+        private val sharedInstances = ConcurrentHashMap<String, AgentTranscriptEntryDatabase>()
+
+        /** Production stores borrow one process-owned pool per database path. */
+        fun shared(context: Context): AgentTranscriptEntryDatabase {
+            val app = context.applicationContext
+            return sharedInstances.computeIfAbsent(app.getDatabasePath(DATABASE_NAME).absolutePath) {
+                AgentTranscriptEntryDatabase(app)
+            }
+        }
+
         private const val SQL_DELETE_BATCH_SIZE = 400
         private const val DATABASE_NAME = "galaxyssi_agent_transcript_entries.db"
         private const val DATABASE_VERSION = 2

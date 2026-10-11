@@ -5,6 +5,7 @@ import android.view.View
 internal fun MainActivity.clearRuntimePlaintextForBackground() {
     if (runtimePlaintextCleared || isChangingConfigurations) return
     runtimePlaintextCleared = true
+    RuntimeSensitiveCaches.clearAll()
     KnowledgeSemanticSearch.clearRuntime(suspend = true)
     suspendConversationHubForBackground()
     runtimePlaintextContactId = selectedContact?.id.orEmpty()

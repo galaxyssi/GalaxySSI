@@ -49,6 +49,7 @@ class AgentModelPlannerSettingsStore(context: Context) {
     }
 
     fun save(settings: AgentModelPlannerSettings) {
+        AgentInvocationMetadataCache.shared.invalidate()
         preferences.writeString(
             KEY_SETTINGS,
             JSONObject()
@@ -82,7 +83,10 @@ class AgentModelPlannerSettingsStore(context: Context) {
         )
     }
 
-    fun clear() = preferences.clear()
+    fun clear() {
+        preferences.clear()
+        AgentInvocationMetadataCache.shared.invalidate()
+    }
 
     private companion object {
         const val PREFS = "galaxyssi_agent_model_planner"
