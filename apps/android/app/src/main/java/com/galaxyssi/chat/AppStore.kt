@@ -1399,7 +1399,7 @@ object AppStore {
         }
         context.getSharedPreferences(AgentTranscriptStore.PREFS, Context.MODE_PRIVATE).edit().clear().commit()
         AgentEncryptedDatabase(context, AgentTranscriptStore.PREFS).clear()
-        AgentTranscriptEntryDatabase(context).clear()
+        AgentTranscriptEntryDatabase.shared(context).clear()
         context.getSharedPreferences("galaxyssi_ui_preferences", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("galaxyssi_agent_safety", Context.MODE_PRIVATE).edit().clear().commit()
         SharedPreferencesAgentConfirmationConsentStore(context).clear()
@@ -1964,6 +1964,7 @@ object AppStore {
         contactsCacheById = indexed
         contactsCacheRaw = normalizedRaw
         contactsCacheRevision += 1L
+        AgentInvocationMetadataCache.shared.invalidate()
     }
 
     private fun galaxyssiIdOf(json: JSONObject): String =
@@ -2064,6 +2065,7 @@ object AppStore {
     private fun writeArray(context: Context, key: String, value: JSONArray) {
         val raw = value.toString()
         storage(context).writeString(key, raw)
+        if (key == KEY_FRIEND_REQUESTS) AgentInvocationMetadataCache.shared.invalidate()
         if (key == KEY_CONTACTS) {
             synchronized(contactsCacheLock) { updateContactsCache(raw) }
         }
@@ -2071,6 +2073,7 @@ object AppStore {
 
     private fun writeObject(context: Context, key: String, value: JSONObject) {
         storage(context).writeString(key, value.toString())
+        if (key == KEY_PROFILE) AgentInvocationMetadataCache.shared.invalidate()
     }
 
     private fun storage(context: Context): AgentEncryptedPreferences =

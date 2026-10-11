@@ -90,8 +90,8 @@ class CollaborationLiveDiagnosticTest {
                 }))
         }))
         val ledger = EncryptedAgentManagedResponseLedger(context)
-        val managed = JSONArray(AgentEncryptedDatabase(context, "galaxyssi_managed_connector_responses_v2")
-            .readString("records", "[]"))
+        val managedRows = AgentManagedResponseRows(context)
+        val managed = AgentManagedResponseCodec.encode(AgentManagedResponseState.entries.flatMap(managedRows::forState))
         report.put("managed_identities", JSONArray((0 until managed.length()).map(managed::getJSONObject)
             .filter { it.optString("conversation_id") == group }.map { record ->
                 JSONObject().apply {

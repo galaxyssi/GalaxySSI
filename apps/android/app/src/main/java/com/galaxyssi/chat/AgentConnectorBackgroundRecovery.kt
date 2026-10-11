@@ -106,6 +106,13 @@ internal class AgentConnectorBackgroundDelivery(
                     val current = taskContext.workspace()
                     val saved = checkNotNull(sessions.load())
                     val accepted = wasAccepted(current, key, saved)
+                    val source = AgentPendingDeliveryStore.recoverySuccessorForResponse(context,
+                        response.sourceMessageId, identity.conversationId, identity.turnId) ?: response.sourceMessageId
+                    if (!accepted && !AgentConnectorReceiptAdmission.saved(saved, source, response.contactId,
+                            identity.conversationId, identity.turnId, identity.taskId)) {
+                        taskContext.waitForResponse("Awaiting the response bound to this task")
+                        return@AgentTaskResumeHook
+                    }
                     // Restoring an executable runtime normalizes approval waits; projection must not do that.
                     val runtime = if (accepted) null else runtimeFactory(sessions).apply {
                         activeConversationContext = AgentConversationContext(identity.conversationId, "", emptyList(),
@@ -115,9 +122,6 @@ internal class AgentConnectorBackgroundDelivery(
                     runtime?.bindExecutionLoopEventSink(AgentExecutionLoopEventSink(taskContext::persistExecutionLoop))
                     var state = if (accepted) AgentRecoveryTranscript.state(saved) else {
                         checkNotNull(runtime)
-                        val source = AgentPendingDeliveryStore.recoverySuccessorForResponse(context,
-                            response.sourceMessageId, identity.conversationId, identity.turnId)
-                            ?: response.sourceMessageId
                         if (!(runtime.canAcceptConnectorResponse(source, response.contactId,
                             identity.conversationId, identity.turnId, identity.taskId) ||
                             runtime.restoreConflictedConnectorReceipt(source, response.contactId,

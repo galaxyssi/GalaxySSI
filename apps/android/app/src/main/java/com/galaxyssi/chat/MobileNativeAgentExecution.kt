@@ -1832,17 +1832,7 @@ internal fun MobileNativeAgent.connectorFailureDomain(connectorId: String): Stri
 }
 
 internal fun MobileNativeAgent.canAcceptConnectorTransport(sourceMessageId: Long, contactId: String): Boolean {
-    if (sourceMessageId <= 0L) return false
-    val pendingResult = lastActionResult ?: return false
-    if (phase != AgentPhase.WAITING_RESPONSE &&
-        !isRecoverableConnectorTimeout(pendingResult, sourceMessageId) &&
-        !AgentTeamParentRecoveryPolicy.acceptsLateResult(phase, pendingResult.metadata, sourceMessageId)
-    ) return false
-    if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) {
-        return false
-    }
-    val expectedContactId = pendingResult.metadata["contact_id"].orEmpty()
-    return expectedContactId.isBlank() || contactId.isBlank() || expectedContactId == contactId
+    return AgentConnectorReceiptAdmission.transport(phase, lastActionResult, sourceMessageId, contactId)
 }
 
 internal fun MobileNativeAgent.canAcceptConnectorResponse(

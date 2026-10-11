@@ -804,7 +804,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     private val preferences = AgentEncryptedDatabase(context.applicationContext, PREFS)
     private val windowState by lazy { AgentWindowStateStore(appContext) }
     private val conversationDatabase = sharedConversationDatabase(context.applicationContext)
-    private val entryDatabase = AgentTranscriptEntryDatabase(context.applicationContext)
+    private val entryDatabase = AgentTranscriptEntryDatabase.shared(context.applicationContext)
     private val entryMutationLock = AgentTranscriptWindowMutationLock
     @Volatile private var draftConversation: AgentConversation? = null
     @Volatile private var emptyConversationsPruned = false

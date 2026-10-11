@@ -74,6 +74,8 @@ object GalaxySSICrypto {
 
     @Synchronized
     fun clearPcTrust(context: Context) {
+        PhoneRelationshipRouteCache.shared.clearSensitive()
+        AgentInvocationMetadataCache.shared.invalidate()
         initialize(context.applicationContext)
         trustStore().remove(KEY_VERIFIED_PC_SHA256)
         store.deleteSession(remoteAddress)
@@ -86,6 +88,8 @@ object GalaxySSICrypto {
 
     @Synchronized
     fun clearDesktopTrust(context: Context, desktopId: String) {
+        PhoneRelationshipRouteCache.shared.clearSensitive()
+        AgentInvocationMetadataCache.shared.invalidate()
         if (desktopId.isBlank()) return
         initialize(context.applicationContext)
         val address = SignalProtocolAddress(desktopId, REMOTE_DEVICE_ID)
@@ -98,6 +102,8 @@ object GalaxySSICrypto {
 
     @Synchronized
     fun clearPeerTrust(context: Context, contactId: String) {
+        PhoneRelationshipRouteCache.shared.clearSensitive()
+        AgentInvocationMetadataCache.shared.invalidate()
         if (contactId.isBlank() || contactId == "hermes") return
         initialize(context.applicationContext)
         val address = SignalProtocolAddress(contactId, DEFAULT_DEVICE_ID)
@@ -110,6 +116,8 @@ object GalaxySSICrypto {
 
     @Synchronized
     fun resetLocalIdentity(context: Context) {
+        PhoneRelationshipRouteCache.shared.clearSensitive()
+        AgentInvocationMetadataCache.shared.invalidate()
         appContext = context.applicationContext
         trustStore().clear()
         AndroidPersistentSignalStore.clear(appContext)
@@ -184,23 +192,22 @@ object GalaxySSICrypto {
     ): GalaxySSILinkProtocol.Routes? {
         ensureInitialized()
         if (remoteIdentityPublicKey.isBlank() || expectedRemoteFingerprint.isBlank()) return null
-        return runCatching {
+        val localFingerprint = localIdentitySha256()
+        return PhoneRelationshipRouteCache.shared.getOrDerive(localFingerprint, remoteIdentityPublicKey,
+            expectedRemoteFingerprint) { runCatching {
             val remoteIdentity = IdentityKey(b64d(remoteIdentityPublicKey))
             val actualRemoteFingerprint = sha256Hex(remoteIdentity.serialize())
             require(actualRemoteFingerprint.equals(expectedRemoteFingerprint, ignoreCase = true)) {
                 "Remote Signal identity fingerprint mismatch"
             }
-            val localFingerprint = localIdentitySha256()
             require(!localFingerprint.equals(actualRemoteFingerprint, ignoreCase = true)) {
                 "Phone relationship cannot target the local identity"
             }
             val sharedSecret = store.identityKeyPair.privateKey
                 .calculateAgreement(remoteIdentity.publicKey)
-            val linkSecret = PhoneRelationshipIdentityBinding.deriveLinkSecret(
-                sharedSecret,
-                localFingerprint,
-                actualRemoteFingerprint
-            )
+            val linkSecret = try {
+                PhoneRelationshipIdentityBinding.deriveLinkSecret(sharedSecret, localFingerprint, actualRemoteFingerprint)
+            } finally { sharedSecret.fill(0) }
             GalaxySSILinkProtocol.Routes(
                 clientRouteId = PhoneRelationshipIdentityBinding.deriveRouteId(
                     linkSecret,
@@ -213,7 +220,7 @@ object GalaxySSICrypto {
             )
         }.onFailure {
             Log.w(TAG, "Could not derive identity-bound phone relationship", it)
-        }.getOrNull()
+        }.getOrNull() }
     }
 
     fun localSignalBundleJson(): JSONObject {
@@ -235,6 +242,7 @@ object GalaxySSICrypto {
     }
 
     fun importSignalStoreJson(context: Context, json: JSONObject) {
+        PhoneRelationshipRouteCache.shared.clearSensitive()
         AndroidPersistentSignalStore.importJson(context.applicationContext, json)
         appContext = context.applicationContext
         store = AndroidPersistentSignalStore(appContext)

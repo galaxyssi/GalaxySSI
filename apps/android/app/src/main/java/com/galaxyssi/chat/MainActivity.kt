@@ -1402,6 +1402,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onTrimMemory(level: Int) {
+        RuntimeSensitiveCaches.clearAll()
         KnowledgeSemanticSearch.clearRuntime()
         AgentEncryptedPreferenceCache.clearAll()
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {

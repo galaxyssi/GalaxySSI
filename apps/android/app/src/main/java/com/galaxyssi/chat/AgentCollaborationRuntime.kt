@@ -446,13 +446,25 @@ class EncryptedAgentTeamExecutionStore internal constructor(
     }
 
     override fun snapshot(supervisorRunId: String): AgentTeamExecutionSnapshot? = synchronized(LOCK) {
-        record(supervisorRunId)?.toSnapshot()
+        val run = supervisorRunId.trim()
+        if (run.isBlank()) return@synchronized null
+        snapshotRows(listOf(recordKey(run))).values.singleOrNull()
+            ?: legacyRecords().firstOrNull { it.request.runId == run }?.toSnapshot()
     }
 
     override fun snapshots(): List<AgentTeamExecutionSnapshot> = synchronized(LOCK) {
-        records().map(AgentTeamExecutionRecord::toSnapshot)
+        val direct = snapshotRows(database.keys(RUN_PREFIX)).values.toList()
+        val runs = direct.mapTo(hashSetOf()) { it.supervisorRunId }
+        (direct + legacyRecords().filterNot { it.request.runId in runs }.map(AgentTeamExecutionRecord::toSnapshot))
             .sortedByDescending(AgentTeamExecutionSnapshot::updatedAtMillis)
     }
+
+    private fun snapshotRows(keys: Collection<String>): Map<String, AgentTeamExecutionSnapshot> =
+        database.readDecodedRows(keys) { key, ciphertext, plaintext ->
+            AgentTeamSnapshotDecodeCache.shared.getOrDecode("${database.storageIdentity}\u0000$key", ciphertext) {
+                plaintext()?.let(::decode)?.toSnapshot()
+            }
+        }
 
     internal fun goalRound(conversationId: String, turnId: String): Long = synchronized(LOCK) {
         records().filter { it.request.conversationId == conversationId &&
@@ -1421,6 +1433,9 @@ class AgentProductionTeamController(
     private val dispatchCheckpoint = AgentTeamDispatchCheckpoint(context)
     private val remoteStops = AgentTeamRemoteStopRecovery(context)
     private val historicalDeliveries = CollaborationHistoricalDeliveryRecovery(context)
+    private val recoveryPass = AgentRecoveryCoalescer()
+    private val projectedSnapshots = AgentTeamPublicationCache()
+    private val reputationSnapshots = AgentTeamPublicationCache()
     private val guardedWorker = object : AgentTeamMemberWorker {
         override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
             if (durableControl.get(context.request.parentRunId) != AgentTeamUserControl.RUN)
@@ -1724,6 +1739,11 @@ class AgentProductionTeamController(
             return 0
         }
         if (closed.get()) return 0
+        return recoveryPass.run(::reconcileLateResponsesPass)
+    }
+
+    private fun reconcileLateResponsesPass(): Int {
+        if (closed.get()) return 0
         val contacts = lazy { AgentConnectorContactSnapshot.from(AppStore.contacts(evidenceContext)) }
         val restored = store.snapshots().sumOf { team ->
             if (team.state != AgentTeamExecutionState.INTERRUPTED ||
@@ -1785,6 +1805,8 @@ class AgentProductionTeamController(
         crossTeamDelegations.clear()
         reputationLedger.clear()
         mailbox.clear()
+        projectedSnapshots.clearSensitive()
+        reputationSnapshots.clearSensitive()
     }
 
     @Synchronized
@@ -1793,6 +1815,8 @@ class AgentProductionTeamController(
         AgentLateManagedResponseBus.removeListener(lateResponseListener)
         runtime.close()
         completionScope.cancel()
+        projectedSnapshots.clearSensitive()
+        reputationSnapshots.clearSensitive()
     }
 
     private fun applyLateResponse(record: AgentManagedResponseRecord): Boolean {
@@ -1871,14 +1895,21 @@ class AgentProductionTeamController(
     }
 
     private fun publishAndRecord(snapshot: AgentTeamExecutionSnapshot) {
-        runCatching { collaborationProjection.publish(controlled(snapshot)) }.onFailure {
-            android.util.Log.w("GalaxySSICollaboration", "Unable to project member progress", it)
+        val projection = controlled(snapshot)
+        if (!projectedSnapshots.isCurrent(projection)) {
+            runCatching { collaborationProjection.publish(projection) }.onSuccess {
+                projectedSnapshots.mark(projection)
+            }.onFailure {
+                android.util.Log.w("GalaxySSICollaboration", "Unable to project member progress", it)
+            }
         }
         if (durableControl.get(snapshot.supervisorRunId) == AgentTeamUserControl.RUN &&
             snapshot.goalDisposition !in setOf("continue", "blocked")) completionSink.publish(snapshot)
-        if (snapshot.state.isTerminal) {
+        if (snapshot.state.isTerminal && !reputationSnapshots.isCurrent(snapshot)) {
             runCatching {
                 reputationLedger.record(snapshot, reputationRegistrationSource())
+            }.onSuccess {
+                reputationSnapshots.mark(snapshot)
             }
         }
     }

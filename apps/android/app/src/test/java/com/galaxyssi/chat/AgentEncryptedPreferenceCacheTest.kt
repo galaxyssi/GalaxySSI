@@ -57,4 +57,16 @@ class AgentEncryptedPreferenceCacheTest {
 
         assertEquals(0, AgentEncryptedPreferenceCache.sizeForTest())
     }
+
+    @Test
+    fun tenMinuteTtlIsNotExtendedByCacheHits() {
+        var now = 0L
+        AgentEncryptedPreferenceCache.setClockForTest { now }
+        AgentEncryptedPreferenceCache.put("prefs\u0000secret", "cipher", "plain")
+        now = RuntimeCachePolicy.SENSITIVE_TTL_NANOS - 1
+        assertEquals("plain", AgentEncryptedPreferenceCache.get("prefs\u0000secret", "cipher"))
+        now++
+        AgentEncryptedPreferenceCache.pruneExpired()
+        assertEquals(0, AgentEncryptedPreferenceCache.sizeForTest())
+    }
 }
