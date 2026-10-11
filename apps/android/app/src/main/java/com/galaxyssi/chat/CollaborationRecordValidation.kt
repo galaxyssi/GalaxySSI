@@ -27,6 +27,14 @@ internal object CollaborationRecordValidation {
         return value!!
     }
 
+    fun optionalContent(body: JSONObject) {
+        if (!body.has("content")) return
+        val value = body.opt("content")
+        check(value is String && value.isNotBlank(), "record_content_invalid", "/body/content",
+            "nonempty string when supplied; omit redundant prose for typed evolution records",
+            when { value == JSONObject.NULL -> "null"; value is String -> "blank"; else -> "not a string" })
+    }
+
     fun exact(ref: JSONObject, kinds: Set<String>, read: (String, Int) -> JSONObject?,
               current: ((String, Int) -> Boolean)? = null): JSONObject {
         val revision = ref.opt("revision")

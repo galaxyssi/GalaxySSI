@@ -72,7 +72,10 @@ internal object CollaborationEvolutionProtocol {
     }
 
     private fun foundation() = """
-        Publish each typed record as an ordinary workspace item: {id,kind,title,body:{content,<kind>:{...}},parents:[],observations:[]}.
+        Publish each typed evolution record as an ordinary workspace item: {id,kind,title,body:{<kind>:{...}},parents:[],observations:[]}.
+        body.content is optional for these typed records; if supplied it must be a nonempty string. Do not duplicate source, tests
+        or structured review in prose just to publish. The exact typed payload is retained without rewriting or invented summaries.
+        This does not remove content requirements for documentary candidates or final user-facing delivery artifacts.
         Exact refs always contain object_id, integer revision and sha256 from host receipts. Never invent them.
         Each publication is atomic and idempotent. Read originals first. Use distinct work IDs and dependent tasks for later records.
         New records use id; revisions use object_id/base_revision. capability_gap, innovation and capability_channel may be revised by their author.
