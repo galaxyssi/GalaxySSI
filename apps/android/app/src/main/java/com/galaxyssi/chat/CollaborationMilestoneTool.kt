@@ -24,12 +24,13 @@ internal object CollaborationMilestoneTool {
         "In your final research-artifact use milestones:[saved IDs] to include those original versions without creating them again. " +
         "Recording authorship is not verification, task completion or a guarantee a peer has read the artifact. " +
         "Specialized host candidate-transition assignments must use their final publication contract. " +
-        "One request is limited to 131072 UTF-8 bytes; split larger independent deliveries into separate milestones, never truncate evidence."
+        "One request is limited to 131072 UTF-8 bytes; split larger independent deliveries into separate milestones, never truncate evidence. " +
+        CollaborationAssessmentPreflight.INSTRUCTIONS
 
     fun schema() = JSONObject().put("type", "object").put("additionalProperties", false)
         .put("required", JSONArray(listOf("mode")))
         .put("properties", JSONObject()
-            .put("mode", JSONObject().put("type", "string").put("enum", JSONArray(listOf("publish", "list", "status", "receipt"))))
+            .put("mode", JSONObject().put("type", "string").put("enum", JSONArray(listOf("publish", "list", "status", "receipt", CollaborationAssessmentPreflight.MODE))))
             .put("milestone_id", JSONObject().put("type", "string").put("maxLength", 160))
             .put("artifact", JSONObject().put("type", "string"))
             .put("artifact_sha256", JSONObject().put("type", "string").put("pattern", "^[a-f0-9]{64}$"))
@@ -49,6 +50,10 @@ internal object CollaborationMilestoneTool {
     fun validate(input: JSONObject) {
         require(input.toString().toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "Publication exceeds 131072 UTF-8 bytes; split independent artifacts, do not truncate" }
         when (input.opt("mode")) {
+            CollaborationAssessmentPreflight.MODE -> require(input.keys().asSequence().toSet() == setOf("mode", "artifact") &&
+                input.opt("artifact") is String && input.getString("artifact").isNotBlank()) {
+                "Assessment preflight accepts only mode and a nonblank artifact JSON string; no authority fields"
+            }
             "status" -> require(input.keys().asSequence().toSet() == setOf("mode")) { "Status accepts only mode; authority comes from the host assignment" }
             "publish" -> {
                 require(input.keys().asSequence().toSet() == setOf("mode", "milestone_id", "artifact")) { "Publish requires only mode, milestone_id and artifact" }
@@ -63,12 +68,14 @@ internal object CollaborationMilestoneTool {
             }
             "list" -> require(input.keys().asSequence().all { it in setOf("mode", "cursor") } &&
                 (!input.has("cursor") || input.opt("cursor") is String && input.getString("cursor").length <= 512)) { "List accepts only mode and an optional cursor" }
-            else -> throw IllegalArgumentException("mode must be publish, list, status or receipt")
+            else -> throw IllegalArgumentException("mode must be publish, list, status, receipt or validate_assessment")
         }
     }
 
     internal fun unavailable(mode: String) = JSONObject().put("success", false).put("status", "unavailable")
         .put("assignment_completed", false).put("error", when (mode) {
+            CollaborationAssessmentPreflight.MODE -> "Assessment preflight unavailable; no plan or artifact was submitted. " +
+                "Retry this check after reconnecting or return the required assessment; final admission still applies."
             "status" -> "Publication capability status unavailable; no artifact was submitted. " +
                 "Continue the required assignment response; a transport failure does not grant publication."
             "list" -> "Saved milestone list unavailable; this read submitted no artifact. Retry listing after reconnecting. " +
@@ -95,6 +102,8 @@ internal object CollaborationMilestoneTool {
         workspace.requirePublicationActive(access)
         val capability = workspace.publicationCapability(access)
         when {
+            input.getString("mode") == CollaborationAssessmentPreflight.MODE ->
+                CollaborationAssessmentPreflight.inspect(input.getString("artifact"))
             input.getString("mode") == "status" -> JSONObject().put("success", true).put("status", "returned")
                 .put("capability", capability).put("assignment_completed", false)
             input.getString("mode") == "publish" && !capability.getBoolean("publish_allowed") ->

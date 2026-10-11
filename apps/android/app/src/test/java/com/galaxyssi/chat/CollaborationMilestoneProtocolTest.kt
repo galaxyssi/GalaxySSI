@@ -79,9 +79,26 @@ class CollaborationMilestoneProtocolTest {
             assertTrue(provider.name, encoded.contains(CollaborationMilestoneTool.NAME))
             assertTrue(encoded.contains("milestone_id")); assertTrue(encoded.contains("artifact"))
             assertTrue(encoded.contains("mode=status"))
+            assertTrue(encoded.contains(CollaborationAssessmentPreflight.MODE))
             CloudConversationStreamEngine.restrictPublicationRepairTools(prepared)
             assertFalse(prepared.body.toString().contains(CollaborationMilestoneTool.NAME))
             assertTrue(prepared.body.toString().contains(CollaborationCloudRecall.NAME))
+        }
+    }
+
+    @Test fun preflightRetainsEnvelopeScopeAndCannotMasqueradeAsPublicationOrRecall() {
+        val input = request().put("phase", CollaborationAssessmentPreflight.MODE).put("arguments", JSONObject()
+            .put("mode", CollaborationAssessmentPreflight.MODE).put("artifact", "{}"))
+        assertTrue(AndroidCollaborationRemoteMilestone.valid(input, 10000))
+        assertFalse(CollaborationRemoteRecallProtocol.valid(input, 10000))
+        for ((key, value) in listOf("phase" to "publish", "expires_at" to 10000L,
+            "agent_id" to "other", "execution_generation" to 1.5)) {
+            assertFalse(AndroidCollaborationRemoteMilestone.valid(JSONObject(input.toString()).put(key, value), 10000))
+        }
+        for (key in listOf("member_id", "milestone_id", "execute")) {
+            val changed = JSONObject(input.toString())
+            changed.getJSONObject("arguments").put(key, "other")
+            assertFalse(AndroidCollaborationRemoteMilestone.valid(changed, 10000))
         }
     }
 
