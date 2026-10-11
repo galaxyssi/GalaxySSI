@@ -90,6 +90,18 @@ class CollaborationLiveDiagnosticTest {
                 }))
         }))
         val ledger = EncryptedAgentManagedResponseLedger(context)
+        val managed = JSONArray(AgentEncryptedDatabase(context, "galaxyssi_managed_connector_responses_v2")
+            .readString("records", "[]"))
+        report.put("managed_identities", JSONArray((0 until managed.length()).map(managed::getJSONObject)
+            .filter { it.optString("conversation_id") == group }.map { record ->
+                JSONObject().apply {
+                    listOf("owner_run_id", "supervisor_run_id", "source_message_id", "contact_id", "turn_id",
+                        "task_id", "state", "created_at_millis", "completed_at_millis").forEach { name ->
+                        put(name, record.opt(name))
+                    }
+                    put("has_response", record.optJSONObject("response") != null)
+                }
+            }))
         val deliveries = ledger.pendingRecoveryDeliveries().filter { it.conversationId == group }
         report.put("pending_deliveries", JSONArray(deliveries.map { delivery ->
             val identity = AgentTaskIdentityStore.find(context, delivery.contactId, delivery.sourceMessageId)

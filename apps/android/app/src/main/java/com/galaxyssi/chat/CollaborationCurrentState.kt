@@ -12,6 +12,16 @@ internal data class CollaborationMemberObservation(
 
 /** Presentation only: never changes scheduler states or dispatches another attempt. */
 internal object CollaborationCurrentStatePolicy {
+    fun unresolved(team: AgentTeamExecutionSnapshot): Boolean = team.state != AgentTeamExecutionState.CANCELLED &&
+        (!team.state.isTerminal || team.state == AgentTeamExecutionState.INTERRUPTED ||
+            team.goalDisposition in setOf("continue", "blocked"))
+
+    fun current(teams: Collection<AgentTeamExecutionSnapshot>): AgentTeamExecutionSnapshot? =
+        teams.filter { unresolved(it) && it.members.any { member -> member.researchStage.isNotBlank() } }
+            .maxByOrNull { it.createdAtMillis }
+            ?: teams.filter(::unresolved).maxByOrNull { it.createdAtMillis }
+            ?: teams.maxByOrNull { it.createdAtMillis }
+
     fun members(team: AgentTeamExecutionSnapshot): List<AgentTeamMemberSnapshot> = team.members
         .filter { it.deliveryMode != AgentDeliveryMode.IGNORE }
         .groupBy { it.personId.ifBlank { it.memberId } }.values.map { attempts ->
@@ -92,7 +102,9 @@ internal object CollaborationCurrentStateStore {
         synchronized(this) {
             if ((teams[team.supervisorRunId]?.updatedAtMillis ?: 0L) > team.updatedAtMillis) return
             teams[team.supervisorRunId] = team
-            while (teams.size > 64) teams.remove(teams.keys.first())
+            val finished = teams.values.filterNot(CollaborationCurrentStatePolicy::unresolved)
+                .sortedBy { it.createdAtMillis }
+            finished.take((finished.size - 64).coerceAtLeast(0)).forEach { teams.remove(it.supervisorRunId) }
             trim()
         }
     }
@@ -129,8 +141,8 @@ internal object CollaborationCurrentStateStore {
     }
 
     @Synchronized fun team(run: String): AgentTeamExecutionSnapshot? = teams[run]
-    @Synchronized fun latest(conversation: String): AgentTeamExecutionSnapshot? = teams.values
-        .filter { it.conversationId == conversation }.maxByOrNull { it.createdAtMillis }
+    @Synchronized fun latest(conversation: String): AgentTeamExecutionSnapshot? = CollaborationCurrentStatePolicy.current(
+        teams.values.filter { it.conversationId == conversation })
     @Synchronized fun metadata(team: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot) =
         CollaborationCurrentStatePolicy.metadata(team, member, observations[key(team.supervisorRunId, member.memberId)])
     @Synchronized fun status(team: AgentTeamExecutionSnapshot) = CollaborationCurrentStatePolicy.status(team,

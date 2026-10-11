@@ -1142,6 +1142,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             turnId = clientTurnId
         )
         traceDispatchStage("identity_ready")
+        AgentManagedDispatchIntent.persist(context, action, messageId, contactId, clientConversationId, clientTurnId, remoteTaskId)
         val voiceAgentRun = if (
             messageId > 0L && VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(context)
         ) {
@@ -1405,6 +1406,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             connectorTaskId, action.id)
         val dispatchIdentity = AgentCloudDispatchIdentity(messageId, contactId, conversationId,
             connectorTurnId, connectorTaskId, action.id)
+        AgentManagedDispatchIntent.persist(context, action, messageId, contactId, conversationId, connectorTurnId, connectorTaskId)
         val dispatchLease = AgentCloudDispatchRegistry.register(dispatchIdentity)
         val cancellationRegistration = AgentTaskRuntime.cancellationToken(connectorTurnId)
             .invokeOnCancellation { dispatchLease.cancel() }
