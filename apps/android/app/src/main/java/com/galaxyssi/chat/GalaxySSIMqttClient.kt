@@ -349,7 +349,8 @@ object GalaxySSIMqttClient {
             link.routes.control,
             wirePayload,
             "desktop_control",
-            messageId.takeIf { durableDelivery }, transportTraffic = MqttTrafficPolicy.classify(payload)
+            messageId.takeIf { durableDelivery }, transportTraffic = MqttTrafficPolicy.classify(payload),
+            transientControl = transientQuery
         )) {
             if (durableDelivery) {
                 scheduleOutboxRetries()
@@ -1622,34 +1623,6 @@ object GalaxySSIMqttClient {
         )
     }
 
-    private fun publishSafely(
-        mqtt: MqttPoolTransport,
-        topic: String,
-        message: MqttMessage,
-        purpose: String,
-        timing: AgentTransportTiming.Attempt? = null,
-        delivery: MqttDeliveryDispatch.Delivery? = null,
-        publication: MqttPoolTransport.Publication? = null,
-        onBackpressure: (() -> Unit)? = null
-    ): IMqttDeliveryToken? = MqttPublishGuard.attempt {
-        val callback = if (timing == null) null else object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken?) {
-                    AgentLatencyTelemetry.transport.broker(timing)
-                }
-                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                    AgentLatencyTelemetry.transport.broker(timing, "failed")
-                }
-            }
-        val token = if (delivery == null) mqtt.publish(topic, message, timing, callback, publication)
-            else mqtt.publishDelivery(topic, delivery, timing, callback)
-        token.exception?.let { throw it }
-        token
-    }.onFailure {
-        AgentLatencyTelemetry.transport.broker(timing, "failed")
-        if (it is MqttPoolTransport.BackpressureException) onBackpressure?.invoke()
-        else Log.w(TAG, "MQTT publish deferred purpose=$purpose", it)
-    }.getOrNull()
-
     private fun publishWirePayload(
         mqtt: MqttPoolTransport,
         topic: String,
@@ -1658,7 +1631,8 @@ object GalaxySSIMqttClient {
         durableMessageId: String? = null,
         brokerAckTimeoutMillis: Long = MqttBrokerAckTimeoutPolicy.DEFAULT_TIMEOUT_MILLIS,
         receiptAttempt: LinkTransportReceiptAttempt? = null,
-        transportTraffic: String = "message"
+        transportTraffic: String = "message",
+        transientControl: Boolean = false
     ): Boolean {
         val context = appContext ?: return false
         val serverLink = GalaxySSILinkProtocol.allServerLinks(context).firstOrNull {
@@ -1681,6 +1655,8 @@ object GalaxySSIMqttClient {
             "max_packet_bytes=${packets.maxOf { it.length }} pending_ack=${brokerAckWatchdog.pendingCount()}")
         if (receiptAttempt != null && packets.size != 1) return false
         if (packets.size == 1) {
+            val transientPublication = if (transientControl) peerRoutes?.transientPublication(
+                topic, packets.first().toByteArray(Charsets.UTF_8), linkSecret) ?: return false else null
             val delivery = if (durableMessageId.isNullOrBlank() || receiptAttempt != null) null else {
                 runCatching { peerRoutes?.prepareDelivery(topic, JSONObject(wirePayload), durableMessageId,
                     MqttTrafficPolicy.parse(transportTraffic)) }
@@ -1695,6 +1671,8 @@ object GalaxySSIMqttClient {
                 purpose,
                 timing,
                 delivery?.takeIf { it.sizeBound <= MqttBrokerCatalog.SMALL_PACKET_BYTES },
+                publication = transientPublication,
+                raceTransientControl = transientControl,
                 onBackpressure = { durableMessageId?.let { GalaxySSILinkDeliveryStore.deferUnsubmittedAttempt(context, it) } }
             ) ?: return false
             if (!durableMessageId.isNullOrBlank()) {
