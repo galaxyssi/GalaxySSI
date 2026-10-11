@@ -50,6 +50,51 @@ class CollaborationSingleAgentCalibrationTest {
         assertEquals("selected-model", p.definition("group", "run").members.single().context["collaboration_model_id"])
     }
 
+    @Test fun researchSingleGetsPublicationWithoutTeamPlanningOrAdditionalPeople() {
+        val p = plan(input().put("format", CollaborationAdaptivePilotPlan.SINGLE_RESEARCH_FORMAT))
+        val graph = p.definition("group", "run")
+        val member = graph.members.single()
+        assertEquals("single_agent_research", p.executionMode)
+        assertTrue(p.singleAgent && p.singleAgentPublication && p.publicationEnabled)
+        assertEquals(p.goal, member.objective)
+        assertEquals(CollaborationResearchStage.EXECUTE, CollaborationResearchWorkflow.stage(member))
+        assertTrue(p.matchesExecution(member, graph))
+        assertFalse(CollaborationLiveGraph.enabled(graph))
+        assertNull(member.context[CollaborationGoalLoop.ENABLED])
+        assertTrue(member.dependsOnAgentIds.isEmpty())
+        assertFalse(plan().publicationEnabled)
+        assertFalse(plan().matchesExecution(member, graph))
+        for (stage in listOf("DELIVER", "VERIFY", "EXPLORE")) {
+            val changed = member.copy(context = member.context + (CollaborationResearchWorkflow.STAGE to stage))
+            assertFalse(p.matchesExecution(changed, graph.copy(members = listOf(changed))))
+        }
+        reject { plan(input().put("format", CollaborationAdaptivePilotPlan.SINGLE_RESEARCH_FORMAT).put("maximum_dispatches", 2)) }
+    }
+
+    @Test fun researchSingleRunsOnlyOneFreeAssignmentAndNeverAcceptsItsOwnGoal() = runBlocking {
+        val p = plan(input().put("format", CollaborationAdaptivePilotPlan.SINGLE_RESEARCH_FORMAT))
+        val store = InMemoryAgentTeamExecutionStore()
+        val request = AgentRunRequest("group", "turn", "task", runId = "run", goal = p.goal, idempotencyKey = "run")
+        val guard = CollaborationAdaptivePilotAdmission(p, "group", "run", "turn", 100, { 1 },
+            { store.deliveryCheckpoint("run") }, {})
+        var calls = 0
+        val worker = object : AgentTeamMemberWorker {
+            override suspend fun execute(context: AgentTeamMemberExecutionContext): AgentSubagentOutput {
+                guard.prepare(context)
+                calls++
+                assertEquals(p.goal, context.member.objective)
+                return AgentSubagentOutput("Synthetic result; externally evaluated")
+            }
+            override suspend fun sendMessage(member: AgentTeamMember, runId: String, message: AgentControlMessage) = Unit
+        }
+        AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = 1)).use { runtime ->
+            val runner = CollaborationAdaptivePilotRunner(store, runtime, guard, singleAgent = true, singleAgentPublication = true)
+            assertEquals("single_agent_returned_goal_unverified", runner.run(p.definition("group", "run"), request, worker))
+        }
+        assertEquals(1, calls)
+        assertNotEquals("achieved", store.snapshot("run")!!.goalDisposition)
+    }
+
     @Test fun singleExecutionIsNotArtificiallySplitAndItsReturnIsNotGoalAcceptance() = runBlocking {
         val p = plan(input().put("goal", "\n  Solve the supplied task.\nPreserve every internal line.\n"))
         val store = InMemoryAgentTeamExecutionStore()
@@ -139,5 +184,19 @@ class CollaborationSingleAgentCalibrationTest {
         assertFalse(CollaborationAdaptivePilotVerdict.evaluate(report().put("execution_mode", "unknown")).passed)
         val changed = report().apply { getJSONArray("rounds").getJSONObject(0).put("goal_disposition", "achieved") }
         assertFalse(CollaborationAdaptivePilotVerdict.evaluate(changed).passed)
+    }
+
+    @Test fun researchSingleRequiresTheSameOriginalArchiveWithoutInventingCapabilityGain() {
+        fun research() = report().put("execution_mode", "single_agent_research").put("interim_publication_enabled", true)
+            .put("milestone_archive_complete", true).put("interim_evidence", JSONObject()
+                .put("format", "galaxyssi.adaptive-pilot-milestones.v1").put("milestones", JSONArray())
+                .put("peer_read_proven", false).put("scientific_acceptance_proven", false))
+        CollaborationAdaptivePilotVerdict.evaluate(research()).requirePassed()
+        assertFalse(CollaborationAdaptivePilotVerdict.evaluate(research().put("interim_publication_enabled", false)).passed)
+        assertFalse(CollaborationAdaptivePilotVerdict.evaluate(research().put("milestone_archive_complete", false)).passed)
+        assertFalse(CollaborationAdaptivePilotVerdict.evaluate(research().put("scientific_capability_gain_proven", true)).passed)
+        assertFalse(CollaborationAdaptivePilotVerdict.evaluate(research().put("status", "host_goal_accepted")).passed)
+        val extra = research().apply { getJSONArray("phone_dispatches").put(JSONObject().put("node_id", "peer")) }
+        assertFalse(CollaborationAdaptivePilotVerdict.evaluate(extra).passed)
     }
 }

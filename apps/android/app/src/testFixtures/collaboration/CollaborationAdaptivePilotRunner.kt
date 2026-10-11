@@ -8,14 +8,18 @@ internal class CollaborationAdaptivePilotRunner(
     private val admission: CollaborationAdaptivePilotAdmission,
     private val projectRecruits: (List<AgentTeamMember>) -> Map<String, String> = { emptyMap() },
     private val checkpoint: (AgentTeamExecutionSnapshot, AgentTeamExecutionCheckpoint) -> Unit = { _, _ -> },
-    private val singleAgent: Boolean = false
+    private val singleAgent: Boolean = false,
+    private val singleAgentPublication: Boolean = false
 ) {
     var activeHandle: AgentTeamExecutionHandle? = null
         private set
 
     suspend fun run(definition: AgentTeamDefinition, request: AgentRunRequest, worker: AgentTeamMemberWorker): String {
+        require(!singleAgentPublication || singleAgent) { "Standalone publication requires single-agent execution" }
         if (singleAgent) require(definition.members.size == 1 && definition.members.all {
-            it.context[CollaborationGoalLoop.ENABLED] == null && CollaborationResearchWorkflow.stage(it) == null
+            it.context[CollaborationGoalLoop.ENABLED] == null &&
+                it.context[CollaborationLiveGraph.ENABLED] == null && it.dependsOnAgentIds.isEmpty() &&
+                CollaborationResearchWorkflow.stage(it) == (if (singleAgentPublication) CollaborationResearchStage.EXECUTE else null)
         }) { "Single-agent calibration cannot execute a team graph" }
         activeHandle = runtime.start(definition, request, worker)
         while (true) {
