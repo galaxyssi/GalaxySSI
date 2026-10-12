@@ -59,6 +59,7 @@ internal object AgentModelToolLoopTimelinePolicy {
             AgentModelToolLoopEventType.LOOP_CANCELLED,
             AgentModelToolLoopEventType.LOOP_FAILED,
             AgentModelToolLoopEventType.LOOP_COMPLETED -> AgentRunControlEventType.STEP_COMPLETED
+            AgentModelToolLoopEventType.LOOP_WAITING -> AgentRunControlEventType.STEP_COMPLETED
             AgentModelToolLoopEventType.TOOL_CALL_PROPOSED -> AgentRunControlEventType.STEP_STARTED
             AgentModelToolLoopEventType.APPROVAL_REQUIRED ->
                 AgentRunControlEventType.TOOL_PERMISSION_REQUIRED
@@ -81,6 +82,7 @@ internal object AgentModelToolLoopTimelinePolicy {
             AgentModelToolLoopEventType.LOOP_COMPLETED -> AgentRunTimelineKind.OBSERVE
             AgentModelToolLoopEventType.TOOL_CALL_PROPOSED -> AgentRunTimelineKind.ACT
             AgentModelToolLoopEventType.APPROVAL_REQUIRED -> AgentRunTimelineKind.OTHER
+            AgentModelToolLoopEventType.LOOP_WAITING -> AgentRunTimelineKind.OTHER
             AgentModelToolLoopEventType.LOOP_RESUMED,
             AgentModelToolLoopEventType.TOOL_RETRY_SCHEDULED -> AgentRunTimelineKind.RETRY
             AgentModelToolLoopEventType.TOOL_STARTED,
@@ -104,6 +106,7 @@ internal object AgentModelToolLoopTimelinePolicy {
             AgentModelToolLoopEventType.TOOL_RETRY_SCHEDULED ->
                 AgentModelToolTimelineText.TOOL_RETRYING
             AgentModelToolLoopEventType.APPROVAL_REQUIRED -> AgentModelToolTimelineText.TOOL_WAITING
+            AgentModelToolLoopEventType.LOOP_WAITING -> AgentModelToolTimelineText.TOOL_WAITING
             AgentModelToolLoopEventType.TOOL_CALL_REJECTED -> AgentModelToolTimelineText.TOOL_FAILED
             AgentModelToolLoopEventType.BUDGET_EXCEEDED,
             AgentModelToolLoopEventType.LOOP_DETECTED,

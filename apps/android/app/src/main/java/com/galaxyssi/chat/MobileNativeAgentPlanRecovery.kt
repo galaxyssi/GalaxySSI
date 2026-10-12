@@ -18,6 +18,7 @@ internal fun MobileNativeAgent.resumePersistedPlanObservations(): Boolean {
     plan.actions.filter { it.evidence == AGENT_NODE_OBSERVATION_PENDING }.forEach { action ->
         val key = requireNotNull(AgentPlanNodeKey.from(sessionId, plan, action))
         val saved = requireNotNull(planNodeJournal.read(key)) { "Persisted node observation is missing" }
+        if (waitForBrowserAction(action, saved.result)) return true
         val observed = if (saved.verified) saved else {
             val screen = captureVerificationScreen(action, currentScreen, saved.result)
             val result = requireNotNull(applyObservationResult(action, saved.result, screen))

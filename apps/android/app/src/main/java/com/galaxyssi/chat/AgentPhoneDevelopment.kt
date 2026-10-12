@@ -88,7 +88,7 @@ internal object AgentPhoneDevelopmentPolicy {
     }
 
     fun isPhoneDevelopmentTool(toolId: String): Boolean =
-        toolId.startsWith(PHONE_WORKSPACE_TOOL_PREFIX) ||
+        toolId in AgentToolInspectionTools.toolIds || toolId.startsWith(PHONE_WORKSPACE_TOOL_PREFIX) ||
             toolId.startsWith(PHONE_PROJECT_TOOL_PREFIX) ||
             toolId.startsWith(PHONE_RUNTIME_SOFTWARE_TOOL_PREFIX) ||
             toolId in PHONE_RUNTIME_TOOL_IDS
@@ -160,7 +160,11 @@ internal object AgentPhoneDevelopmentPolicy {
         AgentOnDeviceRuntimeTools.WORKSPACE_ROLLBACK,
         AgentOnDeviceRuntimeTools.LIST_PACKS,
         AgentOnDeviceRuntimeTools.INSTALL_PACK,
-        AgentOnDeviceRuntimeTools.EXECUTE
+        AgentOnDeviceRuntimeTools.EXECUTE,
+        AgentRuntimeControlTools.DIAGNOSE,
+        AgentRuntimeControlTools.CONTROL,
+        AgentInteractiveBrowserTools.OBSERVE,
+        AgentInteractiveBrowserTools.ACT
     )
 }
 

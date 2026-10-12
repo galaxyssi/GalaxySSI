@@ -4,6 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecords) {
+    var callAdmissionEnabled = true
+        private set
     var restored = false
         private set
     val cancelled: Boolean get() = records.read("cancelled") != null
@@ -18,8 +20,11 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
             }
         val existing = records.read("initial")
         if (existing == null) {
-            records.write("initial", encode(mapOf("binding" to binding, "messages" to messages)))
-            return request
+            val prepared = AgentProblemSolvingPolicy.prepare(request)
+            records.write("initial", encode(mapOf("binding" to binding,
+                "problem_solving_version" to AgentProblemSolvingPolicy.VERSION,
+                "messages" to prepared.messages.map(::messageValue))))
+            return prepared
         }
         val decoded = objectValue(existing)
         checkBinding(decoded["binding"], binding)
@@ -27,18 +32,25 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
         return request.copy(messages = list(decoded["messages"]).map { message(map(it)) })
     }
 
-    fun response(request: AgentModelRequest): AgentModelResponse? =
-        records.read("model:${request.round}")?.let { encoded ->
+    fun response(request: AgentModelRequest): AgentModelResponse? {
+        val encoded = records.read("model:${request.round}") ?: run {
+            callAdmissionEnabled = true
+            return null
+        }
+        return encoded.let {
             val record = objectValue(encoded)
             checkBinding(record["binding"], modelBinding(request))
+            callAdmissionEnabled = (record["call_admission_version"] as? Number)?.toInt() == 1
             val value = map(record["response"])
             val usage = map(value["usage"])
             AgentModelResponse(value["text"] as String, list(value["calls"]).map { call(map(it)) },
                 AgentModelUsage(number(usage["input"]), number(usage["output"])), map(value["metadata"]))
         }
+    }
 
     fun response(request: AgentModelRequest, response: AgentModelResponse) = records.write("model:${request.round}",
-        encode(mapOf("binding" to modelBinding(request), "response" to mapOf("text" to response.assistantText,
+        encode(mapOf("binding" to modelBinding(request), "call_admission_version" to 1,
+            "response" to mapOf("text" to response.assistantText,
             "calls" to response.toolCalls.map(::callValue), "metadata" to response.providerMetadata,
             "usage" to mapOf("input" to response.usage.inputTokens, "output" to response.usage.outputTokens)))))
 
@@ -72,6 +84,22 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
     fun result(invocation: Invocation, result: AgentNativeToolResult, sequence: Long) = records.write(
         "${invocation.operation}:result", encode(mapOf("binding" to invocation.binding,
             "result" to result.toJsonValue(), "sequence" to sequence)))
+
+    fun waitResult(invocation: Invocation): AgentNativeToolResult? =
+        records.read("${invocation.operation}:event-result")?.let { encoded ->
+            val record = objectValue(encoded)
+            checkBinding(record["binding"], invocation.binding)
+            val result = JSONObject(encode(record["result"])).toNativeToolResult()
+                ?: throw AgentModelLoopRecoveryException("model_loop_event_result_invalid")
+            check(result.receipt.invocationId == invocation.id) { "model_loop_event_invocation_changed" }
+            result
+        }
+
+    fun waitResult(invocation: Invocation, result: AgentNativeToolResult) {
+        check(result.receipt.invocationId == invocation.id) { "model_loop_event_invocation_changed" }
+        records.write("${invocation.operation}:event-result", encode(mapOf("binding" to invocation.binding,
+            "result" to result.toJsonValue())))
+    }
 
     private fun modelBinding(request: AgentModelRequest) = AgentNativeJsonCodec.sha256(mapOf(
         "round" to request.round, "messages" to request.messages.map(::messageValue),

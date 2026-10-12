@@ -25,10 +25,14 @@ internal class AgentTeamRemoteStopRecovery(
         val pending = teams.filter { isStopped(it.supervisorRunId) }.flatMap { team ->
             ledger.pendingForSupervisor(team.supervisorRunId).filter { AgentTeamRemoteStopPolicy.owns(team, it) }
         }
-        // An interrupted worker may have detached while its cloud request is still running.
+        // An interrupted worker may have detached while its model request is still running.
         // Cancel only its exact lease; cancellation is not a terminal response acknowledgment.
         pending.forEach { record ->
             AgentCloudDispatchRegistry.cancelExact(AgentCloudDispatchIdentity(
+                sourceMessageId = record.sourceMessageId, contactId = record.contactId,
+                conversationId = record.conversationId, turnId = record.turnId, taskId = record.taskId,
+                actionId = "team-${record.ownerRunId}"))
+            AgentLocalDispatchRegistry.cancelExact(AgentLocalDispatchIdentity(
                 sourceMessageId = record.sourceMessageId, contactId = record.contactId,
                 conversationId = record.conversationId, turnId = record.turnId, taskId = record.taskId,
                 actionId = "team-${record.ownerRunId}"))

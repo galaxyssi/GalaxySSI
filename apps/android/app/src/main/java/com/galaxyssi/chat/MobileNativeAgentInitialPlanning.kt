@@ -41,7 +41,7 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
     ).also(::cacheRuntimeContext)
     logPlanningLatency("context", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
-    val planned = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.planning(appContext, sessionId) {
+    val planned = try { com.galaxyssi.chat.metrics.AgentLatencyTelemetry.planning(appContext, sessionId) {
         planningPlanner.plan(
             request = AgentRequest(
                 goal = currentGoal,
@@ -55,7 +55,7 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
                 executionTurnId = activeConversationTurnId
             )
         )
-    }
+    } } catch (wait: AgentModelLoopEventWaitException) { return waitForModelToolEvent(wait) }
     if (phase in setOf(AgentPhase.PAUSED, AgentPhase.CANCELLED, AgentPhase.FAILED)) return snapshot()
     logPlanningLatency("planner", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()

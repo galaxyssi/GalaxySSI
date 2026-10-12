@@ -365,6 +365,9 @@ internal object AgentManagedResponseCodec {
         .put("turn_id", response.turnId)
         .put("task_id", response.taskId)
         .put("success", response.success)
+        .put("task_status", response.taskStatus)
+        .put("execution_generation", response.executionGeneration)
+        .put("status_sequence", response.statusSequence)
         .put("delivery_failure_code", response.deliveryFailureCode)
         .put("input_tokens", response.inputTokens)
         .put("output_tokens", response.outputTokens)
@@ -380,6 +383,9 @@ internal object AgentManagedResponseCodec {
         val content = json.optString("content")
         val richOutput = json.optString("rich_output")
         if (sourceMessageId <= 0L || (content.isBlank() && richOutput.isBlank())) return null
+        val version = requireNotNull(AgentRemoteOutcomeCodec.version(json)) { "Invalid managed response execution version" }
+        val status = json.optString("task_status")
+        require(status.isBlank() || status in AgentRemoteOutcomeCodec.TERMINAL) { "Invalid managed terminal status" }
         return AgentConnectorResponse(
             sourceMessageId = sourceMessageId,
             contactId = json.optString("contact_id"),
@@ -387,7 +393,10 @@ internal object AgentManagedResponseCodec {
             conversationId = json.optString("conversation_id"),
             turnId = json.optString("turn_id"),
             taskId = json.optString("task_id"),
-            success = json.optBoolean("success", true),
+            success = if (status.isBlank()) json.optBoolean("success", true) else status == "completed",
+            taskStatus = status,
+            executionGeneration = version.generation,
+            statusSequence = version.sequence,
             inputTokens = json.optLong("input_tokens"),
             outputTokens = json.optLong("output_tokens"),
             costMicros = json.optLong("cost_micros"),

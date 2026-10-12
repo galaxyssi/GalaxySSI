@@ -54,8 +54,7 @@ object AgentPhoneUiNativeTools {
                     setOf("window_id", "revision", "node_path", "operation"))) { invocation ->
                 val output = GalaxySSIAccessibilityService.actOnTargetUi(invocation.number("window_id", -1),
                     invocation.text("revision"), invocation.text("node_path"), invocation.text("operation"), invocation.text("text"))
-                if (output["accepted"] == true) AgentNativeToolExecutionResult.success(output)
-                else AgentNativeToolExecutionResult.failure("ui_action_rejected", "The App did not accept the operation")
+                PhoneUiOperationResult.from(output, "ui_action_rejected", "The App did not accept the operation")
             },
             definition(BROWSER, "Use the phone's signed-in Chrome", "Open/search/read/back/forward/refresh in installed Chrome, preserving its existing login state. UI read is paged; use phone.ui.act for links and forms. No cookies or credentials are exported. Missing controls are reported rather than guessed.",
                 AgentNativeToolRisk.MEDIUM, schema(mapOf(
@@ -105,15 +104,15 @@ object AgentPhoneUiNativeTools {
         val snapshot = requireNotNull(GalaxySSIAccessibilityService.readTargetUi()) { "No target window" }
         require(snapshot.packageName in chromePackages) { "Chrome is not the current target App" }
         if (command == "read") return AgentNativeToolExecutionResult.success(snapshot.page())
-        if (command == "back") return AgentNativeToolExecutionResult.success(mapOf(
-            "accepted" to GalaxySSIAccessibilityService.performGlobalBack(), "business_success_verified" to false))
+        if (command == "back") return PhoneUiOperationResult.from(
+            mapOf("accepted" to GalaxySSIAccessibilityService.performGlobalBack()),
+            "chrome_action_rejected", "Chrome did not accept back navigation")
         val labels = if (command == "forward") setOf("Forward", "\u524d\u8fdb")
             else setOf("Refresh", "Reload", "\u5237\u65b0", "\u91cd\u65b0\u52a0\u8f7d")
         val node = snapshot.nodes.firstOrNull { it.enabled && (it.text in labels || it.description in labels) }
             ?: return AgentNativeToolExecutionResult.failure("chrome_control_not_visible", "Open Chrome's menu, inspect it and select the observed navigation control")
         val output = GalaxySSIAccessibilityService.actOnTargetUi(snapshot.windowId, snapshot.revision, node.path, "click", "")
-        return if (output["accepted"] == true) AgentNativeToolExecutionResult.success(output)
-            else AgentNativeToolExecutionResult.failure("chrome_action_rejected", "Chrome did not accept the operation")
+        return PhoneUiOperationResult.from(output, "chrome_action_rejected", "Chrome did not accept the operation")
     }
 
     private fun definition(id: String, title: String, description: String, risk: AgentNativeToolRisk,
@@ -124,6 +123,7 @@ object AgentPhoneUiNativeTools {
             capabilities = setOf("phone.ui.target_window", "phone.ui.verified_observation"),
             idempotency = if (id == INSPECT || id == PAGE_READ) AgentNativeToolIdempotency.IDEMPOTENT else AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
             concurrency = AgentNativeToolConcurrency.SERIAL,
+            effect = if (id == INSPECT || id == PAGE_READ) AgentNativeToolEffect.READ_ONLY else null,
             timeoutMillis = 180_000L,
             timeoutPolicy = AgentNativeToolTimeoutPolicy.PROGRESS_AWARE),
         executorId = "galaxyssi.phone.ui",
@@ -139,8 +139,8 @@ object AgentPhoneUiNativeTools {
             }
             if (id == ACT) {
                 val snapshot = requireNotNull(GalaxySSIAccessibilityService.readTargetUi()) { "No target App" }
-                require(PhoneUiObservationPolicy.accepts(invocation.number("window_id", -1), invocation.text("revision"), snapshot.windowId, snapshot.revision)) {
-                    "The page changed. Inspect it again before asking for confirmation or acting."
+                if (!PhoneUiObservationPolicy.accepts(invocation.number("window_id", -1), invocation.text("revision"), snapshot.windowId, snapshot.revision)) {
+                    return@AgentNativeToolExecutor PhoneUiOperationResult.stale(snapshot.windowId, snapshot.revision)
                 }
                 val node = snapshot.nodes.singleOrNull { it.path == invocation.text("node_path") } ?: error("Target node unavailable")
                 if (PhoneUiMutationRisk.requiresConfirmation(invocation.text("operation"), node.text, node.description)) {

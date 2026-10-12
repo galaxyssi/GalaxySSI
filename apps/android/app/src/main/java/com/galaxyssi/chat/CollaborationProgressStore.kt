@@ -131,6 +131,13 @@ internal object CollaborationProgressStore {
         return true
     }
 
+    fun local(context: Context, identity: AgentLocalDispatchIdentity, eventId: String, text: String, at: Long): Boolean {
+        val binding = binding(context, identity.sourceMessageId, identity.conversationId, identity.turnId) ?: return false
+        if (binding.optString("task") != identity.taskId) return false
+        write(context, binding, "local-model:$eventId", text, at, confirmed = true)
+        return true
+    }
+
     @Synchronized
     private fun write(context: Context, binding: JSONObject, eventId: String, text: String, at: Long,
         connectionState: String = "", confirmed: Boolean = false) {

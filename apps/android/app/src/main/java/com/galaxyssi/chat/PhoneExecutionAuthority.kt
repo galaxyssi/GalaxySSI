@@ -16,6 +16,8 @@ object PhoneExecutionAuthority {
     private val sideEffectLock = ReentrantLock(true)
     private val activeSideEffectTask = AtomicReference<String?>(null)
     private val cancelledTasks = ConcurrentHashMap.newKeySet<String>()
+    private val cancellationLock = Any()
+    private val cancellationListeners = mutableMapOf<String, MutableMap<Any, () -> Unit>>()
 
     fun guarded(delegate: AgentActionExecutor): AgentActionExecutor = object : AgentActionExecutor {
         override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
@@ -46,11 +48,41 @@ object PhoneExecutionAuthority {
     }
 
     fun requestCancellation(taskId: String) {
-        if (taskId.isNotBlank()) cancelledTasks += taskId
+        if (taskId.isBlank()) return
+        val listeners = synchronized(cancellationLock) {
+            if (cancelledTasks.add(taskId)) cancellationListeners[taskId]?.values?.toList().orEmpty()
+            else emptyList()
+        }
+        listeners.forEach { runCatching(it) }
     }
 
     fun clearCancellation(taskId: String) {
-        if (taskId.isNotBlank()) cancelledTasks -= taskId
+        synchronized(cancellationLock) { if (taskId.isNotBlank()) cancelledTasks -= taskId }
+    }
+
+    /** Subscribe before queueing work so STOP cannot be lost between dispatch and execution. */
+    internal fun observeCancellation(taskId: String, listener: () -> Unit): AgentNativeToolCancellationRegistration {
+        require(taskId.isNotBlank())
+        val key = Any()
+        val alreadyCancelled = synchronized(cancellationLock) {
+            if (taskId in cancelledTasks) true else {
+                cancellationListeners.getOrPut(taskId) { linkedMapOf() }[key] = listener
+                false
+            }
+        }
+        if (alreadyCancelled) listener()
+        return AgentNativeToolCancellationRegistration {
+            synchronized(cancellationLock) {
+                cancellationListeners[taskId]?.let {
+                    it.remove(key)
+                    if (it.isEmpty()) cancellationListeners.remove(taskId)
+                }
+            }
+        }
+    }
+
+    internal fun cancellationListenerCount(taskId: String): Int = synchronized(cancellationLock) {
+        cancellationListeners[taskId]?.size ?: 0
     }
 
     fun isCancelled(taskId: String): Boolean =

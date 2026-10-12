@@ -307,9 +307,7 @@ data class AgentPlan(
                     status = status,
                     result = result?.message ?: action.result,
                     evidence = result?.let { actionResult ->
-                        actionResult.metadata["native_tool_output"]
-                            .orEmpty()
-                            .take(MAX_ACTION_EVIDENCE_CHARACTERS)
+                        AgentNativeActionObservation.evidence(actionResult, MAX_ACTION_EVIDENCE_CHARACTERS)
                             .ifBlank { if (actionResult.success) "executor_success" else "executor_failure" }
                     } ?: action.evidence
                 )

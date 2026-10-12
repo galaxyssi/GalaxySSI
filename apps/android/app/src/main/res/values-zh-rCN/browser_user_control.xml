@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_user_control_title">浏览器</string>
+    <string name="browser_user_control_waiting">任务正在等待你操作浏览器。</string>
+    <string name="browser_user_control_back">返回</string>
+    <string name="browser_user_control_input">输入文字</string>
+    <string name="browser_user_control_show_input">显示输入</string>
+    <string name="browser_user_control_refresh">刷新</string>
+    <string name="browser_user_control_done">交还智能体</string>
+    <string name="browser_user_control_error">浏览器操作失败：%1$s</string>
+</resources>

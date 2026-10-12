@@ -294,7 +294,8 @@ data class AgentRuntimeExecutionResponse(
     val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED,
     val stdoutOriginalChars: Int? = null,
     val stderrOriginalChars: Int? = null,
-    val outputCaptureLimitChars: Int? = null
+    val outputCaptureLimitChars: Int? = null,
+    val runtimeInstanceId: String = ""
 ) {
     internal fun boundedOutput(maxChars: Int, maxArtifacts: Int): AgentRuntimeExecutionResponse {
         require(maxChars >= 0 && maxArtifacts >= 0)
@@ -305,8 +306,10 @@ data class AgentRuntimeExecutionResponse(
 }
 
 fun interface AgentOnDeviceRuntimeBridge {
+    val runtimeInstanceId: String get() = ""
     fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse
     fun health(): AgentRuntimeBridgeHealth = AgentRuntimeBridgeHealth(ready = true)
+    fun refreshHealth(): AgentRuntimeBridgeHealth = health()
     fun cancel(requestId: String): Boolean = false
 }
 
@@ -378,7 +381,8 @@ class AgentOnDeviceRuntimeManager(
                 AgentOnDeviceRuntimeSupervisor.cachedHealth(candidate)
             } else {
                 runCatching { candidate.health() }.getOrElse { error ->
-                    AgentRuntimeBridgeHealth(false, reason = error.message ?: "Guest bridge health check failed")
+                    AgentRuntimeBridgeHealth(false, reason = error.message ?: "Guest bridge health check failed",
+                        observationConfirmed = false)
                 }
             }
         }
@@ -586,6 +590,7 @@ class AgentOnDeviceRuntimeManager(
                 AgentRuntimeWorkspaceDisposition.FAILED_CANDIDATE
             }
             val response = rawResponse.copy(
+                runtimeInstanceId = activeBridge.runtimeInstanceId,
                 artifacts = artifacts,
                 requestId = normalizedRequest.requestId,
                 projectFileCount = durableProject?.fileCount ?: durableStatus?.fileCount ?: 0,
@@ -607,7 +612,10 @@ class AgentOnDeviceRuntimeManager(
             )
             response.copy(executionReceipt = receipt)
         } catch (error: Throwable) {
-            val runtimeWasReset = if (error is AgentNativeToolTimeoutException && runtimeLease != null) {
+            val timeoutHealth = if (error is AgentNativeToolTimeoutException && runtimeLease != null) {
+                runCatching(activeBridge::refreshHealth).getOrNull()
+            } else null
+            val runtimeWasReset = if (runtimeLease != null && AgentRuntimeTimeoutRecovery.shouldQuarantine(error, timeoutHealth)) {
                 runCatching { AgentOnDeviceRuntimeRecovery.quarantine(appContext, runtimeLease) }
                     .onFailure { recoveryError -> error.addSuppressed(recoveryError) }
                     .getOrDefault(false)
@@ -663,6 +671,10 @@ class AgentOnDeviceRuntimeManager(
                     "On-device execution failed and its workspace could not be restored",
                     error
                 )
+            }
+            if (error is AgentNativeToolTimeoutException) {
+                throw AgentNativeToolTimeoutException(error.details + AgentRuntimeTimeoutRecovery.evidence(timeoutHealth, runtimeWasReset))
+                    .also { it.initCause(error) }
             }
             throw error
         }
@@ -1013,7 +1025,8 @@ object AgentOnDeviceRuntimeTools {
         WORKSPACE_ROLLBACK,
         LIST_PACKS,
         INSTALL_PACK,
-        EXECUTE
+        EXECUTE,
+        *AgentRuntimeControlTools.toolIds.toTypedArray()
     )
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> {
@@ -1188,7 +1201,10 @@ object AgentOnDeviceRuntimeTools {
                     } else {
                         requestedSource.ifBlank {
                             return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                                "runtime_source_required", "Runtime source is required"
+                                "runtime_source_required",
+                                "Provide non-empty source containing the code or shell command to execute. " +
+                                    "arguments only supplies arguments to that source; it is not a script entry path. " +
+                                    "No command was executed. Inspect the current workspace and choose the next call."
                             )
                         }
                     }
@@ -1288,7 +1304,7 @@ object AgentOnDeviceRuntimeTools {
                 ),
                 availabilityProvider = AgentNativeToolAvailabilityProvider { executionAvailability(manager) }
             )
-        )
+        ) + AgentRuntimeControlTools.definitions(appContext)
     }
 
     internal fun runtimeExecutionResult(
@@ -1568,9 +1584,14 @@ object AgentOnDeviceRuntimeTools {
             .ifBlank { invocation.context.conversationId }
             .ifBlank { invocation.context.invocationId }
 
-    private fun runtimeStatusOutput(status: AgentOnDeviceRuntimeStatus): Map<String, Any?> = mapOf(
+    internal fun runtimeStatusOutput(status: AgentOnDeviceRuntimeStatus): Map<String, Any?> = mapOf(
         "backend" to status.backend.wireValue,
         "backend_ready" to status.backendReady,
+        "execution_tool_availability" to executionAvailability(status).status.wireValue,
+        "execution_startup" to if (status.backend == AgentOnDeviceRuntimeBackend.NONE) "requires_setup" else "on_demand",
+        "execution_readiness_note" to if (status.backend == AgentOnDeviceRuntimeBackend.NONE) status.reason else
+            "runtime.execute starts or reconnects the guest on demand. backend_ready describes the current bridge, " +
+                "not whether an execution may be attempted. Inspect the execution receipt for the actual outcome.",
         "reason" to status.reason,
         "lifecycle" to mapOf(
             "phase" to status.lifecyclePhase.wireValue,

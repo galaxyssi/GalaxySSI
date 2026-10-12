@@ -64,9 +64,10 @@ private fun MobileNativeAgent.publishReplannedPlan(reference: AgentPlanningRefer
     return revised
 }
 
-internal fun MobileNativeAgent.resumePendingReplanning(): AgentUiState {
+internal fun MobileNativeAgent.resumePendingReplanning(afterBrowserReturn: Boolean = false): AgentUiState {
     val reference = pendingPlanning?.takeIf { it.isReplanning } ?: return snapshot()
-    if (phase != AgentPhase.PAUSED || executionLoop.snapshot?.phase?.isTerminal == true ||
+    if ((phase != AgentPhase.PAUSED && !(afterBrowserReturn && phase == AgentPhase.PLANNING)) ||
+        executionLoop.snapshot?.phase?.isTerminal == true ||
         PhoneExecutionAuthority.isCancelled(sessionId)) return snapshot()
     if (reference.sessionId != sessionId || executionLoop.snapshot?.taskId != reference.turnId) {
         throw AgentModelLoopRecoveryException("replanning_session_mismatch")

@@ -282,7 +282,8 @@ class AgentModelToolLoopTest {
             ),
             adapter.requests.last().messages.map(AgentModelMessage::role)
         )
-        assertFalse(outcome.messages.any { it.role == AgentModelMessageRole.SYSTEM })
+        assertTrue(outcome.messages.any { it.role == AgentModelMessageRole.SYSTEM &&
+            it.text == AgentProblemSolvingPolicy.CONTRACT })
     }
 
     @Test
@@ -510,7 +511,7 @@ class AgentModelToolLoopTest {
     }
 
     @Test
-    fun detectsRepeatedCallSignatureBeforeSecondExecution() = runBlocking {
+    fun reportsRepeatedMutationToModelWithoutEndingGoalOrExecutingAgain() = runBlocking {
         val executions = AtomicInteger()
         val registry = registry(executor = AgentNativeToolExecutor {
             executions.incrementAndGet()
@@ -522,16 +523,17 @@ class AgentModelToolLoopTest {
             ),
             AgentModelResponse(
                 toolCalls = listOf(call("repeat-2", arguments = mapOf("value" to "same")))
-            )
+            ),
+            AgentModelResponse("The original operation already succeeded; no duplicate was needed.")
         )
         val loop = loop(adapter, registry)
 
         val outcome = loop.run(request())
 
-        assertEquals(AgentModelToolLoopStatus.LOOP_DETECTED, outcome.status)
-        assertEquals("repeated_tool_call", outcome.error?.code)
+        assertEquals(AgentModelToolLoopStatus.COMPLETED, outcome.status)
+        assertEquals("repeated_tool_call", adapter.requests.last().messages.last().toolResult?.error?.code)
         assertEquals(1, executions.get())
-        assertEquals(AgentModelToolLoopEventType.LOOP_DETECTED, outcome.events.last().type)
+        assertTrue(outcome.events.none { it.type == AgentModelToolLoopEventType.LOOP_DETECTED })
     }
 
     @Test
