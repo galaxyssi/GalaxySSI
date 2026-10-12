@@ -10,7 +10,8 @@ internal data class LocalModelLoopContinuation(
     val hasAttachments: Boolean,
     val collaborationSourceMessageId: Long?,
     val manifestSha256: String,
-    val systemPrompt: String
+    val systemPrompt: String,
+    val catalogBinding: String = AVAILABLE_SNAPSHOT
 ) {
     fun request(catalog: List<AgentNativeToolDescriptor>, cancellation: AgentNativeToolCancellationToken,
         progress: AgentModelToolLoopEventSink): AgentModelToolLoopRequest = AgentModelToolLoopRequest(
@@ -28,6 +29,8 @@ internal data class LocalModelLoopContinuation(
 
     companion object {
         const val CALLER = "galaxyssi.local_model_web_loop"
+        const val AVAILABLE_SNAPSHOT = "available_snapshot_v1"
+        const val REGISTERED_CONTRACTS = "registered_contracts_v1"
 
         fun scope(identity: AgentLocalDispatchIdentity) = AgentModelLoopScope(identity.taskId,
             identity.conversationId, identity.turnId, identity.taskId,
@@ -50,16 +53,26 @@ internal data class LocalModelLoopContinuation(
 internal class LocalModelLoopContinuationStore(private val journal: AgentModelLoopJournal) {
     suspend fun prepare(identity: AgentLocalDispatchIdentity, prompt: String, preferredProfileId: String,
         hasAttachments: Boolean, collaborationSourceMessageId: Long?, manifestSha256: String,
-        systemPrompt: String): LocalModelLoopContinuation {
+        systemPrompt: String, legacyManifestSha256: String? = null): LocalModelLoopContinuation {
         val scope = LocalModelLoopContinuation.scope(identity)
         val proposed = LocalModelLoopContinuation(scope, prompt, preferredProfileId, hasAttachments,
-            collaborationSourceMessageId, manifestSha256, systemPrompt)
+            collaborationSourceMessageId, manifestSha256, systemPrompt,
+            if (legacyManifestSha256 == null) LocalModelLoopContinuation.AVAILABLE_SNAPSHOT
+                else LocalModelLoopContinuation.REGISTERED_CONTRACTS)
         return journal.withLease(scope) { records ->
             val existing = records.read(OPERATION)
             if (existing != null) {
                 val saved = decode(scope, existing)
+                // Old records lack immutable contracts. Never infer a safe migration from readiness alone.
+                val comparable = if (saved.catalogBinding == LocalModelLoopContinuation.AVAILABLE_SNAPSHOT &&
+                    legacyManifestSha256 != null) {
+                    if (saved.manifestSha256 != legacyManifestSha256)
+                        throw AgentModelLoopRecoveryException("local_model_saved_catalog_changed")
+                    proposed.copy(manifestSha256 = legacyManifestSha256,
+                        catalogBinding = LocalModelLoopContinuation.AVAILABLE_SNAPSHOT)
+                } else proposed
                 // Locale/display changes must not rewrite the original model input on recovery.
-                if (saved.copy(systemPrompt = systemPrompt) != proposed)
+                if (saved.copy(systemPrompt = systemPrompt) != comparable)
                     throw AgentModelLoopRecoveryException("local_model_saved_request_changed")
                 saved
             } else {
@@ -73,12 +86,15 @@ internal class LocalModelLoopContinuationStore(private val journal: AgentModelLo
         }
     }
 
-    suspend fun restore(identity: AgentLocalDispatchIdentity, manifestSha256: String): LocalModelLoopContinuation {
+    suspend fun restore(identity: AgentLocalDispatchIdentity, manifestSha256: String,
+        legacyManifestSha256: String? = null): LocalModelLoopContinuation {
         val scope = LocalModelLoopContinuation.scope(identity)
         return journal.withLease(scope) { records ->
             val saved = decode(scope, records.read(OPERATION)
                 ?: throw AgentModelLoopRecoveryException("local_model_saved_request_missing"))
-            if (saved.manifestSha256 != manifestSha256)
+            val expected = if (saved.catalogBinding == LocalModelLoopContinuation.AVAILABLE_SNAPSHOT)
+                legacyManifestSha256 ?: manifestSha256 else manifestSha256
+            if (saved.manifestSha256 != expected)
                 throw AgentModelLoopRecoveryException("local_model_saved_catalog_changed")
             saved
         }
@@ -88,16 +104,19 @@ internal class LocalModelLoopContinuationStore(private val journal: AgentModelLo
         "version" to 1, "scope" to saved.scope.value(), "prompt" to saved.prompt,
         "profile" to saved.preferredProfileId, "attachments" to saved.hasAttachments,
         "collaboration_source" to saved.collaborationSourceMessageId, "manifest" to saved.manifestSha256,
-        "system" to saved.systemPrompt))
+        "system" to saved.systemPrompt, "catalog_binding" to saved.catalogBinding))
 
     private fun decode(scope: AgentModelLoopScope, encoded: String): LocalModelLoopContinuation = try {
         val json = JSONObject(encoded)
         check(json.getInt("version") == 1 && AgentNativeJsonCodec.sha256(scope.value()) ==
             AgentNativeJsonCodec.sha256(scope.value().keys.associateWith { json.getJSONObject("scope").getString(it) }))
         check(json.has("collaboration_source"))
+        val binding = if (json.has("catalog_binding")) json.getString("catalog_binding")
+            else LocalModelLoopContinuation.AVAILABLE_SNAPSHOT
+        check(binding in setOf(LocalModelLoopContinuation.AVAILABLE_SNAPSHOT, LocalModelLoopContinuation.REGISTERED_CONTRACTS))
         LocalModelLoopContinuation(scope, json.getString("prompt"), json.getString("profile"),
             json.getBoolean("attachments"), if (json.isNull("collaboration_source")) null
-                else json.getLong("collaboration_source"), json.getString("manifest"), json.getString("system"))
+                else json.getLong("collaboration_source"), json.getString("manifest"), json.getString("system"), binding)
     } catch (error: Exception) {
         throw AgentModelLoopRecoveryException("local_model_saved_request_invalid", error)
     }
