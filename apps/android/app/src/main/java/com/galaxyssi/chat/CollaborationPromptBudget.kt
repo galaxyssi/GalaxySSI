@@ -12,9 +12,9 @@ internal object CollaborationPromptBudget {
 
     class Overflow(required: List<Section>, reserve: Int, maxChars: Int) : IllegalArgumentException(
         FAILURE_CODE + JSONObject().put("component", "CollaborationPromptBudget").put("model_dispatched", false)
-            .put("required_characters", required.sumOf { render(it).length }).put("reference_characters", reserve)
+            .put("required_characters", required.sumOf(::renderedLength)).put("reference_characters", reserve)
             .put("max_characters", maxChars).put("sections", JSONObject().apply {
-                required.forEach { put(it.name, render(it).length) }
+                required.forEach { put(it.name, renderedLength(it)) }
             }) + ". Restore a fitting durable reference before dispatch; never truncate instructions. " +
             "No model answer exists to repair. Preserve this checkpoint until host context preparation is repaired, then resume."
     )
@@ -34,31 +34,51 @@ internal object CollaborationPromptBudget {
             presentationOrder.all { name -> sections.any { it.name == name } }) { "Presentation order must name distinct known sections" }
         val included = linkedSetOf<String>()
         val omitted = linkedSetOf<String>()
-        var selectedCharacters = 0
+        var selectedCharacters = 0L
         required.forEach { section ->
-            selectedCharacters += render(section).length
+            selectedCharacters += renderedLength(section)
             included += section.name
         }
-        val reserve = omissionNote(optional.sortedByDescending { reference(it).toString().length }).length
-        if (selectedCharacters + reserve > maxChars) throw Overflow(required, reserve, maxChars)
-        optional.forEach { section ->
-            val rendered = render(section)
-            if (selectedCharacters + rendered.length + reserve <= maxChars) {
-                selectedCharacters += rendered.length
-                included += section.name
-            } else omitted += section.name
+        var coverage = omissionNote(optional)
+        if (selectedCharacters + optional.sumOf(::renderedLength) <= maxChars) {
+            selectedCharacters += optional.sumOf(::renderedLength)
+            included += optional.map { it.name }
+            coverage = ""
+        } else {
+            var admitted: Boolean
+            do {
+                admitted = false
+                optional.filter { it.name !in included }.forEach { section ->
+                    val nextCoverage = omissionNote(optional.filter { it.name !in included && it.name != section.name })
+                    val nextCharacters = selectedCharacters + renderedLength(section)
+                    val currentTotal = selectedCharacters + coverage.length
+                    val nextTotal = nextCharacters + nextCoverage.length
+                    // Charge only references that will actually be emitted, including shifts in the first eight.
+                    if (nextTotal <= maxChars || currentTotal > maxChars && nextTotal < currentTotal) {
+                        selectedCharacters = nextCharacters
+                        included += section.name
+                        coverage = nextCoverage
+                        admitted = true
+                    }
+                }
+                // Short inline sections can free reference space for an earlier skipped goal.
+            } while (admitted)
         }
+        if (selectedCharacters + coverage.length > maxChars)
+            throw Overflow(sections.filter { it.name in included }, coverage.length, maxChars)
+        optional.filter { it.name !in included }.mapTo(omitted) { it.name }
         // Presentation cannot change which complete sections the budget admitted.
         val ranks = presentationOrder.withIndex().associate { it.value to it.index }
-        val text = StringBuilder(selectedCharacters + reserve)
+        val text = StringBuilder((selectedCharacters + coverage.length).toInt())
         sections.filter { it.name in included }.sortedBy { ranks[it.name] ?: Int.MAX_VALUE }
             .forEach { text.append(render(it)) }
-        if (omitted.isNotEmpty()) text.append(omissionNote(optional.filter { it.name in omitted }))
+        text.append(coverage)
         check(text.length <= maxChars)
         return Result(text.toString(), included, omitted)
     }
 
     private fun render(section: Section) = "\n[${section.name}]\n${section.content}\n"
+    private fun renderedLength(section: Section): Long = section.name.length.toLong() + section.content.length + 5L
 
     private fun omissionNote(sections: List<Section>): String {
         if (sections.isEmpty()) return ""

@@ -7,7 +7,7 @@ import org.json.JSONObject
 /** Research prompts keep their assignment and protocol intact; omitted material has a durable original. */
 internal object CollaborationResearchPrompt {
     const val MAX_CHARACTERS = 32_000
-    private const val AVAILABILITY_RESERVE = 512
+    private val AVAILABILITY_RESERVE = availabilitySuffix("complete_inline", "complete_inline", "complete_inline").length
     private val DECISION_CONTEXT = listOf(
         "Interim milestone inputs (exact versions, not completed work or verified claims)",
         "Independent review input roles",
@@ -180,17 +180,20 @@ internal object CollaborationResearchPrompt {
         val presentation = (listOf("Assignment", "Execution boundaries", "Current execution resources", "Original user goal",
             "Preserved acceptance criteria", "Host goal contract") + DECISION_CONTEXT).filter { it in names }
         val assembled = CollaborationPromptBudget.assemble(required, optional, MAX_CHARACTERS - AVAILABILITY_RESERVE, presentation)
-        val availability = JSONObject().put("original_goal", availability(assembled, "Original user goal"))
-            .put("acceptance_criteria", availability(assembled, "Preserved acceptance criteria"))
-            .put("source_mapping", availability(assembled, "Goal coverage source"))
-            .put("trust", "supplied_text_not_comprehension_or_validation")
-        val suffix = "\n[Context availability]\n$availability\n"
+        val suffix = availabilitySuffix(availability(assembled, "Original user goal"),
+            availability(assembled, "Preserved acceptance criteria"), availability(assembled, "Goal coverage source"))
         check(suffix.length <= AVAILABILITY_RESERVE)
         return assembled.copy(text = assembled.text + suffix)
     }
 
     private fun availability(result: CollaborationPromptBudget.Result, section: String) =
         if (section in result.included) "complete_inline" else "not_inlined"
+
+    private fun availabilitySuffix(goal: String, criteria: String, source: String): String {
+        val record = JSONObject().put("original_goal", goal).put("acceptance_criteria", criteria)
+            .put("source_mapping", source).put("trust", "supplied_text_not_comprehension_or_validation")
+        return "\n[Context availability]\n$record\n"
+    }
 
     private fun section(name: String, value: String): CollaborationPromptBudget.Section {
         val selector = when (name) {
