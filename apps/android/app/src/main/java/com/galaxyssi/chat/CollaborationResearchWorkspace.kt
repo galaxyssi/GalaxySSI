@@ -594,7 +594,7 @@ internal class CollaborationResearchWorkspace(
     }
 
     private fun checkAcceptanceAccess(access: CollaborationWorkspaceAccess) {
-        require(authorized(access.groupId)) { "Group access was removed" }
+        if (!authorized(access.groupId)) throw CollaborationGroupUnavailableException()
         require(accessAuthorized(access)) { "Acceptance member access was removed" }
     }
 

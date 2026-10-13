@@ -100,7 +100,9 @@ data class AgentTeamExecutionSnapshot(
     val primaryInstanceId: String = primaryAgentId,
     val paused: Boolean = false,
     val goalDisposition: String = "",
-    val nextGoalAttemptAtMillis: Long = 0L
+    val nextGoalAttemptAtMillis: Long = 0L,
+    val recoveryFailureCount: Int = 0,
+    val recoveryScopeMissing: Boolean = false
 ) {
     val primaryMemberId: String get() = primaryInstanceId.ifBlank { primaryAgentId }
 }
@@ -555,6 +557,7 @@ class EncryptedAgentTeamExecutionStore internal constructor(
 
     override fun markInterrupted(supervisorRunId: String, nowMillis: Long): AgentTeamExecutionSnapshot? =
         synchronized(LOCK) {
+            AgentTeamRecoveryDiagnostics.record(supervisorRunId, TeamRecoveryTraceStage.INTERRUPTED)
             val current = record(supervisorRunId) ?: return@synchronized null
             val updated = if (current.toSnapshot().state.isTerminal) current else current.copy(
                 interruptedAtMillis = nowMillis,
@@ -603,8 +606,10 @@ class EncryptedAgentTeamExecutionStore internal constructor(
     private fun record(supervisorRunId: String): AgentTeamExecutionRecord? {
         val cleanRunId = supervisorRunId.trim()
         if (cleanRunId.isBlank()) return null
-        decode(database.readString(recordKey(cleanRunId), ""))?.let { return it }
-        return legacyRecords().firstOrNull { it.request.runId == cleanRunId }
+        return AgentTeamRecoveryDiagnostics.measure(cleanRunId, TeamRecoveryTraceStage.CHECKPOINT_READ) {
+            decode(database.readString(recordKey(cleanRunId), ""))
+                ?: legacyRecords().firstOrNull { it.request.runId == cleanRunId }
+        }
     }
 
     private fun records(): List<AgentTeamExecutionRecord> {
@@ -619,8 +624,10 @@ class EncryptedAgentTeamExecutionStore internal constructor(
         AgentTeamExecutionCodec.decode(database.readString(KEY_LEGACY_RECORDS, "[]"))
 
     private fun write(record: AgentTeamExecutionRecord) {
-        CollaborationMethodExperience.capture(record, candidateWorkspace)
-        database.writeString(recordKey(record.request.runId), encode(record))
+        AgentTeamRecoveryDiagnostics.measure(record.request.runId, TeamRecoveryTraceStage.CHECKPOINT_WRITE) {
+            CollaborationMethodExperience.capture(record, candidateWorkspace)
+            database.writeString(recordKey(record.request.runId), encode(record))
+        }
     }
 
     private fun encode(record: AgentTeamExecutionRecord): String =
@@ -660,6 +667,7 @@ class AgentTeamExecutionHandle internal constructor(
 
     suspend fun await(): AgentTeamExecutionResult {
         val result = try { delegate.await() } catch (failure: Throwable) {
+            AgentTeamRecoveryDiagnostics.record(supervisorRunId, TeamRecoveryTraceStage.AWAIT_FAILURE, failure = failure)
             if (!delegate.isActive) store.markInterrupted(supervisorRunId)
             throw failure
         }
@@ -682,13 +690,17 @@ class AgentTeamExecutionHandle internal constructor(
 internal fun CoroutineScope.watchAgentTeamExecution(
     handle: AgentTeamExecutionHandle,
     onSettled: () -> Unit,
-    onReleased: () -> Unit
+    onReleased: () -> Unit,
+    onFailed: (Throwable) -> Unit = {}
 ): Job = launch(start = CoroutineStart.UNDISPATCHED) {
     try {
         // Enter before launch returns, including when shutdown has already cancelled the scope.
         // The runtime can still be persisting terminal events after its watcher is cancelled.
         withContext(NonCancellable) {
-            runCatching { handle.await() }
+            runCatching { handle.await() }.onFailure {
+                AgentTeamRecoveryDiagnostics.record(handle.supervisorRunId, TeamRecoveryTraceStage.WATCH_FAILURE, failure = it)
+                onFailed(it)
+            }
             onSettled()
         }
     } finally {
@@ -1429,6 +1441,7 @@ class AgentProductionTeamController(
     private val collaborationProjection = CollaborationTranscriptPublisher(context)
     private val collaborationGroups = CollaborationGroupStore(context)
     private val durableControl = AgentTeamDurableControl(context)
+    private val recoveryPolicy = AgentTeamRecoveryPolicy(context)
     private val parentRecovery = AgentTeamParentDeliveryRecovery(context)
     private val dispatchCheckpoint = AgentTeamDispatchCheckpoint(context)
     private val remoteStops = AgentTeamRemoteStopRecovery(context)
@@ -1513,7 +1526,7 @@ class AgentProductionTeamController(
         publishTerminalSnapshots()
         completionScope.launch {
             while (isActive) {
-                runCatching { reconcileLateResponses(); resumeReadyTeams(); reconcileRemoteStops() }
+                runCatching { reconcileLateResponses(); resumeReadyTeams(TeamRecoveryTraceSource.PERIODIC); reconcileRemoteStops() }
                     .onFailure { android.util.Log.w("GalaxySSICollaboration", "Team recovery will retry", it) }
                 delay(30_000L)
             }
@@ -1631,11 +1644,13 @@ class AgentProductionTeamController(
     fun delegations(): List<AgentCrossTeamDelegationRecord> = crossTeamDelegations.list()
 
     private fun controlled(snapshot: AgentTeamExecutionSnapshot): AgentTeamExecutionSnapshot =
-        when (durableControl.get(snapshot.supervisorRunId)) {
-            AgentTeamUserControl.RUN -> snapshot
-            AgentTeamUserControl.PAUSE -> snapshot.copy(paused = true)
-            AgentTeamUserControl.STOP -> snapshot.copy(state = AgentTeamExecutionState.CANCELLED,
-                members = snapshot.members.map { if (it.status.isTerminal) it else it.copy(status = AgentSubagentStatus.CANCELLED) })
+        recoveryPolicy.project(snapshot).let { projection ->
+            when (durableControl.get(snapshot.supervisorRunId)) {
+                AgentTeamUserControl.RUN -> projection
+                AgentTeamUserControl.PAUSE -> projection.copy(paused = true)
+                AgentTeamUserControl.STOP -> projection.copy(state = AgentTeamExecutionState.CANCELLED, paused = false,
+                    members = snapshot.members.map { if (it.status.isTerminal) it else it.copy(status = AgentSubagentStatus.CANCELLED) })
+            }
         }
 
     fun snapshot(supervisorRunId: String): AgentTeamExecutionSnapshot? = runtime.snapshot(supervisorRunId)?.let(::controlled)
@@ -1666,37 +1681,29 @@ class AgentProductionTeamController(
         durableControl.set(supervisorRunId, AgentTeamUserControl.RUN)
         completionScope.launch {
             if (closed.get()) return@launch
-            if (executingRuns.add(supervisorRunId)) {
-                try {
-                    if (!activeHandles.containsKey(supervisorRunId)) store.snapshot(supervisorRunId)?.let {
-                        store.advanceGoal(supervisorRunId, it.primaryMemberId, System.currentTimeMillis(), true)
-                    }
-                } finally { executingRuns.remove(supervisorRunId) }
+            recoveryPolicy.reset(supervisorRunId)
+            store.snapshot(supervisorRunId)?.let { snapshot ->
+                recoverTeam(snapshot, TeamRecoveryTraceSource.USER_RESUME) {
+                    store.advanceGoal(supervisorRunId, snapshot.primaryMemberId, System.currentTimeMillis(), true)
+                }
             }
-            resumeReadyTeams(); publishTerminalSnapshots()
+            resumeReadyTeams(TeamRecoveryTraceSource.USER_RESUME); publishTerminalSnapshots()
         }
         return true
     }
 
     @Synchronized
-    private fun resumeReadyTeams() {
+    private fun resumeReadyTeams(source: TeamRecoveryTraceSource) {
         if (closed.get()) return
         store.snapshots().filter { it.goalDisposition == "continue" }.forEach { snapshot ->
-            if (!executingRuns.add(snapshot.supervisorRunId)) return@forEach
-            try {
-                if (!activeHandles.containsKey(snapshot.supervisorRunId) &&
-                    durableControl.get(snapshot.supervisorRunId) == AgentTeamUserControl.RUN && parentRecovery.canResume(snapshot)) {
-                    store.advanceGoal(snapshot.supervisorRunId, snapshot.primaryMemberId, System.currentTimeMillis())
-                }
-            } finally { executingRuns.remove(snapshot.supervisorRunId) }
+            recoverTeam(snapshot, source) {
+                store.advanceGoal(snapshot.supervisorRunId, snapshot.primaryMemberId, System.currentTimeMillis())
+            }
         }
         store.snapshots().filter { it.state == AgentTeamExecutionState.INTERRUPTED }.forEach { snapshot ->
             if (snapshot.goalDisposition in setOf("continue", "blocked") || snapshot.nextGoalAttemptAtMillis > System.currentTimeMillis()) return@forEach
-            if (activeHandles.containsKey(snapshot.supervisorRunId) || durableControl.get(snapshot.supervisorRunId) != AgentTeamUserControl.RUN ||
-                !parentRecovery.canResume(snapshot)) return@forEach
-            if (!executingRuns.add(snapshot.supervisorRunId)) return@forEach
-            var handedOff = false
-            try {
+            recoverTeam(snapshot, source) {
+                AgentTeamRecoveryDiagnostics.record(snapshot.supervisorRunId, TeamRecoveryTraceStage.RESUME_ATTEMPT, source)
                 // Claim before reading the checkpoint: late delivery must not advance its sequence concurrently.
                 if (snapshot.members.any { it.status == AgentSubagentStatus.RUNNING &&
                         it.agentId.startsWith("cloud:") && it.collaborationGroupId.isNotBlank() }) {
@@ -1708,14 +1715,54 @@ class AgentProductionTeamController(
                 store.requeueUndispatched(snapshot.supervisorRunId, dispatchCheckpoint::wasNotDispatched)
                 if (!store.reconcileGoalRecruits(snapshot.supervisorRunId, snapshot.primaryMemberId) {
                         collaborationGroups.projectRecruits(snapshot.conversationId, it)
-                    }) return@forEach
-                val checkpoint = store.resumeCheckpoint(snapshot.supervisorRunId) ?: return@forEach
+                    }) return@recoverTeam
+                val checkpoint = store.resumeCheckpoint(snapshot.supervisorRunId) ?: run {
+                    AgentTeamRecoveryDiagnostics.record(snapshot.supervisorRunId, TeamRecoveryTraceStage.RESUME_BLOCKED, source)
+                    recoveryPolicy.awaitingResult(snapshot.supervisorRunId)
+                    return@recoverTeam
+                }
                 val handle = runtime.resume(checkpoint, guardedWorker)
                 activeHandles[handle.supervisorRunId] = handle
-                handedOff = true
+                AgentTeamRecoveryDiagnostics.record(snapshot.supervisorRunId, TeamRecoveryTraceStage.RESUME_READY, source,
+                    sequence = checkpoint.lastSequence, completedChildren = checkpoint.completed.size)
                 watch(handle)
-            } finally { if (!handedOff) executingRuns.remove(snapshot.supervisorRunId) }
+            }
         }
+    }
+
+    private fun recoverTeam(snapshot: AgentTeamExecutionSnapshot, source: TeamRecoveryTraceSource, recover: () -> Unit) {
+        val run = snapshot.supervisorRunId
+        if (activeHandles.containsKey(run) || !executingRuns.add(run)) return
+        try {
+            if (durableControl.get(run) != AgentTeamUserControl.RUN || !recoveryPolicy.mayAttempt(run)) return
+            AgentTeamRecoveryPolicy.requireScope(snapshot) { collaborationGroups.load(it) != null }
+            if (parentRecovery.canResume(snapshot)) recover()
+        } catch (failure: Throwable) {
+            AgentTeamRecoveryDiagnostics.record(run, TeamRecoveryTraceStage.RESUME_FAILURE, source, failure)
+            runCatching { recordRecoveryFailure(snapshot, failure) }.onFailure {
+                android.util.Log.w("GalaxySSICollaboration", "Unable to persist recovery status: ${it.javaClass.simpleName}")
+            }
+        } finally {
+            if (!activeHandles.containsKey(run)) executingRuns.remove(run)
+        }
+    }
+
+    private fun recordRecoveryFailure(snapshot: AgentTeamExecutionSnapshot, failure: Throwable) {
+        if (closed.get() || durableControl.get(snapshot.supervisorRunId) != AgentTeamUserControl.RUN) return
+        val run = snapshot.supervisorRunId
+        if (AgentTeamRecoveryPolicy.missingScopeFailure(failure)) {
+            recoveryPolicy.missingScope(run)
+            durableControl.set(run, AgentTeamUserControl.STOP)
+            activeHandles[run]?.cancel()
+            parentRecovery.stop(snapshot, evidenceContext.getString(R.string.collaboration_recovery_scope_missing))
+            completionScope.launch { reconcileRemoteStops() }
+            AgentTeamRecoveryDiagnostics.record(run, TeamRecoveryTraceStage.RECOVERY_STOPPED)
+        } else {
+            val state = recoveryPolicy.failed(snapshot, failure)
+            AgentTeamRecoveryDiagnostics.record(run,
+                if (state.stalled) TeamRecoveryTraceStage.RECOVERY_STOPPED else TeamRecoveryTraceStage.RECOVERY_DEFERRED)
+        }
+        publishAndRecord(snapshot)
     }
 
     fun reputation(
@@ -1747,7 +1794,8 @@ class AgentProductionTeamController(
         val contacts = lazy { AgentConnectorContactSnapshot.from(AppStore.contacts(evidenceContext)) }
         val restored = store.snapshots().sumOf { team ->
             if (team.state != AgentTeamExecutionState.INTERRUPTED ||
-                durableControl.get(team.supervisorRunId) != AgentTeamUserControl.RUN || !parentRecovery.canResume(team)) 0
+                durableControl.get(team.supervisorRunId) != AgentTeamUserControl.RUN ||
+                !recoveryPolicy.mayAttempt(team.supervisorRunId) || !parentRecovery.canResume(team)) 0
             else store.deliveryCheckpoint(team.supervisorRunId)?.let { checkpoint ->
                 AgentTeamReplyRecovery.restore(team, checkpoint, managedResponses, durableControl.get(team.supervisorRunId),
                     dispatchCheckpoint::wasNotDispatched) { member, source ->
@@ -1766,6 +1814,7 @@ class AgentProductionTeamController(
                 .getOrDefault(false)
         }
         val recovering = store.snapshots().filter { durableControl.get(it.supervisorRunId) == AgentTeamUserControl.RUN &&
+            recoveryPolicy.mayAttempt(it.supervisorRunId) &&
             (!it.state.isTerminal || it.state == AgentTeamExecutionState.INTERRUPTED || it.goalDisposition in setOf("continue", "blocked")) &&
             it.members.any { member -> member.collaborationGroupId.isNotBlank() } }
         for (snapshot in recovering) {
@@ -1822,6 +1871,7 @@ class AgentProductionTeamController(
     private fun applyLateResponse(record: AgentManagedResponseRecord): Boolean {
         // The live runtime owns its event sequence. Orphan responses remain durable until it exits.
         if (closed.get()) return false
+        if (recoveryPolicy.state(record.supervisorRunId).scopeMissing) return false
         if (!executingRuns.add(record.supervisorRunId)) return false
         try {
             if (closed.get()) return false
@@ -1843,7 +1893,7 @@ class AgentProductionTeamController(
             val applied = store.applyLateResponse(record, prepared)
             if (applied) {
                 managedResponses.markApplied(record.ownerRunId)
-                store.snapshot(record.supervisorRunId)?.let(::publishAndRecord)
+                store.snapshot(record.supervisorRunId)?.let { recoveryPolicy.observed(it); publishAndRecord(it) }
             }
             return applied
         } finally { executingRuns.remove(record.supervisorRunId) }
@@ -1855,7 +1905,7 @@ class AgentProductionTeamController(
             onSettled = {
                 if (!closed.get()) {
                     val snapshot = store.snapshot(handle.supervisorRunId)
-                    snapshot?.let(::publishAndRecord)
+                    snapshot?.let { recoveryPolicy.observed(it); publishAndRecord(it) }
                     if (delegationId.isNotBlank()) {
                         if (snapshot == null) {
                             runCatching {
@@ -1885,7 +1935,13 @@ class AgentProductionTeamController(
                 executingRuns.remove(handle.supervisorRunId)
                 if (!closed.get()) {
                     reconcileLateResponses()
-                    resumeReadyTeams()
+                    resumeReadyTeams(TeamRecoveryTraceSource.WATCH_RELEASE)
+                }
+            }, onFailed = { failure ->
+                if (!closed.get()) runCatching {
+                    store.snapshot(handle.supervisorRunId)?.let { recordRecoveryFailure(it, failure) }
+                }.onFailure {
+                    android.util.Log.w("GalaxySSICollaboration", "Unable to persist recovery status: ${it.javaClass.simpleName}")
                 }
             })
     }

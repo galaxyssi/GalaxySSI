@@ -46,6 +46,7 @@ internal object CollaborationCurrentStatePolicy {
             waiting = member.waitingForDependencies, primary = member.memberId == team.primaryMemberId,
             summary = applicable?.summary.orEmpty(), researchStage = member.researchStage,
             executionMemberId = member.memberId, paused = team.paused,
+            recoveryFailureCount = team.recoveryFailureCount, recoveryScopeMissing = team.recoveryScopeMissing,
             goalDisposition = if (member.memberId == team.primaryMemberId) team.goalDisposition else "",
             startedAtMillis = member.executionStartedAtMillis, completedAtMillis = member.completedAtMillis,
             clockStoppedAtMillis = if (team.paused || team.state.isTerminal && !interrupted)
@@ -57,6 +58,7 @@ internal object CollaborationCurrentStatePolicy {
 
     fun status(team: AgentTeamExecutionSnapshot, observations: Map<String, CollaborationMemberObservation>): ConversationHubAgentStatus = when {
         team.state == AgentTeamExecutionState.CANCELLED -> ConversationHubAgentStatus.CANCELLED
+        team.recoveryFailureCount >= AgentTeamRecoveryPolicy.MAX_FAILURES -> ConversationHubAgentStatus.BLOCKED
         team.paused -> ConversationHubAgentStatus.PAUSED
         team.goalDisposition == "blocked" -> ConversationHubAgentStatus.BLOCKED
         team.goalDisposition == "continue" && members(team).all { it.status.isTerminal } -> ConversationHubAgentStatus.QUEUED
