@@ -19,7 +19,7 @@ internal object AgentBrowserActionPlanPolicy {
 
     fun action(record: AgentBrowserUserRequest, session: AgentSessionSnapshot): AgentAction? {
         val plan = session.currentPlan ?: return null
-        if (record.modelLoopId.isNotBlank() || record.actionPlanBinding.isBlank() ||
+        if (record.collaborationSourceMessageId != null || record.modelLoopId.isNotBlank() || record.actionPlanBinding.isBlank() ||
             record.callerId != CALLER || plan.planId != record.actionPlanId || !plan.isSupervisedProjectPlan()) return null
         val context = AgentNativeToolInvocationContext(sessionId = record.sessionId,
             conversationId = record.conversationId, turnId = record.turnId, callerId = CALLER,

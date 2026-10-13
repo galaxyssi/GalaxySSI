@@ -66,7 +66,8 @@ class AgentLocalBrowserDispatchTest {
             original.copy(sessionId = "other"), original.copy(conversationId = "other"), original.copy(turnId = "other"),
             original.copy(taskId = "other"), original.copy(workspaceId = "other"), original.copy(callerId = "other"),
             original.copy(runWorkspaceId = "other"), original.copy(runSessionId = "other"),
-            original.copy(actionPlanBinding = "other")).forEach { assertFalse(AgentLocalBrowserDispatchPolicy.matches(dispatch, it)) }
+            original.copy(actionPlanBinding = "other"), original.copy(collaborationSourceMessageId = 42))
+            .forEach { assertFalse(AgentLocalBrowserDispatchPolicy.matches(dispatch, it)) }
         assertEquals(original, AgentBrowserUserRequest.fromJson(original.toJson()))
         assertFalse(original.permitsSameGeneration(original.copy(localDispatchId = "other")))
     }

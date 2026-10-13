@@ -42,6 +42,13 @@ class AgentBrowserRunRecoveryTest {
         assertNull(decide(record = record))
     }
 
+    @Test fun `a collaboration member cannot inherit the ordinary parent planner recovery`() {
+        val member = record.copy(collaborationSourceMessageId = 101)
+        assertEquals(member, AgentBrowserRunRecoveryPolicy.bind(member, listOf(workspace)) { session() })
+        assertFalse(AgentBrowserRunRecoveryPolicy.matches(bound().copy(collaborationSourceMessageId = 101), workspace, session()))
+        assertNull(decide(record = bound().copy(collaborationSourceMessageId = 101)))
+    }
+
     @Test fun `returned event resumes the saved planner without requiring process death`() {
         assertNull(AgentLongTaskRecoveryPolicy.decide(workspace, session()))
         assertEquals(AgentLongTaskRecoveryMode.INITIAL_PLANNING, decide()?.mode)
