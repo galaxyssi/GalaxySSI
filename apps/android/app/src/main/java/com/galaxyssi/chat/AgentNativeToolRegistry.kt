@@ -988,6 +988,20 @@ class AgentNativeToolRegistry(
         }
     }
 
+    /** Durable bindings cover the registered view, not a momentary setup/readiness observation. */
+    @Synchronized
+    internal fun registeredContractCatalog(): AgentNativeToolCatalogView {
+        val descriptors = definitions.values.map { it.descriptor }.sortedBy { it.id }
+        val json = AgentNativeJsonCodec.stringify(linkedMapOf(
+            "contract_version" to CONTRACT_VERSION,
+            "binding_kind" to "registered_contracts_v1",
+            "tools" to descriptors.map {
+                (it.catalogValue() - "availability") + mapOf("effect" to it.effect?.name,
+                    "requires_effect_claim" to it.requiresEffectClaim)
+            }))
+        return AgentNativeToolCatalogView(descriptors, AgentNativeToolCatalogManifest(json, json.sha256Utf8()))
+    }
+
     private fun manifestFor(descriptors: List<AgentNativeToolDescriptor>): AgentNativeToolCatalogManifest {
         val catalog = AgentNativeJsonCodec.stringify(
             linkedMapOf(

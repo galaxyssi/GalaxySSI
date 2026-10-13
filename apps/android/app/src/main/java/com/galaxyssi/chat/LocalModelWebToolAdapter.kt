@@ -139,29 +139,32 @@ internal object LocalModelWebToolRunner {
         }
         require(!restoreSavedRequest || browserDispatch != null)
         val registry = registry(context, conversationId, turnId, collaborationSourceMessageId, browserDispatch != null)
-        val catalog = registry.availableCatalog()
+        val availableCatalog = registry.availableCatalog()
+        val contractCatalog = if (progressIdentity != null) registry.registeredContractCatalog() else availableCatalog
         val progress = progressIdentity?.let { identity ->
             require(identity.conversationId == conversationId && identity.turnId == turnId &&
                 identity.taskId == taskId && sessionId == taskId) { "Local model progress ownership mismatch" }
-            AgentLocalModelProgress.sink(context, identity, managedTeam, cancellationToken, catalog.descriptors)
+            AgentLocalModelProgress.sink(context, identity, managedTeam, cancellationToken, contractCatalog.descriptors)
         } ?: AgentModelToolLoopEventSink.NONE
         var session: LocalModelWebToolSession? = null
         val outcome = runCancellableLocalRequest(cancellationToken) {
             val journal = EncryptedAgentModelLoopJournal(context.applicationContext)
             val saved = if (restoreSavedRequest) LocalModelLoopContinuationStore(journal).restore(
-                checkNotNull(progressIdentity), catalog.manifest.sha256)
+                checkNotNull(progressIdentity), contractCatalog.manifest.sha256, availableCatalog.manifest.sha256)
             else if (progressIdentity != null) LocalModelLoopContinuationStore(journal).prepare(
                 progressIdentity, prompt, preferredProfileId, hasAttachments, collaborationSourceMessageId,
-                catalog.manifest.sha256, CodexStyleResponsePolicy.prompt(context))
+                contractCatalog.manifest.sha256, CodexStyleResponsePolicy.prompt(context), availableCatalog.manifest.sha256)
             else LocalModelLoopContinuation(AgentModelLoopScope(sessionId, conversationId, turnId, taskId,
                 LocalModelAgentToolPolicy.workspace(conversationId, sessionId), LocalModelLoopContinuation.CALLER,
                 LocalModelLoopContinuation.legacyLoopId(prompt, preferredProfileId, hasAttachments,
                     collaborationSourceMessageId)), prompt, preferredProfileId, hasAttachments,
-                collaborationSourceMessageId, catalog.manifest.sha256, CodexStyleResponsePolicy.prompt(context))
+                collaborationSourceMessageId, availableCatalog.manifest.sha256, CodexStyleResponsePolicy.prompt(context))
+            val catalog = if (saved.catalogBinding == LocalModelLoopContinuation.REGISTERED_CONTRACTS)
+                contractCatalog else availableCatalog
             val localSession = LocalModelWebToolSession(context, saved.preferredProfileId,
                 saved.hasAttachments, saved.scope.task).also { session = it }
             AgentModelToolLoop(
-                modelAdapter = localSession.adapter(catalog.descriptors),
+                modelAdapter = localSession.adapter(availableCatalog.descriptors),
                 toolRegistry = registry,
                 disclosedToolManifestJson = catalog.manifest.json,
                 disclosedToolManifestSha256 = catalog.manifest.sha256,
@@ -271,6 +274,10 @@ internal object LocalModelWebToolProtocol {
         append("{\"answer\":\"optional brief progress\",\"tool_calls\":[")
         append("{\"id\":\"unique-call-id\",\"name\":\"exact tool id\",\"arguments\":{}}]}.\n")
         append("Available tools (exact IDs and input contracts):\n")
+        if (catalog.any { it.id == AgentToolDiscoveryTools.ID }) {
+            append("This is the initial readiness snapshot for this execution slice, not a permanent capability restriction. ")
+            append("After setup or a readiness failure, discover and inspect current availability before choosing the next call.\n")
+        }
         append(LocalModelAgentToolPolicy.disclosure(catalog))
     }
 
