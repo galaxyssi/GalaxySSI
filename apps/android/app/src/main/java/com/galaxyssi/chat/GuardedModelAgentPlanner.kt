@@ -38,7 +38,8 @@ class GuardedModelAgentPlanner(
         if (!result.plannerProfile.startsWith("guarded-model:")) {
             val identity = AgentPlannerToolLoopRequest.create(request, settings,
                 listOf(AgentModelMessage.user(request.goal)), emptyList())
-            if (loopJournal.hasRecords(AgentModelLoopScope.from(identity))) {
+            val scope = AgentModelLoopScope.from(identity)
+            if (loopJournal.hasRecords(scope) || loopJournal.hasOperation(scope, AgentPlannerToolCatalogBinding.OPERATION)) {
                 throw AgentModelLoopRecoveryException("model_loop_requires_recovery_not_fallback")
             }
         }
@@ -165,19 +166,18 @@ class GuardedModelAgentPlanner(
                 context = appContext,
                 screenProvider = { request.screen }
             )
-        val availableCatalog = fullRegistry.availableCatalog()
-        val catalog = availableCatalog.descriptors
+        val messages = listOf(AgentModelMessage.system(MODEL_PLANNER_SYSTEM_PROMPT), AgentModelMessage.user(prompt))
+        val identity = AgentPlannerToolLoopRequest.create(request, settings, messages, emptyList())
         val outcome = runBlocking {
+            val catalogs = AgentPlannerToolCatalogBinding.prepare(loopJournal, identity, fullRegistry)
+            val binding = catalogs.binding
             AgentModelToolLoop(
                 modelAdapter = CloudModelClient.nativeToolAdapter(
-                    appContext,
-                    contact,
-                    catalog,
-                    availableCatalog.manifest.sha256
+                    appContext, contact, catalogs.initialAvailable, catalogs::providerCatalog
                 ),
                 toolRegistry = fullRegistry,
-                disclosedToolManifestJson = availableCatalog.manifest.json,
-                disclosedToolManifestSha256 = availableCatalog.manifest.sha256,
+                disclosedToolManifestJson = binding.manifest.json,
+                disclosedToolManifestSha256 = binding.manifest.sha256,
                 journal = loopJournal,
                 eventWaitResolver = AgentBrowserModelEventWaitResolver(AgentBrowserUserRequestStore(appContext)::load, { record ->
                     AgentTaskRuntime.supervisor(appContext).findWorkspace(record.runWorkspaceId)?.let { workspace ->
@@ -190,11 +190,8 @@ class GuardedModelAgentPlanner(
                 AgentPlannerToolLoopRequest.create(
                     request = request,
                     settings = settings,
-                    catalog = catalog,
-                    messages = listOf(
-                        AgentModelMessage.system(MODEL_PLANNER_SYSTEM_PROMPT),
-                        AgentModelMessage.user(prompt)
-                    ),
+                    catalog = binding.descriptors,
+                    messages = messages,
                     eventSink = modelToolLoopEventSink,
                     cancellationToken = modelToolLoopCancellationToken
                 )

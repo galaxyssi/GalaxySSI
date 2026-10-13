@@ -259,6 +259,18 @@ object CloudModelClient {
         contact: JSONObject,
         catalog: List<AgentNativeToolDescriptor>,
         catalogFingerprint: String = ""
+    ): AgentModelAdapter = createNativeToolAdapter(context, contact, catalog, catalogFingerprint, null)
+
+    internal fun nativeToolAdapter(context: Context, contact: JSONObject, initial: AgentNativeToolCatalogView,
+        catalogProvider: (AgentModelRequest) -> AgentNativeToolCatalogView): AgentModelAdapter =
+        createNativeToolAdapter(context, contact, initial.descriptors, initial.manifest.sha256, catalogProvider)
+
+    private fun createNativeToolAdapter(
+        context: Context,
+        contact: JSONObject,
+        catalog: List<AgentNativeToolDescriptor>,
+        catalogFingerprint: String,
+        catalogProvider: ((AgentModelRequest) -> AgentNativeToolCatalogView)?
     ): AgentModelAdapter {
         validateContact(context, contact)
         val provider = when (contact.optString("cloud_api_style", "openai")) {
@@ -267,13 +279,17 @@ object CloudModelClient {
             else -> AgentModelToolProvider.OPENAI_COMPATIBLE
         }
         val protocol = AgentModelToolProtocolAdapters.forProvider(provider)
-        val toolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog, catalogFingerprint)
+        val initialToolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog, catalogFingerprint)
         val contextCompaction = AgentModelContextCompactionSession()
         val disclosureSummarySession = AgentModelDisclosureSummarySession()
         return AgentModelAdapter { request ->
             if (request.cancellationToken.isCancellationRequested) {
                 throw CancellationException("Model tool request cancelled")
             }
+            // Freeze one actual provider view for both this HTTP request and its response decoder.
+            val toolCatalog = catalogProvider?.invoke(request)?.let { current ->
+                AgentModelToolCatalogSnapshot(protocol, current.descriptors, current.manifest.sha256)
+            } ?: initialToolCatalog
             val disclosureSummary = disclosureSummarySession.summarize(request.messages)
             val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
                 context = context,
