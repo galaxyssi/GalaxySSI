@@ -24,6 +24,9 @@ internal object ConversationHubBackPolicy {
 internal object ConversationHubContactHistoryPolicy {
     fun includes(contact: org.json.JSONObject?): Boolean =
         !AgentContactNavigationPolicy.opensAgentConversation(contact)
+
+    fun hasUnread(contact: org.json.JSONObject?, unreadCount: Int, lastAt: Long): Boolean =
+        unreadCount > 0 && lastAt > 0L && includes(contact)
 }
 
 internal class ConversationHubReturnState {

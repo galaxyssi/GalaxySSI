@@ -867,6 +867,14 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     internal fun prepareConversationPaging() {
         prepareWindowDraftStorage()
         conversationDatabase.prepareForPaging()
+        reconcileUnreadReplies()
+    }
+
+    internal fun reconcileUnreadReplies(): Int = AgentReplyUnreadStore.snapshot(appContext).entries.sumOf { (id, tokens) ->
+        synchronized(entryMutationLock) {
+            val missing = tokens.filterNot { entryDatabase.containsUnreadToken(id, it) }.toSet()
+            AgentReplyUnreadStore.discard(appContext, id, missing)
+        }
     }
 
     private fun prepareWindowDraftStorage() {
@@ -1310,6 +1318,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     fun deleteEntry(entryId: String): Boolean {
         val removed = entryDatabase.findById(entryId) ?: return false
         if (!entryDatabase.deleteById(entryId)) return false
+        AgentReplyUnreadStore.read(appContext, removed.conversationId, listOf(removed))
         preparedContextCache.invalidate(removed.conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(removed.conversationId, listOf(removed))
@@ -1331,6 +1340,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         if (cleanKey.isBlank()) return false
         val removed = entryDatabase.findByDedupeKey(conversationId, cleanKey) ?: return false
         if (!entryDatabase.deleteById(removed.id)) return false
+        AgentReplyUnreadStore.read(appContext, conversationId, listOf(removed))
         preparedContextCache.invalidate(conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(conversationId, listOf(removed))
@@ -1605,6 +1615,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val removedByConversation = removed.groupBy(AgentTranscriptEntry::conversationId)
         preparedContextCache.invalidate(removedByConversation.keys)
         removedByConversation.forEach { (conversationId, entries) ->
+            AgentReplyUnreadStore.read(appContext, conversationId, entries)
             conversationForEvent(conversationId)?.let { conversation ->
                 entries.forEach { entry ->
                     GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, entry)
