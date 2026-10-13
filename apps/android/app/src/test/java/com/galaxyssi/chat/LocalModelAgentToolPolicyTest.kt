@@ -23,12 +23,18 @@ class LocalModelAgentToolPolicyTest {
         assertFalse(AgentDesktopRemoteNativeTools.TERMINAL_RUN in LocalModelAgentToolPolicy.toolIds(true, true))
     }
 
-    @Test fun interactiveBrowserRequiresOwnedOrdinaryDispatchAndDoesNotBroadenResearchAssignments() {
+    @Test fun ownedBrowserAddsSetupAndObservationWithoutUnscopedResearchFileOrShellTools() {
         val ids = LocalModelAgentToolPolicy.toolIds(false, false, interactiveBrowser = true)
         assertTrue(ids.containsAll(AgentInteractiveBrowserTools.toolIds))
         assertTrue(AgentDesktopRemoteNativeTools.toolIds.none(ids::contains))
-        assertEquals(LocalModelAgentToolPolicy.toolIds(true, false),
-            LocalModelAgentToolPolicy.toolIds(true, false, interactiveBrowser = true))
+        val research = LocalModelAgentToolPolicy.toolIds(true, false, interactiveBrowser = true)
+        assertTrue(research.containsAll(AgentInteractiveBrowserTools.toolIds))
+        assertTrue(AgentOnDeviceRuntimeTools.INSTALL_PACK in research)
+        assertTrue(AgentToolInspectionTools.DESCRIBE in research)
+        assertTrue(AgentLinuxSoftwareNativeTools.INSTALL in research)
+        assertFalse(AgentOnDeviceRuntimeTools.EXECUTE in research)
+        assertFalse(AgentPhoneNativeToolCatalog.WORKSPACE_APPLY_EXACT_PATCH in research)
+        assertTrue(AgentDesktopRemoteNativeTools.toolIds.none(research::contains))
         assertEquals(LocalModelAgentToolPolicy.toolIds(true, true),
             LocalModelAgentToolPolicy.toolIds(true, true, interactiveBrowser = true))
     }

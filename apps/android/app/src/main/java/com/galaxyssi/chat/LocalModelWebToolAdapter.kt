@@ -100,14 +100,18 @@ internal data class LocalModelWebToolCompletion(
 
 internal object LocalModelWebToolRunner {
     internal fun registry(context: Context, conversationId: String, turnId: String,
-                          collaborationSourceMessageId: Long?, interactiveBrowser: Boolean = false): AgentNativeToolRegistry {
+                          collaborationSourceMessageId: Long?, interactiveBrowser: Boolean = false,
+                          managedOwner: AgentManagedBrowserOwner? = null): AgentNativeToolRegistry {
         val access = collaborationSourceMessageId?.let { source ->
-            requireNotNull(CollaborationEvidenceLedger(context).binding(source, conversationId, turnId)) {
+            val binding = CollaborationEvidenceLedger(context).binding(source, conversationId, turnId)
+            require(binding != null || managedOwner != null && managedOwner.groupId.isBlank()) {
                 "Local collaboration requires the exact host member binding"
             }
+            binding
         }
-        val repairing = access?.let { CollaborationResearchWorkspace(context).publicationCheckpoint(it)
-            ?.optJSONObject("receipt")?.optString("status") == "rejected" } == true
+        val repairing = !(interactiveBrowser && managedOwner != null) && access?.let {
+            CollaborationResearchWorkspace(context).publicationCheckpoint(it)
+                ?.optJSONObject("receipt")?.optString("status") == "rejected" } == true
         val ids = LocalModelAgentToolPolicy.toolIds(access != null, repairing, interactiveBrowser)
         val registry = AgentPhoneNativeToolCatalog.defaultRegistry(
             context = context.applicationContext,
@@ -133,12 +137,16 @@ internal object LocalModelWebToolRunner {
         restoreSavedRequest: Boolean = false
     ): LocalModelWebToolCompletion {
         val browserStore = AgentLocalBrowserDispatchStore(context)
-        if (browserDispatch != null) require(!managedTeam && collaborationSourceMessageId == null &&
+        if (browserDispatch != null) require(managedTeam == (browserDispatch.managedOwner != null) &&
+            collaborationSourceMessageId == browserDispatch.managedOwner?.let { browserDispatch.identity.sourceMessageId } &&
             progressIdentity == browserDispatch.identity && browserStore.owned(browserDispatch, restoreSavedRequest)) {
             "Local browser dispatch no longer owns its original Run"
         }
         require(!restoreSavedRequest || browserDispatch != null)
-        val registry = registry(context, conversationId, turnId, collaborationSourceMessageId, browserDispatch != null)
+        if (restoreSavedRequest && browserDispatch?.managedOwner != null &&
+            browserStore.managedState(browserDispatch) != AgentManagedBrowserState.READY)
+            throw AgentModelLoopRecoveryException("managed_browser_not_ready_on_restore")
+        val registry = registry(context, conversationId, turnId, collaborationSourceMessageId, browserDispatch != null, browserDispatch?.managedOwner)
         val availableCatalog = registry.availableCatalog()
         val contractCatalog = if (progressIdentity != null) registry.registeredContractCatalog() else availableCatalog
         val progress = progressIdentity?.let { identity ->
@@ -161,6 +169,8 @@ internal object LocalModelWebToolRunner {
                 collaborationSourceMessageId, availableCatalog.manifest.sha256, CodexStyleResponsePolicy.prompt(context))
             val catalog = if (saved.catalogBinding == LocalModelLoopContinuation.REGISTERED_CONTRACTS)
                 contractCatalog else availableCatalog
+            if (saved.collaborationSourceMessageId != collaborationSourceMessageId)
+                throw AgentModelLoopRecoveryException("local_model_saved_member_changed")
             val localSession = LocalModelWebToolSession(context, saved.preferredProfileId,
                 saved.hasAttachments, saved.scope.task).also { session = it }
             AgentModelToolLoop(
@@ -192,7 +202,9 @@ internal object LocalModelWebToolRunner {
         cancellation: AgentNativeToolCancellationToken): LocalModelWebToolCompletion {
         val id = dispatch.identity
         return run(context, "", "", false, id.taskId, id.conversationId, id.turnId, id.taskId,
-            cancellationToken = cancellation, progressIdentity = id, browserDispatch = dispatch, restoreSavedRequest = true)
+            collaborationSourceMessageId = dispatch.managedOwner?.let { id.sourceMessageId },
+            cancellationToken = cancellation, progressIdentity = id, managedTeam = dispatch.managedOwner != null,
+            browserDispatch = dispatch, restoreSavedRequest = true)
     }
 }
 

@@ -14,7 +14,8 @@ internal data class AgentLocalBrowserDispatch(
     val startedAtMillis: Long,
     val observedContextIds: Set<String> = emptySet(),
     val planBinding: String = "",
-    val state: String = "pending"
+    val state: String = "pending",
+    val managedOwner: AgentManagedBrowserOwner? = null
 ) {
     val scope get() = LocalModelLoopContinuation.scope(identity)
     val key get() = scope.loop
@@ -68,7 +69,8 @@ internal object AgentLocalBrowserDispatchPolicy {
             record.turnId == scope.turn && record.taskId == scope.task && record.workspaceId == scope.workspace &&
             record.callerId == scope.caller && record.runWorkspaceId == dispatch.runWorkspaceId &&
             record.runSessionId == dispatch.runSessionId && record.actionPlanBinding.isBlank() &&
-            record.collaborationSourceMessageId == null
+            record.managedOwnerRunId == dispatch.managedOwner?.ownerRunId.orEmpty() &&
+            record.collaborationSourceMessageId == dispatch.managedOwner?.let { dispatch.identity.sourceMessageId }
     }
 }
 
@@ -76,6 +78,28 @@ internal object AgentLocalBrowserDispatchPolicy {
 internal class AgentLocalBrowserDispatchStore(context: Context,
     private val directory: File = File(context.noBackupFilesDir, "local-browser-dispatches")) {
     private val app = context.applicationContext
+
+    fun registerManagedIfOwned(identity: AgentLocalDispatchIdentity, label: String, startedAt: Long,
+        observedIds: Set<String>, journal: EncryptedAgentModelLoopJournal = EncryptedAgentModelLoopJournal(app)): AgentLocalBrowserDispatch? {
+        load(LocalModelLoopContinuation.scope(identity).loop)?.let {
+            return it.takeIf { saved -> saved.identity == identity && saved.managedOwner != null && owned(saved) }
+        }
+        val scope = LocalModelLoopContinuation.scope(identity)
+        // Never broaden the immutable catalog of an already-started member loop, even before its first inference.
+        if (journal.hasRecords(scope) || journal.hasOperation(scope, LocalModelLoopContinuationStore.OPERATION)) return null
+        val owner = AgentManagedBrowserOwners(app).capture(identity) ?: return null
+        if (owner.groupId.isNotBlank()) {
+            val access = CollaborationEvidenceLedger(app).binding(identity.sourceMessageId, identity.conversationId, identity.turnId)
+                ?: return null
+            if (CollaborationResearchWorkspace(app).publicationCheckpoint(access)?.optJSONObject("receipt")?.optString("status") == "rejected")
+                return null
+        }
+        return register(AgentLocalBrowserDispatch(identity, "", "", label, startedAt, observedIds, managedOwner = owner))
+    }
+
+    fun managedState(dispatch: AgentLocalBrowserDispatch): AgentManagedBrowserState? = dispatch.managedOwner?.let {
+        AgentManagedBrowserOwners(app).state(it, dispatch.identity)
+    }
 
     fun registerIfOwned(identity: AgentLocalDispatchIdentity, label: String, startedAt: Long,
         observedIds: Set<String>): AgentLocalBrowserDispatch? {
@@ -91,6 +115,8 @@ internal class AgentLocalBrowserDispatchStore(context: Context,
     fun owned(dispatch: AgentLocalBrowserDispatch, pending: Boolean = false): Boolean {
         val latest = load(dispatch.key) ?: return false
         if (latest.terminal || latest.copy(state = dispatch.state) != dispatch) return false
+        if (latest.managedOwner != null) return managedState(latest) in
+            setOf(AgentManagedBrowserState.READY, AgentManagedBrowserState.PAUSED)
         val workspace = EncryptedAgentWorkspaceStore(app).find(dispatch.runWorkspaceId)
         return AgentTranscriptStore(app).conversation(dispatch.identity.conversationId) != null &&
             AgentLocalBrowserDispatchPolicy.owns(latest, workspace,
@@ -98,12 +124,14 @@ internal class AgentLocalBrowserDispatchStore(context: Context,
     }
 
     fun checkpoint(dispatch: AgentLocalBrowserDispatch) {
+        if (dispatch.managedOwner != null) return
         AgentTaskRuntime.supervisor(app).checkpoint(dispatch.runWorkspaceId, AgentLocalBrowserDispatchPolicy.CHECKPOINT,
             stateJson = JSONObject().put("dispatch", dispatch.key).put("action", dispatch.identity.actionId).toString())
     }
 
     /** Only a previous-process in-flight dispatch with its saved anchor may regain its pending reply binding. */
     fun restorePendingBinding(dispatch: AgentLocalBrowserDispatch): Boolean {
+        if (dispatch.managedOwner != null) return owned(dispatch, pending = true)
         val workspace = EncryptedAgentWorkspaceStore(app).find(dispatch.runWorkspaceId) ?: return false
         val sessions = SharedPreferencesAgentSessionStore(app, "task:${dispatch.runWorkspaceId}")
         val session = sessions.load() ?: return false
@@ -136,7 +164,7 @@ internal class AgentLocalBrowserDispatchStore(context: Context,
         val dispatch = load(record.modelLoopId) ?: return record
         if (!owned(dispatch)) return record
         val bound = record.copy(localDispatchId = dispatch.key, runWorkspaceId = dispatch.runWorkspaceId,
-            runSessionId = dispatch.runSessionId)
+            runSessionId = dispatch.runSessionId, managedOwnerRunId = dispatch.managedOwner?.ownerRunId.orEmpty())
         return if (AgentLocalBrowserDispatchPolicy.matches(dispatch, bound)) bound else record
     }
 
@@ -153,8 +181,11 @@ internal class AgentLocalBrowserDispatchStore(context: Context,
             AgentLocalBrowserDispatch(id, json.getString("run_workspace"), json.getString("run_session"),
                 json.getString("target"), json.getLong("started"), json.getJSONArray("observed").let { array ->
                     (0 until array.length()).mapTo(linkedSetOf()) { array.getString(it) }
-                }, planBinding = json.getString("plan_binding"), state = json.getString("state")).also {
-                check(it.key == key && it.state in STATES && it.runWorkspaceId.isNotBlank() && it.runSessionId.isNotBlank())
+                }, planBinding = json.getString("plan_binding"), state = json.getString("state"),
+                managedOwner = if (json.has("managed_owner")) AgentManagedBrowserOwner.fromJson(json.getJSONObject("managed_owner")) else null).also {
+                check(it.key == key && it.state in STATES && if (it.managedOwner == null)
+                    it.runWorkspaceId.isNotBlank() && it.runSessionId.isNotBlank() else
+                    it.runWorkspaceId.isBlank() && it.runSessionId.isBlank() && it.planBinding.isBlank())
             }
         } finally { bytes.fill(0) }
     }
@@ -182,6 +213,7 @@ internal class AgentLocalBrowserDispatchStore(context: Context,
             .put("target", dispatch.targetLabel).put("started", dispatch.startedAtMillis)
             .put("plan_binding", dispatch.planBinding)
             .put("observed", JSONArray(dispatch.observedContextIds.toList())).put("state", dispatch.state)
+        dispatch.managedOwner?.let { json.put("managed_owner", it.toJson()) }
         val bytes = json.toString().toByteArray()
         val encrypted = try { AgentStorageCipher.encryptBinary(bytes, aad(dispatch.key)) } finally { bytes.fill(0) }
         val file = file(dispatch.key)

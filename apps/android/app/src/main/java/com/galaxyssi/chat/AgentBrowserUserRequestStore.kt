@@ -33,10 +33,12 @@ internal data class AgentBrowserUserRequest(
     val actionPlanBinding: String = "",
     val runtimeInstanceId: String = "",
     val localDispatchId: String = "",
-    val collaborationSourceMessageId: Long? = null
+    val collaborationSourceMessageId: Long? = null,
+    val managedOwnerRunId: String = ""
 ) {
     val settled: Boolean get() = state in setOf("returned", "interrupted")
-    val pendingRunWake: Boolean get() = settled && runWorkspaceId.isNotBlank() && !runWakeAcknowledged
+    val pendingRunWake: Boolean get() = settled &&
+        (runWorkspaceId.isNotBlank() || managedOwnerRunId.isNotBlank() && localDispatchId.isNotBlank()) && !runWakeAcknowledged
 
     fun afterHostRestart(currentProcessId: String): AgentBrowserUserRequest {
         require(currentProcessId.isNotBlank())
@@ -79,6 +81,7 @@ internal data class AgentBrowserUserRequest(
         .put("runtime_instance", runtimeInstanceId)
         .put("local_dispatch", localDispatchId)
         .put("collaboration_source", collaborationSourceMessageId ?: JSONObject.NULL)
+        .put("managed_owner", managedOwnerRunId)
 
     companion object {
         fun fromJson(json: JSONObject) = AgentBrowserUserRequest(json.getString("key"), json.getString("generation"),
@@ -90,7 +93,8 @@ internal data class AgentBrowserUserRequest(
             json.optBoolean("model_observation_committed"), json.optString("action_plan"),
             json.optInt("action_plan_revision", -1), json.optString("action"), json.optString("action_plan_binding"),
             json.optString("runtime_instance"), json.optString("local_dispatch"),
-            if (json.has("collaboration_source") && !json.isNull("collaboration_source")) json.getLong("collaboration_source") else null)
+            if (json.has("collaboration_source") && !json.isNull("collaboration_source")) json.getLong("collaboration_source") else null,
+            json.optString("managed_owner"))
 
         fun key(scope: String, browser: String) = AgentNativeJsonCodec.sha256(mapOf("scope" to scope, "browser" to browser))
     }

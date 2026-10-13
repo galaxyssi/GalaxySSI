@@ -71,7 +71,7 @@ internal class AgentBrowserUserControl(
                     } }
                     .also {
                         if ((it.actionPlanBinding.isNotBlank() || it.callerId == LocalModelLoopContinuation.CALLER) &&
-                            it.runWorkspaceId.isBlank())
+                            it.runWorkspaceId.isBlank() && it.managedOwnerRunId.isBlank())
                             throw AgentBrowserControlFailure("browser_run_binding_required", mapOf("executed" to false))
                         store.save(it, replaceSettled = true)
                     }
@@ -101,7 +101,7 @@ internal class AgentBrowserUserControl(
                 }
                 else scheduleRunWake(record)
                 AgentNativeToolExecutionResult.success(state.toNativeObject() +
-                    mapOf("durable_resume_available" to record.runWorkspaceId.isNotBlank(),
+                    mapOf("durable_resume_available" to (record.runWorkspaceId.isNotBlank() || record.managedOwnerRunId.isNotBlank()),
                         "host_wait_key" to record.key, "host_wait_generation" to record.generation),
                     "Browser user-control state observed")
             }

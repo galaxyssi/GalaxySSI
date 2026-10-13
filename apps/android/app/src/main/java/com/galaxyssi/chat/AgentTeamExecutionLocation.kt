@@ -82,16 +82,23 @@ internal class AgentTeamExecutionLocations(context: Context) {
     }
 
     fun state(access: CollaborationWorkspaceAccess): Pair<AgentTeamExecutionCheckpoint, AgentTeamExecutionSnapshot> {
-        val location = synchronized(LOCK) { read(access.runId) }
-        location?.requireAccess(access)
+        return state(access.runId, access.groupId, access.turnId)
+    }
+
+    fun state(runId: String, conversationId: String, turnId: String,
+        taskId: String? = null): Pair<AgentTeamExecutionCheckpoint, AgentTeamExecutionSnapshot> {
+        val location = synchronized(LOCK) { read(runId) }
+        require(location == null || location.conversationId == conversationId && location.turnId == turnId &&
+            (taskId == null || location.taskId == taskId)) { "Execution location belongs to another task" }
         // An absent legacy binding uses the original store. A bad/missing mapped store never falls back.
         val store = EncryptedAgentTeamExecutionStore(app,
             AgentEncryptedDatabase(app, location?.namespace ?: AgentTeamExecutionLocation.DEFAULT_NAMESPACE))
-        val (checkpoint, snapshot) = requireNotNull(store.executionState(access.runId)) { "Team checkpoint is unavailable" }
+        val (checkpoint, snapshot) = requireNotNull(store.executionState(runId)) { "Team checkpoint is unavailable" }
         if (location != null) check(location == AgentTeamExecutionLocation.from(location.namespace, checkpoint.definition, checkpoint.request)) {
             "Execution checkpoint owner differs from its registered location"
         }
-        require(checkpoint.request.conversationId == access.groupId && checkpoint.request.messageId == access.turnId) {
+        require(checkpoint.request.runId == runId && checkpoint.request.conversationId == conversationId &&
+            checkpoint.request.messageId == turnId && (taskId == null || checkpoint.request.taskId == taskId)) {
             "Team checkpoint belongs to another task"
         }
         return checkpoint to snapshot
