@@ -86,9 +86,13 @@ data class AgentModelMessage(
     val role: AgentModelMessageRole,
     val text: String = "",
     val toolCalls: List<AgentModelToolCall> = emptyList(),
-    val toolResult: AgentModelToolResultContent? = null
+    val toolResult: AgentModelToolResultContent? = null,
+    val continuation: AgentProviderContinuation? = null
 ) {
     init {
+        require(continuation == null || role == AgentModelMessageRole.ASSISTANT) {
+            "Only assistant messages may contain provider continuation state"
+        }
         require(role == AgentModelMessageRole.ASSISTANT || toolCalls.isEmpty()) {
             "Only assistant messages may contain tool calls"
         }
@@ -122,7 +126,8 @@ data class AgentModelResponse(
     val assistantText: String = "",
     val toolCalls: List<AgentModelToolCall> = emptyList(),
     val usage: AgentModelUsage = AgentModelUsage(),
-    val providerMetadata: AgentNativeJsonObject = emptyMap()
+    val providerMetadata: AgentNativeJsonObject = emptyMap(),
+    val continuation: AgentProviderContinuation? = null
 ) {
     init {
         require(assistantText.isNotBlank() || toolCalls.isNotEmpty()) {
@@ -545,7 +550,8 @@ class AgentModelToolLoop(
             appendMessage(state, AgentModelMessage(
                 role = AgentModelMessageRole.ASSISTANT,
                 text = response.assistantText,
-                toolCalls = admission.calls
+                toolCalls = admission.calls,
+                continuation = response.continuation?.forHistory(response, admission.calls)
             ))
             emit(
                 state,

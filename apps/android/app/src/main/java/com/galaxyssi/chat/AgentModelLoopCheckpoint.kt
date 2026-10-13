@@ -44,15 +44,18 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
             val value = map(record["response"])
             val usage = map(value["usage"])
             AgentModelResponse(value["text"] as String, list(value["calls"]).map { call(map(it)) },
-                AgentModelUsage(number(usage["input"]), number(usage["output"])), map(value["metadata"]))
+                AgentModelUsage(number(usage["input"]), number(usage["output"])), map(value["metadata"]),
+                value["continuation"]?.let { AgentProviderContinuation.restore(map(it)) })
         }
     }
 
     fun response(request: AgentModelRequest, response: AgentModelResponse) = records.write("model:${request.round}",
         encode(mapOf("binding" to modelBinding(request), "call_admission_version" to 1,
-            "response" to mapOf("text" to response.assistantText,
+            "response" to mutableMapOf<String, Any?>("text" to response.assistantText,
             "calls" to response.toolCalls.map(::callValue), "metadata" to response.providerMetadata,
-            "usage" to mapOf("input" to response.usage.inputTokens, "output" to response.usage.outputTokens)))))
+            "usage" to mapOf("input" to response.usage.inputTokens, "output" to response.usage.outputTokens)).apply {
+                response.continuation?.let { put("continuation", it.record()) }
+            })))
 
     data class Invocation(val operation: String, val binding: String, val id: String,
         val result: AgentNativeToolResult?, val sequence: Long)
@@ -122,7 +125,7 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
                 "message" to it.message, "error" to it.error?.let { error -> mapOf("code" to error.code,
                     "message" to error.message, "retryable" to error.retryable, "details" to error.details) },
                 "invocation" to it.invocationId, "retries" to it.retryCount, "receipt" to it.receipt, "native" to it.nativeResult)
-        })
+        }).toMutableMap().apply { message.continuation?.let { put("continuation", it.record()) } }
 
     private fun message(value: Map<String, Any?>): AgentModelMessage {
         val result = value["result"]?.let { raw ->
@@ -135,7 +138,8 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
                 }, r["invocation"] as? String, number(r["retries"]).toInt(), r["receipt"]?.let(::map), r["native"]?.let(::map))
         }
         return AgentModelMessage(AgentModelMessageRole.valueOf(value["role"] as String), value["text"] as String,
-            list(value["calls"]).map { call(map(it)) }, result)
+            list(value["calls"]).map { call(map(it)) }, result,
+            value["continuation"]?.let { AgentProviderContinuation.restore(map(it)) })
     }
 
     private fun encode(value: Any?) = AgentNativeJsonCodec.stringify(value)
