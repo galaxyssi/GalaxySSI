@@ -9,7 +9,16 @@ const net = require('node:net');
 const http = require('node:http');
 const { randomUUID, randomBytes, createHash, createHmac, createDecipheriv } = require('node:crypto');
 const { spawn } = require('node:child_process');
-const { rpc, equalToken, safeFailure, consumeRequestEnvironment, consumeHostCapability, existingEndpoint, DRIVER_VERSION } = require('./browser-session-cli.cjs');
+const { rpc, equalToken, safeFailure, consumeRequestEnvironment, consumeHostCapability, consumeOperationId,
+  existingEndpoint, DRIVER_VERSION } = require('./browser-session-cli.cjs');
+
+test('host-assigned operation ID is consumed before browser service creation', () => {
+  const environment = { GALAXYSSI_BROWSER_OPERATION_ID: 'a'.repeat(64), KEEP: 'present' };
+  assert.equal(consumeOperationId(environment), 'a'.repeat(64));
+  assert.deepEqual(environment, { KEEP: 'present' });
+  assert.throws(() => consumeOperationId({ GALAXYSSI_BROWSER_OPERATION_ID: '../private' }),
+    { code: 'invalid_browser_request_id' });
+});
 
 test('App host authority is consumed before normal client execution and never written as an endpoint', () => {
   const token = randomBytes(32).toString('hex');
@@ -57,8 +66,8 @@ test('an observation timeout sends one request and does not automatically restar
     for (const socket of sockets) socket.destroy();
     await new Promise(resolve => server.close(resolve));
   });
-  await assert.rejects(rpc({ socket: socketName, token: 'a'.repeat(64) }, { operation: 'click' }, 100),
-    { code: 'browser_observation_timeout' });
+  await assert.rejects(rpc({ socket: socketName, token: 'a'.repeat(64) }, { operation: 'click' }, 100, 'original-request'),
+    error => error.code === 'browser_observation_timeout' && error.details.request_id === 'original-request');
   assert.equal(requests, 1);
 });
 
@@ -93,9 +102,23 @@ test('CLI integration retains a live browser across independent tool processes a
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'galaxyssi-browser-cli-'));
     let navigationStarted;
     const started = new Promise(resolve => { navigationStarted = resolve; });
+    let commitStarted;
+    const committing = new Promise(resolve => { commitStarted = resolve; });
+    let finishCommit;
+    let commits = 0;
     const server = http.createServer((req, res) => {
       if (req.url === '/hang') { navigationStarted(); return; }
       res.setHeader('Content-Type', 'text/html');
+      if (req.url === '/reconcile') {
+        res.end('<form method="POST" action="/commit"><button>Commit once</button></form>');
+        return;
+      }
+      if (req.url === '/commit' && req.method === 'POST') {
+        commits++;
+        finishCommit = () => res.end('<h1>Server committed once</h1>');
+        commitStarted();
+        return;
+      }
       if (req.url === '/signin') {
         res.end('<form method="POST" action="/login"><label>Account<input name="account"></label>' +
           '<label>Password<input type="password" name="password"></label><button>Sign in</button></form>');
@@ -128,10 +151,11 @@ test('CLI integration retains a live browser across independent tool processes a
       GALAXYSSI_BROWSER_EVENT_WORKSPACE_ROOT: workspaceRoot,
       GALAXYSSI_BROWSER_EXECUTABLE: process.env.GALAXYSSI_BROWSER_TEST_EXECUTABLE || '' };
     const scope = 'd'.repeat(64);
-    async function command(input, selectedScope = scope, host = false) {
+    async function command(input, selectedScope = scope, host = false, operationId) {
       return new Promise((resolve, reject) => {
         const child = spawn(process.execPath, [path.join(__dirname, 'browser-session-cli.cjs'), ...(host ? ['host'] : []), selectedScope],
-          { env: { ...env, GALAXYSSI_BROWSER_REQUEST: JSON.stringify(input) }, windowsHide: true });
+          { env: { ...env, GALAXYSSI_BROWSER_REQUEST: JSON.stringify(input),
+            ...(operationId ? { GALAXYSSI_BROWSER_OPERATION_ID: operationId } : {}) }, windowsHide: true });
         let stdout = ''; let stderr = '';
         child.stdout.on('data', chunk => { stdout += chunk; });
         child.stderr.on('data', chunk => { stderr += chunk; });
@@ -165,6 +189,49 @@ test('CLI integration retains a live browser across independent tool processes a
     assert.equal(fs.existsSync(path.join(root, scope, 'host-endpoint.json')), false);
     assert.ok(!fs.readFileSync(path.join(root, scope, 'endpoint.json'), 'utf8').includes(hostToken));
     await assert.rejects(existingEndpoint(path.join(root, scope), true), { code: 'browser_host_capability_missing' });
+
+    await t.test('lost mutation response is reconciled by request ID without repeating the server effect', async () => {
+      const creationId = randomUUID();
+      const created = await command({ operation: 'create', url: `http://127.0.0.1:${server.address().port}/reconcile` },
+        scope, false, creationId);
+      assert.equal(created.ok, true);
+      const page = { session_id: created.result.session_id, page_id: created.result.page_id };
+      const creation = await command({ operation: 'operation_status', request_id: creationId });
+      assert.equal(creation.result.state, 'completed');
+      assert.equal(creation.result.session_id, page.session_id);
+      const view = await command({ ...page, operation: 'observe' });
+      const button = view.result.controls.find(node => node.label === 'Commit once');
+      const id = randomUUID();
+      const mutation = rpc(endpoint, { ...page, operation: 'click', node_id: button.node_id,
+        revision: view.result.revision }, 1000, id);
+      // Attach the rejection observer immediately; the service continues after this socket times out.
+      const timedOut = assert.rejects(mutation, error =>
+        error.code === 'browser_observation_timeout' && error.details.request_id === id);
+      await Promise.race([committing, new Promise((_, reject) => {
+        const timer = setTimeout(() => reject(new Error('Server did not observe the mutation')), 5000); timer.unref();
+      })]);
+      await timedOut;
+      assert.equal(commits, 1);
+      assert.equal((await command({ operation: 'operation_status', request_id: id })).result.state, 'running');
+      const duplicate = await rpc(endpoint, { ...page, operation: 'click', node_id: button.node_id,
+        revision: view.result.revision }, 5000, id);
+      assert.equal(duplicate.error.code, 'browser_request_id_reused');
+      finishCommit();
+      const observed = await command({ ...page, operation: 'observe' });
+      assert.match(observed.result.text, /Server committed once/);
+      const settled = await command({ operation: 'operation_status', request_id: id });
+      assert.equal(settled.result.state, 'completed');
+      assert.equal(settled.result.business_success_verified, false);
+      assert.equal(settled.result.verification_required, true);
+      assert.equal((await rpc(endpoint, { ...page, operation: 'navigate', url: 'https://example.test' }, 5000, id)).error.code,
+        'browser_request_id_reused');
+      assert.equal(commits, 1);
+      await command({ operation: 'create' }, 'e'.repeat(64));
+      const isolated = await command({ operation: 'operation_status', request_id: id }, 'e'.repeat(64));
+      assert.equal(isolated.result.state, 'unknown');
+      assert.equal(isolated.result.missing_receipt_means_not_executed, false);
+      assert.ok(!JSON.stringify(settled).includes('Server committed once'));
+    });
 
     await t.test('model IPC cannot acquire, operate or release host user control', async () => {
       for (const operation of ['human_control_begin', 'human_control_execute', 'human_control_finish']) {
@@ -221,7 +288,7 @@ test('CLI integration retains a live browser across independent tool processes a
     assert.equal(after.ok, true);
     assert.equal(JSON.parse(fs.readFileSync(path.join(root, scope, 'endpoint.json'), 'utf8')).pid, endpoint.pid);
     const otherScope = await command({ ...ids, operation: 'observe' }, 'e'.repeat(64));
-    assert.equal(otherScope.error.code, 'session_lost');
+    assert.equal(otherScope.error.code, 'session_not_found');
     const before = fs.readFileSync(path.join(root, scope, 'endpoint.json'), 'utf8');
     assert.equal((await rpc(endpoint, { operation: 'ping' })).ok, true);
     assert.equal(fs.readFileSync(path.join(root, scope, 'endpoint.json'), 'utf8'), before);

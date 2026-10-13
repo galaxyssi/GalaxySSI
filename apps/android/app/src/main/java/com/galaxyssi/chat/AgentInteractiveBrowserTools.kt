@@ -31,10 +31,10 @@ internal object AgentInteractiveBrowserTools {
     ): List<AgentNativeToolDefinition> = listOf(false, true).map { mutation ->
         val id = if (mutation) ACT else OBSERVE
         val operations = if (mutation) listOf("create", "navigate", "back", "click", "fill", "select", "dialog", "close", "request_user_control")
-            else listOf("observe", "pages", "screenshot", "wait_for_user")
+            else listOf("observe", "pages", "screenshot", "wait_for_user", "operation_status")
         AgentNativeToolDefinition(
             descriptor = AgentNativeToolDescriptor(
-                id = id, version = "1.1.0", title = if (mutation) "Operate an interactive browser" else "Observe an interactive browser",
+                id = id, version = "1.2.0", title = if (mutation) "Operate an interactive browser" else "Observe an interactive browser",
                 description = "Real Playwright browser in phone Linux. create returns an isolated live session; cookies persist within it. " +
                     "Observe before acting; click/fill/select require the observed revision and node_id. Choose frame_id for iframe controls. " +
                     "Inspect results to verify login, pagination and task success. User-only authentication requires user takeover, not bypass. " +
@@ -42,11 +42,14 @@ internal object AgentInteractiveBrowserTools {
                     "It opens the same browser for the user and returns handoff_id. A supervised planner yields durably until control returns; do not poll the model. " +
                     "Other callers can use wait_for_user to subscribe without accessing credentials. " +
                     "After control returns, observe again; completion is not proof of login or business success. " +
+                    "An unobserved outcome includes request_id; query operation_status through browser.observe, then inspect the page. " +
+                    "Running requests must not be resubmitted; completed receipts do not prove business success. Missing receipts do not prove non-execution. " +
                     "Install browser-automation if its launcher is missing; static browser.session tools do not support login.",
                 location = AgentNativeToolLocation.PHONE,
                 inputSchema = AgentNativeJsonSchema.objectSchema(
                     properties = mapOf(
                         "operation" to AgentNativeJsonSchema.string(enumValues = operations),
+                        "request_id" to AgentNativeJsonSchema.string(maxLength = 160),
                         "session_id" to AgentNativeJsonSchema.string(maxLength = 128),
                         "page_id" to AgentNativeJsonSchema.string(maxLength = 128),
                         "frame_id" to AgentNativeJsonSchema.string(maxLength = 128),
@@ -82,7 +85,14 @@ internal object AgentInteractiveBrowserTools {
                         error.message ?: "Check the browser input and conversation scope.",
                         details = mapOf("executed" to false, "goal_terminal" to false))
                 }
-                val response = execute(request)
+                val response = try { execute(request) }
+                catch (error: Exception) {
+                    if (error is AgentNativeToolCancelledException || error is java.util.concurrent.CancellationException ||
+                        error is InterruptedException) throw error
+                    return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
+                        "browser_result_unobserved", "The runtime did not return a browser outcome. Reconcile this operation before repeating a mutation.",
+                        details = reconciliationDetails(invocation, mutation) + mapOf("goal_terminal" to false))
+                }
                 if (response.exitCode == 127) return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
                     "browser_runtime_missing", "Install or update browser-automation and node-js, then inspect readiness.",
                     details = mapOf("executed" to false, "goal_terminal" to false, "required_packs" to listOf("browser-automation", "node-js"),
@@ -91,14 +101,17 @@ internal object AgentInteractiveBrowserTools {
                 val envelope = runCatching { JSONObject(response.stdout.trim()) }.getOrNull()
                     ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
                         "browser_result_unobserved", "No structured browser outcome was observed. Inspect the live session before repeating a mutation.",
-                        details = mapOf("outcome_unknown" to mutation, "goal_terminal" to false, "exit_code" to response.exitCode))
+                        details = reconciliationDetails(invocation, mutation) + mapOf("goal_terminal" to false, "exit_code" to response.exitCode))
                 if (envelope.optBoolean("ok", false)) {
-                    AgentNativeToolExecutionResult.success(envelope.optJSONObject("result").toNativeObject(), "Browser observation received")
+                    AgentNativeToolExecutionResult.success(mapOf("request_id" to operationId(invocation.context)) +
+                        envelope.optJSONObject("result").toNativeObject(), "Browser observation received")
                 } else {
                     val error = envelope.optJSONObject("error")
+                    val details = error?.optJSONObject("details").toNativeObject()
                     AgentNativeToolExecutionResult.failure(error?.optString("code").orEmpty().ifBlank { "browser_operation_failed" },
                         error?.optString("message").orEmpty().ifBlank { "Inspect the current browser state." },
-                        details = error?.optJSONObject("details").toNativeObject() + mapOf("goal_terminal" to false))
+                        details = reconciliationDetails(invocation, mutation && details["executed"] != false) +
+                            details + mapOf("goal_terminal" to false))
                 }
             },
             availabilityProvider = AgentNativeToolAvailabilityProvider { availability() },
@@ -112,6 +125,15 @@ internal object AgentInteractiveBrowserTools {
             "workspace" to context.attributes["workspace_id"].orEmpty(), "caller" to context.callerId))
     }
 
+    internal fun operationId(context: AgentNativeToolInvocationContext): String = AgentNativeJsonCodec.sha256(
+        mapOf("scope" to scope(context), "turn_id" to context.turnId, "invocation_id" to context.invocationId))
+
+    private fun reconciliationDetails(invocation: AgentNativeToolInvocation, mutation: Boolean): AgentNativeJsonObject = mapOf(
+        "request_id" to operationId(invocation.context), "outcome_unknown" to mutation,
+        "reconciliation_tool" to OBSERVE, "reconciliation_operation" to "operation_status",
+        "verification_required" to true
+    )
+
     internal fun runtimeRequest(invocation: AgentNativeToolInvocation, helpers: List<AgentRuntimeHostInput> = emptyList(),
         hostCapability: String? = null): AgentRuntimeExecutionRequest = AgentRuntimeExecutionRequest(
         language = AgentRuntimeLanguage.SHELL,
@@ -120,19 +142,22 @@ internal object AgentInteractiveBrowserTools {
         arguments = emptyList(), timeoutMillis = TIMEOUT, networkEnabled = true, artifactPaths = emptyList(),
         workspaceId = invocation.context.attributes["workspace_id"].orEmpty().ifBlank { invocation.context.conversationId },
         requestId = invocation.context.invocationId, cancellationToken = invocation.cancellationToken,
-        secretEnvironment = secretEnvironment(invocation.input, hostCapability),
+        secretEnvironment = secretEnvironment(invocation.input, hostCapability, operationId(invocation.context)),
         hostInputFiles = helpers,
         resourceLimits = AgentRuntimeResourceLimits(wallClockMillis = TIMEOUT, cpuMillis = TIMEOUT, maxOutputBytes = 4L * 1024 * 1024),
         workspaceMutationExpected = false, discoverBuildArtifacts = false,
         progressListener = { invocation.reportProgress(it.stage, it.message, it.percent, it.sequence, it.timestampMillis) }
     )
 
-    internal fun secretEnvironment(input: AgentNativeJsonObject, hostCapability: String? = null): Map<String, String> {
+    internal fun secretEnvironment(input: AgentNativeJsonObject, hostCapability: String? = null,
+        operationId: String? = null): Map<String, String> {
         val encoded = Base64.getEncoder().encodeToString(AgentNativeJsonCodec.stringify(input).toByteArray(Charsets.UTF_8))
         val chunks = encoded.chunked(4096)
-        require(chunks.size <= if (hostCapability == null) 31 else 30) { "Browser input exceeds the runtime's ephemeral request channel; use a smaller operation payload." }
+        val extraKeys = (if (hostCapability == null) 0 else 1) + (if (operationId == null) 0 else 1)
+        require(chunks.size <= 31 - extraKeys) { "Browser input exceeds the runtime's ephemeral request channel; use a smaller operation payload." }
         return buildMap {
             hostCapability?.let { put("GALAXYSSI_BROWSER_HOST_TOKEN", it) }
+            operationId?.let { put("GALAXYSSI_BROWSER_OPERATION_ID", it) }
             put("GALAXYSSI_BROWSER_REQUEST_COUNT", chunks.size.toString())
             chunks.forEachIndexed { index, chunk -> put("GALAXYSSI_BROWSER_REQUEST_$index", chunk) }
         }
@@ -140,7 +165,7 @@ internal object AgentInteractiveBrowserTools {
 
     internal fun stageHelpers(context: Context): List<AgentRuntimeHostInput> {
         val payloads = listOf("browser-session-engine.cjs", "browser-session-cli.cjs", "browser-user-control.cjs",
-            "browser-service-supervisor.cjs").associateWith { name ->
+            "browser-service-supervisor.cjs", "browser-operation-receipts.cjs").associateWith { name ->
             context.assets.open("interactive-browser/$name").use { it.readBytes() }
         }
         val digest = MessageDigest.getInstance("SHA-256")

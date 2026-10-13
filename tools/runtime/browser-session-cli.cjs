@@ -9,13 +9,14 @@ const { spawn } = require('node:child_process');
 const { randomUUID, randomBytes, timingSafeEqual, createHash } = require('node:crypto');
 const { BrowserSessions, BrowserOperationError } = require('./browser-session-engine.cjs');
 const { BrowserUserControl } = require('./browser-user-control.cjs');
+const { BrowserOperationReceipts } = require('./browser-operation-receipts.cjs');
 const { BrowserServiceMonitorClient, supervisedEventSink, superviseService } = require('./browser-service-supervisor.cjs');
 
 const MAX_REQUEST = 1024 * 1024;
 const MAX_RESPONSE = 4 * 1024 * 1024;
 const EVENT_WORKSPACE_ROOT = process.env.GALAXYSSI_BROWSER_EVENT_WORKSPACE_ROOT || '/workspace';
 const DRIVER_VERSION = createHash('sha256').update(['browser-session-cli.cjs', 'browser-session-engine.cjs',
-  'browser-user-control.cjs', 'browser-service-supervisor.cjs'].map(name => fs.readFileSync(path.join(__dirname, name))).reduce(
+  'browser-user-control.cjs', 'browser-service-supervisor.cjs', 'browser-operation-receipts.cjs'].map(name => fs.readFileSync(path.join(__dirname, name))).reduce(
     (all, bytes) => Buffer.concat([all, bytes]), Buffer.alloc(0))).digest('hex');
 
 function privateDirectory(directory) {
@@ -44,12 +45,12 @@ function rpc(endpoint, input, timeout = 180000, requestId) {
     };
     socket.setTimeout(timeout, () => finish(new BrowserOperationError('browser_observation_timeout',
       'Browser response was not observed. The operation may still be running; inspect the live session before resubmitting.',
-      { outcome_unknown: true })));
+      { outcome_unknown: true, request_id: requestId })));
     socket.on('connect', () => socket.write(`${JSON.stringify({ token: endpoint.token, input,
       ...(requestId ? { request_id: requestId } : {}) })}\n`));
     socket.on('error', error => finish(error));
     socket.on('end', () => finish(new BrowserOperationError('browser_connection_lost',
-      'Browser connection closed before the outcome was observed.', { outcome_unknown: true })));
+      'Browser connection closed before the outcome was observed.', { outcome_unknown: true, request_id: requestId })));
     socket.on('data', chunk => {
       value = Buffer.concat([value, chunk]);
       if (value.length > MAX_RESPONSE) return finish(new BrowserOperationError('browser_response_too_large', 'Browser response exceeded its transport limit.'));
@@ -101,6 +102,14 @@ function consumeHostCapability(environment) {
   return value;
 }
 
+function consumeOperationId(environment) {
+  const id = environment.GALAXYSSI_BROWSER_OPERATION_ID;
+  delete environment.GALAXYSSI_BROWSER_OPERATION_ID;
+  if (id !== undefined && !/^[a-zA-Z0-9_-]{1,160}$/.test(id)) throw new BrowserOperationError(
+    'invalid_browser_request_id', 'Browser operation request ID is invalid.', { executed: false });
+  return id;
+}
+
 async function serve(directory, socketName, token, configuredHostToken) {
   const { chromium } = require('playwright');
   const engine = new BrowserSessions(chromium, { launchOptions: process.env.GALAXYSSI_BROWSER_EXECUTABLE
@@ -110,6 +119,7 @@ async function serve(directory, socketName, token, configuredHostToken) {
   const userControl = new BrowserUserControl(engine, input => supervisedEventSink(input, hostToken, monitor, EVENT_WORKSPACE_ROOT));
   const sockets = new Set();
   const operations = new Map();
+  const receipts = new BrowserOperationReceipts();
   const cancelledRequests = new Map();
   let active = 0;
   let usedAt = Date.now();
@@ -137,7 +147,9 @@ async function serve(directory, socketName, token, configuredHostToken) {
             { executed: false, goal_terminal: false });
         }
         for (const [id, expiry] of cancelledRequests) if (expiry < Date.now()) cancelledRequests.delete(id);
-        if (request.input.operation === 'cancel_operation') {
+        if (request.input.operation === 'operation_status') {
+          socket.end(`${JSON.stringify({ ok: true, result: receipts.status(request.input.request_id) })}\n`);
+        } else if (request.input.operation === 'cancel_operation') {
           if (typeof request.input.request_id !== 'string' || request.input.request_id.length > 160 || !request.input.request_id) {
             throw new BrowserOperationError('invalid_cancellation_id', 'Provide the browser operation request ID.');
           }
@@ -155,7 +167,7 @@ async function serve(directory, socketName, token, configuredHostToken) {
           const requestId = request.request_id;
           if (requestId && cancelledRequests.has(requestId)) throw new BrowserOperationError('browser_operation_cancelled',
             'Browser operation was cancelled before dispatch.', { executed: false });
-          if (requestId && operations.has(requestId)) throw new BrowserOperationError('browser_request_id_reused', 'Inspect the existing browser operation instead of resubmitting its request ID.');
+          if (requestId) receipts.begin(requestId, request.input);
           if (requestId) operations.set(requestId, controller);
           const waiting = request.input.operation === 'wait_for_user';
           const disconnected = () => controller.abort();
@@ -166,10 +178,19 @@ async function serve(directory, socketName, token, configuredHostToken) {
             else if (request.input.operation.startsWith('human_control_')) result = await userControl.executeHost(request.input, controller.signal);
             else if (waiting) result = await userControl.wait(request.input, controller.signal);
             else result = await engine.execute(request.input, controller.signal);
-            socket.end(`${JSON.stringify({ ok: true, result })}\n`);
+            const envelope = { ok: true, result };
+            if (requestId) receipts.finish(requestId, envelope);
+            socket.end(`${JSON.stringify(envelope)}\n`);
           } catch (error) {
             if (error.code === 'browser_user_control_active') error.details = {
               ...error.details, ...userControl.stateForModel(request.input.session_id) };
+            if (requestId) {
+              const failure = safeFailure(error);
+              receipts.finish(requestId, failure);
+              failure.error.details.request_id = requestId;
+              socket.end(`${JSON.stringify(failure)}\n`);
+              return;
+            }
             throw error;
           } finally {
             if (waiting) socket.off('close', disconnected);
@@ -263,6 +284,7 @@ async function startService(directory, hostToken) {
     const env = { ...process.env, GALAXYSSI_BROWSER_RPC_TOKEN: randomBytes(32).toString('hex') };
     if (hostToken) env.GALAXYSSI_BROWSER_HOST_TOKEN = hostToken;
     consumeRequestEnvironment(env);
+    consumeOperationId(env);
     const child = spawn(process.execPath, [__filename, 'supervise', directory, socketName],
       { detached: true, stdio: 'ignore', windowsHide: true, env });
     let spawnError;
@@ -308,6 +330,7 @@ async function main() {
   const scope = process.argv[host ? 3 : 2];
   if (!/^[a-f0-9]{64}$/.test(scope || '')) throw new BrowserOperationError('invalid_scope', 'Browser scope must be a host-bound SHA-256 identifier.');
   const raw = consumeRequestEnvironment(process.env);
+  const requestId = consumeOperationId(process.env) || randomUUID();
   if (Buffer.byteLength(raw) > MAX_REQUEST) throw new BrowserOperationError('request_too_large', 'Browser operation exceeds its transport limit.');
   const input = JSON.parse(raw);
   const root = process.env.GALAXYSSI_BROWSER_STATE_ROOT || path.join(os.homedir(), '.local', 'state', 'galaxyssi-browser');
@@ -320,7 +343,6 @@ async function main() {
     endpoint = await startService(directory, hostToken);
   }
   // Explicit execution cancellation differs from losing an observation socket.
-  const requestId = randomUUID();
   const cancel = () => { void rpc(endpoint, { operation: 'cancel_operation', request_id: requestId }, 2000)
     .catch(() => {}).finally(() => { process.exitCode = 143; }); };
   process.once('SIGTERM', cancel); process.once('SIGINT', cancel);
@@ -332,4 +354,5 @@ async function main() {
 if (require.main === module) void main().catch(error => {
   process.stdout.write(`${JSON.stringify(safeFailure(error))}\n`); process.exitCode = 1;
 });
-module.exports = { rpc, equalToken, safeFailure, privateDirectory, consumeRequestEnvironment, consumeHostCapability, existingEndpoint, DRIVER_VERSION };
+module.exports = { rpc, equalToken, safeFailure, privateDirectory, consumeRequestEnvironment, consumeHostCapability,
+  consumeOperationId, existingEndpoint, DRIVER_VERSION };
