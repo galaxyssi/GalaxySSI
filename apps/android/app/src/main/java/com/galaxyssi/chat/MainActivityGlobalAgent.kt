@@ -768,6 +768,10 @@ internal fun MainActivity.globalTopicRelationLabel(kind: GlobalTopicRelationKind
 })
 
 internal fun MainActivity.showGlobalInsightsDialog() {
+    startActivity(android.content.Intent(this, ProactiveAttentionActivity::class.java))
+}
+
+internal fun MainActivity.showLegacyGlobalInsightsDialog() {
     val runtime = if (isGlobalSuperAgentRuntimeInitialized()) {
         globalSuperAgentRuntime
     } else GlobalSuperAgentRuntime.get(this)
@@ -967,10 +971,9 @@ internal fun MainActivity.refreshGlobalInsightIndicator(countOverride: Int? = nu
         return
     }
     val count = countOverride
-    agentInsightBar.visibility = if (count > 0) View.VISIBLE else View.GONE
-    if (count > 0) {
-        agentInsightText.text = resources.getQuantityString(R.plurals.agent_global_new_insights, count, count)
-    }
+    agentInsightBar.visibility = View.VISIBLE
+    agentInsightText.text = if (count > 0) getString(R.string.attention_unread_entry, count)
+        else getString(R.string.attention_discoveries)
 }
 
 internal fun MainActivity.showGlobalLearningDialog() {

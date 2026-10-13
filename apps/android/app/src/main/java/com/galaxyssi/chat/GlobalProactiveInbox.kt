@@ -105,7 +105,7 @@ object GlobalProactiveInboxPolicy {
         )
     }
 
-    private fun inboxKey(message: GlobalProactiveMessage): String = if (
+    internal fun inboxKey(message: GlobalProactiveMessage): String = if (
         message.target == GlobalProactiveTarget.GLOBAL_DIGEST && message.deliveryGroupId.isNotBlank()
     ) {
         "global-agent-digest:${message.deliveryGroupId}"

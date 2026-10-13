@@ -230,7 +230,7 @@ class AndroidCognitionWorker(
         (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
 
     private fun deliverInsights(runtime: GlobalSuperAgentRuntime) {
-        val delivered = runtime.deliverPending(AgentTranscriptStore(applicationContext))
+        val delivered = (runtime.deliverPending(AgentTranscriptStore(applicationContext)) + runtime.unnotifiedDeliveredMessages()).distinctBy { it.id }
         if (delivered.isEmpty()) return
         val candidate = runtime.notificationCandidateForDelivered(delivered) ?: return
         if (!AndroidCognitionNotificationCenter.notify(applicationContext, candidate)) return
@@ -258,7 +258,9 @@ class AndroidCognitionWorker(
 object AndroidCognitionNotificationCenter {
     const val WORK_NOTIFICATION_ID = 0x534101
     private const val INSIGHT_NOTIFICATION_ID = 0x534102
+    private const val ATTENTION_NOTIFICATION_ID = 0x534103
     private const val CHANNEL_ID = "galaxyssi_cognition"
+    private const val ATTENTION_CHANNEL_ID = "galaxyssi_attention_findings_v1"
 
     fun workingNotification(context: Context): Notification {
         ensureChannel(context)
@@ -273,6 +275,14 @@ object AndroidCognitionNotificationCenter {
 
     fun notify(context: Context, candidate: GlobalAgentNotificationCandidate): Boolean = runCatching {
         ensureChannel(context)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (!manager.areNotificationsEnabled()) return false
+        if (candidate.attention) manager.createNotificationChannel(NotificationChannel(
+            ATTENTION_CHANNEL_ID, context.getString(R.string.attention_notification_channel), NotificationManager.IMPORTANCE_HIGH
+        ))
+        val channel = if (candidate.attention) ATTENTION_CHANNEL_ID else CHANNEL_ID
+        val notificationId = if (candidate.attention) ATTENTION_NOTIFICATION_ID else INSIGHT_NOTIFICATION_ID
+        if (manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE) return false
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("galaxyssi_open_agent", true)
@@ -280,20 +290,21 @@ object AndroidCognitionNotificationCenter {
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            INSIGHT_NOTIFICATION_ID,
+            notificationId,
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = Notification.Builder(context, CHANNEL_ID)
+        val notification = Notification.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_tab_chat_filled)
             .setContentTitle(candidate.title)
             .setContentText(candidate.content)
             .setStyle(Notification.BigTextStyle().bigText(candidate.content))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setGroup(if (candidate.attention) "galaxyssi_attention" else "galaxyssi_cognition")
             .build()
         context.getSystemService(NotificationManager::class.java)
-            .notify(INSIGHT_NOTIFICATION_ID, notification)
+            .notify(notificationId, notification)
         true
     }.getOrDefault(false)
 

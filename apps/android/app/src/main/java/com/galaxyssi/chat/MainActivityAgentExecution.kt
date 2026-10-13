@@ -1744,7 +1744,13 @@ internal fun MainActivity.refreshGlobalAgentCognition() {
         }.getOrDefault(emptyList())
         if (delivered.isNotEmpty()) {
             runCatching {
-                globalSuperAgentRuntime.markNotified(delivered.map(GlobalProactiveMessage::id).toSet())
+                val attention = delivered.filter { it.sourceEventId.startsWith("research:${ProactiveAttentionPolicy.TASK_PREFIX}") }
+                globalSuperAgentRuntime.markNotified((delivered - attention.toSet()).map(GlobalProactiveMessage::id).toSet())
+                globalSuperAgentRuntime.notificationCandidateForDelivered(attention)?.let { candidate ->
+                    if (AndroidCognitionNotificationCenter.notify(this, candidate)) {
+                        globalSuperAgentRuntime.markNotified(candidate.messageIds)
+                    }
+                }
             }
         }
         runOnUiThread {

@@ -46,7 +46,9 @@ data class GlobalAgentNotificationCandidate(
     val title: String,
     val content: String,
     val conversationId: String,
-    val messageIds: Set<String>
+    val messageIds: Set<String>,
+    val attention: Boolean = false,
+    val important: Boolean = false
 )
 
 data class GlobalPromptContextSnapshot(
@@ -2423,7 +2425,10 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun processProactiveDiscoveryCycle(
         force: Boolean = false
-    ): GlobalProactiveDiscoveryCycleResult = proactiveDiscoveryCoordinator.processDue(force = force)
+    ): GlobalProactiveDiscoveryCycleResult {
+        ProactiveAttentionCoordinator(appContext).reconcile()
+        return proactiveDiscoveryCoordinator.processDue(force = force)
+    }
 
     fun proactiveDiscoveryState(): GlobalProactiveDiscoveryState = proactiveDiscoveryCoordinator.state()
 
@@ -2771,7 +2776,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                             message.deliveryLeaseExpiresAtMillis.takeIf { it > 0L }?.let(::add)
                         GlobalProactiveMessageStatus.PENDING,
                         GlobalProactiveMessageStatus.NOTIFIED -> {
-                            val eligibleAt = GlobalProactiveDeliveryPolicy.nextEligibleAtMillis(
+                            val eligibleAt = if (ProactiveAttentionPolicy.isAttention(message)) nowMillis else GlobalProactiveDeliveryPolicy.nextEligibleAtMillis(
                                 message,
                                 settings,
                                 profile,
@@ -2859,32 +2864,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         if (!settings.enabled || !settings.proactiveInsightsEnabled || !settings.notificationsEnabled) return null
         val messages = delivered.filter { it.notifiedAtMillis <= 0L && it.deliveredConversationId.isNotBlank() }
             .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
-        if (messages.isEmpty()) return null
-        val primary = messages.lastOrNull(GlobalProactiveMessage::urgent) ?: messages.last()
-        if (messages.size == 1) {
-            return GlobalAgentNotificationCandidate(
-                title = GlobalAgentText.productTitle(primary.title).ifBlank { "GalaxySSI" },
-                content = primary.content.take(240),
-                conversationId = primary.deliveredConversationId,
-                messageIds = setOf(primary.id)
-            )
-        }
-        val chinese = messages.any { GlobalAgentText.containsCjk(it.content) }
-        val title = if (chinese) {
-            "GalaxySSI \u6709 ${messages.size} \u6761\u65b0\u53d1\u73b0"
-        } else {
-            "GalaxySSI has ${messages.size} new insights"
-        }
-        val content = messages.asReversed()
-            .distinctBy { GlobalAgentText.normalize(it.topic) }
-            .take(3)
-            .joinToString(" \u00b7 ") { it.topic.ifBlank { it.content.take(48) } }
-        return GlobalAgentNotificationCandidate(
-            title = title,
-            content = content,
-            conversationId = primary.deliveredConversationId,
-            messageIds = messages.map(GlobalProactiveMessage::id).toSet()
-        )
+            .filter { ProactiveAttentionStore(appContext).allowsNotification(it) }
+        return GlobalProactiveNotificationPolicy.candidate(messages)
     }
 
     fun unnotifiedDeliveredMessages(limit: Int = 24): List<GlobalProactiveMessage> =
@@ -2896,6 +2877,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                     it.deliveredConversationId.isNotBlank()
             }
             .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
+            .filter { ProactiveAttentionStore(appContext).allowsNotification(it) }
             .sortedBy(GlobalProactiveMessage::deliveredAtMillis)
             .toList()
             .takeLast(limit.coerceIn(1, 100))
@@ -2918,10 +2900,13 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
         messages.asSequence()
             .filterNot { it.target == GlobalProactiveTarget.GLOBAL_DIGEST }
+            .filter { ProactiveAttentionStore(appContext).allows(it) }
             .forEach { message ->
                 val profile = adaptiveProfile()
                 val history = repository.interventionHistory()
-                if (!GlobalProactiveDeliveryPolicy.canDeliver(message, settings, profile, history, nowMillis)) {
+                // Saving an explicitly followed finding is independent of notification frequency.
+                if (!ProactiveAttentionPolicy.isAttention(message) &&
+                    !GlobalProactiveDeliveryPolicy.canDeliver(message, settings, profile, history, nowMillis)) {
                     return@forEach
                 }
                 val currentConversations = transcriptStore.conversations(includeArchived = true)
@@ -2971,7 +2956,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                     messageIds = setOf(message.id),
                     conversationId = route.conversationId,
                     deliveryGroupId = groupId,
-                    countBudget = claimed.none(GlobalProactiveMessage::deliveryBudgetCounted),
+                    countBudget = !ProactiveAttentionPolicy.isAttention(message) && claimed.none(GlobalProactiveMessage::deliveryBudgetCounted),
                     nowMillis = nowMillis
                 )
             }
