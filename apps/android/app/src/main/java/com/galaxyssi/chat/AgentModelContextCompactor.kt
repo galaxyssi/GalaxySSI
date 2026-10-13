@@ -17,11 +17,12 @@ internal class AgentModelContextCompactionSession(
     fun compact(
         messages: List<AgentModelMessage>,
         budget: ConversationContextBudget
-    ): CompactedAgentModelContext = AgentModelContextCompactor.compact(
-        messages = messages,
-        budget = budget,
-        messageEstimator = ::estimateMessage
-    )
+    ): CompactedAgentModelContext {
+        val current = IdentityHashMap<AgentModelMessage, Boolean>()
+        messages.forEach { current[it] = true }
+        estimates.keys.removeAll { !current.containsKey(it) }
+        return AgentModelContextCompactor.compact(messages, budget, ::estimateMessage)
+    }
 
     internal val cachedMessageCount: Int
         get() = estimates.size
@@ -77,8 +78,9 @@ object AgentModelContextCompactor {
                 block.containsCurrentContinuation ||
                 retainedBlocks < budget.minimumRecentGroups ||
                 block.containsOriginalOrLatestUserRequest || block === latestFailure ||
+                block.messages.any { it.role == AgentModelMessageRole.USER } ||
                 block.messages.any { message -> message.toolResult?.let { result ->
-                    result.error?.code == "effect_outcome_unknown" || AgentToolContextObservation.isLive(result)
+                    AgentToolContextObservation.isUncertain(result) || AgentToolContextObservation.isLive(result)
                 } == true }
             if (mustKeep || retainedTokens + blockTokens <= tailAllowance) {
                 retainedKeys += block.index

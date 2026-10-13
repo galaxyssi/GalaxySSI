@@ -45,7 +45,8 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
             val usage = map(value["usage"])
             AgentModelResponse(value["text"] as String, list(value["calls"]).map { call(map(it)) },
                 AgentModelUsage(number(usage["input"]), number(usage["output"])), map(value["metadata"]),
-                value["continuation"]?.let { AgentProviderContinuation.restore(map(it)) })
+                value["continuation"]?.let { AgentProviderContinuation.restore(map(it)) },
+                value["context_handoff"]?.let { AgentModelContextHandoff.restore(map(it)) })
         }
     }
 
@@ -55,6 +56,7 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
             "calls" to response.toolCalls.map(::callValue), "metadata" to response.providerMetadata,
             "usage" to mapOf("input" to response.usage.inputTokens, "output" to response.usage.outputTokens)).apply {
                 response.continuation?.let { put("continuation", it.record()) }
+                response.contextHandoff?.let { put("context_handoff", it.record()) }
             })))
 
     data class Invocation(val operation: String, val binding: String, val id: String,
@@ -125,7 +127,11 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
                 "message" to it.message, "error" to it.error?.let { error -> mapOf("code" to error.code,
                     "message" to error.message, "retryable" to error.retryable, "details" to error.details) },
                 "invocation" to it.invocationId, "retries" to it.retryCount, "receipt" to it.receipt, "native" to it.nativeResult)
-        }).toMutableMap().apply { message.continuation?.let { put("continuation", it.record()) } }
+        }).toMutableMap().apply {
+            message.continuation?.let { put("continuation", it.record()) }
+            message.contextHandoff?.let { put("context_handoff", it.record()) }
+            if (message.providerRoute.isNotBlank()) put("provider_route", message.providerRoute)
+        }
 
     private fun message(value: Map<String, Any?>): AgentModelMessage {
         val result = value["result"]?.let { raw ->
@@ -139,7 +145,9 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
         }
         return AgentModelMessage(AgentModelMessageRole.valueOf(value["role"] as String), value["text"] as String,
             list(value["calls"]).map { call(map(it)) }, result,
-            value["continuation"]?.let { AgentProviderContinuation.restore(map(it)) })
+            value["continuation"]?.let { AgentProviderContinuation.restore(map(it)) },
+            value["context_handoff"]?.let { AgentModelContextHandoff.restore(map(it)) },
+            value["provider_route"] as? String ?: "")
     }
 
     private fun encode(value: Any?) = AgentNativeJsonCodec.stringify(value)
