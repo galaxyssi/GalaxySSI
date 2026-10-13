@@ -113,7 +113,7 @@ class OpenAiCompatibleAgentModelToolProtocolAdapter(
                         .put(
                             "function",
                             JSONObject()
-                                .put("name", descriptor.id)
+                                .put("name", AgentModelToolWireNames.name(descriptor.id))
                                 .put("description", descriptor.modelVisibleDescription())
                                 .put("parameters", descriptor.inputSchema.document.toJsonObject())
                         )
@@ -144,7 +144,7 @@ class OpenAiCompatibleAgentModelToolProtocolAdapter(
                                         .put(
                                             "function",
                                             JSONObject()
-                                                .put("name", call.toolId)
+                                                .put("name", AgentModelToolWireNames.name(call.toolId))
                                                 .put("arguments", AgentNativeJsonCodec.stringify(call.arguments))
                                         )
                                 )
@@ -264,7 +264,7 @@ class AnthropicAgentModelToolProtocolAdapter(
             catalog.forEach { descriptor ->
                 put(
                     JSONObject()
-                        .put("name", descriptor.id)
+                        .put("name", AgentModelToolWireNames.name(descriptor.id))
                         .put("description", descriptor.modelVisibleDescription())
                         .put("input_schema", descriptor.inputSchema.document.toJsonObject())
                 )
@@ -303,7 +303,7 @@ class AnthropicAgentModelToolProtocolAdapter(
                             JSONObject()
                                 .put("type", "tool_use")
                                 .put("id", call.callId)
-                                .put("name", call.toolId)
+                                .put("name", AgentModelToolWireNames.name(call.toolId))
                                 .put("input", call.arguments.toJsonObject())
                         )
                     }
@@ -399,7 +399,7 @@ class GeminiAgentModelToolProtocolAdapter(
         catalog.forEach { descriptor ->
             declarations.put(
                 JSONObject()
-                    .put("name", descriptor.id)
+                    .put("name", AgentModelToolWireNames.name(descriptor.id))
                     .put("description", descriptor.modelVisibleDescription())
                     .put("parameters", descriptor.inputSchema.document.toJsonObject())
                     .put("response", descriptor.outputSchema.document.toJsonObject())
@@ -440,7 +440,7 @@ class GeminiAgentModelToolProtocolAdapter(
                                 "functionCall",
                                 JSONObject()
                                     .put("id", call.callId)
-                                    .put("name", call.toolId)
+                                    .put("name", AgentModelToolWireNames.name(call.toolId))
                                     .put("args", call.arguments.toJsonObject())
                             )
                         )
@@ -457,7 +457,7 @@ class GeminiAgentModelToolProtocolAdapter(
                                 "functionResponse",
                                 JSONObject()
                                     .put("id", toolResult.callId)
-                                    .put("name", toolResult.toolId)
+                                    .put("name", AgentModelToolWireNames.name(toolResult.toolId))
                                     .put("response", bounded.value.toJsonObject())
                             )
                         )
@@ -569,10 +569,19 @@ abstract class StrictAgentModelToolProtocolAdapter(
         catalog: List<AgentNativeToolDescriptor>
     ): Map<String, AgentNativeToolDescriptor> {
         val result = LinkedHashMap<String, AgentNativeToolDescriptor>()
+        val nativeIds = HashSet<String>()
         catalog.forEachIndexed { index, descriptor ->
             checkedToolName(descriptor.id, "catalog[$index].id")
-            if (result.put(descriptor.id, descriptor) != null) {
+            if (!nativeIds.add(descriptor.id)) {
                 protocolFailure("duplicate_tool", "Catalog contains duplicate tool ${descriptor.id}")
+            }
+            val wire = AgentModelToolWireNames.name(descriptor.id)
+            checkedToolName(wire, "catalog[$index].wire_name")
+            // Accept exact canonical IDs from known tools too, but never an ambiguous representation.
+            for (name in setOf(wire, descriptor.id)) {
+                val previous = result.put(name, descriptor)
+                if (previous != null && previous.id != descriptor.id)
+                    protocolFailure("ambiguous_tool_name", "Tool names do not resolve uniquely in this catalog")
             }
         }
         return result
@@ -635,7 +644,7 @@ abstract class StrictAgentModelToolProtocolAdapter(
 
     protected fun checkedOutboundCall(call: AgentModelToolCall, path: String) {
         checkedCallId(call.callId, "$path.id")
-        checkedToolName(call.toolId, "$path.name")
+        checkedNativeToolName(call.toolId, "$path.name")
         checkedArguments(call.arguments, "$path.arguments")
     }
 
@@ -698,7 +707,7 @@ abstract class StrictAgentModelToolProtocolAdapter(
 
     protected fun boundedResult(result: AgentModelToolResultContent, path: String): BoundedResult {
         checkedCallId(result.callId, "$path.tool_call_id")
-        checkedToolName(result.toolId, "$path.tool_id")
+        checkedNativeToolName(result.toolId, "$path.tool_id")
         if (result.status.isBlank()) {
             protocolFailure("malformed_tool_result", "$path.status must not be blank")
         }
@@ -768,6 +777,14 @@ abstract class StrictAgentModelToolProtocolAdapter(
                 "$path exceeds ${limits.maxCallIdCharacters} characters"
             )
         }
+    }
+
+    private fun checkedNativeToolName(name: String, path: String) {
+        checkedToolName(name, path)
+        if (!AgentNativeToolDescriptor.isValidId(name)) {
+            protocolFailure("malformed_tool_call", "$path must be a native tool identifier")
+        }
+        checkedToolName(AgentModelToolWireNames.name(name), "$path.wire_name")
     }
 
     private fun checkedToolName(name: String, path: String) {
@@ -922,12 +939,14 @@ private fun AgentNativeJsonObject.toJsonObject(): JSONObject = JSONObject().appl
     this@toJsonObject.forEach { (key, value) -> put(key, value.toJsonValue()) }
 }
 
-private fun AgentNativeToolDescriptor.modelVisibleDescription(): String =
-    if (concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY) {
+private fun AgentNativeToolDescriptor.modelVisibleDescription(): String {
+    val usage = if (concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY) {
         "$description Parallel-safe read-only: request independent calls together; results preserve call order."
     } else {
         description
     }
+    return if (AgentModelToolWireNames.name(id) == id) usage else "$usage Native tool ID: $id."
+}
 
 private fun Any?.toJsonValue(): Any = when (this) {
     null -> JSONObject.NULL
