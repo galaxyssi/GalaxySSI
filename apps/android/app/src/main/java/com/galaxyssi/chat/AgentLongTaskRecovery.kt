@@ -127,6 +127,8 @@ internal object AgentLongTaskRecoveryScheduler {
             runCatching { enqueueBrowserEvent(appContext, record)?.result?.get() }
                 .onFailure { Log.w("GalaxySSIBrowserRecovery", "Browser event enqueue deferred", it) }
         }
+        runCatching { AgentManagedBrowserControlEvents.recoverIndexed(appContext) }
+            .onFailure { Log.w("GalaxySSIBrowserRecovery", "Managed browser control enqueue deferred", it) }
         val supervisor = AgentTaskRuntime.supervisor(appContext)
         val activeIds = supervisor.activeWorkspaces().mapTo(linkedSetOf(), AgentWorkspace::workspaceId)
         supervisor.recoverableTasks().forEach { workspace ->

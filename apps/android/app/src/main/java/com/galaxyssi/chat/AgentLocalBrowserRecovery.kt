@@ -59,13 +59,14 @@ internal object AgentLocalBrowserDelivery {
 }
 
 internal object AgentLocalBrowserRecovery {
-    fun enqueue(context: Context, record: AgentBrowserUserRequest): Operation? {
+    fun enqueue(context: Context, record: AgentBrowserUserRequest, replace: Boolean = false): Operation? {
         if (!record.pendingRunWake || record.localDispatchId.isBlank()) return null
         val work = OneTimeWorkRequestBuilder<AgentLocalBrowserRecoveryWorker>().setInputData(workDataOf(
             KEY_REQUEST to record.key, KEY_GENERATION to record.generation))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         return WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-            AgentLongTaskRecoveryScheduler.browserEventWorkName(record), ExistingWorkPolicy.KEEP, work)
+            AgentLongTaskRecoveryScheduler.browserEventWorkName(record),
+            if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, work)
     }
 
     /** Injected execution is for isolated framework tests; the production worker uses the real local runner. */
@@ -87,6 +88,13 @@ internal object AgentLocalBrowserRecovery {
             return true
         }
         if (latest.managedOwner != null) {
+            // This generation's durable STOP cannot be undone by a later control write for the parent.
+            if (record.interruptionCode == "browser_owner_stopped") {
+                AgentLocalCancellationDelivery.settled(app, latest.identity, false, true)
+                store.transition(latest, "cancelled")
+                browsers.acknowledgeRunWake(record)
+                return true
+            }
             when (store.managedState(latest)) {
                 AgentManagedBrowserState.DELIVERED -> {
                     store.transition(latest, "delivered"); browsers.acknowledgeRunWake(record); return true

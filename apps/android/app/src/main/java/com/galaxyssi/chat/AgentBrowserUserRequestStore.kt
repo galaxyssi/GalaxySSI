@@ -103,6 +103,7 @@ internal data class AgentBrowserUserRequest(
 /** One encrypted atomic record per browser; an old notification cannot target a later request. */
 internal class AgentBrowserUserRequestStore(context: Context,
     private val directory: File = File(context.filesDir, "browser-user-requests")) {
+    private val app = context.applicationContext
 
     fun load(key: String): AgentBrowserUserRequest? = synchronized(lock) {
         val file = file(key)
@@ -127,6 +128,9 @@ internal class AgentBrowserUserRequestStore(context: Context,
             val previous = runCatching { load(name.removeSuffix(".enc")) }.getOrNull() ?: return@synchronized null
             var current = previous.afterHostRestart(currentProcessId)
             if (current != previous) save(current)
+            // Rebuild the per-Run index for records created before event-driven control recovery.
+            AgentManagedBrowserWakeIndex(app).track(current)
+            AgentManagedBrowserWakeIndex(app).committed(current)
             if (current.state == "active" && current.hostProcessId == currentProcessId) {
                 AgentRuntimeInstanceEvents.hub.interruption(current.runtimeInstanceId)?.let { event ->
                     interruptRuntime(current, event)?.let { current = it }
@@ -151,6 +155,11 @@ internal class AgentBrowserUserRequestStore(context: Context,
         if (record.state != "active" || record.handoffId.isBlank() || record.runtimeInstanceId.isBlank() ||
             record.runtimeInstanceId != event.instanceId || load(record.key) != record) return@synchronized null
         record.copy(state = "interrupted", interruptionCode = event.browserCode).also { save(it) }
+    }
+
+    fun interruptOwner(record: AgentBrowserUserRequest): AgentBrowserUserRequest? = synchronized(lock) {
+        if (record.managedOwnerRunId.isBlank() || record.settled || load(record.key) != record) return@synchronized null
+        record.copy(state = "interrupted", interruptionCode = "browser_owner_stopped").also { save(it) }
     }
 
     fun markObservationCommitted(record: AgentBrowserUserRequest) = synchronized(lock) {
@@ -183,6 +192,8 @@ internal class AgentBrowserUserRequestStore(context: Context,
         if (previous?.generation == record.generation && !previous.permitsSameGeneration(record)) {
             throw AgentBrowserControlFailure("browser_user_request_binding_changed", mapOf("executed" to false))
         }
+        // Write-ahead routing hint: a failed record commit is ignored by exact-generation reconciliation.
+        AgentManagedBrowserWakeIndex(app).track(record)
         val bytes = record.toJson().toString().toByteArray()
         val envelope = try { AgentStorageCipher.encryptBinary(bytes, aad(record.key)) } finally { bytes.fill(0) }
         val file = file(record.key)
@@ -190,6 +201,7 @@ internal class AgentBrowserUserRequestStore(context: Context,
         try { output.write(envelope); file.finishWrite(output) }
         catch (error: Throwable) { file.failWrite(output); throw error }
         finally { envelope.fill(0) }
+        AgentManagedBrowserWakeIndex(app).committed(record)
     }
 
     private fun file(key: String): AtomicFile {

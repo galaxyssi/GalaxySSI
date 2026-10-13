@@ -4,7 +4,7 @@ package com.galaxyssi.chat
 internal object AgentBrowserInterruptionPolicy {
     private val lostSessionCodes = setOf("session_lost", "session_closed", "session_not_found", "browser_closed")
     private val recordedCodes = lostSessionCodes + setOf("browser_host_restarted", "browser_user_handoff_invalid",
-        "browser_runtime_exited", "browser_runtime_replaced")
+        "browser_runtime_exited", "browser_runtime_replaced", "browser_owner_stopped")
 
     fun valid(code: String) = code in recordedCodes
 
@@ -18,6 +18,8 @@ internal object AgentBrowserInterruptionPolicy {
     }
 
     fun message(code: String): String {
+        if (code == "browser_owner_stopped") return "The original managed task was explicitly stopped. " +
+            "This handoff is retired, not a successful login or task result. Do not resume or replay it."
         val cause = if (code == "browser_host_restarted")
             "The App host restarted while this task was waiting; browser availability is unconfirmed, not proved lost."
         else "The browser host reported $code for the recorded user-control handoff."

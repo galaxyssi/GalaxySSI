@@ -57,4 +57,14 @@ class AgentBrowserInterruptionPolicyTest {
         assertTrue(AgentBrowserInterruptionPolicy.message("browser_host_restarted").contains("not proved lost"))
         assertFalse(AgentBrowserInterruptionPolicy.valid("arbitrary"))
     }
+
+    @Test fun explicitOwnerStopIsADurableRetirementNotAnObservedSessionFailure() {
+        assertTrue(AgentBrowserInterruptionPolicy.valid("browser_owner_stopped"))
+        val stopped = record.copy(state = "interrupted", interruptionCode = "browser_owner_stopped")
+        assertTrue(record.permitsSameGeneration(stopped))
+        assertFalse(stopped.permitsSameGeneration(record.copy(state = "returned")))
+        assertEquals(stopped, AgentBrowserUserRequest.fromJson(stopped.toJson()))
+        assertNull(AgentBrowserInterruptionPolicy.observed(record, "browser_owner_stopped", snapshot))
+        assertTrue(AgentBrowserInterruptionPolicy.message("browser_owner_stopped").contains("Do not resume or replay"))
+    }
 }
