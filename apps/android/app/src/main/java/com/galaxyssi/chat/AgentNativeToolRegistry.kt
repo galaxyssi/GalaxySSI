@@ -816,6 +816,7 @@ class AgentNativeToolDefinition(
     val validator: AgentNativeToolValidator = AgentNativeJsonSchemaValidator,
     val executorId: String = "galaxyssi.phone_native",
     val provenanceMetadata: Map<String, String> = emptyMap(),
+    val effectRecoveryProvider: AgentNativeEffectRecoveryProvider? = null,
     val availabilityProvider: AgentNativeToolAvailabilityProvider =
         AgentNativeToolAvailabilityProvider { descriptor.availability }
 ) {
@@ -1068,6 +1069,7 @@ class AgentNativeToolRegistry(
         val cancellationNotified = AtomicBoolean(false)
         val timeoutNotified = AtomicBoolean(false)
         var claimedEffect: AgentNativeToolReplayKey? = null
+        var claimedRecoveryQuery: AgentNativeEffectRecoveryQuery? = null
         runHook { hooks.onStarted(invocation) }
         val cancellationRegistration = hooks.cancellationToken.invokeOnCancellation {
             if (!completed.get() && cancellationNotified.compareAndSet(false, true)) {
@@ -1086,12 +1088,15 @@ class AgentNativeToolRegistry(
             originalInvocationId: String? = null
         ): AgentNativeToolResult {
             val finishedAt = clock.nowEpochMillis()
+            val observedError = if (error?.details?.get("outcome_unknown") == true && claimedRecoveryQuery != null)
+                error.copy(details = error.details + mapOf("recovery_query" to claimedRecoveryQuery!!.toJsonValue(),
+                    "verification_required" to true)) else error
             val result = AgentNativeToolResult(
                 status = status,
                 output = output,
                 message = message,
                 metadata = metadata,
-                error = error,
+                error = observedError,
                 verification = verification,
                 receipt = AgentNativeToolReceipt(
                     invocationId = context.invocationId,
@@ -1141,7 +1146,9 @@ class AgentNativeToolRegistry(
                         "or reconcile the external state before deciding the next action; it was not executed again.",
                     retryable = false, details = mapOf("original_invocation_id" to observation.invocationId,
                         "effect_key" to effectiveKey, "input_sha256" to observation.inputSha256,
-                        "outcome_unknown" to true, "executed_again" to false, "goal_terminal" to false)))
+                        "outcome_unknown" to true, "executed_again" to false, "goal_terminal" to false) +
+                        (observation.recoveryQuery?.let { mapOf("recovery_query" to it.toJsonValue(),
+                            "verification_required" to true) } ?: emptyMap())))
             return finish(status = cached.status, output = cached.output, message = cached.message,
                 metadata = cached.metadata, error = cached.error, verification = cached.verification,
                 replayed = true, originalInvocationId = cached.receipt.originalInvocationId ?: cached.receipt.invocationId)
@@ -1210,13 +1217,33 @@ class AgentNativeToolRegistry(
             }
 
             if (replayKey != null && descriptor.requiresEffectClaim) {
-                val claim = replayStore.claim(replayKey, digestOrEmpty(input), context.invocationId)
+                val query = try {
+                    definition.effectRecoveryProvider?.queryFor(invocation)?.also { candidate ->
+                        val target = requireNotNull(lookup(candidate.toolId)) { "Recovery observation tool is not registered" }
+                        require(target.descriptor.version == candidate.toolVersion &&
+                            !target.descriptor.requiresEffectClaim) {
+                            "Recovery query must use a matching read-only tool contract"
+                        }
+                        require(target.validator.validate(target.descriptor.inputSchema, candidate.arguments).isValid) {
+                            "Recovery query does not satisfy the observation tool schema"
+                        }
+                    }
+                } catch (error: Exception) {
+                    if (error is AgentNativeToolCancelledException || error is java.util.concurrent.CancellationException ||
+                        error is InterruptedException) throw error
+                    return finish(AgentNativeToolResultStatus.REJECTED, error = AgentNativeToolError(
+                        "effect_recovery_query_invalid", "The tool adapter did not provide a valid read-only recovery query.",
+                        details = mapOf("executed" to false, "goal_terminal" to false)))
+                }
+                val claim = if (query == null) replayStore.claim(replayKey, digestOrEmpty(input), context.invocationId)
+                    else replayStore.claimWithRecovery(replayKey, digestOrEmpty(input), context.invocationId, query)
                 if (claim.inputSha256 != digestOrEmpty(input)) {
                     return finish(AgentNativeToolResultStatus.REJECTED, error = AgentNativeToolError(
                         "idempotency_key_conflict", "The effect key was already claimed with different input"))
                 }
                 if (claim.acquired) {
                     claimedEffect = replayKey
+                    claimedRecoveryQuery = claim.recoveryQuery
                 } else {
                     return observedOutcome(claim)
                 }
