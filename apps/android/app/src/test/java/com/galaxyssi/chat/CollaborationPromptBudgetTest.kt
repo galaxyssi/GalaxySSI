@@ -104,4 +104,65 @@ class CollaborationPromptBudgetTest {
         assertTrue(result.text.length <= 4_000)
         assertTrue(result.text.contains("\"unlisted_references\":1016"))
     }
+
+    @Test fun inlineGoalDoesNotPayForItsOwnOmissionReference() {
+        val goal = "\u4fdd\u7559\u5168\u90e8\u76ee\u6807\u7ea6\u675f".repeat(70)
+        val result = CollaborationPromptBudget.assemble(required(), listOf(
+            CollaborationPromptBudget.Section("Original goal", goal, "g".repeat(512)),
+            CollaborationPromptBudget.Section("History", "h".repeat(10_000), "archive")), 1300)
+        assertTrue("Original goal" in result.included)
+        assertEquals(setOf("History"), result.omitted)
+        assertTrue(result.text.contains(goal))
+        assertFalse(result.text.contains("g".repeat(512)))
+        assertTrue(result.text.length <= 1300)
+    }
+
+    @Test fun allSectionsFitWithoutHypotheticalReferenceReserve() {
+        val optional = (1..10).map { CollaborationPromptBudget.Section("Part $it", "ok", "r".repeat(512)) }
+        val exact = (required() + optional).sumOf { it.name.length + it.content.length + 5 }
+        val result = CollaborationPromptBudget.assemble(required(), optional, exact)
+        assertEquals(exact, result.text.length)
+        assertTrue(result.omitted.isEmpty())
+        assertFalse(result.text.contains("Context coverage"))
+    }
+
+    @Test fun shorterInlineBodyCanRescueAnOverflowingReferenceDirectory() {
+        val result = CollaborationPromptBudget.assemble(emptyList(), listOf(
+            CollaborationPromptBudget.Section("Small", "ok", "r".repeat(512)),
+            CollaborationPromptBudget.Section("Large", "x".repeat(10_000), "archive")), 500)
+        assertEquals(setOf("Small"), result.included)
+        assertEquals(setOf("Large"), result.omitted)
+        assertTrue(result.text.length <= 500)
+    }
+
+    @Test fun omittedReferenceWindowShiftsWithoutExceedingBudget() {
+        val optional = (1..8).map { CollaborationPromptBudget.Section("Small $it", "ok", "short") } +
+            CollaborationPromptBudget.Section("Ninth", "x".repeat(10_000), "r".repeat(512))
+        val result = CollaborationPromptBudget.assemble(required(), optional, 1600)
+        assertTrue(result.text.length <= 1600)
+        assertEquals(setOf("Ninth"), result.omitted)
+        val coverage = org.json.JSONObject(result.text.substringAfter("[Context coverage]\n"))
+        assertEquals(1, coverage.getInt("omitted_sections"))
+        assertEquals("Ninth", coverage.getJSONArray("references").getJSONObject(0).getString("section"))
+    }
+
+    @Test fun requiredInstructionsCannotBeRescuedByOptionalOmissions() {
+        assertThrows(CollaborationPromptBudget.Overflow::class.java) {
+            CollaborationPromptBudget.assemble(listOf(CollaborationPromptBudget.Section("Required", "x".repeat(1000))),
+                listOf(CollaborationPromptBudget.Section("Tiny", "ok", "r".repeat(512))), 1000)
+        }
+    }
+
+    @Test fun shortInlineSectionsFreeReferenceSpaceForAnEarlierSkippedGoal() {
+        val goal = "g".repeat(600)
+        val result = CollaborationPromptBudget.assemble(required(), listOf(
+            CollaborationPromptBudget.Section("Goal", goal, "g".repeat(512)),
+            CollaborationPromptBudget.Section("Tiny one", "ok", "a".repeat(512)),
+            CollaborationPromptBudget.Section("Tiny two", "ok", "b".repeat(512)),
+            CollaborationPromptBudget.Section("History", "h".repeat(10_000), "archive")), 1300)
+        assertTrue("An earlier goal must be reconsidered after references disappear", "Goal" in result.included)
+        assertEquals(setOf("History"), result.omitted)
+        assertTrue(result.text.contains("\n[Goal]\n$goal\n"))
+        assertTrue(result.text.length <= 1300)
+    }
 }

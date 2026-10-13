@@ -79,8 +79,14 @@ class CollaborationToolCapabilityRecallTest {
         assertTrue(results(f.workspace.searchCapabilities(f.access(), "parameters")).isEmpty())
         assertTrue(results(f.workspace.searchCapabilities(f.access(), "expected")).isEmpty())
         val tool = f.workspace.read(f.access(), f.tool.getString("object_id"), 1)!!
-        assertNull(CollaborationCapabilityRecall.match(tool, CollaborationCapabilityRecall.query("stable")))
-        val found = results(f.workspace.searchCapabilities(f.access(), "stable")).single()
+        val candidate = requireNotNull(CollaborationCapabilityRecall.match(tool, CollaborationCapabilityRecall.query("stable")))
+        assertEquals("candidate_requires_testing_and_independent_release", candidate.getString("reuse_status"))
+        assertEquals(0, candidate.getJSONArray("linked_sources").length())
+        assertFalse(candidate.getBoolean("grants_permissions"))
+        assertFalse(candidate.getJSONObject("excerpts").has("source"))
+        assertFalse(candidate.getJSONObject("excerpts").has("cases"))
+        val found = results(f.workspace.searchCapabilities(f.access(), "stable"))
+            .single { it.getString("kind") == RELEASE }
         val fields = found.getJSONArray("linked_sources").getJSONObject(0).getJSONArray("fields")
         assertFalse(fields.toString().contains("source"))
         assertFalse(fields.toString().contains("cases"))
@@ -108,6 +114,8 @@ class CollaborationToolCapabilityRecallTest {
         val future = f.access().copy(runId = "future", turnId = "future", round = 0)
         assertEquals(12, results(workspace.searchCapabilities(future, "stable")).size)
         assertEquals(1, reads)
+        assertEquals(12, results(workspace.searchCapabilities(future, "stable")).size)
+        assertEquals("A new page request must revalidate originals", 2, reads)
         val blind = f.access("peer", 1).copy(dependencyNodes = setOf("release"))
         assertTrue(results(workspace.searchCapabilities(blind, "stable")).isEmpty())
     }

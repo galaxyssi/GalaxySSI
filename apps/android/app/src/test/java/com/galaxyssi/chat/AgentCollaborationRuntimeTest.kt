@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -164,6 +165,7 @@ class AgentCollaborationRuntimeTest {
         )
         val activeObservers = AtomicInteger()
         val maximumActiveObservers = AtomicInteger()
+        val bothObserversStarted = CompletableDeferred<Unit>()
         val executed = CopyOnWriteArrayList<String>()
         val definition = teamDefinition()
         val request = request()
@@ -173,7 +175,8 @@ class AgentCollaborationRuntimeTest {
             if (context.member.deliveryMode == AgentDeliveryMode.OBSERVE) {
                 val active = activeObservers.incrementAndGet()
                 maximumActiveObservers.updateAndGet { maxOf(it, active) }
-                delay(60L)
+                if (active == 2) bothObserversStarted.complete(Unit)
+                withTimeout(5_000L) { bothObserversStarted.await() }
                 activeObservers.decrementAndGet()
                 AgentSubagentOutput("${context.member.agentId}-evidence")
             } else {
