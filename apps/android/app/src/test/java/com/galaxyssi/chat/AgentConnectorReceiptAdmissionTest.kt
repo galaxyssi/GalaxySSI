@@ -32,6 +32,21 @@ class AgentConnectorReceiptAdmissionTest {
             metadata = mapOf("error_code" to "idempotency_key_conflict")))))
     }
 
+    @Test fun cancelledOrMissingSessionsNeverConstructAnAgent() {
+        var created = 0
+        repeat(1_000) {
+            assertNull(AgentConnectorReceiptAdmission.restoreCandidate(saved.copy(phase = AgentPhase.CANCELLED)) { created++ })
+            assertNull(AgentConnectorReceiptAdmission.restoreCandidate(null) { created++ })
+        }
+        assertEquals(0, created)
+    }
+
+    @Test fun preflightKeepsNonCancelledRecoveryAndLiveReceiptValidation() {
+        AgentPhase.entries.filter { it != AgentPhase.CANCELLED }.forEach { phase ->
+            assertEquals("runtime", AgentConnectorReceiptAdmission.restoreCandidate(saved.copy(phase = phase)) { "runtime" })
+        }
+    }
+
     private fun admit(session: AgentSessionSnapshot = saved, source: Long = 12, contact: String = "peer",
         conversation: String = "conversation", turn: String = "turn", task: String = "task") =
         AgentConnectorReceiptAdmission.saved(session, source, contact, conversation, turn, task)

@@ -1179,14 +1179,16 @@ internal fun MainActivity.runtimeForConnectorResponse(
     }?.let { return it }
     if (!restorePersisted || Looper.myLooper() == Looper.getMainLooper()) return null
     val cleanTurnId = responseIdentity.turnId
+    fun restore(storageKey: String): MobileNativeAgent? {
+        val sessions = SharedPreferencesAgentSessionStore(this, storageKey)
+        return AgentConnectorReceiptAdmission.restoreCandidate(sessions.load()) {
+            MobileNativeAgent(this, actionExecutor = directAgentActionExecutor, sessionStore = sessions,
+                nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent))
+        }
+    }
     if (cleanTurnId.isNotBlank()) {
-        val restored = MobileNativeAgent(
-            this,
-            actionExecutor = directAgentActionExecutor,
-            sessionStore = SharedPreferencesAgentSessionStore(this, "task:$cleanTurnId"),
-            nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
-        )
-        if (restored.accepts() || restored.acceptsRecoveryPredecessor()) {
+        val restored = restore("task:$cleanTurnId")
+        if (restored != null && (restored.accepts() || restored.acceptsRecoveryPredecessor())) {
             activeAgentTasks[sourceMessageId] = restored
             agentRuntimeTurnIds[restored] = cleanTurnId
             connectorConversationId(responseIdentity.conversationId, restored, cleanTurnId)?.let {
@@ -1203,13 +1205,8 @@ internal fun MainActivity.runtimeForConnectorResponse(
     )?.let { storageKey ->
         if (storageKey == "task:$cleanTurnId") return@let
         val storedTurnId = storageKey.removePrefix("task:")
-        val restored = MobileNativeAgent(
-            this,
-            actionExecutor = directAgentActionExecutor,
-            sessionStore = SharedPreferencesAgentSessionStore(this, storageKey),
-            nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
-        )
-        if (restored.accepts() || restored.acceptsRecoveryPredecessor()) {
+        val restored = restore(storageKey)
+        if (restored != null && (restored.accepts() || restored.acceptsRecoveryPredecessor())) {
             activeAgentTasks[sourceMessageId] = restored
             agentRuntimeTurnIds[restored] = storedTurnId
             connectorConversationId(responseIdentity.conversationId, restored, storedTurnId)?.let {

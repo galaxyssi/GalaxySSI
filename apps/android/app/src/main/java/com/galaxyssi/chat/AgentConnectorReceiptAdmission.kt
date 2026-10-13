@@ -2,6 +2,9 @@ package com.galaxyssi.chat
 
 /** Cheap saved-state admission before constructing an executable Agent. Live admission still runs after the lease. */
 internal object AgentConnectorReceiptAdmission {
+    fun <T> restoreCandidate(saved: AgentSessionSnapshot?, create: () -> T): T? =
+        if (saved == null || saved.phase == AgentPhase.CANCELLED) null else create()
+
     fun transport(phase: AgentPhase, pending: AgentActionResult?, source: Long, contact: String): Boolean {
         if (source <= 0 || pending == null) return false
         val timeout = phase == AgentPhase.FAILED && !pending.success &&

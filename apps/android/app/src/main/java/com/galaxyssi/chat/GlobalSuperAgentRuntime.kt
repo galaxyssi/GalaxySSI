@@ -370,7 +370,11 @@ class GlobalAgentRepository(context: Context) {
     }
 
     fun loadWorld(): PersonalWorldModel = synchronized(STORE_LOCK) {
-        cachedWorld ?: decodeWorld(database.readString(KEY_WORLD, "")).also { cachedWorld = it }
+        cachedWorld ?: decodeWorld(database.readString(KEY_WORLD, "")).let { stored ->
+            val repaired = GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(stored)
+            if (repaired != stored) database.writeString(KEY_WORLD, encodeWorld(repaired).toString())
+            repaired.also { cachedWorld = it }
+        }
     }
 
     fun saveWorld(world: PersonalWorldModel) = synchronized(STORE_LOCK) {
@@ -413,8 +417,7 @@ class GlobalAgentRepository(context: Context) {
         }
         return synchronized(STORE_LOCK) {
             GlobalPromptContextSnapshot(
-                world = cachedWorld ?: decodeWorld(database.readString(KEY_WORLD, ""))
-                    .also { cachedWorld = it },
+                world = loadWorld(),
                 topicGraph = cachedTopicGraph ?: topicGraphStore.load()
                     .also { cachedTopicGraph = it },
                 entityGraph = cachedEntityMemoryGraph ?: entityMemoryGraphStore.load()
@@ -833,7 +836,9 @@ class GlobalAgentRepository(context: Context) {
                 }
             )
         })
-        payload.optJSONObject("world")?.let { saveWorld(decodeWorld(it.toString())) }
+        payload.optJSONObject("world")?.let {
+            saveWorld(GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(decodeWorld(it.toString())))
+        }
         payload.optJSONObject("topic_project_graph")?.let(topicGraphStore::restore)
         payload.optJSONObject("memory_evolution")?.let(memoryEvolutionStore::restore)
         payload.optJSONObject("entity_memory_graph")?.let(entityMemoryGraphStore::restore)
@@ -1193,7 +1198,7 @@ class GlobalAgentRepository(context: Context) {
                 }
             ),
             conflictGroupId = json.optString("conflict_group_id"),
-            supersedesItemIds = json.optJSONArray("supersedes_item_ids").strings().takeLast(12),
+            supersedesItemIds = json.optJSONArray("supersedes_item_ids").strings().distinct(),
             supersededByItemId = json.optString("superseded_by_item_id"),
             firstSeenAtMillis = json.optLong("first_seen_at_millis"),
             lastSeenAtMillis = json.optLong("last_seen_at_millis"),
