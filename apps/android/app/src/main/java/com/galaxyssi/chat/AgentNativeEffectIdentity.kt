@@ -29,7 +29,8 @@ data class AgentNativeEffectClaim(
     val acquired: Boolean,
     val invocationId: String,
     val inputSha256: String,
-    val result: AgentNativeToolResult? = null
+    val result: AgentNativeToolResult? = null,
+    val recoveryQuery: AgentNativeEffectRecoveryQuery? = null
 )
 
 internal fun AgentNativeToolReplayKey.identity(): Map<String, Any> = linkedMapOf(
