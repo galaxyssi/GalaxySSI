@@ -169,13 +169,14 @@ class GuardedModelAgentPlanner(
         val messages = listOf(AgentModelMessage.system(MODEL_PLANNER_SYSTEM_PROMPT), AgentModelMessage.user(prompt))
         val identity = AgentPlannerToolLoopRequest.create(request, settings, messages, emptyList())
         val outcome = runBlocking {
-            val catalogs = AgentPlannerToolCatalogBinding.prepare(loopJournal, identity, fullRegistry)
+            val registry = AgentModelHistoryCatalog.prepare(loopJournal, AgentModelLoopScope.from(identity), fullRegistry)
+            val catalogs = AgentPlannerToolCatalogBinding.prepare(loopJournal, identity, registry)
             val binding = catalogs.binding
             AgentModelToolLoop(
                 modelAdapter = CloudModelClient.nativeToolAdapter(
                     appContext, contact, catalogs.initialAvailable, catalogs::providerCatalog
                 ),
-                toolRegistry = fullRegistry,
+                toolRegistry = registry,
                 disclosedToolManifestJson = binding.manifest.json,
                 disclosedToolManifestSha256 = binding.manifest.sha256,
                 journal = loopJournal,
