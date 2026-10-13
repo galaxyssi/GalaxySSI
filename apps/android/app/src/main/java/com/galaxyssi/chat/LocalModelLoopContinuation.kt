@@ -121,5 +121,5 @@ internal class LocalModelLoopContinuationStore(private val journal: AgentModelLo
         throw AgentModelLoopRecoveryException("local_model_saved_request_invalid", error)
     }
 
-    private companion object { const val OPERATION = "local-dispatch-request:v1" }
+    internal companion object { const val OPERATION = "local-dispatch-request:v1" }
 }

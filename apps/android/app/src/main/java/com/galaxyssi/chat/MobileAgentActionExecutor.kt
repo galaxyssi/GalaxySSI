@@ -795,7 +795,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val boundConversationId = conversationId.ifBlank { "local-$messageId" }
         val dispatchIdentity = AgentLocalDispatchIdentity(messageId, contactId, boundConversationId, turnId, taskId, action.id)
         AgentManagedDispatchIntent.persist(appContext, action, messageId, contactId, conversationId, turnId, taskId)
-        val browserDispatch = if (!managedTeamAction && !persistDedicatedHistory)
+        val browserDispatch = if (managedTeamAction)
+            AgentLocalBrowserDispatchStore(appContext).registerManagedIfOwned(dispatchIdentity, profile.displayName,
+                startedAt, observed.mapTo(linkedSetOf()) { it.id }) else if (!persistDedicatedHistory)
             AgentLocalBrowserDispatchStore(appContext).registerIfOwned(dispatchIdentity, profile.displayName,
                 startedAt, observed.mapTo(linkedSetOf()) { it.id }) else null
         browserDispatch?.let { AgentLocalBrowserDispatchStore(appContext).checkpoint(it) }

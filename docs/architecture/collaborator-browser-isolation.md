@@ -29,10 +29,11 @@ An older collaboration browser in a parent-shared namespace must not be adopted
 by guessing which member owned its authentication state.
 
 Ordinary planner and local-dispatch recovery explicitly reject a member record.
-This increment does **not** enable browser tools in managed local-member catalogs
-or claim that managed-member handoffs already resume. That next integration needs
-the managed dispatch ledger, exact member assignment, stop/pause state and durable
-continuation journal, rather than substituting the parent's ordinary Run owner.
+The initial isolation increment did not enable managed local-member catalogs.
+The subsequent [managed continuation integration](managed-browser-continuation.md)
+uses the managed dispatch ledger, exact member assignment, stop/pause state and
+durable continuation journal, rather than substituting the parent's ordinary Run
+owner. Existing started loops are not silently migrated to the expanded catalog.
 
 ## Verification boundaries
 

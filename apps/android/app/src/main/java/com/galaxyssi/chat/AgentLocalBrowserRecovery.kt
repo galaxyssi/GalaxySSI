@@ -21,6 +21,17 @@ internal object AgentLocalBrowserDelivery {
         val store = AgentLocalBrowserDispatchStore(context)
         val latest = checkNotNull(store.load(dispatch.key))
         if (latest.terminal) return true
+        when (store.managedState(dispatch)) {
+            AgentManagedBrowserState.DELIVERED -> { store.transition(dispatch, "delivered"); return true }
+            AgentManagedBrowserState.STOPPED, AgentManagedBrowserState.OBSOLETE -> {
+                AgentLocalCancellationDelivery.settled(context, dispatch.identity, false, true)
+                store.transition(dispatch, "cancelled")
+                return true
+            }
+            AgentManagedBrowserState.UNVERIFIED -> return false
+            else -> Unit
+        }
+        if (dispatch.managedOwner != null && result.exceptionOrNull() is AgentModelLoopRecoveryException) return false
         if (!store.owned(dispatch)) {
             store.transition(dispatch, "cancelled")
             return true
@@ -75,8 +86,23 @@ internal object AgentLocalBrowserRecovery {
             browsers.acknowledgeRunWake(record)
             return true
         }
+        if (latest.managedOwner != null) {
+            when (store.managedState(latest)) {
+                AgentManagedBrowserState.DELIVERED -> {
+                    store.transition(latest, "delivered"); browsers.acknowledgeRunWake(record); return true
+                }
+                AgentManagedBrowserState.STOPPED, AgentManagedBrowserState.OBSOLETE -> {
+                    AgentLocalBrowserDelivery.settle(app, latest, Result.failure(AgentNativeToolCancelledException()))
+                    browsers.acknowledgeRunWake(record)
+                    return true
+                }
+                AgentManagedBrowserState.PAUSED, AgentManagedBrowserState.UNVERIFIED -> return false
+                else -> Unit
+            }
+        }
         store.restorePendingBinding(latest)
         if (!store.owned(latest, pending = true)) {
+            if (latest.managedOwner != null) return false
             val workspace = EncryptedAgentWorkspaceStore(app).find(latest.runWorkspaceId)
             val session = SharedPreferencesAgentSessionStore(app, "task:${latest.runWorkspaceId}").load()
             val source = session?.lastActionResult?.metadata?.get("source_message_id")?.toLongOrNull()
@@ -99,13 +125,16 @@ internal object AgentLocalBrowserRecovery {
             // WorkManager cancellation detaches this observer; it is not a user STOP of the owned Agent.
             // Its process-owned lease continues to persist/deliver, or a later worker reopens the journal.
             lease.enqueue(AndroidAgentActionExecutor.LOCAL_MODEL_EXECUTOR, request = { token ->
+                if (latest.managedOwner != null && store.managedState(latest) != AgentManagedBrowserState.READY)
+                    throw AgentModelLoopRecoveryException("managed_browser_not_ready_before_execution")
                 check(store.owned(latest, pending = true)) { "local_browser_owner_changed_before_execution" }
                 execute(latest, token)
             }, completed = { outcome ->
                 val settled = runCatching {
-                    if (outcome.exceptionOrNull() is AgentModelLoopRecoveryException) false
+                    if (outcome.exceptionOrNull() is AgentModelLoopRecoveryException && store.managedState(latest) !in
+                        setOf(AgentManagedBrowserState.STOPPED, AgentManagedBrowserState.OBSOLETE, AgentManagedBrowserState.DELIVERED)) false
+                    else if (!AgentLocalBrowserDelivery.settle(app, latest, outcome)) false
                     else {
-                        AgentLocalBrowserDelivery.settle(app, latest, outcome)
                         val current = browsers.load(key)
                         if (current == null || current.generation != generation) true
                         else if (store.load(latest.key)?.state == "cancelled") {
@@ -119,6 +148,7 @@ internal object AgentLocalBrowserRecovery {
                 if (observer.isActive) observer.resume(settled)
             }, cancelled = {
                 val settled = runCatching {
+                    if (latest.managedOwner != null) AgentLocalCancellationDelivery.settled(app, latest.identity, false, true)
                     store.transition(latest, "cancelled")
                     browsers.load(key)?.takeIf { it.generation == generation }?.let(browsers::acknowledgeRunWake)
                     true
@@ -141,8 +171,9 @@ class AgentLocalBrowserRecoveryWorker(context: Context, params: WorkerParameters
         val generation = inputData.getString(AgentLocalBrowserRecovery.KEY_GENERATION) ?: return Result.failure()
         return try {
             val record = AgentBrowserUserRequestStore(applicationContext).load(key)
-            if (record?.generation == generation && record.runWorkspaceId.isNotBlank())
-                runCatching { setForeground(AgentRecoveryNotification.foregroundInfo(applicationContext, record.runWorkspaceId)) }
+            if (record?.generation == generation && (record.runWorkspaceId.isNotBlank() || record.managedOwnerRunId.isNotBlank()))
+                runCatching { setForeground(AgentRecoveryNotification.foregroundInfo(applicationContext,
+                    record.managedOwnerRunId.ifBlank { record.runWorkspaceId })) }
             if (AgentLocalBrowserRecovery.recover(applicationContext, key, generation)) Result.success() else Result.retry()
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {

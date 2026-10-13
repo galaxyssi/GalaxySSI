@@ -13,7 +13,10 @@ internal object LocalModelAgentToolPolicy {
     }
 
     fun toolIds(collaborationBound: Boolean, repairing: Boolean, interactiveBrowser: Boolean = false): Set<String> =
-        if (collaborationBound) LocalModelWebToolProtocol.toolIds(true, repairing)
+        if (collaborationBound) LocalModelWebToolProtocol.toolIds(true, repairing) +
+            if (interactiveBrowser && !repairing) AgentInteractiveBrowserTools.toolIds + AgentToolInspectionTools.toolIds +
+                setOf(AgentOnDeviceRuntimeTools.STATUS, AgentOnDeviceRuntimeTools.LIST_PACKS, AgentOnDeviceRuntimeTools.INSTALL_PACK) +
+                AgentLinuxSoftwareNativeTools.toolIds else emptySet()
         else if (interactiveBrowser) toolIds + AgentInteractiveBrowserTools.toolIds else toolIds
 
     fun workspace(conversationId: String, sessionId: String) = AgentWorkspaceScope.id(conversationId, sessionId)
