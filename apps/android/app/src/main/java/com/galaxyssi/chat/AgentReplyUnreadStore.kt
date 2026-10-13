@@ -49,7 +49,30 @@ internal object AgentReplyUnreadStore {
 
     @Synchronized
     fun hasUnread(context: Context, conversationId: String): Boolean =
-        preferences(context).getStringSet(conversationId, emptySet()).orEmpty().isNotEmpty()
+        count(context, conversationId) > 0
+
+    @Synchronized
+    fun count(context: Context, conversationId: String): Int =
+        preferences(context).getStringSet(conversationId, emptySet()).orEmpty().size
+
+    @Synchronized
+    fun snapshot(context: Context): Map<String, Set<String>> = preferences(context).all.mapNotNull { (id, value) ->
+        val tokens = (value as? Set<*>)?.filterIsInstance<String>()?.toSet().orEmpty()
+        if (tokens.isEmpty()) null else id to tokens
+    }.toMap()
+
+    @Synchronized
+    fun discard(context: Context, conversationId: String, tokens: Set<String>): Int {
+        if (tokens.isEmpty()) return 0
+        val prefs = preferences(context)
+        val pending = prefs.getStringSet(conversationId, emptySet()).orEmpty()
+        val remaining = pending - tokens
+        if (remaining == pending) return 0
+        if (remaining.isEmpty()) prefs.edit().remove(conversationId).apply()
+        else prefs.edit().putStringSet(conversationId, remaining).apply()
+        AgentConversationWindows.changed()
+        return pending.size - remaining.size
+    }
 
     @Synchronized
     fun hasAny(context: Context): Boolean = preferences(context).all.values.any { it is Set<*> && it.isNotEmpty() }
@@ -73,7 +96,10 @@ internal fun MainActivity.refreshReplyUnreadDot() {
     }
     // Keep the marker in the text run, so right alignment cannot separate it from the title.
     val title = agentSessionTitle.text.toString().removePrefix("\uFFFC\u00A0")
-    val unread = AgentReplyUnreadStore.hasAny(this) || summaries.values.any { it.unreadCount > 0 }
+    val unread = AgentReplyUnreadStore.hasAny(this) || summaries.any { (contactId, summary) ->
+        summary.unreadCount > 0 && ConversationHubContactHistoryPolicy.hasUnread(
+            AppStore.contactById(this, contactId), summary.unreadCount, summary.lastAt)
+    }
     val alreadyUnread = agentSessionTitle.text is Spanned &&
         (agentSessionTitle.text as Spanned).getSpans(0, agentSessionTitle.length(), ImageSpan::class.java).isNotEmpty()
     if (alreadyUnread == unread) return

@@ -17,7 +17,7 @@ class ReplyUnreadDeviceTest {
             scenario.onActivity { activity ->
                 val id = "unread-device-test"
                 try {
-                    activity.summaries[id] = ContactSummary(unreadCount = 1)
+                    activity.summaries[id] = ContactSummary(lastAt = 1L, unreadCount = 1)
                     activity.refreshReplyUnreadDot()
                     val text = activity.agentSessionTitle.text as Spanned
                     assertEquals(1, text.getSpans(0, text.length, ImageSpan::class.java).size)
@@ -38,7 +38,9 @@ class ReplyUnreadDeviceTest {
         val id = "unread-device-test-agent"
         val entry = AgentTranscriptEntry("test-reply", AgentTranscriptRole.ASSISTANT,
             "Test", 1L, "test-final", id)
+        val database = AgentTranscriptEntryDatabase.shared(context)
         try {
+            assertTrue(database.insert(entry))
             AgentReplyUnreadStore.record(context, entry)
             AgentReplyUnreadStore.read(context, "different", listOf(entry))
             val prefs = context.getSharedPreferences("agent_reply_unread", Context.MODE_PRIVATE)
@@ -49,6 +51,7 @@ class ReplyUnreadDeviceTest {
             assertFalse(prefs.contains(id))
         } finally {
             AgentReplyUnreadStore.remove(context, id)
+            database.deleteById(entry.id)
         }
     }
 }

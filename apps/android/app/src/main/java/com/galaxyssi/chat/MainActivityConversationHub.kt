@@ -642,8 +642,9 @@ private fun MainActivity.toConversationHubItems(
         val latest = runCatching { agentTranscriptStore.previewEntry(conversation.latestMessageEntryId) }.getOrNull()
         val workspace = ConversationHubAgentStatusPolicy.workspace(conversation.id, latest, workspaces)
         val team = CollaborationCurrentStateStore.latest(conversation.id)
+        val unreadCount = AgentReplyUnreadStore.count(this, conversation.id)
         val state = ConversationHubAgentStatusPolicy.resolve(workspace, latest,
-            AgentReplyUnreadStore.hasUnread(this, conversation.id), team, team?.let(CollaborationCurrentStateStore::status))
+            unreadCount > 0, team, team?.let(CollaborationCurrentStateStore::status))
         val progress = workspace?.eventJournal?.lastOrNull { it.kind == AgentTaskEventKinds.PROGRESS }
             ?.message?.takeIf { state == ConversationHubAgentStatus.RUNNING || state == ConversationHubAgentStatus.WAITING_RESPONSE }
             ?.let(::localizedAgentProcessText)?.replace(Regex("\\s+"), " ")?.take(160).orEmpty()
@@ -659,6 +660,7 @@ private fun MainActivity.toConversationHubItems(
             pinned = conversation.pinned,
             archived = conversation.status == AgentConversationStatus.ARCHIVED,
             searchableMetadata = conversation.selectedModelOrAgent,
+            unreadCount = unreadCount,
             agentStatus = state
         )
     }

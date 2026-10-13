@@ -420,6 +420,17 @@ internal class AgentTranscriptEntryDatabase(
         )
     }
 
+    /** Probe only indexed identifiers; unread reconciliation must not decrypt message bodies. */
+    internal fun containsUnreadToken(conversationId: String, token: String): Boolean {
+        fun exists(selection: String, arguments: Array<String>): Boolean =
+            readableDatabase.query(TABLE_ENTRIES, arrayOf("entry_id"), selection, arguments,
+                null, null, null, "1").use { it.moveToFirst() }
+        return exists("conversation_id = ? AND dedupe_hash = ?", arrayOf(conversationId, digest(token))) ||
+            exists("entry_id = ? AND conversation_id = ? AND dedupe_hash = '' AND turn_id = ''",
+                arrayOf(token, conversationId)) ||
+            exists("turn_id = ? AND conversation_id = ? AND dedupe_hash = ''", arrayOf(token, conversationId))
+    }
+
     fun textChunkPage(
         entryId: String,
         offset: Int = 0,
