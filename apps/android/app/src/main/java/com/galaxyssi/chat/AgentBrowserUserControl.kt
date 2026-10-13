@@ -134,6 +134,27 @@ internal class AgentBrowserUserControl(
         return state
     }
 
+    /** Host cleanup only: never convert a stopped task into a returned-control success event. */
+    internal fun releaseStopped(record: AgentBrowserUserRequest) {
+        val current = store.current(record.key, record.generation)
+        val dispatch = AgentLocalBrowserDispatchStore(app).load(current.localDispatchId)
+            ?: throw AgentBrowserControlFailure("browser_run_binding_required")
+        require(AgentLocalBrowserDispatchPolicy.matches(dispatch, current) &&
+            dispatch.managedOwner != null && current.settled &&
+            (current.interruptionCode == "browser_owner_stopped" ||
+                AgentTeamDurableControl(app).get(dispatch.managedOwner.supervisorRunId) == AgentTeamUserControl.STOP))
+        if (current.state == "returned" || current.handoffId.isBlank()) return
+        try {
+            val state = host(current, mapOf("operation" to "human_control_finish", "handoff_id" to current.handoffId))
+            if (state.optString("control_owner") != "agent") throw AgentBrowserControlFailure(
+                "browser_control_release_unconfirmed", mapOf("outcome_unknown" to true))
+        }
+        catch (error: AgentBrowserControlFailure) {
+            if (error.code !in setOf("browser_user_handoff_invalid", "session_lost", "session_closed", "session_not_found", "browser_closed",
+                    "browser_runtime_replaced")) throw error
+        }
+    }
+
     private fun scheduleRunWake(record: AgentBrowserUserRequest) {
         if (record.pendingRunWake) runCatching {
             enqueue(record)

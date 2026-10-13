@@ -18,8 +18,8 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AgentManagedBrowserRecoveryDeviceTest {
     private val app get() = InstrumentationRegistry.getInstrumentation().targetContext
-    private inner class Fixture(enroll: Boolean = true, val research: Boolean = false) : AutoCloseable {
-        val run = "public-managed-browser-${UUID.randomUUID()}"
+    internal inner class Fixture(enroll: Boolean = true, val research: Boolean = false,
+        val run: String = "public-managed-browser-${UUID.randomUUID()}", reopen: Boolean = false) : AutoCloseable {
         val members = listOf(AgentTeamMember("public-local", AgentDeliveryMode.RESPOND, instanceId = "first"),
             AgentTeamMember("public-local", AgentDeliveryMode.OBSERVE, instanceId = "second")).map {
                 if (research) it.copy(context = mapOf("collaboration_group_id" to "$run-conversation")) else it
@@ -27,7 +27,7 @@ class AgentManagedBrowserRecoveryDeviceTest {
         val request = AgentRunRequest("$run-conversation", "$run-turn", "$run-task", runId = run,
             goal = "公开框架测试：归还浏览器后继续原成员任务。", idempotencyKey = "$run-key")
         val team = EncryptedAgentTeamExecutionStore(app, AgentEncryptedDatabase(app, run))
-        val controls = AgentTeamDurableControl(app)
+        val controls = AgentTeamDurableControl(app, onChanged = {})
         val ledger = EncryptedAgentManagedResponseLedger(app)
         val owners = AgentLocalBrowserDispatchStore(app)
         val browsers = AgentBrowserUserRequestStore(app)
@@ -45,6 +45,9 @@ class AgentManagedBrowserRecoveryDeviceTest {
         val dispatch get() = dispatches[0]
         val record get() = records[0]
         init {
+            if (reopen) reload() else create(enroll)
+        }
+        private fun create(enroll: Boolean) {
             if (research) CollaborationGroupStore(app).update(request.conversationId) { group -> group.copy(
                 members = members.map { CollaborationMember(it.memberId, it.memberId, "fixture", "Public member") },
                 coordinatorId = members.first().memberId) }
@@ -83,12 +86,24 @@ class AgentManagedBrowserRecoveryDeviceTest {
                 }
             }
         }
+        private fun reload() {
+                ids.forEach { id ->
+                    val dispatch = checkNotNull(owners.load(LocalModelLoopContinuation.scope(id).loop))
+                    dispatches += dispatch
+                    val scope = dispatch.scope
+                    val context = AgentNativeToolInvocationContext(sessionId = scope.session, conversationId = scope.conversation,
+                        turnId = scope.turn, callerId = scope.caller, collaborationSourceMessageId = id.sourceMessageId,
+                        attributes = mapOf("task_id" to scope.task, "workspace_id" to scope.workspace))
+                    records += checkNotNull(browsers.load(AgentBrowserUserRequest.key(AgentInteractiveBrowserTools.scope(context), "public-browser")))
+                }
+        }
         fun returned(index: Int = 0): AgentBrowserUserRequest = records[index].copy(state = "returned").also(browsers::save)
         fun response(text: String = "公开框架测试完成。") = AgentConnectorResponse(id.sourceMessageId, id.contactId, text,
             id.conversationId, id.turnId, id.taskId)
         override fun close() {
             ids.forEach { AgentLocalDispatchRegistry.current(it)?.close() }
             records.forEach {
+                AgentManagedBrowserWakeIndex(app).remove(browsers.load(it.key) ?: it)
                 WorkManager.getInstance(app).cancelUniqueWork(AgentLongTaskRecoveryScheduler.browserEventWorkName(it)).result.get()
                 AtomicFile(File(app.filesDir, "browser-user-requests/${it.key}.enc")).delete()
             }

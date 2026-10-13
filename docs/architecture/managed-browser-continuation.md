@@ -38,6 +38,12 @@ ordinary conversation response channel. A receipt committed before dispatch
 acknowledgement retires the dispatch without running another model inference.
 Sibling members keep independent browser scopes, journals and response owners.
 
+Explicit control changes now use the indexed
+[managed browser control events](managed-browser-control-events.md) path. RUN
+immediately reschedules an already pending wake rather than waiting for an old
+worker's retry backoff. STOP retires active user control and schedules exact
+member cancellation independently of browser-host cleanup availability.
+
 ## Verification boundary
 
 Pure ownership tests and Android framework fixtures cover member separation,
