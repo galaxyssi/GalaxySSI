@@ -2865,36 +2865,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val messages = delivered.filter { it.notifiedAtMillis <= 0L && it.deliveredConversationId.isNotBlank() }
             .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
             .filter { ProactiveAttentionStore(appContext).allowsNotification(it) }
-        if (messages.isEmpty()) return null
-        val primary = messages.lastOrNull(GlobalProactiveMessage::urgent) ?: messages.last()
-        if (messages.size == 1) {
-            return GlobalAgentNotificationCandidate(
-                title = GlobalAgentText.productTitle(primary.title).ifBlank { "GalaxySSI" },
-                content = primary.content.take(240),
-                conversationId = primary.deliveredConversationId,
-                messageIds = setOf(primary.id),
-                attention = primary.sourceEventId.startsWith("research:${ProactiveAttentionPolicy.TASK_PREFIX}"),
-                important = primary.urgent
-            )
-        }
-        val chinese = messages.any { GlobalAgentText.containsCjk(it.content) }
-        val title = if (chinese) {
-            "GalaxySSI \u6709 ${messages.size} \u6761\u65b0\u53d1\u73b0"
-        } else {
-            "GalaxySSI has ${messages.size} new insights"
-        }
-        val content = messages.asReversed()
-            .distinctBy { GlobalAgentText.normalize(it.topic) }
-            .take(3)
-            .joinToString(" \u00b7 ") { it.topic.ifBlank { it.content.take(48) } }
-        return GlobalAgentNotificationCandidate(
-            title = title,
-            content = content,
-            conversationId = primary.deliveredConversationId,
-            messageIds = messages.map(GlobalProactiveMessage::id).toSet(),
-            attention = messages.any { it.sourceEventId.startsWith("research:${ProactiveAttentionPolicy.TASK_PREFIX}") },
-            important = messages.any(GlobalProactiveMessage::urgent)
-        )
+        return GlobalProactiveNotificationPolicy.candidate(messages)
     }
 
     fun unnotifiedDeliveredMessages(limit: Int = 24): List<GlobalProactiveMessage> =
