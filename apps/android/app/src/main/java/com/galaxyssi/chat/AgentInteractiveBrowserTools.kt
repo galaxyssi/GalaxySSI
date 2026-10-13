@@ -126,8 +126,11 @@ internal object AgentInteractiveBrowserTools {
 
     internal fun scope(context: AgentNativeToolInvocationContext): String {
         require(context.conversationId.isNotBlank()) { "Interactive browser requires a bound conversation" }
-        return AgentNativeJsonCodec.sha256(mapOf("session" to context.sessionId, "conversation" to context.conversationId,
-            "workspace" to context.attributes["workspace_id"].orEmpty(), "caller" to context.callerId))
+        val owner = mapOf<String, Any>("session" to context.sessionId, "conversation" to context.conversationId,
+            "workspace" to context.attributes["workspace_id"].orEmpty(), "caller" to context.callerId)
+        // Keep ordinary scopes stable; collaboration ownership comes from the host, never tool arguments.
+        return AgentNativeJsonCodec.sha256(if (context.collaborationSourceMessageId == null) owner
+            else owner + ("collaboration_source" to context.collaborationSourceMessageId))
     }
 
     internal fun operationId(context: AgentNativeToolInvocationContext): String = AgentNativeJsonCodec.sha256(

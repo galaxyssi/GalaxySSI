@@ -4,7 +4,8 @@ package com.galaxyssi.chat
 internal object AgentBrowserRunRecoveryPolicy {
     fun bind(record: AgentBrowserUserRequest, candidates: List<AgentWorkspace>,
         session: (String) -> AgentSessionSnapshot?): AgentBrowserUserRequest {
-        if (record.modelLoopId.isBlank() && record.actionPlanBinding.isBlank()) return record
+        if (record.collaborationSourceMessageId != null ||
+            record.modelLoopId.isBlank() && record.actionPlanBinding.isBlank()) return record
         val owners = candidates.mapNotNull { workspace ->
             if (workspace.taskId != record.taskId || workspace.conversationId != record.conversationId ||
                 workspace.status.isTerminal || workspace.cancellationRequested) return@mapNotNull null
@@ -29,7 +30,7 @@ internal object AgentBrowserRunRecoveryPolicy {
 
     private fun matchesRuntime(record: AgentBrowserUserRequest, workspace: AgentWorkspace,
         session: AgentSessionSnapshot): Boolean =
-        record.sessionId == session.sessionId && record.taskId == workspace.taskId &&
+        record.collaborationSourceMessageId == null && record.sessionId == session.sessionId && record.taskId == workspace.taskId &&
             record.turnId == workspace.taskId && record.conversationId == workspace.conversationId &&
             record.workspaceId == AgentWorkspaceScope.id(workspace.conversationId, session.sessionId) &&
             (if (record.actionPlanBinding.isNotBlank()) AgentBrowserActionPlanPolicy.action(record, session) != null

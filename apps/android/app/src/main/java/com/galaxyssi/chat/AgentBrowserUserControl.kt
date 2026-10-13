@@ -62,7 +62,8 @@ internal class AgentBrowserUserControl(
                     actionPlanId = invocation.context.attributes["action_plan_id"].orEmpty(),
                     actionPlanRevision = invocation.context.attributes["action_plan_revision"]?.toIntOrNull() ?: -1,
                     actionId = invocation.context.attributes["action_id"].orEmpty(),
-                    actionPlanBinding = invocation.context.attributes["action_plan_binding"].orEmpty())
+                    actionPlanBinding = invocation.context.attributes["action_plan_binding"].orEmpty(),
+                    collaborationSourceMessageId = invocation.context.collaborationSourceMessageId)
                     .let { candidate -> AgentLocalBrowserDispatchStore(app).bind(candidate) }
                     .let { candidate -> if (candidate.callerId == LocalModelLoopContinuation.CALLER) candidate else AgentBrowserRunRecoveryPolicy.bind(candidate,
                         AgentTaskRuntime.supervisor(app).activeWorkspaces()) { workspace ->

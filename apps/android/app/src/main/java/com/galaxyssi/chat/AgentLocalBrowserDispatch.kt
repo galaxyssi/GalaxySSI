@@ -67,7 +67,8 @@ internal object AgentLocalBrowserDispatchPolicy {
             record.sessionId == scope.session && record.conversationId == scope.conversation &&
             record.turnId == scope.turn && record.taskId == scope.task && record.workspaceId == scope.workspace &&
             record.callerId == scope.caller && record.runWorkspaceId == dispatch.runWorkspaceId &&
-            record.runSessionId == dispatch.runSessionId && record.actionPlanBinding.isBlank()
+            record.runSessionId == dispatch.runSessionId && record.actionPlanBinding.isBlank() &&
+            record.collaborationSourceMessageId == null
     }
 }
 

@@ -59,7 +59,8 @@ class AgentBrowserActionPlanTest {
         changed.forEach { assertNull(AgentBrowserActionPlanPolicy.action(record, session(it))) }
         listOf(record.copy(pageId = "other"), record.copy(browserSessionId = "other"), record.copy(actionId = "other"),
             record.copy(actionPlanRevision = 8), record.copy(actionPlanBinding = "other"), record.copy(callerId = "other"),
-            record.copy(scope = "other"), record.copy(modelLoopId = "other-loop")).forEach {
+            record.copy(scope = "other"), record.copy(modelLoopId = "other-loop"),
+            record.copy(collaborationSourceMessageId = 101)).forEach {
             assertNull(AgentBrowserActionPlanPolicy.action(it, session()))
         }
     }

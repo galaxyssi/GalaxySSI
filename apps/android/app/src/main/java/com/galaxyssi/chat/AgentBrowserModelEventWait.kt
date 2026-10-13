@@ -29,7 +29,7 @@ internal class AgentBrowserModelEventWaitResolver(
         val context = AgentNativeToolInvocationContext(invocationId = result.receipt.invocationId,
             sessionId = request.sessionId, conversationId = request.conversationId, turnId = request.turnId,
             callerId = request.callerId, attributes = mapOf("task_id" to request.taskId,
-                "workspace_id" to request.workspaceId))
+                "workspace_id" to request.workspaceId), collaborationSourceMessageId = request.collaborationSourceMessageId)
         if (record == null || record.generation != generation || !record.sameOwner(context) ||
             record.modelLoopId != request.loopId || record.browserSessionId != call.arguments["session_id"] ||
             record.pageId != call.arguments["page_id"] || !ownsRun(record)) {

@@ -32,7 +32,8 @@ internal data class AgentBrowserUserRequest(
     val actionId: String = "",
     val actionPlanBinding: String = "",
     val runtimeInstanceId: String = "",
-    val localDispatchId: String = ""
+    val localDispatchId: String = "",
+    val collaborationSourceMessageId: Long? = null
 ) {
     val settled: Boolean get() = state in setOf("returned", "interrupted")
     val pendingRunWake: Boolean get() = settled && runWorkspaceId.isNotBlank() && !runWakeAcknowledged
@@ -46,7 +47,9 @@ internal data class AgentBrowserUserRequest(
     fun sameOwner(context: AgentNativeToolInvocationContext): Boolean =
         sessionId == context.sessionId && conversationId == context.conversationId && turnId == context.turnId &&
             callerId == context.callerId && workspaceId == context.attributes["workspace_id"].orEmpty() &&
-            taskId == context.attributes["task_id"].orEmpty() && scope == AgentInteractiveBrowserTools.scope(context)
+            taskId == context.attributes["task_id"].orEmpty() &&
+            collaborationSourceMessageId == context.collaborationSourceMessageId &&
+            scope == AgentInteractiveBrowserTools.scope(context)
 
     fun permitsSameGeneration(next: AgentBrowserUserRequest): Boolean =
         copy(handoffId = "", state = "", runWakeAcknowledged = false, interruptionCode = "", modelObservationCommitted = false,
@@ -75,6 +78,7 @@ internal data class AgentBrowserUserRequest(
         .put("action", actionId).put("action_plan_binding", actionPlanBinding)
         .put("runtime_instance", runtimeInstanceId)
         .put("local_dispatch", localDispatchId)
+        .put("collaboration_source", collaborationSourceMessageId ?: JSONObject.NULL)
 
     companion object {
         fun fromJson(json: JSONObject) = AgentBrowserUserRequest(json.getString("key"), json.getString("generation"),
@@ -85,7 +89,8 @@ internal data class AgentBrowserUserRequest(
             json.optString("run_planning_binding"), json.optString("host_process"), json.optString("interruption_code"),
             json.optBoolean("model_observation_committed"), json.optString("action_plan"),
             json.optInt("action_plan_revision", -1), json.optString("action"), json.optString("action_plan_binding"),
-            json.optString("runtime_instance"), json.optString("local_dispatch"))
+            json.optString("runtime_instance"), json.optString("local_dispatch"),
+            if (json.has("collaboration_source") && !json.isNull("collaboration_source")) json.getLong("collaboration_source") else null)
 
         fun key(scope: String, browser: String) = AgentNativeJsonCodec.sha256(mapOf("scope" to scope, "browser" to browser))
     }
