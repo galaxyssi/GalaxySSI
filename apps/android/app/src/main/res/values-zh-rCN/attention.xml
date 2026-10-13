@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="attention_title">主动关注</string>
+    <string name="attention_discoveries">主动发现</string>
+    <string name="attention_view">查看发现</string>
+    <string name="attention_unread_entry">主动发现 · %1$d 条未读</string>
+    <string name="attention_finance">金融信息</string>
+    <string name="attention_collection">信息收集</string>
+    <string name="attention_technology">科技与产品</string>
+    <string name="attention_galaxyssi">GalaxySSI 相关</string>
+    <string name="attention_research">研究与创新</string>
+    <string name="attention_custom">自定义关注</string>
+    <string name="attention_count">已关注 %1$d 类 · 持续更新</string>
+    <string name="attention_add">添加关注</string>
+    <string name="attention_edit">关注范围</string>
+    <string name="attention_name">关注名称</string>
+    <string name="attention_query">关注的领域、项目或具体问题</string>
+    <string name="attention_empty">暂时没有新发现</string>
+    <string name="attention_loading">正在加载</string>
+    <string name="attention_all">全部</string>
+    <string name="attention_important">重要</string>
+    <string name="attention_unread">未读</string>
+    <string name="attention_saved">收藏</string>
+    <string name="attention_alert_important">重要才弹出</string>
+    <string name="attention_alert_all">新发现也提醒</string>
+    <string name="attention_alert_silent">仅收集</string>
+    <string name="attention_not_connected">未接入</string>
+    <string name="attention_analyze">查看分析与追问</string>
+    <string name="attention_save">收藏</string>
+    <string name="attention_unsave">取消收藏</string>
+    <string name="attention_read">标记已读</string>
+    <string name="attention_source_count">%1$d 项原始资料</string>
+    <string name="attention_sources">来源</string>
+    <string name="attention_unknown_date">发布时间未知</string>
+    <string name="attention_dates">发布 %1$s · 获取 %2$s</string>
+    <string name="attention_paused">已暂停收集</string>
+    <string name="attention_waiting">等待可用的研究模型</string>
+    <string name="attention_researching">正在研究 %1$d 个主题</string>
+    <string name="attention_ready">持续关注 %1$d 个主题</string>
+    <string name="attention_updated">最近收集 %1$s</string>
+    <string name="attention_models">后台研究模型</string>
+    <string name="attention_paired">允许配对 Agent 研究公开资料</string>
+    <string name="attention_cloud">允许云模型研究公开资料</string>
+    <string name="attention_notifications">系统通知设置</string>
+    <string name="attention_error">加载失败，点击重试</string>
+    <string name="attention_invalid">请填写关注名称和范围</string>
+    <string name="attention_failed">部分研究暂不可用 · 请检查模型</string>
+    <string name="attention_notification_channel">主动发现</string>
+    <string-array name="attention_categories">
+        <item>宏观经济与政策</item><item>央行与利率</item><item>股票市场</item>
+        <item>公司基本面</item><item>行业与产业链</item><item>基金与 ETF</item>
+        <item>债券与固定收益</item><item>外汇</item><item>黄金与大宗商品</item>
+        <item>数字资产</item><item>机构与资金动向</item><item>事件与机会线索</item>
+        <item>风险预警与事实核查</item><item>个人持仓与关注清单</item><item>个人金融与成本</item>
+        <item>AI 模型动态</item><item>智能体前沿</item><item>优质开源项目</item>
+        <item>开发工具与基础设施</item><item>多模态与语音</item><item>AR 眼镜与可穿戴设备</item><item>手机与端侧 AI</item>
+        <item>可直接用于 GalaxySSI 的改进</item><item>同类产品与竞争动态</item><item>用户痛点与真实需求</item>
+        <item>项目风险与依赖变化</item><item>产品设计与体验</item>
+        <item>重要论文与研究成果</item><item>蛋白质与生命科学</item><item>跨领域创新机会</item><item>评测与科学验证</item>
+    </string-array>
+    <string-array name="attention_scopes">
+        <item>宏观经济数据、财政政策与监管政策的实质变化</item>
+        <item>央行决议、利率与市场预期变化</item>
+        <item>A 股、港股、美股市场的重要变化与公开数据</item>
+        <item>公司公告、业绩、现金流、债务与经营风险</item>
+        <item>人工智能、半导体、机器人、能源与医药产业链的基本面变化</item>
+        <item>基金与 ETF 的费率、持仓、跟踪误差和产品公告</item>
+        <item>国债和企业债的收益率、信用变化与偿付风险</item>
+        <item>汇率、利差与外汇政策变化</item>
+        <item>黄金、白银、原油、铜的供需和库存变化</item>
+        <item>数字资产监管、平台安全与稳定币风险</item>
+        <item>机构公开披露、回购与股东交易，注明披露滞后</item>
+        <item>分红、并购、重组、指数调整，核实机会线索</item>
+        <item>金融诈骗预警、谣言核查、违约与财务风险</item>
+        <item>公开的持仓集中度与分散风险知识，不访问账户，不假设已有个人持仓</item>
+        <item>公开的存款、贷款、保险和金融服务费用，不假设已有个人账户</item>
+        <item>新模型发布、实际能力、价格、上下文、API、模型停用及替代方案</item>
+        <item>自主执行、多智能体协作、记忆、主动性、自我改进的新方法与实际案例</item>
+        <item>值得研究或集成的开源项目、重大更新、实现原理、许可证与维护情况</item>
+        <item>编程工具、浏览器自动化、MCP、Skills、数据库、通信协议和部署方案</item>
+        <item>图片、视频、实时语音、ASR、TTS、回声消除、端侧推理的新进展</item>
+        <item>AR 眼镜和可穿戴新设备、真实体验、开放 SDK、第三方应用支持、传感器与接口</item>
+        <item>Android、Wear OS、本地模型、NPU/QNN、功耗、后台运行和系统变化</item>
+        <item>外部新技术与 GalaxySSI 现有架构的对应关系、能改善什么、集成难度和验证方法；无法确认架构时明确标注待核实</item>
+        <item>同类 Agent 的新增功能、交互设计、速度、可靠性、价格和用户评价</item>
+        <item>用户反复抱怨的问题、未被满足的需求、值得优先开发的功能，并核实反馈来源及代表性</item>
+        <item>依赖漏洞、接口弃用、服务调整、许可证变化、可能影响现有功能的更新，区分已确认影响与待核实风险</item>
+        <item>优秀的聊天、协作、语音、悬浮交互、通知和多设备体验案例</item>
+        <item>与关注方向相关的论文、方法、数据、代码、独立复现和研究局限</item>
+        <item>蛋白质设计、结构预测、功能验证、实验平台、开放数据与工具；区分计算预测与真实实验结果</item>
+        <item>不同领域方法的组合机会、矛盾证据、知识空白和可检验的新假设，核查已有工作，不把假设当作已验证创新</item>
+        <item>新基准、数据集、对照实验方法、失败案例、评测污染和可复现性问题</item>
+    </string-array>
+</resources>

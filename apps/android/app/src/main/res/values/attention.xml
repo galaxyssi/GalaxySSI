@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="attention_title">Proactive attention</string>
+    <string name="attention_discoveries">Discoveries</string>
+    <string name="attention_view">View discoveries</string>
+    <string name="attention_unread_entry">Discoveries · %1$d unread</string>
+    <string name="attention_finance">Financial information</string>
+    <string name="attention_collection">Information collection</string>
+    <string name="attention_technology">Technology and products</string>
+    <string name="attention_galaxyssi">GalaxySSI</string>
+    <string name="attention_research">Research and innovation</string>
+    <string name="attention_custom">Custom topics</string>
+    <string name="attention_count">Following %1$d topics · continuously updated</string>
+    <string name="attention_add">Add topic</string>
+    <string name="attention_edit">Research scope</string>
+    <string name="attention_name">Topic name</string>
+    <string name="attention_query">Fields, projects or questions to follow</string>
+    <string name="attention_empty">No discoveries yet</string>
+    <string name="attention_loading">Loading</string>
+    <string name="attention_all">All</string>
+    <string name="attention_important">Important</string>
+    <string name="attention_unread">Unread</string>
+    <string name="attention_saved">Saved</string>
+    <string name="attention_alert_important">Important only</string>
+    <string name="attention_alert_all">New findings</string>
+    <string name="attention_alert_silent">Collect only</string>
+    <string name="attention_not_connected">Not connected</string>
+    <string name="attention_analyze">View analysis and ask</string>
+    <string name="attention_save">Save finding</string>
+    <string name="attention_unsave">Unsave finding</string>
+    <string name="attention_read">Mark as read</string>
+    <string name="attention_source_count">%1$d original sources</string>
+    <string name="attention_sources">Sources</string>
+    <string name="attention_unknown_date">Publication date unavailable</string>
+    <string name="attention_dates">Published %1$s · Retrieved %2$s</string>
+    <string name="attention_paused">Collection paused</string>
+    <string name="attention_waiting">Waiting for an available research model</string>
+    <string name="attention_researching">Researching %1$d topics</string>
+    <string name="attention_ready">Following %1$d topics</string>
+    <string name="attention_updated">Last collected %1$s</string>
+    <string name="attention_models">Background research models</string>
+    <string name="attention_paired">Allow paired Agent for public research</string>
+    <string name="attention_cloud">Allow cloud model for public research</string>
+    <string name="attention_notifications">Notification settings</string>
+    <string name="attention_error">Could not load. Tap to retry.</string>
+    <string name="attention_invalid">Enter a topic name and research scope.</string>
+    <string name="attention_failed">Some research is unavailable · check models</string>
+    <string name="attention_notification_channel">Proactive discoveries</string>
+    <string-array name="attention_categories">
+        <item>Macroeconomics and policy</item><item>Central banks and rates</item><item>Equity markets</item>
+        <item>Company fundamentals</item><item>Industries and supply chains</item><item>Funds and ETFs</item>
+        <item>Bonds and fixed income</item><item>Foreign exchange</item><item>Gold and commodities</item>
+        <item>Digital assets</item><item>Institutional disclosures</item><item>Events and opportunities</item>
+        <item>Risk alerts and fact checks</item><item>Portfolio and watchlist</item><item>Personal finance and fees</item>
+        <item>AI models</item><item>Agent frontiers</item><item>Open-source projects</item>
+        <item>Developer tools and infrastructure</item><item>Multimodal and voice</item><item>AR glasses and wearables</item><item>Mobile and on-device AI</item>
+        <item>GalaxySSI improvements</item><item>Agent products and competition</item><item>User needs and pain points</item>
+        <item>Project and dependency risks</item><item>Product design and experience</item>
+        <item>Papers and research findings</item><item>Proteins and life sciences</item><item>Cross-domain innovation</item><item>Evaluation and scientific validation</item>
+    </string-array>
+    <string-array name="attention_scopes">
+        <item>Macroeconomic data and fiscal or regulatory policy changes</item>
+        <item>Central bank decisions, rates and changes in expectations</item>
+        <item>Material changes in China, Hong Kong and US equity markets</item>
+        <item>Company filings, earnings, cash flow, debt and operating risks</item>
+        <item>AI, semiconductor, robotics, energy and pharmaceutical industry fundamentals</item>
+        <item>Fund and ETF fees, holdings, tracking error and announcements</item>
+        <item>Sovereign and corporate bond yields, credit and repayment risks</item>
+        <item>Exchange rates, rate differences and currency policy</item>
+        <item>Gold, silver, oil and copper supply, demand and inventories</item>
+        <item>Digital asset regulation, platform security and stablecoin risks</item>
+        <item>Public institutional disclosures, buybacks and transactions; identify disclosure lag</item>
+        <item>Dividends, mergers, reorganizations and index changes; verify opportunity leads</item>
+        <item>Financial fraud warnings, corrected rumors, default and accounting risks</item>
+        <item>Public portfolio diversification guidance; no account access or assumed holdings</item>
+        <item>Public deposit, loan, insurance and service fees; no assumed private accounts</item>
+        <item>New models, measured capabilities, prices, context, APIs, deprecations and alternatives</item>
+        <item>Autonomy, multi-agent collaboration, memory, proactivity and self-improvement methods with demonstrated cases</item>
+        <item>Useful open-source projects, major releases, implementation, licenses and maintenance</item>
+        <item>Developer tools, browser automation, MCP, Skills, databases, communication protocols and deployment</item>
+        <item>Images, video, realtime voice, ASR, TTS, echo cancellation and on-device inference</item>
+        <item>AR glasses and wearables, hands-on evidence, open SDKs, third-party applications, sensors and interfaces</item>
+        <item>Android, Wear OS, local models, NPU/QNN, power consumption, background execution and system changes</item>
+        <item>External techniques relevant to GalaxySSI architecture, benefits, integration effort and validation; label unconfirmed compatibility</item>
+        <item>Comparable Agent features, interaction design, speed, reliability, prices and user reviews</item>
+        <item>Recurring complaints, unmet needs and candidate priorities; verify source and representativeness</item>
+        <item>Dependency vulnerabilities, API deprecations, service and license changes; distinguish confirmed impact from potential risks</item>
+        <item>Chat, collaboration, voice, floating interaction, notification and multi-device experience examples</item>
+        <item>Relevant papers, methods, data, code, independent reproductions and limitations</item>
+        <item>Protein design, structure prediction, functional validation, experimental platforms, open data and tools; distinguish predictions from experiments</item>
+        <item>Cross-domain combinations, conflicting evidence, knowledge gaps and testable hypotheses; check prior work and do not claim unverified novelty</item>
+        <item>Benchmarks, datasets, controlled experiments, failure cases, evaluation contamination and reproducibility</item>
+    </string-array>
+</resources>

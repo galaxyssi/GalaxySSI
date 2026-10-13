@@ -319,7 +319,7 @@ class GlobalResearchExecutor(context: Context) {
             clientMessageId = sourceMessageId,
             conversationId = GlobalConnectorResponseScope.RESEARCH.conversation(task.id),
             turnId = unit.id,
-            trustedBackgroundCognition = repository.settings().allowPairedAgentCognition
+            trustedBackgroundCognition = researchSettings(task).allowPairedAgentCognition
         )
         return if (published) UnitDispatchResult(running) else {
             modelCallBudget.cancel(GlobalModelCallKind.RESEARCH_EVIDENCE, ownerKey)
@@ -636,7 +636,7 @@ class GlobalResearchExecutor(context: Context) {
             clientMessageId = sourceMessageId,
             conversationId = GlobalConnectorResponseScope.RESEARCH.conversation(task.id),
             turnId = "${task.id}:synthesis",
-            trustedBackgroundCognition = repository.settings().allowPairedAgentCognition
+            trustedBackgroundCognition = researchSettings(task).allowPairedAgentCognition
         )
         if (!published) {
             modelCallBudget.cancel(GlobalModelCallKind.RESEARCH_SYNTHESIS, ownerKey)
@@ -711,13 +711,23 @@ class GlobalResearchExecutor(context: Context) {
             repository.upsertResearchTask(invalidated)
             return GlobalResearchExecutionResult(task.id, invalidated.status, resourceId, invalidated.lastError)
         }
-        val result = CodexStyleResponsePolicy.sanitizeAssistantText(rawResult).trim().take(MAX_RESULT_CHARACTERS)
+        val attention = ProactiveAttentionPolicy.isAttention(task)
+        if (attention && !ProactiveAttentionPolicy.shouldCollect(ProactiveAttentionStore(appContext).preferences(),
+                task.id.removePrefix(ProactiveAttentionPolicy.TASK_PREFIX))) {
+            repository.updateResearchTask(task.id) { it.copy(status = GlobalResearchTaskStatus.PAUSED, leaseExpiresAtMillis = 0L) }
+            return GlobalResearchExecutionResult(task.id, GlobalResearchTaskStatus.PAUSED, resourceId, "Attention disabled")
+        }
+        val attentionImportant = attention && ProactiveAttentionPolicy.important(rawResult, evidenceLedger)
+        val visibleResult = if (attention) ProactiveAttentionPolicy.visibleResult(rawResult) else rawResult
+        val result = CodexStyleResponsePolicy.sanitizeAssistantText(visibleResult).trim().take(MAX_RESULT_CHARACTERS)
         if (result.isBlank()) return retryOrFail(task, "The research result was empty")
         val evidenceUris = (evidenceLedger.sources.map(GlobalEvidenceSource::uri) +
             GlobalEvidenceEvaluator.extractUrls(result)).distinct().take(MAX_EVIDENCE_URIS)
         val now = System.currentTimeMillis()
         val materialChange = GlobalResearchTaskPolicy.isMaterialChange(task.result, task.evidenceUris, result, evidenceUris)
         val continuous = task.depth == GlobalResearchDepth.CONTINUOUS_MONITOR
+        val monitorInterval = if (attention) ProactiveAttentionPolicy.nextInterval(rawResult, materialChange,
+            GlobalResearchTaskPolicy.monitorIntervalMillis(task.monitorIntervalMillis)) else task.monitorIntervalMillis
         val completedPlan = task.researchPlan.copy(
             phase = GlobalResearchPlanPhase.COMPLETED,
             units = task.researchPlan.units.map { unit ->
@@ -739,7 +749,7 @@ class GlobalResearchExecutor(context: Context) {
             sourceMessageId = 0L,
             attemptCount = if (continuous) 0 else task.attemptCount,
             nextAttemptAtMillis = if (continuous) {
-                now + GlobalResearchTaskPolicy.monitorIntervalMillis(task.monitorIntervalMillis)
+                now + GlobalResearchTaskPolicy.monitorIntervalMillis(monitorInterval)
             } else 0L,
             leaseExpiresAtMillis = 0L,
             lastCompletedAtMillis = now,
@@ -749,10 +759,12 @@ class GlobalResearchExecutor(context: Context) {
             researchPlan = if (continuous) GlobalResearchPlan() else completedPlan,
             evidenceLedger = evidenceLedger,
             lastError = "",
+            monitorIntervalMillis = monitorInterval,
             updatedAtMillis = now
         )
         repository.upsertResearchTask(completed)
-        publishCompletedResearch(completed, materialChange, resourceId)
+        if (attention && materialChange && evidenceLedger.verified) ProactiveAttentionStore(appContext).saveEvidence(completed, attentionImportant)
+        publishCompletedResearch(completed, materialChange, resourceId, attentionImportant)
         if (resourceId != "local-evidence-synthesis") {
             AgentResourceHealthStore(appContext).record("target:$resourceId", true, now - task.updatedAtMillis)
         }
@@ -762,7 +774,8 @@ class GlobalResearchExecutor(context: Context) {
     private fun publishCompletedResearch(
         task: GlobalResearchTask,
         materialChange: Boolean,
-        resourceId: String
+        resourceId: String,
+        attentionImportant: Boolean = false
     ) {
         val continuous = task.depth == GlobalResearchDepth.CONTINUOUS_MONITOR
         if (continuous && (!materialChange || !task.evidenceLedger.verified)) return
@@ -781,6 +794,7 @@ class GlobalResearchExecutor(context: Context) {
                 else -> GlobalProactiveTarget.CURRENT_CONVERSATION
             },
             title = when {
+                ProactiveAttentionPolicy.isAttention(task) -> task.topic
                 task.evidenceLedger.verified && chinese -> "\u7814\u7a76\u7ed3\u679c"
                 task.evidenceLedger.verified -> "Research result"
                 chinese -> "\u8bc1\u636e\u5f85\u9a8c\u8bc1"
@@ -788,7 +802,7 @@ class GlobalResearchExecutor(context: Context) {
             },
             content = task.result,
             topic = task.topic,
-            urgent = false,
+            urgent = attentionImportant,
             createdAtMillis = now
         ))
         repository.enqueue(GlobalConversationEvent(
@@ -903,6 +917,8 @@ class GlobalResearchExecutor(context: Context) {
     }
 
     private fun publishResearchFailure(task: GlobalResearchTask, reason: String) {
+        // Followed-topic failures are shown in the attention page, not as fabricated discoveries.
+        if (ProactiveAttentionPolicy.isAttention(task)) return
         val causalEventIds = task.causalEventIds.ifEmpty { setOf(task.sourceEventId) }
         if (repository.loadWorld().hasRetractedEvidence(causalEventIds)) return
         val chinese = GlobalAgentText.containsCjk(task.question)
@@ -924,12 +940,20 @@ class GlobalResearchExecutor(context: Context) {
     }
 
     private fun routeResources(task: GlobalResearchTask): List<String> {
-        val settings = repository.settings()
+        val settings = researchSettings(task)
         return resources.route(
             buildRoutingGoal(task),
             settings.allowPairedAgentCognition,
             settings.allowCloudCognition
         )
+    }
+
+    private fun researchSettings(task: GlobalResearchTask): GlobalAgentSettings {
+        val settings = repository.settings()
+        if (!ProactiveAttentionPolicy.isAttention(task)) return settings
+        val attention = ProactiveAttentionStore(appContext).preferences()
+        return settings.copy(allowPairedAgentCognition = attention.allowPairedModel,
+            allowCloudCognition = attention.allowCloudModel)
     }
 
     private fun selectResource(
@@ -957,21 +981,22 @@ class GlobalResearchExecutor(context: Context) {
 
     private fun buildUnitPrompt(task: GlobalResearchTask, unit: GlobalResearchUnit): String {
         val monitorBaseline = GlobalContinuousMonitorPolicy.baselineBlock(task)
-        val worldContext = GlobalAgentContextSelector.buildWithGraph(
+        val publicAttention = ProactiveAttentionPolicy.isAttention(task)
+        val worldContext = if (publicAttention) "" else GlobalAgentContextSelector.buildWithGraph(
             repository.loadWorld(),
             repository.topicGraph(),
             unit.question,
             task.sourceConversationId,
             maxCharacters = 3_000
         )
-        val conversationContext = repository.recentConversationContext(
+        val conversationContext = if (publicAttention) "" else repository.recentConversationContext(
             conversationId = task.sourceConversationId,
             beforeOrAtMillis = GlobalContinuousMonitorPolicy.contextCutoffMillis(task),
             excludedEventIds = setOf(task.sourceEventId),
             maximumEvents = 10,
             maximumCharacters = 2_500
         )
-        val realtimeState = realtimeContext.build(
+        val realtimeState = if (publicAttention) "" else realtimeContext.build(
             query = unit.question,
             currentConversationId = task.sourceConversationId,
             excludedKeys = setOf("research:${task.id}"),
@@ -1007,21 +1032,22 @@ class GlobalResearchExecutor(context: Context) {
 
     private fun buildSynthesisPrompt(task: GlobalResearchTask, ledger: GlobalEvidenceLedger): String {
         val monitorBaseline = GlobalContinuousMonitorPolicy.baselineBlock(task)
-        val worldContext = GlobalAgentContextSelector.buildWithGraph(
+        val publicAttention = ProactiveAttentionPolicy.isAttention(task)
+        val worldContext = if (publicAttention) "" else GlobalAgentContextSelector.buildWithGraph(
             repository.loadWorld(),
             repository.topicGraph(),
             task.question,
             task.sourceConversationId,
             maxCharacters = 4_000
         )
-        val conversationContext = repository.recentConversationContext(
+        val conversationContext = if (publicAttention) "" else repository.recentConversationContext(
             conversationId = task.sourceConversationId,
             beforeOrAtMillis = GlobalContinuousMonitorPolicy.contextCutoffMillis(task),
             excludedEventIds = setOf(task.sourceEventId),
             maximumEvents = 10,
             maximumCharacters = 2_500
         )
-        val realtimeState = realtimeContext.build(
+        val realtimeState = if (publicAttention) "" else realtimeContext.build(
             query = task.question,
             currentConversationId = task.sourceConversationId,
             excludedKeys = setOf("research:${task.id}"),
@@ -1029,6 +1055,7 @@ class GlobalResearchExecutor(context: Context) {
             maximumCharacters = 2_000
         )
         return buildString {
+            if (publicAttention) append(ProactiveAttentionPolicy.SYNTHESIS_INSTRUCTIONS).append("\n\n")
             append("Original research question:\n").append(task.question).append("\n\n")
             append("Evidence ledger: ").append(ledger.independentSourceCount).append(" independent sources, ")
                 .append(ledger.primarySourceCount).append(" primary sources, ")
