@@ -148,6 +148,7 @@ class AgentInteractiveBrowserDeviceTest {
         val cli = context.assets.open("interactive-browser/browser-session-cli.cjs").bufferedReader().use { it.readText() }
         val userControl = context.assets.open("interactive-browser/browser-user-control.cjs").bufferedReader().use { it.readText() }
         val supervisor = context.assets.open("interactive-browser/browser-service-supervisor.cjs").bufferedReader().use { it.readText() }
+        val receipts = context.assets.open("interactive-browser/browser-operation-receipts.cjs").bufferedReader().use { it.readText() }
         assertTrue(engine.contains("class BrowserSessions"))
         assertTrue(engine.contains("page_observation_stale"))
         assertTrue(engine.contains("beginHumanControl"))
@@ -160,7 +161,27 @@ class AgentInteractiveBrowserDeviceTest {
         assertTrue(supervisor.contains("class BrowserServiceExitMonitor"))
         assertTrue(supervisor.contains("child.once('exit'"))
         assertTrue(cli.contains("'supervise'"))
-        assertEquals(4, AgentInteractiveBrowserTools.stageHelpers(context).size)
+        assertTrue(cli.contains("receipts.status(request.input.request_id)"))
+        assertTrue(receipts.contains("class BrowserOperationReceipts"))
+        assertEquals(5, AgentInteractiveBrowserTools.stageHelpers(context).size)
+    }
+
+    @Test fun lostBrowserResponseExposesTheSameOperationIdUsedByTheRuntime() {
+        val scope = AgentNativeToolInvocationContext(sessionId = "public-receipt-agent",
+            conversationId = "public-receipt-conversation", invocationId = UUID.randomUUID().toString(),
+            idempotencyKey = "public-receipt-${UUID.randomUUID()}")
+        var request: AgentRuntimeExecutionRequest? = null
+        val registry = AgentNativeToolRegistry().registerAll(AgentInteractiveBrowserTools.definitions({
+            request = it
+            AgentRuntimeExecutionResponse(1, "", "private-fixture-diagnostic", 1)
+        }))
+        val result = registry.invoke(AgentInteractiveBrowserTools.ACT, mapOf("operation" to "click"), scope)
+        assertEquals("browser_result_unobserved", result.error?.code)
+        assertEquals(true, result.error?.details?.get("outcome_unknown"))
+        assertEquals(request!!.secretEnvironment["GALAXYSSI_BROWSER_OPERATION_ID"], result.error?.details?.get("request_id"))
+        assertEquals("operation_status", result.error?.details?.get("reconciliation_operation"))
+        assertFalse(result.toJson().contains("private-fixture-diagnostic"))
+        assertEquals(AgentInteractiveBrowserTools.operationId(scope), result.error?.details?.get("request_id"))
     }
 
     @Test fun publicMissingSessionProbeRunsThroughThePhoneRuntimeAndReturnsRecoveryEvidence() {

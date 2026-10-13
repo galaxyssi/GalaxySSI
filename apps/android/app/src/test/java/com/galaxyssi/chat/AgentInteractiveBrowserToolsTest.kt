@@ -49,6 +49,8 @@ class AgentInteractiveBrowserToolsTest {
         assertEquals(1, executions)
         assertEquals("browser_result_unobserved", result.error?.code)
         assertEquals(true, result.error?.details?.get("outcome_unknown"))
+        assertEquals(AgentInteractiveBrowserTools.operationId(context), result.error?.details?.get("request_id"))
+        assertEquals("operation_status", result.error?.details?.get("reconciliation_operation"))
         assertFalse(result.toJson().contains("private-error"))
     }
 
@@ -58,6 +60,7 @@ class AgentInteractiveBrowserToolsTest {
         assertEquals("page_observation_stale", result.error?.code)
         assertEquals(false, result.error?.details?.get("executed"))
         assertEquals(false, result.error?.details?.get("goal_terminal"))
+        assertEquals(false, result.error?.details?.get("outcome_unknown"))
     }
 
     @Test fun readOnlyBrowserToolCannotDispatchMutations() {
@@ -116,6 +119,54 @@ class AgentInteractiveBrowserToolsTest {
         assertTrue(environment.size <= 32)
         assertTrue(environment.values.all { it.toByteArray(Charsets.UTF_8).size <= 4096 })
         assertTrue(decodeEnvironment(environment).contains(value))
+    }
+
+    @Test fun operationIdentityIsStableForOneInvocationButIsolatedAcrossCallsAndScopes() {
+        val id = AgentInteractiveBrowserTools.operationId(context)
+        assertEquals(id, AgentInteractiveBrowserTools.operationId(context.copy()))
+        assertNotEquals(id, AgentInteractiveBrowserTools.operationId(context.copy(invocationId = "later")))
+        assertNotEquals(id, AgentInteractiveBrowserTools.operationId(context.copy(turnId = "later-turn")))
+        assertNotEquals(id, AgentInteractiveBrowserTools.operationId(context.copy(conversationId = "other")))
+        assertNotEquals(id, AgentInteractiveBrowserTools.operationId(context.copy(callerId = "other")))
+    }
+
+    @Test fun operationStatusIsReadOnlyAndUsesTheOriginalRequestIdWithoutResubmitting() {
+        val requests = mutableListOf<AgentRuntimeExecutionRequest>()
+        val registry = registry { requests += it; response("""{"ok":true,"result":{"request_id":"original-request","state":"completed","business_success_verified":false,"verification_required":true}}""") }
+        val result = registry.invoke(AgentInteractiveBrowserTools.OBSERVE,
+            mapOf("operation" to "operation_status", "request_id" to "original-request"), context)
+        assertTrue(result.isSuccess)
+        assertEquals("original-request", result.output["request_id"])
+        assertEquals(false, result.output["business_success_verified"])
+        assertEquals(1, requests.size)
+        assertTrue(decodeEnvironment(requests.single().secretEnvironment).contains("original-request"))
+        assertEquals(AgentInteractiveBrowserTools.operationId(context),
+            requests.single().secretEnvironment["GALAXYSSI_BROWSER_OPERATION_ID"])
+        assertFalse(registry.invoke(AgentInteractiveBrowserTools.ACT,
+            mapOf("operation" to "operation_status", "request_id" to "original-request"), context).isSuccess)
+    }
+
+    @Test fun operationIdentityAndHostCapabilityRespectTheSecureEnvironmentKeyBudget() {
+        val environment = AgentInteractiveBrowserTools.secretEnvironment(
+            mapOf("operation" to "fill", "value" to "\u4f60\u597d".repeat(5000)), "a".repeat(64), "b".repeat(64))
+        assertTrue(environment.size <= 32)
+        assertEquals("b".repeat(64), environment["GALAXYSSI_BROWSER_OPERATION_ID"])
+        assertTrue(environment.values.all { it.toByteArray(Charsets.UTF_8).size <= 4096 })
+    }
+
+    @Test fun thrownRuntimeFailureKeepsTheOperationIdentityWithoutLeakingExceptionText() {
+        val registry = registry { throw IllegalStateException("private-password-runtime-error") }
+        val result = registry.invoke(AgentInteractiveBrowserTools.ACT, mapOf("operation" to "click"), context)
+        assertEquals("browser_result_unobserved", result.error?.code)
+        assertEquals(true, result.error?.details?.get("outcome_unknown"))
+        assertEquals(AgentInteractiveBrowserTools.operationId(context), result.error?.details?.get("request_id"))
+        assertFalse(result.toJson().contains("private-password"))
+    }
+
+    @Test fun explicitNativeCancellationRemainsCancellationRatherThanAModelRecoveryObservation() {
+        val registry = registry { throw AgentNativeToolCancelledException() }
+        val result = registry.invoke(AgentInteractiveBrowserTools.ACT, mapOf("operation" to "click"), context)
+        assertEquals(AgentNativeToolResultStatus.CANCELLED, result.status)
     }
 
     private fun decodeEnvironment(environment: Map<String, String>): String {
