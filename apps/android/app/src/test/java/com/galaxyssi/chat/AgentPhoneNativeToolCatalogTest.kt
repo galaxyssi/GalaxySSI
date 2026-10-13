@@ -101,9 +101,12 @@ class AgentPhoneNativeToolCatalogTest {
             addAll(AgentMobileProjectArchiveTools.toolIds)
             addAll(AgentMobileProjectNativeTools.toolIds)
             addAll(AgentOnDeviceRuntimeTools.toolIds)
+            addAll(AgentInteractiveBrowserTools.toolIds)
             addAll(AgentLinuxSoftwareNativeTools.toolIds)
             addAll(AgentSelfEvolutionNativeTools.toolIds)
             addAll(AgentDesktopRemoteNativeTools.toolIds)
+            add(AgentToolInspectionTools.DESCRIBE)
+            add(AgentToolDiscoveryTools.ID)
         }
 
         assertEquals(expected, AgentPhoneNativeToolCatalog.defaultToolIds)

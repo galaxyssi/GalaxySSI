@@ -68,13 +68,17 @@ object AgentModelContextCompactor {
         val fixedTokens = estimate(systemMessages, messageEstimator)
         val tailAllowance = (targetTokens - fixedTokens - summaryAllowance).coerceAtLeast(512)
         val retainedKeys = linkedSetOf<Int>()
+        val latestFailure = blocks.lastOrNull { block -> block.messages.any { it.toolResult?.failedObservation() == true } }
         var retainedTokens = 0
         var retainedBlocks = 0
         blocks.asReversed().forEach { block ->
             val blockTokens = estimate(block.messages, messageEstimator)
             val mustKeep = block.unresolvedToolCalls ||
                 retainedBlocks < budget.minimumRecentGroups ||
-                block.containsLatestUserRequest
+                block.containsOriginalOrLatestUserRequest || block === latestFailure ||
+                block.messages.any { message -> message.toolResult?.let { result ->
+                    result.error?.code == "effect_outcome_unknown" || AgentToolContextObservation.isLive(result)
+                } == true }
             if (mustKeep || retainedTokens + blockTokens <= tailAllowance) {
                 retainedKeys += block.index
                 retainedTokens += blockTokens
@@ -109,6 +113,7 @@ object AgentModelContextCompactor {
     private fun protocolBlocks(messages: List<AgentModelMessage>): List<ToolProtocolBlock> {
         if (messages.isEmpty()) return emptyList()
         val latestUserIndex = messages.indexOfLast { it.role == AgentModelMessageRole.USER }
+        val originalUserIndex = messages.indexOfFirst { it.role == AgentModelMessageRole.USER }
         val blocks = mutableListOf<ToolProtocolBlock>()
         var index = 0
         while (index < messages.size) {
@@ -129,7 +134,8 @@ object AgentModelContextCompactor {
                     index = blocks.size,
                     messages = blockMessages,
                     unresolvedToolCalls = resolved != expected,
-                    containsLatestUserRequest = latestUserIndex in index until cursor
+                    containsOriginalOrLatestUserRequest = latestUserIndex in index until cursor ||
+                        originalUserIndex in index until cursor
                 )
                 index = cursor
             } else {
@@ -137,7 +143,7 @@ object AgentModelContextCompactor {
                     index = blocks.size,
                     messages = listOf(message),
                     unresolvedToolCalls = false,
-                    containsLatestUserRequest = index == latestUserIndex
+                    containsOriginalOrLatestUserRequest = index == latestUserIndex || index == originalUserIndex
                 )
                 index += 1
             }
@@ -147,35 +153,14 @@ object AgentModelContextCompactor {
 
     private fun toolSummary(blocks: List<ToolProtocolBlock>, maximumTokens: Int): String {
         if (blocks.isEmpty() || maximumTokens <= 0) return ""
+        // Only host-derived counters belong in SYSTEM; page/log/error text stays in TOOL.
         val candidates = blocks.asSequence()
             .flatMap { block -> block.messages.asSequence() }
-            .mapNotNull { message ->
-                when (message.role) {
-                    AgentModelMessageRole.SYSTEM -> null
-                    AgentModelMessageRole.USER ->
-                        message.text.cleanLine().takeIf(String::isNotBlank)?.let { "User goal: $it" }
-                    AgentModelMessageRole.ASSISTANT -> when {
-                        message.toolCalls.isNotEmpty() -> message.toolCalls.joinToString(
-                            prefix = "Requested tools: ",
-                            separator = ", "
-                        ) { it.toolId }
-                        else -> message.text.cleanLine()
-                            .takeIf(String::isNotBlank)
-                            ?.let { "Assistant outcome: $it" }
-                    }
-                    AgentModelMessageRole.TOOL -> requireNotNull(message.toolResult).let { result ->
-                        val detail = result.message.ifBlank {
-                            result.error?.message.orEmpty()
-                        }.cleanLine()
-                        buildString {
-                            append("Tool ").append(result.toolId).append(": ").append(result.status)
-                            if (detail.isNotBlank()) append(" - ").append(detail)
-                        }
-                    }
-                }
+            .mapNotNull(AgentModelMessage::toolResult)
+            .groupBy { it.toolId.takeIf { id -> id.matches(Regex("[a-z0-9_.]{1,160}")) } ?: "invalid_tool_id" }
+            .map { (tool, results) ->
+                "Tool $tool: observations=${results.size}, failed_or_rejected=${results.count { it.failedObservation() }}."
             }
-            .distinct()
-            .toList()
         val lines = mutableListOf<String>()
         var usedTokens = 0
         candidates.asReversed().forEach { candidate ->
@@ -190,7 +175,7 @@ object AgentModelContextCompactor {
         return ConversationContextCompactor.fitTextToTokenBudget(
             buildString {
                 append(SUMMARY_HEADER).append('\n')
-                append("Completed earlier activity only; do not repeat it unless the current result requires it.\n")
+                append("Earlier observations are not proof of goal completion. Details omitted; inspect retained receipts or current state before repeating operations.\n")
                 lines.forEach { append("- ").append(it).append('\n') }
             }.trim(),
             maximumTokens
@@ -209,35 +194,18 @@ object AgentModelContextCompactor {
             current[index].role == AgentModelMessageRole.TOOL ||
                 current[index].role == AgentModelMessageRole.ASSISTANT
         }
+        val resolvedCallIds = messages.mapNotNull { it.toolResult?.callId }.toSet()
         for (index in reducible) {
             val message = current[index]
             val replacement = when (message.role) {
                 AgentModelMessageRole.TOOL -> {
-                    val result = requireNotNull(message.toolResult)
-                    val summary = listOf(
-                        result.message,
-                        result.error?.message.orEmpty(),
-                        runCatching { AgentNativeJsonCodec.stringify(result.output) }.getOrDefault("")
-                    ).firstOrNull(String::isNotBlank).orEmpty()
-                    message.copy(
-                        toolResult = result.copy(
-                            output = linkedMapOf(
-                                "compacted" to true,
-                                "summary" to ConversationContextCompactor.fitTextToTokenBudget(summary, 160)
-                            ),
-                            message = ConversationContextCompactor.fitTextToTokenBudget(
-                                result.message.ifBlank { summary },
-                                160
-                            ),
-                            receipt = null,
-                            nativeResult = null
-                        )
-                    )
+                    message.copy(toolResult = AgentToolContextObservation.compact(requireNotNull(message.toolResult)))
                 }
                 AgentModelMessageRole.ASSISTANT -> message.copy(
                     text = ConversationContextCompactor.fitTextToTokenBudget(message.text, 256),
                     toolCalls = message.toolCalls.map { call ->
-                        call.copy(arguments = compactObject(call.arguments, 80))
+                        if (call.callId !in resolvedCallIds) call
+                        else call.copy(arguments = compactObject(call.arguments, 80))
                     }
                 )
                 else -> message
@@ -283,15 +251,13 @@ object AgentModelContextCompactor {
         else -> value
     }
 
-    private fun String.cleanLine(): String =
-        replace(Regex("\\s+"), " ").trim().let { clean ->
-            if (clean.length <= 420) clean else clean.take(419) + "\u2026"
-        }
+    private fun AgentModelToolResultContent.failedObservation(): Boolean =
+        error != null || status in setOf("failed", "rejected", "cancelled")
 
     private data class ToolProtocolBlock(
         val index: Int,
         val messages: List<AgentModelMessage>,
         val unresolvedToolCalls: Boolean,
-        val containsLatestUserRequest: Boolean
+        val containsOriginalOrLatestUserRequest: Boolean
     )
 }

@@ -818,6 +818,7 @@ internal fun MobileNativeAgent.executePlannedAction(
     lastActionResult = executeJournaledPlanAction(nodeKey) {
         executeAction(executionAction, currentScreen, userConfirmed)
     }
+    if (waitForBrowserAction(hardenedAction, lastActionResult)) return snapshot()
     Log.i(
         "GalaxySSILatency",
         "agent_execute stage=dispatch_return action=${hardenedAction.id.take(24)} " +
@@ -925,8 +926,6 @@ internal fun MobileNativeAgent.executePlannedAction(
     val specializedContinuation = updatedPlan?.plannerProfile?.startsWith("specialized-adapter:") == true &&
         hardenedAction.requiresSpecializedContinuation()
     val replanReason = when {
-        lastActionResult?.success != true &&
-            lastActionResult?.metadata?.get("non_retriable") == "true" -> ""
         lastActionResult?.success != true && updatedPlan?.isSupervisedProjectPlan() == true ->
             PHONE_SUPERVISED_PROJECT_REPLAN_REASON
         lastActionResult?.success != true && hardenedAction.isPhoneDevelopmentRuntimeHandoff() ->
@@ -1517,9 +1516,8 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
         it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
     }
     val preservesToolGraph = effectiveSuccess && responsePlan.hasOutputHandoffFrom(actionId)
-    val nonRetriableFailure = !effectiveSuccess && completedResult.metadata["non_retriable"] == "true"
     val shouldReplan = (hasPendingActions && !preservesToolGraph) ||
-        (!effectiveSuccess && !nonRetriableFailure)
+        !effectiveSuccess
     val continuedPlan = if (shouldReplan) {
         if (!advanceExecutionLoop(
                 nextPhase = AgentExecutionLoopPhase.REPLAN,
@@ -2165,6 +2163,8 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         return resumePendingReplanning()
     }
     val recoveredNodes = if (phase == AgentPhase.PAUSED) resumePersistedPlanObservations() else false
+    if (lastActionResult?.actionId == "agent-event-wait" &&
+        lastActionResult?.metadata?.containsKey("browser_action_wait_event") == true) return snapshot()
     val savedPlan = currentPlan
     val completedDispatch = AgentInterruptedDispatchRecoveryPolicy.completedAction(
         savedPlan,

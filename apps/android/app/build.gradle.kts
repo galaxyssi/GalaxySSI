@@ -128,6 +128,15 @@ val buildNativeMemory = tasks.register<Exec>("buildNativeMemory") {
 }
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeMemory) }
 
+val stageInteractiveBrowserHelpers = tasks.register<Sync>("stageInteractiveBrowserHelpers") {
+    from(rootProject.file("../../tools/runtime")) {
+        include("browser-session-engine.cjs", "browser-session-cli.cjs", "browser-user-control.cjs", "browser-service-supervisor.cjs")
+        into("interactive-browser")
+    }
+    into(layout.buildDirectory.dir("generated/interactive-browser-assets"))
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(stageInteractiveBrowserHelpers) }
+
 tasks.matching { task ->
     task.name.startsWith("merge") && task.name.endsWith("NativeLibs")
 }.configureEach {
@@ -153,8 +162,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1241
-        versionName = "1.4.156"
+        versionCode = 1270
+        versionName = "1.4.185"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -195,6 +204,7 @@ android {
             jniLibs.srcDir(qnnCompatJniRoot)
             jniLibs.srcDir(nativeMemoryJniRoot)
             assets.srcDir(runtimeAssetRoot)
+            assets.srcDir(layout.buildDirectory.dir("generated/interactive-browser-assets"))
             assets.srcDir(rootProject.file("../desktop/core/galaxyssi-link/backend/research_contract"))
         }
     }

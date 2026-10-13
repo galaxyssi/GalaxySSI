@@ -789,24 +789,38 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val observed = observationContextStore.peek(contactId, conversationId)
         val requestPrompt = promptWithObservedContext(prompt, observed)
         val startedAt = System.currentTimeMillis()
-        LOCAL_MODEL_EXECUTOR.execute {
-            val appContext = context.applicationContext
-            val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
-            val boundConversationId = conversationId.ifBlank { "local-$messageId" }
-            val taskId = action.parameters["_galaxyssi_task_id"].orEmpty().ifBlank { turnId }
-            val result = runCatching {
-                LocalModelWebToolRunner.run(
-                    context = appContext,
-                    prompt = promptWithLocalModelContext(action, requestPrompt),
-                    preferredProfileId = action.parameters["manual_model_id"].orEmpty(),
-                    hasAttachments = action.id.startsWith("attachment-") ||
-                        action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true",
-                    sessionId = taskId,
-                    conversationId = boundConversationId,
-                    turnId = turnId,
-                    taskId = taskId,
-                    collaborationSourceMessageId = collaborationSource
-                )
+        val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
+        val taskId = action.parameters["_galaxyssi_task_id"].orEmpty().ifBlank { turnId }
+        val appContext = context.applicationContext
+        val boundConversationId = conversationId.ifBlank { "local-$messageId" }
+        val dispatchIdentity = AgentLocalDispatchIdentity(messageId, contactId, boundConversationId, turnId, taskId, action.id)
+        AgentManagedDispatchIntent.persist(appContext, action, messageId, contactId, conversationId, turnId, taskId)
+        val browserDispatch = if (!managedTeamAction && !persistDedicatedHistory)
+            AgentLocalBrowserDispatchStore(appContext).registerIfOwned(dispatchIdentity, profile.displayName,
+                startedAt, observed.mapTo(linkedSetOf()) { it.id }) else null
+        browserDispatch?.let { AgentLocalBrowserDispatchStore(appContext).checkpoint(it) }
+        val lease = AgentLocalDispatchRegistry.register(dispatchIdentity, AgentTaskRuntime.cancellationToken(turnId))
+        lease.enqueue(LOCAL_MODEL_EXECUTOR, request = { token ->
+            LocalModelWebToolRunner.run(
+                context = appContext,
+                prompt = promptWithLocalModelContext(action, requestPrompt),
+                preferredProfileId = action.parameters["manual_model_id"].orEmpty(),
+                hasAttachments = action.id.startsWith("attachment-") ||
+                    action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true",
+                sessionId = taskId,
+                conversationId = boundConversationId,
+                turnId = turnId,
+                taskId = taskId,
+                collaborationSourceMessageId = collaborationSource,
+                cancellationToken = token,
+                progressIdentity = dispatchIdentity,
+                managedTeam = managedTeamAction,
+                browserDispatch = browserDispatch
+            )
+        }, completed = { result ->
+            if (browserDispatch != null) {
+                AgentLocalBrowserDelivery.settle(appContext, browserDispatch, result)
+                return@enqueue
             }
             val completion = result.getOrNull()
             val inference = completion?.inference
@@ -851,7 +865,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     success = succeeded
                 )
             )
-        }
+        }, cancelled = {
+            browserDispatch?.let { AgentLocalBrowserDispatchStore(appContext).transition(it, "cancelled") }
+            AgentLocalCancellationDelivery.settled(appContext, dispatchIdentity, persistDedicatedHistory, managedTeamAction)
+        })
         return AgentActionResult(
             actionId = action.id,
             success = true,
@@ -2061,7 +2078,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         private const val AGENT_NOTIFICATION_CHANNEL_ID = "galaxyssi_agent_actions"
         private const val AGENT_NOTIFICATION_ID_BASE = 42000
         private const val MAX_KNOWLEDGE_PROMPT_CHARACTERS = 14_000
-        private val LOCAL_MODEL_EXECUTOR = Executors.newSingleThreadExecutor { task ->
+        internal val LOCAL_MODEL_EXECUTOR = Executors.newSingleThreadExecutor { task ->
             Thread(task, "GalaxySSI-LocalModel").apply { isDaemon = true }
         }
         private const val RICH_RESPONSE_CONTRACT =

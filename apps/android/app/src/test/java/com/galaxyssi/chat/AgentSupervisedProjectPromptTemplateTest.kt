@@ -7,6 +7,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun runtimeContractDistinguishesProjectChecksFromArbitraryCommands() {
+        for (continuation in listOf(false, true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240)
+            assertTrue(prompt.contains("With a matching project_profile"))
+            assertTrue(prompt.contains("Otherwise provide source containing the code or shell command"))
+            assertTrue(prompt.contains("arguments are not an entry path"))
+            assertTrue(prompt.contains("Omit collaboration_tool for ordinary execution"))
+            assertTrue(prompt.contains("inspect galaxyssi.tools.describe"))
+            assertFalse(prompt.contains("custom source is recovery only"))
+        }
+    }
+    @Test fun allPhonePlanningModesReceiveTheGeneralProblemSolvingContract() {
+        for ((continuation, phoneControl) in listOf(false to false, true to false, false to true, true to true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240, phoneControl = phoneControl)
+            assertTrue(prompt.contains(AgentProblemSolvingPolicy.COMPACT_CONTRACT))
+            assertTrue(prompt.contains("non-retryable is not goal-terminal"))
+            assertTrue(prompt.contains("inspect external state"))
+        }
+    }
     @Test fun phoneControlUsesPhoneUiToolsNotLinuxProjectContract() {
         val original = context()
         val inspect = original.nativeTools.first().copy(id = AgentPhoneUiNativeTools.INSPECT)

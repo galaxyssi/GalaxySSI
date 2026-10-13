@@ -24,7 +24,6 @@ import java.io.Closeable
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CancellationException
 
 internal enum class AgentLongTaskRecoveryMode {
     TRANSCRIPT_PROJECTION,
@@ -33,7 +32,8 @@ internal enum class AgentLongTaskRecoveryMode {
     INTERRUPTED_EXECUTION,
     LIVENESS_ASSESSMENT,
     REMOTE_SILENCE,
-    TEAM_RECONCILIATION
+    TEAM_RECONCILIATION,
+    BROWSER_ACTION_EVENT
 }
 
 internal data class AgentLongTaskRecoveryDecision(
@@ -66,7 +66,7 @@ internal object AgentLongTaskRecoveryPolicy {
         if (workspace.workspaceId in activeWorkspaceIds || workspace.status.isTerminal ||
             workspace.cancellationRequested || session == null ||
             session.phase in setOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED) ||
-            session.lastActionResult?.actionId == "agent-paused"
+            session.lastActionResult?.actionId in setOf("agent-paused", "agent-event-wait")
         ) {
             return null
         }
@@ -122,9 +122,16 @@ internal object AgentLongTaskRecoveryPolicy {
 internal object AgentLongTaskRecoveryScheduler {
     fun enqueueRecoverable(context: Context, reason: String) {
         val appContext = context.applicationContext
+        val browserWakes = AgentBrowserUserRequestStore(appContext).pendingWakes().toList()
+        browserWakes.forEach { record ->
+            runCatching { enqueueBrowserEvent(appContext, record)?.result?.get() }
+                .onFailure { Log.w("GalaxySSIBrowserRecovery", "Browser event enqueue deferred", it) }
+        }
         val supervisor = AgentTaskRuntime.supervisor(appContext)
         val activeIds = supervisor.activeWorkspaces().mapTo(linkedSetOf(), AgentWorkspace::workspaceId)
         supervisor.recoverableTasks().forEach { workspace ->
+            if (browserWakes.any { it.localDispatchId.isNotBlank() && it.runWorkspaceId == workspace.workspaceId })
+                return@forEach
             val session = SharedPreferencesAgentSessionStore(
                 appContext,
                 "task:${workspace.workspaceId}"
@@ -155,11 +162,30 @@ internal object AgentLongTaskRecoveryScheduler {
         )
     }
 
+    internal fun enqueueBrowserEvent(context: Context, record: AgentBrowserUserRequest): Operation? {
+        if (!record.pendingRunWake) return null
+        if (record.localDispatchId.isNotBlank()) return AgentLocalBrowserRecovery.enqueue(context, record)
+        val request = OneTimeWorkRequestBuilder<AgentLongTaskRecoveryWorker>()
+            .setInputData(workDataOf(KEY_WORKSPACE_ID to record.runWorkspaceId,
+                KEY_BROWSER_REQUEST to record.key, KEY_BROWSER_GENERATION to record.generation))
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30L, TimeUnit.SECONDS)
+            .addTag(WORK_TAG).build()
+        // Independent of a running generic recovery slice: KEEP there could discard this new event.
+        return WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+            browserEventWorkName(record),
+            ExistingWorkPolicy.KEEP, request)
+    }
+
+    internal fun browserEventWorkName(record: AgentBrowserUserRequest): String =
+        "browser-event-${AgentNativeJsonCodec.sha256(listOf(record.key, record.generation))}"
+
     internal fun uniqueWorkName(workspaceId: String): String =
         "$WORK_NAME_PREFIX${AgentNativeJsonCodec.sha256(workspaceId)}"
 
     internal const val KEY_WORKSPACE_ID = "workspace_id"
     internal const val KEY_REASON = "reason"
+    internal const val KEY_BROWSER_REQUEST = "browser_request"
+    internal const val KEY_BROWSER_GENERATION = "browser_generation"
     private const val WORK_TAG = "galaxyssi-agent-long-task-recovery"
     private const val WORK_NAME_PREFIX = "galaxyssi-agent-recovery-v1-"
 }
@@ -173,9 +199,18 @@ class AgentLongTaskRecoveryWorker(
             .orEmpty()
             .trim()
         if (workspaceId.isBlank()) return Result.failure()
+        val browserKey = inputData.getString(AgentLongTaskRecoveryScheduler.KEY_BROWSER_REQUEST)
+        val browserStore = AgentBrowserUserRequestStore(applicationContext)
+        val browserReturn = if (browserKey != null) browserStore.load(browserKey)?.takeIf {
+            it.generation == inputData.getString(AgentLongTaskRecoveryScheduler.KEY_BROWSER_GENERATION) &&
+                it.runWorkspaceId == workspaceId && it.pendingRunWake
+        } ?: return Result.success() else null
         val supervisor = AgentTaskRuntime.supervisor(applicationContext)
         val workspace = supervisor.findWorkspace(workspaceId)
-            ?: return Result.success()
+            ?: run {
+                browserReturn?.let(browserStore::acknowledgeRunWake)
+                return Result.success()
+            }
         val sessionStore = SharedPreferencesAgentSessionStore(
             applicationContext,
             "task:$workspaceId"
@@ -183,13 +218,37 @@ class AgentLongTaskRecoveryWorker(
         val activeWorkspaceIds = supervisor.activeWorkspaces()
             .mapTo(linkedSetOf(), AgentWorkspace::workspaceId)
         if (workspaceId in activeWorkspaceIds) {
-            return if (AgentTaskLivenessPolicy().hasPendingAssessment(workspace)) {
+            return if (browserReturn != null || AgentTaskLivenessPolicy().hasPendingAssessment(workspace)) {
                 Result.retry()
             } else {
                 Result.success()
             }
         }
         val savedSession = sessionStore.load()
+        if (browserReturn == null) {
+            val localEvent = browserStore.pendingWakes().firstOrNull {
+                it.localDispatchId.isNotBlank() && it.runWorkspaceId == workspaceId
+            }
+            if (localEvent != null) {
+                AgentLongTaskRecoveryScheduler.enqueueBrowserEvent(applicationContext, localEvent)?.result?.get()
+                return Result.success()
+            }
+            if (AgentLocalBrowserDispatchPolicy.isWaiting(workspace)) return Result.success()
+        }
+        if (browserReturn != null && !AgentBrowserRunRecoveryPolicy.matches(browserReturn, workspace, savedSession)) {
+            browserStore.acknowledgeRunWake(browserReturn)
+            return Result.success()
+        }
+        val browserDecision = browserReturn?.let {
+            AgentBrowserRunRecoveryPolicy.decision(it, workspace, savedSession, activeWorkspaceIds)
+        }
+        if (browserReturn != null && browserDecision == null) {
+            browserStore.acknowledgeRunWake(browserReturn)
+            return Result.success()
+        }
+        if (browserReturn != null && SharedPreferencesAgentSafetySettingsStore(applicationContext).load().executionPaused) {
+            return Result.retry()
+        }
         val savedMetadata = savedSession?.lastActionResult?.metadata.orEmpty()
         val savedSource = savedMetadata["source_message_id"]?.toLongOrNull() ?: 0L
         val remoteExpired = savedSession?.phase == AgentPhase.WAITING_RESPONSE &&
@@ -200,13 +259,14 @@ class AgentLongTaskRecoveryWorker(
             AndroidAgentRecoveryWake.request(applicationContext)
             return Result.success()
         }
-        val decision = if (remoteExpired) AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.REMOTE_SILENCE,
+        val decision = browserDecision ?: if (remoteExpired) AgentLongTaskRecoveryDecision(AgentLongTaskRecoveryMode.REMOTE_SILENCE,
             "Desktop did not answer repeated task status probes") else AgentLongTaskRecoveryPolicy.decide(
             workspace, savedSession, activeWorkspaceIds) ?: return Result.success()
         runCatching { setForeground(foregroundInfo(workspaceId)) }
             .onFailure { Log.w(LOG_TAG, "Could not promote recovery worker to foreground", it) }
         val claim = AgentLongTaskRecoveryClaims.tryAcquire(workspaceId) ?: return Result.retry()
         var projectionRetry = false
+        val slice = AgentRecoverySlice()
         return try {
             val handle = runCatching {
                 supervisor.resume(
@@ -214,51 +274,64 @@ class AgentLongTaskRecoveryWorker(
                 lane = AgentTaskLane.READ_REASONING,
                 priority = AgentTaskPriority.BACKGROUND,
                 hook = AgentTaskResumeHook { taskContext, _ ->
-                    taskContext.progress("recovery.observe", decision.reason)
-                    val context = AppLanguage.wrap(applicationContext)
-                    val state = if (decision.mode == AgentLongTaskRecoveryMode.TRANSCRIPT_PROJECTION) {
-                        val saved = checkNotNull(sessionStore.load())
-                        check(AgentRecoveryTranscript.needsProjection(workspace, saved)) {
-                            "Recovery session changed before projection"
-                        }
-                        AgentRecoveryTranscript.state(saved)
-                    } else {
-                        val runtime = MobileNativeAgent(context, sessionStore = sessionStore)
-                        if (decision.mode in setOf(AgentLongTaskRecoveryMode.REMOTE_SILENCE,
-                                AgentLongTaskRecoveryMode.TEAM_RECONCILIATION)) {
-                            AgentTranscriptStore(context).conversation(workspace.conversationId)?.let { conversation ->
-                                runtime.activeConversationContext = AgentConversationContext(workspace.conversationId,
-                                    "", emptyList(), conversation.privateMode, trackingPaused = conversation.trackingPaused)
-                                runtime.activeConversationTurnId = workspace.taskId
+                    val state = slice.prepareAndCommit(taskContext) {
+                        taskContext.progress("recovery.observe", decision.reason)
+                        val context = AppLanguage.wrap(applicationContext)
+                        val state = if (decision.mode == AgentLongTaskRecoveryMode.TRANSCRIPT_PROJECTION) {
+                            val saved = checkNotNull(sessionStore.load())
+                            check(AgentRecoveryTranscript.needsProjection(workspace, saved)) {
+                                "Recovery session changed before projection"
                             }
+                            AgentRecoveryTranscript.state(saved)
+                        } else {
+                            val runtime = MobileNativeAgent(context, sessionStore = sessionStore)
+                            if (decision.mode in setOf(AgentLongTaskRecoveryMode.REMOTE_SILENCE,
+                                    AgentLongTaskRecoveryMode.TEAM_RECONCILIATION)) {
+                                AgentTranscriptStore(context).conversation(workspace.conversationId)?.let { conversation ->
+                                    runtime.activeConversationContext = AgentConversationContext(workspace.conversationId,
+                                        "", emptyList(), conversation.privateMode, trackingPaused = conversation.trackingPaused)
+                                    runtime.activeConversationTurnId = workspace.taskId
+                                }
+                            }
+                            runtime.bindExecutionLoopEventSink(AgentExecutionLoopEventSink { event ->
+                                taskContext.persistExecutionLoop(event)
+                            })
+                            // The runtime owns dispatch and permission waits; recovery never grants consent.
+                            val recovered = if (decision.mode == AgentLongTaskRecoveryMode.TEAM_RECONCILIATION) {
+                                runtime.reconcileSavedAgentTeam() ?: runtime.snapshot()
+                            } else if (decision.mode == AgentLongTaskRecoveryMode.REMOTE_SILENCE) {
+                                val current = runtime.pendingConnectorMetadata(savedSource)
+                                if (AndroidAgentRemoteSilence.expired(context, savedSource, current)) {
+                                    runtime.handleConnectorTimeout(savedSource, AgentConnectorTimeoutStage.NOT_ACCEPTED,
+                                        recoveryExhausted = true) ?: runtime.snapshot()
+                                } else runtime.snapshot()
+                            } else if (browserReturn != null) {
+                                // Revalidate after claiming the Run and loading its runtime, not only before scheduling.
+                                check(AgentBrowserRunRecoveryPolicy.decision(browserReturn, taskContext.workspace(),
+                                    sessionStore.load(), emptySet()) != null) { "Browser return planning binding changed" }
+                                if (runtime.safetySettingsStore.load().executionPaused) {
+                                    projectionRetry = true
+                                    runtime.snapshot()
+                                }
+                                else if (decision.mode == AgentLongTaskRecoveryMode.BROWSER_ACTION_EVENT) {
+                                    runtime.resumeBrowserActionPlan(browserReturn)
+                                } else if (decision.mode == AgentLongTaskRecoveryMode.REPLANNING) {
+                                    runtime.resumePendingReplanning(afterBrowserReturn = true)
+                                } else runtime.resumeInitialPlanning()
+                            } else if (decision.mode == AgentLongTaskRecoveryMode.LIVENESS_ASSESSMENT) {
+                                runtime.assessLivenessWithModel(decision.reason)
+                            } else runtime.resumeCurrentTask()
+                            runtime.persistSession()
+                            val next = recovered.lastActionResult?.metadata.orEmpty()
+                            val nextSource = next["source_message_id"]?.toLongOrNull() ?: 0L
+                            if (recovered.phase == AgentPhase.WAITING_RESPONSE && nextSource > 0 && nextSource != savedSource) {
+                                AgentPendingDeliveryStore.put(context, AgentPendingDelivery(nextSource,
+                                    workspace.conversationId, workspaceId, next["remote_task_id"].orEmpty().ifBlank { workspaceId },
+                                    next["contact_id"].orEmpty()))
+                                AndroidAgentRecoveryWake.request(context)
+                            }
+                            recovered
                         }
-                        runtime.bindExecutionLoopEventSink(AgentExecutionLoopEventSink { event ->
-                            taskContext.persistExecutionLoop(event)
-                        })
-                        // The runtime owns dispatch and permission waits; recovery never grants consent.
-                        val recovered = if (decision.mode == AgentLongTaskRecoveryMode.TEAM_RECONCILIATION) {
-                            runtime.reconcileSavedAgentTeam() ?: runtime.snapshot()
-                        } else if (decision.mode == AgentLongTaskRecoveryMode.REMOTE_SILENCE) {
-                            val current = runtime.pendingConnectorMetadata(savedSource)
-                            if (AndroidAgentRemoteSilence.expired(context, savedSource, current)) {
-                                runtime.handleConnectorTimeout(savedSource, AgentConnectorTimeoutStage.NOT_ACCEPTED,
-                                    recoveryExhausted = true) ?: runtime.snapshot()
-                            } else runtime.snapshot()
-                        } else if (decision.mode == AgentLongTaskRecoveryMode.LIVENESS_ASSESSMENT) {
-                            runtime.assessLivenessWithModel(decision.reason)
-                        } else runtime.resumeCurrentTask()
-                        runtime.persistSession()
-                        val next = recovered.lastActionResult?.metadata.orEmpty()
-                        val nextSource = next["source_message_id"]?.toLongOrNull() ?: 0L
-                        if (recovered.phase == AgentPhase.WAITING_RESPONSE && nextSource > 0 && nextSource != savedSource) {
-                            AgentPendingDeliveryStore.put(context, AgentPendingDelivery(nextSource,
-                                workspace.conversationId, workspaceId, next["remote_task_id"].orEmpty().ifBlank { workspaceId },
-                                next["contact_id"].orEmpty()))
-                            AndroidAgentRecoveryWake.request(context)
-                        }
-                        recovered
-                    }
-                    try {
                         taskContext.checkpoint(AgentRecoveryTranscript.CHECKPOINT_ID, stateJson =
                             AgentRecoveryTranscript.pendingCheckpoint(taskContext.workspace(),
                                 checkNotNull(sessionStore.load())))
@@ -269,11 +342,7 @@ class AgentLongTaskRecoveryWorker(
                             acknowledge = { taskContext.checkpoint(AgentRecoveryTranscript.CHECKPOINT_ID,
                                 stateJson = "{\"pending\":false}") }
                         )
-                    } catch (error: Exception) {
-                        if (error is CancellationException) throw error
-                        projectionRetry = true
-                        Log.w(LOG_TAG, "Result commit deferred workspace=${workspaceId.take(8)}", error)
-                        taskContext.pause("Result commit pending; saved actions will not be replayed")
+                        state
                     }
                     when (state.phase) {
                         AgentPhase.WAITING_CONFIRMATION ->
@@ -317,7 +386,10 @@ class AgentLongTaskRecoveryWorker(
                 return Result.retry()
             }
             handle.join()
-            if (projectionRetry) Result.retry() else Result.success()
+            if (slice.failure != null) Log.w(LOG_TAG, "Recovery slice deferred workspace=${workspaceId.take(8)}")
+            if (!slice.committed || projectionRetry) Result.retry()
+            else if (browserReturn != null && !browserStore.acknowledgeObservedRunWake(browserReturn)) Result.retry()
+            else Result.success()
         } finally {
             claim.close()
         }

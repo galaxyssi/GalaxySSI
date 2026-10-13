@@ -259,8 +259,10 @@ internal object AgentSupervisedProjectProgressPolicy {
 
     private fun compactVisibleLedger(actions: List<AgentAction>): List<LedgerEntry> {
         val compactedByIdentity = linkedMapOf<ObservationEquivalenceKey, LedgerEntry>()
-        actions.forEach { action ->
-            val observation = AgentPlannerObservation.from(action, MAX_ACTION_OBSERVATION_CHARACTERS)
+        actions.forEachIndexed { index, action ->
+            val observation = AgentPlannerObservation.from(action,
+                if (index >= actions.size - RECENT_FULL_OBSERVATIONS) MAX_RECENT_OBSERVATION_CHARACTERS
+                else MAX_ACTION_OBSERVATION_CHARACTERS)
             val identity = ObservationEquivalenceKey(
                 state = action.observationStateKey(),
                 status = action.status,
@@ -857,6 +859,8 @@ internal object AgentSupervisedProjectProgressPolicy {
     private const val MAX_VISIBLE_LEDGER_CHARACTERS = 12_000
     private const val LEDGER_ENTRY_PROMPT_OVERHEAD = 96
     private const val MAX_ACTION_OBSERVATION_CHARACTERS = 600
+    private const val RECENT_FULL_OBSERVATIONS = 2
+    private const val MAX_RECENT_OBSERVATION_CHARACTERS = 4_000
     private const val DISCOVERY_ADVISORY_THRESHOLD = 4
     private const val RECENT_DETAILED_TOOL_IDS = 8
 }

@@ -136,9 +136,11 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentMobileProjectArchiveTools.toolIds)
             addAll(AgentMobileProjectNativeTools.toolIds)
             addAll(AgentOnDeviceRuntimeTools.toolIds)
+            addAll(AgentInteractiveBrowserTools.toolIds)
             addAll(AgentLinuxSoftwareNativeTools.toolIds)
             addAll(AgentSelfEvolutionNativeTools.toolIds)
             addAll(AgentDesktopRemoteNativeTools.toolIds)
+            addAll(AgentToolInspectionTools.toolIds)
         }
     }
 
@@ -200,12 +202,14 @@ object AgentPhoneNativeToolCatalog {
         ).registerAll(
             AgentOnDeviceRuntimeTools.definitions(context.applicationContext)
         ).registerAll(
+            AgentInteractiveBrowserTools.definitions(context.applicationContext)
+        ).registerAll(
             AgentLinuxSoftwareNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentSelfEvolutionNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentDesktopRemoteNativeTools.definitions(context.applicationContext)
-        )
+        ).registerAll(listOf(AgentToolInspectionTools.definition(), AgentToolDiscoveryTools.definition()))
     }
 
     fun createDefault(

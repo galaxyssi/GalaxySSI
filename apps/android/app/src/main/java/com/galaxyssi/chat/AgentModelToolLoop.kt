@@ -49,6 +49,7 @@ data class AgentModelToolResultContent(
             nativeResult?.get("provenance")?.let { put("provenance", it) }
             nativeResult?.get("galaxyssi_evidence_receipt")?.let { put("galaxyssi_evidence_receipt", it) }
             nativeResult?.get("galaxyssi_evidence_recording")?.let { put("galaxyssi_evidence_recording", it) }
+            nativeResult?.get("recovery_attempts")?.let { put("recovery_attempts", it) }
         }
         return enveloped(evidence)
     }
@@ -253,6 +254,7 @@ enum class AgentModelToolLoopEventType {
     APPROVAL_REQUIRED,
     APPROVAL_DECIDED,
     LOOP_RESUMED,
+    LOOP_WAITING,
     TOOL_STARTED,
     TOOL_PROGRESS,
     TOOL_FINISHED,
@@ -303,6 +305,7 @@ class AgentModelToolApprovalHandle internal constructor(
 enum class AgentModelToolLoopStatus {
     COMPLETED,
     WAITING_FOR_APPROVAL,
+    WAITING_FOR_EVENT,
     BUDGET_EXCEEDED,
     LOOP_DETECTED,
     CANCELLED,
@@ -337,7 +340,8 @@ data class AgentModelToolLoopOutcome(
     val approval: AgentModelToolApprovalHandle? = null,
     val error: AgentModelToolLoopError? = null
 ) {
-    val isTerminal: Boolean get() = status != AgentModelToolLoopStatus.WAITING_FOR_APPROVAL
+    val isTerminal: Boolean get() = status !in setOf(AgentModelToolLoopStatus.WAITING_FOR_APPROVAL,
+        AgentModelToolLoopStatus.WAITING_FOR_EVENT)
 }
 
 fun interface AgentModelToolLoopIdFactory {
@@ -355,7 +359,8 @@ class AgentModelToolLoop(
     private val idFactory: AgentModelToolLoopIdFactory = AgentModelToolLoopIdFactory.UUIDS,
     private val disclosedToolManifestJson: String = "",
     private val disclosedToolManifestSha256: String = "",
-    private val journal: AgentModelLoopJournal? = null
+    private val journal: AgentModelLoopJournal? = null,
+    private val eventWaitResolver: AgentModelToolEventWaitResolver? = null
 ) {
     private val pendingApprovals = LinkedHashMap<String, PendingApproval>()
 
@@ -387,7 +392,7 @@ class AgentModelToolLoop(
         } else {
             toolRegistry.catalogManifest()
         }
-        val effective = checkpoint?.initial(request, manifest.sha256) ?: request
+        val effective = checkpoint?.initial(request, manifest.sha256) ?: AgentProblemSolvingPolicy.prepare(request)
         val state = LoopState(
             request = effective,
             messages = effective.messages.toMutableList(),
@@ -533,10 +538,14 @@ class AgentModelToolLoop(
             state.inputTokens = safeTokenSum(state.inputTokens, response.usage.inputTokens)
             state.outputTokens = safeTokenSum(state.outputTokens, response.usage.outputTokens)
             state.lastAssistantText = response.assistantText
+            val admission = if (state.checkpoint?.callAdmissionEnabled != false)
+                AgentModelCallAdmission.admit(response.toolCalls, state.callIds.keys, state.rounds)
+            else AgentModelCallAdmission.Result(response.toolCalls, emptyMap())
+            state.protocolRejections.putAll(admission.rejections)
             appendMessage(state, AgentModelMessage(
                 role = AgentModelMessageRole.ASSISTANT,
                 text = response.assistantText,
-                toolCalls = response.toolCalls
+                toolCalls = admission.calls
             ))
             emit(
                 state,
@@ -556,15 +565,7 @@ class AgentModelToolLoop(
             }
             if (response.toolCalls.isEmpty()) return completed(state, response.assistantText)
 
-            val roundFingerprint = responseFingerprint(response)
-            if (!state.seenResponseFingerprints.add(roundFingerprint)) {
-                return loopDetected(
-                    state,
-                    code = "repeated_model_response",
-                    message = "The model repeated an identical tool-calling response"
-                )
-            }
-            calls = response.toolCalls
+            calls = admission.calls
         }
     }
 
@@ -630,6 +631,8 @@ class AgentModelToolLoop(
         state: LoopState,
         proposedCall: AgentModelToolCall
     ): ParallelCandidate? {
+        if (eventWaitResolver?.supports(proposedCall.toolId) == true) return null
+        if (proposedCall.callId in state.protocolRejections) return null
         if (state.request.budget.enforceCountLimits &&
             state.toolCallAttempts >= state.request.budget.maxToolCalls
         ) return null
@@ -681,6 +684,16 @@ class AgentModelToolLoop(
             )
         }
 
+        state.protocolRejections.remove(call.callId)?.let { rejection ->
+            state.callIds[call.callId] = "rejected"
+            appendSyntheticToolResult(state, call, rejection.code,
+                "The model supplied an invalid or previously used tool call ID. This call was not executed. " +
+                    "Use a fresh call ID for the next observation or corrected operation; inspect prior outcomes before repeating a mutation.",
+                details = mapOf("original_call_id" to rejection.originalId, "executed" to false, "goal_terminal" to false),
+                countsAsObservation = false)
+            return PreparationResult.Continue
+        }
+
         val basicError = basicCallError(call)
         if (basicError != null) {
             appendSyntheticToolResult(state, call, basicError.first, basicError.second)
@@ -708,16 +721,15 @@ class AgentModelToolLoop(
         val signatureCount = (state.callSignatures[callIdentity] ?: 0) + 1
         state.callSignatures[callIdentity] = signatureCount
         if (!mayRepeat) {
-            return PreparationResult.Terminal(
-                ProcessResult.Terminal(
-                    loopDetected(
-                        state,
-                        code = "repeated_tool_call",
-                        message = "The model repeated the same tool call beyond the configured limit",
-                        call = call
-                    )
-                )
+            appendSyntheticToolResult(
+                state, call, code = "repeated_tool_call",
+                message = "This operation was already attempted without an intervening observation. " +
+                    "Inspect its result or external state, diagnose the blocker, or choose a different approach.",
+                details = mapOf("executed" to false, "goal_terminal" to false,
+                    "previous_attempts" to (signatureCount - 1)),
+                countsAsObservation = false
             )
+            return PreparationResult.Continue
         }
 
         val inputValidation = toolRegistry.validateInput(call.toolId, call.arguments)
@@ -730,8 +742,12 @@ class AgentModelToolLoop(
                 details = mapOf(
                     "issues" to inputValidation.issues.map {
                         mapOf("path" to it.path, "code" to it.code, "message" to it.message)
-                    }
-                )
+                    },
+                    "input_schema" to toolRegistry.lookup(call.toolId)?.descriptor?.inputSchema?.document,
+                    "executed" to false,
+                    "goal_terminal" to false
+                ),
+                countsAsObservation = false
             )
             return PreparationResult.Continue
         }
@@ -853,7 +869,8 @@ class AgentModelToolLoop(
                 call = prepared.call,
                 descriptor = prepared.descriptor,
                 approvedConsentIds = prepared.approvedConsentIds,
-                startingAttempt = 1
+                startingAttempt = 1,
+                priorAttempts = listOf(result.toJsonValue())
             )) {
                 ProcessResult.Continue -> Unit
                 is ProcessResult.Terminal -> {
@@ -873,11 +890,13 @@ class AgentModelToolLoop(
         descriptor: AgentNativeToolDescriptor,
         approvedConsentIds: Set<String> = emptySet(),
         confirmationId: String? = null,
-        startingAttempt: Int = 0
+        startingAttempt: Int = 0,
+        priorAttempts: List<AgentNativeJsonObject> = emptyList()
     ): ProcessResult {
         val idempotencyKey = call.idempotencyKey?.takeIf(String::isNotBlank)
             ?: derivedIdempotencyKey(state, call)
         val prepared = PreparedCall(call, descriptor, approvedConsentIds)
+        val observations = priorAttempts.toMutableList()
         var attempt = startingAttempt
         while (true) {
             terminalGuard(state)?.let { return ProcessResult.Terminal(it) }
@@ -889,14 +908,40 @@ class AgentModelToolLoop(
                 attempt = attempt,
                 confirmationId = confirmationId
             )
-            val result = invokeNativeTool(state, invocation)
+            val recordedResult = invokeNativeTool(state, invocation)
+            if (recordedResult.status == AgentNativeToolResultStatus.CANCELLED ||
+                state.request.cancellationToken.isCancellationRequested) {
+                finishInvocation(state, invocation, recordedResult)
+                appendToolResult(state, call, recordedResult, attempt - 1, observations)
+                return ProcessResult.Terminal(cancelled(state))
+            }
+            val restoredWaitResult = invocation.checkpoint?.let { state.checkpoint?.waitResult(it) }
+            val wait = if (restoredWaitResult != null) AgentModelToolEventWait.Resolved(restoredWaitResult)
+                else eventWaitResolver?.resolve(state.request, call, recordedResult)
+            val result = (wait as? AgentModelToolEventWait.Resolved)?.result ?: recordedResult
+            if (wait is AgentModelToolEventWait.Resolved && restoredWaitResult == null) {
+                invocation.checkpoint?.let { state.checkpoint?.waitResult(it, result) }
+            }
+            if (wait is AgentModelToolEventWait.Resolved && invocation.checkpoint != null && state.checkpoint != null) {
+                eventWaitResolver?.observationCommitted(state.request, call, result)
+            }
             finishInvocation(state, invocation, result)
 
             if (result.status == AgentNativeToolResultStatus.CANCELLED ||
                 state.request.cancellationToken.isCancellationRequested
             ) {
-                appendToolResult(state, call, result, attempt - 1)
+                appendToolResult(state, call, result, attempt - 1, observations)
                 return ProcessResult.Terminal(cancelled(state))
+            }
+
+            if (wait is AgentModelToolEventWait.Pending) {
+                appendToolResult(state, call, result, attempt - 1, observations)
+                emit(state, AgentModelToolLoopEventType.LOOP_WAITING, call = call,
+                    details = mapOf("event_id" to wait.eventId, "message" to wait.message),
+                    publish = invocation.checkpoint?.result == null)
+                return ProcessResult.Terminal(outcome(state, AgentModelToolLoopStatus.WAITING_FOR_EVENT,
+                    error = AgentModelToolLoopError("waiting_for_external_event", wait.message,
+                        mapOf("event_id" to wait.eventId))))
             }
 
             val mayRetry = !result.isSuccess &&
@@ -904,16 +949,17 @@ class AgentModelToolLoop(
                 !descriptor.requiresEffectClaim &&
                 attempt <= state.request.budget.maxRetriesPerCall
             if (!mayRetry) {
-                appendToolResult(state, call, result, attempt - 1)
+                appendToolResult(state, call, result, attempt - 1, observations)
                 return ProcessResult.Continue
             }
             if (!consumeToolCallAttempt(state)) {
-                appendToolResult(state, call, result, attempt - 1)
+                appendToolResult(state, call, result, attempt - 1, observations)
                 return ProcessResult.Terminal(
                     budgetExceeded(state, "max_tool_calls", "A safe tool retry would exceed the call budget")
                 )
             }
 
+            observations += result.toJsonValue()
             state.retries += 1
             emit(
                 state,
@@ -1065,8 +1111,13 @@ class AgentModelToolLoop(
         state: LoopState,
         call: AgentModelToolCall,
         result: AgentNativeToolResult,
-        retryCount: Int
+        retryCount: Int,
+        priorAttempts: List<AgentNativeJsonObject> = emptyList()
     ) {
+        val identity = callIdentity(call, toolRegistry.lookup(call.toolId)?.descriptor?.version ?: call.toolVersion.orEmpty())
+        if (result.error?.code == "effect_outcome_unknown" || result.error?.details?.get("outcome_unknown") == true ||
+            result.output["outcome_unknown"] == true) state.uncertainCallSignatures.add(identity)
+        else state.uncertainCallSignatures.remove(identity)
         appendMessage(state, AgentModelMessage(
             role = AgentModelMessageRole.TOOL,
             toolResult = AgentModelToolResultContent(
@@ -1079,7 +1130,8 @@ class AgentModelToolLoop(
                 invocationId = result.receipt.invocationId,
                 retryCount = retryCount,
                 receipt = receiptValue(result.receipt),
-                nativeResult = result.toJsonValue()
+                nativeResult = result.toJsonValue() + if (priorAttempts.isEmpty()) emptyMap()
+                    else mapOf("recovery_attempts" to priorAttempts.toList())
             )
         ))
         recordToolObservation(state, call)
@@ -1103,7 +1155,8 @@ class AgentModelToolLoop(
         call: AgentModelToolCall,
         code: String,
         message: String,
-        details: AgentNativeJsonObject = emptyMap()
+        details: AgentNativeJsonObject = emptyMap(),
+        countsAsObservation: Boolean = true
     ) {
         val error = AgentNativeToolError(code, message, retryable = false, details = details)
         appendMessage(state, AgentModelMessage(
@@ -1116,7 +1169,7 @@ class AgentModelToolLoop(
                 error = error
             )
         ))
-        recordToolObservation(state, call)
+        if (countsAsObservation) recordToolObservation(state, call)
         emit(
             state,
             AgentModelToolLoopEventType.TOOL_CALL_REJECTED,
@@ -1287,6 +1340,13 @@ class AgentModelToolLoop(
     }
 
     private fun mayProposeCallSignature(state: LoopState, identity: String): Boolean {
+        val toolId = identity.substringBefore('|')
+        // Re-reading a changing page or process is an observation, not a duplicate side effect.
+        if (toolRegistry.lookup(toolId)?.descriptor?.requiresEffectClaim == false) return true
+        if (identity in state.uncertainCallSignatures) {
+            val lastCompletionSequence = state.callCompletionSequences[identity] ?: return false
+            return state.observationSequence > lastCompletionSequence
+        }
         val signatureCount = state.callSignatures[identity] ?: 0
         if (signatureCount < state.request.budget.maxRepeatedCallSignatures) return true
         val lastCompletionSequence = state.callCompletionSequences[identity] ?: return false
@@ -1294,6 +1354,8 @@ class AgentModelToolLoop(
     }
 
     private fun recordToolObservation(state: LoopState, call: AgentModelToolCall) {
+        // Capability metadata is not an observation of an earlier external side effect.
+        if (call.toolId in AgentToolInspectionTools.toolIds) return
         state.observationSequence += 1
         val resolvedVersion = toolRegistry.lookup(call.toolId)?.descriptor?.version
             ?: call.toolVersion.orEmpty()
@@ -1329,21 +1391,6 @@ class AgentModelToolLoop(
         }.joinToString("|")
         )
     }
-
-    private fun responseFingerprint(response: AgentModelResponse): String = AgentNativeJsonCodec.sha256(
-        mapOf(
-            "assistant_text" to response.assistantText,
-            "tool_calls" to response.toolCalls.map {
-                mapOf(
-                    "call_id" to it.callId,
-                    "tool_id" to it.toolId,
-                    "tool_version" to it.toolVersion,
-                    "arguments" to it.arguments,
-                    "depth" to it.depth
-                )
-            }
-        )
-    )
 
     private fun checkedId(purpose: String): String {
         val value = idFactory.newId(purpose)
@@ -1397,7 +1444,7 @@ class AgentModelToolLoop(
         val callIds: MutableMap<String, String> = linkedMapOf(),
         val callSignatures: MutableMap<String, Int> = linkedMapOf(),
         val callCompletionSequences: MutableMap<String, Long> = linkedMapOf(),
-        val seenResponseFingerprints: MutableSet<String> = linkedSetOf(),
+        val protocolRejections: MutableMap<String, AgentModelCallAdmission.Rejection> = linkedMapOf(),
         val progressFingerprints: MutableMap<String, String> = linkedMapOf(),
         var rounds: Int = 0,
         var toolCallAttempts: Int = 0,
@@ -1407,6 +1454,7 @@ class AgentModelToolLoop(
         var lastAssistantText: String = "",
         var eventSequence: Long = 0,
         var observationSequence: Long = 0,
+        val uncertainCallSignatures: MutableSet<String> = linkedSetOf(),
         val checkpoint: AgentModelLoopCheckpoint? = null,
         var replayingResponse: Boolean = false
     ) {

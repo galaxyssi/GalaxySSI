@@ -528,9 +528,9 @@ internal fun MobileNativeAgent.executeActionUntraced(
         ?.takeIf(String::isNotBlank)
         ?.let { error ->
             val zh = currentGoal.any { it in '\u3400'..'\u9fff' }
-            return AgentActionResult(
-                actionId = action.id,
-                success = false,
+            return AgentNativeActionObservation.beforeDispatch(
+                action = action,
+                code = "phone_development_preflight_failed",
                 message = if (zh) {
                     "\u6ca1\u6709\u6267\u884c\u4ee3\u7801\uff1a${error.take(500)}\u3002\n\n\u8bf7\u91cd\u65b0\u53d1\u9001\u4efb\u52a1\uff0c\u6211\u4f1a\u91cd\u65b0\u751f\u6210\u5e76\u9a8c\u8bc1\u3002"
                 } else {
@@ -540,9 +540,9 @@ internal fun MobileNativeAgent.executeActionUntraced(
         }
     val toolId = action.parameters["tool_id"].orEmpty()
     val descriptor = nativeToolRegistry.lookup(toolId)?.descriptor
-        ?: return AgentActionResult(action.id, false, "Native tool is not registered: $toolId")
+        ?: return AgentNativeActionObservation.beforeDispatch(action, "tool_not_registered", "Native tool is not registered: $toolId")
     val input = runCatching { nativeJsonObject(action.parameters["input_json"].orEmpty()) }
-        .getOrElse { return AgentActionResult(action.id, false, it.message ?: "Invalid native tool input") }
+        .getOrElse { return AgentNativeActionObservation.beforeDispatch(action, "invalid_tool_input", it.message ?: "Invalid native tool input") }
     val effectiveConversationId = conversationIdOverride
         .ifBlank { action.parameters[INTERNAL_CONVERSATION_ID].orEmpty() }
         .ifBlank { activeConversationContext.conversationId }
@@ -577,14 +577,14 @@ internal fun MobileNativeAgent.executeActionUntraced(
         grantedConsents = grantedConsents,
         attributes = mapOf(
             "execution_authority" to "galaxyssi-phone",
-            "task_id" to currentPlan?.planId.orEmpty().ifBlank { sessionId },
+            "task_id" to effectiveTurnId.ifBlank { executionLoop.snapshot?.taskId.orEmpty().ifBlank { sessionId } },
             "goal_id" to currentPlan?.planId.orEmpty().ifBlank { sessionId },
             "confirmation_id" to action.id,
             "step_id" to action.id,
             "workspace_id" to workspaceId,
             "explicit_user_approval" to (fullAccess || userConfirmed || rememberedConsent).toString(),
             "permission_mode" to safetyPolicy.permissionMode().name.lowercase(Locale.US)
-        )
+        ) + AgentBrowserActionPlanPolicy.attributes(sessionId, currentPlan, action)
     )
     val toolCancellation = activeNativeToolCancellations.begin()
     val result = try {
@@ -648,7 +648,8 @@ internal fun MobileNativeAgent.executeActionUntraced(
             "started_at_millis" to result.receipt.startedAtEpochMillis.toString(),
             "completed_at_millis" to result.receipt.finishedAtEpochMillis.toString(),
             "provenance" to result.provenance.executorId
-        ) + richOutput.takeIf(String::isNotBlank)?.let { mapOf("rich_output" to it) }.orEmpty()
+        ) + AgentNativeActionObservation.from(result)?.let { mapOf(AgentNativeActionObservation.KEY to it) }.orEmpty() +
+            richOutput.takeIf(String::isNotBlank)?.let { mapOf("rich_output" to it) }.orEmpty()
     )
 }
 

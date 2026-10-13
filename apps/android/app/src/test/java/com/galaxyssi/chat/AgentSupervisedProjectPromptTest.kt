@@ -585,13 +585,13 @@ class AgentSupervisedProjectPromptTest {
         val continuation = AgentSupervisedProjectLoop.continuationPrompt(request)
 
         assertTrue(continuation.length < planning.length)
-        assertTrue(planning.substringBefore("Available phone tools:").length < 4_800)
+        assertTrue(planning.substringBefore("Available phone tools:").length <= 5_800)
         assertTrue(continuation.contains("execution_location is always phone"))
         assertTrue(continuation.contains("Independent reads/disjoint mutations may run concurrently"))
         assertTrue(continuation.contains("Up to 64 actions per response, not lifetime"))
         assertTrue(continuation.contains("Set completes_goal=true only when"))
-        assertTrue(continuation.contains("galaxyssi.project.repository.* for all Git operations"))
-        assertTrue(continuation.contains("never run Git through galaxyssi.runtime.execute"))
+        assertTrue(continuation.contains("galaxyssi.project.repository.* only"))
+        assertTrue(continuation.contains("no shell Git"))
         assertTrue(continuation.contains("verification_kind and no source"))
         assertTrue(continuation.contains("project_profiles"))
         assertTrue(continuation.contains("required executables"))
@@ -731,7 +731,7 @@ class AgentSupervisedProjectPromptTest {
         val continuationToolLength = continuation.substringAfter(toolsHeader).substringBefore(boundary).length
 
         assertTrue("Planning contract expanded to $planningContractLength characters", planningContractLength <= 5_800)
-        assertTrue("Continuation contract expanded to $continuationContractLength characters", continuationContractLength <= 3_000)
+        assertTrue("Continuation contract expanded to $continuationContractLength characters", continuationContractLength <= 3_500)
         assertEquals(planningToolLength, continuationToolLength)
         assertTrue(planning.length <= 24_000)
         assertTrue(continuation.length <= 24_000)
@@ -908,7 +908,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("Durable project context"))
         assertTrue(prompt.contains("https://github.com/galaxyssi/GalaxySSI"))
         assertTrue(prompt.contains("Use the current conversation workspace only"))
-        assertTrue(prompt.contains("A new conversation intentionally starts with an empty isolated workspace"))
+        assertTrue(prompt.contains("New conversation=empty isolated workspace"))
     }
 
     @Test

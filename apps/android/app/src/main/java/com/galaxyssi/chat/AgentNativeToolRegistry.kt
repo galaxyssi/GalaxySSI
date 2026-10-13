@@ -566,7 +566,8 @@ class AgentNativeToolCancellationSource {
 }
 
 class AgentNativeToolCancelledException : RuntimeException("Native tool invocation was cancelled")
-class AgentNativeToolTimeoutException : RuntimeException("Native tool invocation exceeded its deadline")
+class AgentNativeToolTimeoutException(val details: AgentNativeJsonObject = emptyMap()) :
+    RuntimeException("Native tool invocation exceeded its deadline")
 
 class AgentNativeToolInvocation internal constructor(
     val descriptor: AgentNativeToolDescriptor,
@@ -576,8 +577,13 @@ class AgentNativeToolInvocation internal constructor(
     private val hardDeadlineEpochMillis: Long?,
     val cancellationToken: AgentNativeToolCancellationToken,
     private val clock: AgentNativeClock,
+    private val descriptorResolver: (String) -> AgentNativeToolDescriptor? = { null },
+    private val descriptorCatalogResolver: () -> List<AgentNativeToolDescriptor> = { emptyList() },
     private val progressReporter: (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Unit
 ) {
+    internal fun describeTool(id: String): AgentNativeToolDescriptor? = descriptorResolver(id)
+    internal fun discoverTools(): List<AgentNativeToolDescriptor> = descriptorCatalogResolver()
+
     private val rollingDeadlineEpochMillis = AtomicLong(initialDeadlineEpochMillis)
 
     val deadlineEpochMillis: Long
@@ -927,6 +933,10 @@ class AgentNativeToolRegistry(
         return definition.descriptor.copy(availability = availability)
     }
 
+    @Synchronized
+    private fun discoveryDescriptors(): List<AgentNativeToolDescriptor> =
+        definitions.values.map(::resolvedDescriptor).sortedBy { it.id }
+
     private data class DescriptorSnapshot(
         val createdAtMillis: Long,
         val descriptors: List<AgentNativeToolDescriptor>
@@ -1034,6 +1044,8 @@ class AgentNativeToolRegistry(
             hardDeadlineEpochMillis = context.deadlineEpochMillis,
             cancellationToken = hooks.cancellationToken,
             clock = clock,
+            descriptorResolver = { id -> lookup(id)?.let(::resolvedDescriptor) },
+            descriptorCatalogResolver = ::discoveryDescriptors,
             progressReporter = { activeInvocation, progress ->
                 runHook { hooks.onProgress(activeInvocation, progress) }
             }
@@ -1114,7 +1126,8 @@ class AgentNativeToolRegistry(
                     "This effect was already started and has no durable outcome. Observe its existing execution " +
                         "or reconcile the external state before deciding the next action; it was not executed again.",
                     retryable = false, details = mapOf("original_invocation_id" to observation.invocationId,
-                        "effect_key" to effectiveKey, "input_sha256" to observation.inputSha256)))
+                        "effect_key" to effectiveKey, "input_sha256" to observation.inputSha256,
+                        "outcome_unknown" to true, "executed_again" to false, "goal_terminal" to false)))
             return finish(status = cached.status, output = cached.output, message = cached.message,
                 metadata = cached.metadata, error = cached.error, verification = cached.verification,
                 replayed = true, originalInvocationId = cached.receipt.originalInvocationId ?: cached.receipt.invocationId)
@@ -1145,7 +1158,9 @@ class AgentNativeToolRegistry(
                         code = "tool_unavailable",
                         message = availability.reason.ifBlank { "Native tool is not currently available" },
                         retryable = availability.status == AgentNativeToolAvailabilityStatus.REQUIRES_SETUP,
-                        details = mapOf("availability" to availability.status.wireValue)
+                        details = mapOf("availability" to availability.status.wireValue,
+                            "tool_id" to descriptor.id, "tool_version" to descriptor.version,
+                            "executed" to false, "goal_terminal" to false)
                     )
                 )
             }
@@ -1157,7 +1172,11 @@ class AgentNativeToolRegistry(
                     error = AgentNativeToolError(
                         code = "invalid_input",
                         message = "Native tool input does not satisfy its JSON schema",
-                        details = validationDetails(inputValidation)
+                        details = validationDetails(inputValidation) + mapOf(
+                            "input_schema" to descriptor.inputSchema.document,
+                            "executed" to false,
+                            "goal_terminal" to false
+                        )
                     )
                 )
             }
@@ -1266,11 +1285,12 @@ class AgentNativeToolRegistry(
                 status = AgentNativeToolResultStatus.CANCELLED,
                 error = AgentNativeToolError("cancelled", "Native tool invocation was cancelled", retryable = true)
             )
-        } catch (_: AgentNativeToolTimeoutException) {
+        } catch (error: AgentNativeToolTimeoutException) {
             if (timeoutNotified.compareAndSet(false, true)) runHook { hooks.onTimeout(invocation) }
             return finish(
                 status = AgentNativeToolResultStatus.TIMED_OUT,
-                error = AgentNativeToolError("timeout", "Native tool invocation exceeded its deadline", retryable = true)
+                error = AgentNativeToolError("timeout", "Native tool invocation exceeded its deadline", retryable = true,
+                    details = error.details)
             )
         } catch (error: Throwable) {
             return finish(

@@ -353,6 +353,30 @@ class AgentSupervisedProjectProgressPolicyTest {
     }
 
     @Test
+    fun `latest source observation keeps the middle needed for diagnosis`() {
+        val source = "header ".repeat(70) + "total = sum(payload[values])" + " tail".repeat(100)
+        val read = toolAction(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, "read-source")
+            .copy(result = "Read source", evidence = source)
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(listOf(read)).orEmpty()
+        assertTrue(block.contains("total = sum(payload[values])"))
+        assertFalse(block.contains("[middle omitted]"))
+    }
+
+    @Test
+    fun `recent details remain bounded while older observations shrink`() {
+        val observations = (1..30).map { index ->
+            toolAction(AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT, "read-$index",
+                input = """{"workspace_id":"current","path":"module-$index"}""")
+                .copy(result = "begin-$index " + "x".repeat(8_000) + " end-$index")
+        }
+        val block = AgentSupervisedProjectProgressPolicy.promptBlock(observations).orEmpty()
+        assertTrue(block.contains("begin-30"))
+        assertTrue(block.contains("end-30"))
+        assertTrue(block.length < 14_000)
+        assertTrue(block.contains("[middle omitted]"))
+    }
+
+    @Test
     fun `prompt ledger collapses consecutive equivalent observations`() {
         val toolId = AgentMobileProjectNativeTools.FETCH
         val repeated = (1..3).map { index ->

@@ -223,6 +223,8 @@ class AgentQemuRuntimeEngineController(
     @Volatile private var activeSocketFile: File? = null
     @Volatile private var startedAtMillis: Long = 0L
     @Volatile private var lastExitCode: Int? = null
+    @Volatile override var instanceId: String = ""
+        private set
 
     override val controllerId: String = "galaxyssi.qemu.tcg.v1"
 
@@ -231,6 +233,7 @@ class AgentQemuRuntimeEngineController(
         val current = process ?: return false
         if (current.isAlive) return true
         lastExitCode = runCatching(current::exitValue).getOrNull()
+        if (instanceId.isNotBlank()) AgentRuntimeInstanceEvents.hub.exited(instanceId)
         process = null
         clearEphemeralFiles()
         return false
@@ -278,7 +281,9 @@ class AgentQemuRuntimeEngineController(
         activeSocketFile = spec.socketFile
         startedAtMillis = System.currentTimeMillis()
         lastExitCode = null
-        monitor(child)
+        instanceId = java.util.UUID.randomUUID().toString()
+        AgentRuntimeInstanceEvents.hub.started(instanceId)
+        monitor(child, instanceId)
     }
 
     @Synchronized
@@ -330,9 +335,9 @@ class AgentQemuRuntimeEngineController(
         )
     }
 
-    private fun monitor(child: Process) {
-        Thread({
-            val exitCode = runCatching(child::waitFor).getOrNull()
+    private fun monitor(child: Process, instance: String) {
+        AgentRuntimeProcessMonitor.start(child) { exitCode ->
+            AgentRuntimeInstanceEvents.hub.exited(instance)
             synchronized(this) {
                 if (process === child) {
                     process = null
@@ -342,9 +347,6 @@ class AgentQemuRuntimeEngineController(
                     clearEphemeralFiles()
                 }
             }
-        }, "galaxyssi-qemu-monitor").apply {
-            isDaemon = true
-            start()
         }
     }
 

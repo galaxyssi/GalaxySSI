@@ -136,6 +136,8 @@
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.GalaxySSI.Camera" />
+        <activity android:name=".AgentBrowserUserControlActivity" android:exported="false"
+            android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:screenOrientation="portrait"
