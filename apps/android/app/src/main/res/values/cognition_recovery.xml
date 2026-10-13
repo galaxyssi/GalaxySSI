@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cognition_recovery_stopped">Background goal stalled: %1$d consecutive failures. Automatic retries have stopped. Reason: %2$s. Saved data is retained. Use Process now in the global agent settings to resume after addressing the cause.</string>
+    <string name="cognition_recovery_memory_integrity">Inconsistent memory replacement links</string>
+    <string name="cognition_recovery_processing_failed">Background processing failed (%1$s)</string>
+</resources>

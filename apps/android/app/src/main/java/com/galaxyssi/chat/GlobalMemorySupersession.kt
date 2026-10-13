@@ -12,18 +12,41 @@ data class GlobalMemorySupersessionTrace(
     val complete: Boolean = true
 )
 
+internal class GlobalMemorySupersessionException(violations: List<String>) :
+    IllegalStateException("Invalid memory supersession chain: ${violations.joinToString("; ")}")
+
 data class GlobalMemorySupersessionIntegrityReport(
     val edges: List<GlobalMemorySupersessionEdge> = emptyList(),
     val violations: List<String> = emptyList()
 ) {
     fun requireSafe() {
-        check(violations.isEmpty()) {
-            "Invalid memory supersession chain: ${violations.joinToString("; ")}"
-        }
+        if (violations.isNotEmpty()) throw GlobalMemorySupersessionException(violations)
     }
 }
 
 object GlobalMemorySupersessionPolicy {
+    /** Restore only the inverse links lost by the former twelve-link truncation. */
+    fun restoreTruncatedForwardLinks(world: PersonalWorldModel): PersonalWorldModel {
+        val report = inspect(world)
+        if (report.violations.isEmpty() || report.violations.any { !it.startsWith("missing_forward:") }) return world
+        val byId = world.items.associateBy(GlobalWorldItem::id)
+        if (byId.size != world.items.size) return world
+        val additions = mutableMapOf<String, MutableList<String>>()
+        world.items.forEach { previous ->
+            val successor = byId[previous.supersededByItemId] ?: return@forEach
+            if (previous.id !in successor.supersedesItemIds) {
+                if (previous.status != GlobalWorldItemStatus.SUPERSEDED ||
+                    !GlobalMemoryNamespacePolicy.same(previous, successor)) return world
+                additions.getOrPut(successor.id) { mutableListOf() }.add(previous.id)
+            }
+        }
+        val repaired = world.copy(items = world.items.map { item ->
+            additions[item.id]?.let { item.copy(supersedesItemIds = (item.supersedesItemIds + it).distinct()) } ?: item
+        })
+        inspect(repaired).requireSafe()
+        return repaired
+    }
+
     fun inspect(world: PersonalWorldModel): GlobalMemorySupersessionIntegrityReport {
         val byId = world.items.associateBy(GlobalWorldItem::id)
         val edges = edges(world)

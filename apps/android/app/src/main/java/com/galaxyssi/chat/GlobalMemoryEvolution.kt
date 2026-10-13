@@ -269,7 +269,6 @@ object GlobalMemoryEvolutionPolicy {
                 supersedesItemIds = (approved.item.supersedesItemIds + supersededItemIds)
                     .filter(String::isNotBlank)
                     .distinct()
-                    .takeLast(MAX_EVOLUTION_TARGETS)
             )
             world.items.map { existing ->
                 if (existing.id == incoming.id) return@map existing
@@ -518,7 +517,7 @@ object GlobalMemoryEvolutionPolicy {
                             conflictGroupId = "",
                             supersedesItemIds = (
                                 evolvedItems[currentIncomingIndex].supersedesItemIds + supersededItemIds
-                            ).filter(String::isNotBlank).distinct().takeLast(MAX_EVOLUTION_TARGETS),
+                            ).filter(String::isNotBlank).distinct(),
                             supersededByItemId = ""
                         )
                     }
@@ -980,7 +979,6 @@ object GlobalMemoryCritic {
                     supersedesItemIds = (currentPrimary.supersedesItemIds + duplicate.id)
                         .filter(String::isNotBlank)
                         .distinct()
-                        .takeLast(MAX_SUPERSESSION_TARGETS)
                 )
                 items[primaryIndex] = merged
                 items[duplicateIndex] = duplicate.copy(
@@ -1064,7 +1062,6 @@ object GlobalMemoryCritic {
     private const val MIN_THEME_CONVERSATIONS = 2
     private const val MAX_THEME_ITEMS = 24
     private const val MAX_THEMES = 80
-    private const val MAX_SUPERSESSION_TARGETS = 12
 }
 
 class GlobalMemoryEvolutionStore(context: Context) {
@@ -1381,7 +1378,7 @@ internal object GlobalMemoryEvolutionCodec {
                 )
             ),
             conflictGroupId = json.optString("conflict_group_id"),
-            supersedesItemIds = strings(json.optJSONArray("supersedes_item_ids")).takeLast(12),
+            supersedesItemIds = strings(json.optJSONArray("supersedes_item_ids")).distinct(),
             supersededByItemId = json.optString("superseded_by_item_id"),
             firstSeenAtMillis = json.optLong("first_seen_at_millis"),
             lastSeenAtMillis = json.optLong("last_seen_at_millis"),

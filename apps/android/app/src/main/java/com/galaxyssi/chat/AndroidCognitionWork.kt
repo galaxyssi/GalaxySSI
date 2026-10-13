@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import androidx.work.CoroutineWorker
+import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
@@ -18,6 +19,9 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 
 enum class AndroidCognitionWorkMode {
     EVENT,
@@ -119,8 +123,10 @@ object AndroidCognitionScheduler {
         policy: ExistingWorkPolicy
     ) {
         val request = OneTimeWorkRequestBuilder<AndroidCognitionWorker>()
-            .setInputData(workDataOf(KEY_MODE to mode.name))
+            .setInputData(workDataOf(KEY_MODE to mode.name,
+                KEY_RESUME_TOKEN to if (mode == AndroidCognitionWorkMode.EXPLICIT) UUID.randomUUID().toString() else ""))
             .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .addTag(WORK_TAG)
             .build()
         WorkManager.getInstance(context.applicationContext)
@@ -128,6 +134,7 @@ object AndroidCognitionScheduler {
     }
 
     internal const val KEY_MODE = "mode"
+    internal const val KEY_RESUME_TOKEN = "resume_token"
     private const val EVENT_WORK = "galaxyssi-cognition-event-v1"
     private const val SCHEDULED_WORK = "galaxyssi-cognition-scheduled-v1"
     private const val EXPLICIT_WORK = "galaxyssi-cognition-explicit-v1"
@@ -139,21 +146,33 @@ class AndroidCognitionWorker(
     appContext: Context,
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = AndroidCognitionRecovery.execution.withLock { executeOnce() }
+
+    private suspend fun executeOnce(): Result {
         val startedAt = SystemClock.elapsedRealtime()
         val mode = runCatching {
             AndroidCognitionWorkMode.valueOf(inputData.getString(AndroidCognitionScheduler.KEY_MODE).orEmpty())
         }.getOrDefault(AndroidCognitionWorkMode.SCHEDULED)
+        val recovery = AndroidCognitionRecovery(applicationContext)
+        if (mode == AndroidCognitionWorkMode.EXPLICIT) {
+            recovery.resumeOnce(inputData.getString(AndroidCognitionScheduler.KEY_RESUME_TOKEN).orEmpty())
+        }
+        val saved = recovery.state(mode)
+        if (saved.stopped) {
+            AndroidCognitionRecovery.reportStopped(applicationContext, mode, saved)
+            return Result.failure()
+        }
+        if (!recovery.mayAttempt(mode)) return Result.retry()
         if (mode == AndroidCognitionWorkMode.EXPLICIT || mode == AndroidCognitionWorkMode.PROJECTION) {
             setForeground(foregroundInfo())
         }
-        val runtime = GlobalSuperAgentRuntime.get(applicationContext)
-        val backgroundEnabled = runtime.settings().enabled
-        if (!backgroundEnabled && mode != AndroidCognitionWorkMode.PROJECTION) {
-            Log.i(LOG_TAG, "run_skipped mode=$mode reason=background_disabled elapsed_ms=${elapsed(startedAt)}")
-            return Result.success()
-        }
-        return runCatching {
+        return try {
+            val runtime = GlobalSuperAgentRuntime.get(applicationContext)
+            val backgroundEnabled = runtime.settings().enabled
+            if (!backgroundEnabled && mode != AndroidCognitionWorkMode.PROJECTION) {
+                Log.i(LOG_TAG, "run_skipped mode=$mode reason=background_disabled elapsed_ms=${elapsed(startedAt)}")
+                return Result.success()
+            }
             val explicit = mode == AndroidCognitionWorkMode.EXPLICIT
             val plan = AndroidCognitionSchedulePolicy.workPlan(mode)
             var projection = ObsidianProjectionResult(configured = false)
@@ -180,6 +199,7 @@ class AndroidCognitionWorker(
                 }
             }
             if (backgroundEnabled) AndroidCognitionScheduler.scheduleDynamic(applicationContext, runtime)
+            recovery.succeeded(mode)
             Log.i(
                 LOG_TAG,
                 "run_complete mode=$mode elapsed_ms=${elapsed(startedAt)} " +
@@ -188,20 +208,21 @@ class AndroidCognitionWorker(
                     "projection_candidates=${projection.candidateCount} projection_remaining=${projection.remainingCount}"
             )
             Result.success()
-        }.getOrElse { error ->
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            val failure = recovery.failed(mode, error)
             Log.w(
                 LOG_TAG,
-                "run_retry mode=$mode elapsed_ms=${elapsed(startedAt)} " +
-                    "error=${error.javaClass.simpleName} message=${error.message.orEmpty().take(240)}",
-                error
+                "${if (failure.stopped) "run_stopped" else "run_retry"} mode=$mode elapsed_ms=${elapsed(startedAt)} " +
+                    "failures=${failure.failures} error=${error.javaClass.simpleName} reason=${failure.reason}"
             )
-            if (mode != AndroidCognitionWorkMode.PROJECTION) {
-                AndroidCognitionScheduler.scheduleAt(
-                    applicationContext,
-                    System.currentTimeMillis() + AndroidCognitionSchedulePolicy.MIN_DELAY_MILLIS
-                )
+            if (failure.stopped) {
+                AndroidCognitionRecovery.reportStopped(applicationContext, mode, failure)
+                Result.failure()
+            } else {
+                // WorkManager is the only retry scheduler. Do not replace the currently running work.
+                Result.retry()
             }
-            Result.retry()
         }
     }
 
