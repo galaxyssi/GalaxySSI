@@ -23,8 +23,9 @@ class AgentPlannerCatalogRecoveryDeviceTest {
     @Test fun anthropicRepairRestoresOriginalPlanningJournal() = scenario("anthropic", reopen = true)
     @Test fun geminiRepairRestoresOriginalPlanningJournal() = scenario("gemini", reopen = true)
     @Test fun repairUpdatesTheSameHttpAdapterBeforeReadinessCacheExpires() = scenario("openai", reopen = false)
+    @Test fun canonicalJournalResumesThroughWireNamedHttpCalls() = scenario("openai", reopen = true, legacy = true)
 
-    private fun scenario(style: String, reopen: Boolean) = runBlocking {
+    private fun scenario(style: String, reopen: Boolean, legacy: Boolean = false) = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val token = UUID.randomUUID().toString()
         val database = "public-planner-catalog-$token.db"
@@ -62,9 +63,10 @@ class AgentPlannerCatalogRecoveryDeviceTest {
         try {
             MockWebServer().use { server ->
                 server.start()
-                server.enqueue(response(style, INSTALL))
+                if (!legacy) server.enqueue(response(style, INSTALL))
                 server.enqueue(response(style, READ))
                 server.enqueue(response(style, null))
+                AgentProviderWireNameFixture.enforce(server, style)
                 val contact = JSONObject().put("id", "public-provider-$token").put("name", "Public local Provider fixture")
                     .put("cloud_provider", "custom").put("cloud_api_style", style).put("cloud_model", "public-fixture-model")
                     .put("cloud_api_key", "fixture-only-key").put("cloud_endpoint", server.url("/fixture").toString())
@@ -81,7 +83,8 @@ class AgentPlannerCatalogRecoveryDeviceTest {
                         try {
                             loop(AgentModelAdapter { incoming ->
                                 if (incoming.round == 2) throw CancellationException("Public interruption after setup receipt")
-                                http.complete(incoming)
+                                if (legacy) AgentModelResponse(toolCalls = listOf(AgentModelToolCall("legacy-install", INSTALL)))
+                                else http.complete(incoming)
                             }, initialRegistry, initial, initialJournal).run(request(initial))
                             fail("Expected public interruption")
                         } catch (_: CancellationException) { }
@@ -101,14 +104,17 @@ class AgentPlannerCatalogRecoveryDeviceTest {
                 assertEquals("已验证原始公开测试目标。", completed.assistantText)
                 assertEquals(1, installs)
                 assertEquals(1, reads)
-                assertEquals(3, server.requestCount)
-                val bodies = (0 until 3).map { JSONObject(checkNotNull(server.takeRequest(1, TimeUnit.SECONDS)).body.readUtf8()) }
-                assertFalse(bodies[0].getJSONArray("tools").toString().contains(READ))
-                assertTrue(bodies[1].getJSONArray("tools").toString().contains(READ))
+                val expectedRequests = if (legacy) 2 else 3
+                assertEquals(expectedRequests, server.requestCount)
+                val bodies = (0 until expectedRequests).map { JSONObject(checkNotNull(server.takeRequest(1, TimeUnit.SECONDS)).body.readUtf8()) }
+                val repaired = if (legacy) 0 else 1
+                if (!legacy) assertFalse(AgentProviderWireNameFixture.declarations(style, bodies[0]).contains(AgentModelToolWireNames.name(READ)))
+                assertTrue(AgentProviderWireNameFixture.declarations(style, bodies[repaired]).contains(AgentModelToolWireNames.name(READ)))
+                assertTrue(AgentProviderWireNameFixture.historicalCalls(style, bodies[repaired]).contains(AgentModelToolWireNames.name(INSTALL)))
                 assertTrue(bodies.all { it.toString().contains(goal) })
-                assertFalse(bodies[1].toString().contains("不应替代原目标"))
-                assertTrue(bodies[1].toString().contains("public_fixture_installed"))
-                assertTrue(bodies[2].toString().contains("public_fixture_verified"))
+                assertFalse(bodies[repaired].toString().contains("不应替代原目标"))
+                assertTrue(bodies[repaired].toString().contains("public_fixture_installed"))
+                assertTrue(bodies.last().toString().contains("public_fixture_verified"))
                 assertTrue(bodies.all { it.getString("model") == "public-fixture-model" })
             }
         } finally {
@@ -120,23 +126,25 @@ class AgentPlannerCatalogRecoveryDeviceTest {
 
     private fun response(style: String, tool: String?): MockResponse {
         val text = "已验证原始公开测试目标。"
+        val wireName = tool?.let(AgentModelToolWireNames::name)
+        val callId = tool?.let { "fixture_" + it.replace('.', '_') }
         val body = when (style) {
             "anthropic" -> {
                 val block = if (tool == null) JSONObject().put("type", "text").put("text", text)
-                else JSONObject().put("type", "tool_use").put("id", tool).put("name", tool).put("input", JSONObject())
+                else JSONObject().put("type", "tool_use").put("id", callId).put("name", wireName).put("input", JSONObject())
                 JSONObject().put("content", JSONArray().put(block))
             }
             "gemini" -> {
                 val part = if (tool == null) JSONObject().put("text", text)
-                else JSONObject().put("functionCall", JSONObject().put("name", tool).put("args", JSONObject()))
+                else JSONObject().put("functionCall", JSONObject().put("name", wireName).put("args", JSONObject()))
                 val content = JSONObject().put("parts", JSONArray().put(part))
                 JSONObject().put("candidates", JSONArray().put(JSONObject().put("content", content)))
             }
             else -> {
                 val message = JSONObject().put("content", if (tool == null) text else "")
                 if (tool != null) {
-                    val function = JSONObject().put("name", tool).put("arguments", "{}")
-                    message.put("tool_calls", JSONArray().put(JSONObject().put("id", tool)
+                    val function = JSONObject().put("name", wireName).put("arguments", "{}")
+                    message.put("tool_calls", JSONArray().put(JSONObject().put("id", callId)
                         .put("type", "function").put("function", function)))
                 }
                 JSONObject().put("choices", JSONArray().put(JSONObject().put("message", message)))

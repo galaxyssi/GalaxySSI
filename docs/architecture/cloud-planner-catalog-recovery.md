@@ -50,13 +50,11 @@ They do not prove autonomous website login, successful browser dependency
 installation or diagnosis of unspecified real-world obstacles. Those broader
 end-to-end acceptance requirements remain open.
 
-## Known HTTP Provider Gap
+## HTTP transport names
 
-The existing protocol adapters still emit dotted native IDs as HTTP function
-names. OpenAI's [function-tool specification](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
-restricts those names to letters, numbers, underscores and dashes, with maximum
-length 64. The local scripted Provider does not enforce that vendor constraint.
-This increment does not repair transport naming or establish real-provider
-compatibility. A separate change must map wire names consistently across tool
-declarations, historical calls and response decoding while preserving native
-IDs and durable journals. Other vendors' rules require their own verification.
+The original catalog-recovery increment emitted dotted native IDs as HTTP
+function names. [Provider tool-name mapping](provider-tool-wire-names.md) now
+converts declarations, historical calls and responses consistently while retaining
+native journal identities. Local HTTP recovery fixtures reject invalid function
+names. This closes the known naming defect; real-provider autonomy and complete
+model-specific request compatibility still require end-to-end verification.

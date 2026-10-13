@@ -487,6 +487,8 @@ data class AgentNativeToolDescriptor(
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         private val ID_PATTERN = Regex("[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*")
         private val VERSION_PATTERN = Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?")
+
+        internal fun isValidId(value: String): Boolean = ID_PATTERN.matches(value)
     }
 }
 
