@@ -24,8 +24,11 @@ class AgentPlannerCatalogRecoveryDeviceTest {
     @Test fun geminiRepairRestoresOriginalPlanningJournal() = scenario("gemini", reopen = true)
     @Test fun repairUpdatesTheSameHttpAdapterBeforeReadinessCacheExpires() = scenario("openai", reopen = false)
     @Test fun canonicalJournalResumesThroughWireNamedHttpCalls() = scenario("openai", reopen = true, legacy = true)
+    @Test fun openAiHandoffSurvivesEncryptedRestart() = scenario("openai", reopen = true, rollover = true)
+    @Test fun anthropicHandoffSurvivesEncryptedRestart() = scenario("anthropic", reopen = true, rollover = true)
+    @Test fun geminiHandoffSurvivesEncryptedRestart() = scenario("gemini", reopen = true, rollover = true)
 
-    private fun scenario(style: String, reopen: Boolean, legacy: Boolean = false) = runBlocking {
+    private fun scenario(style: String, reopen: Boolean, legacy: Boolean = false, rollover: Boolean = false) = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val token = UUID.randomUUID().toString()
         val database = "public-planner-catalog-$token.db"
@@ -63,7 +66,7 @@ class AgentPlannerCatalogRecoveryDeviceTest {
         try {
             MockWebServer().use { server ->
                 server.start()
-                if (!legacy) server.enqueue(response(style, INSTALL))
+                if (!legacy) server.enqueue(response(style, INSTALL, large = rollover))
                 server.enqueue(response(style, READ))
                 server.enqueue(response(style, null))
                 AgentProviderWireNameFixture.enforce(server, style) { validContinuation(style, it, legacy) }
@@ -71,6 +74,7 @@ class AgentPlannerCatalogRecoveryDeviceTest {
                     .put("cloud_provider", "custom").put("cloud_api_style", style).put("cloud_model", "public-fixture-model")
                     .put("cloud_api_key", "fixture-only-key").put("cloud_endpoint",
                         server.url(if (style == "gemini") "/models/public-fixture-model:generateContent" else "/fixture").toString())
+                if (rollover) contact.put("cloud_context_window_tokens", 4_096).put("cloud_max_output_tokens", 512)
                 val initialRegistry = registry()
                 val initialJournal = EncryptedAgentModelLoopJournal(app, store)
                 val initial = AgentPlannerToolCatalogBinding.prepare(initialJournal, identity, initialRegistry)
@@ -83,7 +87,7 @@ class AgentPlannerCatalogRecoveryDeviceTest {
                     if (reopen) {
                         try {
                             loop(AgentModelAdapter { incoming ->
-                                if (incoming.round == 2) throw CancellationException("Public interruption after setup receipt")
+                                if (incoming.round == if (rollover) 3 else 2) throw CancellationException("Public interruption after committed receipt")
                                 if (legacy) AgentModelResponse(toolCalls = listOf(AgentModelToolCall("legacy-install", INSTALL)))
                                 else http.complete(incoming)
                             }, initialRegistry, initial, initialJournal).run(request(initial))
@@ -112,7 +116,13 @@ class AgentPlannerCatalogRecoveryDeviceTest {
                 val repaired = if (legacy) 0 else 1
                 if (!legacy) assertFalse(AgentProviderWireNameFixture.declarations(style, bodies[0]).contains(AgentModelToolWireNames.name(READ)))
                 assertTrue(AgentProviderWireNameFixture.declarations(style, bodies[repaired]).contains(AgentModelToolWireNames.name(READ)))
-                assertTrue(AgentProviderWireNameFixture.historicalCalls(style, bodies[repaired]).contains(AgentModelToolWireNames.name(INSTALL)))
+                if (rollover || legacy) {
+                    assertFalse(AgentProviderWireNameFixture.historicalCalls(style, bodies[repaired]).contains(AgentModelToolWireNames.name(INSTALL)))
+                    assertTrue(bodies[repaired].toString().contains("[HOST CONTEXT HANDOFF]"))
+                    assertTrue(bodies.none { it.toString().contains("oversized-private-opaque") })
+                    assertTrue(completed.messages.any { it.contextHandoff != null })
+                    assertTrue(AgentProviderWireNameFixture.historicalCalls(style, bodies.last()).contains(AgentModelToolWireNames.name(READ)))
+                } else assertTrue(AgentProviderWireNameFixture.historicalCalls(style, bodies[repaired]).contains(AgentModelToolWireNames.name(INSTALL)))
                 assertTrue(bodies.all { it.toString().contains(goal) })
                 assertFalse(bodies[repaired].toString().contains("不应替代原目标"))
                 assertTrue(bodies[repaired].toString().contains("public_fixture_installed"))
@@ -129,7 +139,7 @@ class AgentPlannerCatalogRecoveryDeviceTest {
         }
     }
 
-    private fun response(style: String, tool: String?): MockResponse {
+    private fun response(style: String, tool: String?, large: Boolean = false): MockResponse {
         val text = "已验证原始公开测试目标。"
         val wireName = tool?.let(AgentModelToolWireNames::name)
         val callId = tool?.let { "fixture_" + it.replace('.', '_') }
@@ -139,7 +149,7 @@ class AgentPlannerCatalogRecoveryDeviceTest {
                 else JSONObject().put("type", "tool_use").put("id", callId).put("name", wireName).put("input", JSONObject())
                 val blocks = JSONArray()
                 if (tool != null) blocks.put(JSONObject().put("type", "thinking").put("thinking", "Public opaque fixture")
-                    .put("signature", "signature-$tool"))
+                    .put("signature", if (large) "oversized-private-opaque".repeat(4_000) else "signature-$tool"))
                 if (tool != null) blocks.put(JSONObject().put("type", "redacted_thinking").put("data", "opaque-$tool"))
                 JSONObject().put("content", blocks.put(block))
             }
@@ -149,7 +159,7 @@ class AgentPlannerCatalogRecoveryDeviceTest {
                 val parts = JSONArray()
                 if (tool != null) {
                     parts.put(JSONObject().put("text", "Public opaque fixture").put("thought", true).put("thoughtSignature", "thought-$tool"))
-                    part.put("thoughtSignature", "signature-$tool")
+                    part.put("thoughtSignature", if (large) "oversized-private-opaque".repeat(4_000) else "signature-$tool")
                 }
                 val content = JSONObject().put("parts", parts.put(part))
                 JSONObject().put("candidates", JSONArray().put(JSONObject().put("content", content)))
@@ -157,7 +167,7 @@ class AgentPlannerCatalogRecoveryDeviceTest {
             else -> {
                 val message = JSONObject().put("content", if (tool == null) text else "")
                 if (tool != null) {
-                    message.put("reasoning_content", "Public opaque fixture $tool")
+                    message.put("reasoning_content", if (large) "oversized-private-opaque".repeat(4_000) else "Public opaque fixture $tool")
                     val function = JSONObject().put("name", wireName).put("arguments", "{}")
                     message.put("tool_calls", JSONArray().put(JSONObject().put("id", callId)
                         .put("type", "function").put("function", function)))

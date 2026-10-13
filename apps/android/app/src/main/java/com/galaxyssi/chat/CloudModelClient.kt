@@ -283,7 +283,7 @@ object CloudModelClient {
         val initialToolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog, catalogFingerprint)
         val continuationRoute = AgentProviderContinuation.routeFingerprint(provider,
             contact.getString("cloud_endpoint"), contact.getString("cloud_model"), contact.getString("cloud_api_key"))
-        val contextCompaction = AgentModelContextCompactionSession()
+        val contextHandoff = AgentModelContextHandoffSession()
         val disclosureSummarySession = AgentModelDisclosureSummarySession()
         return AgentModelAdapter { request ->
             if (request.cancellationToken.isCancellationRequested) {
@@ -315,14 +315,14 @@ object CloudModelClient {
                             "cloud_max_output_tokens",
                             DEFAULT_OUTPUT_RESERVE_TOKENS
                         ).coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
-                        val compacted = contextCompaction.compact(
-                            AgentUntrustedEvidenceBoundary.secureMessages(
-                                AgentProviderContinuation.forRoute(request.messages, continuationRoute)),
+                        val projection = contextHandoff.prepare(
+                            AgentUntrustedEvidenceBoundary.secureMessages(request.messages),
                             ConversationContextBudget(
                                 contextWindowTokens = contextWindow,
                                 reservedOutputTokens = outputReserve
-                            )
+                            ), continuationRoute
                         )
+                        val compacted = projection.context
                         if (compacted.compacted) {
                             Log.i(
                                 TAG,
@@ -392,7 +392,9 @@ object CloudModelClient {
                             throw CancellationException("Model tool request cancelled")
                         }
                         protocol.decodeResponse(response, toolCatalog.descriptors).let { decoded ->
-                            decoded.copy(continuation = decoded.continuation?.bindRoute(continuationRoute))
+                            decoded.copy(continuation = decoded.continuation?.bindRoute(continuationRoute),
+                                contextHandoff = projection.newHandoff,
+                                providerMetadata = decoded.providerMetadata + (AgentModelContextHandoff.ROUTE_METADATA_KEY to continuationRoute))
                         }
                     }
                         .also {

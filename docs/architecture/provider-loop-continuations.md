@@ -27,8 +27,9 @@ hashes. Existing journals cannot recover signatures that an older version alread
 discarded. Current signed tool chains survive context compaction, and retained
 assistant blocks are never shortened or rewritten. Opaque payload size counts
 toward token estimates. Tool observations can still be compacted. Required state
-that exceeds a model window is not silently truncated; long-task context rollover
-remains a separate concern.
+that exceeds a model window is not silently truncated. The cloud native adapter
+can now create a [durable context handoff](model-context-handoff.md) after receiving
+all tool results, without rewriting the signed blocks or resetting execution.
 
 Gemini's native HTTP adapter now sends the configured model through its endpoint,
 without the unsupported top-level model field used by other protocol families.

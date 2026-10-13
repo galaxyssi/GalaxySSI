@@ -87,9 +87,14 @@ data class AgentModelMessage(
     val text: String = "",
     val toolCalls: List<AgentModelToolCall> = emptyList(),
     val toolResult: AgentModelToolResultContent? = null,
-    val continuation: AgentProviderContinuation? = null
+    val continuation: AgentProviderContinuation? = null,
+    val contextHandoff: AgentModelContextHandoff? = null,
+    val providerRoute: String = ""
 ) {
     init {
+        require(contextHandoff == null || role == AgentModelMessageRole.ASSISTANT) {
+            "Only assistant messages may contain context handoff checkpoints"
+        }
         require(continuation == null || role == AgentModelMessageRole.ASSISTANT) {
             "Only assistant messages may contain provider continuation state"
         }
@@ -127,7 +132,8 @@ data class AgentModelResponse(
     val toolCalls: List<AgentModelToolCall> = emptyList(),
     val usage: AgentModelUsage = AgentModelUsage(),
     val providerMetadata: AgentNativeJsonObject = emptyMap(),
-    val continuation: AgentProviderContinuation? = null
+    val continuation: AgentProviderContinuation? = null,
+    val contextHandoff: AgentModelContextHandoff? = null
 ) {
     init {
         require(assistantText.isNotBlank() || toolCalls.isNotEmpty()) {
@@ -551,7 +557,9 @@ class AgentModelToolLoop(
                 role = AgentModelMessageRole.ASSISTANT,
                 text = response.assistantText,
                 toolCalls = admission.calls,
-                continuation = response.continuation?.forHistory(response, admission.calls)
+                continuation = response.continuation?.forHistory(response, admission.calls),
+                contextHandoff = response.contextHandoff,
+                providerRoute = response.providerMetadata[AgentModelContextHandoff.ROUTE_METADATA_KEY] as? String ?: ""
             ))
             emit(
                 state,

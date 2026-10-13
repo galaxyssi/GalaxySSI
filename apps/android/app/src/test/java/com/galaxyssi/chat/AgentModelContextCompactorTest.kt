@@ -6,6 +6,15 @@ import org.junit.Test
 
 class AgentModelContextCompactorTest {
     @Test
+    fun estimationCacheReleasesRetiredContextWindows() {
+        val session = AgentModelContextCompactionSession()
+        repeat(100) { index ->
+            session.compact(listOf(AgentModelMessage.user("Public context $index")), ConversationContextBudget())
+            assertEquals(1, session.cachedMessageCount)
+        }
+    }
+
+    @Test
     fun compactionSessionEstimatesOnlyNewMessagesAcrossModelRounds() {
         var estimationCount = 0
         val session = AgentModelContextCompactionSession { message ->

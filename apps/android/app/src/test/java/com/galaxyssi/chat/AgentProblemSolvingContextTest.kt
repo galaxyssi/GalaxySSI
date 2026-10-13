@@ -117,6 +117,22 @@ class AgentProblemSolvingContextTest {
         assertFalse(compacted.output.containsKey("text"))
     }
 
+    @Test fun userOwnedBrowserAndUnknownMutationAreRetainedDuringCompaction() {
+        val query = mapOf("tool_id" to AgentInteractiveBrowserTools.OBSERVE,
+            "arguments" to mapOf("operation" to "operation_status", "request_id" to "original-operation"))
+        val messages = listOf(AgentModelMessage.user("Continue the existing browser task")) +
+            block("browser", output = mapOf("control_owner" to "user", "handoff_id" to "human-control", "host_wait_key" to "durable-wait")) +
+            block("uncertain", error = AgentNativeToolError("browser_result_unobserved", "Inspect before repeating",
+                details = mapOf("outcome_unknown" to true, "recovery_query" to query))) + noisyReads()
+        val compacted = AgentModelContextCompactor.compact(messages, budget).messages
+        val browser = compacted.single { it.toolResult?.callId == "browser" }.toolResult!!
+        assertTrue(AgentToolContextObservation.isLive(browser))
+        assertEquals("human-control", browser.output["handoff_id"])
+        val unknown = compacted.single { it.toolResult?.callId == "uncertain" }.toolResult!!
+        assertTrue(AgentToolContextObservation.isUncertain(unknown))
+        assertEquals(query, unknown.error!!.details["recovery_query"])
+    }
+
     private fun block(id: String, error: AgentNativeToolError? = null,
         output: AgentNativeJsonObject = emptyMap(), message: String = "") = listOf(
         AgentModelMessage(AgentModelMessageRole.ASSISTANT,
