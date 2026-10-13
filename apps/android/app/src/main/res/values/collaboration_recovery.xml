@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="collaboration_recovery_stalled">Goal stalled: %1$d consecutive recovery failures. Automatic retries have stopped. Check the cause, then resume.</string>
+    <string name="collaboration_recovery_scope_missing">Recovery stopped: the collaboration group is no longer available. Saved progress has been retained.</string>
     <string name="collaboration_evidence_transfer_count">Reply received · %1$d tool observations synced</string>
     <string name="collaboration_evidence_transfer">Reply received; recovering original tool evidence without rerunning the task</string>
     <string name="collaboration_goal_blocked">Goal unfinished: waiting for the stated resource or authorization</string>

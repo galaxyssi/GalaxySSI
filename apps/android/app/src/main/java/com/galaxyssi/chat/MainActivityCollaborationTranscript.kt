@@ -114,6 +114,9 @@ internal fun MainActivity.collaborationTranscriptRow(
 
 internal fun android.content.Context.collaborationCurrentMemberLabel(metadata: CollaborationTranscriptMetadata): String = when {
     metadata.result -> getString(R.string.collaboration_view_process)
+    metadata.recoveryScopeMissing -> getString(R.string.collaboration_recovery_scope_missing)
+    metadata.recoveryFailureCount >= AgentTeamRecoveryPolicy.MAX_FAILURES ->
+        getString(R.string.collaboration_recovery_stalled, metadata.recoveryFailureCount)
     metadata.status == AgentSubagentStatus.SUCCEEDED -> getString(R.string.agent_team_state_succeeded)
     metadata.status == AgentSubagentStatus.CANCELLED -> getString(R.string.collaboration_cancelled)
     metadata.paused -> getString(R.string.collaboration_team_paused)

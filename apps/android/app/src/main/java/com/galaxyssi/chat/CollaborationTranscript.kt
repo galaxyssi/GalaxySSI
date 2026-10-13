@@ -28,7 +28,9 @@ internal data class CollaborationTranscriptMetadata(
     val connectionState: String = "",
     val current: Boolean = false,
     val updatedAtMillis: Long = 0L,
-    val dependencies: String = ""
+    val dependencies: String = "",
+    val recoveryFailureCount: Int = 0,
+    val recoveryScopeMissing: Boolean = false
 ) {
     fun encode(): String = JSONObject().put("member_id", memberId).put("name", name)
         .put("provider", provider).put("role", role).put("status", status.name)
@@ -39,7 +41,8 @@ internal data class CollaborationTranscriptMetadata(
         .put("goal_disposition", goalDisposition)
         .put("started_at_millis", startedAtMillis).put("completed_at_millis", completedAtMillis)
         .put("clock_stopped_at_millis", clockStoppedAtMillis).put("connection_state", connectionState)
-        .put("current", current).put("updated_at_millis", updatedAtMillis).put("dependencies", dependencies).toString()
+        .put("current", current).put("updated_at_millis", updatedAtMillis).put("dependencies", dependencies)
+        .put("recovery_failures", recoveryFailureCount).put("recovery_scope_missing", recoveryScopeMissing).toString()
 
     val traceTurnId: String get() = "collaboration:$runId:$executionMemberId"
 
@@ -57,7 +60,7 @@ internal data class CollaborationTranscriptMetadata(
                     json.optString("execution_member_id").ifBlank { json.getString("member_id") }, json.optBoolean("paused"), json.optString("goal_disposition"),
                     json.optLong("started_at_millis"), json.optLong("completed_at_millis"), json.optLong("clock_stopped_at_millis"),
                     json.optString("connection_state"), json.optBoolean("current"), json.optLong("updated_at_millis"),
-                    json.optString("dependencies"))
+                    json.optString("dependencies"), json.optInt("recovery_failures"), json.optBoolean("recovery_scope_missing"))
             }.getOrNull()
         }
     }
@@ -109,8 +112,15 @@ internal class CollaborationTranscriptPublisher(context: Context) {
                 member.providerLabel, member.role, status, snapshot.supervisorRunId,
                 waiting = member.waitingForDependencies, primary = member.memberId == snapshot.primaryMemberId,
                 researchStage = member.researchStage, executionMemberId = member.memberId,
-                summary = if (recovering) appContext.getString(R.string.collaboration_waiting_connection_long) else "",
+                summary = when {
+                    snapshot.recoveryScopeMissing -> appContext.getString(R.string.collaboration_recovery_scope_missing)
+                    snapshot.recoveryFailureCount >= AgentTeamRecoveryPolicy.MAX_FAILURES ->
+                        appContext.getString(R.string.collaboration_recovery_stalled, snapshot.recoveryFailureCount)
+                    recovering -> appContext.getString(R.string.collaboration_waiting_connection_long)
+                    else -> ""
+                },
                 paused = snapshot.paused, goalDisposition = if (member.memberId == snapshot.primaryMemberId) snapshot.goalDisposition else "",
+                recoveryFailureCount = snapshot.recoveryFailureCount, recoveryScopeMissing = snapshot.recoveryScopeMissing,
                 startedAtMillis = member.executionStartedAtMillis,
                 completedAtMillis = member.completedAtMillis,
                 clockStoppedAtMillis = if (snapshot.paused || snapshot.state.isTerminal) {

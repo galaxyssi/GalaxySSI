@@ -23,15 +23,15 @@ internal object AgentTeamParentDeliveryPolicy {
 
 /** Repairs only the old remote-silence misclassification of an exact, journal-owned team parent. */
 internal class AgentTeamParentDeliveryRecovery(private val context: Context) {
-    fun stop(team: AgentTeamExecutionSnapshot) {
+    fun stop(team: AgentTeamExecutionSnapshot, reason: String = context.getString(R.string.collaboration_cancelled)) {
         val store = EncryptedAgentWorkspaceStore(context)
         val workspace = store.find(team.taskId) ?: return
         if (workspace.conversationId != team.conversationId || workspace.status.isTerminal) return
-        store.upsert(workspace.copy(status = AgentWorkspaceStatus.CANCELLED, cancellationRequested = true),
+        store.upsert(workspace.copy(status = AgentWorkspaceStatus.CANCELLED, cancellationRequested = true, errorMessage = reason),
             expectedRevision = workspace.revision)
         val delivery = AgentPendingDelivery(AgentTeamDispatchIds.sourceMessageId(team.supervisorRunId),
             team.conversationId, team.taskId, team.taskId, AgentTeamDispatchIds.responseContactId(team.teamId))
-        AgentTerminalDeliveryStore.mark(context, delivery, context.getString(R.string.collaboration_cancelled))
+        AgentTerminalDeliveryStore.mark(context, delivery, reason)
         AgentPendingDeliveryStore.remove(context, delivery.sourceMessageId)
     }
 

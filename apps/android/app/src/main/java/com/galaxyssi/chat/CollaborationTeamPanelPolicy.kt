@@ -34,7 +34,8 @@ internal object CollaborationTeamPanelPolicy {
         return roster.values.map { member ->
             val value = latest[member.id]?.takeIf { currentRun == null || it.second.runId == currentRun || it.second.status.isTerminal }
             val metadata = value?.second?.let { if (currentRun != null && it.runId != currentRun)
-                it.copy(paused = false, goalDisposition = "", connectionState = "") else it }
+                it.copy(paused = false, goalDisposition = "", connectionState = "",
+                    recoveryFailureCount = 0, recoveryScopeMissing = false) else it }
             CollaborationTeamPanelMember(member, value?.first, metadata)
         }
     }
@@ -57,6 +58,7 @@ internal object CollaborationTeamPanelPolicy {
         val states = rows.mapNotNull { it.metadata }
         return when {
             states.isEmpty() -> null
+            states.any { it.recoveryFailureCount >= AgentTeamRecoveryPolicy.MAX_FAILURES } -> ConversationHubAgentStatus.BLOCKED
             states.any { it.paused } -> ConversationHubAgentStatus.PAUSED
             states.any { it.goalDisposition == "blocked" } -> ConversationHubAgentStatus.BLOCKED
             running(rows) > 0 -> ConversationHubAgentStatus.RUNNING
