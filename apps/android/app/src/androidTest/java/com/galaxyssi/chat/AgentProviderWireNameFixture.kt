@@ -9,12 +9,13 @@ import org.json.JSONObject
 
 /** Checks typed SDK name fields only; fixture data and tool arguments are not transport names. */
 internal object AgentProviderWireNameFixture {
-    fun enforce(server: MockWebServer, style: String) {
+    fun enforce(server: MockWebServer, style: String, validate: (JSONObject) -> Boolean = { true }) {
         val queued = server.dispatcher
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val valid = runCatching {
-                    allNames(style, JSONObject(request.body.clone().readUtf8())).all { SAFE_NAME.matches(it) }
+                    val body = JSONObject(request.body.clone().readUtf8())
+                    allNames(style, body).all { SAFE_NAME.matches(it) } && validate(body)
                 }.getOrDefault(false)
                 return if (valid) queued.dispatch(request) else MockResponse().setResponseCode(400)
                     .setBody("{\"error\":\"Invalid public fixture function name\"}")

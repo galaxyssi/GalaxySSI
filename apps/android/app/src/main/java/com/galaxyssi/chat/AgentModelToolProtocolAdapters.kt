@@ -123,6 +123,8 @@ class OpenAiCompatibleAgentModelToolProtocolAdapter(
     }
 
     override fun encodeConversation(messages: List<AgentModelMessage>): JSONObject {
+        checkContinuationMessages(messages)
+        val transcript = AgentProviderTranscript(messages, provider)
         val encoded = JSONArray()
         messages.forEachIndexed { index, message ->
             val path = "messages[$index]"
@@ -130,6 +132,7 @@ class OpenAiCompatibleAgentModelToolProtocolAdapter(
                 AgentModelMessageRole.SYSTEM -> encoded.put(textMessage("system", message.text))
                 AgentModelMessageRole.USER -> encoded.put(textMessage("user", message.text))
                 AgentModelMessageRole.ASSISTANT -> {
+                    transcript.assistant(message)?.let { encoded.put(it); return@forEachIndexed }
                     val item = JSONObject().put("role", "assistant")
                     item.put("content", if (message.text.isBlank()) JSONObject.NULL else message.text)
                     if (message.toolCalls.isNotEmpty()) {
@@ -159,7 +162,7 @@ class OpenAiCompatibleAgentModelToolProtocolAdapter(
                     encoded.put(
                         JSONObject()
                             .put("role", "tool")
-                            .put("tool_call_id", result.callId)
+                            .put("tool_call_id", transcript.replyId(result.callId))
                             .put("content", bounded.jsonText)
                     )
                 }
@@ -211,7 +214,13 @@ class OpenAiCompatibleAgentModelToolProtocolAdapter(
                 root.optionalString("id", "response")?.let { put("response_id", it) }
                 root.optionalString("model", "response")?.let { put("model", it) }
             }
-        )
+        ).let { decoded ->
+            val payload = JSONObject().put("role", "assistant")
+            listOf("content", "tool_calls", "refusal", "reasoning_content").forEach { key ->
+                if (message?.has(key) == true) payload.put(key, message.get(key))
+            }
+            decoded.copy(continuation = AgentProviderContinuation.capture(provider, payload, decoded))
+        }
     }
 
     private fun parseOpenAiArguments(function: JSONObject, path: String): AgentNativeJsonObject {
@@ -273,6 +282,8 @@ class AnthropicAgentModelToolProtocolAdapter(
     }
 
     override fun encodeConversation(messages: List<AgentModelMessage>): JSONObject {
+        checkContinuationMessages(messages)
+        val transcript = AgentProviderTranscript(messages, provider)
         val result = JSONObject()
         messages.asSequence()
             .filter { it.role == AgentModelMessageRole.SYSTEM }
@@ -286,6 +297,12 @@ class AnthropicAgentModelToolProtocolAdapter(
         var index = 0
         while (index < messages.size) {
             val message = messages[index]
+            val continuation = transcript.assistant(message)
+            if (continuation != null) {
+                encoded.put(continuation)
+                index++
+                continue
+            }
             when (message.role) {
                 AgentModelMessageRole.SYSTEM -> Unit
                 AgentModelMessageRole.USER -> encoded.put(
@@ -317,7 +334,7 @@ class AnthropicAgentModelToolProtocolAdapter(
                         blocks.put(
                             JSONObject()
                                 .put("type", "tool_result")
-                                .put("tool_use_id", toolResult.callId)
+                                .put("tool_use_id", transcript.replyId(toolResult.callId))
                                 .put("content", bounded.jsonText)
                                 .put("is_error", toolResult.status !in SUCCESS_STATUSES)
                         )
@@ -380,7 +397,10 @@ class AnthropicAgentModelToolProtocolAdapter(
                 root.optionalString("id", "response")?.let { put("response_id", it) }
                 root.optionalString("model", "response")?.let { put("model", it) }
             }
-        )
+        ).let { decoded ->
+            decoded.copy(continuation = AgentProviderContinuation.capture(provider,
+                JSONObject().put("role", "assistant").put("content", content), decoded))
+        }
     }
 
     private fun textBlock(text: String) = JSONObject().put("type", "text").put("text", text)
@@ -409,6 +429,8 @@ class GeminiAgentModelToolProtocolAdapter(
     }
 
     override fun encodeConversation(messages: List<AgentModelMessage>): JSONObject {
+        checkContinuationMessages(messages)
+        val transcript = AgentProviderTranscript(messages, provider)
         val result = JSONObject()
         val systemText = messages.asSequence()
             .filter { it.role == AgentModelMessageRole.SYSTEM }
@@ -426,6 +448,12 @@ class GeminiAgentModelToolProtocolAdapter(
         var index = 0
         while (index < messages.size) {
             val message = messages[index]
+            val continuation = transcript.assistant(message)
+            if (continuation != null) {
+                contents.put(continuation)
+                index++
+                continue
+            }
             when (message.role) {
                 AgentModelMessageRole.SYSTEM -> Unit
                 AgentModelMessageRole.USER -> contents.put(content("user", JSONArray().put(textPart(message.text))))
@@ -456,8 +484,8 @@ class GeminiAgentModelToolProtocolAdapter(
                             JSONObject().put(
                                 "functionResponse",
                                 JSONObject()
-                                    .put("id", toolResult.callId)
-                                    .put("name", AgentModelToolWireNames.name(toolResult.toolId))
+                                    .put("id", transcript.replyId(toolResult.callId))
+                                    .put("name", transcript.replyName(toolResult))
                                     .put("response", bounded.value.toJsonObject())
                             )
                         )
@@ -487,7 +515,7 @@ class GeminiAgentModelToolProtocolAdapter(
         for (index in 0 until parts.length()) {
             val part = parts.requiredObject(index, "response.candidates[0].content.parts")
             part.optionalString("text", "response.candidates[0].content.parts[$index]")
-                ?.takeIf(String::isNotBlank)
+                ?.takeIf { it.isNotBlank() && !part.optBoolean("thought") }
                 ?.let(text::add)
             part.optionalObject("functionCall", "response.candidates[0].content.parts[$index]")
                 ?.let { rawCalls += it to index }
@@ -528,7 +556,10 @@ class GeminiAgentModelToolProtocolAdapter(
                 root.optionalString("responseId", "response")?.let { put("response_id", it) }
                 root.optionalString("modelVersion", "response")?.let { put("model_version", it) }
             }
-        )
+        ).let { decoded ->
+            decoded.copy(continuation = AgentProviderContinuation.capture(provider,
+                JSONObject().put("role", "model").put("parts", parts), decoded))
+        }
     }
 
     private fun syntheticGeminiCallId(responseSeed: String, callIndex: Int, partIndex: Int): String {
@@ -646,6 +677,17 @@ abstract class StrictAgentModelToolProtocolAdapter(
         checkedCallId(call.callId, "$path.id")
         checkedNativeToolName(call.toolId, "$path.name")
         checkedArguments(call.arguments, "$path.arguments")
+    }
+
+    protected fun checkContinuationMessages(messages: List<AgentModelMessage>) {
+        messages.forEachIndexed { index, message ->
+            if (message.continuation?.provider == provider) {
+                checkCallCount(message.toolCalls.size, "messages[$index]")
+                message.toolCalls.forEachIndexed { callIndex, call ->
+                    checkedOutboundCall(call, "messages[$index].tool_calls[$callIndex]")
+                }
+            }
+        }
     }
 
     protected fun checkCallCount(count: Int, path: String) {

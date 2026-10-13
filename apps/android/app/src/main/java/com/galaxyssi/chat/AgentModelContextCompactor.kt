@@ -74,6 +74,7 @@ object AgentModelContextCompactor {
         blocks.asReversed().forEach { block ->
             val blockTokens = estimate(block.messages, messageEstimator)
             val mustKeep = block.unresolvedToolCalls ||
+                block.containsCurrentContinuation ||
                 retainedBlocks < budget.minimumRecentGroups ||
                 block.containsOriginalOrLatestUserRequest || block === latestFailure ||
                 block.messages.any { message -> message.toolResult?.let { result ->
@@ -134,6 +135,7 @@ object AgentModelContextCompactor {
                     index = blocks.size,
                     messages = blockMessages,
                     unresolvedToolCalls = resolved != expected,
+                    containsCurrentContinuation = index >= latestUserIndex && message.continuation != null,
                     containsOriginalOrLatestUserRequest = latestUserIndex in index until cursor ||
                         originalUserIndex in index until cursor
                 )
@@ -143,6 +145,7 @@ object AgentModelContextCompactor {
                     index = blocks.size,
                     messages = listOf(message),
                     unresolvedToolCalls = false,
+                    containsCurrentContinuation = index >= latestUserIndex && message.continuation != null,
                     containsOriginalOrLatestUserRequest = index == latestUserIndex || index == originalUserIndex
                 )
                 index += 1
@@ -201,7 +204,7 @@ object AgentModelContextCompactor {
                 AgentModelMessageRole.TOOL -> {
                     message.copy(toolResult = AgentToolContextObservation.compact(requireNotNull(message.toolResult)))
                 }
-                AgentModelMessageRole.ASSISTANT -> message.copy(
+                AgentModelMessageRole.ASSISTANT -> if (message.continuation != null) message else message.copy(
                     text = ConversationContextCompactor.fitTextToTokenBudget(message.text, 256),
                     toolCalls = message.toolCalls.map { call ->
                         if (call.callId !in resolvedCallIds) call
@@ -223,6 +226,7 @@ object AgentModelContextCompactor {
     ): Int = messages.sumOf(messageEstimator)
 
     internal fun estimateMessage(message: AgentModelMessage): Int = with(message) {
+        message.continuation?.let { return@with it.estimatedTokens }
         var tokens = ConversationContextCompactor.estimateTokens(message.text) + 6
         message.toolCalls.forEach { call ->
             tokens += ConversationContextCompactor.estimateTokens(call.toolId)
@@ -258,6 +262,7 @@ object AgentModelContextCompactor {
         val index: Int,
         val messages: List<AgentModelMessage>,
         val unresolvedToolCalls: Boolean,
+        val containsCurrentContinuation: Boolean,
         val containsOriginalOrLatestUserRequest: Boolean
     )
 }

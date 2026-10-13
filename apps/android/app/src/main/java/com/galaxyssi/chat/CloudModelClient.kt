@@ -267,11 +267,12 @@ object CloudModelClient {
 
     private fun createNativeToolAdapter(
         context: Context,
-        contact: JSONObject,
+        contactValue: JSONObject,
         catalog: List<AgentNativeToolDescriptor>,
         catalogFingerprint: String,
         catalogProvider: ((AgentModelRequest) -> AgentNativeToolCatalogView)?
     ): AgentModelAdapter {
+        val contact = JSONObject(contactValue.toString())
         validateContact(context, contact)
         val provider = when (contact.optString("cloud_api_style", "openai")) {
             "anthropic" -> AgentModelToolProvider.ANTHROPIC
@@ -280,6 +281,8 @@ object CloudModelClient {
         }
         val protocol = AgentModelToolProtocolAdapters.forProvider(provider)
         val initialToolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog, catalogFingerprint)
+        val continuationRoute = AgentProviderContinuation.routeFingerprint(provider,
+            contact.getString("cloud_endpoint"), contact.getString("cloud_model"), contact.getString("cloud_api_key"))
         val contextCompaction = AgentModelContextCompactionSession()
         val disclosureSummarySession = AgentModelDisclosureSummarySession()
         return AgentModelAdapter { request ->
@@ -313,7 +316,8 @@ object CloudModelClient {
                             DEFAULT_OUTPUT_RESERVE_TOKENS
                         ).coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
                         val compacted = contextCompaction.compact(
-                            AgentUntrustedEvidenceBoundary.secureMessages(request.messages),
+                            AgentUntrustedEvidenceBoundary.secureMessages(
+                                AgentProviderContinuation.forRoute(request.messages, continuationRoute)),
                             ConversationContextBudget(
                                 contextWindowTokens = contextWindow,
                                 reservedOutputTokens = outputReserve
@@ -328,7 +332,8 @@ object CloudModelClient {
                             )
                         }
                         val conversation = protocol.encodeConversation(compacted.messages)
-                        val body = JSONObject().put("model", contact.getString("cloud_model"))
+                        val body = JSONObject()
+                        if (provider != AgentModelToolProvider.GEMINI) body.put("model", contact.getString("cloud_model"))
                         copyJsonFields(conversation, body)
                         when (provider) {
                             AgentModelToolProvider.OPENAI_COMPATIBLE -> {
@@ -386,7 +391,9 @@ object CloudModelClient {
                         if (request.cancellationToken.isCancellationRequested) {
                             throw CancellationException("Model tool request cancelled")
                         }
-                        protocol.decodeResponse(response, toolCatalog.descriptors)
+                        protocol.decodeResponse(response, toolCatalog.descriptors).let { decoded ->
+                            decoded.copy(continuation = decoded.continuation?.bindRoute(continuationRoute))
+                        }
                     }
                         .also {
                             AgentDataDisclosureLedger.update(
