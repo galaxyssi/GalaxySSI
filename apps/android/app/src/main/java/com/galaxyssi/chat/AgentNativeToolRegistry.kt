@@ -581,10 +581,13 @@ class AgentNativeToolInvocation internal constructor(
     private val clock: AgentNativeClock,
     private val descriptorResolver: (String) -> AgentNativeToolDescriptor? = { null },
     private val descriptorCatalogResolver: () -> List<AgentNativeToolDescriptor> = { emptyList() },
+    private val historyReader: ((AgentNativeToolInvocationContext, AgentNativeJsonObject) -> AgentNativeToolExecutionResult)? = null,
     private val progressReporter: (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Unit
 ) {
     internal fun describeTool(id: String): AgentNativeToolDescriptor? = descriptorResolver(id)
     internal fun discoverTools(): List<AgentNativeToolDescriptor> = descriptorCatalogResolver()
+    internal fun readModelHistory(): AgentNativeToolExecutionResult = historyReader?.invoke(context, input)
+        ?: AgentModelHistoryTools.failure("model_history_not_bound", "History requires the original active model loop.")
 
     private val rollingDeadlineEpochMillis = AtomicLong(initialDeadlineEpochMillis)
 
@@ -808,7 +811,8 @@ class AgentNativeToolInvocationHooks(
     val onProgress: (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Unit = { _, _ -> },
     val onCancelled: (AgentNativeToolInvocation) -> Unit = {},
     val onTimeout: (AgentNativeToolInvocation) -> Unit = {},
-    val onFinished: (AgentNativeToolResult) -> Unit = {}
+    val onFinished: (AgentNativeToolResult) -> Unit = {},
+    val historyReader: ((AgentNativeToolInvocationContext, AgentNativeJsonObject) -> AgentNativeToolExecutionResult)? = null
 )
 
 class AgentNativeToolDefinition(
@@ -1068,6 +1072,7 @@ class AgentNativeToolRegistry(
             clock = clock,
             descriptorResolver = { id -> lookup(id)?.let(::resolvedDescriptor) },
             descriptorCatalogResolver = ::discoveryDescriptors,
+            historyReader = hooks.historyReader,
             progressReporter = { activeInvocation, progress ->
                 runHook { hooks.onProgress(activeInvocation, progress) }
             }

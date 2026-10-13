@@ -47,8 +47,9 @@ token-estimate cache releases entries from retired context projections.
 
 This is a bounded structured evidence handoff, not a semantic summary of every
 historical fact. Older omitted detail remains in the encrypted execution journal;
-the model may need current-state inspection. A model-facing paged journal reader
-and semantic memory selection are not added by this increment. If required user
+the model can use the [paged observation reader](model-observation-history.md)
+in newly created native cloud/local loops, or inspect current state. Semantic
+memory selection remains separate. If required user
 instructions or required live/uncertain evidence alone exceed the model window,
 the adapter reports the concrete context error instead of truncating requirements.
 Tool-schema token accounting and provider-specific server compaction are separate

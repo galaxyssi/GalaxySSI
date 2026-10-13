@@ -1026,6 +1026,7 @@ class AgentModelToolLoop(
         val descriptor = prepared.descriptor
         val call = prepared.call
         invocation.checkpoint?.result?.let { return it }
+        val historySource = if (call.toolId == AgentModelHistoryTools.ID) state.messages.toList() else emptyList()
         val result = toolRegistry.invoke(
             id = call.toolId,
             input = call.arguments,
@@ -1060,6 +1061,7 @@ class AgentModelToolLoop(
             ),
             hooks = AgentNativeToolInvocationHooks(
                 cancellationToken = state.request.cancellationToken,
+                historyReader = { context, input -> state.history.read(context, input, historySource) },
                 onProgress = { _, progress ->
                     emitToolProgress(state, invocation, progress)
                 }
@@ -1369,7 +1371,7 @@ class AgentModelToolLoop(
 
     private fun recordToolObservation(state: LoopState, call: AgentModelToolCall) {
         // Capability metadata is not an observation of an earlier external side effect.
-        if (call.toolId in AgentToolInspectionTools.toolIds) return
+        if (call.toolId in AgentToolInspectionTools.toolIds || call.toolId == AgentModelHistoryTools.ID) return
         state.observationSequence += 1
         val resolvedVersion = toolRegistry.lookup(call.toolId)?.descriptor?.version
             ?: call.toolVersion.orEmpty()
@@ -1472,6 +1474,7 @@ class AgentModelToolLoop(
         val checkpoint: AgentModelLoopCheckpoint? = null,
         var replayingResponse: Boolean = false
     ) {
+        val history = AgentModelHistoryReader(request)
         fun totalTokens(): Long = safeTokenSum(inputTokens, outputTokens)
     }
 

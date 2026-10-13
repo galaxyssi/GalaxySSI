@@ -146,17 +146,22 @@ internal object LocalModelWebToolRunner {
         if (restoreSavedRequest && browserDispatch?.managedOwner != null &&
             browserStore.managedState(browserDispatch) != AgentManagedBrowserState.READY)
             throw AgentModelLoopRecoveryException("managed_browser_not_ready_on_restore")
-        val registry = registry(context, conversationId, turnId, collaborationSourceMessageId, browserDispatch != null, browserDispatch?.managedOwner)
-        val availableCatalog = registry.availableCatalog()
-        val contractCatalog = if (progressIdentity != null) registry.registeredContractCatalog() else availableCatalog
-        val progress = progressIdentity?.let { identity ->
-            require(identity.conversationId == conversationId && identity.turnId == turnId &&
-                identity.taskId == taskId && sessionId == taskId) { "Local model progress ownership mismatch" }
-            AgentLocalModelProgress.sink(context, identity, managedTeam, cancellationToken, contractCatalog.descriptors)
-        } ?: AgentModelToolLoopEventSink.NONE
+        val baseRegistry = registry(context, conversationId, turnId, collaborationSourceMessageId, browserDispatch != null, browserDispatch?.managedOwner)
         var session: LocalModelWebToolSession? = null
         val outcome = runCancellableLocalRequest(cancellationToken) {
             val journal = EncryptedAgentModelLoopJournal(context.applicationContext)
+            val scope = progressIdentity?.let(LocalModelLoopContinuation::scope) ?: AgentModelLoopScope(
+                sessionId, conversationId, turnId, taskId, LocalModelAgentToolPolicy.workspace(conversationId, sessionId),
+                LocalModelLoopContinuation.CALLER, LocalModelLoopContinuation.legacyLoopId(prompt, preferredProfileId,
+                    hasAttachments, collaborationSourceMessageId))
+            val registry = AgentModelHistoryCatalog.prepare(journal, scope, baseRegistry)
+            val availableCatalog = registry.availableCatalog()
+            val contractCatalog = if (progressIdentity != null) registry.registeredContractCatalog() else availableCatalog
+            val progress = progressIdentity?.let { identity ->
+                require(identity.conversationId == conversationId && identity.turnId == turnId &&
+                    identity.taskId == taskId && sessionId == taskId) { "Local model progress ownership mismatch" }
+                AgentLocalModelProgress.sink(context, identity, managedTeam, cancellationToken, contractCatalog.descriptors)
+            } ?: AgentModelToolLoopEventSink.NONE
             val saved = if (restoreSavedRequest) LocalModelLoopContinuationStore(journal).restore(
                 checkNotNull(progressIdentity), contractCatalog.manifest.sha256, availableCatalog.manifest.sha256)
             else if (progressIdentity != null) LocalModelLoopContinuationStore(journal).prepare(
