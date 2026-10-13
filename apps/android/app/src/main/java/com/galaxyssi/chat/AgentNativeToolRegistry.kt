@@ -969,7 +969,12 @@ class AgentNativeToolRegistry(
     }
 
     @Synchronized
-    internal fun availableCatalog(): AgentNativeToolCatalogView {
+    internal fun availableCatalog(refresh: Boolean = false): AgentNativeToolCatalogView {
+        if (refresh) {
+            descriptorSnapshot = null
+            catalogSnapshot = null
+            availableCatalogSnapshot = null
+        }
         val now = clock.nowEpochMillis().coerceAtLeast(0L)
         availableCatalogSnapshot?.takeIf { snapshot ->
             now >= snapshot.createdAtMillis &&
