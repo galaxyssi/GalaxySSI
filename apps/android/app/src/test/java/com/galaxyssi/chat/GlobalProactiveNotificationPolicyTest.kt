@@ -32,7 +32,7 @@ class GlobalProactiveNotificationPolicyTest {
 
     private fun message(id: String) = GlobalProactiveMessage(
         id = id, sourceEventId = "event-$id", sourceConversationId = "source",
-        target = GlobalProactiveTarget.NEW_CONVERSATION, title = "Finding", content = "Evidence", topic = "Topic",
+        target = GlobalProactiveTarget.NEW_CONVERSATION, title = "Finding", content = "Evidence", topic = "Topic", urgent = false,
         deliveredConversationId = "conversation-$id", status = GlobalProactiveMessageStatus.DELIVERED
     )
 }

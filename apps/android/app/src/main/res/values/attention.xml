@@ -91,4 +91,9 @@
         <item>Cross-domain combinations, conflicting evidence, knowledge gaps and testable hypotheses; check prior work and do not claim unverified novelty</item>
         <item>Benchmarks, datasets, controlled experiments, failure cases, evaluation contamination and reproducibility</item>
     </string-array>
+    <string name="attention_token_wait">Token budget reached; evidence retained for resumption</string>
+    <string name="attention_cost_wait">Configured cost budget reached; waiting to resume</string>
+    <string name="attention_capacity_wait">Waiting for model capacity</string>
+    <string name="attention_source_wait">Original pages could not be read; retrying, not marked verified</string>
+    <string name="attention_no_supported_news">No supported recent news in the last batch; other topics remain queued</string>
 </resources>

@@ -1236,7 +1236,7 @@ object GalaxySSIMqttClient {
         deferQueuedDispatch: Boolean = false,
         trustedBackgroundCognitionAuthorized: Boolean = false
     ): MqttPublishResult {
-        if (GalaxySSITransportPrivacyPolicy.isLocalOnly(payload, trustedBackgroundCognitionAuthorized)) {
+        if (GalaxySSITransportPrivacyPolicy.isLocalOnly(payload, trustedBackgroundCognitionAuthorized, outbound = true)) {
             Log.w(
                 TAG,
                 "Publish rejected by local-only privacy boundary type=${payload.optString("type")}"

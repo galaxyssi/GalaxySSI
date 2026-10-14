@@ -4,6 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AndroidCognitionSchedulePolicyTest {
+    @Test fun `attention continuation does not run unrelated cognition or knowledge projection`() {
+        val plan = AndroidCognitionSchedulePolicy.workPlan(AndroidCognitionWorkMode.ATTENTION)
+        assertEquals(false, plan.runBatchCognition)
+        assertEquals(0, plan.cycleCount)
+        assertEquals(false, plan.projectKnowledge)
+    }
+
     @Test
     fun `message events use only the lightweight processing path`() {
         val plan = AndroidCognitionSchedulePolicy.workPlan(AndroidCognitionWorkMode.EVENT)

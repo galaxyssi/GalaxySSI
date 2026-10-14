@@ -289,6 +289,12 @@ object AgentCognitiveEvalBridge {
     }
 
     fun shouldNotify(context: Context, message: GlobalProactiveMessage): Boolean {
+        if (ProactiveAttentionPolicy.isAttention(message)) {
+            val attention = ProactiveAttentionStore(context)
+            // Explicit subscriptions use their selected alert mode, not the unsolicited-insight heuristic.
+            return attention.allowsNotification(message) &&
+                (attention.evidence(message.sourceEventId)?.optJSONArray("sources")?.length() ?: 0) > 0
+        }
         val threshold = AgentEvalOpsStore(context).settings().attentionThreshold
         return AgentAttentionBudgetRuntime.decide(context, message, threshold).decision.disposition ==
             AgentAttentionDisposition.NOTIFY_NOW

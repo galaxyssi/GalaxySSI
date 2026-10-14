@@ -20,7 +20,7 @@ class GlobalConnectorResponseScopeTest {
             val expected = when (scope) {
                 GlobalConnectorResponseScope.COGNITION -> "cognition"
                 GlobalConnectorResponseScope.ACTION, GlobalConnectorResponseScope.REVIEW -> "autonomous"
-                GlobalConnectorResponseScope.RESEARCH -> "research"
+                GlobalConnectorResponseScope.RESEARCH, GlobalConnectorResponseScope.PUBLIC_ATTENTION -> "research"
             }
             assertEquals(listOf(expected), calls)
         }
@@ -89,5 +89,19 @@ class GlobalConnectorResponseScopeTest {
             assertThrows(IllegalArgumentException::class.java) { scope.conversation("") }
             assertThrows(IllegalArgumentException::class.java) { scope.conversation(" ") }
         }
+    }
+
+    @Test fun onlyPublicAttentionTasksUseTheRemoteResearchNamespace() {
+        val task = GlobalResearchTask(id = "private-research", sourceEventId = "event", sourceConversationId = "conversation",
+            topic = "Topic", question = "Question", depth = GlobalResearchDepth.CONTINUOUS_MONITOR,
+            preferredSources = emptyList())
+        assertEquals(GlobalConnectorResponseScope.RESEARCH, GlobalConnectorResponseScope.research(task))
+        val attention = task.copy(id = "attention-research:ai_models")
+        val scope = GlobalConnectorResponseScope.research(attention)
+        assertEquals(GlobalConnectorResponseScope.PUBLIC_ATTENTION, scope)
+        assertEquals("public-attention:attention-research:ai_models", scope.conversation(attention.id))
+        assertFalse(scope.matches(response("global-research:${attention.id}", "unit"), attention.id, "unit"))
+        assertTrue(scope.matches(response(scope.conversation(attention.id), "unit"), attention.id, "unit"))
+        assertFalse(scope.matches(response(scope.conversation(attention.id), "synthesis"), attention.id, "unit"))
     }
 }

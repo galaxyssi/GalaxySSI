@@ -952,26 +952,26 @@ internal fun MainActivity.openAgentConversation(conversationId: String) {
     refreshGlobalInsightIndicator()
 }
 
-internal fun MainActivity.refreshGlobalInsightIndicator(countOverride: Int? = null) {
+internal fun MainActivity.refreshGlobalInsightIndicator() {
     if (!isAgentInsightBarInitialized() || !isAgentInsightTextInitialized()) return
     val runtime = if (isGlobalSuperAgentRuntimeInitialized()) {
         globalSuperAgentRuntime
     } else return
-    if (countOverride == null) {
-        if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
-        navigationContentExecutor.execute {
-            val count = runCatching(runtime::newProactiveInsightCount).getOrNull()
-            handler.post {
-                globalInsightCountRefreshInProgress.set(false)
-                if (count != null && !isFinishing && !isDestroyed) {
-                    refreshGlobalInsightIndicator(count)
-                }
+    if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
+    navigationContentExecutor.execute {
+        val items = runCatching { runtime.proactiveInboxItems(limit = 100) }.getOrNull()
+        handler.post {
+            globalInsightCountRefreshInProgress.set(false)
+            if (items != null && !isFinishing && !isDestroyed) {
+                renderGlobalInsightIndicator(items)
             }
         }
-        return
     }
-    val count = countOverride
-    agentInsightBar.visibility = View.VISIBLE
+}
+
+internal fun MainActivity.renderGlobalInsightIndicator(items: List<GlobalProactiveInboxItem>) {
+    val count = GlobalProactiveInboxPolicy.newCount(items)
+    agentInsightBar.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
     agentInsightText.text = if (count > 0) getString(R.string.attention_unread_entry, count)
         else getString(R.string.attention_discoveries)
 }

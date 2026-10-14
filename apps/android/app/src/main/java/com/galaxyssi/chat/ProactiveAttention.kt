@@ -207,7 +207,9 @@ class ProactiveAttentionStore(context: Context) {
     fun allowsNotification(message: GlobalProactiveMessage): Boolean {
         if (!ProactiveAttentionPolicy.isAttention(message)) return true
         val preferences = preferences()
-        return ProactiveAttentionPolicy.shouldAlert(preferences.alertMode, message.urgent, allows(message))
+        val currentImportant = message.urgent && ProactiveAttentionNewsPolicy.hasCurrentAlertDate(
+            message.content, System.currentTimeMillis())
+        return ProactiveAttentionPolicy.shouldAlert(preferences.alertMode, currentImportant, allows(message))
     }
 
     fun evidence(eventId: String): JSONObject? = synchronized(LOCK) {
@@ -256,6 +258,11 @@ class ProactiveAttentionCoordinator(context: Context) {
                     depth = GlobalResearchDepth.CONTINUOUS_MONITOR,
                     preferredSources = ProactiveAttentionPolicy.preferredSources(topic.id),
                     monitorIntervalMillis = repository.settings().monitorIntervalMillis))
+            } else if (current.lastError == "The background model-call budget is temporarily unavailable" ||
+                current.lastError == "background_budget:DAILY_LIMIT") {
+                // Reopen only the retired count gate; retain evidence, usage, resource failures and token budgets.
+                repository.updateResearchTask(id) { it.copy(nextAttemptAtMillis = 0L, lastError = "",
+                    status = GlobalResearchTaskStatus.WAITING_FOR_RESOURCE) }
             } else if (current.question != question || current.status == GlobalResearchTaskStatus.PAUSED) {
                 repository.updateResearchTask(id) { it.copy(question = question, topic = topic.title,
                     preferredSources = ProactiveAttentionPolicy.preferredSources(topic.id),

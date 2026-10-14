@@ -104,7 +104,8 @@ object GlobalModelUsageEstimator {
 
 object GlobalModelCallBudgetPolicy {
     const val WINDOW_MILLIS = 24L * 60L * 60L * 1_000L
-    const val MIN_DAILY_LIMIT = 1
+    // Zero disables the count ceiling; token, cost, concurrency and deduplication still apply.
+    const val MIN_DAILY_LIMIT = 0
     const val MAX_DAILY_LIMIT = 200
     const val MIN_CONCURRENCY_LIMIT = 1
     const val MAX_CONCURRENCY_LIMIT = 6
@@ -148,7 +149,7 @@ object GlobalModelCallBudgetPolicy {
             )
         }
         val appliedDailyLimit = dailyLimit.coerceIn(MIN_DAILY_LIMIT, MAX_DAILY_LIMIT)
-        if (normalized.dispatches.size >= appliedDailyLimit) {
+        if (appliedDailyLimit > 0 && normalized.dispatches.size >= appliedDailyLimit) {
             val oldest = normalized.dispatches.minOfOrNull(GlobalModelCallDispatch::startedAtMillis) ?: nowMillis
             return denied(
                 normalized,
@@ -225,7 +226,7 @@ object GlobalModelCallBudgetPolicy {
     ): GlobalModelCallBudgetDecision {
         val normalized = normalize(state, nowMillis)
         val appliedDailyLimit = dailyLimit.coerceIn(MIN_DAILY_LIMIT, MAX_DAILY_LIMIT)
-        if (normalized.dispatches.size >= appliedDailyLimit) {
+        if (appliedDailyLimit > 0 && normalized.dispatches.size >= appliedDailyLimit) {
             val oldest = normalized.dispatches.minOfOrNull(GlobalModelCallDispatch::startedAtMillis) ?: nowMillis
             return denied(
                 normalized,
