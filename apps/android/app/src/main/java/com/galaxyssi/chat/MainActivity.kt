@@ -1158,9 +1158,16 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             intent.removeExtra("galaxyssi_agent_conversation_id")
             openLatestGlobalInsightWhenDelivered = true
             conversationWindow.beforeSelection()
-            requestedGlobalInsightConversationId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::switchConversation)
+            val explicitConversation = requestedGlobalInsightConversationId.takeIf(String::isNotBlank)
+            if (explicitConversation != null && agentTranscriptStore.switchConversation(explicitConversation)) {
+                conversationWindow.selected(explicitConversation)
+                resetAgentTranscriptRendering(explicitConversation)
+                openLatestGlobalInsightWhenDelivered = false
+                requestedGlobalInsightConversationId = ""
+            }
             showMainTab(PAGE_AGENT)
             renderAgentState(mobileNativeAgent.reloadSession())
+            refreshAgentTranscriptWindow()
             refreshGlobalAgentCognition()
         }
         intent?.getStringExtra("galaxyssi_open_contact_id")

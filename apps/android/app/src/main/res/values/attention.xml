@@ -96,4 +96,9 @@
     <string name="attention_capacity_wait">Waiting for model capacity</string>
     <string name="attention_source_wait">Original pages could not be read; retrying, not marked verified</string>
     <string name="attention_no_supported_news">No supported recent news in the last batch; other topics remain queued</string>
+    <string name="attention_source_summary">Source summary; not independently verified</string>
+    <string name="attention_headline_only">Headline collected; full article not yet read</string>
+    <string name="attention_not_verified">Not independently confirmed; original source retained</string>
+    <string name="attention_reviewed">Original-page evidence checked</string>
+    <string name="attention_feed_active">News collection active; deeper analysis runs separately</string>
 </resources>

@@ -38,6 +38,7 @@ class ProactiveAttentionActivity : Activity() {
     private var messages = emptyMap<String, GlobalProactiveMessage>()
     private var evidence = emptyMap<String, JSONObject>()
     private var tasks = emptyList<GlobalResearchTask>()
+    private var feedLastPoll = 0L
     private var settingsPage = false
     private var filter = AttentionFeedFilter.ALL
     private var revision = 0
@@ -99,6 +100,7 @@ class ProactiveAttentionActivity : Activity() {
         worker.execute {
             val loaded = runCatching {
                 val p = store.preferences()
+                if (p.configured && p.enabled) ProactiveAttentionFeedScheduler.request(applicationContext)
                 val repository = GlobalAgentRepository(applicationContext)
                 val messageMap = repository.proactiveMessages().associateBy(GlobalProactiveMessage::id)
                 val savedInbox = GlobalProactiveInboxPolicy.project(messageMap.values.filter {
@@ -111,12 +113,18 @@ class ProactiveAttentionActivity : Activity() {
                 Triple(p, inbox, Pair(messageMap, sources))
             }
             val research = runCatching { runtime.researchTasks().filter(ProactiveAttentionPolicy::isAttention) }.getOrDefault(emptyList())
+            val lastPoll = runCatching {
+                val feed = ProactiveAttentionFeedStore(applicationContext)
+                store.preferences().topics.filter { it.enabled }.map { feed.topicState(it.id) }
+                    .filter { it.optString("error").isBlank() }.maxOfOrNull { it.optLong("at") } ?: 0L
+            }.getOrDefault(0L)
             runOnUiThread {
                 if (isDestroyed || request != revision) return@runOnUiThread
                 loaded.onSuccess { (p, inbox, metadata) ->
                     preferences = p; items = inbox; messages = metadata.first
                     evidence = metadata.second.mapNotNull { (key, value) -> value?.let { key to it } }.toMap()
                     tasks = research
+                    feedLastPoll = lastPoll
                     render()
                 }.onFailure {
                     body.removeAllViews()
@@ -138,6 +146,7 @@ class ProactiveAttentionActivity : Activity() {
                 if (reschedule) {
                     ProactiveAttentionCoordinator(applicationContext).reconcile()
                     if (next.configured && next.enabled) {
+                        ProactiveAttentionFeedScheduler.request(applicationContext)
                         AndroidCognitionScheduler.scheduleAt(applicationContext, System.currentTimeMillis())
                     } else AndroidCognitionScheduler.scheduleDynamic(applicationContext, runtime)
                 }
@@ -221,8 +230,12 @@ class ProactiveAttentionActivity : Activity() {
             block.addView(metadata)
             val headline = item.content.lineSequence().firstOrNull { it.isNotBlank() }?.trim('#', '*', ' ')?.take(90).orEmpty()
             block.addView(text(headline.ifBlank { item.title }, 17f, item.isNew).apply { setPadding(0, dp(9), 0, dp(7)) })
-            val preview = item.content.lineSequence().dropWhile(String::isBlank).drop(1).joinToString("\n").trim()
+            val previewBody = item.content.lineSequence().dropWhile(String::isBlank).drop(1).joinToString("\n").trim()
                 .ifBlank { item.content }
+            val reviewNotice = listOf(R.string.attention_source_summary, R.string.attention_not_verified,
+                R.string.attention_reviewed).map { getString(it) }.firstOrNull { previewBody.contains(it) }
+            val preview = if (reviewNotice == null) previewBody else
+                reviewNotice + "\n" + previewBody.replace(reviewNotice, "").trim()
             block.addView(text(preview.replace(Regex("\\[([^]]+)\\]\\([^)]+\\)"), "$1").replace("**", "").take(240), 14f).apply { maxLines = 4 })
             val actions = horizontal()
             actions.addView(text(getString(R.string.attention_analyze), 14f).apply {
@@ -253,13 +266,24 @@ class ProactiveAttentionActivity : Activity() {
     }
 
     private fun open(item: GlobalProactiveInboxItem) {
-        if (item.destinationConversationId.isBlank()) return
         worker.execute {
+            val repository = GlobalAgentRepository(applicationContext)
+            val message = repository.proactiveMessages().firstOrNull { it.id in item.messageIds }
+            var destination = message?.deliveredConversationId ?: item.destinationConversationId
+            if (destination.isBlank() && message?.id?.startsWith("attention-feed:") == true) {
+                val transcript = AgentTranscriptStore(applicationContext)
+                val conversation = transcript.createAgentConversation(message.title)
+                transcript.append(AgentTranscriptRole.ASSISTANT, message.content, "global-agent:" + message.id,
+                    timestampMillis = message.createdAtMillis, conversationId = conversation.id)
+                repository.bindProactiveConversation(message.id, conversation.id)
+                destination = conversation.id
+            }
+            if (destination.isBlank()) return@execute
             runtime.markProactiveInboxViewed(item.messageIds)
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", item.destinationConversationId))
+                    .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", destination))
                 finish()
             }
         }
@@ -318,6 +342,8 @@ class ProactiveAttentionActivity : Activity() {
     private fun status(): String {
         if (!preferences.configured || !preferences.enabled) return getString(R.string.attention_paused)
         val settings = runtime.cachedSettings()
+        if (settings.enabled && feedLastPoll > 0) return getString(R.string.attention_updated, date(feedLastPoll)) +
+            "\n" + getString(R.string.attention_feed_active)
         if (!settings.enabled || !settings.autonomousResearchEnabled ||
             (!preferences.allowPairedModel && !preferences.allowCloudModel)) return getString(R.string.attention_waiting)
         val active = tasks.filter { it.status != GlobalResearchTaskStatus.PAUSED }
