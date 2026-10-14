@@ -139,6 +139,7 @@ class ProactiveAttentionActivity : Activity() {
             runCatching {
                 val before = store.preferences()
                 val next = store.update(transform)
+                ProactiveAttentionPush.refresh()
                 if (next.configured && next.enabled && (!before.configured || !before.enabled)) runtime.updateSettings { it.copy(
                     enabled = true, proactiveInsightsEnabled = true, autonomousResearchEnabled = true,
                     autoCreateConversationsEnabled = true

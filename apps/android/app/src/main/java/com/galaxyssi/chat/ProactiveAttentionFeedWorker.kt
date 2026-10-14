@@ -54,12 +54,22 @@ class ProactiveAttentionFeedCollector(
         var created = 0
         var fetched = false
         val originals = ProactiveAttentionFeedSources.originals(topic)
-        for (endpoint in originals + ProactiveAttentionFeedPolicy.endpoints(topic)) {
+        val explicit = ProactiveAttentionWebSources.explicit(topic)
+        for (endpoint in (explicit + originals + ProactiveAttentionFeedPolicy.endpoints(topic)).distinct()) {
             val items = try {
                 val xml = (if (endpoint in originals) store.cachedFeed(endpoint, now) else null) ?: fetch(endpoint).also {
                     if (endpoint in originals) store.cacheFeed(endpoint, it, now)
                 }
-                ProactiveAttentionFeedPolicy.parse(xml, topic.id, now).filter {
+                if (endpoint in explicit) {
+                    runCatching { ProactiveAttentionFeedPolicy.parse(xml, topic.id, now) }.getOrElse {
+                        val page = ProactiveAttentionWebSources.discover(xml, endpoint, topic.id, now)
+                        if (page.articles.isNotEmpty()) page.articles
+                        else {
+                            val feedUrl = page.feeds.firstOrNull() ?: error("news_page_has_no_dated_articles_or_feed")
+                            ProactiveAttentionFeedPolicy.parse(fetch(feedUrl), topic.id, now)
+                        }
+                    }
+                } else ProactiveAttentionFeedPolicy.parse(xml, topic.id, now).filter {
                     endpoint !in originals || ProactiveAttentionFeedSources.matches(it, topic)
                 }
             } catch (failure: Exception) {
@@ -93,11 +103,8 @@ class ProactiveAttentionFeedWorker(context: Context, params: WorkerParameters) :
             if (failure is java.util.concurrent.CancellationException) throw failure
             return@withContext Result.retry()
         }
-        val runtime = GlobalSuperAgentRuntime.get(applicationContext)
-        val candidate = runtime.notificationCandidateForDelivered(runtime.unnotifiedDeliveredMessages())
-        if (candidate != null && AndroidCognitionNotificationCenter.notify(applicationContext, candidate))
-            runtime.markNotified(candidate.messageIds)
-        if (cycle.newItems > 0) AndroidCognitionScheduler.requestAttention(applicationContext)
+        ProactiveAttentionFeedDelivery.published(applicationContext, cycle.newItems)
+        ProactiveAttentionPush.refresh()
         if (cycle.nextAt > 0L || cycle.newItems > 0)
             ProactiveAttentionFeedScheduler.request(applicationContext,
                 (cycle.nextAt - System.currentTimeMillis()).coerceAtLeast(1_000L))
@@ -106,4 +113,17 @@ class ProactiveAttentionFeedWorker(context: Context, params: WorkerParameters) :
     } }
 
     companion object { private val execution = Mutex() }
+}
+
+object ProactiveAttentionFeedDelivery {
+    @Synchronized fun published(context: Context, newItems: Int) {
+        val runtime = GlobalSuperAgentRuntime.get(context)
+        val candidate = runtime.notificationCandidateForDelivered(runtime.unnotifiedDeliveredMessages())
+        if (candidate != null && AndroidCognitionNotificationCenter.notify(context, candidate))
+            runtime.markNotified(candidate.messageIds)
+        if (newItems > 0) {
+            GlobalProactiveDeliveryBus.signalReady()
+            AndroidCognitionScheduler.requestAttention(context)
+        }
+    }
 }

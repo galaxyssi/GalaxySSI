@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="attention_source_discovered">来源收录／更新：%1$s；原文发布日期尚未核实</string>
     <string name="attention_title">主动关注</string>
     <string name="attention_discoveries">主动发现</string>
     <string name="attention_view">查看发现</string>

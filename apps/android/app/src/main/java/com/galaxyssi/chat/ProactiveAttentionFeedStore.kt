@@ -26,6 +26,7 @@ class ProactiveAttentionFeedStore(context: Context) {
         val record = previous ?: JSONObject().put("key", article.key).put("topic", article.topicId)
             .put("title", article.title).put("summary", article.summary).put("url", article.url)
             .put("publisher", article.publisher).put("published", article.publishedAt)
+            .put("discovery_date", article.discoveryDate)
             .put("collected", article.collectedAt).put("review", "pending")
         if (previous == null) save(all + record)
         // Replays repair a crash between durable collection and inbox publication.
@@ -44,7 +45,8 @@ class ProactiveAttentionFeedStore(context: Context) {
         val content = "**" + ProactiveAttentionFeedPolicy.markdownText(record.optString("title")) + "**\n\n" +
             ProactiveAttentionFeedPolicy.markdownText(record.optString("summary")
                 .ifBlank { context.getString(R.string.attention_headline_only) }) +
-            "\n\n" + context.getString(R.string.attention_source_summary) + "\n" + date + "\n[" +
+            "\n\n" + context.getString(R.string.attention_source_summary) + "\n" +
+            (if (record.optBoolean("discovery_date")) context.getString(R.string.attention_source_discovered, date) else date) + "\n[" +
             ProactiveAttentionFeedPolicy.markdownText(record.optString("publisher")) + "](" + record.optString("url") + ")"
         val task = GlobalResearchTask(id = ProactiveAttentionPolicy.TASK_PREFIX + record.optString("topic"),
             sourceEventId = eventId(record), sourceConversationId = "", topic = topic, question = "",
@@ -52,7 +54,7 @@ class ProactiveAttentionFeedStore(context: Context) {
             updatedAtMillis = at, lastResultFingerprint = "feed:" + record.optString("key"),
             evidenceLedger = GlobalEvidenceLedger(sources = listOf(GlobalEvidenceSource(
                 record.optString("url"), GlobalEvidenceSourceKind.UNKNOWN, 0.0, record.optString("publisher"),
-                publishedAtMillis = record.optLong("published"), retrievedAtMillis = at))))
+                publishedAtMillis = if (record.optBoolean("discovery_date")) 0L else record.optLong("published"), retrievedAtMillis = at))))
         ProactiveAttentionStore(context).saveEvidence(task, false)
         repository.appendProactiveMessage(GlobalProactiveMessage(
             id = messageId(record), sourceEventId = eventId(record), sourceConversationId = "",
@@ -77,7 +79,8 @@ class ProactiveAttentionFeedStore(context: Context) {
                 status = GlobalResearchUnitStatus.COMPLETED, completedAtMillis = now,
                 resourceId = "local-public-news-feed",
                 result = "CLAIM: " + record.optString("title") + "\n" + record.optString("summary") +
-                    "\nSOURCE: " + record.optString("url") + "\nPUBLISHED: " + record.optLong("published"),
+                    "\nSOURCE: " + record.optString("url") +
+                    (if (record.optBoolean("discovery_date")) "\nDISCOVERED (original publication date unknown): " else "\nPUBLISHED: ") + record.optLong("published"),
                 evidenceUris = listOf(record.optString("url"))) })
     }
 

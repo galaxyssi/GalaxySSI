@@ -17,6 +17,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.UUID
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.Assume.assumeTrue
@@ -25,6 +26,112 @@ import org.junit.runner.RunWith
 /** Only isolated synthetic evidence; no provider calls, accounts, trades or existing research tasks. */
 @RunWith(AndroidJUnit4::class)
 class ProactiveAttentionDeviceTest {
+    @Test fun streamedNewStoryAndReplayProduceOneInboxItem() = isolated { context ->
+        val topic = AttentionTopic("ai_models", "AI", "AI")
+        ProactiveAttentionStore(context).update { it.copy(configured = true, topics = listOf(topic)) }
+        val store = ProactiveAttentionPushStore(context)
+        val received = java.util.concurrent.CountDownLatch(3)
+        val error = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val client = okhttp3.OkHttpClient()
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            val baseline = "event: put\ndata: {\"path\":\"/\",\"data\":[11,10]}\n\n"
+            val update = "event: patch\ndata: {\"path\":\"/\",\"data\":{\"0\":12,\"1\":11}}\n\n"
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setHeader("Content-Type", "text/event-stream")
+                .setBody(baseline + update + update))
+            val source = okhttp3.sse.EventSources.createFactory(client).newEventSource(
+                okhttp3.Request.Builder().url(server.url("/events")).build(), object : okhttp3.sse.EventSourceListener() {
+                    override fun onEvent(source: okhttp3.sse.EventSource, id: String?, type: String?, data: String) {
+                        runCatching {
+                            store.accept(type!!, data)
+                            store.next()?.let { storyId ->
+                                val now = System.currentTimeMillis()
+                                val json = """{"id":$storyId,"type":"story","time":${now / 1000},"title":"New AI model","url":"https://example.org/streamed"}"""
+                                val article = ProactiveAttentionPushPolicy.article(json, storyId, now)!!
+                                ProactiveAttentionFeedStore(context).ingest(article.copy(topicId = topic.id), topic)
+                                store.complete(storyId)
+                            }
+                        }.onFailure(error::set)
+                        received.countDown()
+                    }
+                    override fun onFailure(source: okhttp3.sse.EventSource, t: Throwable?, response: okhttp3.Response?) {
+                        error.set(t ?: IllegalStateException("Stream failed"))
+                        while (received.count > 0) received.countDown()
+                    }
+                })
+            try {
+                assertTrue(received.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                error.get()?.let { throw AssertionError("Fixture stream failed", it) }
+                assertEquals(1, GlobalAgentRepository(context).proactiveMessages().size)
+                assertNull(store.next())
+            } finally { source.cancel(); client.dispatcher.cancelAll(); client.connectionPool.evictAll(); client.dispatcher.executorService.shutdown() }
+        }
+    }
+
+    @Test fun pushCursorAndPendingArticlesSurviveReopenAndBackoff() = isolated { context ->
+        val now = System.currentTimeMillis()
+        val first = ProactiveAttentionPushStore(context)
+        first.accept("put", """{"path":"/","data":[11,10]}""", now)
+        assertNull(first.next(now))
+        first.accept("patch", """{"path":"/","data":{"0":12,"1":11}}""", now)
+        val reopened = ProactiveAttentionPushStore(context)
+        assertEquals(12L, reopened.next(now))
+        reopened.defer(12, now)
+        assertNull(first.next(now))
+        assertEquals(12L, first.next(now + 10_000))
+        first.complete(12)
+        reopened.accept("put", """{"path":"/","data":[12,11]}""", now + 20_000)
+        assertNull(reopened.next(now + 20_000))
+    }
+
+    @Test fun pushAndRssShareInboxIdentityAndNeverInventOriginalDates() = isolated { context ->
+        val topic = AttentionTopic("ai_models", "AI", "AI")
+        ProactiveAttentionStore(context).update { it.copy(configured = true, topics = listOf(topic)) }
+        val now = System.currentTimeMillis()
+        val story = """{"id":12,"type":"story","time":${now / 1000},"title":"New AI model","url":"https://example.org/model"}"""
+        val article = ProactiveAttentionPushPolicy.article(story, 12, now)!!.copy(topicId = topic.id)
+        val store = ProactiveAttentionFeedStore(context)
+        assertTrue(store.ingest(article, topic))
+        assertFalse(store.ingest(article.copy(discoveryDate = false), topic))
+        val message = GlobalAgentRepository(context).proactiveMessages().single()
+        val evidence = ProactiveAttentionStore(context).evidence(message.sourceEventId)!!
+        assertEquals(0L, evidence.getJSONArray("sources").getJSONObject(0).getLong("published"))
+        assertTrue(message.content.contains(context.getString(R.string.attention_source_discovered,
+            java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString())))
+    }
+
+    @Test fun livePhoneStreamReceivesEventsWithoutRelayOrModel() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("attention_live_push") == "true")
+        isolated { context ->
+            val received = java.util.concurrent.CountDownLatch(1)
+            val client = okhttp3.OkHttpClient.Builder().connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS).build()
+            val error = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+            val store = ProactiveAttentionPushStore(context)
+            val started = SystemClock.elapsedRealtime()
+            val source = okhttp3.sse.EventSources.createFactory(client).newEventSource(
+                okhttp3.Request.Builder().url(ProactiveAttentionPushPolicy.STREAM).header("Accept", "text/event-stream").build(),
+                object : okhttp3.sse.EventSourceListener() {
+                    override fun onEvent(source: okhttp3.sse.EventSource, id: String?, type: String?, data: String) {
+                        if (type !in setOf("put", "patch")) return
+                        runCatching { store.accept(type!!, data) }.onFailure(error::set)
+                        received.countDown()
+                    }
+                    override fun onFailure(source: okhttp3.sse.EventSource, t: Throwable?, response: okhttp3.Response?) {
+                        error.set(t ?: IllegalStateException("HTTP ${response?.code}")); received.countDown()
+                    }
+                })
+            try {
+                assertTrue("No phone-side SSE event", received.await(40, java.util.concurrent.TimeUnit.SECONDS))
+                error.get()?.let { throw AssertionError("Source stream failed", it) }
+                val snapshot = store.snapshot()
+                assertTrue(snapshot.getBoolean("initialized"))
+                assertTrue(snapshot.getJSONObject("slots").length() > 0)
+                File(instrumentation.targetContext.getExternalFilesDir(null), "attention-push-live-evidence.json").writeText(
+                    JSONObject().put("elapsed_ms", SystemClock.elapsedRealtime() - started)
+                        .put("snapshot_ids", snapshot.getJSONObject("slots").length()).put("model_dispatches", 0)
+                        .put("desktop_required", false).toString())
+            } finally { source.cancel(); client.dispatcher.cancelAll(); client.connectionPool.evictAll(); client.dispatcher.executorService.shutdown() }
+        }
+    }
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
     @Test fun feedPublishesWithoutAModelAndReviewUpdatesTheSameReadItem() = isolated { context ->
