@@ -22,6 +22,10 @@
   snapshot; selecting the unread tab again reapplies the filter.
 - Outline/filled bookmarks distinguish saved state, with an undo action.
   Read and bookmark changes use RecyclerView payloads, not full row rebuilding.
+- Unread headlines use soft purple and read headlines use opaque primary text
+  (black in light mode, light text in dark mode). Read commits do not change
+  the title color or read label of an attached article, including expansion
+  and bookmark updates. A newly attached/reopened row adopts its latest state.
 - Filter, loaded keys, expanded keys, anchor and offset are stored in the
   encrypted database off the UI thread, including when leaving the Activity.
   Restoration preserves read rows in an unread snapshot. Source metadata loads
@@ -96,3 +100,14 @@ continuous-reader results are recorded separately after its validation.
   persisted position and expansion state.
 - Kotlin source-size policy, Chinese localization guard and diff whitespace
   checks passed. Collection schedules and model routing were not changed.
+
+## Headline presentation verification on 2026-10-14
+
+- Android v1.5.12 (1295) installed on S20U without clearing data.
+- 19 timeline/inbox JVM tests and three targeted instrumented reader tests
+  passed (device run: 24.115 seconds).
+- Auto-read commits, expansion, bookmarking and undo retain the currently
+  visible purple headline. Reattachment and reconstruction adopt the opaque
+  read color. Read persistence and unread snapshot membership are unchanged.
+- Unread/read colors are distinct and meet a 4.5:1 contrast ratio against the
+  reader background in both light and dark resource configurations.

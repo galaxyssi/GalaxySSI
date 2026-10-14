@@ -31,6 +31,7 @@ internal class ProactiveAttentionArticleView(
     private var bookmark: ImageButton? = null
     private var sourceName = ""
     private var evidenceChecked = false
+    private var displayedUnread = false
     private val notices by lazy { listOf(R.string.attention_source_summary, R.string.attention_not_verified,
         R.string.attention_reviewed).flatMap(::statusTexts).toSet() }
     lateinit var readable: View
@@ -39,8 +40,17 @@ internal class ProactiveAttentionArticleView(
 
     init { orientation = VERTICAL }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        row?.let {
+            displayedUnread = it.item.isNew
+            updateStatus(it)
+        }
+    }
+
     fun bind(next: AttentionReaderRow) {
         val token = ++generation
+        if (!isAttachedToWindow || row?.item?.key != next.item.key) displayedUnread = next.item.isNew
         row = next; sourceName = ""; evidenceChecked = false
         removeAllViews()
         val item = next.item
@@ -56,6 +66,7 @@ internal class ProactiveAttentionArticleView(
         intro.addView(top)
         val titleRow = horizontal()
         headline = label(item.title.ifBlank { item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ') }, 16f).apply {
+            tag = "attention-headline:${item.key}"
             setTypeface(typeface, Typeface.BOLD)
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
             ellipsize = TextUtils.TruncateAt.END
@@ -112,10 +123,12 @@ internal class ProactiveAttentionArticleView(
 
     fun updateStatus(next: AttentionReaderRow) {
         row = next
-        headline?.setTextColor(context.getColor(R.color.text_primary))
-        headline?.alpha = if (next.item.isNew) 1f else .72f
+        // Read commits must not recolor an article while it is being viewed.
+        if (!isAttachedToWindow) displayedUnread = next.item.isNew
+        headline?.setTextColor(context.getColor(if (displayedUnread) R.color.attention_unread_title else R.color.text_primary))
+        headline?.alpha = 1f
         val status = context.getString(if (evidenceChecked) R.string.attention_reader_checked else R.string.attention_reader_unverified)
-        sourceLine?.text = listOf(sourceName, status, if (next.item.isNew) "" else context.getString(R.string.attention_is_read))
+        sourceLine?.text = listOf(sourceName, status, if (displayedUnread) "" else context.getString(R.string.attention_is_read))
             .filter(String::isNotBlank).joinToString(" · ")
         bookmark?.apply {
             setImageResource(if (next.saved) R.drawable.ic_attention_bookmark_filled else R.drawable.ic_attention_bookmark)

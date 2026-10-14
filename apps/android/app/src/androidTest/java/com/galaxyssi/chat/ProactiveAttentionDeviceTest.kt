@@ -218,6 +218,15 @@ class ProactiveAttentionDeviceTest {
                 assertTrue(repository.proactiveMessage("reader-auto")!!.viewedAtMillis > 0)
                 scenario.onActivity {
                     assertEquals(1, reader!!.timeline.visible.size)
+                    val headline = views(it.window.decorView).first { view -> view.tag == "attention-headline:global-agent:reader-auto" } as TextView
+                    assertEquals(it.getColor(R.color.attention_unread_title), headline.currentTextColor)
+                    assertEquals(1f, headline.alpha, 0f)
+                    views(it.window.decorView).filterIsInstance<ProactiveAttentionArticleView>().first().readable.performClick()
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-expanded:global-agent:reader-auto" } }
+                scenario.onActivity {
+                    val headline = views(it.window.decorView).first { view -> view.tag == "attention-headline:global-agent:reader-auto" } as TextView
+                    assertEquals(it.getColor(R.color.attention_unread_title), headline.currentTextColor)
                     views(it.window.decorView).first { view -> view.contentDescription == it.getString(R.string.attention_save) }.performClick()
                 }
                 await(scenario) { ProactiveAttentionStore(context).preferences().savedKeys.isNotEmpty() &&
@@ -231,11 +240,47 @@ class ProactiveAttentionDeviceTest {
                 scenario.onActivity {
                     reader!!.pause()
                     assertEquals(1, reader!!.timeline.visible.size)
+                    val headline = views(it.window.decorView).first { view -> view.tag == "attention-headline:global-agent:reader-auto" } as TextView
+                    assertEquals(it.getColor(R.color.attention_unread_title), headline.currentTextColor)
+                    it.setContentView(android.widget.FrameLayout(it))
+                    it.setContentView(reader!!.view)
+                    assertEquals(it.getColor(R.color.text_primary), headline.currentTextColor)
+                }
+                worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                val restored = ProactiveAttentionReaderStateStore(context).read()
+                scenario.onActivity { activity ->
+                    reader!!.destroy()
+                    reader = ProactiveAttentionReader(activity, worker, { fail("Reading must not launch Agent") }, {},
+                        { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.update(GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList()), emptySet(), restored)
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-headline:global-agent:reader-auto" } }
+                scenario.onActivity {
+                    val headline = views(it.window.decorView).first { view -> view.tag == "attention-headline:global-agent:reader-auto" } as TextView
+                    assertEquals(it.getColor(R.color.text_primary), headline.currentTextColor)
+                    assertEquals(1f, headline.alpha, 0f)
                 }
             } finally {
                 scenario.onActivity { reader?.pause(); reader?.destroy() }
                 worker.shutdown(); assertTrue(worker.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS))
             }
+        }
+    }
+
+    @Test fun attentionTitleColorsRemainLegibleInLightAndDarkModes() {
+        listOf(android.content.res.Configuration.UI_MODE_NIGHT_NO,
+            android.content.res.Configuration.UI_MODE_NIGHT_YES).forEach { mode ->
+            val configuration = android.content.res.Configuration(instrumentation.targetContext.resources.configuration).apply {
+                uiMode = (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or mode
+            }
+            val context = instrumentation.targetContext.createConfigurationContext(configuration)
+            val background = context.getColor(R.color.page_bg)
+            val unread = context.getColor(R.color.attention_unread_title)
+            val read = context.getColor(R.color.text_primary)
+            assertNotEquals(unread, read)
+            assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(unread, background) >= 4.5)
+            assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(read, background) >= 4.5)
         }
     }
 

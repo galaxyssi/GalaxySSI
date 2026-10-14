@@ -15,6 +15,7 @@
     <color name="surface_bg">#FFFFFF</color>
     <color name="search_bg">#E5E5EA</color>
     <color name="text_primary">#111111</color>
+    <color name="attention_unread_title">#8261AA</color>
     <color name="text_secondary">#8E8E93</color>
     <color name="agent_session_title">#505052</color>
     <color name="accent_green">#14C66A</color>
