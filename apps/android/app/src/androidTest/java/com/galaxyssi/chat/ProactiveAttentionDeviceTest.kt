@@ -344,6 +344,34 @@ class ProactiveAttentionDeviceTest {
         }
     }
 
+    @Test fun articleTypographyUsesRegularLargerTitlesAndExpandedBody() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+        instrumentation.runOnMainSync {
+            listOf(1f, 1.3f).forEach { scale ->
+                val configuration = android.content.res.Configuration(instrumentation.targetContext.resources.configuration)
+                    .apply { fontScale = scale }
+                val context = instrumentation.targetContext.createConfigurationContext(configuration)
+                val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, callback -> callback(null) }, {})
+                fun pixels(sp: Float) = android.util.TypedValue.applyDimension(
+                    android.util.TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)
+                listOf(false, true, false).forEach { expanded ->
+                    article.bind(AttentionReaderRow(item, expanded, false))
+                    val title = views(article).first { it.tag == "attention-headline:${item.key}" } as TextView
+                    assertFalse(title.typeface.isBold)
+                    assertEquals(pixels(17.6f), title.textSize, .1f)
+                    if (expanded) {
+                        val body = views(article).first { it.tag == "attention-expanded:${item.key}" } as TextView
+                        assertEquals(pixels(18f), body.textSize, .1f)
+                        val heading = views(article).filterIsInstance<TextView>()
+                            .first { it.text == context.getString(R.string.attention_content_summary) }
+                        assertEquals(pixels(14.4f), heading.textSize, .1f)
+                    }
+                }
+            }
+        }
+    }
+
     @Test fun attentionTitleColorsRemainLegibleInLightAndDarkModes() {
         listOf(android.content.res.Configuration.UI_MODE_NIGHT_NO,
             android.content.res.Configuration.UI_MODE_NIGHT_YES).forEach { mode ->
