@@ -458,35 +458,15 @@ class GlobalAgentRepository(context: Context) {
         updated
     }
 
-    fun claimResearchTask(nowMillis: Long = System.currentTimeMillis()): GlobalResearchTask? = synchronized(STORE_LOCK) {
-        val tasks = loadResearchTasks()
-            .map { GlobalResearchTaskPolicy.recoverIfStale(it, nowMillis) }
-            .toMutableList()
-        val index = tasks.indices
-            .filter { index ->
-                tasks[index].status in setOf(
-                    GlobalResearchTaskStatus.QUEUED,
-                    GlobalResearchTaskStatus.SCHEDULED,
-                    GlobalResearchTaskStatus.WAITING_FOR_RESOURCE
-                ) && tasks[index].nextAttemptAtMillis <= nowMillis
-            }
-            .maxByOrNull { index -> GlobalResearchTaskPolicy.selectionScore(tasks[index], nowMillis) }
-            ?: -1
-        if (index < 0) {
-            saveResearchTasks(tasks)
-            return@synchronized null
-        }
-        val claimed = tasks[index].copy(
-            status = GlobalResearchTaskStatus.RUNNING,
-            attemptCount = tasks[index].attemptCount + 1,
-            sourceMessageId = 0L,
-            leaseExpiresAtMillis = nowMillis + GlobalResearchTaskPolicy.leaseMillis(tasks[index].depth),
-            updatedAtMillis = nowMillis
-        )
-        tasks[index] = claimed
-        saveResearchTasks(tasks)
-        claimed
+    fun claimResearchTask(nowMillis: Long = System.currentTimeMillis(), attentionOnly: Boolean = false): GlobalResearchTask? = synchronized(STORE_LOCK) {
+        val selection = GlobalResearchClaimCoordinator.claim(loadResearchTasks(), nowMillis, attentionOnly,
+            appContext.getDatabasePath(DATABASE_NAME).absolutePath)
+        saveResearchTasks(selection.tasks)
+        selection.claimed
     }
+
+    internal fun releaseResearchPreparation(task: GlobalResearchTask) = GlobalResearchClaimCoordinator.release(
+        appContext.getDatabasePath(DATABASE_NAME).absolutePath, task)
 
     fun cognitionTasks(): List<GlobalCognitionTask> = deliberationStore.cognitionTasks()
 
@@ -2594,7 +2574,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         repository.savePersistentContextSyncVersion(PERSISTENT_CONTEXT_SYNC_VERSION)
     }
 
-    fun executeResearchCycle(explicitUserOverride: Boolean = false): GlobalResearchExecutionResult? {
+    fun executeResearchCycle(explicitUserOverride: Boolean = false, attentionOnly: Boolean = false): GlobalResearchExecutionResult? {
         val settings = repository.settings()
         if (!settings.enabled || !settings.autonomousResearchEnabled) return null
         val budget = backgroundBudgetDecision(
@@ -2603,8 +2583,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             explicitUserOverride = explicitUserOverride
         )
         if (!budget.allowed) return null
-        if (!modelCallBudget.availability(settings).granted) return null
-        return researchExecutor.executeNext()
+        return researchExecutor.executeNext(attentionOnly)
     }
 
     fun executeCognitionCycle(explicitUserOverride: Boolean = false): GlobalCognitionExecutionResult? {

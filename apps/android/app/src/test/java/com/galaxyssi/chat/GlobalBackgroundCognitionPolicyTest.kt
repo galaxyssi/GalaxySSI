@@ -53,6 +53,24 @@ class GlobalBackgroundCognitionPolicyTest {
     }
 
     @Test
+    fun `public attention requires authorized dispatch but permits authenticated result recovery`() {
+        val request = JSONObject().put("type", "text")
+            .put("conversation_id", "public-attention:attention-research:ai_models")
+        assertTrue(GalaxySSITransportPrivacyPolicy.isLocalOnly(request, outbound = true))
+        assertFalse(GalaxySSITransportPrivacyPolicy.isLocalOnly(request, true, outbound = true))
+        assertFalse(GalaxySSITransportPrivacyPolicy.isLocalOnly(request))
+        for (type in listOf("agent_task_event", "agent_task_result_receipt", "agent_task_query")) {
+            val control = JSONObject(request.toString()).put("type", type)
+            assertFalse(GalaxySSITransportPrivacyPolicy.isLocalOnly(control))
+            assertFalse(GalaxySSITransportPrivacyPolicy.isLocalOnly(control, outbound = true))
+        }
+        assertTrue(GalaxySSITransportPrivacyPolicy.isLocalOnly(JSONObject(request.toString())
+            .put("task_kind", "self_evolution"), true, outbound = true))
+        assertTrue(GalaxySSITransportPrivacyPolicy.isLocalOnly(JSONObject(request.toString())
+            .put("type", "global_memory_event"), true, outbound = true))
+    }
+
+    @Test
     fun `fresh durable cognition outranks stale generic retries`() {
         val now = 1_800_000_000_000L
         val generic = cognitionTask(

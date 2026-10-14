@@ -27,6 +27,7 @@ enum class AndroidCognitionWorkMode {
     EVENT,
     SCHEDULED,
     EXPLICIT,
+    ATTENTION,
     PROJECTION
 }
 
@@ -40,6 +41,7 @@ data class AndroidCognitionWorkPlan(
 object AndroidCognitionSchedulePolicy {
     fun workPlan(mode: AndroidCognitionWorkMode): AndroidCognitionWorkPlan = when (mode) {
         AndroidCognitionWorkMode.EVENT -> AndroidCognitionWorkPlan(12, false, 0, false)
+        AndroidCognitionWorkMode.ATTENTION -> AndroidCognitionWorkPlan(12, false, 0, false)
         AndroidCognitionWorkMode.SCHEDULED -> AndroidCognitionWorkPlan(48, true, 1, true)
         AndroidCognitionWorkMode.EXPLICIT -> AndroidCognitionWorkPlan(200, true, 2, true)
         AndroidCognitionWorkMode.PROJECTION -> AndroidCognitionWorkPlan(0, false, 0, true)
@@ -61,6 +63,13 @@ object AndroidCognitionSchedulePolicy {
 }
 
 object AndroidCognitionScheduler {
+    fun requestAttention(context: Context, delayMillis: Long = 0L) {
+        // A future retry must never sit ahead of a newly received model result.
+        enqueue(context, if (delayMillis > 0L) ATTENTION_TIMER else ATTENTION_WORK,
+            AndroidCognitionWorkMode.ATTENTION, delayMillis,
+            if (delayMillis > 0L) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.APPEND_OR_REPLACE)
+    }
+
     fun requestImmediate(context: Context, explicit: Boolean = false) {
         enqueue(
             context = context,
@@ -136,6 +145,8 @@ object AndroidCognitionScheduler {
     internal const val KEY_MODE = "mode"
     internal const val KEY_RESUME_TOKEN = "resume_token"
     private const val EVENT_WORK = "galaxyssi-cognition-event-v1"
+    private const val ATTENTION_WORK = "galaxyssi-attention-continuation-v1"
+    private const val ATTENTION_TIMER = "galaxyssi-attention-retry-v1"
     private const val SCHEDULED_WORK = "galaxyssi-cognition-scheduled-v1"
     private const val EXPLICIT_WORK = "galaxyssi-cognition-explicit-v1"
     private const val PROJECTION_WORK = "galaxyssi-obsidian-projection-v1"
@@ -177,6 +188,16 @@ class AndroidCognitionWorker(
             val plan = AndroidCognitionSchedulePolicy.workPlan(mode)
             var projection = ObsidianProjectionResult(configured = false)
             if (plan.eventLimit > 0) runtime.processPending(plan.eventLimit)
+            if (mode == AndroidCognitionWorkMode.ATTENTION) {
+                ProactiveAttentionCoordinator(applicationContext).reconcile()
+                val result = runtime.executeResearchCycle(attentionOnly = true)
+                val tasks = runtime.researchTasks().filter(ProactiveAttentionPolicy::isAttention)
+                val next = GlobalResearchClaimCoordinator.attentionNextWake(tasks)
+                if (next != null) AndroidCognitionScheduler.requestAttention(applicationContext,
+                    (next - System.currentTimeMillis()).coerceAtLeast(
+                        if (result == null && tasks.none { it.status == GlobalResearchTaskStatus.RUNNING })
+                            AndroidCognitionSchedulePolicy.MIN_DELAY_MILLIS else 15_000L))
+            }
             if (plan.runBatchCognition) {
                 runtime.processLongHorizonCycle()
                 runtime.processProactiveDiscoveryCycle(force = explicit)
@@ -186,8 +207,8 @@ class AndroidCognitionWorker(
                     runtime.executeResearchCycle(explicitUserOverride = explicit)
                 }
                 runtime.processPending(plan.eventLimit)
-                deliverInsights(runtime)
             }
+            if (mode != AndroidCognitionWorkMode.PROJECTION) deliverInsights(runtime)
             if (plan.projectKnowledge) {
                 projection = ObsidianAndroidBridge.projectIncrementally(
                     applicationContext,
@@ -198,7 +219,10 @@ class AndroidCognitionWorker(
                     AndroidCognitionScheduler.requestObsidianProjection(applicationContext)
                 }
             }
-            if (backgroundEnabled) AndroidCognitionScheduler.scheduleDynamic(applicationContext, runtime)
+            // Incoming progress must not postpone the scheduled research worker indefinitely.
+            if (backgroundEnabled && mode !in setOf(AndroidCognitionWorkMode.EVENT, AndroidCognitionWorkMode.ATTENTION)) {
+                AndroidCognitionScheduler.scheduleDynamic(applicationContext, runtime)
+            }
             recovery.succeeded(mode)
             Log.i(
                 LOG_TAG,

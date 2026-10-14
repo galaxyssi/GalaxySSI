@@ -144,6 +144,17 @@ class MqttEvolutionRoutingTests(unittest.TestCase):
             "conversation_id": "user-conversation",
         }))
 
+    def test_public_attention_uses_normal_pairing_without_exporting_private_state(self):
+        for kind in ("text", "agent_response"):
+            payload = {
+                "type": kind,
+                "conversation_id": "public-attention:attention-research:ai_models",
+            }
+            self.assertFalse(mqtt_bridge._local_only_transport_payload(payload))
+            self.assertTrue(mqtt_bridge._local_only_transport_payload({
+                **payload, "task_kind": "self_evolution",
+            }))
+
 
 if __name__ == "__main__":
     unittest.main()

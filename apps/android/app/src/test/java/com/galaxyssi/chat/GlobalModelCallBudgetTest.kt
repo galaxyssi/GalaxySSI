@@ -6,6 +6,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlobalModelCallBudgetTest {
+    @Test fun `uncapped count retains usage and enforces token and concurrency limits`() {
+        val history = GlobalModelCallBudgetState(dispatches = (1..48).map {
+            GlobalModelCallDispatch("old-$it", GlobalModelCallKind.RESEARCH_EVIDENCE, NOW, inputTokens = 250L)
+        })
+        val allowed = acquire(history, "news", dailyLimit = 0)
+        assertTrue(allowed.granted)
+        assertEquals(49, allowed.state.dispatches.size)
+        assertEquals(GlobalModelCallBudgetDenial.TOKEN_LIMIT,
+            acquire(history, "tokens", dailyLimit = 0, dailyTokenLimit = 10_000L).denial)
+        assertEquals(GlobalModelCallBudgetDenial.CONCURRENCY_LIMIT,
+            acquire(allowed.state, "parallel", dailyLimit = 0, concurrencyLimit = 1).denial)
+        assertTrue(GlobalModelCallBudgetPolicy.availability(history, 0, 3, NOW).granted)
+        assertEquals(GlobalModelCallBudgetDenial.DAILY_LIMIT, acquire(history, "ordinary", dailyLimit = 48).denial)
+    }
+
     @Test
     fun `acquisition records one dispatch and one active lease`() {
         val decision = acquire(GlobalModelCallBudgetState(), "call-1")

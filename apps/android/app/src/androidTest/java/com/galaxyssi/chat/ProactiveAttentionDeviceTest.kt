@@ -27,6 +27,69 @@ import org.junit.runner.RunWith
 class ProactiveAttentionDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
+    @Test fun subscribedAlertsHonorSelectedModeWithoutUnsolicitedHeuristics() = isolated { context ->
+        val store = ProactiveAttentionStore(context)
+        store.update { it.copy(configured = true, alertMode = AttentionAlertMode.IMPORTANT) }
+        val task = task("attention-research:macro").copy(lastResultFingerprint = "alert-test",
+            evidenceLedger = GlobalEvidenceLedger(sources = listOf(GlobalEvidenceSource(
+                "https://example.org/original", GlobalEvidenceSourceKind.OFFICIAL, 1.0, "Original")), verified = true))
+        val finding = message().copy(sourceEventId = ProactiveAttentionStore.eventId(task), urgent = true)
+        assertFalse(AgentCognitiveEvalBridge.shouldNotify(context, finding))
+        store.saveEvidence(task, true)
+        assertTrue(AgentCognitiveEvalBridge.shouldNotify(context, finding))
+        assertFalse(AgentCognitiveEvalBridge.shouldNotify(context, finding.copy(urgent = false)))
+        assertFalse(AgentCognitiveEvalBridge.shouldNotify(context, finding.copy(content = "Expired notice\n2020-01-01")))
+        store.update { it.copy(alertMode = AttentionAlertMode.ALL) }
+        assertTrue(AgentCognitiveEvalBridge.shouldNotify(context, finding.copy(urgent = false)))
+        store.update { it.copy(alertMode = AttentionAlertMode.SILENT) }
+        assertFalse(AgentCognitiveEvalBridge.shouldNotify(context, finding))
+    }
+
+    @Test fun oldCountBlockedEvidenceResumesWithoutErasingUsage() = isolated { context ->
+        val store = ProactiveAttentionStore(context)
+        store.update { it.copy(configured = true) }
+        val repository = GlobalAgentRepository(context)
+        val coordinator = ProactiveAttentionCoordinator(context)
+        coordinator.reconcile()
+        val original = repository.researchTasks().first()
+        val collected = GlobalResearchUnit(purpose = GlobalResearchUnitPurpose.CHANGE_MONITOR,
+            question = "Public fixture", sourceFocus = "Original page", result = "Retained original evidence",
+            status = GlobalResearchUnitStatus.COMPLETED)
+        repository.upsertResearchTask(original.copy(status = GlobalResearchTaskStatus.WAITING_FOR_RESOURCE,
+            nextAttemptAtMillis = Long.MAX_VALUE, lastError = "The background model-call budget is temporarily unavailable",
+            researchPlan = GlobalResearchPlan(id = "preserved", units = listOf(collected))))
+        val budget = GlobalModelCallBudgetStore(context)
+        budget.acquire(GlobalModelCallKind.RESEARCH_EVIDENCE, "fixture", 60000, repository.settings())
+        val usage = budget.snapshot(repository.settings()).dispatchesInWindow
+        coordinator.reconcile()
+        val restored = repository.researchTasks().first { it.id == original.id }
+        assertEquals(0L, restored.nextAttemptAtMillis)
+        assertEquals(collected, restored.researchPlan.units.single())
+        assertEquals(usage, budget.snapshot(repository.settings()).dispatchesInWindow)
+    }
+
+    @Test fun reviewReadyTopicIsClaimedBeforeFreshTopicsAndOnlyOneTopicRuns() = isolated { context ->
+        val store = ProactiveAttentionStore(context)
+        store.update { it.copy(configured = true) }
+        val repository = GlobalAgentRepository(context)
+        ProactiveAttentionCoordinator(context).reconcile()
+        val original = repository.researchTasks().last()
+        val unit = GlobalResearchUnit(purpose = GlobalResearchUnitPurpose.CHANGE_MONITOR, question = "", sourceFocus = "",
+            status = GlobalResearchUnitStatus.COMPLETED)
+        repository.upsertResearchTask(original.copy(status = GlobalResearchTaskStatus.WAITING_FOR_RESOURCE,
+            attemptCount = 10, researchPlan = GlobalResearchPlan(id = "progress", units = listOf(unit))))
+        val claimed = repository.claimResearchTask(attentionOnly = true)!!
+        try {
+            assertEquals(original.id, claimed.id)
+            assertNull(repository.claimResearchTask(attentionOnly = true))
+        } finally { repository.releaseResearchPreparation(claimed) }
+        val resumed = repository.claimResearchTask(attentionOnly = true)!!
+        try {
+            assertEquals(original.id, resumed.id)
+            assertEquals(unit, resumed.researchPlan.units.single())
+        } finally { repository.releaseResearchPreparation(resumed) }
+    }
+
     @Test fun configurationAndFavoritesSurviveRecreation() = isolated { context ->
         val store = ProactiveAttentionStore(context)
         assertEquals(31, store.preferences().topics.size)
@@ -177,6 +240,29 @@ class ProactiveAttentionDeviceTest {
                 bitmap.recycle()
             }
         } finally { manager.cancel(id) }
+    }
+
+    @Test fun homepageHidesEmptyDiscoveriesAndKeepsReadFindingsAccessible() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val bar = activity.findViewById<View>(R.id.agentInsightBar)
+                val label = activity.findViewById<TextView>(R.id.agentInsightText)
+                val items = GlobalProactiveInboxPolicy.project(listOf(message().copy(
+                    status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = 1000)), emptyList())
+                try {
+                    activity.renderGlobalInsightIndicator(emptyList())
+                    assertEquals(View.GONE, bar.visibility)
+                    activity.renderGlobalInsightIndicator(items)
+                    assertEquals(View.VISIBLE, bar.visibility)
+                    assertEquals(activity.getString(R.string.attention_unread_entry, 1), label.text.toString())
+                    activity.renderGlobalInsightIndicator(items.map { it.copy(viewedAtMillis = 2000) })
+                    assertEquals(View.VISIBLE, bar.visibility)
+                    assertEquals(activity.getString(R.string.attention_discoveries), label.text.toString())
+                    activity.renderGlobalInsightIndicator(emptyList())
+                    assertEquals(View.GONE, bar.visibility)
+                } finally { activity.refreshGlobalInsightIndicator() }
+            }
+        }
     }
 
     private fun await(scenario: ActivityScenario<ProactiveAttentionActivity>, predicate: (View) -> Boolean) {

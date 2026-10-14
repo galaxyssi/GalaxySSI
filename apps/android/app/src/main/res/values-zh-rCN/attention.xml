@@ -91,4 +91,9 @@
         <item>不同领域方法的组合机会、矛盾证据、知识空白和可检验的新假设，核查已有工作，不把假设当作已验证创新</item>
         <item>新基准、数据集、对照实验方法、失败案例、评测污染和可复现性问题</item>
     </string-array>
+    <string name="attention_token_wait">Token 预算已用完，资料已保留，等待恢复</string>
+    <string name="attention_cost_wait">已达到设置的费用预算，等待恢复</string>
+    <string name="attention_capacity_wait">等待可用的模型并发名额</string>
+    <string name="attention_source_wait">原文暂时无法读取，稍后重试，未标记为已核实</string>
+    <string name="attention_no_supported_news">最近一批没有证据充分的新消息，其他主题继续排队</string>
 </resources>

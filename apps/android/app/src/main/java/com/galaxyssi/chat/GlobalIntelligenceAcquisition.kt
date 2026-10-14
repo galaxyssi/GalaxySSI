@@ -282,6 +282,7 @@ object GlobalResearchPlanBuilder {
         nowMillis: Long = System.currentTimeMillis()
     ): GlobalResearchPlan {
         if (plan.phase in setOf(GlobalResearchPlanPhase.SYNTHESIZING, GlobalResearchPlanPhase.COMPLETED)) return plan
+        if (ProactiveAttentionPolicy.isAttention(task)) return ProactiveAttentionNewsPolicy.close(task, plan, nowMillis)
         if (plan.runningUnits().isNotEmpty() || plan.pendingUnits().isNotEmpty()) return plan
         if (plan.completedUnits().isEmpty()) return plan
         if (ledger.verified || plan.qualityExpansionCount >= MAX_QUALITY_EXPANSIONS) {
@@ -601,7 +602,8 @@ object GlobalEvidenceEvaluator {
         val domain = sourceDomain(uri)
         val authority = sourceAuthority(uri)
         return when {
-            domain.endsWith(".gov") || domain.contains(".gov.") -> GlobalEvidenceSourceKind.GOVERNMENT
+            domain.endsWith(".gov") || GOVERNMENT_SUFFIXES.any { domain == it || domain.endsWith(".$it") } ->
+                GlobalEvidenceSourceKind.GOVERNMENT
             domain == "github.com" || domain == "gitlab.com" -> GlobalEvidenceSourceKind.CODE_REPOSITORY
             authority in OFFICIAL_AUTHORITIES ->
                 GlobalEvidenceSourceKind.OFFICIAL
@@ -799,13 +801,17 @@ object GlobalEvidenceEvaluator {
     private val TRACKING_QUERY_KEYS = setOf("ref", "source", "fbclid", "gclid", "mc_cid", "mc_eid")
     private val IPV4_PATTERN = Regex("(?:\\d{1,3}\\.){3}\\d{1,3}")
     private val TWO_LEVEL_PUBLIC_SUFFIXES = setOf(
-        "co.uk", "org.uk", "ac.uk", "com.cn", "net.cn", "org.cn", "com.au", "co.jp", "co.kr", "com.br"
+        "co.uk", "org.uk", "ac.uk", "com.cn", "net.cn", "org.cn", "com.hk", "com.au", "co.jp", "co.kr", "com.br"
     )
     private val OFFICIAL_AUTHORITIES = setOf(
         "openai.com", "android.com", "microsoft.com", "apple.com", "anthropic.com", "google.com",
         "github.com", "kotlinlang.org", "oracle.com", "python.org", "rust-lang.org", "nodejs.org",
-        "mozilla.org", "w3.org"
+        "mozilla.org", "w3.org", "sse.com.cn", "szse.cn", "cninfo.com.cn", "hkex.com.hk", "hkexnews.hk",
+        "nyse.com", "nasdaq.com", "cmegroup.com", "msci.com", "ftserussell.com",
+        "blackrock.com", "ishares.com", "vanguard.com", "imf.org", "bis.org", "europa.eu", "bankofengland.co.uk"
     )
+    private val GOVERNMENT_SUFFIXES = setOf("gov.cn", "gov.uk", "gov.au", "gov.sg", "gov.in", "gov.br",
+        "gov.hk", "gov.tw", "gov.za", "gov.my", "govt.nz")
     private val NEWS_AUTHORITIES = setOf("reuters.com", "apnews.com", "bbc.com", "bloomberg.com")
     private val COMMUNITY_AUTHORITIES = setOf("stackoverflow.com", "reddit.com", "medium.com")
 }

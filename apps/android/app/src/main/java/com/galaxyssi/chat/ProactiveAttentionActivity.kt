@@ -221,7 +221,9 @@ class ProactiveAttentionActivity : Activity() {
             block.addView(metadata)
             val headline = item.content.lineSequence().firstOrNull { it.isNotBlank() }?.trim('#', '*', ' ')?.take(90).orEmpty()
             block.addView(text(headline.ifBlank { item.title }, 17f, item.isNew).apply { setPadding(0, dp(9), 0, dp(7)) })
-            block.addView(text(item.content.replace(Regex("\\[([^]]+)\\]\\([^)]+\\)"), "$1").replace("**", "").take(240), 14f).apply { maxLines = 4 })
+            val preview = item.content.lineSequence().dropWhile(String::isBlank).drop(1).joinToString("\n").trim()
+                .ifBlank { item.content }
+            block.addView(text(preview.replace(Regex("\\[([^]]+)\\]\\([^)]+\\)"), "$1").replace("**", "").take(240), 14f).apply { maxLines = 4 })
             val actions = horizontal()
             actions.addView(text(getString(R.string.attention_analyze), 14f).apply {
                 setTextColor(getColor(R.color.galaxyssi_green)); minimumHeight = dp(48); gravity = Gravity.CENTER_VERTICAL
@@ -321,8 +323,21 @@ class ProactiveAttentionActivity : Activity() {
         val active = tasks.filter { it.status != GlobalResearchTaskStatus.PAUSED }
         val running = active.count { it.status == GlobalResearchTaskStatus.RUNNING }
         if (running > 0) return getString(R.string.attention_researching, running)
-        if (active.any { it.status == GlobalResearchTaskStatus.WAITING_FOR_RESOURCE }) return getString(R.string.attention_waiting)
+        val waiting = active.firstOrNull { it.status == GlobalResearchTaskStatus.WAITING_FOR_RESOURCE }
+        if (waiting != null) {
+            val reason = when (waiting.lastError) {
+                "background_budget:TOKEN_LIMIT" -> R.string.attention_token_wait
+                "background_budget:REPORTED_COST_LIMIT" -> R.string.attention_cost_wait
+                "background_budget:CONCURRENCY_LIMIT" -> R.string.attention_capacity_wait
+                "attention_source_read_unavailable" -> R.string.attention_source_wait
+                else -> R.string.attention_waiting
+            }
+            return getString(reason)
+        }
         if (active.any { it.status == GlobalResearchTaskStatus.FAILED }) return getString(R.string.attention_failed)
+        if (active.maxByOrNull { it.updatedAtMillis }?.lastError == "attention_no_supported_news") {
+            return getString(R.string.attention_no_supported_news)
+        }
         val last = active.maxOfOrNull { it.lastCompletedAtMillis } ?: 0L
         return if (last > 0) getString(R.string.attention_updated, date(last)) else getString(R.string.attention_ready, preferences.topics.count { it.enabled })
     }
