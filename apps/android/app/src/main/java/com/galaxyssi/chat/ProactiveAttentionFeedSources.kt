@@ -14,14 +14,40 @@ object ProactiveAttentionFeedSources {
     }
 
     fun matches(article: AttentionFeedArticle, topic: AttentionTopic): Boolean {
-        val words = terms[topic.id] ?: (topic.title + " " + topic.query).split(Regex("[\\s,;]+"))
-            .map(String::trim).filter { it.length >= 2 }
+        val words = (terms[topic.id]?.plus(english[topic.id].orEmpty())) ?: (topic.title + " " + topic.query)
+            .split(Regex("[\\s,;]+")) .map(String::trim).filter { it.length >= 2 }
         val text = article.title + "\n" + article.summary
         return words.any { word ->
             if (word.any { it.code > 127 }) text.contains(word, ignoreCase = true)
             else Regex("\\b" + Regex.escape(word) + "\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
         }
     }
+
+    private val english = mapOf(
+        "macro" to listOf("inflation", "GDP", "fiscal"), "rates" to listOf("interest rate", "central bank"),
+        "stocks" to listOf("stock market", "equities"), "companies" to listOf("earnings", "revenue"),
+        "industry" to listOf("semiconductor", "robotics", "renewable energy"), "funds" to listOf("ETF", "mutual fund"),
+        "bonds" to listOf("bond yield", "treasury"), "fx" to listOf("exchange rate", "forex"),
+        "commodities" to listOf("crude oil", "gold price"), "digital" to listOf("bitcoin", "stablecoin", "crypto"),
+        "institutions" to listOf("buyback", "shareholder"), "events" to listOf("merger", "dividend"),
+        "risks" to listOf("fraud", "default risk"), "portfolio" to listOf("asset allocation"),
+        "personal" to listOf("mortgage", "savings rate"),
+        "ai_models" to listOf("OpenAI", "LLM", "language model", "Gemini"),
+        "agent_frontiers" to listOf("multi-agent", "autonomous agent"),
+        "open_source" to listOf("open source", "open-source"),
+        "dev_infrastructure" to listOf("database", "compiler", "developer tool"),
+        "multimodal_voice" to listOf("multimodal", "speech", "text-to-speech"),
+        "ar_wearables" to listOf("smart glasses", "wearable"),
+        "mobile_edge_ai" to listOf("on-device", "edge AI"),
+        "galaxyssi_improvements" to listOf("agent memory", "tool calling"),
+        "agent_products" to listOf("coding agent"), "user_needs" to listOf("user feedback", "usability"),
+        "dependency_risks" to listOf("vulnerability", "CVE", "deprecation"),
+        "product_experience" to listOf("user interface", "interaction design"),
+        "research_papers" to listOf("preprint", "research paper", "arXiv"),
+        "protein_life_sciences" to listOf("protein", "enzyme", "biology"),
+        "cross_domain_innovation" to listOf("cross-domain", "novel method"),
+        "evaluation_science" to listOf("reproducibility", "benchmark")
+    )
 
     private val terms = mapOf(
         "macro" to listOf("\u7ecf\u6d4e", "GDP", "CPI", "\u901a\u80c0", "\u8d22\u653f", "\u653f\u7b56"),

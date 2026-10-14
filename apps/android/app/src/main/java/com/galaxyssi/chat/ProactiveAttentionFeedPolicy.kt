@@ -20,7 +20,8 @@ data class AttentionFeedArticle(
     val url: String,
     val publisher: String,
     val publishedAt: Long,
-    val collectedAt: Long
+    val collectedAt: Long,
+    val discoveryDate: Boolean = false
 )
 
 /** Discovery is a source-attributed lead, not a model verdict or a full-text reading receipt. */
@@ -42,19 +43,22 @@ object ProactiveAttentionFeedPolicy {
     fun parse(xml: String, topicId: String, now: Long): List<AttentionFeedArticle> {
         // Jsoup's XML parser does not resolve external entities or execute feed markup.
         val document = Jsoup.parse(xml, "", Parser.xmlParser())
-        require(document.selectFirst("rss, RDF") != null) { "news_feed_invalid_document" }
-        return document.select("item").mapNotNull { item ->
+        require(document.selectFirst("rss, RDF, feed") != null) { "news_feed_invalid_document" }
+        return document.select("item, entry").mapNotNull { item ->
             val title = clean(item.selectFirst("title")?.text().orEmpty(), 240)
-            val summary = clean(item.selectFirst("description")?.text().orEmpty(), 800)
-            val link = item.selectFirst("link")?.text().orEmpty()
+            val summary = clean(item.selectFirst("description, summary")?.text().orEmpty(), 800)
+            val link = item.selectFirst("link[rel=alternate]")?.attr("href")
+                ?: item.selectFirst("link:not([rel])")?.let { it.attr("href").ifBlank { it.text() } }.orEmpty()
             val url = publicUrl(unwrap(link)) ?: return@mapNotNull null
-            val published = date(item.selectFirst("pubDate")?.text().orEmpty())
+            val publication = item.selectFirst("pubDate")?.text()
+                ?: item.selectFirst("published")?.text().orEmpty()
+            val published = date(publication.ifBlank { item.selectFirst("updated")?.text().orEmpty() })
             if (title.isBlank() || published < now - 7 * ProactiveAttentionNewsPolicy.DAY ||
                 published > now + 5 * 60_000L) return@mapNotNull null
             val publisher = clean(item.selectFirst("source")?.text().orEmpty(), 120)
                 .ifBlank { URI(url).host }
             AttentionFeedArticle(urlKey(url), topicId,
-                title, summary, url, publisher, published, now)
+                title, summary, url, publisher, published, now, discoveryDate = publication.isBlank())
         }.distinctBy { it.key }
     }
 

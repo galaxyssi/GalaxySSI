@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="attention_source_discovered">Source discovery/update: %1$s; original publication date not verified</string>
     <string name="attention_title">Proactive attention</string>
     <string name="attention_discoveries">Discoveries</string>
     <string name="attention_view">View discoveries</string>

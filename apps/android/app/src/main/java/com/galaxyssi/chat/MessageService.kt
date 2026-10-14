@@ -56,6 +56,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
         GalaxySSIMqttClient.addListener(this)
         GalaxySSIMqttClient.connect(this)
         registerNetworkRecoveryCallback()
+        ProactiveAttentionPush.start(this)
         thread(name = "galaxyssi-runtime-bootstrap") {
             runCatching { AgentStartupRecovery.enqueue(this@MessageService).result.get() }
                 .onFailure { Log.w("GalaxySSILongTask", "Could not enqueue startup recovery", it) }
@@ -125,6 +126,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onDestroy() {
+        ProactiveAttentionPush.stop()
         unregisterNetworkRecoveryCallback()
         GalaxySSIMqttClient.removeListener(this)
         proactiveTaskExecutor.shutdownNow()
@@ -220,15 +222,18 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 GalaxySSIMqttClient.connectAfterNetworkAvailable(this@MessageService)
+                ProactiveAttentionPush.refresh(networkChanged = true)
             }
 
             override fun onLost(network: Network) {
                 GalaxySSIMqttClient.waitForNetwork(this@MessageService)
+                ProactiveAttentionPush.refresh(networkChanged = true)
             }
 
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
                 if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
                     GalaxySSIMqttClient.connectAfterNetworkAvailable(this@MessageService)
+                    ProactiveAttentionPush.refresh()
                 }
             }
         }
