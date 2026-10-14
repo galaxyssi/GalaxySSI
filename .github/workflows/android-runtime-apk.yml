@@ -84,6 +84,9 @@ jobs:
           sudo apt-get install --yes \
             bc bison build-essential cpio file flex libelf-dev libncurses-dev libssl-dev \
             llvm make openssl patchelf python3 qemu-user rsync squashfs-tools unzip wget xz-utils
+          if [[ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
+            echo -1 | sudo tee /proc/sys/fs/binfmt_misc/qemu-aarch64 >/dev/null
+          fi
 
       # Register container-safe static interpreters after apt installs host QEMU.
       - uses: docker/setup-qemu-action@v3
