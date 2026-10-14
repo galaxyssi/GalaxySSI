@@ -55,7 +55,7 @@ class AgentTeamArtifactDeliveryDeviceTest {
             val request = AgentRunRequest(conversationId = id, messageId = "turn", taskId = "task",
                 runId = id, goal = "Public artifact delivery test", idempotencyKey = id)
             val result = runtime.start(definition, request) { AgentSubagentOutput("", richOutputJson = rich) }.await()
-            assertEquals(rich, result.snapshot.finalRichOutputJson)
+            assertEquals(AgentRichContentCodec.decode(rich), AgentRichContentCodec.decode(result.snapshot.finalRichOutputJson))
             val reopened = EncryptedAgentTeamExecutionStore(AgentEncryptedDatabase(context, namespace))
             val restored = requireNotNull(reopened.snapshot(id))
             val rendered = AgentRichContentCodec.decode(restored.finalRichOutputJson)

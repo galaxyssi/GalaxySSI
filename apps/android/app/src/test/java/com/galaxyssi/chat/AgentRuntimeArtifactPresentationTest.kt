@@ -16,7 +16,7 @@ class AgentRuntimeArtifactPresentationTest {
             assertEquals(mime, block.mimeType)
             assertEquals(if (mime.startsWith("image/")) AgentRichBlockType.IMAGE else AgentRichBlockType.FILE, block.type)
             assertTrue(block.actions.any { it.verb == "save_runtime_artifact" })
-            assertEquals(rich, AgentRuntimeArtifactUi.mergeArtifactOutputs(rich, rich))
+            assertEquals(listOf(block), AgentRichContentCodec.decode(AgentRuntimeArtifactUi.mergeArtifactOutputs(rich, rich)))
         }
     }
 }
