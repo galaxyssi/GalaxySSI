@@ -164,6 +164,9 @@ class AndroidCognitionWorker(
         val mode = runCatching {
             AndroidCognitionWorkMode.valueOf(inputData.getString(AndroidCognitionScheduler.KEY_MODE).orEmpty())
         }.getOrDefault(AndroidCognitionWorkMode.SCHEDULED)
+        // Collection has its own network-constrained worker, even when learning is paused by a budget or recovery gate.
+        if (mode in setOf(AndroidCognitionWorkMode.ATTENTION, AndroidCognitionWorkMode.SCHEDULED, AndroidCognitionWorkMode.EXPLICIT))
+            ProactiveAttentionFeedScheduler.request(applicationContext)
         val recovery = AndroidCognitionRecovery(applicationContext)
         if (mode == AndroidCognitionWorkMode.EXPLICIT) {
             recovery.resumeOnce(inputData.getString(AndroidCognitionScheduler.KEY_RESUME_TOKEN).orEmpty())
@@ -307,7 +310,8 @@ object AndroidCognitionNotificationCenter {
         val channel = if (candidate.attention) ATTENTION_CHANNEL_ID else CHANNEL_ID
         val notificationId = if (candidate.attention) ATTENTION_NOTIFICATION_ID else INSIGHT_NOTIFICATION_ID
         if (manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE) return false
-        val openIntent = Intent(context, MainActivity::class.java).apply {
+        val openIntent = Intent(context, if (candidate.attention && candidate.conversationId.isBlank())
+            ProactiveAttentionActivity::class.java else MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("galaxyssi_open_agent", true)
             putExtra("galaxyssi_agent_conversation_id", candidate.conversationId)

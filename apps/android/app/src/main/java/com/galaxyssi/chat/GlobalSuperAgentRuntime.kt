@@ -522,6 +522,23 @@ class GlobalAgentRepository(context: Context) {
         true
     }
 
+    fun reviseProactiveMessage(id: String, content: String, important: Boolean): Boolean = synchronized(STORE_LOCK) {
+        val messages = loadProactiveMessages()
+        val previous = messages.firstOrNull { it.id == id } ?: return false
+        if (previous.status == GlobalProactiveMessageStatus.DISMISSED) return false
+        if (previous.content == content && previous.urgent == important) return false
+        val updated = previous.copy(content = content, urgent = important,
+            notifiedAtMillis = if (important && !previous.urgent) 0L else previous.notifiedAtMillis)
+        saveProactiveMessages(messages.map { if (it.id == id) updated else it })
+        true
+    }
+
+    fun bindProactiveConversation(id: String, conversationId: String) = synchronized(STORE_LOCK) {
+        saveProactiveMessages(loadProactiveMessages().map {
+            if (it.id == id) it.copy(deliveredConversationId = conversationId) else it
+        })
+    }
+
     fun claimProactiveMessages(
         messageIds: Set<String>,
         conversationId: String,
@@ -2841,7 +2858,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     ): GlobalAgentNotificationCandidate? {
         val settings = repository.settings()
         if (!settings.enabled || !settings.proactiveInsightsEnabled || !settings.notificationsEnabled) return null
-        val messages = delivered.filter { it.notifiedAtMillis <= 0L && it.deliveredConversationId.isNotBlank() }
+        val messages = delivered.filter { it.notifiedAtMillis <= 0L &&
+            (it.deliveredConversationId.isNotBlank() || it.id.startsWith("attention-feed:")) }
             .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
             .filter { ProactiveAttentionStore(appContext).allowsNotification(it) }
         return GlobalProactiveNotificationPolicy.candidate(messages)
@@ -2853,7 +2871,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             .filter {
                 it.status == GlobalProactiveMessageStatus.DELIVERED &&
                     it.notifiedAtMillis <= 0L &&
-                    it.deliveredConversationId.isNotBlank()
+                    (it.deliveredConversationId.isNotBlank() || it.id.startsWith("attention-feed:"))
             }
             .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
             .filter { ProactiveAttentionStore(appContext).allowsNotification(it) }

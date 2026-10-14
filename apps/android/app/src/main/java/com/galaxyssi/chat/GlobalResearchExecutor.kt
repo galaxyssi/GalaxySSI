@@ -27,8 +27,17 @@ class GlobalResearchExecutor(context: Context) {
 
     private fun executeClaimed(claimed: GlobalResearchTask): GlobalResearchExecutionResult {
         val now = System.currentTimeMillis()
-        val initialPlan = claimed.researchPlan.takeIf { it.id.isNotBlank() }
-            ?: GlobalResearchPlanBuilder.create(claimed, now)
+        val legacyIdleCollection = ProactiveAttentionPolicy.isAttention(claimed) &&
+            !ProactiveAttentionFeedStore.isFeed(claimed) && claimed.researchPlan.runningUnits().isEmpty() &&
+            claimed.researchPlan.synthesisSourceMessageId == 0L &&
+            claimed.researchPlan.completedUnits().none(ProactiveAttentionNewsPolicy::isReview)
+        if (legacyIdleCollection && claimed.researchPlan.id.isNotBlank())
+            ProactiveAttentionNewsEvidence(appContext).archive(claimed)
+        val initialPlan = claimed.researchPlan.takeIf { it.id.isNotBlank() && !legacyIdleCollection }
+            ?: if (ProactiveAttentionPolicy.isAttention(claimed)) {
+                ProactiveAttentionFeedStore(appContext).nextPlan(claimed, now)
+                    ?: return deferAttentionBatch(claimed, "attention_waiting_for_feed")
+            } else GlobalResearchPlanBuilder.create(claimed, now)
         val recoveredPlan = GlobalResearchPlanBuilder.recoverStale(initialPlan, now)
         val recoveredLedger = if (recoveredPlan.completedUnits().isNotEmpty()) {
             GlobalEvidenceEvaluator.build(recoveredPlan, now)
@@ -62,7 +71,10 @@ class GlobalResearchExecutor(context: Context) {
         for (unit in pending) {
             if (ProactiveAttentionPolicy.isAttention(task) && ProactiveAttentionNewsPolicy.isReview(unit)) {
                 val pages = ProactiveAttentionNewsEvidence(appContext).capture(task)
-                if (pages.length() == 0) return waitForResource(task, "attention_source_read_unavailable")
+                if (pages.length() == 0) {
+                    if (ProactiveAttentionFeedStore.isFeed(task)) return deferAttentionBatch(task, "attention_source_read_unavailable")
+                    return waitForResource(task, "attention_source_read_unavailable")
+                }
             }
             val dispatch = dispatchUnit(task, unit, selectResource(task, unit, routedResources))
             task = dispatch.task
@@ -674,19 +686,28 @@ class GlobalResearchExecutor(context: Context) {
         val review = task.researchPlan.completedUnits().firstOrNull(ProactiveAttentionNewsPolicy::isReview)
             ?: return waitForResource(task, "attention_review_pending")
         val checked = ProactiveAttentionNewsPolicy.review(review.result, evidence.pages(task), System.currentTimeMillis())
-            ?: return waitForResource(task, "attention_review_invalid")
+            ?: return if (ProactiveAttentionFeedStore.isFeed(task))
+                deferAttentionBatch(task, "attention_review_invalid")
+            else waitForResource(task, "attention_review_invalid")
         evidence.archive(task)
+        if (ProactiveAttentionFeedStore.isFeed(task)) {
+            ProactiveAttentionFeedStore(appContext).finish(task, checked, "review_complete")
+            return deferAttentionBatch(task, "attention_learning_complete", finishFeed = false)
+        }
         if (checked.count == 0) {
             return deferAttentionBatch(task, "attention_no_supported_news")
         }
         return complete(task, checked.text, review.resourceId, checked.ledger)
     }
 
-    private fun deferAttentionBatch(task: GlobalResearchTask, reason: String): GlobalResearchExecutionResult {
+    private fun deferAttentionBatch(task: GlobalResearchTask, reason: String, finishFeed: Boolean = true): GlobalResearchExecutionResult {
         ProactiveAttentionNewsEvidence(appContext).archive(task)
+        val feed = ProactiveAttentionFeedStore(appContext)
+        if (finishFeed && ProactiveAttentionFeedStore.isFeed(task)) feed.finish(task, null, reason)
         val now = System.currentTimeMillis()
+        val hasPending = feed.nextPlan(task, now) != null
         repository.updateResearchTask(task.id) { it.copy(status = GlobalResearchTaskStatus.SCHEDULED,
-            nextAttemptAtMillis = now + GlobalResearchTaskPolicy.monitorIntervalMillis(it.monitorIntervalMillis),
+            nextAttemptAtMillis = now + if (hasPending) 1_000L else ProactiveAttentionFeedPolicy.MIN_INTERVAL,
             researchPlan = GlobalResearchPlan(), sourceMessageId = 0L, leaseExpiresAtMillis = 0L,
             attemptCount = 0, lastError = reason, updatedAtMillis = now) }
         return GlobalResearchExecutionResult(task.id, GlobalResearchTaskStatus.SCHEDULED, detail = reason)

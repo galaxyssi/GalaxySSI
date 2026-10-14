@@ -27,6 +27,149 @@ import org.junit.runner.RunWith
 class ProactiveAttentionDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
+    @Test fun feedPublishesWithoutAModelAndReviewUpdatesTheSameReadItem() = isolated { context ->
+        val now = System.currentTimeMillis()
+        val topic = AttentionTopic("ai_models", "AI models", "AI models")
+        ProactiveAttentionStore(context).update { it.copy(configured = true, allowPairedModel = false,
+            allowCloudModel = false, topics = it.topics.map { t -> t.copy(enabled = t.id == topic.id) }) }
+        val repository = GlobalAgentRepository(context)
+        val before = GlobalModelCallBudgetStore(context).snapshot(repository.settings()).dispatchesInWindow
+        val article = AttentionFeedArticle("fixture-news", topic.id, "Synthetic release", "Source-provided summary",
+            "https://github.com/example/project/releases", "Publisher", now, now)
+        val feed = ProactiveAttentionFeedStore(context)
+        assertTrue(feed.ingest(article, topic))
+        val original = repository.proactiveMessages().single()
+        assertEquals(GlobalProactiveMessageStatus.DELIVERED, original.status)
+        assertTrue(original.deliveredConversationId.isBlank())
+        assertTrue(original.content.contains(context.getString(R.string.attention_source_summary)))
+        assertFalse(original.urgent)
+        repository.markProactiveViewed(setOf(original.id), now + 1)
+        assertFalse(ProactiveAttentionFeedStore(context).ingest(article, topic))
+        assertEquals(1, repository.proactiveMessages().size)
+        val plan = feed.nextPlan(task("attention-research:ai_models"), now)!!
+        val ledger = GlobalEvidenceLedger(sources = listOf(GlobalEvidenceSource(article.url,
+            GlobalEvidenceSourceKind.OFFICIAL, 1.0, "Publisher")), verified = true)
+        val reviewed = ProactiveAttentionNewsPolicy.Reviewed("Verified fixture", ledger, 1,
+            listOf(ProactiveAttentionNewsPolicy.ReviewedItem("Verified fixture", ledger, false)))
+        feed.finish(task("attention-research:ai_models").copy(researchPlan = plan), reviewed, "test")
+        val updated = GlobalAgentRepository(context).proactiveMessages().single()
+        assertEquals(original.id, updated.id)
+        assertEquals(original.deliveredAtMillis, updated.deliveredAtMillis)
+        assertTrue(updated.viewedAtMillis > 0)
+        assertTrue(updated.content.startsWith("Verified fixture"))
+        assertNull(ProactiveAttentionFeedStore(context).nextPlan(task("attention-research:ai_models"), now))
+        assertEquals(before, GlobalModelCallBudgetStore(context).snapshot(repository.settings()).dispatchesInWindow)
+    }
+
+    @Test fun unavailableOriginalDoesNotRetractTheFeedOrLoopOnTheSameEvidence() = isolated { context ->
+        val now = System.currentTimeMillis()
+        val topic = AttentionTopic("ai_models", "AI models", "AI models")
+        ProactiveAttentionStore(context).update { it.copy(configured = true) }
+        val feed = ProactiveAttentionFeedStore(context)
+        feed.ingest(AttentionFeedArticle("unavailable", topic.id, "Source headline", "",
+            "https://example.org/news", "Source", now, now), topic)
+        val task = task("attention-research:ai_models")
+        feed.finish(task.copy(researchPlan = feed.nextPlan(task, now)!!), null, "source_unavailable")
+        val message = GlobalAgentRepository(context).proactiveMessages().single()
+        assertEquals(GlobalProactiveMessageStatus.DELIVERED, message.status)
+        assertTrue(message.content.contains(context.getString(R.string.attention_not_verified)))
+        assertNull(ProactiveAttentionFeedStore(context).nextPlan(task, now))
+        assertFalse(message.urgent)
+    }
+
+    @Test fun disabledTopicDoesNotReceiveANetworkResultThatArrivesLate() = isolated { context ->
+        val store = ProactiveAttentionStore(context)
+        store.update { it.copy(configured = true, enabled = false) }
+        val now = System.currentTimeMillis()
+        assertFalse(ProactiveAttentionFeedStore(context).ingest(AttentionFeedArticle("disabled", "ai_models",
+            "Headline", "", "https://example.org/news", "Source", now, now),
+            AttentionTopic("ai_models", "AI", "AI")))
+        assertTrue(GlobalAgentRepository(context).proactiveMessages().isEmpty())
+    }
+
+    @Test fun invalidReviewBacksOffDurablyAndDoesNotBlockAnotherArticle() = isolated { context ->
+        val now = System.currentTimeMillis()
+        val topic = AttentionTopic("ai_models", "AI models", "AI models")
+        ProactiveAttentionStore(context).update { it.copy(configured = true) }
+        val feed = ProactiveAttentionFeedStore(context)
+        val article = AttentionFeedArticle("invalid-review", topic.id, "Source headline", "Summary",
+            "https://example.org/invalid-review", "Source", now, now)
+        feed.ingest(article, topic)
+        val task = task("attention-research:ai_models")
+        feed.finish(task.copy(researchPlan = feed.nextPlan(task, now)!!), null, "attention_review_invalid")
+        assertNull(ProactiveAttentionFeedStore(context).nextPlan(task, now + 1000))
+        assertNotNull(ProactiveAttentionFeedStore(context).nextPlan(task, now + 61 * 60_000L))
+        feed.ingest(article.copy(key = "other-article", url = "https://example.org/other"), topic)
+        val next = ProactiveAttentionFeedStore(context).nextPlan(task, now + 1000)!!
+        assertEquals("attention-feed:other-article", next.units.single().id)
+        assertEquals(2, GlobalAgentRepository(context).proactiveMessages().size)
+    }
+
+    @Test fun exhaustedLearningBudgetAndOneFailedSourceDoNotBlockCollection() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        val settings = repository.settings().copy(enabled = true, dailyBackgroundModelCallBudget = 0,
+            dailyBackgroundTokenBudget = 10_000)
+        repository.saveSettings(settings)
+        ProactiveAttentionStore(context).update { it.copy(configured = true,
+            topics = it.topics.map { t -> t.copy(enabled = t.id == "ai_models") }) }
+        val now = System.currentTimeMillis()
+        val budget = GlobalModelCallBudgetStore(context)
+        assertTrue(budget.acquire(GlobalModelCallKind.RESEARCH_EVIDENCE, "exhaust", 60000, settings).granted)
+        budget.complete(GlobalModelCallKind.RESEARCH_EVIDENCE, "exhaust", 10_000, 1, 0, "fixture")
+        assertEquals(GlobalModelCallBudgetDenial.TOKEN_LIMIT, budget.availability(settings).denial)
+        val before = budget.snapshot(settings)
+        val date = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(
+            java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneOffset.UTC))
+        var requests = 0
+        val collector = ProactiveAttentionFeedCollector(context) {
+            requests++
+            if (requests == 1) throw java.io.IOException("offline fixture")
+            "<rss><channel><item><title>Fixture public release</title><link>https://example.org/release</link>" +
+                "<source>Fixture publisher</source><pubDate>$date</pubDate></item></channel></rss>"
+        }
+        val cycle = collector.collect(now)
+        assertEquals(1, cycle.newItems)
+        assertEquals(2, requests)
+        assertEquals(1, repository.proactiveMessages().size)
+        assertEquals(before.totalTokensInWindow, budget.snapshot(settings).totalTokensInWindow)
+        assertEquals(before.dispatchesInWindow, budget.snapshot(settings).dispatchesInWindow)
+        assertEquals(cycle.nextAt, ProactiveAttentionFeedStore(context).topicState("ai_models").optLong("next"))
+        collector.collect(now + 1)
+        assertEquals(2, requests)
+    }
+
+    @Test fun livePublicFeedUsesNoModelAndDoesNotTouchUserTopics() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("attention_live_feed") == "true")
+        isolated { context ->
+            val repository = GlobalAgentRepository(context)
+            repository.saveSettings(repository.settings().copy(enabled = true))
+            ProactiveAttentionStore(context).update { it.copy(configured = true,
+                topics = it.topics.map { t -> t.copy(enabled = t.id == "ai_models") }) }
+            val started = SystemClock.elapsedRealtime()
+            val result = ProactiveAttentionFeedCollector(context).collect()
+            val elapsed = SystemClock.elapsedRealtime() - started
+            assertTrue("No live articles delivered: " + result.error, result.newItems > 0)
+            assertTrue(repository.proactiveMessages().all { it.status == GlobalProactiveMessageStatus.DELIVERED })
+            assertEquals(0, GlobalModelCallBudgetStore(context).snapshot(repository.settings()).dispatchesInWindow)
+            File(instrumentation.targetContext.getExternalFilesDir(null), "attention-feed-live-evidence.json")
+                .writeText(org.json.JSONObject().put("at", System.currentTimeMillis())
+                    .put("new_items", result.newItems).put("elapsed_ms", elapsed).put("model_dispatches", 0)
+                    .put("isolated_fixture", true).toString())
+        }
+    }
+
+    @Test fun publisherCachesKeepTheirOwnBodiesAndExpire() = isolated { context ->
+        val store = ProactiveAttentionFeedStore(context)
+        val now = System.currentTimeMillis()
+        val first = "<rss><channel><title>Technology</title></channel></rss>"
+        val second = "<rss><channel><title>Finance</title></channel></rss>"
+        store.cacheFeed("https://one.example/rss", first, now)
+        store.cacheFeed("https://two.example/rss", second, now)
+        assertEquals(first, ProactiveAttentionFeedStore(context).cachedFeed("https://one.example/rss", now + 1))
+        assertEquals(second, ProactiveAttentionFeedStore(context).cachedFeed("https://two.example/rss", now + 1))
+        assertNull(store.cachedFeed("https://one.example/rss", now + 6 * 60_000L))
+    }
+
     @Test fun subscribedAlertsHonorSelectedModeWithoutUnsolicitedHeuristics() = isolated { context ->
         val store = ProactiveAttentionStore(context)
         store.update { it.copy(configured = true, alertMode = AttentionAlertMode.IMPORTANT) }

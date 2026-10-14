@@ -96,4 +96,9 @@
     <string name="attention_capacity_wait">等待可用的模型并发名额</string>
     <string name="attention_source_wait">原文暂时无法读取，稍后重试，未标记为已核实</string>
     <string name="attention_no_supported_news">最近一批没有证据充分的新消息，其他主题继续排队</string>
+    <string name="attention_source_summary">来源摘要，尚未独立核验</string>
+    <string name="attention_headline_only">已获取标题，尚未阅读全文</string>
+    <string name="attention_not_verified">尚未获得独立确认，保留原始来源</string>
+    <string name="attention_reviewed">已核对原文证据</string>
+    <string name="attention_feed_active">新闻持续采集，深入分析在后台独立进行</string>
 </resources>
