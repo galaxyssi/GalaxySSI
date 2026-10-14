@@ -959,7 +959,7 @@ internal fun MainActivity.refreshGlobalInsightIndicator() {
     } else return
     if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
     navigationContentExecutor.execute {
-        val items = runCatching { runtime.proactiveInboxItems(limit = 100) }.getOrNull()
+        val items = runCatching { runtime.proactiveInboxItems() }.getOrNull()
         handler.post {
             globalInsightCountRefreshInProgress.set(false)
             if (items != null && !isFinishing && !isDestroyed) {

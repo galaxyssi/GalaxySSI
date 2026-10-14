@@ -26,6 +26,121 @@ import org.junit.runner.RunWith
 /** Only isolated synthetic evidence; no provider calls, accounts, trades or existing research tasks. */
 @RunWith(AndroidJUnit4::class)
 class ProactiveAttentionDeviceTest {
+    @Test fun inboxMigratesAndRetainsBeyondThreeHundredAcrossReopenAndRestore() = isolated { context ->
+        val database = AgentEncryptedDatabase(context, GlobalAgentRepository.DATABASE_NAME)
+        val legacy = org.json.JSONArray().apply { repeat(305) { index -> put(JSONObject()
+            .put("id", "legacy-$index").put("source_event_id", "source-$index")
+            .put("content", "fixture-$index").put("status", "DELIVERED").put("target", "NEW_CONVERSATION")
+            .put("created_at_millis", index + 1).put("delivered_at_millis", index + 1)
+            .put("viewed_at_millis", if (index == 0) 1000 else 0)) } }
+        database.writeString("proactive_messages", legacy.toString())
+        val repository = GlobalAgentRepository(context)
+        assertEquals(305, repository.proactiveMessages().size)
+        assertFalse(database.contains("proactive_messages"))
+        repeat(900) { index -> assertTrue(repository.appendProactiveMessage(message().copy(
+            id = "new-$index", sourceEventId = "new-source-$index", status = GlobalProactiveMessageStatus.DELIVERED))) }
+        assertFalse(repository.appendProactiveMessage(message().copy(id = "duplicate", sourceEventId = "source-0")))
+        repository.bindProactiveConversation("legacy-0", "fixture-conversation")
+        repository.reviseProactiveMessage("legacy-0", "reviewed", true)
+        assertEquals(1, repository.markProactiveViewed(setOf("new-0"), 2000))
+        val reopened = GlobalAgentRepository(context)
+        assertEquals(1205, reopened.proactiveMessages().size)
+        assertEquals("fixture-conversation", reopened.proactiveMessage("legacy-0")!!.deliveredConversationId)
+        assertEquals(1000L, reopened.proactiveMessage("legacy-0")!!.viewedAtMillis)
+        assertEquals(2000L, reopened.proactiveMessage("new-0")!!.viewedAtMillis)
+        val snapshot = reopened.exportSnapshot()
+        reopened.clear()
+        reopened.restoreSnapshot(snapshot)
+        assertEquals(1205, reopened.proactiveMessages().size)
+        assertEquals("reviewed", reopened.proactiveMessage("legacy-0")!!.content)
+        assertFalse(reopened.appendProactiveMessage(message().copy(id = "duplicate2", sourceEventId = "source-0")))
+        assertTrue(reopened.appendProactiveMessage(message().copy(id = "case-sensitive", sourceEventId = "SOURCE-0")))
+        val longPrefix = "source".repeat(450)
+        assertTrue(reopened.appendProactiveMessage(message().copy(id = "long-a", sourceEventId = longPrefix + "a")))
+        assertTrue(reopened.appendProactiveMessage(message().copy(id = "long-b", sourceEventId = longPrefix + "b")))
+    }
+
+    @Test fun feedAndEvidenceKeepMoreThanFiveHundredWithoutEvictingSavedArticles() = isolated { context ->
+        val now = System.currentTimeMillis()
+        val topic = AttentionTopic("ai_models", "AI", "AI")
+        val attention = ProactiveAttentionStore(context)
+        attention.update { it.copy(configured = true, topics = listOf(topic)) }
+        val legacyRecord = JSONObject().put("key", "legacy-feed").put("topic", topic.id)
+            .put("title", "Legacy").put("summary", "Fixture").put("url", "https://example.org/legacy")
+            .put("publisher", "Fixture").put("published", now).put("collected", now).put("review", "pending")
+        val feedDatabase = AgentEncryptedDatabase(context, "attention_feed_v1")
+        feedDatabase.writeString("articles", org.json.JSONArray().put(legacyRecord).toString())
+        val evidenceDatabase = AgentEncryptedDatabase(context, GlobalAgentRepository.DATABASE_NAME)
+        evidenceDatabase.writeString("proactive_attention_evidence_v1", JSONObject()
+            .put("legacy-evidence", JSONObject().put("sources", org.json.JSONArray().put(JSONObject().put("url", "https://example.org/legacy"))))
+            .toString())
+        assertNotNull(attention.evidence("legacy-evidence"))
+        val store = ProactiveAttentionFeedStore(context)
+        val first = AttentionFeedArticle("news-0", topic.id, "Fixture", "Summary", "https://example.org/0", "Fixture", now, now)
+        repeat(605) { index -> assertTrue(store.ingest(first.copy(key = "news-$index", url = "https://example.org/$index"), topic)) }
+        val repository = GlobalAgentRepository(context)
+        attention.update { it.copy(savedKeys = setOf("global-agent:attention-feed:news-0")) }
+        assertEquals(605, repository.proactiveMessages().size)
+        assertEquals(606, feedDatabase.countKeys("article:"))
+        assertEquals(606, evidenceDatabase.countKeys("proactive_attention_evidence_row:"))
+        assertFalse(feedDatabase.contains("articles"))
+        assertFalse(evidenceDatabase.contains("proactive_attention_evidence_v1"))
+        val reopened = ProactiveAttentionFeedStore(context)
+        assertFalse(reopened.ingest(first, topic))
+        val message = repository.proactiveMessage("attention-feed:news-0")!!
+        assertNotNull(ProactiveAttentionStore(context).evidence(message.sourceEventId))
+        assertNotNull(ProactiveAttentionStore(context).evidence("legacy-evidence"))
+        val items = GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList())
+        assertEquals(message.id, ProactiveAttentionPaging.page(items, AttentionFeedFilter.SAVED,
+            attention.preferences().savedKeys, 0).items.single().messageIds.single())
+    }
+
+    @Test fun malformedLegacyMigrationRollsBackWithoutLosingOriginalRecords() = isolated { context ->
+        val database = AgentEncryptedDatabase(context, "attention_feed_v1")
+        val legacy = """[{"key":"valid"},{"unexpected":true}]"""
+        database.writeString("articles", legacy)
+        val rows = ProactiveRecordRows(database, "article:", "articles", { it.getString("key") })
+        assertTrue(runCatching { rows.all().toList() }.isFailure)
+        assertEquals(legacy, database.readString("articles", ""))
+        assertEquals(0, database.countKeys("article:"))
+    }
+
+    @Test fun pagedDiscoveriesReachOldItemsAndKeepOnlyVisibleRowsAttached() {
+        val context = instrumentation.targetContext
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(context, ProactiveAttentionActivity::class.java)).use { scenario ->
+            await(scenario) { views(it).any { view -> view.tag == "attention-page-count" } }
+            scenario.onActivity { activity ->
+                val fixture = GlobalProactiveInboxPolicy.project((1..1005).map { index -> message().copy(
+                    id = "ui-$index", sourceEventId = "ui-$index", title = "Fixture $index", content = "Fixture $index",
+                    status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = index.toLong()) }, emptyList())
+                ProactiveAttentionActivity::class.java.getDeclaredField("items").apply { isAccessible = true }.set(activity, fixture)
+                ProactiveAttentionActivity::class.java.getDeclaredField("page").apply { isAccessible = true }
+                    .set(activity, AttentionInboxPage(index = 50))
+                ProactiveAttentionActivity::class.java.getDeclaredMethod("render", Boolean::class.javaPrimitiveType)
+                    .apply { isAccessible = true }.invoke(activity, true)
+            }
+            await(scenario) { views(it).filterIsInstance<TextView>().any { view ->
+                view.tag == "attention-page-count" && view.text.toString() == context.getString(R.string.attention_page_count, 51, 51, 1005)
+            } }
+            scenario.onActivity { activity ->
+                val recycler = views(activity.window.decorView).filterIsInstance<androidx.recyclerview.widget.RecyclerView>().single()
+                assertEquals(7, recycler.adapter!!.itemCount)
+                assertTrue(recycler.childCount < 7)
+                assertFalse(views(activity.window.decorView).first { it.contentDescription == context.getString(R.string.attention_next_page) }.isEnabled)
+                assertTrue(views(activity.window.decorView).any { it.tag == "attention-item:global-agent:ui-5" })
+                views(activity.window.decorView).first { it.contentDescription == context.getString(R.string.attention_previous_page) }.performClick()
+            }
+            await(scenario) { views(it).filterIsInstance<TextView>().any { view ->
+                view.tag == "attention-page-count" && view.text.toString() == context.getString(R.string.attention_page_count, 50, 51, 1005)
+            } }
+            scenario.onActivity { activity ->
+                val recycler = views(activity.window.decorView).filterIsInstance<androidx.recyclerview.widget.RecyclerView>().single()
+                assertEquals(22, recycler.adapter!!.itemCount)
+                assertTrue(recycler.childCount < 10)
+            }
+        }
+    }
+
     @Test fun streamedNewStoryAndReplayProduceOneInboxItem() = isolated { context ->
         val topic = AttentionTopic("ai_models", "AI", "AI")
         ProactiveAttentionStore(context).update { it.copy(configured = true, topics = listOf(topic)) }

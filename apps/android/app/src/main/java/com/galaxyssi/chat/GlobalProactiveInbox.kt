@@ -24,7 +24,7 @@ object GlobalProactiveInboxPolicy {
     fun project(
         messages: List<GlobalProactiveMessage>,
         feedback: List<GlobalAgentFeedback>,
-        limit: Int = 50
+        limit: Int = Int.MAX_VALUE
     ): List<GlobalProactiveInboxItem> {
         if (limit <= 0) return emptyList()
         val feedbackByMessage = feedback
@@ -41,7 +41,7 @@ object GlobalProactiveInboxPolicy {
                     .thenByDescending { it.deliveredAtMillis }
                     .thenByDescending { it.createdAtMillis }
             )
-            .take(limit.coerceIn(1, 100))
+            .take(limit)
             .toList()
     }
 
