@@ -71,10 +71,6 @@ jobs:
         with:
           node-version: 22
 
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -88,6 +84,14 @@ jobs:
           sudo apt-get install --yes \
             bc bison build-essential cpio file flex libelf-dev libncurses-dev libssl-dev \
             llvm make openssl patchelf python3 qemu-user rsync squashfs-tools unzip wget xz-utils
+
+      # Register container-safe static interpreters after apt installs host QEMU.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Verify ARM64 container execution
+        run: docker run --rm --platform linux/arm64 ubuntu:24.04 bash -c 'test "$(uname -m)" = aarch64'
 
       - name: Prepare runtime signing identity
         env:
