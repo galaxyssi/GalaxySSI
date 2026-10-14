@@ -201,6 +201,7 @@ jobs:
             fi
             rm -f "$log_file"
           }
+          run_pack "FFmpeg" npm run runtime:build-ffmpeg
           run_pack "Node.js" npm run runtime:build-node-js
           run_pack "Go" npm run runtime:build-go
           run_pack "C and C++" npm run runtime:build-cpp
@@ -209,7 +210,6 @@ jobs:
           run_pack "Gradle" npm run runtime:build-gradle
           run_pack "Android SDK" npm run runtime:build-android-sdk
           run_pack "Browser automation" npm run runtime:build-browser-automation
-          run_pack "FFmpeg" npm run runtime:build-ffmpeg
 
       - name: Save optional software image cache
         if: steps.optional-images-cache.outputs.cache-hit != 'true'
