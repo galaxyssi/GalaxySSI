@@ -157,6 +157,7 @@ object ProactiveAttentionPolicy {
 class ProactiveAttentionStore(context: Context) {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(appContext, GlobalAgentRepository.DATABASE_NAME)
+    private val evidenceRows = ProactiveRecordRows(database, "proactive_attention_evidence_row:", EVIDENCE, { "" }, legacyObject = true)
 
     fun preferences(): AttentionPreferences = synchronized(LOCK) {
         val root = runCatching { JSONObject(database.readString(KEY, "{}")) }.getOrDefault(JSONObject())
@@ -186,16 +187,11 @@ class ProactiveAttentionStore(context: Context) {
     }
 
     fun saveEvidence(task: GlobalResearchTask, important: Boolean) = synchronized(LOCK) {
-        val records = runCatching { JSONObject(database.readString(EVIDENCE, "{}")) }.getOrDefault(JSONObject())
-        records.put(eventId(task), JSONObject().put("topic_id", task.id.removePrefix(ProactiveAttentionPolicy.TASK_PREFIX))
+        evidenceRows.put(eventId(task), JSONObject().put("topic_id", task.id.removePrefix(ProactiveAttentionPolicy.TASK_PREFIX))
             .put("important", important).put("at", task.updatedAtMillis)
             .put("sources", JSONArray().apply { task.evidenceLedger.sources.forEach { source -> put(JSONObject()
                 .put("url", source.uri).put("title", source.authority.ifBlank { source.uri })
                 .put("published", source.publishedAtMillis).put("retrieved", source.retrievedAtMillis)) } }))
-        // Match the bounded inbox retention without deleting research evidence from its original store.
-        val keys = records.keys().asSequence().toList().sortedByDescending { records.optJSONObject(it)?.optLong("at") ?: 0L }
-        keys.drop(500).forEach(records::remove)
-        database.writeString(EVIDENCE, records.toString())
     }
 
     fun allows(message: GlobalProactiveMessage): Boolean {
@@ -213,7 +209,7 @@ class ProactiveAttentionStore(context: Context) {
     }
 
     fun evidence(eventId: String): JSONObject? = synchronized(LOCK) {
-        runCatching { JSONObject(database.readString(EVIDENCE, "{}")).optJSONObject(eventId) }.getOrNull()
+        evidenceRows.get(eventId)
     }
 
     companion object {

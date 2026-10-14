@@ -1,7 +1,6 @@
 package com.galaxyssi.chat
 
 import android.content.Context
-import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneOffset
@@ -11,26 +10,19 @@ class ProactiveAttentionFeedStore(context: Context) {
     private val context = context.applicationContext
     private val database = AgentEncryptedDatabase(this.context, "attention_feed_v1")
     private val repository = GlobalAgentRepository(this.context)
-
-    private fun records(): List<JSONObject> = JSONArray(database.readString("articles", "[]")).let { array ->
-        (0 until array.length()).mapNotNull(array::optJSONObject)
-    }
-
-    private fun save(records: List<JSONObject>) = database.writeString("articles",
-        JSONArray(records.sortedByDescending { it.optLong("collected") }.take(500)).toString())
+    private val rows = ProactiveRecordRows(database, "article:", "articles", { it.getString("key") })
 
     fun ingest(article: AttentionFeedArticle, topic: AttentionTopic): Boolean = synchronized(LOCK) {
         if (!ProactiveAttentionPolicy.shouldCollect(ProactiveAttentionStore(context).preferences(), topic.id)) return false
-        val all = records()
-        val previous = all.firstOrNull { it.optString("key") == article.key }
+        val previous = rows.get(article.key)
         val record = previous ?: JSONObject().put("key", article.key).put("topic", article.topicId)
             .put("title", article.title).put("summary", article.summary).put("url", article.url)
             .put("publisher", article.publisher).put("published", article.publishedAt)
             .put("discovery_date", article.discoveryDate)
             .put("collected", article.collectedAt).put("review", "pending")
-        if (previous == null) save(all + record)
+        if (previous == null) rows.put(article.key, record)
         // Replays repair a crash between durable collection and inbox publication.
-        if (previous == null || repository.proactiveMessages().none { it.id == messageId(record) })
+        if (previous == null || repository.proactiveMessage(messageId(record)) == null)
             publish(record, topic.title)
         previous == null
     }
@@ -65,10 +57,10 @@ class ProactiveAttentionFeedStore(context: Context) {
 
     fun nextPlan(task: GlobalResearchTask, now: Long): GlobalResearchPlan? = synchronized(LOCK) {
         val topic = task.id.removePrefix(ProactiveAttentionPolicy.TASK_PREFIX)
-        val pending = records().filter { it.optString("topic") == topic &&
+        val pending = rows.all().filter { it.optString("topic") == topic &&
             (it.optString("review") == "pending" || it.optString("review") == "deferred" && it.optLong("retry_at") <= now) &&
             it.optLong("published") >= now - 7 * ProactiveAttentionNewsPolicy.DAY }
-            .sortedByDescending { it.optLong("published") }.take(2)
+            .sortedByDescending { it.optLong("published") }.take(2).toList()
         if (pending.isEmpty()) return null
         GlobalResearchPlan(id = UUID.randomUUID().toString(), depth = task.depth,
             phase = GlobalResearchPlanPhase.COLLECTING, createdAtMillis = now, updatedAtMillis = now,
@@ -88,14 +80,13 @@ class ProactiveAttentionFeedStore(context: Context) {
         val keys = task.researchPlan.units.filter { it.id.startsWith(ProactiveAttentionFeedPolicy.UNIT_PREFIX) }
             .map { it.id.removePrefix(ProactiveAttentionFeedPolicy.UNIT_PREFIX) }.toSet()
         if (keys.isEmpty()) return
-        val all = records()
-        all.filter { it.optString("key") in keys }.forEach { record ->
+        keys.mapNotNull(rows::get).forEach { record ->
             val url = GlobalEvidenceEvaluator.canonicalUri(record.optString("url"))
             val item = reviewed?.items?.firstOrNull { result -> result.ledger.sources.any { it.uri == url } }
             val retryable = item == null && reason in setOf("attention_source_read_unavailable", "attention_review_failed",
                 "attention_review_invalid")
             val state = if (item != null) "reviewed" else if (retryable) "deferred" else "unverified"
-            val current = repository.proactiveMessages().firstOrNull { it.id == messageId(record) }
+            val current = repository.proactiveMessage(messageId(record))
             if (current != null && current.status != GlobalProactiveMessageStatus.DISMISSED) {
                 val text = if (item == null) current.content.replace(
                     context.getString(R.string.attention_source_summary),
@@ -121,8 +112,8 @@ class ProactiveAttentionFeedStore(context: Context) {
                     .coerceAtMost(ProactiveAttentionFeedPolicy.MAX_INTERVAL)
                 record.put("retry_delay", delay).put("retry_at", System.currentTimeMillis() + delay)
             }
+            rows.put(record.getString("key"), record)
         }
-        save(all)
         GlobalProactiveDeliveryBus.signalReady()
     }
 

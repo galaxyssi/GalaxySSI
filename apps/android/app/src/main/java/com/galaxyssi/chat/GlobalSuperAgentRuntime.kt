@@ -60,6 +60,7 @@ data class GlobalPromptContextSnapshot(
 class GlobalAgentRepository(context: Context) {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(appContext, DATABASE_NAME)
+    private val proactiveMessageStore = GlobalProactiveMessageStore(database, ::encodeProactiveMessage, ::decodeProactiveMessage)
     private val deliberationStore = GlobalAgentDeliberationStore(appContext)
     private val longHorizonStore = GlobalLongHorizonGoalStore(appContext)
     private val topicGraphStore = GlobalTopicProjectGraphStore(appContext)
@@ -502,41 +503,28 @@ class GlobalAgentRepository(context: Context) {
 
     fun proactiveMessages(): List<GlobalProactiveMessage> = synchronized(STORE_LOCK) { loadProactiveMessages() }
 
+    fun proactiveMessage(id: String): GlobalProactiveMessage? = synchronized(STORE_LOCK) { proactiveMessageStore.get(id) }
+
     fun saveProactiveMessages(messages: List<GlobalProactiveMessage>) = synchronized(STORE_LOCK) {
-        val array = JSONArray()
-        messages.sortedBy(GlobalProactiveMessage::createdAtMillis).takeLast(MAX_PROACTIVE_MESSAGES)
-            .forEach { array.put(encodeProactiveMessage(it)) }
-        database.writeString(KEY_PROACTIVE_MESSAGES, array.toString())
+        proactiveMessageStore.replace(messages)
     }
 
     fun appendProactiveMessage(message: GlobalProactiveMessage): Boolean = synchronized(STORE_LOCK) {
-        val messages = loadProactiveMessages()
-        if (messages.any {
-                it.id == message.id ||
-                    message.sourceEventId.isNotBlank() && it.sourceEventId == message.sourceEventId
-            }
-        ) {
-            return@synchronized false
-        }
-        saveProactiveMessages(messages + message)
-        true
+        proactiveMessageStore.append(message)
     }
 
     fun reviseProactiveMessage(id: String, content: String, important: Boolean): Boolean = synchronized(STORE_LOCK) {
-        val messages = loadProactiveMessages()
-        val previous = messages.firstOrNull { it.id == id } ?: return false
+        val previous = proactiveMessageStore.get(id) ?: return false
         if (previous.status == GlobalProactiveMessageStatus.DISMISSED) return false
         if (previous.content == content && previous.urgent == important) return false
         val updated = previous.copy(content = content, urgent = important,
             notifiedAtMillis = if (important && !previous.urgent) 0L else previous.notifiedAtMillis)
-        saveProactiveMessages(messages.map { if (it.id == id) updated else it })
+        proactiveMessageStore.put(updated)
         true
     }
 
     fun bindProactiveConversation(id: String, conversationId: String) = synchronized(STORE_LOCK) {
-        saveProactiveMessages(loadProactiveMessages().map {
-            if (it.id == id) it.copy(deliveredConversationId = conversationId) else it
-        })
+        proactiveMessageStore.get(id)?.let { proactiveMessageStore.put(it.copy(deliveredConversationId = conversationId)) }
     }
 
     fun claimProactiveMessages(
@@ -692,10 +680,10 @@ class GlobalAgentRepository(context: Context) {
 
     fun markProactiveViewed(messageIds: Set<String>, nowMillis: Long): Int = synchronized(STORE_LOCK) {
         if (messageIds.isEmpty() || nowMillis <= 0L) return@synchronized 0
-        val messages = loadProactiveMessages()
+        val messages = messageIds.mapNotNull(proactiveMessageStore::get)
         val updated = GlobalProactiveInboxPolicy.markViewed(messages, messageIds, nowMillis)
         val changed = updated.indices.count { index -> updated[index] != messages[index] }
-        if (changed > 0) saveProactiveMessages(updated)
+        updated.indices.filter { updated[it] != messages[it] }.forEach { proactiveMessageStore.put(updated[it]) }
         changed
     }
 
@@ -852,7 +840,7 @@ class GlobalAgentRepository(context: Context) {
         payload.optJSONArray("proactive_messages")?.let { array ->
             saveProactiveMessages(buildList {
                 for (index in 0 until array.length()) decodeProactiveMessage(array.optJSONObject(index))?.let(::add)
-            }.takeLast(MAX_PROACTIVE_MESSAGES))
+            })
         }
         payload.optJSONObject("intervention_history")?.let {
             saveInterventionHistory(decodeInterventionHistory(it.toString()))
@@ -999,12 +987,7 @@ class GlobalAgentRepository(context: Context) {
         }
     }.getOrDefault(emptyList())
 
-    private fun loadProactiveMessages(): List<GlobalProactiveMessage> = runCatching {
-        val array = JSONArray(database.readString(KEY_PROACTIVE_MESSAGES, "[]"))
-        buildList {
-            for (index in 0 until array.length()) decodeProactiveMessage(array.optJSONObject(index))?.let(::add)
-        }
-    }.getOrDefault(emptyList())
+    private fun loadProactiveMessages(): List<GlobalProactiveMessage> = proactiveMessageStore.all()
 
     private fun loadFeedback(): List<GlobalAgentFeedback> = runCatching {
         val array = JSONArray(database.readString(KEY_FEEDBACK, "[]"))
@@ -1744,7 +1727,6 @@ class GlobalAgentRepository(context: Context) {
         private const val KEY_CONTEXT_JOURNAL_RECORD_PREFIX = "conversation_context_journal_v2:"
         private const val KEY_WORLD = "personal_world_model"
         private const val KEY_RESEARCH_TASKS = "research_tasks"
-        private const val KEY_PROACTIVE_MESSAGES = "proactive_messages"
         private const val KEY_INTERVENTION_HISTORY = "intervention_history"
         private const val KEY_SETTINGS = "settings"
         private const val KEY_PERSISTENT_CONTEXT_SYNC_VERSION = "persistent_context_sync_version"
@@ -1756,7 +1738,6 @@ class GlobalAgentRepository(context: Context) {
         private const val MAX_DEAD_LETTERS = 1_000
         private const val MAX_PROCESS_BATCH = 250
         private const val MAX_RESEARCH_TASKS = 300
-        private const val MAX_PROACTIVE_MESSAGES = 300
         private const val MAX_FEEDBACK_ITEMS = 800
         private const val MAX_COUNTED_DELIVERY_GROUPS = 800
         private const val MAX_CONVERSATION_TOMBSTONES = 500
@@ -2840,7 +2821,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                     .thenBy(GlobalProactiveMessage::createdAtMillis)
             )
 
-    fun proactiveInboxItems(limit: Int = 50): List<GlobalProactiveInboxItem> =
+    fun proactiveInboxItems(limit: Int = Int.MAX_VALUE): List<GlobalProactiveInboxItem> =
         GlobalProactiveInboxPolicy.project(
             messages = repository.proactiveMessages(),
             feedback = repository.feedback(),
@@ -2848,7 +2829,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         )
 
     fun newProactiveInsightCount(): Int =
-        GlobalProactiveInboxPolicy.newCount(proactiveInboxItems(limit = 100))
+        GlobalProactiveInboxPolicy.newCount(proactiveInboxItems())
 
     fun markProactiveInboxViewed(messageIds: Set<String>): Int =
         repository.markProactiveViewed(messageIds, System.currentTimeMillis())

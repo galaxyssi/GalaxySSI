@@ -6,6 +6,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlobalProactiveInboxTest {
+    @Test fun allFindingsAndUnreadCountsSurviveFormerLimits() {
+        val messages = (1..1205).map { message("item-$it").copy(deliveredAtMillis = it.toLong()) }
+        val items = GlobalProactiveInboxPolicy.project(messages, emptyList())
+        assertEquals(1205, items.size)
+        assertEquals(1205, GlobalProactiveInboxPolicy.newCount(items))
+        assertEquals(257, GlobalProactiveInboxPolicy.project(messages, emptyList(), 257).size)
+        assertTrue(GlobalProactiveInboxPolicy.project(messages, emptyList(), 0).isEmpty())
+        val pages = (0..60).map { ProactiveAttentionPaging.page(items, AttentionFeedFilter.ALL, emptySet(), it) }
+        assertEquals(items.map { it.key }, pages.flatMap { it.items }.map { it.key })
+        assertTrue(pages.all { it.items.size <= 20 && it.total == 1205 && it.pages == 61 })
+        assertEquals(5, pages.last().items.size)
+        val saved = ProactiveAttentionPaging.page(items, AttentionFeedFilter.SAVED, setOf(items.last().key), 60)
+        assertEquals(items.last(), saved.items.single())
+        assertEquals(0, saved.index)
+        assertEquals(1, saved.total)
+    }
+
+    @Test fun pagingFiltersBeforeSlicingAndClampsEmptyOrRemovedPages() {
+        val items = GlobalProactiveInboxPolicy.project((1..501).map {
+            message("item-$it").copy(urgent = it % 2 == 0, viewedAtMillis = if (it % 3 == 0) 1 else 0)
+        }, emptyList())
+        val important = ProactiveAttentionPaging.page(items, AttentionFeedFilter.IMPORTANT, emptySet(), 12)
+        assertEquals(250, important.total)
+        assertEquals(10, important.items.size)
+        assertTrue(important.items.all { it.urgent })
+        assertEquals(334, ProactiveAttentionPaging.page(items, AttentionFeedFilter.UNREAD, emptySet(), 0).total)
+        val empty = ProactiveAttentionPaging.page(items, AttentionFeedFilter.SAVED, emptySet(), 30)
+        assertEquals(AttentionInboxPage(), empty)
+        assertEquals(0, ProactiveAttentionPaging.page(items, AttentionFeedFilter.ALL, emptySet(), -1).index)
+    }
+
     @Test
     fun deliveredFindingsBecomeUserVisibleInboxItems() {
         val items = GlobalProactiveInboxPolicy.project(
