@@ -91,8 +91,10 @@ class ProactiveAttentionDeviceTest {
         assertNotNull(ProactiveAttentionStore(context).evidence(message.sourceEventId))
         assertNotNull(ProactiveAttentionStore(context).evidence("legacy-evidence"))
         val items = GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList())
-        assertEquals(message.id, ProactiveAttentionPaging.page(items, AttentionFeedFilter.SAVED,
-            attention.preferences().savedKeys, 0).items.single().messageIds.single())
+        val timeline = ProactiveAttentionTimeline().apply {
+            update(items, attention.preferences().savedKeys); begin(AttentionFeedFilter.SAVED)
+        }
+        assertEquals(message.id, timeline.visible.single().messageIds.single())
     }
 
     @Test fun malformedLegacyMigrationRollsBackWithoutLosingOriginalRecords() = isolated { context ->
@@ -105,38 +107,134 @@ class ProactiveAttentionDeviceTest {
         assertEquals(0, database.countKeys("article:"))
     }
 
-    @Test fun pagedDiscoveriesReachOldItemsAndKeepOnlyVisibleRowsAttached() {
-        val context = instrumentation.targetContext
-        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(context, ProactiveAttentionActivity::class.java)).use { scenario ->
-            await(scenario) { views(it).any { view -> view.tag == "attention-page-count" } }
-            scenario.onActivity { activity ->
-                val fixture = GlobalProactiveInboxPolicy.project((1..1005).map { index -> message().copy(
-                    id = "ui-$index", sourceEventId = "ui-$index", title = "Fixture $index", content = "Fixture $index",
-                    status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = index.toLong()) }, emptyList())
-                ProactiveAttentionActivity::class.java.getDeclaredField("items").apply { isAccessible = true }.set(activity, fixture)
-                ProactiveAttentionActivity::class.java.getDeclaredField("page").apply { isAccessible = true }
-                    .set(activity, AttentionInboxPage(index = 50))
-                ProactiveAttentionActivity::class.java.getDeclaredMethod("render", Boolean::class.javaPrimitiveType)
-                    .apply { isAccessible = true }.invoke(activity, true)
+    @Test fun continuousReaderKeepsExpandedContentAndAnchorWhileNewStoriesArrive() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        repeat(65) { index -> repository.appendProactiveMessage(message().copy(id = "reader-$index",
+            sourceEventId = "reader-$index", title = "Fixture $index", content = "**Fixture $index**\n\nBody $index",
+            status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = index + 1L)) }
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        var reader: ProactiveAttentionReader? = null
+        var asks = 0
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            try {
+                scenario.onActivity { activity ->
+                    val original = ProactiveAttentionActivity::class.java.getDeclaredField("reader").apply { isAccessible = true }
+                        .get(activity) as ProactiveAttentionReader
+                    original.pause()
+                    reader = ProactiveAttentionReader(activity, worker, { asks++ }, {}, { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.update(GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList()),
+                        emptySet(), AttentionReaderState())
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-item:global-agent:reader-64" } }
+                var body: View? = null
+                var initialTop = 0
+                scenario.onActivity {
+                    assertFalse(views(it.window.decorView).any { view -> view.tag == "attention-page-count" })
+                    reader!!.list.scrollBy(0, 40)
+                    val row = views(it.window.decorView).filterIsInstance<ProactiveAttentionArticleView>().first()
+                    row.readable.performClick()
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-expanded:global-agent:reader-64" } }
+                scenario.onActivity {
+                    body = views(it.window.decorView).first { view -> view.tag == "attention-expanded:global-agent:reader-64" }
+                    initialTop = reader!!.list.getChildAt(0).top
+                }
+                repository.appendProactiveMessage(message().copy(id = "reader-new", sourceEventId = "reader-new",
+                    title = "New fixture", status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = 1000))
+                repository.reviseProactiveMessage("reader-64", "New reviewed body", false)
+                scenario.onActivity {
+                    reader!!.update(GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList()),
+                        emptySet(), AttentionReaderState())
+                    assertEquals("global-agent:reader-64", reader!!.timeline.visible.first().key)
+                    assertEquals(1, reader!!.timeline.newerCount)
+                    assertSame(body, views(it.window.decorView).first { view -> view.tag == "attention-expanded:global-agent:reader-64" })
+                    assertEquals(initialTop, reader!!.list.getChildAt(0).top)
+                    assertEquals(0, asks)
+                    reader!!.pause()
+                    reader!!.persist()
+                }
+                worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                val restored = ProactiveAttentionReaderStateStore(context).read()
+                assertTrue("global-agent:reader-64" in restored.expanded)
+                assertEquals("global-agent:reader-64", restored.anchor)
+                scenario.onActivity { activity ->
+                    reader!!.destroy()
+                    reader = ProactiveAttentionReader(activity, worker, { asks++ }, {}, { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.update(GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList()), emptySet(), restored)
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-expanded:global-agent:reader-64" } }
+                scenario.onActivity {
+                    assertEquals(initialTop, reader!!.list.getChildAt(0).top)
+                    assertTrue(reader!!.timeline.expanded.contains(restored.anchor))
+                    (reader!!.list.layoutManager as androidx.recyclerview.widget.LinearLayoutManager).scrollToPositionWithOffset(19, 0)
+                }
+                instrumentation.waitForIdleSync()
+                scenario.onActivity { reader!!.list.scrollBy(0, 80) }
+                await(scenario) { reader!!.timeline.visible.size > 20 }
+                scenario.onActivity {
+                    assertTrue(reader!!.list.childCount < 12)
+                    assertEquals(0, asks)
+                    (reader!!.list.layoutManager as androidx.recyclerview.widget.LinearLayoutManager).scrollToPositionWithOffset(0, -40)
+                }
+                instrumentation.waitForIdleSync()
+                scenario.onActivity { views(it.window.decorView).first { view -> view.tag == "attention-reader-updates" }.performClick() }
+                worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                assertEquals("global-agent:reader-64", ProactiveAttentionReaderStateStore(context).read().anchor)
+                instrumentation.waitForIdleSync()
+                scenario.onActivity {
+                    views(it.window.decorView).first { view -> view.tag == "attention-collapse:global-agent:reader-64" }.performClick()
+                }
+                worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                assertEquals(0, ProactiveAttentionReaderStateStore(context).read().offset)
+            } finally {
+                scenario.onActivity { reader?.pause(); reader?.destroy() }
+                worker.shutdown(); assertTrue(worker.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS))
             }
-            await(scenario) { views(it).filterIsInstance<TextView>().any { view ->
-                view.tag == "attention-page-count" && view.text.toString() == context.getString(R.string.attention_page_count, 51, 51, 1005)
-            } }
-            scenario.onActivity { activity ->
-                val recycler = views(activity.window.decorView).filterIsInstance<androidx.recyclerview.widget.RecyclerView>().single()
-                assertEquals(7, recycler.adapter!!.itemCount)
-                assertTrue(recycler.childCount < 7)
-                assertFalse(views(activity.window.decorView).first { it.contentDescription == context.getString(R.string.attention_next_page) }.isEnabled)
-                assertTrue(views(activity.window.decorView).any { it.tag == "attention-item:global-agent:ui-5" })
-                views(activity.window.decorView).first { it.contentDescription == context.getString(R.string.attention_previous_page) }.performClick()
-            }
-            await(scenario) { views(it).filterIsInstance<TextView>().any { view ->
-                view.tag == "attention-page-count" && view.text.toString() == context.getString(R.string.attention_page_count, 50, 51, 1005)
-            } }
-            scenario.onActivity { activity ->
-                val recycler = views(activity.window.decorView).filterIsInstance<androidx.recyclerview.widget.RecyclerView>().single()
-                assertEquals(22, recycler.adapter!!.itemCount)
-                assertTrue(recycler.childCount < 10)
+        }
+    }
+
+    @Test fun readerAutomaticallyMarksVisibleNewsAndBookmarkCanBeUndone() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        repository.appendProactiveMessage(message().copy(id = "reader-auto", sourceEventId = "reader-auto",
+            title = "Reader fixture", content = "Visible synthetic summary.", status = GlobalProactiveMessageStatus.DELIVERED,
+            deliveredAtMillis = 1000))
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        var reader: ProactiveAttentionReader? = null
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            try {
+                scenario.onActivity { activity ->
+                    (ProactiveAttentionActivity::class.java.getDeclaredField("reader").apply { isAccessible = true }
+                        .get(activity) as ProactiveAttentionReader).pause()
+                    reader = ProactiveAttentionReader(activity, worker, { fail("Reading must not launch Agent") }, {},
+                        { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.update(GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList()),
+                        emptySet(), AttentionReaderState(filter = AttentionFeedFilter.UNREAD))
+                    reader!!.resume()
+                }
+                await(scenario) { reader!!.timeline.unreadCount == 0 }
+                assertTrue(repository.proactiveMessage("reader-auto")!!.viewedAtMillis > 0)
+                scenario.onActivity {
+                    assertEquals(1, reader!!.timeline.visible.size)
+                    views(it.window.decorView).first { view -> view.contentDescription == it.getString(R.string.attention_save) }.performClick()
+                }
+                await(scenario) { ProactiveAttentionStore(context).preferences().savedKeys.isNotEmpty() &&
+                    views(it).filterIsInstance<TextView>().any { view -> view.text == context.getString(R.string.attention_undo) } }
+                scenario.onActivity {
+                    val bookmark = views(it.window.decorView).first { view -> view.contentDescription == it.getString(R.string.attention_unsave) }
+                    assertTrue(bookmark.isSelected)
+                    views(it.window.decorView).filterIsInstance<TextView>().first { view -> view.text == it.getString(R.string.attention_undo) }.performClick()
+                }
+                await(scenario) { ProactiveAttentionStore(context).preferences().savedKeys.isEmpty() }
+                scenario.onActivity {
+                    reader!!.pause()
+                    assertEquals(1, reader!!.timeline.visible.size)
+                }
+            } finally {
+                scenario.onActivity { reader?.pause(); reader?.destroy() }
+                worker.shutdown(); assertTrue(worker.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS))
             }
         }
     }

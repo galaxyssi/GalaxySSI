@@ -189,6 +189,7 @@ class ProactiveAttentionStore(context: Context) {
     fun saveEvidence(task: GlobalResearchTask, important: Boolean) = synchronized(LOCK) {
         evidenceRows.put(eventId(task), JSONObject().put("topic_id", task.id.removePrefix(ProactiveAttentionPolicy.TASK_PREFIX))
             .put("important", important).put("at", task.updatedAtMillis)
+            .put("verified", task.evidenceLedger.verified)
             .put("sources", JSONArray().apply { task.evidenceLedger.sources.forEach { source -> put(JSONObject()
                 .put("url", source.uri).put("title", source.authority.ifBlank { source.uri })
                 .put("published", source.publishedAtMillis).put("retrieved", source.retrievedAtMillis)) } }))

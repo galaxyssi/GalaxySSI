@@ -7,7 +7,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.os.Parcelable
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -19,8 +18,6 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,10 +31,9 @@ class ProactiveAttentionActivity : Activity() {
     private lateinit var runtime: GlobalSuperAgentRuntime
     private lateinit var body: LinearLayout
     private lateinit var scroll: ScrollView
-    private lateinit var feed: RecyclerView
-    private lateinit var feedAdapter: ProactiveAttentionFeedAdapter
-    private var feedPosition: Parcelable? = null
-    private var page = AttentionInboxPage()
+    private lateinit var reader: ProactiveAttentionReader
+    private lateinit var readerStateStore: ProactiveAttentionReaderStateStore
+    private var readerState = AttentionReaderState()
     private lateinit var title: TextView
     private lateinit var trailing: ImageButton
     private var preferences = AttentionPreferences()
@@ -47,22 +43,19 @@ class ProactiveAttentionActivity : Activity() {
     private var tasks = emptyList<GlobalResearchTask>()
     private var feedLastPoll = 0L
     private var settingsPage = false
-    private var filter = AttentionFeedFilter.ALL
     private var revision = 0
     private var reloadRunning = false
     private var reloadQueued = false
     private var started = false
+    private var collectionRequested = false
     private val pageHistory = mutableListOf<Boolean>()
     private val listener = GlobalProactiveDeliveryListener { runOnUiThread { if (started) reload() } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settingsPage = savedInstanceState?.getBoolean("settings") ?: intent.getBooleanExtra("settings", false)
-        filter = runCatching { AttentionFeedFilter.valueOf(savedInstanceState?.getString("filter").orEmpty()) }
-            .getOrDefault(AttentionFeedFilter.ALL)
         savedInstanceState?.getBooleanArray("pages")?.forEach(pageHistory::add)
-        feedPosition = savedInstanceState?.getParcelable("feed_position")
-        page = AttentionInboxPage(index = savedInstanceState?.getInt("feed_page") ?: 0)
+        readerStateStore = ProactiveAttentionReaderStateStore(applicationContext)
         store = ProactiveAttentionStore(applicationContext)
         runtime = GlobalSuperAgentRuntime.get(applicationContext)
         window.statusBarColor = getColor(R.color.page_bg)
@@ -72,13 +65,13 @@ class ProactiveAttentionActivity : Activity() {
 
     override fun onStart() { super.onStart(); started = true; GlobalProactiveDeliveryBus.addListener(listener); reload() }
     override fun onStop() { started = false; GlobalProactiveDeliveryBus.removeListener(listener); super.onStop() }
-    override fun onDestroy() { worker.shutdown(); super.onDestroy() }
+    override fun onResume() { super.onResume(); reader.resume() }
+    override fun onPause() { reader.pause(); super.onPause() }
+    override fun onDestroy() { reader.destroy(); worker.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("settings", settingsPage)
-        outState.putString("filter", filter.name)
         outState.putBooleanArray("pages", pageHistory.toBooleanArray())
-        outState.putParcelable("feed_position", feed.layoutManager?.onSaveInstanceState())
-        outState.putInt("feed_page", page.index)
+        reader.persist()
         super.onSaveInstanceState(outState)
     }
 
@@ -88,7 +81,10 @@ class ProactiveAttentionActivity : Activity() {
         else super.onBackPressed()
     }
 
-    private fun navigate(settings: Boolean) { pageHistory += settingsPage; settingsPage = settings; render(resetScroll = true) }
+    private fun navigate(settings: Boolean) {
+        if (!settingsPage) reader.persist()
+        pageHistory += settingsPage; settingsPage = settings; render(resetScroll = true)
+    }
 
     private fun layout() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -96,7 +92,8 @@ class ProactiveAttentionActivity : Activity() {
         val bar = horizontal()
         bar.setBackgroundColor(getColor(R.color.surface_bg))
         bar.addView(icon(R.drawable.ic_navigation_back, android.R.string.cancel) { onBackPressed() })
-        title = text("", 18f, true).apply { gravity = Gravity.CENTER }
+        title = text(getString(if (settingsPage) R.string.attention_title else R.string.attention_discoveries), 18f, true)
+            .apply { gravity = Gravity.CENTER }
         bar.addView(title, LinearLayout.LayoutParams(0, dp(56), 1f))
         trailing = icon(R.drawable.ic_tab_settings, R.string.attention_title) {
             if (settingsPage) editTopic(null) else navigate(true)
@@ -105,15 +102,11 @@ class ProactiveAttentionActivity : Activity() {
         addView(bar)
         body = LinearLayout(this@ProactiveAttentionActivity).apply { orientation = LinearLayout.VERTICAL }
         scroll = ScrollView(this@ProactiveAttentionActivity).apply { isFillViewport = true; addView(body) }
+        scroll.visibility = if (settingsPage) View.VISIBLE else View.GONE
         addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        feedAdapter = ProactiveAttentionFeedAdapter(::feedHeader, ::feedArticle, ::feedFooter)
-        feed = RecyclerView(this@ProactiveAttentionActivity).apply {
-            layoutManager = LinearLayoutManager(this@ProactiveAttentionActivity)
-            adapter = feedAdapter
-            itemAnimator = null
-            visibility = View.GONE
-        }
-        addView(feed, LinearLayout.LayoutParams(-1, 0, 1f))
+        reader = ProactiveAttentionReader(this@ProactiveAttentionActivity, worker, ::open, ::showSources, ::loadEvidence, ::reload)
+        reader.view.visibility = if (settingsPage) View.GONE else View.VISIBLE
+        addView(reader.view, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
     private fun reload() {
@@ -123,12 +116,16 @@ class ProactiveAttentionActivity : Activity() {
         worker.execute {
             val loaded = runCatching {
                 val p = store.preferences()
-                if (p.configured && p.enabled) ProactiveAttentionFeedScheduler.request(applicationContext)
+                if (p.configured && p.enabled && !collectionRequested) {
+                    collectionRequested = true
+                    ProactiveAttentionFeedScheduler.request(applicationContext)
+                }
                 val repository = GlobalAgentRepository(applicationContext)
                 val messageMap = repository.proactiveMessages().associateBy(GlobalProactiveMessage::id)
                 val inbox = GlobalProactiveInboxPolicy.project(messageMap.values.toList(), repository.feedback())
                 Triple(p, inbox, messageMap)
             }
+            val savedReaderState = readerStateStore.read()
             val research = runCatching { runtime.researchTasks().filter(ProactiveAttentionPolicy::isAttention) }.getOrDefault(emptyList())
             val lastPoll = runCatching {
                 val feed = ProactiveAttentionFeedStore(applicationContext)
@@ -140,12 +137,13 @@ class ProactiveAttentionActivity : Activity() {
                 if (isDestroyed || request != revision) return@runOnUiThread
                 loaded.onSuccess { (p, inbox, metadata) ->
                     preferences = p; items = inbox; messages = metadata
+                    readerState = savedReaderState
                     evidence.evictAll()
                     tasks = research
                     feedLastPoll = lastPoll
                     render()
                 }.onFailure {
-                    feed.visibility = View.GONE
+                    reader.view.visibility = View.GONE
                     scroll.visibility = View.VISIBLE
                     body.removeAllViews()
                     body.addView(row(getString(R.string.attention_error)) { reload() })
@@ -183,9 +181,9 @@ class ProactiveAttentionActivity : Activity() {
         trailing.setImageResource(if (settingsPage) android.R.drawable.ic_input_add else R.drawable.ic_tab_settings)
         trailing.contentDescription = getString(if (settingsPage) R.string.attention_add else R.string.attention_title)
         scroll.visibility = if (settingsPage) View.VISIBLE else View.GONE
-        feed.visibility = if (settingsPage) View.GONE else View.VISIBLE
+        reader.view.visibility = if (settingsPage) View.GONE else View.VISIBLE
         body.removeAllViews()
-        if (settingsPage) renderSettings() else renderFeed(resetScroll)
+        if (settingsPage) renderSettings() else reader.update(items, preferences.savedKeys, readerState)
         scroll.post { if (!isDestroyed) scroll.scrollTo(0, previousScroll) }
     }
 
@@ -238,101 +236,6 @@ class ProactiveAttentionActivity : Activity() {
         })
     }
 
-    private fun renderFeed(resetScroll: Boolean) {
-        val layout = feed.layoutManager as LinearLayoutManager
-        val anchor = layout.findFirstVisibleItemPosition()
-        val key = feedAdapter.items.getOrNull(anchor - 1)?.key
-        val offset = layout.findViewByPosition(anchor)?.top ?: 0
-        page = ProactiveAttentionPaging.page(items, filter, preferences.savedKeys, page.index)
-        feedAdapter.submit(page.items)
-        when {
-            resetScroll -> { feedPosition = null; layout.scrollToPositionWithOffset(0, 0) }
-            feedPosition != null -> { layout.onRestoreInstanceState(feedPosition); feedPosition = null }
-            key != null -> page.items.indexOfFirst { it.key == key }.takeIf { it >= 0 }?.let {
-                layout.scrollToPositionWithOffset(it + 1, offset)
-            }
-        }
-    }
-
-    private fun feedHeader() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        addView(segments(listOf(R.string.attention_all, R.string.attention_important, R.string.attention_unread, R.string.attention_saved)
-            .map(::getString), filter.ordinal) {
-                filter = AttentionFeedFilter.entries[it]; page = AttentionInboxPage(); render(resetScroll = true)
-            })
-        addView(row(status()) { navigate(true) })
-        addView(pager())
-    }
-
-    private fun feedFooter(empty: Boolean) = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        if (empty) addView(text(getString(R.string.attention_empty), 15f).apply { setPadding(dp(20), dp(36), dp(20), dp(36)) })
-        if (!empty) addView(pager())
-        addView(row(getString(R.string.attention_title), getString(R.string.attention_count, preferences.topics.count { it.enabled })) { navigate(true) })
-    }
-
-    private fun pager() = horizontal().apply {
-        setPadding(dp(12), 0, dp(12), 0)
-        addView(icon(R.drawable.ic_chevron_down, R.string.attention_previous_page) {
-            page = page.copy(index = page.index - 1); render(resetScroll = true)
-        }.apply { rotation = 90f; isEnabled = page.index > 0; alpha = if (isEnabled) 1f else .35f })
-        addView(text(getString(R.string.attention_page_count, page.index + 1, page.pages, page.total), 12f).apply {
-            gravity = Gravity.CENTER; tag = "attention-page-count"
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(icon(R.drawable.ic_chevron_down, R.string.attention_next_page) {
-            page = page.copy(index = page.index + 1); render(resetScroll = true)
-        }.apply { rotation = -90f; isEnabled = page.index + 1 < page.pages; alpha = if (isEnabled) 1f else .35f })
-    }
-
-    private fun feedArticle(item: GlobalProactiveInboxItem): View {
-            val block = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(15), dp(18), dp(15)); tag = "attention-item:${item.key}" }
-            val metadata = horizontal()
-            metadata.addView(text((if (item.urgent) getString(R.string.attention_important) + " · " else "") + item.topic, 12f).apply {
-                setTextColor(getColor(if (item.urgent) R.color.galaxyssi_green else R.color.text_secondary))
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            metadata.addView(text(date(item.deliveredAtMillis), 11f))
-            block.addView(metadata)
-            val headline = item.content.lineSequence().firstOrNull { it.isNotBlank() }?.trim('#', '*', ' ')?.take(90).orEmpty()
-            block.addView(text(headline.ifBlank { item.title }, 17f, item.isNew).apply { setPadding(0, dp(9), 0, dp(7)) })
-            val previewBody = item.content.lineSequence().dropWhile(String::isBlank).drop(1).joinToString("\n").trim()
-                .ifBlank { item.content }
-            val reviewNotice = listOf(R.string.attention_source_summary, R.string.attention_not_verified,
-                R.string.attention_reviewed).map { getString(it) }.firstOrNull { previewBody.contains(it) }
-            val preview = if (reviewNotice == null) previewBody else
-                reviewNotice + "\n" + previewBody.replace(reviewNotice, "").trim()
-            block.addView(text(preview.replace(Regex("\\[([^]]+)\\]\\([^)]+\\)"), "$1").replace("**", "").take(240), 14f).apply { maxLines = 4 })
-            val actions = horizontal()
-            actions.addView(text(getString(R.string.attention_analyze), 14f).apply {
-                setTextColor(getColor(R.color.galaxyssi_green)); minimumHeight = dp(48); gravity = Gravity.CENTER_VERTICAL
-                setOnClickListener { open(item) }
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            val saved = item.key in preferences.savedKeys
-            actions.addView(icon(if (saved) android.R.drawable.btn_star_big_on else android.R.drawable.btn_star_big_off,
-                if (saved) R.string.attention_unsave else R.string.attention_save) {
-                mutate(reschedule = false) { it.copy(savedKeys = if (saved) it.savedKeys - item.key else it.savedKeys + item.key) }
-            })
-            block.addView(actions)
-            loadEvidence(item) { record ->
-                val sources = record?.optJSONArray("sources")
-                if (sources != null && sources.length() > 0) block.addView(row(getString(R.string.attention_source_count, sources.length())) { showSources(item) })
-            }
-            block.setOnClickListener { open(item) }
-            block.setOnLongClickListener {
-                AlertDialog.Builder(this).setItems(arrayOf(getString(R.string.attention_read), getString(R.string.agent_global_feedback_not_relevant))) { _, index ->
-                    worker.execute {
-                        if (index == 0) runtime.markProactiveInboxViewed(item.messageIds)
-                        else runtime.recordProactiveFeedback(item.key, GlobalAgentFeedbackKind.NOT_RELEVANT)
-                        runOnUiThread { if (!isDestroyed) reload() }
-                    }
-                }.show(); true
-            }
-            return LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(block)
-                addView(View(this@ProactiveAttentionActivity).apply { setBackgroundColor(getColor(R.color.separator)) }, LinearLayout.LayoutParams(-1, dp(1)))
-            }
-    }
-
     private fun open(item: GlobalProactiveInboxItem) {
         worker.execute {
             val repository = GlobalAgentRepository(applicationContext)
@@ -363,12 +266,11 @@ class ProactiveAttentionActivity : Activity() {
 
     private fun loadEvidence(item: GlobalProactiveInboxItem, loaded: (JSONObject?) -> Unit) {
         evidence.get(item.key)?.let { loaded(it); return }
-        val request = revision
         val ids = item.messageIds.mapNotNull { messages[it]?.sourceEventId }
         worker.execute {
             val result = runCatching { ids.mapNotNull(store::evidence).lastOrNull() }.getOrNull()
             runOnUiThread {
-                if (isDestroyed || request != revision) return@runOnUiThread
+                if (isDestroyed) return@runOnUiThread
                 if (result != null) evidence.put(item.key, result)
                 loaded(result)
             }
@@ -376,15 +278,22 @@ class ProactiveAttentionActivity : Activity() {
     }
 
     private fun showSourcesRecord(record: JSONObject?) {
-        val sources = record?.optJSONArray("sources") ?: return
+        val sources = record?.optJSONArray("sources")
+        if (sources == null || sources.length() == 0) { toast(R.string.attention_source_unavailable); return }
         val rows = (0 until sources.length()).mapNotNull(sources::optJSONObject)
+        if (rows.size == 1) { openSource(rows.single().optString("url")); return }
         AlertDialog.Builder(this).setTitle(R.string.attention_sources).setItems(rows.map { source ->
             source.optString("title") + "\n" + getString(R.string.attention_dates,
                 source.optLong("published").takeIf { it > 0 }?.let(::date) ?: getString(R.string.attention_unknown_date), date(source.optLong("retrieved")))
         }.toTypedArray()) { _, index ->
-            val uri = Uri.parse(rows[index].optString("url"))
-            if (uri.scheme in setOf("http", "https")) runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+            openSource(rows[index].optString("url"))
         }.setNegativeButton(android.R.string.cancel, null).show()
+    }
+
+    private fun openSource(url: String) {
+        val uri = Uri.parse(url)
+        if (uri.scheme in setOf("http", "https")) runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+            .onFailure { toast(R.string.attention_error) }
     }
 
     private fun editTopic(topic: AttentionTopic?) {
