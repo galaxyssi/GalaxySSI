@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="attention_previous_page">Previous page</string>
-    <string name="attention_next_page">Next page</string>
-    <string name="attention_page_count">%1$d / %2$d · %3$d items</string>
+    <string name="attention_reader_unread">Unread %1$d</string>
+    <string name="attention_reader_new">%1$d new items</string>
+    <string name="attention_content_summary">Content summary</string>
+    <string name="attention_source_unavailable">No source link is available yet</string>
+    <string name="attention_reader_checked">Evidence checked</string>
+    <string name="attention_reader_unverified">Unverified</string>
+    <string name="attention_is_read">Read</string>
+    <string name="attention_original">Original</string>
+    <string name="attention_ask">Ask Agent</string>
+    <string name="attention_collapse">Collapse</string>
+    <string name="attention_saved_done">Saved</string>
+    <string name="attention_unsaved_done">Removed from saved</string>
+    <string name="attention_undo">Undo</string>
     <string name="attention_source_discovered">Source discovery/update: %1$s; original publication date not verified</string>
     <string name="attention_title">Proactive attention</string>
     <string name="attention_discoveries">Discoveries</string>

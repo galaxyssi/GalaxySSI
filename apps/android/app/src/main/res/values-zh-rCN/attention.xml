@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="attention_previous_page">上一页</string>
-    <string name="attention_next_page">下一页</string>
-    <string name="attention_page_count">第 %1$d / %2$d 页 · 共 %3$d 条</string>
+    <string name="attention_reader_unread">未读 %1$d</string>
+    <string name="attention_reader_new">%1$d 条新内容</string>
+    <string name="attention_content_summary">内容摘要</string>
+    <string name="attention_source_unavailable">暂无可用的来源链接</string>
+    <string name="attention_reader_checked">已核对证据</string>
+    <string name="attention_reader_unverified">待核验</string>
+    <string name="attention_is_read">已读</string>
+    <string name="attention_original">原文</string>
+    <string name="attention_ask">问 Agent</string>
+    <string name="attention_collapse">收起</string>
+    <string name="attention_saved_done">已收藏</string>
+    <string name="attention_unsaved_done">已取消收藏</string>
+    <string name="attention_undo">撤销</string>
     <string name="attention_source_discovered">来源收录／更新：%1$s；原文发布日期尚未核实</string>
     <string name="attention_title">主动关注</string>
     <string name="attention_discoveries">主动发现</string>
