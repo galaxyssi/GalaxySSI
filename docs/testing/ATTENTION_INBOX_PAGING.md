@@ -16,6 +16,11 @@
 - Tapping a finding expands it inline. Original-source navigation and Ask Agent
   are separate explicit actions. Source summaries remain labelled unverified;
   viewing a finding does not mark its evidence verified.
+- After scrolling settles, expanded articles fully outside the viewport
+  collapse automatically. Partially visible articles, including long bodies
+  whose headlines have scrolled away, remain expanded. The current key and
+  pixel offset are preserved and the collapsed state is persisted. Initial
+  restoration, incoming updates and backgrounding do not trigger this action.
 - Foreground, focused, idle visibility of at least 85% of the title/summary area
   for two continuous seconds marks the finding read. Scrolling, focus loss and
   backgrounding reset the dwell timer. Read rows remain in the current unread
@@ -111,3 +116,18 @@ continuous-reader results are recorded separately after its validation.
   read color. Read persistence and unread snapshot membership are unchanged.
 - Unread/read colors are distinct and meet a 4.5:1 contrast ratio against the
   reader background in both light and dark resource configurations.
+
+## Offscreen collapse verification (v1.5.13)
+
+- Android v1.5.13 (1296) built and installed on Samsung S20U (SM-G9880)
+  without clearing app data.
+- All 21 focused timeline/inbox JVM tests and four targeted instrumented
+  reader tests passed (device run: 39.408 seconds).
+- Device assertions cover keeping partially visible long articles expanded,
+  collapsing fully offscreen articles after scrolling in both directions,
+  preserving the visible item and exact pixel offset, and persisting the
+  collapsed state.
+- Regression checks cover stable incoming updates, automatic read commits,
+  bookmark undo and legible unread/read colors in light and dark themes.
+- Tests used isolated synthetic records without dispatching model tasks.
+  Collection schedules, model routing and existing headline colors are unchanged.

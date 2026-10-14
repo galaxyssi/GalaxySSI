@@ -105,6 +105,25 @@ class ProactiveAttentionTimelineTest {
         assertTrue(dwell.sample(setOf("a"), 5000, true).isEmpty())
     }
 
+    @Test fun onlyFullyOffscreenArticlesCollapseWithoutChangingTheSnapshot() {
+        val timeline = timeline(20)
+        val before = timeline.visible.toList()
+        timeline.expanded += setOf("20", "15", "10")
+        assertTrue(timeline.collapseOutsideViewport(setOf("16", "15", "14")))
+        assertEquals(setOf("15"), timeline.expanded)
+        assertEquals(before, timeline.visible)
+        assertFalse(timeline.collapseOutsideViewport(setOf("15")))
+        assertTrue(timeline.collapseOutsideViewport(setOf("20", "19")))
+        assertTrue(timeline.expanded.isEmpty())
+    }
+
+    @Test fun anEmptyViewportDuringLayoutDoesNotDiscardExpandedState() {
+        val timeline = timeline(20)
+        timeline.expanded += "20"
+        assertFalse(timeline.collapseOutsideViewport(emptySet()))
+        assertEquals(setOf("20"), timeline.expanded)
+    }
+
     private fun timeline(count: Int, filter: AttentionFeedFilter = AttentionFeedFilter.ALL) = ProactiveAttentionTimeline().apply {
         update((1..count).map(::item), emptySet()); begin(filter)
     }

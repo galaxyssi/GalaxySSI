@@ -96,6 +96,28 @@ internal class ProactiveAttentionReader(
         addView(undo, LinearLayout.LayoutParams(-1, dp(48)))
     }
 
+    private val settleReading = object : Runnable {
+        override fun run() {
+            if (activity.isDestroyed || !list.isAttachedToWindow || !view.isShown ||
+                list.scrollState != RecyclerView.SCROLL_STATE_IDLE) return
+            if (list.isComputingLayout || list.hasPendingAdapterUpdates()) {
+                list.postOnAnimation(this)
+                return
+            }
+            val first = manager.findFirstVisibleItemPosition()
+            val last = manager.findLastVisibleItemPosition()
+            val anchor = adapter.rows.getOrNull(first)?.item?.key ?: return
+            val offset = manager.findViewByPosition(first)?.top ?: return
+            val viewport = (first..last).mapNotNull { adapter.rows.getOrNull(it)?.item?.key }.toSet()
+            if (timeline.collapseOutsideViewport(viewport)) {
+                // Shrinking an article above the viewport must not move the current text.
+                publish()
+                manager.scrollToPositionWithOffset(first, offset)
+            }
+            persistAt(anchor, offset)
+        }
+    }
+
     init {
         list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
@@ -111,7 +133,8 @@ internal class ProactiveAttentionReader(
             }
             override fun onScrollStateChanged(recyclerView: RecyclerView, state: Int) {
                 dwell.reset()
-                if (state == RecyclerView.SCROLL_STATE_IDLE) persist()
+                list.removeCallbacks(settleReading)
+                if (state == RecyclerView.SCROLL_STATE_IDLE) list.postOnAnimation(settleReading)
             }
         })
         var downY = 0f
@@ -259,8 +282,8 @@ internal class ProactiveAttentionReader(
     }
 
     fun resume() { if (!active) { active = true; dwell.reset(); main.post(readTick) } }
-    fun pause() { active = false; dwell.reset(); main.removeCallbacks(readTick); persist() }
-    fun destroy() { active = false; main.removeCallbacksAndMessages(null) }
+    fun pause() { active = false; dwell.reset(); main.removeCallbacks(readTick); list.removeCallbacks(settleReading); persist() }
+    fun destroy() { active = false; main.removeCallbacksAndMessages(null); list.removeCallbacks(settleReading) }
     fun persist() {
         if (!initialized || activity.isDestroyed) return
         val position = manager.findFirstVisibleItemPosition()

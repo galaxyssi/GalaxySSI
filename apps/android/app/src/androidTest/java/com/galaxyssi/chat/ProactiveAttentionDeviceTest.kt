@@ -195,6 +195,82 @@ class ProactiveAttentionDeviceTest {
         }
     }
 
+    @Test fun scrollingCollapsesOnlyOffscreenArticlesAndPreservesTheAnchor() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        repeat(40) { index -> repository.appendProactiveMessage(message().copy(id = "collapse-$index",
+            sourceEventId = "collapse-$index", title = "Article $index",
+            content = if (index == 39) (1..50).joinToString("\n\n") { "Long fixture section $it. Details remain readable while scrolling." } else "Article body $index.",
+            status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = index + 1L)) }
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        var reader: ProactiveAttentionReader? = null
+        var watchedKey = "global-agent:collapse-39"
+        var anchorBefore: Pair<String, Int>? = null
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            try {
+                scenario.onActivity { activity ->
+                    (ProactiveAttentionActivity::class.java.getDeclaredField("reader").apply { isAccessible = true }
+                        .get(activity) as ProactiveAttentionReader).pause()
+                    reader = ProactiveAttentionReader(activity, worker, { fail("Reading must not launch Agent") }, {},
+                        { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.update(GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList()), emptySet(), AttentionReaderState())
+                    reader!!.list.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+                        override fun onScrollStateChanged(recyclerView: androidx.recyclerview.widget.RecyclerView, state: Int) {
+                            if (state != androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE) return
+                            val layout = recyclerView.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+                            val first = layout.findFirstVisibleItemPosition()
+                            val last = layout.findLastVisibleItemPosition()
+                            val keys = (first..last).mapNotNull { reader!!.timeline.visible.getOrNull(it)?.key }
+                            if (first >= 0 && watchedKey !in keys && watchedKey in reader!!.timeline.expanded) {
+                                anchorBefore = reader!!.timeline.visible[first].key to (layout.findViewByPosition(first)?.top ?: 0)
+                            }
+                        }
+                    })
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-item:$watchedKey" } }
+                scenario.onActivity {
+                    (views(it.window.decorView).first { view -> view.tag == "attention-item:$watchedKey" } as ProactiveAttentionArticleView).readable.performClick()
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-expanded:$watchedKey" } }
+                scenario.onActivity { reader!!.list.smoothScrollBy(0, 300) }
+                await(scenario) {
+                    reader!!.list.scrollState == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE &&
+                        (reader!!.list.getChildAt(0)?.top ?: 0) < 0
+                }
+                scenario.onActivity {
+                    assertTrue(watchedKey in reader!!.timeline.expanded)
+                    assertTrue(reader!!.list.getChildAt(0).bottom > reader!!.list.height)
+                    reader!!.list.smoothScrollToPosition(18)
+                }
+                await(scenario) { watchedKey !in reader!!.timeline.expanded && !reader!!.list.hasPendingAdapterUpdates() }
+                scenario.onActivity {
+                    val layout = reader!!.list.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+                    val first = layout.findFirstVisibleItemPosition()
+                    assertNotNull(anchorBefore)
+                    assertEquals(anchorBefore, reader!!.timeline.visible[first].key to layout.findViewByPosition(first)!!.top)
+                    watchedKey = reader!!.timeline.visible[first].key
+                    anchorBefore = null
+                    (layout.findViewByPosition(first) as ProactiveAttentionArticleView).readable.performClick()
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-expanded:$watchedKey" } }
+                scenario.onActivity { reader!!.list.smoothScrollToPosition(0) }
+                await(scenario) { watchedKey !in reader!!.timeline.expanded && !reader!!.list.hasPendingAdapterUpdates() }
+                scenario.onActivity {
+                    val layout = reader!!.list.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+                    val first = layout.findFirstVisibleItemPosition()
+                    assertNotNull(anchorBefore)
+                    assertEquals(anchorBefore, reader!!.timeline.visible[first].key to layout.findViewByPosition(first)!!.top)
+                    assertTrue(reader!!.timeline.expanded.isEmpty())
+                }
+                worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                assertTrue(ProactiveAttentionReaderStateStore(context).read().expanded.isEmpty())
+            } finally {
+                scenario.onActivity { reader?.pause(); reader?.destroy() }
+                worker.shutdown(); assertTrue(worker.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS))
+            }
+        }
+    }
+
     @Test fun readerAutomaticallyMarksVisibleNewsAndBookmarkCanBeUndone() = isolated { context ->
         val repository = GlobalAgentRepository(context)
         repository.appendProactiveMessage(message().copy(id = "reader-auto", sourceEventId = "reader-auto",
