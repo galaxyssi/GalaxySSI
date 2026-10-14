@@ -91,7 +91,7 @@ internal class AgentTeamParentDeliveryRecovery(private val context: Context) {
         val key = AgentFinalResponseIdentity.dedupeKey(team.taskId)
         return AgentTranscriptStore(context).workspacePreviews(workspace).any {
             it.role == AgentTranscriptRole.ASSISTANT && it.turnId == team.taskId && it.dedupeKey == key &&
-                it.text.isNotBlank()
+                (it.text.isNotBlank() || AgentRichContentCodec.normalize(it.richOutputJson).isNotBlank())
         }
     }
 }

@@ -1,6 +1,14 @@
 package com.galaxyssi.chat
 
 internal object AgentProcessClockPolicy {
+    fun startedAt(process: AgentTranscriptEntry, entries: Collection<AgentTranscriptEntry>, fallback: Long): Long =
+        entries.asSequence().filter { it.role == AgentTranscriptRole.USER && sameTurn(process, it) &&
+            it.timestampMillis > 0 }.minOfOrNull { it.timestampMillis }?.coerceAtMost(fallback) ?: fallback
+
+    fun isRunning(phase: AgentPhase?): Boolean = phase != null && phase !in setOf(
+        AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED
+    )
+
     fun sameTurn(process: AgentTranscriptEntry, candidate: AgentTranscriptEntry): Boolean =
         process.conversationId == candidate.conversationId && when {
             process.turnId.isNotBlank() -> process.turnId == candidate.turnId
@@ -15,12 +23,16 @@ internal object AgentProcessClockPolicy {
         }.maxOfOrNull(AgentTranscriptEntry::timestampMillis)
 }
 
-/** A terminal clock never starts again when a later projection temporarily lacks its terminal event. */
+/** Missing projections keep a terminal clock frozen; an authoritative recovery resumes it. */
 internal class AgentProcessClock(private val startedAtMillis: Long, completedAtMillis: Long? = null) {
     var completedAtMillis: Long? = completedAtMillis
         private set
 
-    fun observe(completedAt: Long?) {
+    fun observe(completedAt: Long?, running: Boolean = false) {
+        if (running) {
+            completedAtMillis = null
+            return
+        }
         if (completedAtMillis == null && completedAt != null) {
             completedAtMillis = completedAt.coerceAtLeast(startedAtMillis)
         }

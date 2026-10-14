@@ -920,6 +920,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val existing = runtime.agentTeamSnapshot(spec.supervisorRunId)
         if (existing == null) {
             val requestContext = linkedMapOf<String, Any?>(
+                "connector_task_mode" to action.parameters["connector_task_mode"].orEmpty(),
+                INTERNAL_TASK_EXECUTION_MODE to action.parameters[INTERNAL_TASK_EXECUTION_MODE].orEmpty(),
+                INTERNAL_CONVERSATION_HAS_ATTACHMENTS to action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS].orEmpty(),
                 INTERNAL_CONVERSATION_CONTEXT to action.parameters[INTERNAL_CONVERSATION_CONTEXT].orEmpty(),
                 INTERNAL_MEMORY_CONTEXT to action.parameters[INTERNAL_MEMORY_CONTEXT].orEmpty(),
                 INTERNAL_CLOUD_KNOWLEDGE_CONTEXT to action.parameters[INTERNAL_CLOUD_KNOWLEDGE_CONTEXT].orEmpty(),

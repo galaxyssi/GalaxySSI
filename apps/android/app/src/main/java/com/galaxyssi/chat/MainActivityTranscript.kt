@@ -1308,7 +1308,8 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         processEntries.ifEmpty { listOf(entry) }
     )
     val hasProcessDetails = processSegments.isNotEmpty()
-    val startedAt = processEntries.firstOrNull()?.timestampMillis ?: entry.timestampMillis
+    val startedAt = AgentProcessClockPolicy.startedAt(entry, turnEntries,
+        processEntries.firstOrNull()?.timestampMillis ?: entry.timestampMillis)
     val completedAt = agentProcessCompletionTimestamp(entry, turnEntries)
     val execution = agentExecutionPresentation(
         entry = entry,
@@ -1316,7 +1317,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         startedAtMillis = startedAt,
         completedAtMillis = completedAt
     )
-    val displayCompletedAt = completedAt
+    val displayCompletedAt = if (agentProcessIsRunning(entry)) null else completedAt
         ?: execution.completedAtMillis.takeIf { it > 0L }
     val completed = displayCompletedAt != null
     val deliveryUnconfirmed = turnEntries.any { it.dedupeKey.startsWith("delivery-failed:") }
@@ -1397,9 +1398,8 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                         val visible = statusView.isShown &&
                             statusView.getGlobalVisibleRect(visibleBounds)
                         if (!hasRendered || visible) {
-                            if (clock.completedAtMillis == null) {
-                                clock.observe(agentProcessCompletionTimestamp(entry, renderedAgentTranscriptSourceEntries))
-                            }
+                            clock.observe(agentProcessCompletionTimestamp(entry, renderedAgentTranscriptSourceEntries),
+                                running = agentProcessIsRunning(entry))
                             val elapsedMillis = clock.elapsed(System.currentTimeMillis())
                             val nextText = getString(
                                 if (deliveryUnconfirmed) {

@@ -75,7 +75,8 @@ data class AgentTeamMemberSnapshot(
     val personId: String = instanceId,
     val executionStartedAtMillis: Long = startedAtMillis,
     val updatedAtMillis: Long = 0L,
-    val pendingDependencyNames: List<String> = emptyList()
+    val pendingDependencyNames: List<String> = emptyList(),
+    val richOutputJson: String = ""
 ) {
     val memberId: String get() = instanceId.ifBlank { agentId }
 
@@ -102,7 +103,8 @@ data class AgentTeamExecutionSnapshot(
     val goalDisposition: String = "",
     val nextGoalAttemptAtMillis: Long = 0L,
     val recoveryFailureCount: Int = 0,
-    val recoveryScopeMissing: Boolean = false
+    val recoveryScopeMissing: Boolean = false,
+    val finalRichOutputJson: String = ""
 ) {
     val primaryMemberId: String get() = primaryInstanceId.ifBlank { primaryAgentId }
 }
@@ -1097,10 +1099,11 @@ class AgentAdapterTeamMemberWorker(
         )
         else -> {
             val output = event.payload.text("result", "content", "output", "summary", "message")
-            if (output.isBlank()) {
+            val richOutput = AgentRichContentCodec.normalize(event.payload.text("rich_output"))
+            if (output.isBlank() && richOutput.isBlank()) {
                 throw IllegalStateException("Agent Run completed without a usable result")
             }
-            AgentSubagentOutput(output)
+            AgentSubagentOutput(output, richOutputJson = richOutput)
         }
     }
 
@@ -1198,7 +1201,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
             context = context.request.context + (MANAGED_TEAM_CONTEXT_KEY to true)
         )
         val forwardedContext = context.request.context
-            .filterKeys { it.startsWith("_galaxyssi_") }
+            .filterKeys { it.startsWith("_galaxyssi_") || it == "connector_task_mode" }
             .mapValues { (_, value) -> value?.toString().orEmpty() }
         val groupId = context.member.context["collaboration_group_id"].orEmpty()
         val trialGuarded = groupId.isNotBlank() && progressContext?.let {
@@ -1250,7 +1253,7 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
         if (groupId.isNotBlank()) progressContext?.let {
             CollaborationResearchArchive(it, groupId).record(context, context.request.goal, input = true)
         }
-        provider.prepare(registration.agentId, managedRequest, action, screenProvider())
+        provider.prepare(registration.agentId, managedRequest, action.enforceSupervisedPlanningBoundary(), screenProvider())
         return try {
             val result = adapterWorker.execute(context.copy(request = managedRequest))
             if (groupId.isNotBlank() && progressContext != null)
@@ -1884,7 +1887,8 @@ class AgentProductionTeamController(
                 execution.member.context["collaboration_group_id"].orEmpty().isNotBlank() &&
                 checkpoint.completed[execution.member.memberId] == null)
                 CollaborationResultFinalizer(evidenceContext).finishIfReady(execution,
-                    AgentSubagentOutput(record.response.content.ifBlank { record.response.richOutputJson })) {
+                    AgentSubagentOutput(record.response.content,
+                        richOutputJson = AgentRichContentCodec.normalize(record.response.richOutputJson))) {
                     if (AndroidCollaborationRemoteEvidence.pending(evidenceContext, record.conversationId, record.sourceMessageId))
                         AndroidCollaborationRemoteEvidence.enqueue(evidenceContext)
                     !AndroidCollaborationRemoteEvidence.pendingRequired(evidenceContext, execution,
@@ -2000,7 +2004,7 @@ private fun AgentTeamExecutionRecord.applyLateResponse(
     val status = if (response.success) AgentSubagentStatus.SUCCEEDED else AgentSubagentStatus.FAILED
     val completedAt = response.receivedAtMillis.coerceAtLeast(managed.completedAtMillis)
         .coerceAtLeast(managed.createdAtMillis)
-    val sourceOutput = prepared?.content ?: response.content.ifBlank { response.richOutputJson }
+    val sourceOutput = prepared?.content ?: response.content
     val output = if (prepared != null) sourceOutput else sourceOutput.take(MAX_LATE_RESPONSE_OUTPUT_CHARS)
     val error = if (response.success) "" else output.take(MAX_LATE_RESPONSE_ERROR_CHARS)
     val provenance = AgentSubagentProvenance(
@@ -2028,7 +2032,9 @@ private fun AgentTeamExecutionRecord.applyLateResponse(
             ?: managed.createdAtMillis,
         completedAtMillis = completedAt,
         collaborationAcceptance = prepared?.collaborationAcceptance,
-        collaborationDelivery = prepared?.collaborationDelivery
+        collaborationDelivery = prepared?.collaborationDelivery,
+        richOutputJson = if (response.success) AgentRichContentCodec.normalize(
+            prepared?.richOutputJson?.takeIf(String::isNotBlank) ?: response.richOutputJson) else ""
     )
     var nextSequence = (events.maxOfOrNull(AgentSubagentEvent::sequence) ?: 0L) + 1L
     val nextEvents = events.toMutableList().apply {
@@ -2110,6 +2116,7 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
             } else if (organizationEnabled && event?.childStatus?.isTerminal == true && result == null) AgentSubagentStatus.RUNNING
             else result?.status ?: event?.childStatus ?: AgentSubagentStatus.QUEUED,
             output = result?.output.orEmpty(),
+            richOutputJson = result?.richOutputJson.orEmpty(),
             errorMessage = result?.errorMessage.orEmpty().ifBlank { event?.message.orEmpty() },
             startedAtMillis = result?.startedAtMillis ?: 0L,
             completedAtMillis = result?.completedAtMillis?.takeIf { it > 0L }
@@ -2184,7 +2191,9 @@ private fun AgentTeamExecutionRecord.toSnapshot(): AgentTeamExecutionSnapshot {
         interruptedAtMillis = interruptedAtMillis,
         primaryInstanceId = definition.primaryMemberId,
         goalDisposition = goalDisposition,
-        nextGoalAttemptAtMillis = request.context[CollaborationGoalLoop.RETRY_AT]?.toString()?.toLongOrNull() ?: 0L
+        nextGoalAttemptAtMillis = request.context[CollaborationGoalLoop.RETRY_AT]?.toString()?.toLongOrNull() ?: 0L,
+        finalRichOutputJson = members.firstOrNull { it.memberId == definition.primaryMemberId &&
+            it.status == AgentSubagentStatus.SUCCEEDED }?.richOutputJson.orEmpty()
     )
 }
 
@@ -2358,6 +2367,7 @@ private object AgentTeamExecutionCodec {
         .put("completed_at_millis", result.completedAtMillis)
         .put("collaboration_acceptance", result.collaborationAcceptance?.encode())
         .put("collaboration_delivery", result.collaborationDelivery?.encode())
+        .put("rich_output", result.richOutputJson)
 
     private fun decodeResult(json: JSONObject?): AgentSubagentChildResult? {
         json ?: return null
@@ -2376,7 +2386,8 @@ private object AgentTeamExecutionCodec {
             startedAtMillis = json.optLong("started_at_millis"),
             completedAtMillis = json.optLong("completed_at_millis"),
             collaborationAcceptance = CollaborationAcceptanceReceipt.decode(json.optJSONObject("collaboration_acceptance")),
-            collaborationDelivery = CollaborationDeliveryReceipt.decode(json.optJSONObject("collaboration_delivery"))
+            collaborationDelivery = CollaborationDeliveryReceipt.decode(json.optJSONObject("collaboration_delivery")),
+            richOutputJson = AgentRichContentCodec.normalize(json.optString("rich_output"))
         )
     }
 

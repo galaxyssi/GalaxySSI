@@ -1059,14 +1059,16 @@ internal fun MainActivity.agentProcessedDuration(durationMillis: Long): String {
     }.joinToString(" ")
 }
 
+internal fun MainActivity.agentProcessIsRunning(entry: AgentTranscriptEntry): Boolean =
+    AgentProcessClockPolicy.isRunning(agentTimelineRuntime(entry)?.snapshot()?.phase
+        ?: agentExecutionPresentations[entry.taskId]?.phase)
+
 internal fun MainActivity.agentProcessCompletionTimestamp(
     entry: AgentTranscriptEntry,
     entries: List<AgentTranscriptEntry>
 ): Long? {
-    val assistantTimestamp = AgentProcessClockPolicy.finalReplyTimestamp(
-        entry, entries.filterNot(::isAgentApprovalEntry)
-    )
-    if (assistantTimestamp != null) return assistantTimestamp.coerceAtLeast(entry.timestampMillis)
+    // A live run is authoritative over an interim reply or a previous failed attempt.
+    if (agentProcessIsRunning(entry)) return null
     agentExecutionPresentations[entry.taskId]
         ?.takeIf { presentation ->
             !presentation.cancellable &&
@@ -1076,14 +1078,18 @@ internal fun MainActivity.agentProcessCompletionTimestamp(
         ?.takeIf { it > 0L }
         ?.let { return it.coerceAtLeast(entry.timestampMillis) }
     val workspaceId = entry.turnId.trim()
-    if (workspaceId.isBlank()) return null
+    val assistantTimestamp = AgentProcessClockPolicy.finalReplyTimestamp(
+        entry, entries.filterNot(::isAgentApprovalEntry)
+    )
+    if (workspaceId.isBlank()) return assistantTimestamp
     val cached = agentProcessCompletionLookups[workspaceId]
-    cached?.completedAtMillis?.let { return it.coerceAtLeast(entry.timestampMillis) }
     val cacheFresh = cached != null &&
         SystemClock.elapsedRealtime() - cached.checkedAtElapsedRealtime <
         AGENT_PROCESS_COMPLETION_LOOKUP_RETRY_MS
     if (!cacheFresh) scheduleAgentProcessCompletionLookup(entry, workspaceId)
-    return null
+    if (cached == null) return null
+    if (cached.status != null && !AgentTranscriptPresentationPolicy.processClockStopsFor(cached.status)) return null
+    return (cached.completedAtMillis ?: assistantTimestamp)?.coerceAtLeast(entry.timestampMillis)
 }
 
 private fun MainActivity.scheduleAgentProcessCompletionLookup(
@@ -1092,20 +1098,26 @@ private fun MainActivity.scheduleAgentProcessCompletionLookup(
 ) {
     if (!agentProcessCompletionLookupInFlight.add(workspaceId)) return
     agentTranscriptContentExecutor.execute {
-        val completedAtMillis = runCatching {
+        val lookup = runCatching {
             EncryptedAgentWorkspaceStore(this).find(workspaceId)
                 ?.takeIf { it.conversationId == entry.conversationId }
-                ?.takeIf { AgentTranscriptPresentationPolicy.processClockStopsFor(it.status) }
-                ?.updatedAtMillis
-                ?.takeIf { it > 0L }
-        }.getOrNull()
+        }
+        if (lookup.isFailure) {
+            agentProcessCompletionLookupInFlight.remove(workspaceId)
+            return@execute
+        }
+        val workspace = lookup.getOrNull()
+        val completedAtMillis = workspace?.takeIf {
+            AgentTranscriptPresentationPolicy.processClockStopsFor(it.status)
+        }?.updatedAtMillis?.takeIf { it > 0L }
         val previous = agentProcessCompletionLookups[workspaceId]
         agentProcessCompletionLookups[workspaceId] = AgentProcessCompletionLookup(
             completedAtMillis = completedAtMillis,
-            checkedAtElapsedRealtime = SystemClock.elapsedRealtime()
+            checkedAtElapsedRealtime = SystemClock.elapsedRealtime(),
+            status = workspace?.status
         )
         agentProcessCompletionLookupInFlight.remove(workspaceId)
-        if (completedAtMillis == null || previous?.completedAtMillis == completedAtMillis) return@execute
+        if (previous != null && previous.completedAtMillis == completedAtMillis && previous.status == workspace?.status) return@execute
         runOnUiThread {
             if (isFinishing || isDestroyed || !isAgentTranscriptAdapterInitialized()) {
                 return@runOnUiThread
