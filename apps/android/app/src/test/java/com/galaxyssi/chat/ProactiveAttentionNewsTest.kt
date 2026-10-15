@@ -84,6 +84,18 @@ class ProactiveAttentionNewsTest {
         assertFalse(report.text.contains("hash"))
     }
 
+    @Test fun reviewRetainsFaithfulHeadlineTranslationsSeparatelyFromSummary() {
+        val original = "Model 2.1 released"
+        val translated = "Model 2.1 \u53d1\u5e03"
+        val result = item().put("headline_translations", JSONArray()
+            .put(JSONObject().put("original_title", original).put("title_zh", translated))
+            .put(JSONObject().put("original_title", "Model 2.2 released").put("title_zh", translated)))
+        val report = review(JSONArray().put(result))!!
+        assertEquals(mapOf(original to translated), report.items.single().titleTranslations)
+        assertTrue(report.text.contains("New capability"))
+        assertTrue(report.ledger.verified)
+    }
+
     @Test fun olderAnnouncementsRemainReadableButCannotBecomeUrgentAlerts() {
         val oldQuote = "The exchange suspended trading only on 2026-10-08 until market close."
         val oldPage = page().put("content", oldQuote)

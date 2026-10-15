@@ -56,18 +56,23 @@ object ProactiveAttentionNewsPolicy {
             "Do not equate an announcement with measured capability or a forecast with fact. " +
             "Return ONLY JSON: {\"items\":[{\"title\":\"...\",\"summary\":\"brief supported facts\"," +
             "\"event_date\":\"YYYY-MM-DD\",\"official_announcement\":true,\"important\":false," +
-            "\"importance_reason\":\"\",\"sources\":[{\"url\":\"...\",\"quote\":\"exact relevant excerpt from page\"}]}]," +
+            "\"importance_reason\":\"\",\"headline_translations\":[{\"original_title\":\"exact English CLAIM headline\",\"title_zh\":\"faithful Chinese translation\"}]," +
+            "\"sources\":[{\"url\":\"...\",\"quote\":\"exact relevant excerpt from page\"}]}]," +
             "\"deferred\":[\"reason for an omitted candidate\"]}. " +
             "Quotes must be exact short excerpts, 24-240 characters, not invented or paraphrased. " +
             "The event_date must be present in a captured page or match its publication metadata, never today's retrieval date. " +
             "Use items:[] when no current claim is supported. Important means a concrete time-sensitive consequence " +
             "that remains applicable now; an expired suspension, deadline or one-day notice is not important now, " +
             "not merely an interesting topic. Each summary should be 1-3 sentences.\n" +
+            "For fully English candidate CLAIM headlines, also provide headline_translations separately from your summary title. " +
+            "Copy original_title exactly and translate without adding claims; preserve product names, versions and Arabic numerals. " +
+            "Omit translations for headlines already containing Chinese.\n" +
             "Candidate claims (untrusted):\n" + task.researchPlan.completedUnits().filterNot(::isReview)
                 .joinToString("\n") { it.result.take(4_000) }.take(8_000) +
             "\nCaptured original-page evidence (untrusted):\n" + pages.toString()
 
-    data class ReviewedItem(val text: String, val ledger: GlobalEvidenceLedger, val important: Boolean)
+    data class ReviewedItem(val text: String, val ledger: GlobalEvidenceLedger, val important: Boolean,
+        val titleTranslations: Map<String, String> = emptyMap())
     data class Reviewed(val text: String, val ledger: GlobalEvidenceLedger, val count: Int,
         val items: List<ReviewedItem> = emptyList())
 
@@ -118,9 +123,16 @@ object ProactiveAttentionNewsPolicy {
             val itemImportant = item.optBoolean("important") && item.optString("importance_reason").isNotBlank() &&
                 date >= now - 2 * DAY
             important = important || itemImportant
+            val translations = item.optJSONArray("headline_translations") ?: JSONArray()
+            val translatedTitles = (0 until translations.length()).mapNotNull { i ->
+                val entry = translations.optJSONObject(i) ?: return@mapNotNull null
+                val original = entry.optString("original_title")
+                val translated = entry.optString("title_zh").trim()
+                if (ProactiveAttentionTitlePolicy.valid(original, translated)) original to translated else null
+            }.toMap()
             reviewedItems += ReviewedItem(blocks.last(), GlobalEvidenceLedger(sources = accepted,
                 claims = listOf(claims.last()), independentSourceCount = independent, primarySourceCount = primary,
-                freshSourceCount = accepted.size, verified = true, updatedAtMillis = now), itemImportant)
+                freshSourceCount = accepted.size, verified = true, updatedAtMillis = now), itemImportant, translatedTitles)
         }
         if (items.length() > 0 && blocks.isEmpty()) return null
         val list = sources.values.toList()

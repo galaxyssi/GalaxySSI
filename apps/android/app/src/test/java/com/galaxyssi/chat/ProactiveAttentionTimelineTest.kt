@@ -4,6 +4,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProactiveAttentionTimelineTest {
+    @Test fun firstPageCanBeExtendedWithAllHistoryWithoutMovingVisibleRows() {
+        val timeline = ProactiveAttentionTimeline()
+        timeline.update((81..100).map(::item), emptySet())
+        timeline.begin(AttentionFeedFilter.ALL)
+        timeline.expanded += "98"
+        val before = timeline.visible.toList()
+        timeline.update((1..102).map(::item), emptySet())
+        assertEquals(before, timeline.visible)
+        assertEquals(setOf("98"), timeline.expanded)
+        assertEquals(2, timeline.newerCount)
+        while (timeline.loadOlder()) Unit
+        assertEquals((100 downTo 1).map(Int::toString), timeline.visible.map { it.key })
+        timeline.loadNewer()
+        assertEquals((102 downTo 1).map(Int::toString), timeline.visible.map { it.key })
+    }
+
+    @Test fun restoredMiddlePreviewCanLoadBothDirectionsAfterHistoryArrives() {
+        val timeline = ProactiveAttentionTimeline()
+        timeline.update((40..59).map(::item), emptySet())
+        timeline.begin(AttentionFeedFilter.ALL, (59 downTo 40).map(Int::toString))
+        timeline.update((1..1205).map(::item), emptySet())
+        assertEquals("59", timeline.visible.first().key)
+        while (timeline.loadOlder()) Unit
+        while (timeline.loadNewer()) Unit
+        assertEquals((1205 downTo 1).map(Int::toString), timeline.visible.map { it.key })
+    }
+
     @Test fun arrivalAndReviewDoNotReorderOrReplaceTheReadingSnapshot() {
         val timeline = timeline(100)
         timeline.expanded += "100"
@@ -103,6 +130,25 @@ class ProactiveAttentionTimelineTest {
         assertTrue(dwell.sample(setOf("a"), 2000, true).isEmpty())
         dwell.reset()
         assertTrue(dwell.sample(setOf("a"), 5000, true).isEmpty())
+    }
+
+    @Test fun onlyFullyOffscreenArticlesCollapseWithoutChangingTheSnapshot() {
+        val timeline = timeline(20)
+        val before = timeline.visible.toList()
+        timeline.expanded += setOf("20", "15", "10")
+        assertTrue(timeline.collapseOutsideViewport(setOf("16", "15", "14")))
+        assertEquals(setOf("15"), timeline.expanded)
+        assertEquals(before, timeline.visible)
+        assertFalse(timeline.collapseOutsideViewport(setOf("15")))
+        assertTrue(timeline.collapseOutsideViewport(setOf("20", "19")))
+        assertTrue(timeline.expanded.isEmpty())
+    }
+
+    @Test fun anEmptyViewportDuringLayoutDoesNotDiscardExpandedState() {
+        val timeline = timeline(20)
+        timeline.expanded += "20"
+        assertFalse(timeline.collapseOutsideViewport(emptySet()))
+        assertEquals(setOf("20"), timeline.expanded)
     }
 
     private fun timeline(count: Int, filter: AttentionFeedFilter = AttentionFeedFilter.ALL) = ProactiveAttentionTimeline().apply {

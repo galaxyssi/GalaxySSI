@@ -27,6 +27,8 @@ internal class ProactiveAttentionArticleView(
     private var row: AttentionReaderRow? = null
     private var generation = 0
     private var headline: TextView? = null
+    private var originalHeadline: TextView? = null
+    private var displayedTranslation = ""
     private var sourceLine: TextView? = null
     private var bookmark: ImageButton? = null
     private var sourceName = ""
@@ -44,13 +46,18 @@ internal class ProactiveAttentionArticleView(
         super.onAttachedToWindow()
         row?.let {
             displayedUnread = it.item.isNew
+            displayedTranslation = it.item.translatedTitle
+            updateHeadline(it)
             updateStatus(it)
         }
     }
 
     fun bind(next: AttentionReaderRow) {
         val token = ++generation
-        if (!isAttachedToWindow || row?.item?.key != next.item.key) displayedUnread = next.item.isNew
+        if (!isAttachedToWindow || row?.item?.key != next.item.key) {
+            displayedUnread = next.item.isNew
+        }
+        displayedTranslation = next.item.translatedTitle
         row = next; sourceName = ""; evidenceChecked = false
         removeAllViews()
         val item = next.item
@@ -65,14 +72,28 @@ internal class ProactiveAttentionArticleView(
         top.addView(label(SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.deliveredAtMillis)), 11f, secondary = true))
         intro.addView(top)
         val titleRow = horizontal()
-        headline = label(item.title.ifBlank { item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ') }, 16f).apply {
+        val titles = column()
+        headline = label("", 19.36f).apply {
             tag = "attention-headline:${item.key}"
-            setTypeface(typeface, Typeface.BOLD)
+            setTypeface(typeface, Typeface.NORMAL)
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
+            minLines = if (!next.expanded && expectsTranslation(item)) 2 else 1
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, dp(6), 0, dp(5))
+            if (!next.expanded && expectsTranslation(item)) reserveBilingualHeight()
         }
-        titleRow.addView(headline, LayoutParams(0, -2, 1f))
+        titles.addView(headline)
+        originalHeadline = label("", 13f, secondary = true).apply {
+            tag = "attention-original-headline:${item.key}"
+            maxLines = if (next.expanded) Int.MAX_VALUE else 2
+            minLines = if (!next.expanded && expectsTranslation(item)) 2 else 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, 0, 0, dp(6))
+            if (!next.expanded && expectsTranslation(item)) reserveBilingualHeight()
+        }
+        titles.addView(originalHeadline)
+        updateHeadline(next)
+        titleRow.addView(titles, LayoutParams(0, -2, 1f))
         bookmark = icon(R.drawable.ic_attention_bookmark, R.string.attention_save) { save(item.key) }
         titleRow.addView(bookmark)
         intro.addView(titleRow)
@@ -90,10 +111,10 @@ internal class ProactiveAttentionArticleView(
         intro.setOnLongClickListener { menu(item); true }
         content.addView(intro)
         if (next.expanded) {
-            content.addView(label(context.getString(R.string.attention_content_summary), 12f, true).apply {
+            content.addView(label(context.getString(R.string.attention_content_summary), 14.4f, true).apply {
                 setPadding(0, dp(12), 0, dp(8))
             })
-            content.addView(label("", 15f).apply {
+            content.addView(label("", 18f).apply {
                 setLineSpacing(dp(4).toFloat(), 1f)
                 text = AgentRichInlineMarkdownRenderer.render(bodyText)
                 movementMethod = LinkMovementMethod.getInstance()
@@ -123,8 +144,15 @@ internal class ProactiveAttentionArticleView(
 
     fun updateStatus(next: AttentionReaderRow) {
         row = next
-        // Read commits must not recolor an article while it is being viewed.
-        if (!isAttachedToWindow) displayedUnread = next.item.isNew
+        // Freeze read color. Collapsed bilingual slots have stable heights, so translations can
+        // arrive in place. Expanded text waits for the next explicit bind to avoid moving the body.
+        if (!isAttachedToWindow) {
+            displayedUnread = next.item.isNew
+        }
+        if (!isAttachedToWindow || !next.expanded) {
+            displayedTranslation = next.item.translatedTitle
+            updateHeadline(next)
+        }
         headline?.setTextColor(context.getColor(if (displayedUnread) R.color.attention_unread_title else R.color.text_primary))
         headline?.alpha = 1f
         val status = context.getString(if (evidenceChecked) R.string.attention_reader_checked else R.string.attention_reader_unverified)
@@ -136,6 +164,26 @@ internal class ProactiveAttentionArticleView(
             contentDescription = context.getString(if (next.saved) R.string.attention_unsave else R.string.attention_save)
             tooltipText = contentDescription; isSelected = next.saved
         }
+    }
+
+    private fun updateHeadline(next: AttentionReaderRow) {
+        val original = next.item.title.ifBlank {
+            next.item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ')
+        }
+        headline?.text = displayedTranslation.ifBlank { original }
+        originalHeadline?.apply {
+            text = if (displayedTranslation.isNotBlank()) original else context.getString(R.string.attention_translation_pending)
+            visibility = if (displayedTranslation.isNotBlank() || expectsTranslation(next.item)) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun expectsTranslation(item: GlobalProactiveInboxItem) =
+        context.resources.configuration.locales[0].language == "zh" && ProactiveAttentionTitlePolicy.needsTranslation(item.title)
+
+    private fun TextView.reserveBilingualHeight() {
+        // CJK fallback fonts can be taller than Latin fonts even with identical minLines.
+        layoutParams = LayoutParams(-1,
+            kotlin.math.ceil(maxOf(textSize * 1.5f, lineHeight.toFloat())).toInt() * 2 + paddingTop + paddingBottom)
     }
 
     private fun articleText(item: GlobalProactiveInboxItem): String {

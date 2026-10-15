@@ -1311,10 +1311,15 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return mutation.result
     }
 
-    @Synchronized
     fun deleteEntry(entryId: String): Boolean {
-        val removed = entryDatabase.findById(entryId) ?: return false
-        if (!entryDatabase.deleteById(entryId)) return false
+        val event = synchronized(this) { deleteEntryLocked(entryId) } ?: return false
+        publishDeletedEntry(event)
+        return true
+    }
+
+    private fun deleteEntryLocked(entryId: String): Pair<AgentConversation?, AgentTranscriptEntry>? {
+        val removed = entryDatabase.findById(entryId) ?: return null
+        if (!entryDatabase.deleteById(entryId)) return null
         AgentReplyUnreadStore.read(appContext, removed.conversationId, listOf(removed))
         preparedContextCache.invalidate(removed.conversationId)
         emptyConversationsPruned = false
@@ -1325,32 +1330,26 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         ) {
             refreshLatestMessagePreview(removed.conversationId)
         }
-        conversationForEvent(removed.conversationId)?.let { conversation ->
-            GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, removed)
-        }
-        return true
+        return conversationForEvent(removed.conversationId) to removed
     }
 
-    @Synchronized
     fun deleteByDedupeKey(conversationId: String, dedupeKey: String): Boolean {
         val cleanKey = dedupeKey.trim()
         if (cleanKey.isBlank()) return false
-        val removed = entryDatabase.findByDedupeKey(conversationId, cleanKey) ?: return false
-        if (!entryDatabase.deleteById(removed.id)) return false
-        AgentReplyUnreadStore.read(appContext, conversationId, listOf(removed))
-        preparedContextCache.invalidate(conversationId)
-        emptyConversationsPruned = false
-        invalidateCompactionIfNeeded(conversationId, listOf(removed))
-        if (
-            removed.role != AgentTranscriptRole.PROCESS &&
-            conversationForEvent(conversationId)?.latestMessageEntryId == removed.id
-        ) {
-            refreshLatestMessagePreview(conversationId)
-        }
-        conversationForEvent(conversationId)?.let { conversation ->
-            GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, removed)
-        }
+        val event = synchronized(this) {
+            val removed = entryDatabase.findByDedupeKey(conversationId, cleanKey) ?: return false
+            deleteEntryLocked(removed.id)
+        } ?: return false
+        publishDeletedEntry(event)
         return true
+    }
+
+    private fun publishDeletedEntry(event: Pair<AgentConversation?, AgentTranscriptEntry>) {
+        // Learning may wait for a large background read. Never retain the transcript monitor here.
+        if (event.second.role == AgentTranscriptRole.PROCESS) return
+        event.first?.let { conversation ->
+            GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, event.second)
+        }
     }
 
     fun context(
@@ -1602,23 +1601,21 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         emptyConversationsPruned = false
     }
 
-    @Synchronized
     fun removeExactText(text: String): Int {
-        val current = allEntries()
-        val removed = current.filter { it.text == text }
-        if (removed.isEmpty()) return 0
-        entryDatabase.deleteEntries(removed.map(AgentTranscriptEntry::id))
-        emptyConversationsPruned = false
-        val removedByConversation = removed.groupBy(AgentTranscriptEntry::conversationId)
-        preparedContextCache.invalidate(removedByConversation.keys)
-        removedByConversation.forEach { (conversationId, entries) ->
-            AgentReplyUnreadStore.read(appContext, conversationId, entries)
-            conversationForEvent(conversationId)?.let { conversation ->
-                entries.forEach { entry ->
-                    GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, entry)
-                }
+        val removed = synchronized(this) {
+            val entries = allEntries().filter { it.text == text }
+            if (entries.isEmpty()) return 0
+            entryDatabase.deleteEntries(entries.map(AgentTranscriptEntry::id))
+            emptyConversationsPruned = false
+            val byConversation = entries.groupBy(AgentTranscriptEntry::conversationId)
+            preparedContextCache.invalidate(byConversation.keys)
+            byConversation.flatMap { (conversationId, items) ->
+                AgentReplyUnreadStore.read(appContext, conversationId, items)
+                val conversation = conversationForEvent(conversationId)
+                items.map { conversation to it }
             }
         }
+        removed.forEach(::publishDeletedEntry)
         return removed.size
     }
 
@@ -1952,8 +1949,8 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         conversationId: String,
         changedEntries: List<AgentTranscriptEntry>
     ) {
-        val conversation = conversations(includeArchived = true)
-            .firstOrNull { it.id == conversationId } ?: return
+        if (changedEntries.none { it.role != AgentTranscriptRole.PROCESS }) return
+        val conversation = conversationForEvent(conversationId) ?: return
         if (conversation.contextCompactedThroughMillis <= 0L) return
         val affectsSummary = changedEntries.any { entry ->
             entry.role != AgentTranscriptRole.PROCESS &&

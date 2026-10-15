@@ -23,9 +23,104 @@ import org.junit.Test
 import org.junit.Assume.assumeTrue
 import org.junit.runner.RunWith
 
-/** Only isolated synthetic evidence; no provider calls, accounts, trades or existing research tasks. */
+/** Synthetic by default; explicitly enabled live checks use public feeds and existing model permissions. */
 @RunWith(AndroidJUnit4::class)
 class ProactiveAttentionDeviceTest {
+    @Test fun indexedPreviewIsBoundedAndTracksReadRevisionsRestoresAndDeletes() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        val values = (1..65).map { index -> message().copy(id = "preview-$index", sourceEventId = "preview-source-$index",
+            status = GlobalProactiveMessageStatus.DELIVERED, createdAtMillis = index.toLong(), deliveredAtMillis = index.toLong()) }
+        repository.saveProactiveMessages(values)
+        val state = AttentionReaderState()
+        val first = repository.proactiveInboxPreview(state, emptySet())
+        assertEquals(20, first.size)
+        assertEquals((65 downTo 46).map { "global-agent:preview-$it" }, first.map { it.key })
+        repository.markProactiveViewed(setOf("preview-65"), 1000)
+        repository.reviseProactiveMessage("preview-1", "updated old article", true)
+        assertEquals("global-agent:preview-65", repository.proactiveInboxPreview(state, emptySet()).maxBy { it.deliveredAtMillis }.key)
+        assertEquals("global-agent:preview-64", repository.proactiveInboxPreview(
+            state.copy(filter = AttentionFeedFilter.UNREAD), emptySet()).first().key)
+        val restored = state.copy(keys = (65 downTo 1).map { "global-agent:preview-$it" }, anchor = "global-agent:preview-20")
+        val page = repository.proactiveInboxPreview(restored, emptySet())
+        assertEquals(20, page.size)
+        assertTrue(page.any { it.key == restored.anchor })
+        val saved = repository.proactiveInboxPreview(state.copy(filter = AttentionFeedFilter.SAVED), setOf("global-agent:preview-1"))
+        assertEquals("updated old article", saved.single().content)
+        repository.saveProactiveMessages(values.dropLast(1))
+        assertEquals("global-agent:preview-64", GlobalAgentRepository(context).proactiveInboxPreview(state, emptySet()).first().key)
+    }
+
+    @Test fun indexedPreviewKeepsDigestsCompleteAndMigratesLegacyRows() = isolated { context ->
+        val database = AgentEncryptedDatabase(context, GlobalAgentRepository.DATABASE_NAME)
+        database.writeString("proactive_messages", org.json.JSONArray().apply {
+            repeat(25) { index -> put(JSONObject().put("id", "digest-$index").put("content", "part-$index")
+                .put("status", "DELIVERED").put("target", "GLOBAL_DIGEST").put("delivery_group_id", "fixture-group")
+                .put("created_at_millis", index + 1).put("delivered_at_millis", index + 1)) }
+        }.toString())
+        val repository = GlobalAgentRepository(context)
+        val preview = repository.proactiveInboxPreview(AttentionReaderState(), emptySet())
+        assertEquals(1, preview.size)
+        assertEquals(25, preview.single().messageIds.size)
+        assertEquals(25, repository.proactiveMessages().size)
+        assertFalse(database.contains("proactive_messages"))
+        database.clear()
+        database.indexedTransaction { db ->
+            db.rawQuery("SELECT COUNT(*) FROM proactive_message_read_index", null).use { cursor ->
+                assertTrue(cursor.moveToFirst()); assertEquals(0, cursor.getInt(0))
+            }
+        }
+        assertTrue(repository.proactiveInboxPreview(AttentionReaderState(), emptySet()).isEmpty())
+    }
+
+    @Test fun liveHeadlineTranslationUsesExistingPublicNewsAndPermissions() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("attention_live_titles") == "true")
+        val context = AppLanguage.wrap(instrumentation.targetContext.applicationContext)
+        val preferences = ProactiveAttentionStore(context).preferences()
+        assertTrue(preferences.configured && preferences.enabled)
+        val store = ProactiveAttentionTitleStore(context)
+        val pending = GlobalAgentRepository(context).proactiveMessages().filter {
+            it.id.startsWith("attention-feed:") && it.status == GlobalProactiveMessageStatus.DELIVERED &&
+                ProactiveAttentionTitlePolicy.needsTranslation(it.title) && store.translation(it.title).isBlank()
+        }.map { it.title }.distinct()
+        assumeTrue("No untranslated public headlines", pending.isNotEmpty())
+        ProactiveAttentionTitleScheduler.request(context)
+        val deadline = SystemClock.elapsedRealtime() + 180_000L
+        var translated = 0
+        while (SystemClock.elapsedRealtime() < deadline && translated == 0) {
+            SystemClock.sleep(1_000L)
+            translated = pending.count { store.translation(it).isNotBlank() }
+        }
+        android.util.Log.i("GalaxySSIAttention", "live_title_verification saved=$translated")
+        assertTrue("No real translation returned within the live-test window", translated > 0)
+        assertEquals(preferences.allowPairedModel, ProactiveAttentionStore(context).preferences().allowPairedModel)
+        assertEquals(preferences.allowCloudModel, ProactiveAttentionStore(context).preferences().allowCloudModel)
+    }
+
+    @Test fun pairedTitleResponseRecoversDurablyWithoutCreatingAConversation() = isolated { context ->
+        val original = "Model 2 released"
+        val translated = "\u6a21\u578b 2 \u53d1\u5e03"
+        val titleId = ProactiveAttentionTitlePolicy.key(original)
+        val request = AttentionTitleRequest("fixture-title-batch", 4321L, "fixture-desktop", "fixture-owner",
+            System.currentTimeMillis() + AttentionTitleRequest.LEASE, mapOf(titleId to original))
+        val database = AgentEncryptedDatabase(context, "attention_paired_titles_v1")
+        database.writeString("request", request.json())
+        val before = GlobalAgentRepository(context).proactiveMessages().size
+        val reply = AgentConnectorResponse(request.source, request.contact,
+            JSONObject().put("translations", org.json.JSONArray().put(JSONObject()
+                .put("id", titleId).put("title_zh", translated))).toString(),
+            conversationId = request.conversation, turnId = request.id)
+        val host = ProactiveAttentionPairedTitles(context) { }
+        assertTrue(host.pendingDelay(System.currentTimeMillis()) > 0L)
+        assertTrue(host.consume(reply.copy(contactId = "unrelated")))
+        assertEquals("", ProactiveAttentionTitleStore(context).translation(original))
+        assertTrue(ProactiveAttentionPairedTitles(context) { }.consume(reply))
+        assertEquals(translated, ProactiveAttentionTitleStore(context).translation(original))
+        assertEquals(0L, host.pendingDelay(System.currentTimeMillis()))
+        assertTrue(host.consume(reply))
+        assertEquals(before, GlobalAgentRepository(context).proactiveMessages().size)
+        assertTrue(AttentionTitleRequest.parse(database.readString("request", "{}"))!!.completed)
+    }
+
     @Test fun inboxMigratesAndRetainsBeyondThreeHundredAcrossReopenAndRestore() = isolated { context ->
         val database = AgentEncryptedDatabase(context, GlobalAgentRepository.DATABASE_NAME)
         val legacy = org.json.JSONArray().apply { repeat(305) { index -> put(JSONObject()
@@ -195,6 +290,82 @@ class ProactiveAttentionDeviceTest {
         }
     }
 
+    @Test fun scrollingCollapsesOnlyOffscreenArticlesAndPreservesTheAnchor() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        repeat(40) { index -> repository.appendProactiveMessage(message().copy(id = "collapse-$index",
+            sourceEventId = "collapse-$index", title = "Article $index",
+            content = if (index == 39) (1..50).joinToString("\n\n") { "Long fixture section $it. Details remain readable while scrolling." } else "Article body $index.",
+            status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = index + 1L)) }
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        var reader: ProactiveAttentionReader? = null
+        var watchedKey = "global-agent:collapse-39"
+        var anchorBefore: Pair<String, Int>? = null
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            try {
+                scenario.onActivity { activity ->
+                    (ProactiveAttentionActivity::class.java.getDeclaredField("reader").apply { isAccessible = true }
+                        .get(activity) as ProactiveAttentionReader).pause()
+                    reader = ProactiveAttentionReader(activity, worker, { fail("Reading must not launch Agent") }, {},
+                        { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.update(GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList()), emptySet(), AttentionReaderState())
+                    reader!!.list.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+                        override fun onScrollStateChanged(recyclerView: androidx.recyclerview.widget.RecyclerView, state: Int) {
+                            if (state != androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE) return
+                            val layout = recyclerView.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+                            val first = layout.findFirstVisibleItemPosition()
+                            val last = layout.findLastVisibleItemPosition()
+                            val keys = (first..last).mapNotNull { reader!!.timeline.visible.getOrNull(it)?.key }
+                            if (first >= 0 && watchedKey !in keys && watchedKey in reader!!.timeline.expanded) {
+                                anchorBefore = reader!!.timeline.visible[first].key to (layout.findViewByPosition(first)?.top ?: 0)
+                            }
+                        }
+                    })
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-item:$watchedKey" } }
+                scenario.onActivity {
+                    (views(it.window.decorView).first { view -> view.tag == "attention-item:$watchedKey" } as ProactiveAttentionArticleView).readable.performClick()
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-expanded:$watchedKey" } }
+                scenario.onActivity { reader!!.list.smoothScrollBy(0, 300) }
+                await(scenario) {
+                    reader!!.list.scrollState == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE &&
+                        (reader!!.list.getChildAt(0)?.top ?: 0) < 0
+                }
+                scenario.onActivity {
+                    assertTrue(watchedKey in reader!!.timeline.expanded)
+                    assertTrue(reader!!.list.getChildAt(0).bottom > reader!!.list.height)
+                    reader!!.list.smoothScrollToPosition(18)
+                }
+                await(scenario) { watchedKey !in reader!!.timeline.expanded && !reader!!.list.hasPendingAdapterUpdates() }
+                scenario.onActivity {
+                    val layout = reader!!.list.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+                    val first = layout.findFirstVisibleItemPosition()
+                    assertNotNull(anchorBefore)
+                    assertEquals(anchorBefore, reader!!.timeline.visible[first].key to layout.findViewByPosition(first)!!.top)
+                    watchedKey = reader!!.timeline.visible[first].key
+                    anchorBefore = null
+                    (layout.findViewByPosition(first) as ProactiveAttentionArticleView).readable.performClick()
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-expanded:$watchedKey" } }
+                scenario.onActivity { reader!!.list.smoothScrollToPosition(0) }
+                await(scenario) { watchedKey !in reader!!.timeline.expanded && !reader!!.list.hasPendingAdapterUpdates() }
+                scenario.onActivity {
+                    val layout = reader!!.list.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+                    val first = layout.findFirstVisibleItemPosition()
+                    assertNotNull(anchorBefore)
+                    assertEquals(anchorBefore, reader!!.timeline.visible[first].key to layout.findViewByPosition(first)!!.top)
+                    assertTrue(reader!!.timeline.expanded.isEmpty())
+                }
+                worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                assertTrue(ProactiveAttentionReaderStateStore(context).read().expanded.isEmpty())
+            } finally {
+                scenario.onActivity { reader?.pause(); reader?.destroy() }
+                worker.shutdown(); assertTrue(worker.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS))
+            }
+        }
+    }
+
     @Test fun readerAutomaticallyMarksVisibleNewsAndBookmarkCanBeUndone() = isolated { context ->
         val repository = GlobalAgentRepository(context)
         repository.appendProactiveMessage(message().copy(id = "reader-auto", sourceEventId = "reader-auto",
@@ -266,6 +437,154 @@ class ProactiveAttentionDeviceTest {
                 worker.shutdown(); assertTrue(worker.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS))
             }
         }
+    }
+
+    @Test fun articleTypographyUsesRegularLargerTitlesAndExpandedBody() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+        instrumentation.runOnMainSync {
+            listOf(1f, 1.3f).forEach { scale ->
+                val configuration = android.content.res.Configuration(instrumentation.targetContext.resources.configuration)
+                    .apply { fontScale = scale }
+                val context = instrumentation.targetContext.createConfigurationContext(configuration)
+                val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, callback -> callback(null) }, {})
+                fun pixels(sp: Float) = android.util.TypedValue.applyDimension(
+                    android.util.TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)
+                listOf(false, true, false).forEach { expanded ->
+                    article.bind(AttentionReaderRow(item, expanded, false))
+                    val title = views(article).first { it.tag == "attention-headline:${item.key}" } as TextView
+                    assertFalse(title.typeface.isBold)
+                    assertEquals(pixels(19.36f), title.textSize, .1f)
+                    if (expanded) {
+                        val body = views(article).first { it.tag == "attention-expanded:${item.key}" } as TextView
+                        assertEquals(pixels(18f), body.textSize, .1f)
+                        val heading = views(article).filterIsInstance<TextView>()
+                            .first { it.text == context.getString(R.string.attention_content_summary) }
+                        assertEquals(pixels(14.4f), heading.textSize, .1f)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun headlineTranslationsPersistWithoutChangingOriginalAndRetrySurvivesReopen() = isolated { context ->
+        val original = "Model 2.1 released"
+        val translated = "Model 2.1 \u53d1\u5e03"
+        val store = ProactiveAttentionTitleStore(context)
+        assertFalse(store.save(original, "invalid translation"))
+        store.defer(listOf(original), 1_000L)
+        assertEquals(301_000L, ProactiveAttentionTitleStore(context).nextAt(original))
+        assertTrue(store.save(original, translated))
+        val reopened = ProactiveAttentionTitleStore(context)
+        assertEquals(translated, reopened.translation(original))
+        assertEquals("", reopened.translation("Model 2.2 released"))
+        reopened.defer(listOf(original), 500_000L)
+        assertEquals(translated, store.translation(original))
+        assertEquals(0L, reopened.nextAt(original))
+    }
+
+    @Test fun bilingualHeadlineKeepsOriginalAndResetsRecycledRows() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(title = "New model released",
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+            .copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03")
+        instrumentation.runOnMainSync {
+            val context = instrumentation.targetContext
+            val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, done -> done(null) }, {})
+            listOf(false, true).forEach { expanded ->
+                article.bind(AttentionReaderRow(item, expanded, false))
+                val title = views(article).first { it.tag == "attention-headline:${item.key}" } as TextView
+                val original = views(article).first { it.tag == "attention-original-headline:${item.key}" } as TextView
+                assertEquals(item.translatedTitle, title.text.toString())
+                assertEquals(item.title, original.text.toString())
+                assertEquals(View.VISIBLE, original.visibility)
+                assertEquals(if (expanded) Int.MAX_VALUE else 2, original.maxLines)
+                assertFalse(title.typeface.isBold)
+            }
+            val next = item.copy(key = "other", title = "\u4e2d\u6587\u65b0\u95fb", translatedTitle = "")
+            article.bind(AttentionReaderRow(next, false, false))
+            assertEquals(View.GONE, views(article).first { it.tag == "attention-original-headline:other" }.visibility)
+            assertEquals(next.title, (views(article).first { it.tag == "attention-headline:other" } as TextView).text.toString())
+        }
+    }
+
+    @Test fun translationArrivalUpdatesVisibleCollapsedHeadlineWithoutResizingOrChangingReadColor() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(title = "New model released",
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                val host = android.widget.FrameLayout(activity)
+                val article = ProactiveAttentionArticleView(activity, {}, {}, {}, {}, { _, done -> done(null) }, {})
+                article.bind(AttentionReaderRow(item, false, false))
+                host.addView(article)
+                activity.setContentView(host)
+                assertTrue(article.isAttachedToWindow)
+                val width = View.MeasureSpec.makeMeasureSpec(activity.resources.displayMetrics.widthPixels, View.MeasureSpec.EXACTLY)
+                val height = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                article.measure(width, height)
+                val beforeHeight = article.measuredHeight
+                val beforeColor = (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).currentTextColor
+                val updated = AttentionReaderRow(item.copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03"), false, false)
+                article.updateStatus(updated)
+                fun title() = (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).text.toString()
+                assertEquals(updated.item.translatedTitle, title())
+                article.measure(width, height)
+                assertEquals(beforeHeight, article.measuredHeight)
+                assertEquals(beforeColor, (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).currentTextColor)
+                article.bind(updated.copy(expanded = true))
+                assertEquals(updated.item.translatedTitle, title())
+                host.removeView(article)
+                host.addView(article)
+                assertEquals(updated.item.translatedTitle, title())
+            }
+        }
+    }
+
+    @Test fun expandedArticleAdoptsTranslationOnExplicitRebindNotWhileReadingBody() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(title = "New model released",
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                val article = ProactiveAttentionArticleView(activity, {}, {}, {}, {}, { _, done -> done(null) }, {})
+                article.bind(AttentionReaderRow(item, true, false))
+                activity.setContentView(article)
+                val updated = AttentionReaderRow(item.copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03"), true, false)
+                fun title() = (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).text.toString()
+                article.updateStatus(updated)
+                assertEquals(item.title, title())
+                article.bind(updated.copy(expanded = false))
+                assertEquals(updated.item.translatedTitle, title())
+            }
+        }
+    }
+
+    @Test fun oldValidatorBackoffRecoversAndRejectedResponsesProvidePersistentFeedback() = isolated { context ->
+        val original = "Eight states accuse OpenAI"
+        val id = ProactiveAttentionTitlePolicy.key(original)
+        AgentEncryptedDatabase(context, "attention_titles_v1").writeString(id, JSONObject()
+            .put("original", original).put("retry_delay", 4_800_000L).put("next_at", Long.MAX_VALUE).toString())
+        val store = ProactiveAttentionTitleStore(context)
+        assertEquals(0L, store.nextAt(original))
+        store.defer(listOf(original), 1000)
+        assertEquals(301_000L, store.nextAt(original))
+        val bad = """{"translations":[{"id":"$id","title_zh":"English only"}]}"""
+        assertEquals(0, store.accept(bad, mapOf(id to original)))
+        assertEquals("missing_chinese_text", ProactiveAttentionTitleStore(context).feedback(mapOf(id to original))[id])
+        val good = JSONObject().put("translations", org.json.JSONArray().put(JSONObject().put("id", id)
+            .put("title_zh", "8\u4e2a\u5dde\u6307\u63a7OpenAI"))).toString()
+        assertEquals(1, store.accept(good, mapOf(id to original)))
+        assertEquals("8\u4e2a\u5dde\u6307\u63a7OpenAI", ProactiveAttentionTitleStore(context).translation(original))
+        assertTrue(store.feedback(mapOf(id to original)).isEmpty())
+    }
+
+    @Test fun visibleTitlePriorityPersistsExpiresAndDoesNotBypassRetryLease() = isolated { context ->
+        val store = ProactiveAttentionTitleStore(context)
+        val title = "New model released"
+        store.prioritize(listOf(title, title), 1_000)
+        assertEquals(setOf(ProactiveAttentionTitlePolicy.key(title)), ProactiveAttentionTitleStore(context).priorityKeys(2_000))
+        store.defer(listOf(title), 1_000)
+        store.prioritize(listOf(title), 2_000)
+        assertEquals(301_000L, store.nextAt(title))
+        assertTrue(store.priorityKeys(602_000).isEmpty())
     }
 
     @Test fun attentionTitleColorsRemainLegibleInLightAndDarkModes() {

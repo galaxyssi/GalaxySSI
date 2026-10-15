@@ -503,6 +503,17 @@ class GlobalAgentRepository(context: Context) {
 
     fun proactiveMessages(): List<GlobalProactiveMessage> = synchronized(STORE_LOCK) { loadProactiveMessages() }
 
+    internal fun proactiveInboxPreview(state: AttentionReaderState, saved: Set<String>): List<GlobalProactiveInboxItem> {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        // The index and rows are committed together. Reading does not wait for unrelated research under STORE_LOCK.
+        return GlobalProactiveInboxPolicy.project(proactiveMessageStore.preview(state, saved), loadFeedback())
+    }
+
+    internal fun proactiveInboxCounts(): ProactiveInboxCounts {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        return proactiveMessageStore.counts(loadFeedback())
+    }
+
     fun proactiveMessage(id: String): GlobalProactiveMessage? = synchronized(STORE_LOCK) { proactiveMessageStore.get(id) }
 
     fun saveProactiveMessages(messages: List<GlobalProactiveMessage>) = synchronized(STORE_LOCK) {
@@ -2803,7 +2814,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     )
 
     fun consumeConnectorResponse(response: AgentConnectorResponse): Boolean =
-        GlobalConnectorResponseScope.consume(
+        (response.conversationId.startsWith(AttentionTitleRequest.PREFIX) &&
+            ProactiveAttentionPairedTitles(appContext).consume(response)) || GlobalConnectorResponseScope.consume(
             response,
             cognition = { cognitionExecutor.consumeConnectorResponse(response) },
             autonomous = { autonomousRunExecutor.consumeConnectorResponse(response) },
@@ -3490,7 +3502,7 @@ object GlobalConversationEventBus {
         entry: AgentTranscriptEntry,
         timestampMillis: Long = System.currentTimeMillis()
     ): Boolean {
-        if (conversation.trackingPaused || conversation.privateMode) return false
+        if (conversation.trackingPaused || conversation.privateMode || entry.role == AgentTranscriptRole.PROCESS) return false
         val repository = GlobalAgentRepository(context)
         if (!repository.settings().enabled) return false
         val deletedEventId = "transcript:${entry.id}"
