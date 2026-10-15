@@ -73,8 +73,7 @@ internal class ProactiveAttentionPushRuntime(private val context: Context) {
 
     private fun enabled(): Boolean {
         val preferences = ProactiveAttentionStore(context).preferences()
-        return !closed && preferences.configured && preferences.enabled && preferences.topics.any { it.enabled } &&
-            GlobalAgentRepository(context).settings().enabled
+        return !closed && preferences.configured && preferences.enabled && preferences.topics.any { it.enabled }
     }
 
     private fun online(): Boolean {

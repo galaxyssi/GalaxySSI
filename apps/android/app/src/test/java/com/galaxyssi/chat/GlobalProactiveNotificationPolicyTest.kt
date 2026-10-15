@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GlobalProactiveNotificationPolicyTest {
+    @Test fun pausedLearningKeepsFeedAlertsButNotNewWorldModelInsights() {
+        val paused = GlobalAgentSettings(enabled = false, proactiveInsightsEnabled = false)
+        assertTrue(GlobalProactiveNotificationPolicy.enabledFor(message("attention-feed:article"), paused))
+        assertFalse(GlobalProactiveNotificationPolicy.enabledFor(message("world-model"), paused))
+        assertFalse(GlobalProactiveNotificationPolicy.enabledFor(message("attention-feed:article"),
+            paused.copy(notificationsEnabled = false)))
+        assertTrue(GlobalProactiveNotificationPolicy.enabledFor(message("world-model"), GlobalAgentSettings()))
+    }
+
     @Test fun emptyBatchHasNoNotification() {
         assertNull(GlobalProactiveNotificationPolicy.candidate(emptyList()))
     }

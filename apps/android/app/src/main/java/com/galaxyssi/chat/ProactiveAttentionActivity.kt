@@ -203,10 +203,6 @@ class ProactiveAttentionActivity : Activity() {
                 val next = store.update(transform)
                 if (before.translateTitles != next.translateTitles) ProactiveAttentionTitleScheduler.request(applicationContext)
                 ProactiveAttentionPush.refresh()
-                if (next.configured && next.enabled && (!before.configured || !before.enabled)) runtime.updateSettings { it.copy(
-                    enabled = true, proactiveInsightsEnabled = true, autonomousResearchEnabled = true,
-                    autoCreateConversationsEnabled = true
-                ) }
                 if (reschedule) {
                     ProactiveAttentionCoordinator(applicationContext).reconcile()
                     if (next.configured && next.enabled) {
@@ -404,7 +400,7 @@ class ProactiveAttentionActivity : Activity() {
     private fun status(): String {
         if (!preferences.configured || !preferences.enabled) return getString(R.string.attention_paused)
         val settings = runtime.cachedSettings()
-        if (settings.enabled && feedLastPoll > 0) return getString(R.string.attention_updated, date(feedLastPoll)) +
+        if (feedLastPoll > 0) return getString(R.string.attention_updated, date(feedLastPoll)) +
             "\n" + getString(R.string.attention_feed_active)
         if (!settings.enabled || !settings.autonomousResearchEnabled ||
             (!preferences.allowPairedModel && !preferences.allowCloudModel)) return getString(R.string.attention_waiting)

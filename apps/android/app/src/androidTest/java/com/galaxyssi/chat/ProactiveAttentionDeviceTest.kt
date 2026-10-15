@@ -26,6 +26,36 @@ import org.junit.runner.RunWith
 /** Synthetic by default; explicitly enabled live checks use public feeds and existing model permissions. */
 @RunWith(AndroidJUnit4::class)
 class ProactiveAttentionDeviceTest {
+    @Test fun pausedWorldModelStillCollectsNewsWithoutEnqueuingLearning() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        repository.saveSettings(repository.settings().copy(enabled = false))
+        val topic = AttentionTopic("ai_models", "AI", "AI")
+        val preferences = ProactiveAttentionStore(context).update { it.copy(configured = true,
+            alertMode = AttentionAlertMode.ALL, topics = listOf(topic)) }
+        val pendingBefore = repository.pendingEventCount()
+        val tasksBefore = repository.researchTasks()
+        val now = System.currentTimeMillis()
+        val date = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(
+            java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneOffset.UTC))
+        var fetches = 0
+        val cycle = ProactiveAttentionFeedCollector(context) {
+            fetches++
+            "<rss><channel><item><title>AI fixture release</title><link>https://example.org/ai-release</link>" +
+                "<source>Fixture</source><pubDate>$date</pubDate></item></channel></rss>"
+        }.collect(now)
+        assertEquals(1, cycle.newItems)
+        assertTrue(fetches > 0)
+        val message = repository.proactiveMessages().single()
+        assertEquals(GlobalProactiveMessageStatus.DELIVERED, message.status)
+        assertTrue(GlobalProactiveNotificationPolicy.enabledFor(message, repository.settings()))
+        assertTrue(AgentCognitiveEvalBridge.shouldNotify(context, message, preferences))
+        ProactiveAttentionCoordinator(context).reconcile()
+        assertEquals(tasksBefore, repository.researchTasks())
+        assertEquals(pendingBefore, repository.pendingEventCount())
+        assertFalse(GlobalAgentRepository(context).settings().enabled)
+        assertEquals(message.id, GlobalAgentRepository(context).proactiveMessages().single().id)
+    }
+
     @Test fun notificationPassReusesItsSnapshotAndNextPassHonorsChangedSettings() = isolated { context ->
         val store = ProactiveAttentionStore(context)
         val snapshot = store.update { it.copy(configured = true, alertMode = AttentionAlertMode.ALL) }

@@ -4,6 +4,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AndroidCognitionSchedulePolicyTest {
+    @Test fun `paused learning rejects event research explicit and retry wakeups`() {
+        AndroidCognitionWorkMode.entries.forEach { mode ->
+            assertEquals(mode == AndroidCognitionWorkMode.PROJECTION,
+                AndroidCognitionScheduler.allowsWork(mode, false))
+            assertEquals(true, AndroidCognitionScheduler.allowsWork(mode, true))
+        }
+    }
+
     @Test fun `attention continuation does not run unrelated cognition or knowledge projection`() {
         val plan = AndroidCognitionSchedulePolicy.workPlan(AndroidCognitionWorkMode.ATTENTION)
         assertEquals(false, plan.runBatchCognition)
