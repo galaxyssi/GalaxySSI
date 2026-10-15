@@ -2803,7 +2803,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     )
 
     fun consumeConnectorResponse(response: AgentConnectorResponse): Boolean =
-        GlobalConnectorResponseScope.consume(
+        (response.conversationId.startsWith(AttentionTitleRequest.PREFIX) &&
+            ProactiveAttentionPairedTitles(appContext).consume(response)) || GlobalConnectorResponseScope.consume(
             response,
             cognition = { cognitionExecutor.consumeConnectorResponse(response) },
             autonomous = { autonomousRunExecutor.consumeConnectorResponse(response) },

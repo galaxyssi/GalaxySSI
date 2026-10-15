@@ -122,6 +122,7 @@ object ProactiveAttentionFeedDelivery {
         if (candidate != null && AndroidCognitionNotificationCenter.notify(context, candidate))
             runtime.markNotified(candidate.messageIds)
         if (newItems > 0) {
+            ProactiveAttentionTitleScheduler.request(context)
             GlobalProactiveDeliveryBus.signalReady()
             AndroidCognitionScheduler.requestAttention(context)
         }
