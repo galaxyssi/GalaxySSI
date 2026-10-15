@@ -56,8 +56,8 @@ internal class ProactiveAttentionArticleView(
         val token = ++generation
         if (!isAttachedToWindow || row?.item?.key != next.item.key) {
             displayedUnread = next.item.isNew
-            displayedTranslation = next.item.translatedTitle
         }
+        displayedTranslation = next.item.translatedTitle
         row = next; sourceName = ""; evidenceChecked = false
         removeAllViews()
         val item = next.item
@@ -77,15 +77,19 @@ internal class ProactiveAttentionArticleView(
             tag = "attention-headline:${item.key}"
             setTypeface(typeface, Typeface.NORMAL)
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
+            minLines = if (!next.expanded && expectsTranslation(item)) 2 else 1
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, dp(6), 0, dp(5))
+            if (!next.expanded && expectsTranslation(item)) reserveBilingualHeight()
         }
         titles.addView(headline)
         originalHeadline = label("", 13f, secondary = true).apply {
             tag = "attention-original-headline:${item.key}"
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
+            minLines = if (!next.expanded && expectsTranslation(item)) 2 else 1
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, 0, 0, dp(6))
+            if (!next.expanded && expectsTranslation(item)) reserveBilingualHeight()
         }
         titles.addView(originalHeadline)
         updateHeadline(next)
@@ -140,9 +144,12 @@ internal class ProactiveAttentionArticleView(
 
     fun updateStatus(next: AttentionReaderRow) {
         row = next
-        // Read and translation commits must not change the layout of an article being viewed.
+        // Freeze read color. Collapsed bilingual slots have stable heights, so translations can
+        // arrive in place. Expanded text waits for the next explicit bind to avoid moving the body.
         if (!isAttachedToWindow) {
             displayedUnread = next.item.isNew
+        }
+        if (!isAttachedToWindow || !next.expanded) {
             displayedTranslation = next.item.translatedTitle
             updateHeadline(next)
         }
@@ -165,9 +172,18 @@ internal class ProactiveAttentionArticleView(
         }
         headline?.text = displayedTranslation.ifBlank { original }
         originalHeadline?.apply {
-            text = original
-            visibility = if (displayedTranslation.isNotBlank()) View.VISIBLE else View.GONE
+            text = if (displayedTranslation.isNotBlank()) original else context.getString(R.string.attention_translation_pending)
+            visibility = if (displayedTranslation.isNotBlank() || expectsTranslation(next.item)) View.VISIBLE else View.GONE
         }
+    }
+
+    private fun expectsTranslation(item: GlobalProactiveInboxItem) =
+        context.resources.configuration.locales[0].language == "zh" && ProactiveAttentionTitlePolicy.needsTranslation(item.title)
+
+    private fun TextView.reserveBilingualHeight() {
+        // CJK fallback fonts can be taller than Latin fonts even with identical minLines.
+        layoutParams = LayoutParams(-1,
+            kotlin.math.ceil(maxOf(textSize * 1.5f, lineHeight.toFloat())).toInt() * 2 + paddingTop + paddingBottom)
     }
 
     private fun articleText(item: GlobalProactiveInboxItem): String {

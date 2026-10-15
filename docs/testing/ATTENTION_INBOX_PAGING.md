@@ -238,3 +238,63 @@ are local-storage timings, not model-response or network timings.
   test database immediately removes its ordering metadata via the delete trigger.
 - Final APK/test APK builds, all 99 JVM checks, localization guard, source-size
   policy and whitespace validation passed. No real model experiment was started.
+
+## Visible headline translation recovery (v1.5.17)
+
+The S20U screenshot still showed an English-only headline. Read-only diagnostics
+found 159 English feed titles and 153 cached translations. The displayed title
+had no cache entry and an 80-minute retry interval. Desktop task history showed
+that the model had returned Chinese successfully: the validator rejected an
+English spelled-out count translated into the equivalent Arabic numeral. Other
+rejected replies similarly converted English month names into numeric months.
+
+- Original Arabic numbers and versions must still match exactly. Additional
+  translated digits are accepted only when backed by equivalent explicit English
+  count words or month names. This is structural validation, not semantic proof.
+- A validator revision releases old rejection backoffs once, without discarding
+  already accepted translations or overriding current retry leases and budgets.
+- Rejections retain per-title reason codes. Subsequent model requests receive
+  those codes as data, so a retry can correct the actual defect rather than
+  blindly repeat an identical request. Cloud permission is never enabled here.
+- Visible public feed titles receive expiring priority within the existing
+  single-batch scheduler. Priority does not bypass leases, concurrency, token or
+  cost limits. Missing model routes schedule another eligibility check.
+- Collapsed English-title rows reserve two bilingual title slots. A translation
+  updates the Chinese primary title and English original in place, without
+  changing row height or the frozen read color. Expanded body reading is not
+  shifted: an explicit rebind/collapse or reattachment adopts the latest title.
+- Priority refresh is separate from scroll-settle/collapse behavior. Destroyed
+  readers ignore delayed callbacks; scheduling cannot revive a closed reader.
+- Opt-in title diagnostics inspect only public-feed state. The live regression
+  accepts a title prefix, uses the configured route, and requires that exact
+  existing article to receive a translation without rewriting its source title.
+
+### Real translation checks
+
+- The originally displayed headline received its real Chinese translation through
+  the existing paired Desktop route. The repaired six-title model batch completed
+  in 25.253 seconds on Desktop; this is not a mobile end-to-end latency claim.
+- Month abbreviations (including `Jan` and `Sept.`) are covered as well. A later
+  read-only snapshot contained 510 public messages and 161 English headlines;
+  all 161 had accepted Chinese translations in the phone cache. Collection kept
+  running, so this is a point-in-time coverage count, not a permanent guarantee.
+- Background cloud-model permission remained disabled. No source title was
+  rewritten, no fabricated translations were injected, and no private article
+  contents, screenshots or logs were uploaded to the repository.
+
+### Final verification
+
+- Android v1.5.17 (1300) was built and installed over the existing S20U app.
+- All 102 focused JVM tests passed. All 12 focused device regressions passed in
+  74.025 seconds, including exact row-height stability, bilingual recycling,
+  expanded-body stability, scrolling anchors, read/bookmark state, old-backoff
+  recovery, durable validation feedback, priority expiry and response ownership.
+- Device regression caught and fixed a late-reader callback, a 3-pixel CJK font
+  height change, a `TextView.setHeight`/max-lines conflict, and an unwanted
+  coupling between priority refresh and offscreen collapse. The final run retains
+  the original user-driven collapse rules and two-line collapsed title limit.
+- Final screenshot inspection confirmed the originally untranslated real article
+  now shows a Chinese primary headline with the English original underneath, at
+  the device's existing enlarged font scale. The source remains marked unverified.
+- Both APK builds, localization guard, Kotlin source-size policy and whitespace
+  validation passed. Desktop code and model permissions were not changed.

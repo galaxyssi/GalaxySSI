@@ -507,7 +507,7 @@ class ProactiveAttentionDeviceTest {
         }
     }
 
-    @Test fun translationArrivalDoesNotChangeVisibleHeadlineUntilReattached() {
+    @Test fun translationArrivalUpdatesVisibleCollapsedHeadlineWithoutResizingOrChangingReadColor() {
         val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(title = "New model released",
             status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
         ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
@@ -518,17 +518,73 @@ class ProactiveAttentionDeviceTest {
                 host.addView(article)
                 activity.setContentView(host)
                 assertTrue(article.isAttachedToWindow)
+                val width = View.MeasureSpec.makeMeasureSpec(activity.resources.displayMetrics.widthPixels, View.MeasureSpec.EXACTLY)
+                val height = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                article.measure(width, height)
+                val beforeHeight = article.measuredHeight
+                val beforeColor = (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).currentTextColor
                 val updated = AttentionReaderRow(item.copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03"), false, false)
                 article.updateStatus(updated)
                 fun title() = (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).text.toString()
-                assertEquals(item.title, title())
+                assertEquals(updated.item.translatedTitle, title())
+                article.measure(width, height)
+                assertEquals(beforeHeight, article.measuredHeight)
+                assertEquals(beforeColor, (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).currentTextColor)
                 article.bind(updated.copy(expanded = true))
-                assertEquals(item.title, title())
+                assertEquals(updated.item.translatedTitle, title())
                 host.removeView(article)
                 host.addView(article)
                 assertEquals(updated.item.translatedTitle, title())
             }
         }
+    }
+
+    @Test fun expandedArticleAdoptsTranslationOnExplicitRebindNotWhileReadingBody() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(title = "New model released",
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                val article = ProactiveAttentionArticleView(activity, {}, {}, {}, {}, { _, done -> done(null) }, {})
+                article.bind(AttentionReaderRow(item, true, false))
+                activity.setContentView(article)
+                val updated = AttentionReaderRow(item.copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03"), true, false)
+                fun title() = (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).text.toString()
+                article.updateStatus(updated)
+                assertEquals(item.title, title())
+                article.bind(updated.copy(expanded = false))
+                assertEquals(updated.item.translatedTitle, title())
+            }
+        }
+    }
+
+    @Test fun oldValidatorBackoffRecoversAndRejectedResponsesProvidePersistentFeedback() = isolated { context ->
+        val original = "Eight states accuse OpenAI"
+        val id = ProactiveAttentionTitlePolicy.key(original)
+        AgentEncryptedDatabase(context, "attention_titles_v1").writeString(id, JSONObject()
+            .put("original", original).put("retry_delay", 4_800_000L).put("next_at", Long.MAX_VALUE).toString())
+        val store = ProactiveAttentionTitleStore(context)
+        assertEquals(0L, store.nextAt(original))
+        store.defer(listOf(original), 1000)
+        assertEquals(301_000L, store.nextAt(original))
+        val bad = """{"translations":[{"id":"$id","title_zh":"English only"}]}"""
+        assertEquals(0, store.accept(bad, mapOf(id to original)))
+        assertEquals("missing_chinese_text", ProactiveAttentionTitleStore(context).feedback(mapOf(id to original))[id])
+        val good = JSONObject().put("translations", org.json.JSONArray().put(JSONObject().put("id", id)
+            .put("title_zh", "8\u4e2a\u5dde\u6307\u63a7OpenAI"))).toString()
+        assertEquals(1, store.accept(good, mapOf(id to original)))
+        assertEquals("8\u4e2a\u5dde\u6307\u63a7OpenAI", ProactiveAttentionTitleStore(context).translation(original))
+        assertTrue(store.feedback(mapOf(id to original)).isEmpty())
+    }
+
+    @Test fun visibleTitlePriorityPersistsExpiresAndDoesNotBypassRetryLease() = isolated { context ->
+        val store = ProactiveAttentionTitleStore(context)
+        val title = "New model released"
+        store.prioritize(listOf(title, title), 1_000)
+        assertEquals(setOf(ProactiveAttentionTitlePolicy.key(title)), ProactiveAttentionTitleStore(context).priorityKeys(2_000))
+        store.defer(listOf(title), 1_000)
+        store.prioritize(listOf(title), 2_000)
+        assertEquals(301_000L, store.nextAt(title))
+        assertTrue(store.priorityKeys(602_000).isEmpty())
     }
 
     @Test fun attentionTitleColorsRemainLegibleInLightAndDarkModes() {

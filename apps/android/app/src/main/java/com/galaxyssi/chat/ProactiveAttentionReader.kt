@@ -32,11 +32,14 @@ internal class ProactiveAttentionReader(
     private val stateStore = ProactiveAttentionReaderStateStore(storageContext)
     private val attention = ProactiveAttentionStore(storageContext)
     private val repository = GlobalAgentRepository(storageContext)
+    private val titleStore = ProactiveAttentionTitleStore(storageContext)
+    private var prioritizedTitles = emptyList<String>()
     private val runtime = GlobalSuperAgentRuntime.get(activity)
     private val dwell = AttentionReadDwell()
     private var initialized = false
     private var complete = true
     private var active = false
+    private var destroyed = false
     private var olderQueued = false
     private var saved = emptySet<String>()
     private val pendingSaves = mutableMapOf<String, Boolean>()
@@ -99,7 +102,7 @@ internal class ProactiveAttentionReader(
 
     private val settleReading = object : Runnable {
         override fun run() {
-            if (activity.isDestroyed || !list.isAttachedToWindow || !view.isShown ||
+            if (destroyed || worker.isShutdown || activity.isDestroyed || !list.isAttachedToWindow || !view.isShown ||
                 list.scrollState != RecyclerView.SCROLL_STATE_IDLE) return
             if (list.isComputingLayout || list.hasPendingAdapterUpdates()) {
                 list.postOnAnimation(this)
@@ -116,6 +119,19 @@ internal class ProactiveAttentionReader(
                 manager.scrollToPositionWithOffset(first, offset)
             }
             persistAt(anchor, offset)
+            prioritizeVisibleTitles(first, last)
+        }
+    }
+
+    private val prioritizeReading = object : Runnable {
+        override fun run() {
+            if (destroyed || worker.isShutdown || activity.isDestroyed || !list.isAttachedToWindow || !view.isShown ||
+                list.scrollState != RecyclerView.SCROLL_STATE_IDLE) return
+            if (list.isComputingLayout || list.hasPendingAdapterUpdates()) {
+                list.postOnAnimation(this)
+                return
+            }
+            prioritizeVisibleTitles(manager.findFirstVisibleItemPosition(), manager.findLastVisibleItemPosition())
         }
     }
 
@@ -150,6 +166,7 @@ internal class ProactiveAttentionReader(
     }
 
     fun update(items: List<GlobalProactiveInboxItem>, savedKeys: Set<String>, restored: AttentionReaderState, complete: Boolean = true) {
+        if (destroyed) return
         val finishingInitialLoad = !this.complete && complete
         this.complete = complete
         saved = savedKeys.toMutableSet().apply { pendingSaves.forEach { (key, value) -> if (value) add(key) else remove(key) } }
@@ -168,6 +185,7 @@ internal class ProactiveAttentionReader(
     }
 
     private fun publish() {
+        if (destroyed) return
         timeline.setSaved(saved)
         adapter.submit(timeline.visible.map { AttentionReaderRow(it, it.key in timeline.expanded, it.key in saved) })
         tabs.forEachIndexed { index, tab ->
@@ -185,6 +203,22 @@ internal class ProactiveAttentionReader(
         notice.isClickable = timeline.newerCount > 0
         empty.text = activity.getString(if (complete) R.string.attention_empty else R.string.attention_loading)
         empty.visibility = if (timeline.visible.isEmpty()) View.VISIBLE else View.GONE
+        list.removeCallbacks(prioritizeReading)
+        list.postOnAnimation(prioritizeReading)
+    }
+
+    private fun prioritizeVisibleTitles(first: Int, last: Int) {
+        if (activity.resources.configuration.locales[0].language != "zh") return
+        val titles = (first..last).mapNotNull { adapter.rows.getOrNull(it)?.item }.filter {
+            it.messageIds.any { id -> id.startsWith("attention-feed:") } && it.translatedTitle.isBlank() &&
+                ProactiveAttentionTitlePolicy.needsTranslation(it.title)
+        }.map { it.title }.distinct()
+        if (titles == prioritizedTitles) return
+        prioritizedTitles = titles
+        worker.execute {
+            titleStore.prioritize(titles, System.currentTimeMillis())
+            if (titles.isNotEmpty()) ProactiveAttentionTitleScheduler.request(activity.applicationContext)
+        }
     }
 
     private fun loadNewer() {
@@ -288,17 +322,17 @@ internal class ProactiveAttentionReader(
         }
     }
 
-    fun resume() { if (!active) { active = true; dwell.reset(); main.post(readTick) } }
-    fun pause() { active = false; dwell.reset(); main.removeCallbacks(readTick); list.removeCallbacks(settleReading); persist() }
-    fun destroy() { active = false; main.removeCallbacksAndMessages(null); list.removeCallbacks(settleReading) }
+    fun resume() { if (!active && !destroyed) { active = true; dwell.reset(); main.post(readTick) } }
+    fun pause() { active = false; dwell.reset(); main.removeCallbacks(readTick); list.removeCallbacks(settleReading); list.removeCallbacks(prioritizeReading); persist() }
+    fun destroy() { destroyed = true; active = false; main.removeCallbacksAndMessages(null); list.removeCallbacks(settleReading); list.removeCallbacks(prioritizeReading) }
     fun persist() {
-        if (!initialized || activity.isDestroyed) return
+        if (destroyed || worker.isShutdown || !initialized || activity.isDestroyed) return
         val position = manager.findFirstVisibleItemPosition()
         if (position < 0 && timeline.visible.isNotEmpty()) return
         persistAt(adapter.rows.getOrNull(position)?.item?.key.orEmpty(), manager.findViewByPosition(position)?.top ?: 0)
     }
     private fun persistAt(anchor: String, offset: Int) {
-        if (!initialized || activity.isDestroyed) return
+        if (destroyed || worker.isShutdown || !initialized || activity.isDestroyed) return
         val state = AttentionReaderState(timeline.filter, timeline.visible.map { it.key }, timeline.expanded.toSet(), anchor, offset)
         worker.execute { runCatching { stateStore.write(state) } }
     }
