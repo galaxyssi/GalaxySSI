@@ -31,7 +31,8 @@ class ProactiveAttentionDeviceTest {
         repository.saveSettings(repository.settings().copy(enabled = false))
         val topic = AttentionTopic("ai_models", "AI", "AI")
         val preferences = ProactiveAttentionStore(context).update { it.copy(configured = true,
-            alertMode = AttentionAlertMode.ALL, topics = listOf(topic)) }
+            alertMode = AttentionAlertMode.ALL,
+            topics = it.topics.map { current -> if (current.id == topic.id) topic else current.copy(enabled = false) }) }
         val pendingBefore = repository.pendingEventCount()
         val tasksBefore = repository.researchTasks()
         val now = System.currentTimeMillis()
@@ -46,6 +47,7 @@ class ProactiveAttentionDeviceTest {
         assertEquals(1, cycle.newItems)
         assertTrue(fetches > 0)
         val message = repository.proactiveMessages().single()
+        assertEquals(topic.title, message.topic)
         assertEquals(GlobalProactiveMessageStatus.DELIVERED, message.status)
         assertTrue(GlobalProactiveNotificationPolicy.enabledFor(message, repository.settings()))
         assertTrue(AgentCognitiveEvalBridge.shouldNotify(context, message, preferences))
