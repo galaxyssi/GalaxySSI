@@ -65,9 +65,9 @@ internal class ProactiveAttentionArticleView(
         top.addView(label(SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.deliveredAtMillis)), 11f, secondary = true))
         intro.addView(top)
         val titleRow = horizontal()
-        headline = label(item.title.ifBlank { item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ') }, 16f).apply {
+        headline = label(item.title.ifBlank { item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ') }, 17.6f).apply {
             tag = "attention-headline:${item.key}"
-            setTypeface(typeface, Typeface.BOLD)
+            setTypeface(typeface, Typeface.NORMAL)
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, dp(6), 0, dp(5))
@@ -90,10 +90,10 @@ internal class ProactiveAttentionArticleView(
         intro.setOnLongClickListener { menu(item); true }
         content.addView(intro)
         if (next.expanded) {
-            content.addView(label(context.getString(R.string.attention_content_summary), 12f, true).apply {
+            content.addView(label(context.getString(R.string.attention_content_summary), 14.4f, true).apply {
                 setPadding(0, dp(12), 0, dp(8))
             })
-            content.addView(label("", 15f).apply {
+            content.addView(label("", 18f).apply {
                 setLineSpacing(dp(4).toFloat(), 1f)
                 text = AgentRichInlineMarkdownRenderer.render(bodyText)
                 movementMethod = LinkMovementMethod.getInstance()

@@ -131,3 +131,15 @@ continuous-reader results are recorded separately after its validation.
   bookmark undo and legible unread/read colors in light and dark themes.
 - Tests used isolated synthetic records without dispatching model tasks.
   Collection schedules, model routing and existing headline colors are unchanged.
+
+## Reading typography verification (v1.5.14)
+
+- News headlines use regular weight at 17.6sp (previously bold 16sp).
+- Expanded body text uses 18sp (previously 15sp); the content-summary label
+  uses 14.4sp (previously 12sp). Preview, metadata and action text are unchanged.
+- Android v1.5.14 (1297) built and installed over the existing S20U app.
+- All five targeted reader device tests passed in 34.491 seconds, including
+  regular headline weight across expand/collapse, exact SP sizes at standard
+  and enlarged font scales, offscreen collapse, stable anchors, read state,
+  bookmark undo and title contrast. Real list and expanded screenshots were
+  also inspected for wrapping and spacing.
