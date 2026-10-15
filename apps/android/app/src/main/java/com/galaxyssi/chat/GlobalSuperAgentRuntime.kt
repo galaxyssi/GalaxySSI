@@ -509,6 +509,11 @@ class GlobalAgentRepository(context: Context) {
         return GlobalProactiveInboxPolicy.project(proactiveMessageStore.preview(state, saved), loadFeedback())
     }
 
+    internal fun proactiveInboxCounts(): ProactiveInboxCounts {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        return proactiveMessageStore.counts(loadFeedback())
+    }
+
     fun proactiveMessage(id: String): GlobalProactiveMessage? = synchronized(STORE_LOCK) { proactiveMessageStore.get(id) }
 
     fun saveProactiveMessages(messages: List<GlobalProactiveMessage>) = synchronized(STORE_LOCK) {
@@ -3497,7 +3502,7 @@ object GlobalConversationEventBus {
         entry: AgentTranscriptEntry,
         timestampMillis: Long = System.currentTimeMillis()
     ): Boolean {
-        if (conversation.trackingPaused || conversation.privateMode) return false
+        if (conversation.trackingPaused || conversation.privateMode || entry.role == AgentTranscriptRole.PROCESS) return false
         val repository = GlobalAgentRepository(context)
         if (!repository.settings().enabled) return false
         val deletedEventId = "transcript:${entry.id}"

@@ -3,6 +3,8 @@ package com.galaxyssi.chat
 import android.database.sqlite.SQLiteDatabase
 import org.json.JSONObject
 
+internal data class ProactiveInboxCounts(val total: Int, val unread: Int)
+
 /** Ordering metadata only; headlines and bodies remain in the encrypted message rows. */
 internal class ProactiveMessageReadIndex(private val database: AgentEncryptedDatabase) {
     fun ready() = database.contains(READY)
@@ -36,6 +38,32 @@ internal class ProactiveMessageReadIndex(private val database: AgentEncryptedDat
         db.execSQL("INSERT OR REPLACE INTO $TABLE(id,storage_key,delivered,created,viewed,digest) VALUES(?,?,?,?,?,?)",
             arrayOf(id, key, record.optLong("delivered_at_millis"), record.optLong("created_at_millis"),
                 record.optLong("viewed_at_millis"), digest))
+    }
+
+    fun counts(feedback: List<GlobalAgentFeedback>): ProactiveInboxCounts {
+        val kinds = feedback.groupBy(GlobalAgentFeedback::proactiveMessageId)
+            .mapValues { (_, values) -> values.maxByOrNull(GlobalAgentFeedback::createdAtMillis)?.kind }
+        return database.indexedTransaction { db ->
+            val groups = linkedMapOf<String, CountGroup>()
+            db.rawQuery("SELECT id,digest,viewed FROM $TABLE", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val id = cursor.getString(0)
+                    val digest = cursor.getString(1)
+                    val group = groups.getOrPut(if (digest.isBlank()) "message:$id" else "digest:$digest") { CountGroup() }
+                    group.hasUnread = group.hasUnread || cursor.getLong(2) <= 0L
+                    kinds[id]?.let(group.kinds::add)
+                }
+            }
+            val visible = groups.values.filterNot {
+                GlobalAgentFeedbackKind.NOT_RELEVANT in it.kinds || GlobalAgentFeedbackKind.TOO_FREQUENT in it.kinds
+            }
+            ProactiveInboxCounts(visible.size, visible.count { it.hasUnread && it.kinds.size != 1 })
+        }
+    }
+
+    private class CountGroup {
+        var hasUnread = false
+        val kinds = mutableSetOf<GlobalAgentFeedbackKind>()
     }
 
     fun firstKeys(state: AttentionReaderState, saved: Set<String>, pageSize: Int = 20): List<String> =

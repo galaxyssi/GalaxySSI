@@ -123,6 +123,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
 ) {
     private val snapshotMigrationLock = Any()
     @Volatile private var snapshotIndexReady = false
+    @Volatile private var legacyMigrationComplete = false
     private data class RootRow(
         val rootHash: String,
         val state: AgentRunControlState,
@@ -447,22 +448,34 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
         }
     }
 
-    fun migrateLegacyIfNeeded(context: Context) = synchronized(this) {
-        if (metadata(LEGACY_MIGRATION_KEY) == "done") return@synchronized
-        val legacy = AgentEncryptedDatabase(context, LEGACY_DATABASE)
-        val entries = legacy.entries("run:")
-        entries.forEach { (_, raw) ->
-            val array = runCatching { JSONArray(raw) }.getOrNull() ?: return@forEach
-            val events = buildList {
-                for (index in 0 until array.length()) {
-                    array.optJSONObject(index)?.toRunEvent()?.let(::add)
-                }
-            }.sortedBy { it.sequence }
-            events.forEach { event ->
-                runCatching { appendExact(event) }.getOrThrow()
-            }
+    fun migrateLegacyIfNeeded(context: Context) {
+        if (legacyMigrationComplete) return
+        // The committed marker is immutable. Reopening a facade must not wait for event writers.
+        if (metadata(LEGACY_MIGRATION_KEY) == "done") {
+            legacyMigrationComplete = true
+            return
         }
-        putMetadata(LEGACY_MIGRATION_KEY, "done")
+        synchronized(this) {
+            if (legacyMigrationComplete || metadata(LEGACY_MIGRATION_KEY) == "done") {
+                legacyMigrationComplete = true
+                return
+            }
+            val legacy = AgentEncryptedDatabase(context, LEGACY_DATABASE)
+            val entries = legacy.entries("run:")
+            entries.forEach { (_, raw) ->
+                val array = runCatching { JSONArray(raw) }.getOrNull() ?: return@forEach
+                val events = buildList {
+                    for (index in 0 until array.length()) {
+                        array.optJSONObject(index)?.toRunEvent()?.let(::add)
+                    }
+                }.sortedBy { it.sequence }
+                events.forEach { event ->
+                    runCatching { appendExact(event) }.getOrThrow()
+                }
+            }
+            putMetadata(LEGACY_MIGRATION_KEY, "done")
+            legacyMigrationComplete = true
+        }
     }
 
     private fun insert(event: AgentRunControlEvent, existingRoot: RootRow?) {

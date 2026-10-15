@@ -66,6 +66,7 @@ internal class GlobalProactiveMessageStore(
 
     fun previewReady() = readIndex.ready()
     fun preparePreview() { prepare() }
+    fun counts(feedback: List<GlobalAgentFeedback>) = readIndex.counts(feedback)
     fun preview(state: AttentionReaderState, saved: Set<String>): List<GlobalProactiveMessage> =
         database.readStrings(readIndex.firstKeys(state, saved)).values.mapNotNull { decode(JSONObject(it)) }
 
