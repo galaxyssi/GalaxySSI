@@ -1043,12 +1043,13 @@ class ProactiveAttentionDeviceTest {
                 val anchor = views(activity.window.decorView).first { it.tag == "attention-feed-menu" }
                 anchor.performClick()
                 val popup = ProactiveAttentionActivity::class.java.getDeclaredField("feedMenu").apply { isAccessible = true }
-                    .get(activity) as android.widget.PopupMenu
-                assertEquals(4, popup.menu.size())
-                assertEquals(activity.getString(R.string.attention_menu_all), popup.menu.findItem(AttentionFeedFilter.ALL.ordinal).title)
-                assertEquals(activity.getString(R.string.attention_menu_unread), popup.menu.findItem(AttentionFeedFilter.UNREAD.ordinal).title)
-                assertEquals(activity.getString(R.string.attention_menu_saved), popup.menu.findItem(AttentionFeedFilter.SAVED.ordinal).title)
-                assertEquals(activity.getString(R.string.attention_title), popup.menu.findItem(100).title)
+                    .get(activity) as ProactiveAttentionFeedMenu
+                val menuRows = views(popup.content).filter { it.tag?.toString()?.startsWith("attention-menu:") == true }
+                assertEquals(4, menuRows.size)
+                assertEquals(listOf(R.string.attention_menu_all, R.string.attention_menu_unread,
+                    R.string.attention_menu_saved, R.string.attention_title).map(activity::getString),
+                    menuRows.map { it.contentDescription.toString() })
+                assertFalse(views(popup.content).any { it is CheckBox })
                 popup.dismiss()
             }
             scenario.onActivity { it.onBackPressed() }
