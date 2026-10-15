@@ -52,6 +52,12 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
             store.workerState(AttentionTitleStatus.DISABLED)
             return@withContext Result.success()
         }
+        val load = BackgroundLearningLoadSampler.read(context)
+        if (load.deferMillis > 0) {
+            ProactiveAttentionTitleScheduler.request(context, load.deferMillis)
+            android.util.Log.i("GalaxySSIAttention", "title_translation_deferred reason=device_load")
+            return@withContext Result.success()
+        }
         val paired = ProactiveAttentionPairedTitles(context)
         val pairedDelay = paired.pendingDelay(System.currentTimeMillis())
         if (pairedDelay > 0L) {

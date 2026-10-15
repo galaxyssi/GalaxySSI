@@ -26,6 +26,21 @@ import org.junit.runner.RunWith
 /** Synthetic by default; explicitly enabled live checks use public feeds and existing model permissions. */
 @RunWith(AndroidJUnit4::class)
 class ProactiveAttentionDeviceTest {
+    @Test fun notificationPassReusesItsSnapshotAndNextPassHonorsChangedSettings() = isolated { context ->
+        val store = ProactiveAttentionStore(context)
+        val snapshot = store.update { it.copy(configured = true, alertMode = AttentionAlertMode.ALL) }
+        val now = System.currentTimeMillis()
+        val topic = AttentionTopic("ai_models", "AI", "AI")
+        assertTrue(ProactiveAttentionFeedStore(context).ingest(AttentionFeedArticle("notification-fixture",
+            topic.id, "Synthetic headline", "Summary", "https://example.org/fixture", "Source", now, now), topic))
+        val message = GlobalAgentRepository(context).proactiveMessages().single()
+        store.update { it.copy(alertMode = AttentionAlertMode.SILENT) }
+        repeat(24) { assertTrue(AgentCognitiveEvalBridge.shouldNotify(context, message, snapshot)) }
+        assertFalse(AgentCognitiveEvalBridge.shouldNotify(context, message))
+        store.update { it.copy(alertMode = AttentionAlertMode.ALL, enabled = false) }
+        assertFalse(AgentCognitiveEvalBridge.shouldNotify(context, message))
+    }
+
     @Test fun indexedPreviewIsBoundedAndTracksReadRevisionsRestoresAndDeletes() = isolated { context ->
         val repository = GlobalAgentRepository(context)
         val values = (1..65).map { index -> message().copy(id = "preview-$index", sourceEventId = "preview-source-$index",

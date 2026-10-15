@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,11 +21,14 @@ import kotlinx.coroutines.sync.withLock
 object ProactiveAttentionFeedScheduler {
     private const val WORK = "galaxyssi-attention-feed-v1"
     private const val TIMER = "galaxyssi-attention-feed-timer-v1"
-    fun request(context: Context, delay: Long = 0L) {
-        val request = OneTimeWorkRequestBuilder<ProactiveAttentionFeedWorker>()
+    internal const val TIMER_INPUT = "feed_timer_only"
+    internal fun buildRequest(delay: Long) = OneTimeWorkRequestBuilder<ProactiveAttentionFeedWorker>()
+            .setInputData(workDataOf(TIMER_INPUT to (delay > 0)))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInitialDelay(delay.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
+    fun request(context: Context, delay: Long = 0L) {
+        val request = buildRequest(delay)
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
             if (delay > 0) TIMER else WORK,
             if (delay > 0) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
@@ -86,14 +90,18 @@ class ProactiveAttentionFeedCollector(
             if (items.isNotEmpty()) break
         }
         store.recordPoll(topic.id, created, if (fetched) "" else error, now)
-        GlobalProactiveDeliveryBus.signalReady()
         return AttentionFeedCycle(created, topics.minOf { store.topicState(it.id).optLong("next") }.coerceAtLeast(now + 1_000L),
             if (fetched) "" else error)
     }
 }
 
 class ProactiveAttentionFeedWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result = execution.withLock { withContext(Dispatchers.IO) {
+    override suspend fun doWork(): Result {
+        if (inputData.getBoolean(ProactiveAttentionFeedScheduler.TIMER_INPUT, false)) {
+            ProactiveAttentionFeedScheduler.request(applicationContext)
+            return Result.success()
+        }
+        return execution.withLock { withContext(Dispatchers.IO) {
         val coroutine = currentCoroutineContext()
         val collector = ProactiveAttentionFeedCollector(applicationContext) { url ->
             AgentBoundedWebService(AgentPinnedOkHttpWebTransport()).fetch(url, maxBytes = 512 * 1024L,
@@ -107,16 +115,19 @@ class ProactiveAttentionFeedWorker(context: Context, params: WorkerParameters) :
         ProactiveAttentionPush.refresh()
         if (cycle.nextAt > 0L || cycle.newItems > 0)
             ProactiveAttentionFeedScheduler.request(applicationContext,
-                (cycle.nextAt - System.currentTimeMillis()).coerceAtLeast(1_000L))
+                (cycle.nextAt - System.currentTimeMillis()).coerceAtLeast(
+                    BackgroundLearningLoadSampler.read(applicationContext).spacingMillis))
         android.util.Log.i("GalaxySSIAttention", "feed_cycle new=" + cycle.newItems + " error=" + cycle.error)
         Result.success()
-    } }
+    } } }
 
     companion object { private val execution = Mutex() }
 }
 
 object ProactiveAttentionFeedDelivery {
     @Synchronized fun published(context: Context, newItems: Int) {
+        // Empty polls and irrelevant push items must not scan the inbox or wake learning/UI work.
+        if (newItems <= 0) return
         val runtime = GlobalSuperAgentRuntime.get(context)
         val candidate = runtime.notificationCandidateForDelivered(runtime.unnotifiedDeliveredMessages())
         if (candidate != null && AndroidCognitionNotificationCenter.notify(context, candidate))
