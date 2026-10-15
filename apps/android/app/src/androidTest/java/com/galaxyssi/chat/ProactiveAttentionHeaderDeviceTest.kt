@@ -4,6 +4,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CompoundButton
@@ -17,6 +18,23 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ProactiveAttentionHeaderDeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
+
+    @Test fun feedHeaderMatchesPageBackgroundInBothThemes() {
+        instrumentation.runOnMainSync {
+            for (nightMode in listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES)) {
+                val config = Configuration(instrumentation.targetContext.resources.configuration).apply {
+                    uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or nightMode
+                }
+                val context = instrumentation.targetContext.createConfigurationContext(config)
+                val header = ProactiveAttentionHeader(context, {}, {})
+                for (settings in listOf(false, true, false)) {
+                    header.render(settings, 18)
+                    assertEquals(context.getColor(if (settings) R.color.surface_bg else R.color.page_bg),
+                        (header.background as ColorDrawable).color)
+                }
+            }
+        }
+    }
 
     @Test fun titleStaysAtPhysicalCenterWhenUnreadCountChanges() {
         instrumentation.runOnMainSync {

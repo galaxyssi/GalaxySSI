@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -64,6 +65,8 @@ internal class ProactiveAttentionHeader(
     }
 
     fun render(settings: Boolean, count: Int?) {
+        val color = context.getColor(if (settings) R.color.surface_bg else R.color.page_bg)
+        if ((background as? ColorDrawable)?.color != color) setBackgroundColor(color)
         val label = context.getString(if (settings) R.string.attention_title else R.string.attention_discoveries)
         if (title.text.toString() != label) title.text = label
         unread.visibility = if (!settings && count != null && count > 0) View.VISIBLE else View.GONE
