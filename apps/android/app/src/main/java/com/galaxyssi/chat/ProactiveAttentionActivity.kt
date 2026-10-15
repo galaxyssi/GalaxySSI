@@ -201,6 +201,7 @@ class ProactiveAttentionActivity : Activity() {
             runCatching {
                 val before = store.preferences()
                 val next = store.update(transform)
+                if (before.translateTitles != next.translateTitles) ProactiveAttentionTitleScheduler.request(applicationContext)
                 ProactiveAttentionPush.refresh()
                 if (next.configured && next.enabled && (!before.configured || !before.enabled)) runtime.updateSettings { it.copy(
                     enabled = true, proactiveInsightsEnabled = true, autonomousResearchEnabled = true,
@@ -281,6 +282,15 @@ class ProactiveAttentionActivity : Activity() {
             body.addView(line); divider()
         }
         body.addView(row("+ ${getString(R.string.attention_add)}") { editTopic(null) })
+        body.addView(row(getString(R.string.attention_translate_titles), getString(R.string.attention_translation_models)).apply {
+            addView(Switch(this@ProactiveAttentionActivity).apply {
+                tag = "attention-translate-titles"; contentDescription = getString(R.string.attention_translate_titles)
+                isChecked = preferences.translateTitles
+                setOnCheckedChangeListener { _, checked ->
+                    mutate(reschedule = false) { it.copy(translateTitles = checked) }
+                }
+            })
+        })
         body.addView(row(getString(R.string.attention_models), status()) { models() })
         body.addView(row(getString(R.string.attention_notifications)) {
             startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))

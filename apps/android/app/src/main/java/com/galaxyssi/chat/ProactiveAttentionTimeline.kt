@@ -31,7 +31,8 @@ internal class ProactiveAttentionTimeline(private val batchSize: Int = 20) {
         // Keep the body, order and membership even when the unread filter no longer matches.
         visible = visible.map { old -> byKey[old.key]?.let { current ->
             old.copy(viewedAtMillis = current.viewedAtMillis, feedbackKind = current.feedbackKind,
-                translatedTitle = if (old.title == current.title) current.translatedTitle else old.translatedTitle)
+                translatedTitle = if (old.title == current.title) current.translatedTitle else old.translatedTitle,
+                titleTranslationStatus = if (old.title == current.title) current.titleTranslationStatus else old.titleTranslationStatus)
         } ?: old }
         if (begun) {
             val last = visible.lastOrNull()

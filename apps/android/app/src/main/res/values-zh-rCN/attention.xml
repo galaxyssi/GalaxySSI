@@ -121,4 +121,11 @@
     <string name="attention_reviewed">已核对原文证据</string>
     <string name="attention_feed_active">新闻持续采集，深入分析在后台独立进行</string>
     <string name="attention_translation_pending">中文标题待翻译</string>
+    <string name="attention_translate_titles">自动翻译英文标题</string>
+    <string name="attention_translation_models">已配置模型 · 仅发送公开新闻标题</string>
+    <string name="attention_translation_running">正在翻译标题</string>
+    <string name="attention_translation_no_model">翻译等待可用模型</string>
+    <string name="attention_translation_capacity">翻译等待模型容量或额度</string>
+    <string name="attention_translation_retry">翻译未成功，稍后重试</string>
+    <string name="attention_translation_disabled">标题自动翻译已关闭</string>
 </resources>
