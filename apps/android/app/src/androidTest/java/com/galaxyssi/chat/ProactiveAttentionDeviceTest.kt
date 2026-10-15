@@ -1037,12 +1037,101 @@ class ProactiveAttentionDeviceTest {
                 views(root).filterIsInstance<TextView>().first { it.text.toString() == activity.getString(R.string.attention_view) }
                     .parent.let { (it as View).parent as View }.performClick()
             }
-            await(scenario) { root -> views(root).filterIsInstance<TextView>().any { it.text.toString() == context.getString(R.string.attention_saved) } }
+            await(scenario) { root -> views(root).any { it.tag == "attention-reader-list" && it.isShown } }
+            scenario.onActivity { activity ->
+                assertFalse(views(activity.window.decorView).any { it.tag?.toString()?.startsWith("attention-filter:") == true })
+                val anchor = views(activity.window.decorView).first { it.tag == "attention-feed-menu" }
+                anchor.performClick()
+                val popup = ProactiveAttentionActivity::class.java.getDeclaredField("feedMenu").apply { isAccessible = true }
+                    .get(activity) as android.widget.PopupMenu
+                assertEquals(4, popup.menu.size())
+                assertEquals(activity.getString(R.string.attention_menu_all), popup.menu.findItem(AttentionFeedFilter.ALL.ordinal).title)
+                assertEquals(activity.getString(R.string.attention_menu_unread), popup.menu.findItem(AttentionFeedFilter.UNREAD.ordinal).title)
+                assertEquals(activity.getString(R.string.attention_menu_saved), popup.menu.findItem(AttentionFeedFilter.SAVED.ordinal).title)
+                assertEquals(activity.getString(R.string.attention_title), popup.menu.findItem(100).title)
+                popup.dismiss()
+            }
             scenario.onActivity { it.onBackPressed() }
             await(scenario) { root -> views(root).filterIsInstance<CheckBox>().count() >= 31 }
             scenario.recreate()
             await(scenario) { root -> views(root).filterIsInstance<CheckBox>().count() >= 31 }
         }
+    }
+
+    @Test fun compactReaderFiltersRestoreWithoutTabsOrEmptyUpdateStrip() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        repository.saveProactiveMessages((1..3).map { index -> message().copy(id = "compact-$index",
+            sourceEventId = "compact-$index", title = "Compact fixture $index",
+            status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = index.toLong(),
+            viewedAtMillis = if (index == 2) 10L else 0L) })
+        val inbox = GlobalProactiveInboxPolicy.project(repository.proactiveMessages(), emptyList())
+        val saved = setOf("global-agent:compact-2")
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        var reader: ProactiveAttentionReader? = null
+        var count: Int? = null
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            try {
+                scenario.onActivity { activity ->
+                    (ProactiveAttentionActivity::class.java.getDeclaredField("reader").apply { isAccessible = true }
+                        .get(activity) as ProactiveAttentionReader).pause()
+                    reader = ProactiveAttentionReader(activity, worker, { fail("Filtering must not open Agent") }, {},
+                        { _, callback -> callback(null) }, {}, context, { count = it })
+                    activity.setContentView(reader!!.view)
+                    reader!!.selectFilter(AttentionFeedFilter.SAVED)
+                    reader!!.update(inbox, saved, AttentionReaderState(), complete = false)
+                    assertNull("A preview must not present its partial count as the total", count)
+                    reader!!.update(inbox, saved, AttentionReaderState())
+                    assertEquals(2, count)
+                    assertEquals(saved, reader!!.timeline.visible.map { it.key }.toSet())
+                }
+                await(scenario) { views(it).any { view -> view.tag == "attention-item:global-agent:compact-2" } }
+                scenario.onActivity { activity ->
+                    val root = activity.window.decorView
+                    assertFalse(views(root).any { it.tag?.toString()?.startsWith("attention-filter:") == true })
+                    assertEquals(View.GONE, views(root).first { it.tag == "attention-reader-updates" }.visibility)
+                    assertEquals(0, reader!!.list.top)
+                    assertEquals(0, (reader!!.list.parent as View).top)
+                    reader!!.selectFilter(AttentionFeedFilter.UNREAD)
+                    assertEquals(setOf("global-agent:compact-1", "global-agent:compact-3"),
+                        reader!!.timeline.visible.map { it.key }.toSet())
+                    reader!!.selectFilter(AttentionFeedFilter.ALL)
+                    assertEquals(3, reader!!.timeline.visible.size)
+                    reader!!.selectFilter(AttentionFeedFilter.SAVED)
+                }
+                worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                val restored = ProactiveAttentionReaderStateStore(context).read()
+                assertEquals(AttentionFeedFilter.SAVED, restored.filter)
+                scenario.onActivity { activity ->
+                    reader!!.destroy()
+                    reader = ProactiveAttentionReader(activity, worker, {}, {}, { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.update(inbox, saved, restored)
+                    assertEquals(AttentionFeedFilter.SAVED, reader!!.timeline.filter)
+                    assertEquals(saved, reader!!.timeline.visible.map { it.key }.toSet())
+                    reader!!.destroy()
+                    reader = ProactiveAttentionReader(activity, worker, {}, {}, { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.selectFilter(AttentionFeedFilter.ALL)
+                    reader!!.update(inbox, saved, restored)
+                    assertEquals(AttentionFeedFilter.ALL, reader!!.timeline.filter)
+                    assertEquals(3, reader!!.timeline.visible.size)
+                }
+            } finally {
+                scenario.onActivity { reader?.pause(); reader?.destroy() }
+                worker.shutdown(); assertTrue(worker.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS))
+            }
+        }
+    }
+
+    @Test fun followingNamesAreConsistentAcrossChineseEntries() {
+        val configuration = android.content.res.Configuration(instrumentation.targetContext.resources.configuration)
+        configuration.setLocale(java.util.Locale.SIMPLIFIED_CHINESE)
+        val context = instrumentation.targetContext.createConfigurationContext(configuration)
+        assertEquals("\u5173\u6ce8\u52a8\u6001", context.getString(R.string.attention_discoveries))
+        assertEquals(context.getString(R.string.attention_discoveries), context.getString(R.string.attention_view))
+        assertEquals(context.getString(R.string.attention_discoveries), context.getString(R.string.attention_notification_channel))
+        assertEquals("\u5173\u6ce8\u8bbe\u7f6e", context.getString(R.string.attention_title))
+        assertEquals("\u5173\u6ce8\u52a8\u6001 \u00b7 18 \u6761\u672a\u8bfb", context.getString(R.string.attention_unread_entry, 18))
     }
 
     @Test fun importantFindingUsesSystemHeadsUpChannel() {

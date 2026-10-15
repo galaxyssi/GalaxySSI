@@ -14,10 +14,15 @@
     <string name="attention_unsaved_done">Removed from saved</string>
     <string name="attention_undo">Undo</string>
     <string name="attention_source_discovered">Source discovery/update: %1$s; original publication date not verified</string>
-    <string name="attention_title">Proactive attention</string>
-    <string name="attention_discoveries">Discoveries</string>
-    <string name="attention_view">View discoveries</string>
-    <string name="attention_unread_entry">Discoveries · %1$d unread</string>
+    <string name="attention_title">Following settings</string>
+    <string name="attention_discoveries">Following updates</string>
+    <string name="attention_view">Following updates</string>
+    <string name="attention_unread_entry">Following updates · %1$d unread</string>
+    <string name="attention_feed_menu">Filter and settings</string>
+    <string name="attention_menu_all">All updates</string>
+    <string name="attention_menu_unread">Unread only</string>
+    <string name="attention_menu_saved">My saved items</string>
+    <string name="attention_header_unread">%1$d unread</string>
     <string name="attention_finance">Financial information</string>
     <string name="attention_collection">Information collection</string>
     <string name="attention_technology">Technology and products</string>
@@ -59,7 +64,7 @@
     <string name="attention_error">Could not load. Tap to retry.</string>
     <string name="attention_invalid">Enter a topic name and research scope.</string>
     <string name="attention_failed">Some research is unavailable · check models</string>
-    <string name="attention_notification_channel">Proactive discoveries</string>
+    <string name="attention_notification_channel">Following updates</string>
     <string-array name="attention_categories">
         <item>Macroeconomics and policy</item><item>Central banks and rates</item><item>Equity markets</item>
         <item>Company fundamentals</item><item>Industries and supply chains</item><item>Funds and ETFs</item>

@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -25,7 +26,8 @@ internal class ProactiveAttentionReader(
     private val sources: (GlobalProactiveInboxItem) -> Unit,
     private val evidence: (GlobalProactiveInboxItem, (JSONObject?) -> Unit) -> Unit,
     private val refresh: () -> Unit,
-    storageContext: Context = activity
+    storageContext: Context = activity,
+    private val stateChanged: (Int?) -> Unit = {}
 ) {
     val timeline = ProactiveAttentionTimeline()
     private val main = Handler(Looper.getMainLooper())
@@ -37,6 +39,7 @@ internal class ProactiveAttentionReader(
     private val runtime = GlobalSuperAgentRuntime.get(activity)
     private val dwell = AttentionReadDwell()
     private var initialized = false
+    private var requestedFilter: AttentionFeedFilter? = null
     private var complete = true
     private var active = false
     private var destroyed = false
@@ -45,8 +48,6 @@ internal class ProactiveAttentionReader(
     private val pendingSaves = mutableMapOf<String, Boolean>()
     private val pendingReads = mutableSetOf<String>()
     private val filters = listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED)
-    private val tabs = mutableListOf<TextView>()
-    private val tabLines = mutableListOf<View>()
     private val manager = LinearLayoutManager(activity)
     private val adapter = ProactiveAttentionFeedAdapter { ProactiveAttentionArticleView(activity,
         ::toggle, ::toggleSaved, ask, sources, evidence, ::menu) }
@@ -55,8 +56,14 @@ internal class ProactiveAttentionReader(
         tag = "attention-reader-list"
     }
     private val notice = text(11f).apply {
-        gravity = Gravity.END or Gravity.CENTER_VERTICAL; setPadding(dp(18), 0, dp(18), 0)
-        setTextColor(activity.getColor(R.color.text_secondary)); tag = "attention-reader-updates"
+        gravity = Gravity.CENTER; setPadding(dp(14), 0, dp(14), 0)
+        minimumHeight = dp(44); visibility = View.GONE
+        setTextColor(activity.getColor(R.color.text_primary)); tag = "attention-reader-updates"
+        background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = dp(6).toFloat(); setColor(activity.getColor(R.color.surface_bg))
+            setStroke(dp(1), activity.getColor(R.color.separator))
+        }
+        elevation = dp(3).toFloat()
         setOnClickListener { loadNewer(); refresh() }
     }
     private val empty = text(14f).apply {
@@ -69,35 +76,28 @@ internal class ProactiveAttentionReader(
     private val dismissUndo = Runnable { undo.visibility = View.GONE }
     val view = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        val bar = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
-        filters.forEach { filter ->
-            val tab = text(14f).apply {
-                gravity = Gravity.CENTER; minimumHeight = dp(44); tag = "attention-filter:${filter.name}"
-                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-                text = activity.getString(when (filter) {
-                    AttentionFeedFilter.ALL -> R.string.attention_all
-                    AttentionFeedFilter.UNREAD -> R.string.attention_unread
-                    else -> R.string.attention_saved
-                })
-                setOnClickListener {
-                    dwell.reset(); timeline.begin(filter); timeline.expanded.clear()
-                    publish(); manager.scrollToPositionWithOffset(0, 0)
-                    persistAt(timeline.visible.firstOrNull()?.key.orEmpty(), 0)
-                }
-            }
-            val line = View(activity).apply {
-                setBackgroundColor(activity.getColor(R.color.galaxyssi_green)); visibility = View.INVISIBLE
-            }
-            tabs += tab; tabLines += line
-            bar.addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL; addView(tab, LinearLayout.LayoutParams(-1, dp(44)))
-                addView(line, LinearLayout.LayoutParams(dp(40), dp(2)).apply { gravity = Gravity.CENTER_HORIZONTAL })
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        addView(bar); addView(notice, LinearLayout.LayoutParams(-1, dp(24)))
         addView(empty, LinearLayout.LayoutParams(-1, dp(80)))
-        addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
+        addView(FrameLayout(activity).apply {
+            addView(list, FrameLayout.LayoutParams(-1, -1))
+            // New arrivals must not change the viewport height or the current article position.
+            addView(notice, FrameLayout.LayoutParams(-2, dp(44), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = dp(8)
+            })
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
         addView(undo, LinearLayout.LayoutParams(-1, dp(48)))
+    }
+
+    fun selectFilter(filter: AttentionFeedFilter) {
+        if (destroyed || filter !in filters) return
+        if (!initialized) {
+            requestedFilter = filter
+            timeline.begin(filter)
+            return
+        }
+        if (timeline.filter == filter) return
+        dwell.reset(); timeline.begin(filter); timeline.expanded.clear()
+        publish(); manager.scrollToPositionWithOffset(0, 0)
+        persistAt(timeline.visible.firstOrNull()?.key.orEmpty(), 0)
     }
 
     private val settleReading = object : Runnable {
@@ -173,11 +173,15 @@ internal class ProactiveAttentionReader(
         timeline.update(items, saved)
         if (!initialized) {
             initialized = true
-            timeline.begin(restored.filter.takeIf { it in filters } ?: AttentionFeedFilter.ALL, restored.keys)
-            timeline.expanded.addAll(restored.expanded.intersect(timeline.visible.map { it.key }.toSet()))
+            val requested = requestedFilter
+            timeline.begin(requested ?: restored.filter.takeIf { it in filters } ?: AttentionFeedFilter.ALL,
+                if (requested == null) restored.keys else emptyList())
+            if (requested == null) timeline.expanded.addAll(restored.expanded.intersect(timeline.visible.map { it.key }.toSet()))
             publish()
-            val index = timeline.visible.indexOfFirst { it.key == restored.anchor }
+            val index = if (requested == null) timeline.visible.indexOfFirst { it.key == restored.anchor } else -1
             if (index >= 0) manager.scrollToPositionWithOffset(index, restored.offset)
+            if (requested != null) persistAt(timeline.visible.firstOrNull()?.key.orEmpty(), 0)
+            requestedFilter = null
         } else {
             if (finishingInitialLoad && timeline.visible.isEmpty()) timeline.begin(timeline.filter)
             publish()
@@ -188,19 +192,10 @@ internal class ProactiveAttentionReader(
         if (destroyed) return
         timeline.setSaved(saved)
         adapter.submit(timeline.visible.map { AttentionReaderRow(it, it.key in timeline.expanded, it.key in saved) })
-        tabs.forEachIndexed { index, tab ->
-            tab.text = when (filters[index]) {
-                AttentionFeedFilter.ALL -> activity.getString(R.string.attention_all)
-                AttentionFeedFilter.UNREAD -> if (complete) activity.getString(R.string.attention_reader_unread, timeline.unreadCount)
-                    else activity.getString(R.string.attention_unread)
-                else -> activity.getString(R.string.attention_saved)
-            }
-            tab.isSelected = timeline.filter == filters[index]
-            tab.setTextColor(activity.getColor(if (tab.isSelected) R.color.galaxyssi_green else R.color.text_secondary))
-            tabLines[index].visibility = if (tab.isSelected) View.VISIBLE else View.INVISIBLE
-        }
+        stateChanged(if (complete) timeline.unreadCount else null)
         notice.text = if (timeline.newerCount > 0) activity.getString(R.string.attention_reader_new, timeline.newerCount) else ""
         notice.isClickable = timeline.newerCount > 0
+        notice.visibility = if (timeline.newerCount > 0) View.VISIBLE else View.GONE
         empty.text = activity.getString(if (complete) R.string.attention_empty else R.string.attention_loading)
         empty.visibility = if (timeline.visible.isEmpty()) View.VISIBLE else View.GONE
         list.removeCallbacks(prioritizeReading)
