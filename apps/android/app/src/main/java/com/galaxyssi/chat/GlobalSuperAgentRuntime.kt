@@ -503,6 +503,12 @@ class GlobalAgentRepository(context: Context) {
 
     fun proactiveMessages(): List<GlobalProactiveMessage> = synchronized(STORE_LOCK) { loadProactiveMessages() }
 
+    internal fun proactiveInboxPreview(state: AttentionReaderState, saved: Set<String>): List<GlobalProactiveInboxItem> {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        // The index and rows are committed together. Reading does not wait for unrelated research under STORE_LOCK.
+        return GlobalProactiveInboxPolicy.project(proactiveMessageStore.preview(state, saved), loadFeedback())
+    }
+
     fun proactiveMessage(id: String): GlobalProactiveMessage? = synchronized(STORE_LOCK) { proactiveMessageStore.get(id) }
 
     fun saveProactiveMessages(messages: List<GlobalProactiveMessage>) = synchronized(STORE_LOCK) {

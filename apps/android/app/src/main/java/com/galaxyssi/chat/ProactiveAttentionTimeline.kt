@@ -7,6 +7,7 @@ internal class ProactiveAttentionTimeline(private val batchSize: Int = 20) {
     private var eligible = emptyList<String>()
     private var saved = emptySet<String>()
     private val confirmedReads = mutableMapOf<String, Long>()
+    private var begun = false
     var filter = AttentionFeedFilter.ALL
         private set
     var visible = emptyList<GlobalProactiveInboxItem>()
@@ -32,9 +33,16 @@ internal class ProactiveAttentionTimeline(private val batchSize: Int = 20) {
             old.copy(viewedAtMillis = current.viewedAtMillis, feedbackKind = current.feedbackKind,
                 translatedTitle = if (old.title == current.title) current.translatedTitle else old.translatedTitle)
         } ?: old }
+        if (begun) {
+            val last = visible.lastOrNull()
+            val existing = visible.mapTo(hashSetOf()) { it.key }
+            eligible = visible.map { it.key } + source.filter { matches(it) && it.key !in existing &&
+                (last == null || order.compare(it, last) > 0) }.map { it.key }
+        }
     }
 
     fun begin(nextFilter: AttentionFeedFilter, restoredKeys: List<String> = emptyList()) {
+        begun = true
         filter = nextFilter
         eligible = source.filter { matches(it) }.map { it.key }
         visible = restoredKeys.distinct().mapNotNull(byKey::get)

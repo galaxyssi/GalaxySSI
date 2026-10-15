@@ -193,3 +193,48 @@ continuous-reader results are recorded separately after its validation.
 - Debug and instrumentation APK builds, Kotlin source-size policy, localization
   guard and `git diff --check` passed. Translation validation checks structure
   and number preservation, not semantic correctness of every headline.
+
+## First-open loading (v1.5.16)
+
+The S20U read-only baseline contained 476 delivered messages. The former serial
+load took 12,354 ms and 19,759 ms in two samples: message reads 4,716/9,865 ms,
+title-cache reads 2,376/3,020 ms, and research-task reads 4,230/5,650 ms. These
+are local-storage timings, not model-response or network timings.
+
+- A transactional SQLite ordering index selects the first reading batch or a
+  bounded window around the saved anchor. It stores identities, timestamps,
+  read state and digest membership only; titles/bodies remain encrypted.
+- Existing records receive a one-time, crash-atomic index migration. Inserts,
+  revisions, read commits, bulk replacement and deletion update the index in
+  the same transaction as message rows. Modification order is not news order.
+- The first batch and its cached translations render before full history loads.
+  The batch size is not a retention cap. All older/newer records remain readable;
+  digest groups are loaded completely, not split into misleading partial items.
+- Loading full history uses a separate executor from reading actions. It extends
+  the timeline without replacing visible bodies, moving the anchor or collapsing
+  expanded content. The unread total is shown only after the full count is known.
+- Research-task and feed-poll status are fetched only for the settings page.
+  Collection/translation scheduling no longer precedes the initial inbox read.
+- Opt-in `ProactiveAttentionLoadPerformanceTest` logs timing/count metadata only.
+  It does not request new model tasks or export article/conversation content.
+
+### Device measurements
+
+- The first installed implementation rendered 20 initial rows in 1,774 ms on
+  the S20U. Three read-only first-batch samples took 303, 472 and 1,117 ms.
+  These are initial-content timings, not a claim that all history finished in
+  that time. The persistent index had already been migrated during app startup.
+- 99 focused JVM tests and 12 synthetic device tests passed (device suite:
+  220.919 seconds), including 1,205-message retention, restored paging,
+  index updates/deletion, complete digest groups, typography, translations,
+  read/bookmark state and pixel-anchor preservation.
+- A first-upgrade index build is one-time work; normal process recreation reuses
+  the durable index. These small samples do not establish a stable p95 or a
+  sub-second guarantee under all storage/background-load conditions.
+- Final Android v1.5.16 (1299) was installed over S20U data. A fresh instrumentation
+  process rendered its first 20 rows in 657 ms; first-batch reads measured
+  406/239/928 ms. Both performance probes and both index regression tests passed
+  in 28.712 seconds. The final index test also verifies that clearing an isolated
+  test database immediately removes its ordering metadata via the delete trigger.
+- Final APK/test APK builds, all 99 JVM checks, localization guard, source-size
+  policy and whitespace validation passed. No real model experiment was started.

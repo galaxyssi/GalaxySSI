@@ -4,6 +4,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProactiveAttentionTimelineTest {
+    @Test fun firstPageCanBeExtendedWithAllHistoryWithoutMovingVisibleRows() {
+        val timeline = ProactiveAttentionTimeline()
+        timeline.update((81..100).map(::item), emptySet())
+        timeline.begin(AttentionFeedFilter.ALL)
+        timeline.expanded += "98"
+        val before = timeline.visible.toList()
+        timeline.update((1..102).map(::item), emptySet())
+        assertEquals(before, timeline.visible)
+        assertEquals(setOf("98"), timeline.expanded)
+        assertEquals(2, timeline.newerCount)
+        while (timeline.loadOlder()) Unit
+        assertEquals((100 downTo 1).map(Int::toString), timeline.visible.map { it.key })
+        timeline.loadNewer()
+        assertEquals((102 downTo 1).map(Int::toString), timeline.visible.map { it.key })
+    }
+
+    @Test fun restoredMiddlePreviewCanLoadBothDirectionsAfterHistoryArrives() {
+        val timeline = ProactiveAttentionTimeline()
+        timeline.update((40..59).map(::item), emptySet())
+        timeline.begin(AttentionFeedFilter.ALL, (59 downTo 40).map(Int::toString))
+        timeline.update((1..1205).map(::item), emptySet())
+        assertEquals("59", timeline.visible.first().key)
+        while (timeline.loadOlder()) Unit
+        while (timeline.loadNewer()) Unit
+        assertEquals((1205 downTo 1).map(Int::toString), timeline.visible.map { it.key })
+    }
+
     @Test fun arrivalAndReviewDoNotReorderOrReplaceTheReadingSnapshot() {
         val timeline = timeline(100)
         timeline.expanded += "100"
