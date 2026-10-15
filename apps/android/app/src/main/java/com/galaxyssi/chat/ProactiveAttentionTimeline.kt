@@ -71,6 +71,11 @@ internal class ProactiveAttentionTimeline(private val batchSize: Int = 20) {
 
     fun setSaved(keys: Set<String>) { saved = keys }
 
+    fun collapseOutsideViewport(viewportKeys: Set<String>): Boolean {
+        if (viewportKeys.isEmpty()) return false
+        return expanded.retainAll(viewportKeys)
+    }
+
     fun remove(key: String) {
         visible = visible.filterNot { it.key == key }; eligible = eligible - key; expanded.remove(key)
     }
