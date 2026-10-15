@@ -14,6 +14,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
@@ -37,6 +38,8 @@ class ProactiveAttentionActivity : Activity() {
     private var readerState = AttentionReaderState()
     private lateinit var title: TextView
     private lateinit var trailing: ImageButton
+    private var feedMenu: PopupMenu? = null
+    private var unreadCount: Int? = null
     private var preferences = AttentionPreferences()
     private var items = emptyList<GlobalProactiveInboxItem>()
     private var messages = emptyMap<String, GlobalProactiveMessage>()
@@ -69,7 +72,7 @@ class ProactiveAttentionActivity : Activity() {
     }
 
     override fun onStart() { super.onStart(); started = true; GlobalProactiveDeliveryBus.addListener(listener); reload() }
-    override fun onStop() { started = false; GlobalProactiveDeliveryBus.removeListener(listener); super.onStop() }
+    override fun onStop() { started = false; feedMenu?.dismiss(); GlobalProactiveDeliveryBus.removeListener(listener); super.onStop() }
     override fun onResume() { super.onResume(); reader.resume() }
     override fun onPause() { reader.pause(); super.onPause() }
     override fun onDestroy() { reader.destroy(); worker.shutdown(); loader.shutdown(); super.onDestroy() }
@@ -98,20 +101,73 @@ class ProactiveAttentionActivity : Activity() {
         bar.setBackgroundColor(getColor(R.color.surface_bg))
         bar.addView(icon(R.drawable.ic_navigation_back, android.R.string.cancel) { onBackPressed() })
         title = text(getString(if (settingsPage) R.string.attention_title else R.string.attention_discoveries), 18f, true)
-            .apply { gravity = Gravity.CENTER }
+            .apply {
+                gravity = Gravity.CENTER; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                tag = "attention-page-title"
+            }
         bar.addView(title, LinearLayout.LayoutParams(0, dp(56), 1f))
-        trailing = icon(R.drawable.ic_tab_settings, R.string.attention_title) {
-            if (settingsPage) editTopic(null) else navigate(true)
-        }
+        trailing = icon(if (settingsPage) android.R.drawable.ic_input_add else R.drawable.ic_more_horizontal,
+            if (settingsPage) R.string.attention_add else R.string.attention_feed_menu) {
+            if (settingsPage) editTopic(null) else showFeedMenu()
+        }.apply { tag = "attention-feed-menu" }
         bar.addView(trailing)
         addView(bar)
         body = LinearLayout(this@ProactiveAttentionActivity).apply { orientation = LinearLayout.VERTICAL }
         scroll = ScrollView(this@ProactiveAttentionActivity).apply { isFillViewport = true; addView(body) }
         scroll.visibility = if (settingsPage) View.VISIBLE else View.GONE
         addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        reader = ProactiveAttentionReader(this@ProactiveAttentionActivity, worker, ::open, ::showSources, ::loadEvidence, ::reload)
+        reader = ProactiveAttentionReader(this@ProactiveAttentionActivity, worker, ::open, ::showSources, ::loadEvidence, ::reload,
+            stateChanged = { count -> unreadCount = count; renderHeader() })
         reader.view.visibility = if (settingsPage) View.GONE else View.VISIBLE
         addView(reader.view, LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    private fun showFeedMenu() {
+        feedMenu?.dismiss()
+        feedMenu = PopupMenu(this, trailing, Gravity.END).apply {
+            if (android.os.Build.VERSION.SDK_INT >= 29) setForceShowIcon(true)
+            if (android.os.Build.VERSION.SDK_INT >= 28) menu.setGroupDividerEnabled(true)
+            listOf(
+                Triple(AttentionFeedFilter.ALL, R.string.attention_menu_all, R.drawable.ic_process_file),
+                Triple(AttentionFeedFilter.UNREAD, R.string.attention_menu_unread, R.drawable.ic_tab_discover),
+                Triple(AttentionFeedFilter.SAVED, R.string.attention_menu_saved, R.drawable.ic_attention_bookmark)
+            ).forEach { (filter, label, icon) ->
+                menu.add(0, filter.ordinal, filter.ordinal, label).setIcon(icon)
+                    .setCheckable(true).isChecked = reader.timeline.filter == filter
+            }
+            menu.add(1, 100, 100, R.string.attention_title).setIcon(R.drawable.ic_tab_settings)
+            repeat(menu.size()) { index ->
+                menu.getItem(index).icon?.mutate()?.setTint(getColor(R.color.text_primary))
+            }
+            setOnMenuItemClickListener { item ->
+                if (item.itemId == 100) navigate(true)
+                else AttentionFeedFilter.entries.getOrNull(item.itemId)?.let(reader::selectFilter)
+                true
+            }
+            setOnDismissListener { feedMenu = null }
+            show()
+        }
+    }
+
+    private fun renderHeader() {
+        val label = getString(if (settingsPage) R.string.attention_title else R.string.attention_discoveries)
+        val count = unreadCount?.takeIf { !settingsPage && it > 0 }
+        title.setTypeface(null, Typeface.NORMAL)
+        title.text = android.text.SpannableStringBuilder(label).apply {
+            setSpan(android.text.style.StyleSpan(Typeface.BOLD), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (count != null) {
+                append("  ")
+                val start = length
+                append(getString(R.string.attention_header_unread, count))
+                setSpan(android.text.style.RelativeSizeSpan(2f / 3f), start, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(android.text.style.StyleSpan(Typeface.NORMAL), start, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(android.text.style.ForegroundColorSpan(getColor(R.color.text_secondary)), start, length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        trailing.setImageResource(if (settingsPage) android.R.drawable.ic_input_add else R.drawable.ic_more_horizontal)
+        trailing.contentDescription = getString(if (settingsPage) R.string.attention_add else R.string.attention_feed_menu)
+        trailing.tooltipText = trailing.contentDescription
     }
 
     private fun reload() {
@@ -215,9 +271,7 @@ class ProactiveAttentionActivity : Activity() {
 
     private fun render(resetScroll: Boolean = false) {
         val previousScroll = if (resetScroll) 0 else scroll.scrollY
-        title.setText(if (settingsPage) R.string.attention_title else R.string.attention_discoveries)
-        trailing.setImageResource(if (settingsPage) android.R.drawable.ic_input_add else R.drawable.ic_tab_settings)
-        trailing.contentDescription = getString(if (settingsPage) R.string.attention_add else R.string.attention_title)
+        renderHeader()
         scroll.visibility = if (settingsPage) View.VISIBLE else View.GONE
         reader.view.visibility = if (settingsPage) View.GONE else View.VISIBLE
         body.removeAllViews()

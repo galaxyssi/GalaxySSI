@@ -14,10 +14,15 @@
     <string name="attention_unsaved_done">已取消收藏</string>
     <string name="attention_undo">撤销</string>
     <string name="attention_source_discovered">来源收录／更新：%1$s；原文发布日期尚未核实</string>
-    <string name="attention_title">主动关注</string>
-    <string name="attention_discoveries">主动发现</string>
-    <string name="attention_view">查看发现</string>
-    <string name="attention_unread_entry">主动发现 · %1$d 条未读</string>
+    <string name="attention_title">关注设置</string>
+    <string name="attention_discoveries">关注动态</string>
+    <string name="attention_view">关注动态</string>
+    <string name="attention_unread_entry">关注动态 · %1$d 条未读</string>
+    <string name="attention_feed_menu">筛选与设置</string>
+    <string name="attention_menu_all">全部内容</string>
+    <string name="attention_menu_unread">只看未读</string>
+    <string name="attention_menu_saved">我的收藏</string>
+    <string name="attention_header_unread">%1$d 未读</string>
     <string name="attention_finance">金融信息</string>
     <string name="attention_collection">信息收集</string>
     <string name="attention_technology">科技与产品</string>
@@ -59,7 +64,7 @@
     <string name="attention_error">加载失败，点击重试</string>
     <string name="attention_invalid">请填写关注名称和范围</string>
     <string name="attention_failed">部分研究暂不可用 · 请检查模型</string>
-    <string name="attention_notification_channel">主动发现</string>
+    <string name="attention_notification_channel">关注动态</string>
     <string-array name="attention_categories">
         <item>宏观经济与政策</item><item>央行与利率</item><item>股票市场</item>
         <item>公司基本面</item><item>行业与产业链</item><item>基金与 ETF</item>
