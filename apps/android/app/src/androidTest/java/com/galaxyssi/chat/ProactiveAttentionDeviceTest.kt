@@ -467,13 +467,100 @@ class ProactiveAttentionDeviceTest {
         }
     }
 
+    @Test fun titleTranslationPreferenceIsIndependentAndDurable() = isolated { context ->
+        val store = ProactiveAttentionStore(context)
+        store.update { it.copy(configured = true, allowPairedModel = false, allowCloudModel = false) }
+        assertTrue(store.preferences().translateTitles)
+        store.update { it.copy(translateTitles = false) }
+        val reopened = ProactiveAttentionStore(context).preferences()
+        assertFalse(reopened.translateTitles)
+        assertFalse(reopened.allowPairedModel)
+        assertFalse(reopened.allowCloudModel)
+        store.update { it.copy(translateTitles = true) }
+        assertTrue(ProactiveAttentionTranslationPolicy.enabled(store.preferences(), "zh"))
+        assertFalse(store.preferences().allowPairedModel)
+        assertFalse(store.preferences().allowCloudModel)
+    }
+
+    @Test fun titleTimersWakeSeparateInferenceJobsAndInterruptionDoesNotBlameAModel() = isolated { context ->
+        val immediate = ProactiveAttentionTitleScheduler.buildRequest(0)
+        val timer = ProactiveAttentionTitleScheduler.buildRequest(30_000)
+        assertFalse(immediate.workSpec.input.getBoolean(ProactiveAttentionTitleScheduler.TIMER, false))
+        assertTrue(timer.workSpec.input.getBoolean(ProactiveAttentionTitleScheduler.TIMER, false))
+        assertEquals(30_000L, timer.workSpec.initialDelay)
+        val store = ProactiveAttentionTitleStore(context)
+        store.beginAttempt(listOf("New release"), 1000, 90_000)
+        store.failed(listOf("New release"), "request_interrupted", 2000)
+        store.workerState(AttentionTitleStatus.PENDING, now = 2000)
+        assertEquals("", store.lastFailedResource(3000))
+        assertEquals(AttentionTitleStatus.RETRYING, store.status("New release", true, 3000))
+    }
+
+    @Test fun titleTranslationStatesDistinguishWaitingInFlightAndFailedAfterReopen() = isolated { context ->
+        val title = "New model released"
+        val store = ProactiveAttentionTitleStore(context)
+        assertEquals(AttentionTitleStatus.PENDING, store.status(title, true, 1000))
+        store.workerState(AttentionTitleStatus.WAITING_MODEL, now = 1000)
+        assertEquals(AttentionTitleStatus.WAITING_MODEL, store.status(title, true, 1000))
+        store.workerState(AttentionTitleStatus.WAITING_CAPACITY, now = 1000)
+        assertEquals(AttentionTitleStatus.WAITING_CAPACITY, store.status(title, true, 1000))
+        store.beginAttempt(listOf(title), 1000, 90_000)
+        val reopened = ProactiveAttentionTitleStore(context)
+        assertEquals(91_000L, reopened.nextAt(title))
+        assertEquals(AttentionTitleStatus.TRANSLATING, reopened.status(title, true, 2000))
+        assertEquals(AttentionTitleStatus.PENDING, reopened.status(title, true, 92_000))
+        reopened.failed(listOf(title), "request_failed", 2000)
+        assertEquals(32_000L, store.nextAt(title))
+        assertEquals(AttentionTitleStatus.RETRYING, store.status(title, true, 2000))
+        assertEquals(AttentionTitleStatus.DISABLED, store.status(title, false, 2000))
+        store.workerState(AttentionTitleStatus.RETRYING, "cloud", 2000)
+        assertEquals("cloud", reopened.lastFailedResource(3000))
+        assertEquals("", reopened.lastFailedResource(1_000_000))
+    }
+
+    @Test fun partialTitleTranslationRetriesOnlyRejectedEntriesAndPreservesOriginals() = isolated { context ->
+        val one = "Model 2.1 released"
+        val two = "New feature released"
+        val titles = mapOf("one" to one, "two" to two)
+        val store = ProactiveAttentionTitleStore(context)
+        store.beginAttempt(titles.values, 1000, 90_000)
+        val raw = JSONObject().put("translations", org.json.JSONArray()
+            .put(JSONObject().put("id", "one").put("title_zh", "Model 2.1 \u53d1\u5e03"))
+            .put(JSONObject().put("id", "two").put("title_zh", "English only"))).toString()
+        assertEquals(1, store.accept(raw, titles, 2000))
+        assertEquals("Model 2.1 \u53d1\u5e03", store.translation(one))
+        assertEquals(0L, store.nextAt(one))
+        assertEquals(32_000L, store.nextAt(two))
+        assertEquals(AttentionTitleStatus.RETRYING, store.status(two, true, 2000))
+        assertEquals(mapOf("two" to "missing_chinese_text"), store.feedback(titles))
+    }
+
+    @Test fun articleDisplaysSpecificTranslationStatesWithoutChangingHeight() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(title = "New model released",
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+        instrumentation.runOnMainSync {
+            val context = AppLanguage.wrap(instrumentation.targetContext)
+            val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, done -> done(null) }, {})
+            var height: Int? = null
+            AttentionTitleStatus.entries.forEach { state ->
+                article.bind(AttentionReaderRow(item.copy(titleTranslationStatus = state), false, false))
+                val label = views(article).first { it.tag == "attention-original-headline:${item.key}" } as TextView
+                assertEquals(context.getString(ProactiveAttentionTranslationPolicy.statusLabel(state)), label.text.toString())
+                article.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                height?.let { assertEquals(it, article.measuredHeight) }
+                height = article.measuredHeight
+            }
+        }
+    }
+
     @Test fun headlineTranslationsPersistWithoutChangingOriginalAndRetrySurvivesReopen() = isolated { context ->
         val original = "Model 2.1 released"
         val translated = "Model 2.1 \u53d1\u5e03"
         val store = ProactiveAttentionTitleStore(context)
         assertFalse(store.save(original, "invalid translation"))
         store.defer(listOf(original), 1_000L)
-        assertEquals(301_000L, ProactiveAttentionTitleStore(context).nextAt(original))
+        assertEquals(31_000L, ProactiveAttentionTitleStore(context).nextAt(original))
         assertTrue(store.save(original, translated))
         val reopened = ProactiveAttentionTitleStore(context)
         assertEquals(translated, reopened.translation(original))
@@ -565,7 +652,7 @@ class ProactiveAttentionDeviceTest {
         val store = ProactiveAttentionTitleStore(context)
         assertEquals(0L, store.nextAt(original))
         store.defer(listOf(original), 1000)
-        assertEquals(301_000L, store.nextAt(original))
+        assertEquals(31_000L, store.nextAt(original))
         val bad = """{"translations":[{"id":"$id","title_zh":"English only"}]}"""
         assertEquals(0, store.accept(bad, mapOf(id to original)))
         assertEquals("missing_chinese_text", ProactiveAttentionTitleStore(context).feedback(mapOf(id to original))[id])
@@ -583,7 +670,7 @@ class ProactiveAttentionDeviceTest {
         assertEquals(setOf(ProactiveAttentionTitlePolicy.key(title)), ProactiveAttentionTitleStore(context).priorityKeys(2_000))
         store.defer(listOf(title), 1_000)
         store.prioritize(listOf(title), 2_000)
-        assertEquals(301_000L, store.nextAt(title))
+        assertEquals(31_000L, store.nextAt(title))
         assertTrue(store.priorityKeys(602_000).isEmpty())
     }
 

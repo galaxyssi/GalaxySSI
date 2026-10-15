@@ -46,6 +46,10 @@ internal class ProactiveAttentionPairedTitles(context: Context,
         if (request.completed) return 0L
         if (request.expires > now) return request.expires - now
         GlobalModelCallBudgetStore(context).release(GlobalModelCallKind.COGNITION, request.owner)
+        ProactiveAttentionTitleStore(context).apply {
+            failed(request.titles.values, "remote_response_timeout", now)
+            workerState(AttentionTitleStatus.RETRYING, request.contact, now)
+        }
         database.writeString("request", request.copy(completed = true).json())
         0L
     }
@@ -76,9 +80,14 @@ internal class ProactiveAttentionPairedTitles(context: Context,
             GlobalModelCallBudgetStore(context).complete(GlobalModelCallKind.COGNITION, request.owner,
                 response.inputTokens, response.outputTokens, response.costMicros, response.content)
             val store = ProactiveAttentionTitleStore(context)
-            val saved = if (response.success && !response.remoteFailure) store.accept(response.content, request.titles) else 0
+            val saved = if (response.success && !response.remoteFailure) store.accept(response.content, request.titles) else {
+                store.failed(request.titles.values, "remote_request_failed")
+                0
+            }
+            store.workerState(if (saved == request.titles.size) AttentionTitleStatus.PENDING else AttentionTitleStatus.RETRYING,
+                if (saved == request.titles.size) "" else request.contact)
             database.writeString("request", request.copy(completed = true).json())
-            if (saved > 0) GlobalProactiveDeliveryBus.signalReady()
+            GlobalProactiveDeliveryBus.signalReady()
             android.util.Log.i("GalaxySSIAttention", "paired_title_translation requested=${request.titles.size} saved=$saved")
         }
         scheduleNext(context)

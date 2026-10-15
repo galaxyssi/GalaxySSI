@@ -16,7 +16,8 @@ data class AttentionPreferences(
     val topics: List<AttentionTopic> = emptyList(),
     val savedKeys: Set<String> = emptySet(),
     val allowPairedModel: Boolean = false,
-    val allowCloudModel: Boolean = false
+    val allowCloudModel: Boolean = false,
+    val translateTitles: Boolean = true
 )
 
 object ProactiveAttentionPolicy {
@@ -173,13 +174,15 @@ class ProactiveAttentionStore(context: Context) {
         AttentionPreferences(root.optBoolean("configured"), root.optBoolean("enabled", true),
             runCatching { AttentionAlertMode.valueOf(root.optString("mode")) }.getOrDefault(AttentionAlertMode.IMPORTANT),
             ProactiveAttentionPolicy.mergeTopics(defaults, topics),
-            root.optJSONArray("saved").strings(), root.optBoolean("paired"), root.optBoolean("cloud"))
+            root.optJSONArray("saved").strings(), root.optBoolean("paired"), root.optBoolean("cloud"),
+            root.optBoolean("translate_titles", true))
     }
 
     fun update(transform: (AttentionPreferences) -> AttentionPreferences): AttentionPreferences = synchronized(LOCK) {
         val next = transform(preferences())
         database.writeString(KEY, JSONObject().put("configured", next.configured).put("enabled", next.enabled)
             .put("paired", next.allowPairedModel).put("cloud", next.allowCloudModel)
+            .put("translate_titles", next.translateTitles)
             .put("mode", next.alertMode.name).put("saved", JSONArray(next.savedKeys.toList()))
             .put("topics", JSONArray().apply { next.topics.forEach { topic -> put(JSONObject()
                 .put("id", topic.id).put("title", topic.title).put("query", topic.query).put("enabled", topic.enabled)) } }).toString())

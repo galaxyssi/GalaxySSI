@@ -172,7 +172,8 @@ internal class ProactiveAttentionArticleView(
         }
         headline?.text = displayedTranslation.ifBlank { original }
         originalHeadline?.apply {
-            text = if (displayedTranslation.isNotBlank()) original else context.getString(R.string.attention_translation_pending)
+            text = if (displayedTranslation.isNotBlank()) original else
+                context.getString(ProactiveAttentionTranslationPolicy.statusLabel(next.item.titleTranslationStatus))
             visibility = if (displayedTranslation.isNotBlank() || expectsTranslation(next.item)) View.VISIBLE else View.GONE
         }
     }

@@ -11,6 +11,24 @@ class ProactiveAttentionTitlePolicyTest {
     private fun response(vararg entries: Pair<String, String>) = JSONObject().put("translations",
         JSONArray().apply { entries.forEach { (id, text) -> put(JSONObject().put("id", id).put("title_zh", text)) } }).toString()
 
+    @Test fun translationDoesNotRequireAutonomousResearchPermissions() {
+        val preferences = AttentionPreferences(configured = true, allowPairedModel = false, allowCloudModel = false)
+        assertTrue(ProactiveAttentionTranslationPolicy.enabled(preferences, "zh"))
+        assertFalse(ProactiveAttentionTranslationPolicy.enabled(preferences.copy(translateTitles = false), "zh"))
+        assertFalse(ProactiveAttentionTranslationPolicy.enabled(preferences.copy(enabled = false), "zh"))
+        assertFalse(ProactiveAttentionTranslationPolicy.enabled(preferences.copy(configured = false), "zh"))
+        assertFalse(ProactiveAttentionTranslationPolicy.enabled(preferences, "en"))
+    }
+
+    @Test fun configuredCloudIsPreferredAndFailedRouteDoesNotBlockOtherModels() {
+        val routes = listOf("desktop", "cloud", "local-llm", "cloud")
+        assertEquals(listOf("cloud", "local-llm", "desktop"),
+            ProactiveAttentionTranslationPolicy.orderRoutes(routes, { it == "cloud" }))
+        assertEquals(listOf("local-llm", "desktop", "cloud"),
+            ProactiveAttentionTranslationPolicy.orderRoutes(routes, { it == "cloud" }, "cloud"))
+        assertTrue(ProactiveAttentionTranslationPolicy.orderRoutes(emptyList(), { true }).isEmpty())
+    }
+
     @Test fun onlyLatinHeadlinesNeedTranslation() {
         assertTrue(ProactiveAttentionTitlePolicy.needsTranslation(original))
         assertFalse(ProactiveAttentionTitlePolicy.needsTranslation("AI \u6a21\u578b\u53d1\u5e03"))
@@ -91,8 +109,10 @@ class ProactiveAttentionTitlePolicyTest {
         val timeline = ProactiveAttentionTimeline()
         timeline.update(listOf(item), emptySet())
         timeline.begin(AttentionFeedFilter.ALL)
-        timeline.update(listOf(item.copy(translatedTitle = translated, content = "Revised body")), emptySet())
+        timeline.update(listOf(item.copy(translatedTitle = translated, content = "Revised body",
+            titleTranslationStatus = AttentionTitleStatus.TRANSLATING)), emptySet())
         assertEquals(translated, timeline.visible.single().translatedTitle)
+        assertEquals(AttentionTitleStatus.TRANSLATING, timeline.visible.single().titleTranslationStatus)
         assertEquals("Original body", timeline.visible.single().content)
         timeline.update(listOf(item.copy(title = "New headline", translatedTitle = "\u65b0\u6807\u9898")), emptySet())
         assertEquals(original, timeline.visible.single().title)

@@ -15,7 +15,8 @@ data class GlobalProactiveInboxItem(
     val deliveredAtMillis: Long,
     val viewedAtMillis: Long,
     val feedbackKind: GlobalAgentFeedbackKind?,
-    val translatedTitle: String = ""
+    val translatedTitle: String = "",
+    val titleTranslationStatus: AttentionTitleStatus = AttentionTitleStatus.PENDING
 ) {
     val isNew: Boolean
         get() = viewedAtMillis <= 0L && feedbackKind == null
