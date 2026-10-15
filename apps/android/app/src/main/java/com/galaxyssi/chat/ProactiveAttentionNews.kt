@@ -145,12 +145,14 @@ object ProactiveAttentionNewsPolicy {
     }
 
     fun hasCurrentAlertDate(content: String, now: Long): Boolean {
-        val dates = content.lineSequence().map(String::trim).filter { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }
+        val dates = content.lineSequence().map(String::trim).filter { it.matches(alertDatePattern) }
             .mapNotNull { runCatching { LocalDate.parse(it).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli() }.getOrNull() }
             .toList()
         // Legacy summaries may have no standalone event date; retain their existing notification policy.
         return dates.isEmpty() || dates.any { it >= now - 2 * DAY && it <= now + DAY }
     }
+
+    private val alertDatePattern = Regex("\\d{4}-\\d{2}-\\d{2}")
 
     private fun normalize(value: String) = value.replace(Regex("\\s+"), " ").trim()
     private fun publicationDate(document: JSONObject): Long = runCatching {

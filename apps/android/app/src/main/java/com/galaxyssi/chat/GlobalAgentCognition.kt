@@ -226,6 +226,9 @@ data class GlobalUnderstanding(
 
 object GlobalAgentText {
     private val word = Regex("[\\p{L}\\p{N}][\\p{L}\\p{N}+#._-]{1,40}")
+    private val url = Regex("https?://\\S+")
+    private val path = Regex("[a-zA-Z]:[\\\\/][^\\s]+")
+    private val whitespace = Regex("\\s+")
     private val legacyProductTitles = mapOf(
         "Signal insight" to "GalaxySSI insight",
         "Signal prepared" to "GalaxySSI prepared",
@@ -243,9 +246,9 @@ object GlobalAgentText {
 
     fun normalize(value: String): String = value
         .lowercase(Locale.ROOT)
-        .replace(Regex("https?://\\S+"), " <url> ")
-        .replace(Regex("[a-zA-Z]:[\\\\/][^\\s]+"), " <path> ")
-        .replace(Regex("\\s+"), " ")
+        .replace(url, " <url> ")
+        .replace(path, " <path> ")
+        .replace(whitespace, " ")
         .trim()
 
     fun productTitle(value: String): String {

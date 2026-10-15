@@ -17,9 +17,11 @@ import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.WorkInfo
 import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 import java.util.UUID
+import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.withLock
 
@@ -63,12 +65,46 @@ object AndroidCognitionSchedulePolicy {
 }
 
 object AndroidCognitionScheduler {
+    private val attentionDispatch = Executors.newSingleThreadExecutor { Thread(it, "attention-wake-coalescer") }
+    private val attentionWakeLock = Any()
+    private var attentionWakePending = false
+    private var attentionWakeActive = false
+
     fun requestAttention(context: Context, delayMillis: Long = 0L) {
-        // A future retry must never sit ahead of a newly received model result.
-        enqueue(context, if (delayMillis > 0L) ATTENTION_TIMER else ATTENTION_WORK,
-            AndroidCognitionWorkMode.ATTENTION, delayMillis,
-            if (delayMillis > 0L) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.APPEND_OR_REPLACE)
+        val app = context.applicationContext
+        if (delayMillis > 0L) {
+            enqueue(app, ATTENTION_TIMER, AndroidCognitionWorkMode.ATTENTION, delayMillis, ExistingWorkPolicy.REPLACE)
+        } else requestAttentionWake(app)
     }
+
+    private fun requestAttentionWake(app: Context) = synchronized(attentionWakeLock) {
+        attentionWakePending = true
+        if (attentionWakeActive) return@synchronized
+        attentionWakeActive = true
+        attentionDispatch.execute {
+            while (true) {
+                synchronized(attentionWakeLock) {
+                    if (!attentionWakePending) { attentionWakeActive = false; return@execute }
+                    attentionWakePending = false
+                }
+                // Keep at most one successor. A running worker may already have taken its snapshot.
+                runCatching {
+                    val pending = WorkManager.getInstance(app).getWorkInfosForUniqueWork(ATTENTION_WORK)
+                        .get(10, TimeUnit.SECONDS).any {
+                            it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED
+                        }
+                    if (!pending) enqueue(app, ATTENTION_WORK, AndroidCognitionWorkMode.ATTENTION, 0L,
+                        ExistingWorkPolicy.APPEND_OR_REPLACE).result.get(10, TimeUnit.SECONDS)
+                }.onFailure {
+                    Log.w("GalaxySSICognition", "attention_wake_deferred type=${it.javaClass.simpleName}")
+                    requestAttention(app, 60_000L)
+                }
+            }
+        }
+    }
+
+    internal fun requestScheduledNow(context: Context) = enqueue(context, SCHEDULED_NOW,
+        AndroidCognitionWorkMode.SCHEDULED, 0L, ExistingWorkPolicy.KEEP)
 
     fun requestImmediate(context: Context, explicit: Boolean = false) {
         enqueue(
@@ -130,24 +166,30 @@ object AndroidCognitionScheduler {
         mode: AndroidCognitionWorkMode,
         delayMillis: Long,
         policy: ExistingWorkPolicy
-    ) {
-        val request = OneTimeWorkRequestBuilder<AndroidCognitionWorker>()
+    ): androidx.work.Operation {
+        val request = buildRequest(mode, delayMillis, uniqueName == ATTENTION_TIMER || uniqueName == SCHEDULED_WORK)
+        return WorkManager.getInstance(context.applicationContext)
+            .enqueueUniqueWork(uniqueName, policy, request)
+    }
+
+    internal fun buildRequest(mode: AndroidCognitionWorkMode, delayMillis: Long, timer: Boolean) =
+        OneTimeWorkRequestBuilder<AndroidCognitionWorker>()
             .setInputData(workDataOf(KEY_MODE to mode.name,
+                KEY_TIMER to timer,
                 KEY_RESUME_TOKEN to if (mode == AndroidCognitionWorkMode.EXPLICIT) UUID.randomUUID().toString() else ""))
             .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .addTag(WORK_TAG)
             .build()
-        WorkManager.getInstance(context.applicationContext)
-            .enqueueUniqueWork(uniqueName, policy, request)
-    }
 
     internal const val KEY_MODE = "mode"
     internal const val KEY_RESUME_TOKEN = "resume_token"
+    internal const val KEY_TIMER = "timer_only"
     private const val EVENT_WORK = "galaxyssi-cognition-event-v1"
     private const val ATTENTION_WORK = "galaxyssi-attention-continuation-v1"
     private const val ATTENTION_TIMER = "galaxyssi-attention-retry-v1"
     private const val SCHEDULED_WORK = "galaxyssi-cognition-scheduled-v1"
+    private const val SCHEDULED_NOW = "galaxyssi-cognition-scheduled-now-v1"
     private const val EXPLICIT_WORK = "galaxyssi-cognition-explicit-v1"
     private const val PROJECTION_WORK = "galaxyssi-obsidian-projection-v1"
     private const val WORK_TAG = "galaxyssi-cognition"
@@ -157,7 +199,15 @@ class AndroidCognitionWorker(
     appContext: Context,
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
-    override suspend fun doWork(): Result = AndroidCognitionRecovery.execution.withLock { executeOnce() }
+    override suspend fun doWork(): Result {
+        if (inputData.getBoolean(AndroidCognitionScheduler.KEY_TIMER, false)) {
+            if (inputData.getString(AndroidCognitionScheduler.KEY_MODE) == AndroidCognitionWorkMode.ATTENTION.name)
+                AndroidCognitionScheduler.requestAttention(applicationContext)
+            else AndroidCognitionScheduler.requestScheduledNow(applicationContext)
+            return Result.success()
+        }
+        return AndroidCognitionRecovery.execution.withLock { executeOnce() }
+    }
 
     private suspend fun executeOnce(): Result {
         val startedAt = SystemClock.elapsedRealtime()
@@ -165,8 +215,19 @@ class AndroidCognitionWorker(
             AndroidCognitionWorkMode.valueOf(inputData.getString(AndroidCognitionScheduler.KEY_MODE).orEmpty())
         }.getOrDefault(AndroidCognitionWorkMode.SCHEDULED)
         // Collection has its own network-constrained worker, even when learning is paused by a budget or recovery gate.
-        if (mode in setOf(AndroidCognitionWorkMode.ATTENTION, AndroidCognitionWorkMode.SCHEDULED, AndroidCognitionWorkMode.EXPLICIT))
+        if (mode in setOf(AndroidCognitionWorkMode.SCHEDULED, AndroidCognitionWorkMode.EXPLICIT))
             ProactiveAttentionFeedScheduler.request(applicationContext)
+        if (mode != AndroidCognitionWorkMode.EXPLICIT && mode != AndroidCognitionWorkMode.PROJECTION) {
+            val load = BackgroundLearningLoadSampler.read(applicationContext)
+            if (load.deferMillis > 0) {
+                // Pending events/results remain durable; this is neither a failure nor a model retry.
+                if (mode == AndroidCognitionWorkMode.ATTENTION)
+                    AndroidCognitionScheduler.requestAttention(applicationContext, load.deferMillis)
+                else AndroidCognitionScheduler.scheduleAt(applicationContext, System.currentTimeMillis() + load.deferMillis)
+                Log.i(LOG_TAG, "run_deferred mode=$mode reason=device_load delay_ms=${load.deferMillis}")
+                return Result.success()
+            }
+        }
         val recovery = AndroidCognitionRecovery(applicationContext)
         if (mode == AndroidCognitionWorkMode.EXPLICIT) {
             recovery.resumeOnce(inputData.getString(AndroidCognitionScheduler.KEY_RESUME_TOKEN).orEmpty())

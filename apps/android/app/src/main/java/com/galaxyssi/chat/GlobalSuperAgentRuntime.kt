@@ -60,6 +60,7 @@ data class GlobalPromptContextSnapshot(
 class GlobalAgentRepository(context: Context) {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(appContext, DATABASE_NAME)
+    private val deadLetterStore = GlobalDeadLetterStore(database)
     private val proactiveMessageStore = GlobalProactiveMessageStore(database, ::encodeProactiveMessage, ::decodeProactiveMessage)
     private val deliberationStore = GlobalAgentDeliberationStore(appContext)
     private val longHorizonStore = GlobalLongHorizonGoalStore(appContext)
@@ -95,7 +96,7 @@ class GlobalAgentRepository(context: Context) {
         val mutation = GlobalEventQueuePolicy.enqueue(
             state = GlobalEventQueueState(loadEvents(), loadOverflowEvents()),
             incoming = normalizedIncoming,
-            deadLetterEventIds = loadDeadLetters().mapTo(mutableSetOf()) { it.event.id },
+            deadLetterEventIds = deadLetterStore.ids(),
             readyCapacity = MAX_PENDING_EVENTS,
             overflowCapacity = MAX_OVERFLOW_EVENTS
         )
@@ -112,14 +113,14 @@ class GlobalAgentRepository(context: Context) {
         saveOverflowEvents(mutation.state.overflow)
         if (mutation.capacityRejected.isNotEmpty()) {
             val now = System.currentTimeMillis()
-            saveDeadLetters(
-                loadDeadLetters() + mutation.capacityRejected.map { event ->
+            deadLetterStore.upsert(
+                mutation.capacityRejected.map { event ->
                     GlobalDeadLetterEvent(
                         event = event,
                         failure = GlobalEventRetryPolicy.capacityFailure(event.id, now),
                         quarantinedAtMillis = now,
                         quarantinedVersionCode = currentVersionCode
-                    )
+                    ).let(::encodeDeadLetter)
                 }
             )
         }
@@ -184,13 +185,12 @@ class GlobalAgentRepository(context: Context) {
         nowMillis: Long = System.currentTimeMillis(),
         versionCode: Int = currentVersionCode
     ) = synchronized(STORE_LOCK) {
-        saveDeadLetters(loadDeadLetters().filterNot { it.event.id == event.id } +
-            GlobalDeadLetterEvent(
+        deadLetterStore.upsert(listOf(encodeDeadLetter(GlobalDeadLetterEvent(
                 event = event,
                 failure = failure.copy(quarantined = true, nextAttemptAtMillis = 0L),
                 quarantinedAtMillis = nowMillis,
                 quarantinedVersionCode = versionCode.coerceAtLeast(0)
-            ))
+            ))))
         saveEventFailures(loadEventFailures().filterNot { it.eventId == event.id })
     }
 
@@ -226,6 +226,7 @@ class GlobalAgentRepository(context: Context) {
         limit: Int = GlobalDeadLetterUpgradeRecoveryPolicy.DEFAULT_RECOVERY_LIMIT
     ): Int = synchronized(STORE_LOCK) {
         if (currentVersionCode <= 0) return@synchronized 0
+        if (!deadLetterStore.hasRecoveryCandidate(currentVersionCode)) return@synchronized 0
         var queueState = GlobalEventQueueState(loadEvents(), loadOverflowEvents())
         var letters = loadDeadLetters()
         var journal = loadContextJournal()
@@ -925,18 +926,10 @@ class GlobalAgentRepository(context: Context) {
         database.writeString(KEY_EVENT_FAILURES, array.toString())
     }
 
-    private fun loadDeadLetters(): List<GlobalDeadLetterEvent> = runCatching {
-        val array = JSONArray(database.readString(KEY_DEAD_LETTERS, "[]"))
-        buildList {
-            for (index in 0 until array.length()) decodeDeadLetter(array.optJSONObject(index))?.let(::add)
-        }
-    }.getOrDefault(emptyList())
+    private fun loadDeadLetters(): List<GlobalDeadLetterEvent> = deadLetterStore.all().mapNotNull(::decodeDeadLetter)
 
     private fun saveDeadLetters(letters: List<GlobalDeadLetterEvent>) {
-        val array = JSONArray()
-        letters.distinctBy { it.event.id }.sortedBy(GlobalDeadLetterEvent::quarantinedAtMillis)
-            .takeLast(MAX_DEAD_LETTERS).forEach { array.put(encodeDeadLetter(it)) }
-        database.writeString(KEY_DEAD_LETTERS, array.toString())
+        deadLetterStore.replace(letters.map(::encodeDeadLetter))
     }
 
     private fun loadContextJournal(): List<GlobalConversationEvent> = cachedContextJournal ?: runCatching {
@@ -1732,7 +1725,6 @@ class GlobalAgentRepository(context: Context) {
         private const val KEY_OVERFLOW_EVENTS_INDEX = "conversation_event_overflow_index_v2"
         private const val KEY_OVERFLOW_EVENT_RECORD_PREFIX = "conversation_event_overflow_v2:"
         private const val KEY_EVENT_FAILURES = "conversation_event_failures"
-        private const val KEY_DEAD_LETTERS = "conversation_event_dead_letters"
         private const val KEY_CONTEXT_JOURNAL = "conversation_context_journal"
         private const val KEY_CONTEXT_JOURNAL_INDEX = "conversation_context_journal_index_v2"
         private const val KEY_CONTEXT_JOURNAL_RECORD_PREFIX = "conversation_context_journal_v2:"
@@ -1746,7 +1738,6 @@ class GlobalAgentRepository(context: Context) {
         private const val MAX_PENDING_EVENTS = 2_000
         private const val MAX_OVERFLOW_EVENTS = 8_000
         private const val MAX_EVENT_FAILURES = 1_000
-        private const val MAX_DEAD_LETTERS = 1_000
         private const val MAX_PROCESS_BATCH = 250
         private const val MAX_RESEARCH_TASKS = 300
         private const val MAX_FEEDBACK_ITEMS = 800
@@ -2851,26 +2842,30 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     ): GlobalAgentNotificationCandidate? {
         val settings = repository.settings()
         if (!settings.enabled || !settings.proactiveInsightsEnabled || !settings.notificationsEnabled) return null
+        val attention = ProactiveAttentionStore(appContext).preferences()
         val messages = delivered.filter { it.notifiedAtMillis <= 0L &&
             (it.deliveredConversationId.isNotBlank() || it.id.startsWith("attention-feed:")) }
-            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
-            .filter { ProactiveAttentionStore(appContext).allowsNotification(it) }
+            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it, attention) }
         return GlobalProactiveNotificationPolicy.candidate(messages)
     }
 
-    fun unnotifiedDeliveredMessages(limit: Int = 24): List<GlobalProactiveMessage> =
-        repository.proactiveMessages()
+    fun unnotifiedDeliveredMessages(limit: Int = 24): List<GlobalProactiveMessage> {
+        val settings = repository.settings()
+        if (!settings.enabled || !settings.proactiveInsightsEnabled || !settings.notificationsEnabled) return emptyList()
+        val attention = ProactiveAttentionStore(appContext).preferences()
+        return repository.proactiveMessages()
             .asSequence()
             .filter {
                 it.status == GlobalProactiveMessageStatus.DELIVERED &&
                     it.notifiedAtMillis <= 0L &&
                     (it.deliveredConversationId.isNotBlank() || it.id.startsWith("attention-feed:"))
             }
-            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
-            .filter { ProactiveAttentionStore(appContext).allowsNotification(it) }
-            .sortedBy(GlobalProactiveMessage::deliveredAtMillis)
+            .sortedByDescending(GlobalProactiveMessage::deliveredAtMillis)
+            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it, attention) }
+            .take(limit.coerceIn(1, 100))
             .toList()
-            .takeLast(limit.coerceIn(1, 100))
+            .reversed()
+    }
 
     fun markNotified(messageIds: Set<String>) {
         repository.markProactiveNotified(messageIds, System.currentTimeMillis())
@@ -2887,10 +2882,12 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         if (messages.isEmpty()) return@synchronized emptyList()
         val delivered = mutableListOf<GlobalProactiveMessage>()
         val excludedConversationIds = repository.excludedConversationIds()
+        val attentionStore = ProactiveAttentionStore(appContext)
+        val attentionPreferences = attentionStore.preferences()
 
         messages.asSequence()
             .filterNot { it.target == GlobalProactiveTarget.GLOBAL_DIGEST }
-            .filter { ProactiveAttentionStore(appContext).allows(it) }
+            .filter { attentionStore.allows(it, attentionPreferences) }
             .forEach { message ->
                 val profile = adaptiveProfile()
                 val history = repository.interventionHistory()

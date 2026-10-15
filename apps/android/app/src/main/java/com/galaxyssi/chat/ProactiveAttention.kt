@@ -198,18 +198,18 @@ class ProactiveAttentionStore(context: Context) {
                 .put("published", source.publishedAtMillis).put("retrieved", source.retrievedAtMillis)) } }))
     }
 
-    fun allows(message: GlobalProactiveMessage): Boolean {
+    fun allows(message: GlobalProactiveMessage, preferences: AttentionPreferences? = null): Boolean {
         if (!ProactiveAttentionPolicy.isAttention(message)) return true
         val topicId = message.sourceEventId.removePrefix("research:${ProactiveAttentionPolicy.TASK_PREFIX}").substringBefore(':')
-        return ProactiveAttentionPolicy.shouldCollect(preferences(), topicId)
+        return ProactiveAttentionPolicy.shouldCollect(preferences ?: preferences(), topicId)
     }
 
-    fun allowsNotification(message: GlobalProactiveMessage): Boolean {
+    fun allowsNotification(message: GlobalProactiveMessage, preferences: AttentionPreferences? = null): Boolean {
         if (!ProactiveAttentionPolicy.isAttention(message)) return true
-        val preferences = preferences()
+        val snapshot = preferences ?: preferences()
         val currentImportant = message.urgent && ProactiveAttentionNewsPolicy.hasCurrentAlertDate(
             message.content, System.currentTimeMillis())
-        return ProactiveAttentionPolicy.shouldAlert(preferences.alertMode, currentImportant, allows(message))
+        return ProactiveAttentionPolicy.shouldAlert(snapshot.alertMode, currentImportant, allows(message, snapshot))
     }
 
     fun evidence(eventId: String): JSONObject? = synchronized(LOCK) {
@@ -237,7 +237,7 @@ class ProactiveAttentionCoordinator(context: Context) {
         if (!preferences.configured) return@synchronized
         val existing = repository.researchTasks().associateBy(GlobalResearchTask::id)
         val inactiveMessages = repository.proactiveMessages().filter {
-            ProactiveAttentionPolicy.isAttention(it) && !store.allows(it) &&
+            ProactiveAttentionPolicy.isAttention(it) && !store.allows(it, preferences) &&
                 it.status == GlobalProactiveMessageStatus.PENDING
         }.map(GlobalProactiveMessage::id).toSet()
         if (inactiveMessages.isNotEmpty()) repository.dismissProactiveMessages(inactiveMessages, "Attention topic disabled")
