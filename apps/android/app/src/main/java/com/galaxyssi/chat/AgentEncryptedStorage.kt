@@ -438,7 +438,9 @@ class AgentEncryptedDatabase(
     private fun encodeValue(key: String, value: String, largeStore: Boolean = false): ContentValues =
         ContentValues().apply {
             put("storage_key", key)
-            if (database.segmented && AgentMemoryPayloadSegments.external(key, value, largeStore)) {
+            if (AttentionLocalStoragePolicy.allows(databaseName, key, value)) {
+                put("encrypted_value", AttentionLocalStoragePolicy.PREFIX + value)
+            } else if (database.segmented && AgentMemoryPayloadSegments.external(key, value, largeStore)) {
                 val encoded = database.segments.encode(key, value, associatedData(key))
                 put("encrypted_value", encoded.value)
                 put("segment_id", encoded.segment)
@@ -472,12 +474,25 @@ class AgentEncryptedDatabase(
         } finally { database.operations.unlock() }
     }
 
-    private fun decodeValue(key: String, encrypted: String): String? =
-        if (encrypted.startsWith(AgentMemoryPayloadSegments.PREFIX)) {
+    private fun decodeValue(key: String, encrypted: String): String? {
+        if (encrypted.startsWith(AttentionLocalStoragePolicy.PREFIX)) {
+            val value = encrypted.removePrefix(AttentionLocalStoragePolicy.PREFIX)
+            check(AttentionLocalStoragePolicy.allows(databaseName, key, value)) { "Unexpected unencrypted storage row" }
+            return value
+        }
+        val value = if (encrypted.startsWith(AgentMemoryPayloadSegments.PREFIX)) {
             database.segments.decode(key, encrypted, associatedData(key))
         } else AgentStorageCipher.decrypt(encrypted, associatedData(key)).also {
             check(it != null || !key.startsWith(AgentPersonalMemoryRows.PREFIX)) { "Personal memory ciphertext is corrupt" }
         }
+        // Convert existing discovery rows on access, without a startup-wide scan or deleting user data.
+        if (value != null && AttentionLocalStoragePolicy.allows(databaseName, key, value)) {
+            database.writableDatabase.execSQL("UPDATE $TABLE_VALUES SET encrypted_value = ? " +
+                "WHERE storage_key = ? AND encrypted_value = ?",
+                arrayOf(AttentionLocalStoragePolicy.PREFIX + value, key, encrypted))
+        }
+        return value
+    }
 
     private fun readEncryptedValue(database: SQLiteDatabase, key: String): String? {
         val length = database.rawQuery(

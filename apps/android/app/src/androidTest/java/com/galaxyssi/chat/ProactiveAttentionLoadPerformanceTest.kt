@@ -20,6 +20,16 @@ class ProactiveAttentionLoadPerformanceTest {
         InstrumentationRegistry.getInstrumentation().sendStatus(0, Bundle().apply { putString("stream", "$value\n") })
     }
 
+    @Test fun measureIndexedHomeCounts() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("attention_load_profile") == "true")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        repeat(3) { pass ->
+            val start = SystemClock.elapsedRealtime()
+            val counts = GlobalAgentRepository(context).proactiveInboxCounts()
+            report("home_count_pass=$pass total=${counts.total} unread=${counts.unread} ms=${SystemClock.elapsedRealtime() - start}")
+        }
+    }
+
     @Test fun measureDiscoveryFirstContent() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("attention_load_profile") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
