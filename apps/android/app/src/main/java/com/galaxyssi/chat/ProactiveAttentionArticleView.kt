@@ -27,6 +27,8 @@ internal class ProactiveAttentionArticleView(
     private var row: AttentionReaderRow? = null
     private var generation = 0
     private var headline: TextView? = null
+    private var originalHeadline: TextView? = null
+    private var displayedTranslation = ""
     private var sourceLine: TextView? = null
     private var bookmark: ImageButton? = null
     private var sourceName = ""
@@ -44,13 +46,18 @@ internal class ProactiveAttentionArticleView(
         super.onAttachedToWindow()
         row?.let {
             displayedUnread = it.item.isNew
+            displayedTranslation = it.item.translatedTitle
+            updateHeadline(it)
             updateStatus(it)
         }
     }
 
     fun bind(next: AttentionReaderRow) {
         val token = ++generation
-        if (!isAttachedToWindow || row?.item?.key != next.item.key) displayedUnread = next.item.isNew
+        if (!isAttachedToWindow || row?.item?.key != next.item.key) {
+            displayedUnread = next.item.isNew
+            displayedTranslation = next.item.translatedTitle
+        }
         row = next; sourceName = ""; evidenceChecked = false
         removeAllViews()
         val item = next.item
@@ -65,14 +72,24 @@ internal class ProactiveAttentionArticleView(
         top.addView(label(SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.deliveredAtMillis)), 11f, secondary = true))
         intro.addView(top)
         val titleRow = horizontal()
-        headline = label(item.title.ifBlank { item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ') }, 17.6f).apply {
+        val titles = column()
+        headline = label("", 19.36f).apply {
             tag = "attention-headline:${item.key}"
             setTypeface(typeface, Typeface.NORMAL)
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, dp(6), 0, dp(5))
         }
-        titleRow.addView(headline, LayoutParams(0, -2, 1f))
+        titles.addView(headline)
+        originalHeadline = label("", 13f, secondary = true).apply {
+            tag = "attention-original-headline:${item.key}"
+            maxLines = if (next.expanded) Int.MAX_VALUE else 2
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, 0, 0, dp(6))
+        }
+        titles.addView(originalHeadline)
+        updateHeadline(next)
+        titleRow.addView(titles, LayoutParams(0, -2, 1f))
         bookmark = icon(R.drawable.ic_attention_bookmark, R.string.attention_save) { save(item.key) }
         titleRow.addView(bookmark)
         intro.addView(titleRow)
@@ -123,8 +140,12 @@ internal class ProactiveAttentionArticleView(
 
     fun updateStatus(next: AttentionReaderRow) {
         row = next
-        // Read commits must not recolor an article while it is being viewed.
-        if (!isAttachedToWindow) displayedUnread = next.item.isNew
+        // Read and translation commits must not change the layout of an article being viewed.
+        if (!isAttachedToWindow) {
+            displayedUnread = next.item.isNew
+            displayedTranslation = next.item.translatedTitle
+            updateHeadline(next)
+        }
         headline?.setTextColor(context.getColor(if (displayedUnread) R.color.attention_unread_title else R.color.text_primary))
         headline?.alpha = 1f
         val status = context.getString(if (evidenceChecked) R.string.attention_reader_checked else R.string.attention_reader_unverified)
@@ -135,6 +156,17 @@ internal class ProactiveAttentionArticleView(
             imageTintList = ColorStateList.valueOf(context.getColor(if (next.saved) R.color.galaxyssi_green else R.color.text_secondary))
             contentDescription = context.getString(if (next.saved) R.string.attention_unsave else R.string.attention_save)
             tooltipText = contentDescription; isSelected = next.saved
+        }
+    }
+
+    private fun updateHeadline(next: AttentionReaderRow) {
+        val original = next.item.title.ifBlank {
+            next.item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ')
+        }
+        headline?.text = displayedTranslation.ifBlank { original }
+        originalHeadline?.apply {
+            text = original
+            visibility = if (displayedTranslation.isNotBlank()) View.VISIBLE else View.GONE
         }
     }
 

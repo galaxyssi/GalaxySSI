@@ -119,11 +119,12 @@ class ProactiveAttentionActivity : Activity() {
                 if (p.configured && p.enabled && !collectionRequested) {
                     collectionRequested = true
                     ProactiveAttentionFeedScheduler.request(applicationContext)
+                    ProactiveAttentionTitleScheduler.request(applicationContext)
                 }
                 val repository = GlobalAgentRepository(applicationContext)
                 val messageMap = repository.proactiveMessages().associateBy(GlobalProactiveMessage::id)
                 val inbox = GlobalProactiveInboxPolicy.project(messageMap.values.toList(), repository.feedback())
-                Triple(p, inbox, messageMap)
+                Triple(p, ProactiveAttentionTitleStore(applicationContext).decorate(inbox), messageMap)
             }
             val savedReaderState = readerStateStore.read()
             val research = runCatching { runtime.researchTasks().filter(ProactiveAttentionPolicy::isAttention) }.getOrDefault(emptyList())
@@ -167,6 +168,7 @@ class ProactiveAttentionActivity : Activity() {
                     ProactiveAttentionCoordinator(applicationContext).reconcile()
                     if (next.configured && next.enabled) {
                         ProactiveAttentionFeedScheduler.request(applicationContext)
+                        ProactiveAttentionTitleScheduler.request(applicationContext)
                         AndroidCognitionScheduler.scheduleAt(applicationContext, System.currentTimeMillis())
                     } else AndroidCognitionScheduler.scheduleDynamic(applicationContext, runtime)
                 }

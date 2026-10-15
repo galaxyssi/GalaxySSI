@@ -143,3 +143,53 @@ continuous-reader results are recorded separately after its validation.
   and enlarged font scales, offscreen collapse, stable anchors, read state,
   bookmark undo and title contrast. Real list and expanded screenshots were
   also inspected for wrapping and spacing.
+
+## Bilingual headlines (v1.5.15)
+
+- In the Chinese reader, fully English feed headlines receive a Chinese primary
+  title and a smaller English original. Headlines already containing Chinese
+  remain unchanged. Primary titles are regular 19.36sp, 10% above v1.5.14;
+  originals are 13sp and expanded body text remains 18sp.
+- Title-only translation is independent of full-source review. It sends public
+  feed headlines without conversation history to an already permitted local,
+  cloud or paired model. Direct inference supplies no tools; paired requests
+  explicitly ask for translation only, without browsing or tool use. No provider,
+  model, credential or permission is enabled implicitly. Existing paired reviews
+  can also return a separate faithful title translation, matched to the exact
+  original headline and accepted source.
+- The paired route persists one active batch before dispatch and correlates
+  replies by contact, source ID, conversation and turn. Background delivery
+  caches translations and acknowledges the reply without creating a chat.
+  A durable lease prevents duplicate dispatch after reopening the app; expired
+  batches become retryable. This lease is not a limit on article retention.
+- Small batches are scheduling units, not a lifetime or retention limit. The
+  existing token, cost and concurrency admission remains in effect; the retired
+  background dispatch-count ceiling is not reintroduced.
+- Exact-original/version/target-language cache keys and durable retry leases
+  prevent repeated successful translations and rapid failure loops. Invalid,
+  duplicate or unknown results are rejected. Numeric/version changes and markup
+  are rejected; this is structural validation, not proof of semantic accuracy.
+  Failed/unavailable translation leaves the English source readable.
+- Translation payloads update stored row state without changing an attached
+  article's title, height, read color or expansion. Reattachment or reopening
+  adopts the translation. English originals remain available in both collapsed
+  and expanded articles, with full text on expansion.
+
+### Verification
+
+- Android v1.5.15 (1298) was built and installed over the existing S20U app.
+- 97 JVM tests passed, including title parsing, identity/lease persistence,
+  review integration, timeline preservation and connector response scopes.
+- Nine synthetic device tests passed: typography, bilingual rows, translation
+  arrival stability, durable cache/retries, paired response ownership/recovery,
+  scrolling anchors, read state/bookmarks and light/dark title contrast.
+- An explicitly enabled live device test passed in 42.434 seconds. The S20U's
+  existing paired-only permission was preserved (cloud background calls remained
+  disabled); eight real public headlines were translated through the Desktop
+  and saved to the phone cache. No chat conversation was created by this path.
+- The real Chinese article layout was inspected on S20U. Final real bilingual
+  screenshot inspection remains pending because the device returned to another
+  app; it was not forced back. Bilingual layout assertions passed with fixtures.
+- Debug and instrumentation APK builds, Kotlin source-size policy, localization
+  guard and `git diff --check` passed. Translation validation checks structure
+  and number preservation, not semantic correctness of every headline.

@@ -113,6 +113,11 @@ object AgentConnectorResponseBus {
         )
         if (normalized.content.isBlank() && normalized.richOutputJson.isBlank()) return false
         if (!AgentConnectorResponseStore.isCurrentExecution(context, normalized)) return false
+        if (normalized.conversationId.startsWith(AttentionTitleRequest.PREFIX) &&
+            ProactiveAttentionPairedTitles(context).consume(normalized)) {
+            AgentConnectorResponseStore.recordManagedReceipt(context, normalized, receipt)
+            return true
+        }
         if (AgentManagedConnectorResponseRegistry.consume(normalized) ||
             EncryptedAgentManagedResponseLedger(context).complete(normalized) != null) {
             // The supervisor owns the body; persist its receipt without exposing a child reply to UI recovery.

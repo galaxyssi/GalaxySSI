@@ -83,6 +83,9 @@ class ProactiveAttentionFeedStore(context: Context) {
         keys.mapNotNull(rows::get).forEach { record ->
             val url = GlobalEvidenceEvaluator.canonicalUri(record.optString("url"))
             val item = reviewed?.items?.firstOrNull { result -> result.ledger.sources.any { it.uri == url } }
+            item?.titleTranslations?.get(record.optString("title"))?.let { translated ->
+                ProactiveAttentionTitleStore(context).save(record.optString("title"), translated)
+            }
             val retryable = item == null && reason in setOf("attention_source_read_unavailable", "attention_review_failed",
                 "attention_review_invalid")
             val state = if (item != null) "reviewed" else if (retryable) "deferred" else "unverified"

@@ -23,9 +23,58 @@ import org.junit.Test
 import org.junit.Assume.assumeTrue
 import org.junit.runner.RunWith
 
-/** Only isolated synthetic evidence; no provider calls, accounts, trades or existing research tasks. */
+/** Synthetic by default; explicitly enabled live checks use public feeds and existing model permissions. */
 @RunWith(AndroidJUnit4::class)
 class ProactiveAttentionDeviceTest {
+    @Test fun liveHeadlineTranslationUsesExistingPublicNewsAndPermissions() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("attention_live_titles") == "true")
+        val context = AppLanguage.wrap(instrumentation.targetContext.applicationContext)
+        val preferences = ProactiveAttentionStore(context).preferences()
+        assertTrue(preferences.configured && preferences.enabled)
+        val store = ProactiveAttentionTitleStore(context)
+        val pending = GlobalAgentRepository(context).proactiveMessages().filter {
+            it.id.startsWith("attention-feed:") && it.status == GlobalProactiveMessageStatus.DELIVERED &&
+                ProactiveAttentionTitlePolicy.needsTranslation(it.title) && store.translation(it.title).isBlank()
+        }.map { it.title }.distinct()
+        assumeTrue("No untranslated public headlines", pending.isNotEmpty())
+        ProactiveAttentionTitleScheduler.request(context)
+        val deadline = SystemClock.elapsedRealtime() + 180_000L
+        var translated = 0
+        while (SystemClock.elapsedRealtime() < deadline && translated == 0) {
+            SystemClock.sleep(1_000L)
+            translated = pending.count { store.translation(it).isNotBlank() }
+        }
+        android.util.Log.i("GalaxySSIAttention", "live_title_verification saved=$translated")
+        assertTrue("No real translation returned within the live-test window", translated > 0)
+        assertEquals(preferences.allowPairedModel, ProactiveAttentionStore(context).preferences().allowPairedModel)
+        assertEquals(preferences.allowCloudModel, ProactiveAttentionStore(context).preferences().allowCloudModel)
+    }
+
+    @Test fun pairedTitleResponseRecoversDurablyWithoutCreatingAConversation() = isolated { context ->
+        val original = "Model 2 released"
+        val translated = "\u6a21\u578b 2 \u53d1\u5e03"
+        val titleId = ProactiveAttentionTitlePolicy.key(original)
+        val request = AttentionTitleRequest("fixture-title-batch", 4321L, "fixture-desktop", "fixture-owner",
+            System.currentTimeMillis() + AttentionTitleRequest.LEASE, mapOf(titleId to original))
+        val database = AgentEncryptedDatabase(context, "attention_paired_titles_v1")
+        database.writeString("request", request.json())
+        val before = GlobalAgentRepository(context).proactiveMessages().size
+        val reply = AgentConnectorResponse(request.source, request.contact,
+            JSONObject().put("translations", org.json.JSONArray().put(JSONObject()
+                .put("id", titleId).put("title_zh", translated))).toString(),
+            conversationId = request.conversation, turnId = request.id)
+        val host = ProactiveAttentionPairedTitles(context) { }
+        assertTrue(host.pendingDelay(System.currentTimeMillis()) > 0L)
+        assertTrue(host.consume(reply.copy(contactId = "unrelated")))
+        assertEquals("", ProactiveAttentionTitleStore(context).translation(original))
+        assertTrue(ProactiveAttentionPairedTitles(context) { }.consume(reply))
+        assertEquals(translated, ProactiveAttentionTitleStore(context).translation(original))
+        assertEquals(0L, host.pendingDelay(System.currentTimeMillis()))
+        assertTrue(host.consume(reply))
+        assertEquals(before, GlobalAgentRepository(context).proactiveMessages().size)
+        assertTrue(AttentionTitleRequest.parse(database.readString("request", "{}"))!!.completed)
+    }
+
     @Test fun inboxMigratesAndRetainsBeyondThreeHundredAcrossReopenAndRestore() = isolated { context ->
         val database = AgentEncryptedDatabase(context, GlobalAgentRepository.DATABASE_NAME)
         val legacy = org.json.JSONArray().apply { repeat(305) { index -> put(JSONObject()
@@ -359,7 +408,7 @@ class ProactiveAttentionDeviceTest {
                     article.bind(AttentionReaderRow(item, expanded, false))
                     val title = views(article).first { it.tag == "attention-headline:${item.key}" } as TextView
                     assertFalse(title.typeface.isBold)
-                    assertEquals(pixels(17.6f), title.textSize, .1f)
+                    assertEquals(pixels(19.36f), title.textSize, .1f)
                     if (expanded) {
                         val body = views(article).first { it.tag == "attention-expanded:${item.key}" } as TextView
                         assertEquals(pixels(18f), body.textSize, .1f)
@@ -368,6 +417,70 @@ class ProactiveAttentionDeviceTest {
                         assertEquals(pixels(14.4f), heading.textSize, .1f)
                     }
                 }
+            }
+        }
+    }
+
+    @Test fun headlineTranslationsPersistWithoutChangingOriginalAndRetrySurvivesReopen() = isolated { context ->
+        val original = "Model 2.1 released"
+        val translated = "Model 2.1 \u53d1\u5e03"
+        val store = ProactiveAttentionTitleStore(context)
+        assertFalse(store.save(original, "invalid translation"))
+        store.defer(listOf(original), 1_000L)
+        assertEquals(301_000L, ProactiveAttentionTitleStore(context).nextAt(original))
+        assertTrue(store.save(original, translated))
+        val reopened = ProactiveAttentionTitleStore(context)
+        assertEquals(translated, reopened.translation(original))
+        assertEquals("", reopened.translation("Model 2.2 released"))
+        reopened.defer(listOf(original), 500_000L)
+        assertEquals(translated, store.translation(original))
+        assertEquals(0L, reopened.nextAt(original))
+    }
+
+    @Test fun bilingualHeadlineKeepsOriginalAndResetsRecycledRows() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(title = "New model released",
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+            .copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03")
+        instrumentation.runOnMainSync {
+            val context = instrumentation.targetContext
+            val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, done -> done(null) }, {})
+            listOf(false, true).forEach { expanded ->
+                article.bind(AttentionReaderRow(item, expanded, false))
+                val title = views(article).first { it.tag == "attention-headline:${item.key}" } as TextView
+                val original = views(article).first { it.tag == "attention-original-headline:${item.key}" } as TextView
+                assertEquals(item.translatedTitle, title.text.toString())
+                assertEquals(item.title, original.text.toString())
+                assertEquals(View.VISIBLE, original.visibility)
+                assertEquals(if (expanded) Int.MAX_VALUE else 2, original.maxLines)
+                assertFalse(title.typeface.isBold)
+            }
+            val next = item.copy(key = "other", title = "\u4e2d\u6587\u65b0\u95fb", translatedTitle = "")
+            article.bind(AttentionReaderRow(next, false, false))
+            assertEquals(View.GONE, views(article).first { it.tag == "attention-original-headline:other" }.visibility)
+            assertEquals(next.title, (views(article).first { it.tag == "attention-headline:other" } as TextView).text.toString())
+        }
+    }
+
+    @Test fun translationArrivalDoesNotChangeVisibleHeadlineUntilReattached() {
+        val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(title = "New model released",
+            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+        ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                val host = android.widget.FrameLayout(activity)
+                val article = ProactiveAttentionArticleView(activity, {}, {}, {}, {}, { _, done -> done(null) }, {})
+                article.bind(AttentionReaderRow(item, false, false))
+                host.addView(article)
+                activity.setContentView(host)
+                assertTrue(article.isAttachedToWindow)
+                val updated = AttentionReaderRow(item.copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03"), false, false)
+                article.updateStatus(updated)
+                fun title() = (views(article).first { it.tag == "attention-headline:${item.key}" } as TextView).text.toString()
+                assertEquals(item.title, title())
+                article.bind(updated.copy(expanded = true))
+                assertEquals(item.title, title())
+                host.removeView(article)
+                host.addView(article)
+                assertEquals(updated.item.translatedTitle, title())
             }
         }
     }
