@@ -115,4 +115,5 @@
     <string name="attention_not_verified">尚未获得独立确认，保留原始来源</string>
     <string name="attention_reviewed">已核对原文证据</string>
     <string name="attention_feed_active">新闻持续采集，深入分析在后台独立进行</string>
+    <string name="attention_translation_pending">中文标题待翻译</string>
 </resources>

@@ -53,19 +53,28 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
         }.toList()
         if (pending.isEmpty()) return@withContext Result.success()
         val now = System.currentTimeMillis()
-        val batch = pending.filter { store.nextAt(it) <= now }.take(ProactiveAttentionTitlePolicy.BATCH_SIZE)
+        val priority = store.priorityKeys(now)
+        val batch = pending.filter { store.nextAt(it) <= now }
+            .sortedBy { ProactiveAttentionTitlePolicy.key(it) !in priority }.take(ProactiveAttentionTitlePolicy.BATCH_SIZE)
         if (batch.isEmpty()) {
             ProactiveAttentionTitleScheduler.request(context, (pending.minOf(store::nextAt) - now).coerceAtLeast(30_000L))
             return@withContext Result.success()
         }
         val resources = GlobalAgentResourceResolver(context)
         val resource = resources.route("Translate public news headlines into Chinese", preferences.allowPairedModel,
-            preferences.allowCloudModel).firstOrNull() ?: return@withContext Result.success()
+            preferences.allowCloudModel).firstOrNull()
+        if (resource == null) {
+            ProactiveAttentionTitleScheduler.request(context, 5 * 60_000L)
+            return@withContext Result.success()
+        }
         val cloud = resources.cloudContact(resource)
         val pairedContact = if (resource != "local-llm" && cloud == null) resources.resolvePairedContact(resource) else null
-        if (resource != "local-llm" && cloud == null && pairedContact == null) return@withContext Result.success()
+        if (resource != "local-llm" && cloud == null && pairedContact == null) {
+            ProactiveAttentionTitleScheduler.request(context, 5 * 60_000L)
+            return@withContext Result.success()
+        }
         val titles = batch.associateBy(ProactiveAttentionTitlePolicy::key)
-        val prompt = ProactiveAttentionTitlePolicy.prompt(titles)
+        val prompt = ProactiveAttentionTitlePolicy.prompt(titles, store.feedback(titles))
         val owner = "attention-titles:" + UUID.randomUUID()
         val budget = GlobalModelCallBudgetStore(context)
         val lease = if (pairedContact != null) AttentionTitleRequest.LEASE else 5 * 60_000L
@@ -102,10 +111,9 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
             budget.complete(GlobalModelCallKind.COGNITION, owner, response.inputTokens,
                 response.outputTokens, response.costMicros, response.text)
             currentCoroutineContext().ensureActive()
-            val translated = ProactiveAttentionTitlePolicy.parse(response.text, titles)
-            translated.forEach { (id, title) -> store.save(titles.getValue(id), title) }
-            if (translated.isNotEmpty()) GlobalProactiveDeliveryBus.signalReady()
-            android.util.Log.i("GalaxySSIAttention", "title_translation requested=${batch.size} saved=${translated.size}")
+            val saved = store.accept(response.text, titles)
+            if (saved > 0) GlobalProactiveDeliveryBus.signalReady()
+            android.util.Log.i("GalaxySSIAttention", "title_translation requested=${batch.size} saved=$saved")
         } catch (failure: Exception) {
             budget.release(GlobalModelCallKind.COGNITION, owner)
             if (failure is java.util.concurrent.CancellationException) throw failure

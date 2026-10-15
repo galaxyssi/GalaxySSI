@@ -59,7 +59,8 @@ internal class ProactiveAttentionPairedTitles(context: Context,
         database.writeString("request", request.json())
         GalaxySSIMqttClient.connect(context)
         val published = GalaxySSIMqttClient.publishUserMessage(
-            content = ProactiveAttentionTitlePolicy.SYSTEM + "\n" + ProactiveAttentionTitlePolicy.prompt(titles),
+            content = ProactiveAttentionTitlePolicy.SYSTEM + "\n" +
+                ProactiveAttentionTitlePolicy.prompt(titles, ProactiveAttentionTitleStore(context).feedback(titles)),
             contactId = contact, topicOverride = topic, clientMessageId = request.source,
             conversationId = request.conversation, turnId = request.id, trustedBackgroundCognition = true)
         if (!published) database.writeString("request", request.copy(completed = true).json())
@@ -74,13 +75,11 @@ internal class ProactiveAttentionPairedTitles(context: Context,
             if (!request.matches(response) || request.completed) return true
             GlobalModelCallBudgetStore(context).complete(GlobalModelCallKind.COGNITION, request.owner,
                 response.inputTokens, response.outputTokens, response.costMicros, response.content)
-            val translations = if (response.success && !response.remoteFailure)
-                ProactiveAttentionTitlePolicy.parse(response.content, request.titles) else emptyMap()
             val store = ProactiveAttentionTitleStore(context)
-            translations.forEach { (id, title) -> store.save(request.titles.getValue(id), title) }
+            val saved = if (response.success && !response.remoteFailure) store.accept(response.content, request.titles) else 0
             database.writeString("request", request.copy(completed = true).json())
-            if (translations.isNotEmpty()) GlobalProactiveDeliveryBus.signalReady()
-            android.util.Log.i("GalaxySSIAttention", "paired_title_translation requested=${request.titles.size} saved=${translations.size}")
+            if (saved > 0) GlobalProactiveDeliveryBus.signalReady()
+            android.util.Log.i("GalaxySSIAttention", "paired_title_translation requested=${request.titles.size} saved=$saved")
         }
         scheduleNext(context)
         return true
