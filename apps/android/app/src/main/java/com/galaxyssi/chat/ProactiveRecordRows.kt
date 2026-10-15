@@ -62,9 +62,16 @@ internal class GlobalProactiveMessageStore(
     private val decode: (JSONObject?) -> GlobalProactiveMessage?
 ) {
     private val rows = ProactiveRecordRows(database, PREFIX, "proactive_messages", { it.getString("id") })
+    private val readIndex = ProactiveMessageReadIndex(database)
+
+    fun previewReady() = readIndex.ready()
+    fun preparePreview() { prepare() }
+    fun preview(state: AttentionReaderState, saved: Set<String>): List<GlobalProactiveMessage> =
+        database.readStrings(readIndex.firstKeys(state, saved)).values.mapNotNull { decode(JSONObject(it)) }
 
     private fun prepare() {
         rows.migrate()
+        readIndex.prepare(rows::all)
         if (database.contains(INDEX_READY)) return
         database.mutateStreaming(sequence {
             rows.all().forEach { record ->
@@ -95,7 +102,7 @@ internal class GlobalProactiveMessageStore(
         database.mutateStrings(buildMap {
             put(PREFIX + message.id, encode(message).toString())
             if (message.sourceEventId.isNotBlank()) put(eventKey(message.sourceEventId), message.id)
-        })
+        }, onMutation = readIndex::update)
     }
 
     fun replace(messages: List<GlobalProactiveMessage>) {
@@ -106,7 +113,7 @@ internal class GlobalProactiveMessageStore(
                 if (message.sourceEventId.isNotBlank()) put(eventKey(message.sourceEventId), message.id)
             }
         }
-        database.mutateStreaming(retained.asSequence().map { it.key to it.value }, removals = {
+        database.mutateStreaming(retained.asSequence().map { it.key to it.value }, onMutation = readIndex::update, removals = {
             (database.keys(PREFIX) + database.keys(EVENT_PREFIX)).asSequence().filter { it !in retained }
         })
     }

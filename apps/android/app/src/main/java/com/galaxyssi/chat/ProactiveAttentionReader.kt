@@ -35,6 +35,7 @@ internal class ProactiveAttentionReader(
     private val runtime = GlobalSuperAgentRuntime.get(activity)
     private val dwell = AttentionReadDwell()
     private var initialized = false
+    private var complete = true
     private var active = false
     private var olderQueued = false
     private var saved = emptySet<String>()
@@ -148,7 +149,9 @@ internal class ProactiveAttentionReader(
         }
     }
 
-    fun update(items: List<GlobalProactiveInboxItem>, savedKeys: Set<String>, restored: AttentionReaderState) {
+    fun update(items: List<GlobalProactiveInboxItem>, savedKeys: Set<String>, restored: AttentionReaderState, complete: Boolean = true) {
+        val finishingInitialLoad = !this.complete && complete
+        this.complete = complete
         saved = savedKeys.toMutableSet().apply { pendingSaves.forEach { (key, value) -> if (value) add(key) else remove(key) } }
         timeline.update(items, saved)
         if (!initialized) {
@@ -158,7 +161,10 @@ internal class ProactiveAttentionReader(
             publish()
             val index = timeline.visible.indexOfFirst { it.key == restored.anchor }
             if (index >= 0) manager.scrollToPositionWithOffset(index, restored.offset)
-        } else publish()
+        } else {
+            if (finishingInitialLoad && timeline.visible.isEmpty()) timeline.begin(timeline.filter)
+            publish()
+        }
     }
 
     private fun publish() {
@@ -167,7 +173,8 @@ internal class ProactiveAttentionReader(
         tabs.forEachIndexed { index, tab ->
             tab.text = when (filters[index]) {
                 AttentionFeedFilter.ALL -> activity.getString(R.string.attention_all)
-                AttentionFeedFilter.UNREAD -> activity.getString(R.string.attention_reader_unread, timeline.unreadCount)
+                AttentionFeedFilter.UNREAD -> if (complete) activity.getString(R.string.attention_reader_unread, timeline.unreadCount)
+                    else activity.getString(R.string.attention_unread)
                 else -> activity.getString(R.string.attention_saved)
             }
             tab.isSelected = timeline.filter == filters[index]
@@ -176,7 +183,7 @@ internal class ProactiveAttentionReader(
         }
         notice.text = if (timeline.newerCount > 0) activity.getString(R.string.attention_reader_new, timeline.newerCount) else ""
         notice.isClickable = timeline.newerCount > 0
-        empty.text = activity.getString(R.string.attention_empty)
+        empty.text = activity.getString(if (complete) R.string.attention_empty else R.string.attention_loading)
         empty.visibility = if (timeline.visible.isEmpty()) View.VISIBLE else View.GONE
     }
 

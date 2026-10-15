@@ -27,6 +27,7 @@ import org.json.JSONObject
 
 class ProactiveAttentionActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
+    private val loader = Executors.newSingleThreadExecutor()
     private lateinit var store: ProactiveAttentionStore
     private lateinit var runtime: GlobalSuperAgentRuntime
     private lateinit var body: LinearLayout
@@ -48,6 +49,10 @@ class ProactiveAttentionActivity : Activity() {
     private var reloadQueued = false
     private var started = false
     private var collectionRequested = false
+    @Volatile private var completeInbox = false
+    private var settingsStatusLoading = false
+    private val openedAt = android.os.SystemClock.elapsedRealtime()
+    private var firstContentLogged = false
     private val pageHistory = mutableListOf<Boolean>()
     private val listener = GlobalProactiveDeliveryListener { runOnUiThread { if (started) reload() } }
 
@@ -67,7 +72,7 @@ class ProactiveAttentionActivity : Activity() {
     override fun onStop() { started = false; GlobalProactiveDeliveryBus.removeListener(listener); super.onStop() }
     override fun onResume() { super.onResume(); reader.resume() }
     override fun onPause() { reader.pause(); super.onPause() }
-    override fun onDestroy() { reader.destroy(); worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { reader.destroy(); worker.shutdown(); loader.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("settings", settingsPage)
         outState.putBooleanArray("pages", pageHistory.toBooleanArray())
@@ -113,43 +118,74 @@ class ProactiveAttentionActivity : Activity() {
         if (reloadRunning) { reloadQueued = true; return }
         reloadRunning = true
         val request = ++revision
-        worker.execute {
+        loader.execute {
             val loaded = runCatching {
                 val p = store.preferences()
-                if (p.configured && p.enabled && !collectionRequested) {
-                    collectionRequested = true
-                    ProactiveAttentionFeedScheduler.request(applicationContext)
-                    ProactiveAttentionTitleScheduler.request(applicationContext)
-                }
+                val savedReaderState = readerStateStore.read()
                 val repository = GlobalAgentRepository(applicationContext)
+                val titles = ProactiveAttentionTitleStore(applicationContext)
+                if (!completeInbox) {
+                    val preview = runCatching { titles.decorate(repository.proactiveInboxPreview(savedReaderState, p.savedKeys)) }
+                        .getOrDefault(emptyList())
+                    if (preview.isNotEmpty()) runOnUiThread {
+                        if (!isDestroyed && request == revision) {
+                            preferences = p; items = preview; readerState = savedReaderState
+                            render()
+                        }
+                    }
+                }
                 val messageMap = repository.proactiveMessages().associateBy(GlobalProactiveMessage::id)
                 val inbox = GlobalProactiveInboxPolicy.project(messageMap.values.toList(), repository.feedback())
-                Triple(p, ProactiveAttentionTitleStore(applicationContext).decorate(inbox), messageMap)
+                Triple(p, titles.decorate(inbox), messageMap) to savedReaderState
             }
-            val savedReaderState = readerStateStore.read()
-            val research = runCatching { runtime.researchTasks().filter(ProactiveAttentionPolicy::isAttention) }.getOrDefault(emptyList())
-            val lastPoll = runCatching {
-                val feed = ProactiveAttentionFeedStore(applicationContext)
-                store.preferences().topics.filter { it.enabled }.map { feed.topicState(it.id) }
-                    .filter { it.optString("error").isBlank() }.maxOfOrNull { it.optLong("at") } ?: 0L
-            }.getOrDefault(0L)
             runOnUiThread {
                 reloadRunning = false
                 if (isDestroyed || request != revision) return@runOnUiThread
-                loaded.onSuccess { (p, inbox, metadata) ->
+                loaded.onSuccess { (data, savedReaderState) ->
+                    val (p, inbox, metadata) = data
                     preferences = p; items = inbox; messages = metadata
                     readerState = savedReaderState
                     evidence.evictAll()
-                    tasks = research
-                    feedLastPoll = lastPoll
+                    completeInbox = true
                     render()
+                    if (p.configured && p.enabled && !collectionRequested) {
+                        collectionRequested = true
+                        ProactiveAttentionFeedScheduler.request(applicationContext)
+                        ProactiveAttentionTitleScheduler.request(applicationContext)
+                    }
                 }.onFailure {
-                    reader.view.visibility = View.GONE
-                    scroll.visibility = View.VISIBLE
-                    body.removeAllViews()
-                    body.addView(row(getString(R.string.attention_error)) { reload() })
+                    if (items.isEmpty()) {
+                        reader.view.visibility = View.GONE
+                        scroll.visibility = View.VISIBLE
+                        body.removeAllViews()
+                        body.addView(row(getString(R.string.attention_error)) { reload() })
+                    } else toast(R.string.attention_error)
                 }
                 if (reloadQueued) { reloadQueued = false; reload() }
+            }
+        }
+    }
+
+    private fun loadSettingsStatus() {
+        if (settingsStatusLoading) return
+        settingsStatusLoading = true
+        val topics = preferences.topics.filter { it.enabled }.map { it.id }
+        loader.execute {
+            val research = runCatching { runtime.researchTasks().filter(ProactiveAttentionPolicy::isAttention) }.getOrDefault(emptyList())
+            val lastPoll = runCatching {
+                val feed = ProactiveAttentionFeedStore(applicationContext)
+                topics.map(feed::topicState).filter { it.optString("error").isBlank() }
+                    .maxOfOrNull { it.optLong("at") } ?: 0L
+            }.getOrDefault(0L)
+            runOnUiThread {
+                settingsStatusLoading = false
+                if (isDestroyed) return@runOnUiThread
+                tasks = research; feedLastPoll = lastPoll
+                if (settingsPage) {
+                    val y = scroll.scrollY
+                    body.removeAllViews(); renderSettings()
+                    scroll.post { scroll.scrollTo(0, y) }
+                }
             }
         }
     }
@@ -185,12 +221,21 @@ class ProactiveAttentionActivity : Activity() {
         scroll.visibility = if (settingsPage) View.VISIBLE else View.GONE
         reader.view.visibility = if (settingsPage) View.GONE else View.VISIBLE
         body.removeAllViews()
-        if (settingsPage) renderSettings() else reader.update(items, preferences.savedKeys, readerState)
+        if (settingsPage) { renderSettings(); loadSettingsStatus() }
+        else {
+            if (items.isNotEmpty() || completeInbox) reader.update(items, preferences.savedKeys, readerState, completeInbox)
+            if (items.isNotEmpty() && !firstContentLogged) {
+                firstContentLogged = true
+                reader.list.postOnAnimation { android.util.Log.i("AttentionLoadProfile",
+                    "first_content_ms=${android.os.SystemClock.elapsedRealtime() - openedAt} rows=${reader.list.adapter?.itemCount}") }
+            }
+        }
         scroll.post { if (!isDestroyed) scroll.scrollTo(0, previousScroll) }
     }
 
     private fun renderSettings() {
-        body.addView(row(getString(R.string.attention_view), getString(R.string.attention_unread_entry, items.count { it.isNew })) { navigate(false) })
+        body.addView(row(getString(R.string.attention_view), if (completeInbox)
+            getString(R.string.attention_unread_entry, items.count { it.isNew }) else "") { navigate(false) })
         val enabled = Switch(this).apply {
             isChecked = preferences.configured && preferences.enabled
             contentDescription = getString(R.string.attention_collection)
@@ -268,9 +313,15 @@ class ProactiveAttentionActivity : Activity() {
 
     private fun loadEvidence(item: GlobalProactiveInboxItem, loaded: (JSONObject?) -> Unit) {
         evidence.get(item.key)?.let { loaded(it); return }
-        val ids = item.messageIds.mapNotNull { messages[it]?.sourceEventId }
+        val knownIds = item.messageIds.mapNotNull { messages[it]?.sourceEventId }
         worker.execute {
-            val result = runCatching { ids.mapNotNull(store::evidence).lastOrNull() }.getOrNull()
+            val result = runCatching {
+                val ids = if (knownIds.size == item.messageIds.size) knownIds else {
+                    val repository = GlobalAgentRepository(applicationContext)
+                    item.messageIds.mapNotNull { repository.proactiveMessage(it)?.sourceEventId }
+                }
+                ids.mapNotNull(store::evidence).lastOrNull()
+            }.getOrNull()
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 if (result != null) evidence.put(item.key, result)

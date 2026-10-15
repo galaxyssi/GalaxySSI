@@ -26,6 +26,52 @@ import org.junit.runner.RunWith
 /** Synthetic by default; explicitly enabled live checks use public feeds and existing model permissions. */
 @RunWith(AndroidJUnit4::class)
 class ProactiveAttentionDeviceTest {
+    @Test fun indexedPreviewIsBoundedAndTracksReadRevisionsRestoresAndDeletes() = isolated { context ->
+        val repository = GlobalAgentRepository(context)
+        val values = (1..65).map { index -> message().copy(id = "preview-$index", sourceEventId = "preview-source-$index",
+            status = GlobalProactiveMessageStatus.DELIVERED, createdAtMillis = index.toLong(), deliveredAtMillis = index.toLong()) }
+        repository.saveProactiveMessages(values)
+        val state = AttentionReaderState()
+        val first = repository.proactiveInboxPreview(state, emptySet())
+        assertEquals(20, first.size)
+        assertEquals((65 downTo 46).map { "global-agent:preview-$it" }, first.map { it.key })
+        repository.markProactiveViewed(setOf("preview-65"), 1000)
+        repository.reviseProactiveMessage("preview-1", "updated old article", true)
+        assertEquals("global-agent:preview-65", repository.proactiveInboxPreview(state, emptySet()).maxBy { it.deliveredAtMillis }.key)
+        assertEquals("global-agent:preview-64", repository.proactiveInboxPreview(
+            state.copy(filter = AttentionFeedFilter.UNREAD), emptySet()).first().key)
+        val restored = state.copy(keys = (65 downTo 1).map { "global-agent:preview-$it" }, anchor = "global-agent:preview-20")
+        val page = repository.proactiveInboxPreview(restored, emptySet())
+        assertEquals(20, page.size)
+        assertTrue(page.any { it.key == restored.anchor })
+        val saved = repository.proactiveInboxPreview(state.copy(filter = AttentionFeedFilter.SAVED), setOf("global-agent:preview-1"))
+        assertEquals("updated old article", saved.single().content)
+        repository.saveProactiveMessages(values.dropLast(1))
+        assertEquals("global-agent:preview-64", GlobalAgentRepository(context).proactiveInboxPreview(state, emptySet()).first().key)
+    }
+
+    @Test fun indexedPreviewKeepsDigestsCompleteAndMigratesLegacyRows() = isolated { context ->
+        val database = AgentEncryptedDatabase(context, GlobalAgentRepository.DATABASE_NAME)
+        database.writeString("proactive_messages", org.json.JSONArray().apply {
+            repeat(25) { index -> put(JSONObject().put("id", "digest-$index").put("content", "part-$index")
+                .put("status", "DELIVERED").put("target", "GLOBAL_DIGEST").put("delivery_group_id", "fixture-group")
+                .put("created_at_millis", index + 1).put("delivered_at_millis", index + 1)) }
+        }.toString())
+        val repository = GlobalAgentRepository(context)
+        val preview = repository.proactiveInboxPreview(AttentionReaderState(), emptySet())
+        assertEquals(1, preview.size)
+        assertEquals(25, preview.single().messageIds.size)
+        assertEquals(25, repository.proactiveMessages().size)
+        assertFalse(database.contains("proactive_messages"))
+        database.clear()
+        database.indexedTransaction { db ->
+            db.rawQuery("SELECT COUNT(*) FROM proactive_message_read_index", null).use { cursor ->
+                assertTrue(cursor.moveToFirst()); assertEquals(0, cursor.getInt(0))
+            }
+        }
+        assertTrue(repository.proactiveInboxPreview(AttentionReaderState(), emptySet()).isEmpty())
+    }
+
     @Test fun liveHeadlineTranslationUsesExistingPublicNewsAndPermissions() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("attention_live_titles") == "true")
         val context = AppLanguage.wrap(instrumentation.targetContext.applicationContext)
