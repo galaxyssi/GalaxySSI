@@ -9,6 +9,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSystemToolPlannerTest {
+    @Test fun attachmentsRemainPhoneOwnedWithoutCommandOrPathKeywords() {
+        for (goal in listOf("Show it", "Here is the result I want", "Please identify this", "Render the revision")) {
+            assertTrue(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, hasAttachments = true))
+        }
+        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution("hello"))
+    }
+
     @Test
     fun selectedCodexReasonsWhilePhoneLinuxExecutesTheRequestedCommand() {
         val screen = ScreenContext(foregroundApp = "com.galaxyssi.chat", pageTitle = "GalaxySSI")

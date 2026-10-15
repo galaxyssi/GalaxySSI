@@ -39,6 +39,7 @@ jobs:
           bash -n tools/runtime/build-gradle-image.sh
           bash -n tools/runtime/build-browser-automation-image.sh
           bash -n tools/runtime/build-ffmpeg-image.sh
+          bash -n tools/runtime/verify-ffmpeg-images.sh
           bash -n apps/android/runtime/qemu/termux-build.sh
           bash -n apps/android/runtime/buildroot-external/board/galaxyssi/aarch64/post-build.sh
           bash -n apps/android/runtime/buildroot-external/board/galaxyssi/aarch64/rootfs-overlay/etc/init.d/S99galaxyssi

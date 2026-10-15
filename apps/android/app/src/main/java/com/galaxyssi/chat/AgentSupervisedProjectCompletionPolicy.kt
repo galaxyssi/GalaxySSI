@@ -18,6 +18,7 @@ internal object AgentSupervisedProjectCompletionPolicy {
             .map(::toolId)
             .toSet()
         return buildList {
+            addAll(AgentArtifactCompletionEvidence.missing(requirements.artifacts, history))
             if (requirements.phoneLinux && AgentOnDeviceRuntimeTools.EXECUTE !in completedTools) {
                 add("a successful galaxyssi.runtime.execute receipt from the phone Linux guest")
             }

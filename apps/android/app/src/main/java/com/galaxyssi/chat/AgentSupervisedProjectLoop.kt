@@ -418,6 +418,8 @@ internal object AgentSupervisedProjectLoop {
             append(key.progressLedger).append('\n')
         }
         append("Context precedence: verified observations are chronological, and the newest verified tool observation overrides older assistant statements or older observations about the same state. Never preserve an older inference when a newer host-owned fact contradicts it.\n")
+        append("Preserve requested edits during recovery: copying or re-encoding inputs is not completion. Inspect and repair unavailable tool capabilities (including missing encoders), then verify the requested change. Reuse verified outputs when asked to display/send them.\n")
+        append("For files set completion_requirements.artifacts=[{\"path\":\"outputs/result.png\",\"source_sha256\":\"\"}]; edits use observed input hash. Export via artifact_paths. Unchanged copies fail; inspect edits too.\n")
     }.let { prompt ->
         AgentSupervisedProjectPromptCodec.preserveToolInventory(
             prompt,
@@ -633,8 +635,9 @@ internal object AgentSupervisedProjectRoutingPolicy {
             goal = goal,
             hasAttachments = hasAttachments
         )
-        val executableFileRequest = classification.intent == AgentTaskIntent.FILE &&
-            "file-path-operation" in classification.matchedSignals
+        // The model decides whether tools are needed; an absent command or path
+        // must not transfer execution ownership for attachments to a Desktop agent.
+        val executableFileRequest = hasAttachments || classification.intent == AgentTaskIntent.FILE
         val executablePhoneControlRequest = classification.intent == AgentTaskIntent.PHONE_CONTROL &&
             "phone-control-action" in classification.matchedSignals
         return AgentCapability.TASK_EXECUTION in requirements.capabilities ||

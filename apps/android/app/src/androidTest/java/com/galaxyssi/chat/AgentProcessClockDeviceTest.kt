@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AgentProcessClockDeviceTest {
-    @Test fun deliveredReplyTimeWinsOverALateRuntimeProjection() {
+    @Test fun authoritativeCompletionWinsOverAnInterimReply() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val process = AgentTranscriptEntry("clock-projection", AgentTranscriptRole.PROCESS, "Working",
@@ -22,7 +22,12 @@ class AgentProcessClockDeviceTest {
                     cancellable = false, startedAtMillis = 1000L, completedAtMillis = 9000L))
                 val final = process.copy(id = "final-clock", role = AgentTranscriptRole.ASSISTANT,
                     text = "Done", timestampMillis = 3000L)
-                assertEquals(3000L, activity.agentProcessCompletionTimestamp(process, listOf(process, final)))
+                assertEquals(9000L, activity.agentProcessCompletionTimestamp(process, listOf(process, final)))
+                activity.rememberAgentExecutionPresentation(process.taskId, AgentExecutionPresentation(
+                    executorId = "test", executorLabel = "Test", locationKind = AgentExecutionLocationKind.CLOUD,
+                    locationLabelHint = "Test", currentStep = "Recovering", phase = AgentPhase.WAITING_RESPONSE,
+                    cancellable = true, startedAtMillis = 1000L))
+                assertNull(activity.agentProcessCompletionTimestamp(process, listOf(process, final)))
                 activity.agentExecutionPresentations.remove(process.taskId)
             }
         }

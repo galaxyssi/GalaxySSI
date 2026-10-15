@@ -920,8 +920,19 @@ internal fun MainActivity.rememberAgentExecutionPresentation(
     presentation: AgentExecutionPresentation
 ) {
     if (taskId.isBlank()) return
+    val previousPhase = agentExecutionPresentations[taskId]?.phase
     agentExecutionPresentations.compute(taskId) { _, previous ->
         presentation.copy(voiceRun = presentation.voiceRun ?: previous?.voiceRun)
+    }
+    if (previousPhase != presentation.phase) runOnUiThread {
+        if (!isFinishing && !isDestroyed && isAgentTranscriptAdapterInitialized()) {
+            renderedAgentTranscriptSourceEntries.filter { it.role == AgentTranscriptRole.PROCESS &&
+                (it.taskId == taskId || it.turnId == taskId) }.forEach { entry ->
+                agentProcessCompletionLookups.remove(entry.turnId)
+                agentTranscriptAdapter.indexOfEntry(entry.id).takeIf { it >= 0 }
+                    ?.let(agentTranscriptAdapter::notifyItemChanged)
+            }
+        }
     }
     if (agentExecutionPresentations.size <= 512) return
     agentExecutionPresentations.entries

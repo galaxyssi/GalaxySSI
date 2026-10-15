@@ -165,7 +165,8 @@ data class AgentSubagentOutput(
     val content: String = "",
     val collaborationAcceptance: CollaborationAcceptanceReceipt? = null,
     val collaborationDelivery: CollaborationDeliveryReceipt? = null,
-    val collaborationDiscussionRouted: Boolean = false
+    val collaborationDiscussionRouted: Boolean = false,
+    val richOutputJson: String = ""
 )
 
 fun interface AgentSubagentWorker {
@@ -185,7 +186,8 @@ data class AgentSubagentChildResult(
     val startedAtMillis: Long = 0L,
     val completedAtMillis: Long = 0L,
     val collaborationAcceptance: CollaborationAcceptanceReceipt? = null,
-    val collaborationDelivery: CollaborationDeliveryReceipt? = null
+    val collaborationDelivery: CollaborationDeliveryReceipt? = null,
+    val richOutputJson: String = ""
 )
 
 data class AgentSubagentRunResult(
@@ -769,7 +771,8 @@ class AgentSubagentRuntime(
                     output = boundedOutput,
                     outputTruncated = boundedOutput.length < output.content.length,
                     startedAt = startedAt
-                ).copy(collaborationAcceptance = output.collaborationAcceptance, collaborationDelivery = output.collaborationDelivery)
+                ).copy(collaborationAcceptance = output.collaborationAcceptance,
+                    collaborationDelivery = output.collaborationDelivery, richOutputJson = output.richOutputJson)
                 publishChildResult(
                     control,
                     plan,

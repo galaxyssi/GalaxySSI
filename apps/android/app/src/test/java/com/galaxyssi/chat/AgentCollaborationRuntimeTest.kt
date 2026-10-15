@@ -20,6 +20,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentCollaborationRuntimeTest {
+    @Test fun richArtifactsSurviveTeamAggregationWithoutLeakingObserverOutput() = runBlocking {
+        val image = AgentRichContentCodec.encode(listOf(AgentRichBlock("image", AgentRichBlockType.IMAGE,
+            uri = "galaxyssi-artifact://primary/outputs/result.png", mimeType = "image/png")))
+        val file = AgentRichContentCodec.encode(listOf(AgentRichBlock("file", AgentRichBlockType.FILE,
+            uri = "galaxyssi-artifact://observer/private.md")))
+        val store = InMemoryAgentTeamExecutionStore()
+        val runtime = AgentTeamExecutionRuntime(store)
+        try {
+            val result = runtime.start(teamDefinition(), request()) { context ->
+                AgentSubagentOutput("done", richOutputJson = if (context.member.memberId == "primary") image else file)
+            }.await()
+            assertEquals(image, result.snapshot.finalRichOutputJson)
+            assertEquals(image, result.subagentResult["primary"]?.richOutputJson)
+            assertEquals(image, store.snapshot(request().runId)?.finalRichOutputJson)
+            assertFalse(result.snapshot.finalRichOutputJson.contains("private.md"))
+        } finally { runtime.close() }
+    }
+
     @Test fun managedAssignmentPromptWinsOverSharedGoalOnlyForHostManagedTeams() {
         val action = AgentAction(id = "assignment", kind = AgentActionKind.CALL_CONNECTOR, target = "test", risk = AgentRisk.LOW,
             status = AgentActionStatus.RUNNING, description = "test", parameters = mapOf("prompt" to "Only Curie's assignment",
@@ -396,12 +414,15 @@ class AgentCollaborationRuntimeTest {
             sourceMessageId = 71L,
             content = "verified evidence"
         )
-        val primary = managedResponse(
+        val primaryWithoutArtifacts = managedResponse(
             ownerRunId = "primary-run",
             agentId = "primary",
             sourceMessageId = 72L,
             content = "final reviewed answer"
         )
+        val rich = AgentRichContentCodec.encode(listOf(AgentRichBlock("file", AgentRichBlockType.FILE,
+            uri = "galaxyssi-artifact://primary/result.md", mimeType = "text/markdown")))
+        val primary = primaryWithoutArtifacts.copy(response = primaryWithoutArtifacts.response!!.copy(richOutputJson = rich))
 
         assertTrue(store.applyLateResponse(observer))
         assertEquals(AgentTeamExecutionState.INTERRUPTED, store.snapshot(request.runId)?.state)
@@ -410,6 +431,7 @@ class AgentCollaborationRuntimeTest {
         val eventCount = store.records().single().events.size
         assertEquals(AgentTeamExecutionState.SUCCEEDED, completed.state)
         assertEquals("final reviewed answer", completed.finalOutput)
+        assertEquals(rich, completed.finalRichOutputJson)
         assertEquals(AgentSubagentStatus.SUCCEEDED, completed.members.first {
             it.agentId == "observer"
         }.status)

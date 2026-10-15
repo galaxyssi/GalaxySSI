@@ -137,7 +137,7 @@ internal object AgentRuntimeArtifactUi {
         }
         return AgentRichBlock(
             id = "runtime-artifact:${sha256.take(24)}",
-            type = AgentRichBlockType.FILE,
+            type = if (mimeType.startsWith("image/")) AgentRichBlockType.IMAGE else AgentRichBlockType.FILE,
             title = payload.displayName,
             uri = File(hostPath).toURI().toString(),
             mimeType = mimeType,

@@ -437,6 +437,7 @@ private class ActionExecutorAgentTransport(
                 "success" to result.success,
                 "source_message_id" to result.metadata["source_message_id"].orEmpty(),
                 "result" to result.message,
+                "rich_output" to result.metadata["rich_output"].orEmpty(),
                 "error" to if (result.success) "" else result.message
             )
         )
