@@ -27,19 +27,22 @@ data class AgentCompletionRequirements(
     val publication: AgentPublicationRequirement,
     val phoneLinux: Boolean,
     val reason: String = "",
-    val artifacts: List<AgentArtifactRequirement> = emptyList()
+    val artifacts: List<AgentArtifactRequirement> = emptyList(),
+    val outcomes: List<AgentObservedOutcome> = emptyList()
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("publication", publication.wireValue)
         .put("phone_linux", phoneLinux)
         .put("reason", reason)
         .put("artifacts", JSONArray(artifacts.map(AgentArtifactRequirement::toJson)))
+        .put("outcomes", JSONArray(outcomes.map(AgentObservedOutcome::toJson)))
 
     fun changesOutcome(previous: AgentCompletionRequirements): Boolean =
-        publication != previous.publication || phoneLinux != previous.phoneLinux || artifacts != previous.artifacts
+        publication != previous.publication || phoneLinux != previous.phoneLinux || artifacts != previous.artifacts || outcomes != previous.outcomes
 
     fun canReplace(previous: AgentCompletionRequirements?): Boolean =
-        previous == null || !changesOutcome(previous) || reason.isNotBlank()
+        previous == null || outcomes.map { it.id }.containsAll(previous.outcomes.map { it.id }) &&
+            (!changesOutcome(previous) || reason.isNotBlank())
 
     companion object {
         fun parse(json: JSONObject?): AgentCompletionRequirements? {
@@ -58,7 +61,13 @@ data class AgentCompletionRequirements(
                 }
                 if (artifacts.map { it.path }.distinct().size != artifacts.size) return null
             }
-            return AgentCompletionRequirements(publication, phoneLinux, reason.trim(), artifacts)
+            val outcomes = mutableListOf<AgentObservedOutcome>()
+            if (json.has("outcomes")) {
+                val array = json.optJSONArray("outcomes") ?: return null
+                for (index in 0 until array.length()) outcomes += AgentObservedOutcome.parse(array.optJSONObject(index) ?: return null) ?: return null
+                if (outcomes.map { it.id }.distinct().size != outcomes.size) return null
+            }
+            return AgentCompletionRequirements(publication, phoneLinux, reason.trim(), artifacts, outcomes)
         }
     }
 }

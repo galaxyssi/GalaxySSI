@@ -274,6 +274,10 @@ internal fun MainActivity.renderAgentState(
         return
     }
     lastRenderedAgentState = state
+    if (state.phase in setOf(AgentPhase.COMPLETED, AgentPhase.BLOCKED, AgentPhase.FAILED, AgentPhase.PAUSED)) {
+        offerPendingDeviceOperationAccess(conversationId)
+        continueVisibleAgentPermissionGate()
+    }
     val pendingAction = state.pendingAction
     if (syncTranscript) renderAgentOutput(
         state,

@@ -401,16 +401,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             return AgentActionResult(action.id, false, "Notification reply target or text is missing")
         }
         val result = GalaxySSINotificationListenerService.reply(notificationKey, replyText)
-        return AgentActionResult(
-            actionId = action.id,
-            success = result.success,
-            message = result.message,
-            metadata = mapOf(
-                "notification_key_hash" to notificationKey.hashCode().toString(),
-                "notification_package" to action.parameters["notification_package"].orEmpty(),
-                "reply_length" to replyText.length.toString()
-            )
-        )
+        return AgentGoalEvidence.notificationReply(action, result,
+            zh = context.resources.configuration.locales[0].language == "zh")
     }
 
     internal fun ensureAgentNotificationChannel() {
@@ -472,14 +464,19 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
     }
 
     internal fun setAlarm(action: AgentAction): AgentActionResult {
-        val timerSeconds = action.parameters["timer_seconds"]?.toIntOrNull()
+        if (action.parameters.containsKey("timer_seconds") || action.parameters.containsKey("timer_operation")) {
+            return AgentTimerExecutor(context).execute(action)
+        }
         val hour = action.parameters["hour"]?.toIntOrNull()
         val minute = action.parameters["minute"]?.toIntOrNull()
+        if ((action.parameters.containsKey("hour") || action.parameters.containsKey("minute")) &&
+            (hour == null || minute == null || hour !in 0..23 || minute !in 0..59)) {
+            return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.FAILED, context.getString(R.string.device_operation_alarm_invalid))
+        }
+        if (hour == null && action.id != "open-timer" && action.description != "Open alarm app") {
+            return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.FAILED, context.getString(R.string.device_operation_time_missing))
+        }
         val intent = when {
-            timerSeconds != null -> Intent(AlarmClock.ACTION_SET_TIMER)
-                .putExtra(AlarmClock.EXTRA_LENGTH, timerSeconds)
-                .putExtra(AlarmClock.EXTRA_MESSAGE, "GalaxySSI")
-                .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
             action.id == "open-timer" -> Intent(AlarmClock.ACTION_SHOW_TIMERS)
             hour != null && minute != null -> Intent(AlarmClock.ACTION_SET_ALARM)
                 .putExtra(AlarmClock.EXTRA_HOUR, hour)
@@ -491,21 +488,13 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             actionId = action.id,
             intent = intent,
             successMessage = when {
-                timerSeconds != null -> "Timer handoff started"
                 action.id == "open-timer" -> "Opened timer app"
                 hour != null && minute != null -> "Alarm handoff started"
                 else -> "Opened alarm app"
             }
         )
-        if (result.success && timerSeconds != null) {
-            runCatching {
-                context.startActivity(
-                    Intent(AlarmClock.ACTION_SHOW_TIMERS)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
-        }
-        return result
+        return if (result.success && hour != null && minute != null) result.copy(metadata = result.metadata +
+            mapOf("goal_status" to "dispatched", "business_success_verified" to "false")) else result
     }
 
     internal fun launchIntent(actionId: String, intent: Intent, successMessage: String): AgentActionResult {

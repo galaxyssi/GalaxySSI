@@ -51,6 +51,9 @@ internal object AgentSupervisedProjectPromptTemplate {
                     appendInitialPlanningContract()
                 }
                 append(AgentProblemSolvingPolicy.COMPACT_CONTRACT).append('\n')
+                append("Goal execution: understand the requested state, resolve this conversation's pending intent, check available capabilities, execute, observe, then repair only what is missing. Infer typos and natural phrasing; do not substitute an easier action. ")
+                append("Persist observable postconditions in completion_requirements.outcomes=[{id,tool_id,subject:{\"/identity_field\":\"observed identity\"},checks:{\"/state_field\":\"expected value\"},after_tool_id:\"mutation tool id\"}]. JSON-pointer fields refer to actual native output, not prose. Match the exact file, operation or recipient/message identity; use the latest observation after mutation. Only use fields exposed by tool schemas/observations, never invent them. ")
+                append("API acceptance, queueing, opening a UI or exit_code=0 alone are not business completion. Files require hash-bound export plus opening/format verification; delivery requires receiver acknowledgement. When such observation is unavailable, return a truthful unverified/blocked result and preserve the goal; do not claim completion or silently weaken its checks.\n")
                 append("For unclear signatures inspect galaxyssi.tools.describe: tool_id, schema_path=/input_schema or /description.\n")
                 append("Available phone tools:\n")
                 append(toolManifest)
@@ -69,6 +72,9 @@ internal object AgentSupervisedProjectPromptTemplate {
         append("Password text is unavailable; Android permission/security dialogs require the user. Sensitive actions may wait for panel confirmation. ")
         append("Chrome uses the phone's existing session. Do not export cookies or credentials. Recording uses visible Android consent. ")
         append("Dispatch acceptance is not business completion. Declare completion_requirements with publication=none and phone_linux=false. ")
+        append("Understand typos, spoken numbers and short follow-ups from the user's goal and scoped Phone operation context. A one-minute countdown is not an every-minute schedule. Never replace SET with OPEN because a parameter was not parsed. ")
+        append("Prefer native semantic tools before UI. For countdowns use galaxyssi.agent_action.set.alarm with timer_operation and timer_seconds; after UI recovery use timer_operation=inspect. Require a matching timer identity and decreasing remaining seconds, not just an opened Clock screen. ")
+        append("For any action define the intended postcondition, inspect actual observations and repair only missing work. Files need readable artifacts; message delivery needs recipient acknowledgement, not enqueue success. If access is absent preserve the pending goal and report the exact capability needed, never invent success or ask the user to repeat the original command. ")
         append("After observations prove the outcome, return one DRAFT_PLAN action with target=task-complete and description=the concise final answer in the user's language.\n")
     }
 

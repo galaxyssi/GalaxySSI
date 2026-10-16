@@ -368,7 +368,8 @@ internal object AgentSupervisedProjectLoop {
                     maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
                     temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
                     detailedToolIds = progress.detailedToolIds,
-                    phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId)
+                    phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId) ||
+                        AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
                 )
             },
             goal = AgentPlanningTiming.measure("goal") { compileGoal(request.goal) },
@@ -387,7 +388,8 @@ internal object AgentSupervisedProjectLoop {
                 }
             },
             progressLedger = progress.promptLedger.orEmpty(),
-            directResponseAllowed = !evidenceExpected,
+            directResponseAllowed = !evidenceExpected &&
+                !AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext),
             maximumCharacters = maximumCharacters,
             minimumBaseCharacters = MINIMUM_BASE_PROMPT_CHARACTERS,
             completionRequirements = request.completionRequirements
@@ -621,10 +623,23 @@ internal object AgentSupervisedProjectRuntimeContextPolicy {
 }
 
 internal object AgentSupervisedProjectRoutingPolicy {
+    fun requiresPhoneReceipt(goal: String, context: AgentConversationContext): Boolean =
+        AgentDeviceIntent.requiresReasoning(goal) && AgentDeviceIntent.seconds(goal) != null ||
+            AgentDeviceIntent.followup(goal) != null && context.summary.contains("Phone operation:")
+
+    fun isPhoneControl(goal: String, context: AgentConversationContext): Boolean =
+        AgentDeviceIntent.requiresReasoning(goal) ||
+            AgentDeviceIntent.needsOperationContext(goal) && context.summary.contains("Phone operation:") ||
+            AgentTaskIntentClassifier.classify(goal, hasAttachments = context.hasAttachments).let {
+                it.intent == AgentTaskIntent.PHONE_CONTROL && "phone-control-action" in it.matchedSignals
+            }
+
     fun requiresModelDirectedExecution(
         goal: String,
         conversationContext: AgentConversationContext
-    ): Boolean = requiresModelDirectedExecution(goal, conversationContext.hasAttachments)
+    ): Boolean = requiresModelDirectedExecution(goal, conversationContext.hasAttachments) ||
+        AgentDeviceIntent.needsOperationContext(goal) && (conversationContext.summary.contains("Phone operation:") ||
+            conversationContext.summary.contains("Pending executable goal:"))
 
     fun requiresModelDirectedExecution(
         goal: String,
@@ -640,7 +655,7 @@ internal object AgentSupervisedProjectRoutingPolicy {
         val executableFileRequest = hasAttachments || classification.intent == AgentTaskIntent.FILE
         val executablePhoneControlRequest = classification.intent == AgentTaskIntent.PHONE_CONTROL &&
             "phone-control-action" in classification.matchedSignals
-        return AgentCapability.TASK_EXECUTION in requirements.capabilities ||
+        return AgentDeviceIntent.requiresReasoning(goal) || AgentCapability.TASK_EXECUTION in requirements.capabilities ||
             executablePhoneControlRequest ||
             classification.intent in setOf(
                 AgentTaskIntent.DESKTOP_CONTROL,
@@ -1069,6 +1084,10 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     )
     if (iteration == 0) {
         AgentSupervisedProjectDirectResponseCodec.parse(normalizedResponse)?.let { finalResponse ->
+            if (AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext)) {
+                return supervisedFormatRepairDecision(plan, connector, request, response,
+                    "Phone execution requires an action receipt, not a prose assertion. Return an executable native-tool plan; inspect before retrying a pending operation.")
+            }
             return AgentSupervisedProjectPlanDecision.finalResponse(finalResponse)
         }
     }
@@ -1088,7 +1107,8 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     val rawParsed = AgentModelPlanParser.parse(request, normalizedResponse, settings)
         ?.takeIf { candidate ->
             AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, candidate.actions,
-                phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId))
+                phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
+                    AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext))
         }
         ?: run {
             logSupervisedPlanRejection("action_plan", normalizedResponse)
@@ -1138,10 +1158,29 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
 
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
+        val observedMissing = AgentObservedOutcomeEvidence.missing(parsed.completionRequirements?.outcomes.orEmpty(), plannerHistory)
+        val pendingOutcome = AgentGoalEvidence.pendingReceipt(plannerHistory)?.takeUnless {
+            !parsed.completionRequirements?.outcomes.isNullOrEmpty() && observedMissing.isEmpty()
+        }
+        if (pendingOutcome != null && !pendingOutcome.canInspect)
+            return AgentSupervisedProjectPlanDecision.finalResponse(pendingOutcome.message)
+        val mutationNeedsPostcondition = plannerHistory.any { action ->
+            action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
+                nativeToolRegistry.lookup(action.parameters["tool_id"].orEmpty())?.descriptor?.requiresEffectClaim == true &&
+                !AgentGoalEvidence.hasVerifiedOutcome(listOf(action))
+        } && parsed.completionRequirements?.let { it.outcomes.isEmpty() && it.artifacts.isEmpty() &&
+            it.publication == AgentPublicationRequirement.NONE } == true
         val missingEvidence = AgentSupervisedProjectCompletionPolicy.missingEvidence(
             parsed.completionRequirements,
             plannerHistory
-        )
+        ) + (pendingOutcome?.let { listOf("The latest business outcome is still unverified: ${it.message}. " +
+            "Inspect before retrying (${it.nextAction.ifBlank { "choose an available observation tool" }}), repair only missing work, " +
+            "then provide an identity-bound postcondition. Do not repeat the accepted side effect.") }.orEmpty()) +
+            (if (mutationNeedsPostcondition) listOf("Declare an observable, identity-bound postcondition in completion_requirements.outcomes and verify it; API acceptance is insufficient") else emptyList()) +
+            if (AgentDeviceIntent.requiresReasoning(request.goal) && plannerHistory.none { action ->
+            action.kind == AgentActionKind.SET_ALARM ||
+                action.parameters["tool_id"] == AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM)
+        }) listOf("Execute the requested timer via a phone tool before claiming completion; text alone is not execution") else emptyList()
         if (missingEvidence.isNotEmpty()) {
             val repairAttempts = connector.parameters["supervised_completion_attempt"]
                 ?.toIntOrNull()?.coerceAtLeast(0) ?: 0
@@ -1162,6 +1201,8 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         }
     }
 
+    AgentDeviceOperationStore(appContext).recordPlan(request.conversationContext.conversationId, request.goal,
+        parsed.completionRequirements, parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true)
     val revision = plan.revision + 1
     val durableHistory = plan.historyForNextRevision(revision).map { action ->
         if (action.id == connector.id) {

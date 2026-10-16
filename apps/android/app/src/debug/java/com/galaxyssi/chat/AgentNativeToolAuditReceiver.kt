@@ -24,7 +24,8 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                     toolId.isNotBlank() -> runSingleTool(
                         context.applicationContext,
                         toolId,
-                        intent.getStringExtra("input_base64").orEmpty()
+                        intent.getStringExtra("input_base64").orEmpty(),
+                        intent.getStringExtra("audit_scope").orEmpty()
                     )
                     else -> runAudit(context.applicationContext)
                 }
@@ -62,7 +63,9 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
             .put("elapsed_ms", System.currentTimeMillis() - started)
     }
 
-    private fun runSingleTool(context: Context, toolId: String, encodedInput: String): JSONObject {
+    private fun runSingleTool(context: Context, toolId: String, encodedInput: String, auditScope: String): JSONObject {
+        require(auditScope.isBlank() || auditScope.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "Invalid audit scope" }
+        val scope = if (auditScope.isBlank()) "native-audit" else "native-audit-$auditScope"
         val registry = AgentPhoneNativeToolCatalog.defaultRegistry(
             context = context,
             screenProvider = { ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent") }
@@ -78,8 +81,8 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
             id = toolId,
             input = input,
             context = AgentNativeToolInvocationContext(
-                sessionId = "native-audit",
-                conversationId = "native-audit",
+                sessionId = scope,
+                conversationId = scope,
                 turnId = UUID.randomUUID().toString(),
                 callerId = "galaxyssi.debug.native_audit",
                 idempotencyKey = "audit-$toolId-${UUID.randomUUID()}",

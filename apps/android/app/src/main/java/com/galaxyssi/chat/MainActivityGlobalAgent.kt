@@ -950,6 +950,8 @@ internal fun MainActivity.openAgentConversation(conversationId: String) {
     refreshAgentConversationHeader()
     refreshAgentTranscriptWindow(destination)
     refreshGlobalInsightIndicator()
+    offerPendingDeviceOperationAccess(destination)
+    continueVisibleAgentPermissionGate()
 }
 
 internal fun MainActivity.refreshGlobalInsightIndicator() {

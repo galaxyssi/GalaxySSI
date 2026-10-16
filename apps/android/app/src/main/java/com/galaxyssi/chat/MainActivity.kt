@@ -286,6 +286,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val agentExecutionPresentations =
         ConcurrentHashMap<String, AgentExecutionPresentation>()
     internal var pendingDirectSystemAction: PendingDirectSystemAction? = null
+    internal var pendingAgentRuntimePermission: Pair<MobileNativeAgent, AgentRuntimePermissionContinuation>? = null
+    internal val offeredAgentRuntimePermissions = mutableSetOf<String>()
     internal lateinit var agentScreenSearchInput: EditText
     internal lateinit var agentScreenDetailList: LinearLayout
     internal lateinit var agentActionQueueList: LinearLayout
@@ -670,6 +672,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val voiceSecondPassCoordinator = VoiceSecondPassCoordinator()
     internal val remoteWhisperNodeClient = RemoteWhisperNodeClient(GalaxySSILinkRemoteWhisperTransport)
     internal var voiceRiskConfirmationDialog: AlertDialog? = null
+    internal var deviceOperationAccessDialog: AlertDialog? = null
+    internal val offeredDeviceOperationAccessIds = mutableSetOf<String>()
     internal var voiceRiskConfirmationCancellation: (() -> Unit)? = null
     internal var voiceCoordinatorObserverId = ""
     internal var recordingVoiceCoordinatorSessionId = ""
@@ -1226,6 +1230,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         voiceRiskConfirmationCancellation = null
         voiceRiskConfirmationDialog?.dismiss()
         voiceRiskConfirmationDialog = null
+        deviceOperationAccessDialog?.dismiss()
+        deviceOperationAccessDialog = null
         voiceSecondPassCoordinator.cancelForInteractiveVoice()
         remoteWhisperNodeClient.cancelAll()
         activeCloudStreams.values.forEach { stream ->
@@ -1315,6 +1321,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         ScreenAssistantSettings.reconcileSystemAccess(this)
         GalaxySSIAccessibilityService.refreshScreenAssistant()
         GalaxySSIAccessibilityService.retryPendingScreenAssistant()
+        resumePendingDeviceOperation()
+        continueVisibleAgentPermissionGate()
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         AndroidAgentRecoveryWake.request(this)
         AgentConnectorStreamBus.addListener(agentConnectorStreamListener)
@@ -2102,6 +2110,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             val granted = grantResults.count { it == PackageManager.PERMISSION_GRANTED }
             val pending = pendingDirectSystemAction
             pendingDirectSystemAction = null
+            val modelPending = pendingAgentRuntimePermission
+            pendingAgentRuntimePermission = null
             if (pending != null) {
                 if (grantResults.isNotEmpty() && granted == grantResults.size) {
                     executeDirectSystemAction(pending.action, pending.conversationId, pending.turnId)
@@ -2114,6 +2124,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                     )
                 }
             }
+            if (modelPending != null) continueAgentPermissionGate(modelPending.first, modelPending.second)
             Toast.makeText(
                 this,
                 getString(R.string.agent_native_permissions_result, granted, grantResults.size),

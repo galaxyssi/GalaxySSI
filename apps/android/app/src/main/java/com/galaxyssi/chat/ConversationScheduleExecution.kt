@@ -40,7 +40,13 @@ internal object ConversationScheduleExecution {
             screenObservationOverride = false)
         agent.sessionId = run.runId
         agent.currentGoal = task.action.prompt
-        val result = agent.executeDirectAction(action, task.action.conversationId, run.runId)
+        val operationScope = if (action.kind == AgentActionKind.SET_ALARM && action.parameters.containsKey("timer_seconds"))
+            "${task.action.conversationId}:schedule:${task.taskId}:${run.runId}" else task.action.conversationId
+        val result = agent.executeDirectAction(action, operationScope, run.runId)
+        if (result.metadata["goal_status"] == "verified")
+            return ConversationScheduleOutcome(AgentProactiveRunStatus.COMPLETED, result.message)
+        if (result.metadata["goal_status"] in setOf("unknown", "dispatched", "blocked"))
+            return ConversationScheduleOutcome(AgentProactiveRunStatus.UNVERIFIED, result.message, "goal_not_verified")
         if (!result.success) return ConversationScheduleOutcome(AgentProactiveRunStatus.FAILED,
             result.message, result.metadata["error_code"].orEmpty().ifBlank { "local_action_failed" })
 

@@ -86,7 +86,8 @@ fun AgentRuntimeExecutionReceipt.toEvidenceMap(): AgentNativeJsonObject = linked
         linkedMapOf(
             "relative_path" to artifact["relative_path"],
             "size_bytes" to artifact["size_bytes"],
-            "sha256" to artifact["sha256"]
+            "sha256" to artifact["sha256"],
+            "openability" to artifact["openability"]
         )
     },
     "error" to error,
@@ -406,13 +407,15 @@ class AgentRuntimeWorkspaceManager private constructor(
     private val root: File,
     private val projectRoot: File,
     private val checkpointRoot: File,
-    private val directExecution: Boolean
+    private val directExecution: Boolean,
+    private val artifactInspector: AgentArtifactOpenability = AgentArtifactOpenability()
 ) {
     constructor(context: Context) : this(
         File(context.applicationContext.filesDir, "agent-runtime/workspaces"),
         File(context.applicationContext.filesDir, "agent-native-workspaces"),
         File(context.applicationContext.filesDir, "agent-runtime/checkpoints"),
-        true
+        true,
+        AgentArtifactOpenability(context.applicationContext)
     )
 
     internal constructor(
@@ -815,10 +818,12 @@ class AgentRuntimeWorkspaceManager private constructor(
             check(bytes <= request.resourceLimits.maxArtifactBytes) { "Runtime artifact exceeds its size limit" }
             totalBytes += bytes
             check(totalBytes <= request.resourceLimits.diskBytes) { "Runtime artifacts exceed the workspace quota" }
+            val hash = sha256File(artifact)
             mapOf(
                 "relative_path" to relative,
                 "size_bytes" to bytes,
-                "sha256" to sha256File(artifact),
+                "sha256" to hash,
+                "openability" to artifactInspector.inspect(artifact, hash, request.resourceLimits.diskBytes),
                 "host_path" to artifact.absolutePath,
                 "artifact_kind" to "file"
             )
@@ -926,10 +931,12 @@ class AgentRuntimeWorkspaceManager private constructor(
             temporary.delete()
             throw error
         }
+        val hash = sha256File(archive)
         return mapOf(
             "relative_path" to archive.name,
             "size_bytes" to archive.length(),
-            "sha256" to sha256File(archive),
+            "sha256" to hash,
+            "openability" to artifactInspector.inspect(archive, hash, request.resourceLimits.diskBytes),
             "host_path" to archive.absolutePath,
             "artifact_kind" to "project_archive",
             "file_count" to fileCount,
