@@ -68,6 +68,30 @@ the normal composer and verify actual output, not merely a terminal task phase.
   Linux tool took approximately 34 seconds; the full run took about 153 seconds.
   Saving exposed an incorrect generic text MIME type that added `.txt` to `.csv`.
   CSV/TSV now have their correct MIME types and support the existing text preview.
+- The CSV follow-up correctly planned quantity 4 and total 44, but remained in
+  `WAITING_RESPONSE` without starting the next phone tool for more than four
+  minutes. It was stopped and is NOT a pass. The post-fix CSV save/preview and
+  combined text-plus-artifact UI still need a successful fresh model run. Local
+  snapshot: `composer-csv-followup-waiting-20261017.json` in the report directory.
 - A separate application-launch trial found that `open calculator` succeeds but
   the Chinese equivalent of `open the calculator on my phone` includes the device
   qualifier in the app-name lookup. That routing defect is separate follow-up work.
+
+## 2026-10-17: Android 1.5.36 (1319)
+
+- Normalize explicit phone-location qualifiers in installed-app launch requests,
+  including simplified/traditional Chinese and English. Preserve actual names
+  such as mobile banking and Phone Link, missing-app handling and Desktop routing.
+- This is a separate change from native artifact delivery; no timer acceptance is
+  resumed and no Desktop source or version changes.
+- The five launch-policy tests and 46 system-planner tests passed. An expanded
+  run also included 19 intent tests: 18 passed; the existing
+  `imageUnderstandingDoesNotBecomeAProjectExecutionTask` expectation conflicts
+  with the phone-owned attachment routing test. Both the disputed test and the
+  routing policy are unchanged by this PR. Do not report the expanded 70-test
+  run as entirely passing; the picture-routing expectation needs a separate audit.
+- Installed 1.5.36 on S20U. The normal-composer request equivalent to `open the
+  calculator on my phone` completed in 6.8 seconds, and Android's resumed activity
+  was `com.sec.android.app.popupcalculator/.Calculator`, not a Desktop app.
+- A separate normal-composer device-status request completed. Its 100% battery
+  and charging state matched Android `dumpsys battery`; no timer was started.

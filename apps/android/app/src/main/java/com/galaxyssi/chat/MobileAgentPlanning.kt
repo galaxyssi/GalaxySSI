@@ -58,7 +58,7 @@ internal object AgentInstalledAppLaunchPolicy {
             AgentTaskIntentClassifier.classify(goal).intent != AgentTaskIntent.DESKTOP_CONTROL
 
     fun query(goal: String): String {
-        val trimmed = goal.trim()
+        val trimmed = goal.trim().replaceFirst(POLITE_PREFIX, "").replaceFirst(PHONE_LOCATION_PREFIX, "")
         val rawQuery = when {
             trimmed.startsWith("open ", ignoreCase = true) ->
                 trimmed.removePrefixIgnoreCase("open ").removeSuffixIgnoreCase(" app").trim()
@@ -69,17 +69,31 @@ internal object AgentInstalledAppLaunchPolicy {
             trimmed.startsWith("\u6253\u5f00") -> trimmed.removePrefix("\u6253\u5f00").trim()
             trimmed.startsWith("\u542f\u52a8") -> trimmed.removePrefix("\u542f\u52a8").trim()
             trimmed.startsWith("\u8fd0\u884c") -> trimmed.removePrefix("\u8fd0\u884c").trim()
+            trimmed.startsWith("\u6253\u958b") -> trimmed.removePrefix("\u6253\u958b").trim()
+            trimmed.startsWith("\u958b\u555f") -> trimmed.removePrefix("\u958b\u555f").trim()
+            trimmed.startsWith("\u555f\u52d5") -> trimmed.removePrefix("\u555f\u52d5").trim()
+            trimmed.startsWith("\u904b\u884c") -> trimmed.removePrefix("\u904b\u884c").trim()
             else -> ""
         }
         val query = rawQuery
+            .replaceFirst(PHONE_APP_PREFIX, "")
+            .replaceFirst(PHONE_APP_SUFFIX, "")
             .removePrefixIgnoreCase("app ")
+            .removeSuffixIgnoreCase(" app")
             .removeSuffix("\u5e94\u7528")
+            .removeSuffix("\u61c9\u7528")
             .trim()
         return if (query.equals("app", ignoreCase = true)) "" else query
     }
 
     private fun String.removeSuffixIgnoreCase(suffix: String): String =
         if (endsWith(suffix, ignoreCase = true)) dropLast(suffix.length) else this
+
+    // Strip only explicit device-location grammar, not app names such as Phone Link or mobile banking.
+    private val POLITE_PREFIX = Regex("^(?:(?:please)\\s+|(?:\u8bf7|\u8acb)(?:\u5e2e\u6211|\u5e6b\u6211)?\\s*)", RegexOption.IGNORE_CASE)
+    private val PHONE_LOCATION_PREFIX = Regex("^\u5728(?:\u6211\u7684)?(?:\u624b\u673a|\u624b\u6a5f|\u672c\u673a|\u672c\u6a5f)\u4e0a\\s*")
+    private val PHONE_APP_PREFIX = Regex("^(?:\u6211\u7684)?(?:\u624b\u673a|\u624b\u6a5f|\u672c\u673a|\u672c\u6a5f)(?:\u4e0a(?:\u7684)?|\u7684)\\s*")
+    private val PHONE_APP_SUFFIX = Regex("\\s+on\\s+(?:(?:my|this|the)\\s+)?(?:phone|device)\\s*$", RegexOption.IGNORE_CASE)
 }
 
 class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner {
