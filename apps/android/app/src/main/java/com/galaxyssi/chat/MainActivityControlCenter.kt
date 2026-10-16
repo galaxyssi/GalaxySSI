@@ -734,6 +734,7 @@ internal fun MainActivity.renderCurrentControlCenterDestination() {
             ControlCenterRoute.SKILLS_HUB -> renderMyAgentSkillsPage()
             ControlCenterRoute.SAFETY_HUB -> renderMyAgentSafetyPage()
             ControlCenterRoute.PROACTIVE_HUB -> renderMyAgentProactivePage()
+            ControlCenterRoute.SCHEDULED_TASKS -> showScheduledTasksPage()
             ControlCenterRoute.OBSIDIAN_HUB -> renderMyAgentObsidianPage()
             ControlCenterRoute.STORAGE_HUB -> renderMyAgentStoragePage()
             ControlCenterRoute.NOTIFICATIONS_HUB -> renderMyAgentNotificationsPage()

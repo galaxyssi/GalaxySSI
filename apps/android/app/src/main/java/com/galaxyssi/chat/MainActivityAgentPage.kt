@@ -1330,11 +1330,12 @@ internal fun MainActivity.submitAgentGoal(
         }
     }) return
     val requestedMembers = collaborationRequestedMembers(conversation.id, explicitMembers, goalOverride == null)
-    if (CollaborationGroupStore.cached(conversation.id)?.members?.isNotEmpty() == true && requestedMembers.isEmpty()) {
+    val scheduleCommand = attachments.isEmpty() && ConversationScheduleParser.parse(goal) != null
+    if (!scheduleCommand && CollaborationGroupStore.cached(conversation.id)?.members?.isNotEmpty() == true && requestedMembers.isEmpty()) {
         Toast.makeText(this, R.string.collaboration_no_active_members, Toast.LENGTH_LONG).show()
         return
     }
-    if (requestedMembers.size > 12) {
+    if (!scheduleCommand && requestedMembers.size > 12) {
         Toast.makeText(this, getString(R.string.collaboration_dispatch_limit, 12), Toast.LENGTH_LONG).show()
         return
     }
@@ -1351,7 +1352,7 @@ internal fun MainActivity.submitAgentGoal(
         agentTranscriptStore.preparedContext(conversation.id)
     }
     preparedContext?.let { prepared -> agentContextBeforeTurn[turnId] = prepared }
-    val cachedPriorVisualReference = if (attachments.isEmpty()) {
+    val cachedPriorVisualReference = if (attachments.isEmpty() && !scheduleCommand) {
         AgentConversationVisualContext.latest(preparedContext)
             ?: agentTranscriptWindow.takeIf { it.conversationId == conversation.id }?.let { window ->
                 AgentConversationVisualContext.latest(window.entries)
@@ -1437,7 +1438,7 @@ internal fun MainActivity.submitAgentGoal(
             "agent_submit stage=user_persisted turn=${turnId.take(8)} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
         )
-        val priorVisualReference = if (attachments.isEmpty()) {
+        val priorVisualReference = if (attachments.isEmpty() && !scheduleCommand) {
             cachedPriorVisualReference ?: AgentConversationVisualContext.latest(
                 agentTranscriptStore.context(
                     conversationId = conversation.id,
@@ -1640,15 +1641,30 @@ internal fun MainActivity.continueAgentGoalSubmission(
     originalGoal: String = goal,
     executionModeOverride: AgentTaskExecutionMode? = null,
     isSubmissionCancelled: () -> Boolean = { false },
-    collaborationChecked: Boolean = false
+    collaborationChecked: Boolean = false,
+    scheduleChecked: Boolean = false
 ) {
     if (isSubmissionCancelled()) return
+    if (!scheduleChecked && forcedAction == null && AgentTurnAttachmentRegistry.get(turnId).isEmpty() &&
+        ConversationScheduleParser.parse(originalGoal) != null) {
+        agentRoutingExecutor.execute {
+            if (isSubmissionCancelled()) return@execute
+            if (handleConversationSchedule(originalGoal, conversationId, turnId)) {
+                agentContextBeforeTurn.remove(turnId)
+                AgentTurnMentionRegistry.remove(turnId)
+            } else runOnUiThread {
+                continueAgentGoalSubmission(goal, conversationId, turnId, forcedAction, originalGoal,
+                    executionModeOverride, isSubmissionCancelled, collaborationChecked, scheduleChecked = true)
+            }
+        }
+        return
+    }
     if (!collaborationChecked && forcedAction == null &&
         CollaborationGroupStore.cached(conversationId)?.members?.isNotEmpty() == true &&
         AgentTurnAttachmentRegistry.get(turnId).isEmpty() && !AgentLocalControlCommandPolicy.matches(goal)) {
         routeCollaborationFollowup(conversationId, turnId, goal, isSubmissionCancelled) {
             continueAgentGoalSubmission(goal, conversationId, turnId, forcedAction, originalGoal,
-                executionModeOverride, isSubmissionCancelled, collaborationChecked = true)
+                executionModeOverride, isSubmissionCancelled, collaborationChecked = true, scheduleChecked = true)
         }
         return
     }

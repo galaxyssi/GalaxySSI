@@ -58,6 +58,8 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
         registerNetworkRecoveryCallback()
         ProactiveAttentionPush.start(this)
         thread(name = "galaxyssi-runtime-bootstrap") {
+            runCatching { AgentProactiveTaskScheduler.restoreAll(this@MessageService, conversationOnly = true) }
+                .onFailure { Log.w("GalaxySSISchedule", "Could not restore schedules", it) }
             runCatching { AgentStartupRecovery.enqueue(this@MessageService).result.get() }
                 .onFailure { Log.w("GalaxySSILongTask", "Could not enqueue startup recovery", it) }
             runCatching { AgentEmbeddedRuntimeBootstrap.ensureInstalled(this@MessageService) }

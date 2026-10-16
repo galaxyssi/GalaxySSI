@@ -20,6 +20,8 @@ internal class AgentConnectorTeamCompletionSink(
     private val recovery = AgentTeamParentDeliveryRecovery(appContext)
 
     override fun publish(snapshot: AgentTeamExecutionSnapshot): Boolean {
+        // Scheduled executions have their own durable, deduplicated conversation delivery.
+        if (snapshot.teamId.startsWith(ConversationScheduledTasks.TEAM_PREFIX)) return false
         if (snapshot.state !in DELIVERABLE_STATES) return false
         if (ledger.contains(snapshot.supervisorRunId)) return false
         if (recovery.committed(snapshot)) {

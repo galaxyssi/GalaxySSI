@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="schedule_title">Scheduled tasks</string>
+    <string name="schedule_new">New scheduled task</string>
+    <string name="schedule_edit">Edit</string>
+    <string name="schedule_pause">Pause</string>
+    <string name="schedule_resume">Resume</string>
+    <string name="schedule_delete">Delete</string>
+    <string name="schedule_paused">Paused</string>
+    <string name="schedule_next">Next: %1$s</string>
+    <string name="schedule_empty">No scheduled tasks</string>
+    <string name="schedule_prompt">Task</string>
+    <string name="schedule_time">When</string>
+    <string name="schedule_time_hint">Every 1 minute / daily at 09:00</string>
+    <string name="schedule_time_invalid">Enter a repeat time, such as every 1 minute or daily at 09:00.</string>
+    <string name="schedule_saved">Scheduled. Running once now, then repeating at the set time until paused.</string>
+    <string name="schedule_updated">Updated. Running the new instructions now, then repeating at the set time.</string>
+    <string name="schedule_stopped">Paused. No further scheduled runs will start.</string>
+    <string name="schedule_resumed">Resumed the scheduled task.</string>
+    <string name="schedule_choose">Choose a scheduled task</string>
+    <string name="schedule_not_found">This scheduled task no longer exists.</string>
+    <string name="schedule_failed">Could not save the task: %1$s</string>
+    <string name="schedule_result">Scheduled task · %1$s\n\n%2$s</string>
+    <string name="schedule_failed_result">Scheduled task · %1$s\n\nThis run failed: %2$s</string>
+    <string name="schedule_empty_result">No verifiable result was returned.</string>
+    <string name="schedule_agent_unavailable">The conversation Agent is unavailable. Check its connection or select an available Agent.</string>
+    <string name="schedule_execution_note">Uses this conversation’s Agent. Phone sleep or loss of connection may delay execution.</string>
+    <string name="schedule_delete_confirm">Delete this schedule? Conversation messages will be kept.</string>
+    <string name="schedule_open_list">Manage scheduled tasks</string>
+    <string name="schedule_pending">Scheduled, waiting for the next run</string>
+    <string name="schedule_retrying">Retrying</string>
+    <string name="schedule_unverified">Execution not verified</string>
+    <string name="schedule_unverified_result">Scheduled task · %1$s\n\nExecution not verified: %2$s</string>
+    <string name="schedule_local_opened">Verified on this phone: %1$s</string>
+    <string name="schedule_local_unverified">The phone launch request was sent, but the target screen could not be verified. Android may have blocked a background launch; unlock the phone and check its screen.</string>
+    <string name="schedule_status_unavailable">Task status is temporarily unavailable</string>
+    <string name="schedule_local_configuration_unverified">The clock request was sent, but the saved alarm or timer has not been verified. Check the Clock app.</string>
+    <string name="schedule_last_execution">Last run: %1$s</string>
+</resources>

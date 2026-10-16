@@ -30,7 +30,7 @@ internal class AgentStableAssistantRow(
     }
 
     private fun refreshFooter() {
-        val speech = activity.agentReplySpeechFooter(entry, speechFooter)
+        val speech = activity.agentReplySpeechFooter(entry, speechFooter, content)
         if (speech !== speechFooter) {
             speechFooter?.let(footer::removeView)
             speech?.let { footer.addView(it, 0) }

@@ -37,7 +37,7 @@ internal fun MainActivity.decorateAgentReplySpeech(
     entry: AgentTranscriptEntry,
     content: View
 ): View {
-    val footer = agentReplySpeechFooter(entry) ?: return content
+    val footer = agentReplySpeechFooter(entry, content = content) ?: return content
     return LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         layoutParams = LinearLayout.LayoutParams(
@@ -49,7 +49,9 @@ internal fun MainActivity.decorateAgentReplySpeech(
     }
 }
 
-internal fun MainActivity.agentReplySpeechFooter(entry: AgentTranscriptEntry, existing: View? = null): View? {
+internal fun MainActivity.agentReplySpeechFooter(
+    entry: AgentTranscriptEntry, existing: View? = null, content: View? = null
+): View? {
     val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return null
     val controller = AgentReplySpeechRuntime.controller(this)
     val latest = AgentReplySpeechPresentationPolicy.latestTarget(renderedAgentTranscriptSourceEntries)
@@ -61,7 +63,8 @@ internal fun MainActivity.agentReplySpeechFooter(entry: AgentTranscriptEntry, ex
         tag = "agent-reply-speech:${target.responseId}"
         setPlaying(controller.isEnabled(target))
         setOnClickListener {
-            val command = controller.toggle(target)
+            val visibleText = ConversationScheduleCardPresentation.visibleSpeechText(content)
+            val command = controller.toggle(if (visibleText == null) target else target.copy(text = visibleText))
             setPlaying(controller.isEnabled(target))
             notifyAgentReplySpeechRows(command.changedEntryIds - entry.id)
             val changed = applyAgentReplySpeechCommand(command)

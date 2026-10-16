@@ -1040,6 +1040,7 @@ internal fun MainActivity.proactiveRunStatusLabel(status: AgentProactiveRunStatu
         AgentProactiveRunStatus.RETRYING -> R.string.automation_run_status_running
         AgentProactiveRunStatus.WAITING -> R.string.cc_global_status_waiting
         AgentProactiveRunStatus.COMPLETED -> R.string.automation_run_status_completed
+        AgentProactiveRunStatus.UNVERIFIED -> R.string.schedule_unverified
         AgentProactiveRunStatus.FAILED -> R.string.automation_run_status_failed
         AgentProactiveRunStatus.CANCELLED -> R.string.automation_run_status_cancelled
         AgentProactiveRunStatus.SKIPPED -> R.string.automation_run_status_skipped

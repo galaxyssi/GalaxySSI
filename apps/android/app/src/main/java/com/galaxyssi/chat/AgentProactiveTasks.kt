@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -52,12 +54,13 @@ enum class AgentProactiveRunStatus {
     WAITING,
     RETRYING,
     COMPLETED,
+    UNVERIFIED,
     FAILED,
     CANCELLED,
     SKIPPED;
 
     val terminal: Boolean
-        get() = this in setOf(COMPLETED, FAILED, CANCELLED, SKIPPED)
+        get() = this in setOf(COMPLETED, UNVERIFIED, FAILED, CANCELLED, SKIPPED)
 }
 
 enum class AgentProactiveTeamRole {
@@ -120,7 +123,9 @@ data class AgentProactiveAction(
     val contactId: String = "system",
     val clientRouteId: String = "",
     val grantedPermissions: Set<String> = emptySet(),
-    val grantedConsents: Set<String> = emptySet()
+    val grantedConsents: Set<String> = emptySet(),
+    val conversationId: String = "",
+    val scheduleText: String = ""
 ) {
     init {
         require(prompt.length <= 65_536) { "Proactive prompt is too long" }
@@ -165,7 +170,7 @@ data class AgentProactivePolicy(
         require(maxAttempts in 1..12)
         require(retryBackoffSeconds in 1..86_400)
         require(maxConcurrency in 1..16)
-        require(maxConsecutiveFailures in 1..100)
+        require(maxConsecutiveFailures in 0..100)
         require(deadlineAtMillis >= 0L && maxRuns >= 0)
         require(network in setOf("any", "unmetered", "offline"))
     }
@@ -205,7 +210,9 @@ data class AgentProactiveRun(
     val resultSummary: String = "",
     val errorCode: String = "",
     val linkedExecutionId: String = "",
-    val teamRunId: String = ""
+    val teamRunId: String = "",
+    val deliveryRecorded: Boolean = false,
+    val resultRichOutputJson: String = ""
 )
 
 data class AgentRemoteProactiveEvent(
@@ -318,6 +325,7 @@ class AgentProactiveTaskStore(context: Context) {
     @Synchronized
     fun upsert(task: AgentProactiveTask) {
         database.writeString(taskKey(task.taskId), encodeTask(task).toString())
+        ConversationScheduleState.notifyChanged(task.taskId)
     }
 
     @Synchronized
@@ -329,6 +337,7 @@ class AgentProactiveTaskStore(context: Context) {
             val run = decodeRun(database.readString(runKey, ""))
             if (run?.taskId == taskId) database.remove(runKey)
         }
+        ConversationScheduleState.notifyChanged(taskId)
         return true
     }
 
@@ -342,6 +351,7 @@ class AgentProactiveTaskStore(context: Context) {
         if (database.contains(key)) return false
         database.writeString(key, encodeRun(run).toString())
         trimRuns()
+        ConversationScheduleState.notifyChanged(run.taskId)
         return true
     }
 
@@ -349,6 +359,33 @@ class AgentProactiveTaskStore(context: Context) {
     fun upsertRun(run: AgentProactiveRun) {
         database.writeString(runKey(run.runId), encodeRun(run).toString())
         trimRuns()
+        ConversationScheduleState.notifyChanged(run.taskId)
+    }
+
+    internal fun completeScheduledRun(result: AgentProactiveRun): Boolean = synchronized(AgentProactiveTaskScheduler) {
+        val previous = run(result.runId) ?: return@synchronized false
+        if (previous.status.terminal) return@synchronized false
+        val task = task(result.taskId) ?: return@synchronized false
+        val failures = if (result.status == AgentProactiveRunStatus.FAILED) task.consecutiveFailures + 1 else 0
+        val updated = task.copy(lastRunAtMillis = result.completedAtMillis, lastStatus = result.status,
+            runCount = task.runCount + 1, consecutiveFailures = failures, updatedAtMillis = result.completedAtMillis)
+        database.mutateStrings(mapOf(taskKey(task.taskId) to encodeTask(updated).toString(),
+            runKey(result.runId) to encodeRun(result).toString()))
+        ConversationScheduleState.notifyChanged(task.taskId)
+        true
+    }
+
+    internal fun updateScheduledPendingRun(value: AgentProactiveRun): Boolean = synchronized(AgentProactiveTaskScheduler) {
+        val current = run(value.runId) ?: return@synchronized false
+        val latest = task(value.taskId) ?: return@synchronized false
+        if (current.status.terminal || !latest.enabled) return@synchronized false
+        if (current.teamRunId.isBlank() && JSONObject(current.causeJson).optInt("task_revision", latest.revision) != latest.revision) {
+            upsertRun(current.copy(status = AgentProactiveRunStatus.CANCELLED,
+                completedAtMillis = System.currentTimeMillis(), errorCode = "schedule_updated", deliveryRecorded = true))
+            return@synchronized false
+        }
+        upsertRun(value.copy(teamRunId = value.teamRunId.ifBlank { current.teamRunId }))
+        true
     }
 
     @Synchronized
@@ -358,6 +395,11 @@ class AgentProactiveTaskStore(context: Context) {
             .filter { taskId.isBlank() || it.taskId == taskId }
             .sortedByDescending { it.scheduledForMillis }
             .take(limit.coerceIn(1, 1_000))
+
+    internal fun recoverableRuns(): List<AgentProactiveRun> = database.entries(RUN_PREFIX)
+        .mapNotNull { (_, value) -> decodeRun(value) }
+        .filter { !it.status.terminal || !it.deliveryRecorded }
+        .sortedBy { it.scheduledForMillis }
 
     @Synchronized
     fun consumeRemoteEvent(taskId: String, eventId: String): Boolean {
@@ -377,7 +419,10 @@ class AgentProactiveTaskStore(context: Context) {
         val values = database.entries(RUN_PREFIX)
             .mapNotNull { (key, value) -> decodeRun(value)?.let { key to it } }
             .sortedBy { it.second.scheduledForMillis }
-        if (values.size > MAX_RUNS) database.removeAll(values.take(values.size - MAX_RUNS).map { it.first })
+        if (values.size > MAX_RUNS) database.removeAll(values.filter { (_, run) ->
+            run.status.terminal && (run.status in setOf(AgentProactiveRunStatus.CANCELLED, AgentProactiveRunStatus.SKIPPED) ||
+                run.deliveryRecorded || task(run.taskId)?.action?.conversationId.isNullOrBlank())
+        }.take(values.size - MAX_RUNS).map { it.first })
     }
 
     private fun taskKey(taskId: String) = "$TASK_PREFIX$taskId"
@@ -461,6 +506,8 @@ class AgentProactiveTaskStore(context: Context) {
         .put("client_route_id", value.clientRouteId)
         .put("granted_permissions", JSONArray(value.grantedPermissions.toList()))
         .put("granted_consents", JSONArray(value.grantedConsents.toList()))
+        .put("conversation_id", value.conversationId)
+        .put("schedule_text", value.scheduleText)
 
     private fun decodeAction(json: JSONObject) = AgentProactiveAction(
         kind = enumValue(json.optString("kind"), AgentProactiveActionKind.AGENT),
@@ -480,7 +527,9 @@ class AgentProactiveTaskStore(context: Context) {
         contactId = json.optString("contact_id").ifBlank { "system" },
         clientRouteId = json.optString("client_route_id"),
         grantedPermissions = json.optJSONArray("granted_permissions").toStringSet(),
-        grantedConsents = json.optJSONArray("granted_consents").toStringSet()
+        grantedConsents = json.optJSONArray("granted_consents").toStringSet(),
+        conversationId = json.optString("conversation_id"),
+        scheduleText = json.optString("schedule_text")
     )
 
     private fun encodePolicy(value: AgentProactivePolicy): JSONObject = JSONObject()
@@ -523,6 +572,8 @@ class AgentProactiveTaskStore(context: Context) {
         .put("error_code", run.errorCode)
         .put("linked_execution_id", run.linkedExecutionId)
         .put("team_run_id", run.teamRunId)
+        .put("delivery_recorded", run.deliveryRecorded)
+        .put("result_rich_output_json", run.resultRichOutputJson)
 
     private fun decodeRun(raw: String): AgentProactiveRun? = runCatching {
         val json = JSONObject(raw)
@@ -535,10 +586,12 @@ class AgentProactiveTaskStore(context: Context) {
             causeJson = (json.optJSONObject("cause") ?: JSONObject()).toString(),
             startedAtMillis = json.optLong("started_at_millis"),
             completedAtMillis = json.optLong("completed_at_millis"),
-            resultSummary = json.optString("result_summary").take(4_096),
+            resultSummary = json.optString("result_summary").take(65_536),
             errorCode = json.optString("error_code").take(128),
             linkedExecutionId = json.optString("linked_execution_id"),
-            teamRunId = json.optString("team_run_id")
+            teamRunId = json.optString("team_run_id"),
+            deliveryRecorded = json.optBoolean("delivery_recorded"),
+            resultRichOutputJson = json.optString("result_rich_output_json")
         )
     }.getOrNull()
 
@@ -557,8 +610,24 @@ object AgentProactiveTaskScheduler {
     const val EXTRA_TASK_ID = "proactive_task_id"
     const val EXTRA_RUN_ID = "proactive_run_id"
     private const val WINDOW_MILLIS = 60_000L
+    private val awakeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val awakeTimers = ConcurrentHashMap<String, Job>()
+    private val awakeRunTimers = ConcurrentHashMap<String, Job>()
 
-    fun save(context: Context, task: AgentProactiveTask): AgentProactiveTask {
+    internal fun wakeRunWhileAwake(context: Context, runId: String, atMillis: Long) {
+        val app = context.applicationContext
+        awakeRunTimers.remove(runId)?.cancel()
+        awakeRunTimers[runId] = awakeScope.launch {
+            delay((atMillis - System.currentTimeMillis()).coerceAtLeast(1L))
+            awakeRunTimers.remove(runId)
+            runCatching { resumeRun(app, runId) }
+        }
+    }
+
+    @Synchronized
+    fun save(context: Context, task: AgentProactiveTask, runImmediately: Boolean = false): AgentProactiveTask {
+        require(!runImmediately || task.trigger.kind in setOf(AgentProactiveTriggerKind.INTERVAL,
+            AgentProactiveTriggerKind.CRON, AgentProactiveTriggerKind.GOAL_CHECKPOINT))
         require(
             task.action.kind !in setOf(
                 AgentProactiveActionKind.AGENT,
@@ -568,17 +637,25 @@ object AgentProactiveTaskScheduler {
             "Agent and sub-agent team actions require a goal or instructions"
         }
         val now = System.currentTimeMillis()
+        awakeTimers.remove(task.taskId)?.cancel()
         alarmManager(context).cancel(taskPendingIntent(context, task.taskId))
         val next = task.copy(
-            nextRunAtMillis = if (task.enabled) initialNextRun(task, now) else 0L,
+            nextRunAtMillis = if (!task.enabled) 0L else if (runImmediately) now else initialNextRun(task, now),
             updatedAtMillis = now
         )
         AgentProactiveTaskStore(context).upsert(next)
+        if (task.enabled && runImmediately) {
+            // Use the durable occurrence path, including pending-run coalescing and recovery.
+            handleAlarm(context, next.taskId)
+            return AgentProactiveTaskStore(context).task(next.taskId) ?: next
+        }
         register(context, next)
         return next
     }
 
+    @Synchronized
     fun cancel(context: Context, taskId: String): Boolean {
+        awakeTimers.remove(taskId)?.cancel()
         alarmManager(context).cancel(taskPendingIntent(context, taskId))
         val store = AgentProactiveTaskStore(context)
         store.runs(taskId, limit = 1_000)
@@ -587,17 +664,24 @@ object AgentProactiveTaskScheduler {
         return store.delete(taskId)
     }
 
-    fun restoreAll(context: Context) {
+    @Synchronized
+    fun restoreAll(context: Context, conversationOnly: Boolean = false) {
         val store = AgentProactiveTaskStore(context)
         val now = System.currentTimeMillis()
-        store.tasks().filter { it.enabled }.forEach { task ->
+        store.tasks().filter { it.enabled && (!conversationOnly || it.action.conversationId.isNotBlank()) }.forEach { task ->
             val next = if (task.nextRunAtMillis > 0L) task.nextRunAtMillis else initialNextRun(task, now)
             val updated = task.copy(nextRunAtMillis = next, updatedAtMillis = now)
             store.upsert(updated)
             register(context, updated)
         }
-        reconcile(context)
-        recoverPendingRuns(context, store, now)
+        if (!conversationOnly) reconcile(context)
+        recoverPendingRuns(context, store, now, conversationOnly)
+        store.recoverableRuns().filter { it.status in setOf(AgentProactiveRunStatus.COMPLETED, AgentProactiveRunStatus.UNVERIFIED,
+            AgentProactiveRunStatus.FAILED) && !it.deliveryRecorded }.forEach { run ->
+            val task = store.task(run.taskId)?.takeIf { it.action.conversationId.isNotBlank() } ?: return@forEach
+            if (ConversationScheduledTasks.deliver(context, task, run))
+                AgentProactiveTaskNotifier.deliver(context, task, run.resultSummary, run.status != AgentProactiveRunStatus.COMPLETED)
+        }
     }
 
     fun triggerNow(
@@ -642,10 +726,12 @@ object AgentProactiveTaskScheduler {
         )
     }
 
+    @Synchronized
     fun handleAlarm(context: Context, taskId: String) {
         val store = AgentProactiveTaskStore(context)
         val task = store.task(taskId)?.takeIf { it.enabled } ?: return
         val now = System.currentTimeMillis()
+        if (task.nextRunAtMillis <= 0L || now < task.nextRunAtMillis) return
         if (shouldDisable(task, now)) {
             store.upsert(task.copy(enabled = false, nextRunAtMillis = 0L, updatedAtMillis = now))
             return
@@ -660,6 +746,13 @@ object AgentProactiveTaskScheduler {
                     .copy(status = status, completedAtMillis = now)
                 store.createRun(run)
             } else {
+                val pending = if (task.action.conversationId.isNotBlank())
+                    store.runs(taskId, 1_000).firstOrNull { !it.status.terminal } else null
+                if (pending != null) {
+                    // A repeating schedule never accumulates a backlog behind a slow/offline run.
+                    if (pending.status != AgentProactiveRunStatus.RUNNING) resumeRun(context, pending.runId)
+                    return@forEach
+                }
                 enqueue(
                     context,
                     store,
@@ -705,7 +798,7 @@ object AgentProactiveTaskScheduler {
 
     internal fun initialNextRun(task: AgentProactiveTask, now: Long): Long = when (task.trigger.kind) {
         AgentProactiveTriggerKind.CRON ->
-            AgentCronExpression.parse(task.trigger.cron).nextAfter(now - 60_000L, task.trigger.timeZone)
+            AgentCronExpression.parse(task.trigger.cron).nextAfter(now, task.trigger.timeZone)
         AgentProactiveTriggerKind.INTERVAL,
         AgentProactiveTriggerKind.GOAL_CHECKPOINT -> now + task.trigger.intervalSeconds * 1_000L
         AgentProactiveTriggerKind.MANUAL,
@@ -765,6 +858,7 @@ object AgentProactiveTaskScheduler {
         }
     }
 
+    @Synchronized
     internal fun recordOutcome(
         store: AgentProactiveTaskStore,
         taskId: String,
@@ -779,7 +873,7 @@ object AgentProactiveTaskScheduler {
         }
         val nextRunCount = task.runCount + 1
         val enabled = task.enabled &&
-            failures < task.policy.maxConsecutiveFailures &&
+            (task.policy.maxConsecutiveFailures == 0 || failures < task.policy.maxConsecutiveFailures) &&
             (task.policy.maxRuns == 0 || nextRunCount < task.policy.maxRuns)
         store.upsert(
             task.copy(
@@ -817,11 +911,20 @@ object AgentProactiveTaskScheduler {
         taskId = task.taskId,
         scheduledForMillis = scheduledForMillis,
         status = AgentProactiveRunStatus.QUEUED,
-        causeJson = cause.toString()
+        causeJson = JSONObject(cause.toString()).put("task_revision", task.revision).toString()
     )
 
     private fun register(context: Context, task: AgentProactiveTask) {
         if (!task.enabled || task.nextRunAtMillis <= 0L) return
+        if (task.action.conversationId.isNotBlank()) {
+            val app = context.applicationContext
+            awakeTimers.remove(task.taskId)?.cancel()
+            awakeTimers[task.taskId] = awakeScope.launch {
+                delay((task.nextRunAtMillis - System.currentTimeMillis()).coerceAtLeast(1L))
+                runCatching { handleAlarm(app, task.taskId) }
+                    .onFailure { android.util.Log.w("GalaxySSISchedule", "Awake schedule wake failed; alarm remains registered", it) }
+            }
+        }
         alarmManager(context).setWindow(
             AlarmManager.RTC_WAKEUP,
             task.nextRunAtMillis.coerceAtLeast(System.currentTimeMillis() + 1_000L),
@@ -863,17 +966,21 @@ object AgentProactiveTaskScheduler {
     private fun shouldDisable(task: AgentProactiveTask, now: Long): Boolean =
         (task.policy.deadlineAtMillis > 0L && now > task.policy.deadlineAtMillis) ||
             (task.policy.maxRuns > 0 && task.runCount >= task.policy.maxRuns) ||
-            task.consecutiveFailures >= task.policy.maxConsecutiveFailures
+            (task.policy.maxConsecutiveFailures > 0 && task.consecutiveFailures >= task.policy.maxConsecutiveFailures)
 
     private fun recoverPendingRuns(
         context: Context,
         store: AgentProactiveTaskStore,
-        now: Long
+        now: Long,
+        conversationOnly: Boolean = false
     ) {
-        store.runs(limit = 1_000)
+        store.recoverableRuns()
             .filter { !it.status.terminal }
             .forEach { run ->
+                if (conversationOnly && store.task(run.taskId)?.action?.conversationId.isNullOrBlank()) return@forEach
                 when {
+                    run.teamRunId.isNotBlank() && store.task(run.taskId)?.action?.conversationId?.isNotBlank() == true ->
+                        startRunService(context, run.runId)
                     run.linkedExecutionId.isNotBlank() -> Unit
                     run.status == AgentProactiveRunStatus.WAITING ->
                         AgentProactiveTaskExecutor.scheduleWake(context, run.runId, now + 30_000L)
@@ -922,22 +1029,29 @@ object AgentProactiveTaskScheduler {
 class AgentProactiveAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != AgentProactiveTaskScheduler.ACTION_RUN) return
-        val runId = intent.getStringExtra(AgentProactiveTaskScheduler.EXTRA_RUN_ID).orEmpty()
-        if (runId.isNotBlank()) {
-            AgentProactiveTaskScheduler.resumeRun(context, runId)
-            return
+        val pending = goAsync()
+        scope.launch {
+            try {
+                val runId = intent.getStringExtra(AgentProactiveTaskScheduler.EXTRA_RUN_ID).orEmpty()
+                if (runId.isNotBlank()) AgentProactiveTaskScheduler.resumeRun(context, runId)
+                else intent.getStringExtra(AgentProactiveTaskScheduler.EXTRA_TASK_ID)?.takeIf(String::isNotBlank)
+                    ?.let { AgentProactiveTaskScheduler.handleAlarm(context, it) }
+            } catch (error: Exception) {
+                android.util.Log.w("GalaxySSISchedule", "Schedule wake failed; persisted work remains recoverable", error)
+            } finally { pending.finish() }
         }
-        val taskId = intent.getStringExtra(AgentProactiveTaskScheduler.EXTRA_TASK_ID).orEmpty()
-        if (taskId.isNotBlank()) AgentProactiveTaskScheduler.handleAlarm(context, taskId)
     }
+    private companion object { val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO) }
 }
 
 object AgentProactiveTaskExecutor {
     private val teamScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeTeamRuns = ConcurrentHashMap.newKeySet<String>()
     private val activeTeamHandles = ConcurrentHashMap<String, AgentTeamExecutionHandle>()
+    private val activeTeamControllers = ConcurrentHashMap<String, AgentProductionTeamController>()
 
     fun execute(context: Context, runId: String) {
+        if (runId in activeTeamRuns) return
         val store = AgentProactiveTaskStore(context)
         val run = store.run(runId)?.takeIf { !it.status.terminal } ?: return
         val task = store.task(run.taskId)?.takeIf { it.enabled } ?: run {
@@ -950,8 +1064,20 @@ object AgentProactiveTaskExecutor {
             )
             return
         }
-        if (foregroundTurnBlocksBackground(context)) {
-            store.upsertRun(
+        if (task.action.conversationId.isNotBlank() && AgentTranscriptStore(context).conversation(task.action.conversationId) == null) {
+            ConversationScheduledTasks.setEnabled(context, task.taskId, false)
+            return
+        }
+        if (task.action.conversationId.isNotBlank() && run.teamRunId.isBlank() &&
+            JSONObject(run.causeJson).optInt("task_revision", task.revision) != task.revision) {
+            store.upsertRun(run.copy(status = AgentProactiveRunStatus.CANCELLED,
+                completedAtMillis = System.currentTimeMillis(), errorCode = "schedule_updated"))
+            return
+        }
+        // An explicit user schedule is independent work, not opportunistic background learning.
+        // Actual phone actions still go through PhoneExecutionAuthority and its resource locks.
+        if (task.action.conversationId.isBlank() && foregroundTurnBlocksBackground(context)) {
+            updatePendingRun(store, task,
                 run.copy(
                     status = AgentProactiveRunStatus.WAITING,
                     resultSummary = "Waiting for foreground chat"
@@ -965,7 +1091,7 @@ object AgentProactiveTaskExecutor {
             return
         }
         if (!constraintsSatisfied(context, task.policy)) {
-            store.upsertRun(
+            updatePendingRun(store, task,
                 run.copy(
                     status = AgentProactiveRunStatus.WAITING,
                     resultSummary = "Waiting for task constraints"
@@ -982,7 +1108,7 @@ object AgentProactiveTaskExecutor {
                 )
         }
         if (activeForTask >= task.policy.maxConcurrency) {
-            store.upsertRun(
+            updatePendingRun(store, task,
                 run.copy(
                     status = AgentProactiveRunStatus.WAITING,
                     resultSummary = "Waiting for an execution slot"
@@ -995,7 +1121,9 @@ object AgentProactiveTaskExecutor {
             status = if (run.attempt > 1) AgentProactiveRunStatus.RETRYING else AgentProactiveRunStatus.RUNNING,
             startedAtMillis = run.startedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
         )
-        store.upsertRun(running)
+        if (task.action.conversationId.isNotBlank()) {
+            if (!store.updateScheduledPendingRun(running)) return
+        } else store.upsertRun(running)
         when (task.action.kind) {
             AgentProactiveActionKind.SUBAGENT_TEAM -> executeTeam(context, store, task, running)
             AgentProactiveActionKind.NATIVE_TOOL -> executeNativeTool(context, store, task, running)
@@ -1007,11 +1135,20 @@ object AgentProactiveTaskExecutor {
     fun cancel(context: Context, runId: String): Boolean {
         val store = AgentProactiveTaskStore(context)
         val run = store.run(runId)?.takeIf { !it.status.terminal } ?: return false
+        val now = System.currentTimeMillis()
+        val scheduled = store.task(run.taskId)?.action?.conversationId?.isNotBlank() == true
+        val cancelled = run.copy(status = AgentProactiveRunStatus.CANCELLED, completedAtMillis = now,
+            errorCode = "cancelled", resultSummary = "Proactive task cancelled", deliveryRecorded = true)
+        if (scheduled && !store.completeScheduledRun(cancelled)) return false
         activeTeamHandles.remove(runId)?.cancel("Proactive task cancelled")
+        if (run.teamRunId.isNotBlank()) {
+            activeTeamControllers[runId]?.cancel(run.teamRunId)
+                ?: AgentTeamDurableControl(context).set(run.teamRunId, AgentTeamUserControl.STOP)
+        }
         if (run.linkedExecutionId.isNotBlank()) {
             runCatching { MobileNativeAgent(context).cancelCurrentTask() }
         }
-        val now = System.currentTimeMillis()
+        if (scheduled) return true
         store.upsertRun(
             run.copy(
                 status = AgentProactiveRunStatus.CANCELLED,
@@ -1027,6 +1164,11 @@ object AgentProactiveTaskExecutor {
             now
         )
         return true
+    }
+
+    private fun updatePendingRun(store: AgentProactiveTaskStore, task: AgentProactiveTask, run: AgentProactiveRun) {
+        if (task.action.conversationId.isNotBlank()) store.updateScheduledPendingRun(run)
+        else store.upsertRun(run)
     }
 
     private fun executeWorkflowGoal(
@@ -1099,25 +1241,55 @@ object AgentProactiveTaskExecutor {
         task: AgentProactiveTask,
         run: AgentProactiveRun
     ) {
+        val scheduled = task.action.conversationId.isNotBlank()
+        if (scheduled && run.teamRunId.isBlank()) {
+            val local = runCatching { ConversationScheduleExecution.localAction(context, task) }
+                .getOrElse { return failOrRetry(context, store, task, run, "local_route_failed", it.message.orEmpty()) }
+            if (local != null) {
+                if (!activeTeamRuns.add(run.runId)) return
+                try {
+                    val outcome = runCatching { ConversationScheduleExecution.executeLocal(context, task, run, local) }
+                        .getOrElse { ConversationScheduleOutcome(AgentProactiveRunStatus.FAILED,
+                            it.message.orEmpty(), "local_execution_failed") }
+                    android.util.Log.i("GalaxySSISchedule", "Local occurrence=${run.runId} status=${outcome.status} error=${outcome.errorCode}")
+                    finishScheduledOutcome(context, store, task, run, outcome)
+                } finally { activeTeamRuns.remove(run.runId) }
+                return
+            }
+        }
+        val resolved = if (scheduled) runCatching { ConversationScheduledTasks.resolve(context, task) }.getOrElse {
+            return failOrRetry(context, store, task, run, "scheduled_agent_unavailable", it.message.orEmpty())
+        } else task.action.targetId to emptyMap()
         executeManagedTeam(
             context = context,
             store = store,
             task = task,
             run = run,
             definition = AgentTeamDefinition(
-                teamId = task.taskId,
-                primaryAgentId = task.action.targetId,
+                teamId = if (scheduled) ConversationScheduledTasks.TEAM_PREFIX + task.taskId else task.taskId,
+                primaryAgentId = resolved.first,
                 members = listOf(
                     AgentTeamMember(
-                        agentId = task.action.targetId,
+                        agentId = resolved.first,
                         deliveryMode = AgentDeliveryMode.RESPOND,
                         role = "lead",
-                        objective = task.action.prompt
+                        objective = task.action.prompt,
+                        context = resolved.second
                     )
                 ),
                 visibilityMode = AgentTeamVisibilityMode.BACKGROUND
             ),
-            goal = goalCheckpointPrompt(task, task.action.prompt)
+            goal = goalCheckpointPrompt(task, if (scheduled) buildString {
+                append("Execute this scheduled occurrence now, not a new schedule. Verify actual tool outcomes before claiming success. ")
+                append("Report partial failures accurately; continue independent requested actions when possible.\n\n")
+                append("Keep routine outcome wording stable when the verified state is unchanged; omit timestamps unless relevant.\n\n")
+                append(ConversationScheduleExecution.REMOTE_CONTRACT).append("\n\n")
+                append(task.action.prompt)
+                append("\n\n").append(AgentTranscriptStore(context).context(
+                    conversationId = task.action.conversationId).asTransportBlock(maximumTokens = 4_000))
+                val prior = store.runs(task.taskId, 1_000).firstOrNull { it.runId != run.runId && it.status.terminal }
+                if (prior != null) append("\n\nPrevious occurrence (context, not proof of current success):\n").append(prior.resultSummary)
+            } else task.action.prompt)
         )
     }
 
@@ -1216,13 +1388,43 @@ object AgentProactiveTaskExecutor {
     ) {
         if (!activeTeamRuns.add(run.runId)) return
         val controller = AgentProductionTeamController(context.applicationContext)
+        activeTeamControllers[run.runId] = controller
+        if (task.action.conversationId.isNotBlank() && run.teamRunId.isNotBlank() &&
+            controller.snapshot(run.teamRunId) != null) {
+            // Reattach to the persisted execution, never start its external effects a second time.
+            teamScope.launch {
+                try {
+                    controller.resume(run.teamRunId)
+                    while (store.run(run.runId)?.status?.terminal == false) {
+                        val snapshot = controller.snapshot(run.teamRunId)
+                        if (snapshot?.state?.isTerminal == true && snapshot.state != AgentTeamExecutionState.INTERRUPTED) {
+                            completeScheduledTeam(context, store, task, run, snapshot)
+                            break
+                        }
+                        delay(5_000L)
+                    }
+                } finally { activeTeamRuns.remove(run.runId); activeTeamControllers.remove(run.runId); controller.close() }
+            }
+            return
+        }
+        if (task.action.conversationId.isNotBlank()) {
+            val current = store.task(task.taskId)
+            if (current?.enabled != true || store.run(run.runId)?.status?.terminal == true) {
+                activeTeamRuns.remove(run.runId); activeTeamControllers.remove(run.runId); controller.close()
+                return
+            }
+            if (!store.updateScheduledPendingRun(run.copy(teamRunId = run.runId))) {
+                activeTeamRuns.remove(run.runId); activeTeamControllers.remove(run.runId); controller.close()
+                return
+            }
+        }
         val handle = runCatching {
             controller.start(
                 definition,
                 AgentRunRequest(
                     conversationId = "proactive:${task.taskId}",
                     messageId = run.runId,
-                    taskId = task.taskId,
+                    taskId = if (task.action.conversationId.isNotBlank()) run.runId else task.taskId,
                     runId = run.runId,
                     goal = goal,
                     context = mapOf(
@@ -1236,6 +1438,7 @@ object AgentProactiveTaskExecutor {
             )
         }.getOrElse { error ->
             activeTeamRuns.remove(run.runId)
+            activeTeamControllers.remove(run.runId)
             controller.close()
             return failOrRetry(
                 context,
@@ -1247,11 +1450,20 @@ object AgentProactiveTaskExecutor {
             )
         }
         activeTeamHandles[run.runId] = handle
-        store.upsertRun(run.copy(teamRunId = handle.supervisorRunId))
+        if (store.run(run.runId)?.status == AgentProactiveRunStatus.CANCELLED || store.task(task.taskId)?.enabled != true) {
+            controller.cancel(handle.supervisorRunId)
+        } else if (task.action.conversationId.isNotBlank()) {
+            if (!store.updateScheduledPendingRun(run.copy(teamRunId = handle.supervisorRunId)))
+                controller.cancel(handle.supervisorRunId)
+        } else store.upsertRun(run.copy(teamRunId = handle.supervisorRunId))
         teamScope.launch {
             try {
                 val result = handle.await()
                 if (store.run(run.runId)?.status == AgentProactiveRunStatus.CANCELLED) return@launch
+                if (task.action.conversationId.isNotBlank()) {
+                    completeScheduledTeam(context, store, task, run.copy(teamRunId = handle.supervisorRunId), result.snapshot)
+                    return@launch
+                }
                 val status = when (result.snapshot.state) {
                     AgentTeamExecutionState.SUCCEEDED,
                     AgentTeamExecutionState.COMPLETED_WITH_FAILURES ->
@@ -1259,7 +1471,8 @@ object AgentProactiveTaskExecutor {
                     AgentTeamExecutionState.CANCELLED -> AgentProactiveRunStatus.CANCELLED
                     else -> AgentProactiveRunStatus.FAILED
                 }
-                val finishedRun = run.copy(teamRunId = handle.supervisorRunId)
+                val finishedRun = run.copy(teamRunId = handle.supervisorRunId,
+                    resultRichOutputJson = result.snapshot.finalRichOutputJson)
                 when (status) {
                     AgentProactiveRunStatus.COMPLETED ->
                         finishCompleted(context, store, task, finishedRun, result.finalOutput)
@@ -1295,6 +1508,7 @@ object AgentProactiveTaskExecutor {
             } finally {
                 activeTeamHandles.remove(run.runId)
                 activeTeamRuns.remove(run.runId)
+                activeTeamControllers.remove(run.runId)
                 controller.close()
             }
         }
@@ -1319,6 +1533,32 @@ object AgentProactiveTaskExecutor {
         }
     }
 
+    private fun completeScheduledTeam(context: Context, store: AgentProactiveTaskStore,
+        task: AgentProactiveTask, run: AgentProactiveRun, snapshot: AgentTeamExecutionSnapshot) {
+        if (snapshot.state == AgentTeamExecutionState.CANCELLED) {
+            store.completeScheduledRun(run.copy(status = AgentProactiveRunStatus.CANCELLED,
+                completedAtMillis = System.currentTimeMillis(), deliveryRecorded = true))
+            return
+        }
+        val output = snapshot.finalOutput.ifBlank {
+            snapshot.members.firstNotNullOfOrNull { it.errorMessage.takeIf(String::isNotBlank) }.orEmpty()
+        }
+        val outcome = ConversationScheduleExecution.remoteOutcome(output, snapshot.state == AgentTeamExecutionState.SUCCEEDED,
+            ConversationScheduleExecution.expectsPhone(task.action.prompt))
+        finishScheduledOutcome(context, store, task, run.copy(resultRichOutputJson =
+            ConversationScheduleExecution.remoteRichOutput(snapshot.finalRichOutputJson, outcome.summary)), outcome)
+    }
+
+    private fun finishScheduledOutcome(context: Context, store: AgentProactiveTaskStore,
+        task: AgentProactiveTask, run: AgentProactiveRun, outcome: ConversationScheduleOutcome) {
+        val finished = run.copy(status = outcome.status, completedAtMillis = System.currentTimeMillis(),
+            resultSummary = outcome.summary.take(65_536), errorCode = outcome.errorCode)
+        if (store.completeScheduledRun(finished) && ConversationScheduledTasks.deliver(context, task, finished))
+            AgentProactiveTaskNotifier.deliver(context, task, finished.resultSummary,
+                outcome.status != AgentProactiveRunStatus.COMPLETED)
+    }
+
+    @Synchronized
     private fun finishCompleted(
         context: Context,
         store: AgentProactiveTaskStore,
@@ -1328,6 +1568,13 @@ object AgentProactiveTaskExecutor {
     ) {
         if (store.run(run.runId)?.status == AgentProactiveRunStatus.CANCELLED) return
         val now = System.currentTimeMillis()
+        if (task.action.conversationId.isNotBlank()) {
+            val completed = run.copy(status = AgentProactiveRunStatus.COMPLETED, completedAtMillis = now,
+                resultSummary = rawSummary.trim().take(65_536), errorCode = "")
+            if (store.completeScheduledRun(completed) && ConversationScheduledTasks.deliver(context, task, completed))
+                AgentProactiveTaskNotifier.deliver(context, task, completed.resultSummary, false)
+            return
+        }
         val goalState = if (task.trigger.kind == AgentProactiveTriggerKind.GOAL_CHECKPOINT) {
             goalState(rawSummary)
         } else ""
@@ -1354,7 +1601,8 @@ object AgentProactiveTaskExecutor {
                 )
             }
         }
-        AgentProactiveTaskNotifier.deliver(context, task, summary, failed = false)
+        if (ConversationScheduledTasks.deliver(context, task, requireNotNull(store.run(run.runId))))
+            AgentProactiveTaskNotifier.deliver(context, task, summary, failed = false)
     }
 
     private fun goalCheckpointPrompt(task: AgentProactiveTask, prompt: String): String {
@@ -1378,6 +1626,7 @@ object AgentProactiveTaskExecutor {
         .joinToString("\n")
         .trim()
 
+    @Synchronized
     private fun failOrRetry(
         context: Context,
         store: AgentProactiveTaskStore,
@@ -1386,18 +1635,27 @@ object AgentProactiveTaskExecutor {
         errorCode: String,
         message: String
     ) {
+        if (store.run(run.runId)?.status?.terminal == true) return
         val now = System.currentTimeMillis()
-        if (run.attempt < task.policy.maxAttempts) {
+        if (run.attempt < task.policy.maxAttempts &&
+            (task.action.conversationId.isBlank() || store.run(run.runId)?.teamRunId.isNullOrBlank())) {
             val retry = run.copy(
                 status = AgentProactiveRunStatus.RETRYING,
                 attempt = run.attempt + 1,
                 errorCode = errorCode.take(128),
                 resultSummary = message.take(4_096)
             )
-            store.upsertRun(retry)
+            updatePendingRun(store, task, retry)
             val delaySeconds = task.policy.retryBackoffSeconds *
                 (1L shl (run.attempt - 1).coerceIn(0, 20))
             scheduleWake(context, retry.runId, now + delaySeconds * 1_000L)
+            return
+        }
+        if (task.action.conversationId.isNotBlank()) {
+            val failed = (store.run(run.runId) ?: run).copy(status = AgentProactiveRunStatus.FAILED,
+                completedAtMillis = now, errorCode = errorCode, resultSummary = message.ifBlank { errorCode }.take(65_536))
+            if (store.completeScheduledRun(failed) && ConversationScheduledTasks.deliver(context, task, failed))
+                AgentProactiveTaskNotifier.deliver(context, task, failed.resultSummary, true)
             return
         }
         store.upsertRun(
@@ -1414,6 +1672,7 @@ object AgentProactiveTaskExecutor {
             AgentProactiveRunStatus.FAILED,
             now
         )
+        if (!ConversationScheduledTasks.deliver(context, task, requireNotNull(store.run(run.runId)))) return
         AgentProactiveTaskNotifier.deliver(
             context,
             task,
@@ -1423,6 +1682,9 @@ object AgentProactiveTaskExecutor {
     }
 
     internal fun scheduleWake(context: Context, runId: String, atMillis: Long) {
+        val store = AgentProactiveTaskStore(context)
+        if (store.run(runId)?.let { store.task(it.taskId)?.action?.conversationId?.isNotBlank() } == true)
+            AgentProactiveTaskScheduler.wakeRunWhileAwake(context, runId, atMillis)
         val pending = PendingIntent.getBroadcast(
             context,
             runId.hashCode(),
@@ -1499,6 +1761,8 @@ private object AgentProactiveTaskNotifier {
             task.taskId.hashCode(),
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                if (task.action.conversationId.isNotBlank())
+                    putExtra(AgentConversationWindows.CONVERSATION, task.action.conversationId)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

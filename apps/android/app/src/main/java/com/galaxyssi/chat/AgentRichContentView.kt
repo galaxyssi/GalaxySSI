@@ -95,7 +95,8 @@ class AgentRichContentView(
 
     private fun presentationBlocks(entry: AgentTranscriptEntry): List<AgentRichBlock> {
         val explicit = AgentRichContentCodec.decode(entry.richOutputJson)
-        val parsed = explicit.ifEmpty { AgentRichContentCodec.fromText(entry.text) }
+        val parsed = ConversationScheduleCardPresentation.visibleBlocks(explicit)
+            .ifEmpty { AgentRichContentCodec.fromText(entry.text) }
         return AgentImagePresentation.annotate(parsed,
             entry.text + "\n" + parsed.filter { it.type == AgentRichBlockType.TEXT }.joinToString("\n") { it.text },
             activity.resources.configuration.locales[0].language == "zh",
@@ -1417,6 +1418,11 @@ class AgentRichContentView(
 
     private fun actionBlock(block: AgentRichBlock, approval: Boolean): View = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
+        if (!approval) block.actions.singleOrNull()?.takeIf { it.verb == "edit_scheduled_task" }?.let { action ->
+            addView(scheduledTaskCard(block, action), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            return@apply
+        }
         setPadding(dp(12), dp(11), dp(12), dp(11))
         background = roundedBackground(if (approval) "#FFFFFF" else "#F6F8FA", 6f, "#DDE3E8")
         if (approval) {
@@ -1424,7 +1430,7 @@ class AgentRichContentView(
         } else {
             val heading = block.title.ifBlank { activity.getString(R.string.rich_output_actions) }
             addView(selectableText(heading, 15f).apply { setTypeface(typeface, Typeface.BOLD) })
-            if (block.text.isNotBlank()) addView(selectableText(block.text, 14f).apply {
+            if (block.text.isNotBlank() && block.actions.none { it.verb == "edit_scheduled_task" }) addView(selectableText(block.text, 14f).apply {
                 setPadding(0, dp(5), 0, dp(5))
             })
         }
@@ -1474,6 +1480,41 @@ class AgentRichContentView(
         addView(actionRows, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(10)
         })
+    }
+
+    private fun scheduledTaskCard(block: AgentRichBlock, action: AgentRichAction): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(64)
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        background = roundedBackground("#FFFFFF", 8f, "#E6E8EB")
+        isFocusable = true
+        contentDescription = activity.getString(R.string.schedule_edit) + " " + block.title
+        setOnClickListener { onAction(action) }
+        addView(ImageView(activity).apply {
+            setImageResource(android.R.drawable.ic_menu_recent_history)
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#62666C"))
+            background = roundedBackground("#F5F6F7", 6f, "#F5F6F7")
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(12) })
+        addView(LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(activity).apply {
+                text = block.title
+                textSize = 14f
+                includeFontPadding = false
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(Color.parseColor("#20242A"))
+            }, LinearLayout.LayoutParams(-1, -2))
+            addView(ConversationScheduleStatusView(activity, action.value, includeSchedule = true, cardTitle = block.title).apply {
+                textSize = 12f
+                text = ConversationScheduleCardPresentation.compactDetail(block)
+                includeFontPadding = false
+                setPadding(0, dp(5), 0, 0)
+            }, LinearLayout.LayoutParams(-1, -2))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
     }
 
     private fun approvalHeader(block: AgentRichBlock): View = LinearLayout(activity).apply {

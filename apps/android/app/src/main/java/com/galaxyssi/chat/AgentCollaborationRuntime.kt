@@ -37,7 +37,8 @@ internal fun isPersistedAgentTeamContextKey(key: String): Boolean = key.startsWi
     key.startsWith("collaboration_research_") ||
     key == CollaborationWorkflowWork.TASK || key == CollaborationPredictionWork.TASK ||
     key in setOf("collaboration_group_id", "collaboration_name", "collaboration_provider",
-        "collaboration_receive_results", "collaboration_model_id", CollaborationReasoningSelection.KEY)
+        "collaboration_receive_results", "collaboration_model_id", CollaborationReasoningSelection.KEY,
+        "scheduled_model_id", "scheduled_reasoning_effort")
 
 internal fun stableAgentTeamMemberRunId(supervisorRunId: String, instanceId: String): String =
     UUID.nameUUIDFromBytes("$supervisorRunId\u001f$instanceId".toByteArray(Charsets.UTF_8)).toString()
@@ -1242,7 +1243,12 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 "_galaxyssi_task_id" to context.request.taskId,
                 "idempotency_key" to context.request.idempotencyKey,
                 MANAGED_AGENT_TEAM_ACTION_PARAMETER to "true"
-            ) + reasoningParameters + CollaborationResultContract.assignment(groupId) + (if (context.member.context["collaboration_group_id"].orEmpty().isNotBlank()) {
+            ) + (if (context.member.context.containsKey("scheduled_model_id")) mapOf(
+                "manual_target_locked" to "true",
+                "manual_model_id" to context.member.context["scheduled_model_id"].orEmpty(),
+                "agent_model_id" to context.member.context["scheduled_model_id"].orEmpty(),
+                "agent_reasoning_effort" to context.member.context["scheduled_reasoning_effort"].orEmpty()
+            ) else emptyMap()) + reasoningParameters + CollaborationResultContract.assignment(groupId) + (if (context.member.context["collaboration_group_id"].orEmpty().isNotBlank()) {
                 mapOf("manual_target_locked" to "true",
                     EXECUTION_POLICY_PROMPT_ACTION_PARAMETER to context.member.objective.ifBlank { context.request.goal },
                     "manual_model_id" to context.member.context["collaboration_model_id"].orEmpty())
