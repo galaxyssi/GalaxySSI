@@ -57,6 +57,7 @@ class AgentPhoneNativeToolCatalogTest {
             "galaxyssi.workspace.files.patch.exact.batch",
             "galaxyssi.workspace.file.diff.summary",
             "galaxyssi.workspace.file.sha256",
+            "galaxyssi.workspace.file.export",
             "galaxyssi.workspace.zip.create",
             "galaxyssi.workspace.zip.list",
             "galaxyssi.workspace.zip.extract",

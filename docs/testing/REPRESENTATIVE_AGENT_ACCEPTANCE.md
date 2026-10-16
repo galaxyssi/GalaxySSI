@@ -39,3 +39,35 @@ This uses the existing debug native-tool receiver without instrumentation or an
 App force-stop. Every report identifies its validation layer, expected negative
 cases, receipt IDs and cleanup result. Model-driven cases must additionally use
 the normal composer and verify actual output, not merely a terminal task phase.
+
+## 2026-10-17: Android 1.5.35 (1318)
+
+- Added native workspace file export with a streamed, content-addressed snapshot,
+  SHA-256 and host-owned openability inspection. It reuses artifact preview/save
+  rendering and does not require Linux for ordinary file delivery.
+- Nine native S20U scenarios passed, including export verification and a new
+  delivery version after editing the source. Fixtures were removed. Report:
+  `%TEMP%/galaxyssi-representative-acceptance/representative-f14806bf58f34af9ae268d29b82e7a56.json`.
+- The first real model trial created, read and exported the correct file, but
+  wrongly declared the exported hash as a pre-edit source hash. Completion then
+  correctly rejected an unchanged transformation, which was not the user's goal.
+  The test was stopped, not counted as success. The prompt and rejection feedback
+  now distinguish new-file output integrity from a pre-edit transformation hash;
+  the unchanged-edit guard remains enforced.
+- The second normal-composer trial completed in 113.8 seconds and returned sum 12.
+  The real UI opened the file and saved it to
+  `Download/GalaxySSI/representative-delivery.txt`; exact content and SHA-256 matched
+  its receipt (`f9707caaff307ef35f5f82c6e9c897c7dc5b17e214e276803b4363852507254a`).
+  UI inspection also found that an attachment-only rich result suppressed its
+  final text. The artifact merge now includes the final answer when rich output
+  contains only attachments, without changing plain-text or already-rich answers.
+- The final selected JVM suite contains 100 tests: 99 pass, one existing symbolic-link
+  test is skipped because the Windows account cannot create symbolic links.
+  This skip is not counted as validation of symlink handling on this machine.
+- A real shopping-list CSV run generated correct rows (24, 15, total 39). Its
+  Linux tool took approximately 34 seconds; the full run took about 153 seconds.
+  Saving exposed an incorrect generic text MIME type that added `.txt` to `.csv`.
+  CSV/TSV now have their correct MIME types and support the existing text preview.
+- A separate application-launch trial found that `open calculator` succeeds but
+  the Chinese equivalent of `open the calculator on my phone` includes the device
+  qualifier in the app-name lookup. That routing defect is separate follow-up work.

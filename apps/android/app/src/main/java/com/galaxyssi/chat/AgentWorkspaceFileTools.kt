@@ -299,7 +299,8 @@ data class AgentWorkspaceZipExtraction(
 /** App-private, workspace-scoped file operations with no shell execution surface. */
 class AgentWorkspaceFileTools(
     storageRoot: Path,
-    private val policy: AgentWorkspaceFilePolicy = AgentWorkspaceFilePolicy()
+    private val policy: AgentWorkspaceFilePolicy = AgentWorkspaceFilePolicy(),
+    private val artifactInspector: (java.io.File, String, Long) -> AgentNativeJsonObject = AgentArtifactOpenability()::inspect
 ) {
     private val storageRoot: Path
 
@@ -310,6 +311,44 @@ class AgentWorkspaceFileTools(
         require(!Files.isSymbolicLink(canonical)) { "Workspace storage root cannot be a symbolic link" }
         this.storageRoot = canonical
     }
+
+    /** Export a stable copy so later source edits cannot invalidate an already delivered file. */
+    fun exportArtifact(workspaceId: String, path: String): AgentWorkspaceFileResult<AgentNativeJsonObject> =
+        runOperation("export", workspaceId, path) {
+            val root = workspaceRoot(workspaceId)
+            val source = requireFile(resolvePath(root, path, allowRoot = false))
+            val exportRoot = resolvePath(root, ".galaxyssi-artifacts", allowRoot = false)
+            createDirectoriesSafely(root, exportRoot)
+            val temporary = exportRoot.resolve(".${java.util.UUID.randomUUID()}.tmp")
+            val digest = MessageDigest.getInstance("SHA-256")
+            var size = 0L
+            try {
+                Files.newInputStream(source, READ, NOFOLLOW_LINKS).use { input ->
+                    Files.newOutputStream(temporary, CREATE_NEW, WRITE).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            size += count
+                            if (size > policy.maxHashBytes) limitExceeded("Export exceeds the bounded artifact size")
+                            digest.update(buffer, 0, count)
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                }
+                val hash = digest.digest().joinToString("") { "%02x".format(it) }
+                val directory = exportRoot.resolve(hash)
+                createDirectoriesSafely(root, directory)
+                val exported = resolvePath(root, relativePath(root, directory.resolve(source.fileName)), allowRoot = false)
+                // Replacement is a complete atomic snapshot; never append to an existing delivery.
+                movePath(temporary, exported, replace = true)
+                mapOf("artifacts" to listOf(mapOf(
+                    "relative_path" to relativePath(root, source), "host_path" to exported.toString(),
+                    "size_bytes" to size, "sha256" to hash, "artifact_kind" to "file",
+                    "openability" to artifactInspector(exported.toFile(), hash, policy.maxZipUncompressedBytes)
+                )))
+            } finally { Files.deleteIfExists(temporary) }
+        }
 
     fun initializeWorkspace(workspaceId: String): AgentWorkspaceFileResult<AgentWorkspaceMutation> =
         runOperation("initialize", workspaceId, workspaceId) {

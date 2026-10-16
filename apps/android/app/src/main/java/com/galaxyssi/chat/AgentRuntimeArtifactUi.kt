@@ -89,7 +89,7 @@ internal object AgentRuntimeArtifactUi {
         return if (blocks.isEmpty()) "" else AgentRichContentCodec.encode(blocks)
     }
 
-    fun mergeWithArtifactOutputs(base: String, vararg artifactOutputs: String): String {
+    fun mergeWithArtifactOutputs(base: String, vararg artifactOutputs: String, fallbackText: String = ""): String {
         val baseBlocks = AgentRichContentCodec.decode(base)
         val existing = baseBlocks.asSequence()
             .filter { it.metadata["runtime_artifact"] == "true" }
@@ -102,6 +102,10 @@ internal object AgentRuntimeArtifactUi {
             .take(MAX_PERSISTED_ARTIFACTS)
             .toList()
         val merged = baseBlocks + appended
+        // An attachment-only rich document replaces plain transcript text in the renderer.
+        if (merged.isNotEmpty() && baseBlocks.all { it.metadata["runtime_artifact"] == "true" } && fallbackText.isNotBlank()) {
+            return AgentRichContentCodec.encode(AgentRichContentCodec.fromText(fallbackText) + merged)
+        }
         return if (merged.isEmpty()) "" else AgentRichContentCodec.encode(merged)
     }
 
@@ -222,6 +226,8 @@ internal object AgentRuntimeArtifactUi {
         "md" -> "text/markdown"
         "html", "htm" -> "text/html"
         "css" -> "text/css"
+        "csv" -> "text/csv"
+        "tsv" -> "text/tab-separated-values"
         "zip" -> "application/zip"
         "pdf" -> "application/pdf"
         "apk" -> "application/vnd.android.package-archive"
@@ -244,6 +250,8 @@ internal object AgentRuntimeArtifactUi {
         "ts" -> "TypeScript"
         "json" -> "JSON"
         "md" -> "Markdown"
+        "csv" -> "CSV"
+        "tsv" -> "TSV"
         "apk" -> "Android APK"
         "aab" -> "Android App Bundle"
         "zip" -> "ZIP"
@@ -273,7 +281,7 @@ internal object AgentRuntimeArtifactUi {
     private const val MAX_ZIP_PREVIEW_ENTRIES = 500
     private const val MAX_PERSISTED_ARTIFACTS = 24
     private val CODE_EXTENSIONS = setOf("py", "js", "ts", "java", "kt", "kts", "c", "h", "cpp", "hpp", "rs", "go", "sh")
-    private val PREVIEW_EXTENSIONS = CODE_EXTENSIONS + setOf("txt", "md", "json", "yaml", "yml", "xml", "html", "htm", "css", "toml", "ini", "zip")
+    private val PREVIEW_EXTENSIONS = CODE_EXTENSIONS + setOf("txt", "csv", "tsv", "md", "json", "yaml", "yml", "xml", "html", "htm", "css", "toml", "ini", "zip")
     private val OPENABLE_EXTENSIONS = setOf(
         "pdf", "apk", "png", "jpg", "jpeg", "gif", "webp", "mp3", "wav", "m4a", "mp4"
     )

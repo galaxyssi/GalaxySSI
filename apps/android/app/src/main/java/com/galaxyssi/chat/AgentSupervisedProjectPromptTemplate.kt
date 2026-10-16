@@ -119,6 +119,8 @@ internal object AgentSupervisedProjectPromptTemplate {
 
     private fun StringBuilder.appendObservedCompletionContract() {
         append("Declare root completion_requirements={\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"\"} from user intent, respecting exclusions. No default publication. Preserve on replan; explain changes in reason. ")
+        append("To deliver an existing workspace file, use galaxyssi.workspace.file.export with workspace_id and path. This native tool produces downloadable, hash-bound openability receipts without Linux; reading a file alone is not delivery. ")
+        append("Declare artifacts=[{path:relative_path,source_sha256:\"\"}] for requested files. source_sha256 is ONLY the observed pre-edit input hash when the user requires transforming an existing file. It is NOT the created/exported file hash. For new files or unchanged downloads keep it empty; the host verifies the output hash separately. If you mistakenly copied an output hash into source_sha256, correct the requirement with an explicit reason; do not alter correct file content just to change its hash. ")
         append("Set completes_goal=true only when verified commit/push/PR receipts finish the goal; other receipts need model review. After evidence proves completion, return one DRAFT_PLAN: target=task-complete, description=final answer in user's language, parameters={}, depends_on=[], use_outputs_from=[]. Never repeat tools to finish or output diagnostic receipts. ")
     }
 

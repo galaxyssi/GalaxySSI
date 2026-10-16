@@ -29,6 +29,7 @@ object AgentPhoneNativeToolCatalog {
     const val WORKSPACE_APPLY_EXACT_PATCH_BATCH = "galaxyssi.workspace.files.patch.exact.batch"
     const val WORKSPACE_DIFF_SUMMARY = "galaxyssi.workspace.file.diff.summary"
     const val WORKSPACE_SHA256 = "galaxyssi.workspace.file.sha256"
+    const val WORKSPACE_EXPORT = "galaxyssi.workspace.file.export"
     const val WORKSPACE_ZIP_CREATE = "galaxyssi.workspace.zip.create"
     const val WORKSPACE_ZIP_LIST = "galaxyssi.workspace.zip.list"
     const val WORKSPACE_ZIP_EXTRACT = "galaxyssi.workspace.zip.extract"
@@ -112,6 +113,7 @@ object AgentPhoneNativeToolCatalog {
         WORKSPACE_APPLY_EXACT_PATCH_BATCH,
         WORKSPACE_DIFF_SUMMARY,
         WORKSPACE_SHA256,
+        WORKSPACE_EXPORT,
         WORKSPACE_ZIP_CREATE,
         WORKSPACE_ZIP_LIST,
         WORKSPACE_ZIP_EXTRACT
@@ -156,7 +158,8 @@ object AgentPhoneNativeToolCatalog {
         )
         val registry = createRegistry(
             workspaceFileTools = AgentWorkspaceFileTools(
-                context.filesDir.toPath().resolve("agent-native-workspaces")
+                context.filesDir.toPath().resolve("agent-native-workspaces"),
+                artifactInspector = AgentArtifactOpenability(context.applicationContext)::inspect
             ),
             actionExecutor = actionExecutor,
             screenProvider = screenProvider,
@@ -251,6 +254,18 @@ object AgentPhoneNativeToolCatalog {
         )
 
     private fun workspaceDefinitions(tools: AgentWorkspaceFileTools): List<AgentNativeToolDefinition> = listOf(
+        workspaceDefinition(
+            id = WORKSPACE_EXPORT,
+            title = "Export workspace file",
+            description = "Export an existing phone workspace file as a stable downloadable artifact with host-owned SHA-256 and openability evidence. Works without Linux or shell execution. Use after write/read to deliver text, CSV, PDF, Office or image files. Export each requested file individually; a directory is not accepted. Unverified openability is not a completed user goal.",
+            risk = AgentNativeToolRisk.MEDIUM,
+            consentId = WORKSPACE_WRITE_CONSENT,
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            inputSchema = workspacePathInputSchema(),
+            outputSchema = AgentNativeJsonSchema.objectSchema(),
+            execute = { input -> tools.exportArtifact(input.string("workspace_id"), input.string("path")) },
+            encode = { it }
+        ),
         workspaceDefinition(
             id = WORKSPACE_INITIALIZE,
             title = "Initialize app-private workspace",

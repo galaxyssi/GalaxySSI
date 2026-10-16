@@ -686,7 +686,8 @@ internal fun Context.persistAgentTranscript(
             richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(
                 AgentRuntimeArtifactUi.mergeWithArtifactOutputs(
                     state.lastActionResult?.metadata?.get("rich_output").orEmpty(),
-                    state.plan?.artifactRichOutputJson.orEmpty()
+                    state.plan?.artifactRichOutputJson.orEmpty(),
+                    fallbackText = result
                 )
             )
         )
