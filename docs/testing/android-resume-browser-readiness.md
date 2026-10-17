@@ -70,3 +70,22 @@
   foreground/background transitions and conversation switches. Check the
   `GalaxySSIStartup` resume stage timings and new crash/ANR records. Do not clear
   production app data or existing conversations to make a test pass.
+
+## S26U acceptance (2026-10-17)
+
+- Android 1.5.41 (1324), installed in place without resetting data or pairings.
+- 161 targeted JVM tests passed; 89 Node tests passed and 3 Windows symlink
+  tests were skipped. All 5 targeted device tests passed.
+- The device browser test verified local visible text, offline TLS initialization,
+  and the title plus visible body of a public HTTPS page. It took 54.665 seconds
+  including cold runtime preparation and cleanup, not a browser speed benchmark.
+- Cold Activity launch: 809 ms. Returning from Proactive Attention: onResume
+  60 ms, asynchronous restoration 334 ms. Home/foreground: onResume 12 ms,
+  asynchronous restoration 229 ms. These individual samples are not percentiles.
+- No crash/ANR followed the final installation during acceptance. An earlier
+  debug broadcast exceeded Android's receiver deadline; subsequent acceptance
+  used instrumentation. Do not confuse that harness ANR with UI-return evidence.
+- The existing signed browser image was not replaced. Its missing NSS dependencies
+  were installed in persistent Linux using Debian's libnss3/libnspr4 packages;
+  the client supplied the relocated-font configuration. Rebuilt-image publication
+  and authenticated website/model-goal acceptance remain separate work.
