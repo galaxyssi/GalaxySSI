@@ -23,48 +23,48 @@ object AgentSystemToolPlanner {
     }
 
     fun actionFor(request: AgentRequest): AgentAction? {
-        val goal = request.goal.trim()
+        val goal = AgentLocalCommandText.withoutPolitePrefix(request.goal)
         if (AgentDeviceShortcutIntent.requiresReasoning(goal)) return null
         val lower = goal.lowercase()
         namedAppSettingsAction(request, lower)?.let { return it }
         commonToolAction(goal, lower)?.let { return it }
         return when {
-            lower.contains("open wifi settings") || lower == "wifi settings" -> intentAction(
+            lower.matchesCommand("open wifi settings") || lower == "wifi settings" -> intentAction(
                 id = "open-wifi-settings",
                 target = "Wi-Fi Settings",
                 description = "Open Wi-Fi settings",
                 intentAction = Settings.ACTION_WIFI_SETTINGS
             )
-            lower.contains("open bluetooth settings") || lower == "bluetooth settings" -> intentAction(
+            lower.matchesCommand("open bluetooth settings") || lower == "bluetooth settings" -> intentAction(
                 id = "open-bluetooth-settings",
                 target = "Bluetooth Settings",
                 description = "Open Bluetooth settings",
                 intentAction = Settings.ACTION_BLUETOOTH_SETTINGS
             )
-            lower.contains("open accessibility settings") || lower.contains("screen agent permission") -> intentAction(
+            lower.matchesCommand("open accessibility settings") || lower.matchesCommand("screen agent permission") -> intentAction(
                 id = "open-accessibility-settings",
                 target = "Accessibility Settings",
                 description = "Open accessibility settings",
                 intentAction = Settings.ACTION_ACCESSIBILITY_SETTINGS
             )
-            lower.contains("open notification listener settings") ||
-                lower.contains("open notification access settings") ||
-                lower.contains("notification listener permission") ||
-                lower.contains("notification access permission") -> intentAction(
+            lower.matchesCommand("open notification listener settings") ||
+                lower.matchesCommand("open notification access settings") ||
+                lower.matchesCommand("notification listener permission") ||
+                lower.matchesCommand("notification access permission") -> intentAction(
                     id = "open-notification-listener-settings",
                     target = "Notification Access",
                     description = "Open notification listener access settings",
                     intentAction = "android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"
                 )
-            lower.contains("open notification settings") || lower == "notification settings" -> intentAction(
+            lower.matchesCommand("open notification settings") || lower == "notification settings" -> intentAction(
                 id = "open-notification-settings",
                 target = "Notification Settings",
                 description = "Open notification settings",
                 intentAction = "android.settings.NOTIFICATION_SETTINGS"
             )
-            lower.contains("open current app settings") ||
-                lower.contains("open current app info") ||
-                lower.contains("open current app permissions") -> {
+            lower.matchesCommand("open current app settings") ||
+                lower.matchesCommand("open current app info") ||
+                lower.matchesCommand("open current app permissions") -> {
                     val packageName = request.screen.foregroundApp.takeIf { "." in it }.orEmpty()
                     intentAction(
                         id = "open-current-app-settings",
@@ -75,43 +75,43 @@ object AgentSystemToolPlanner {
                         risk = AgentRisk.MEDIUM
                     )
                 }
-            lower.contains("open battery settings") || lower == "battery settings" -> intentAction(
+            lower.matchesCommand("open battery settings") || lower == "battery settings" -> intentAction(
                 id = "open-battery-settings",
                 target = "Battery Settings",
                 description = "Open battery settings",
                 intentAction = Settings.ACTION_BATTERY_SAVER_SETTINGS
             )
-            lower.contains("open display settings") || lower == "display settings" -> intentAction(
+            lower.matchesCommand("open display settings") || lower == "display settings" -> intentAction(
                 id = "open-display-settings",
                 target = "Display Settings",
                 description = "Open display settings",
                 intentAction = Settings.ACTION_DISPLAY_SETTINGS
             )
-            lower.contains("open location settings") || lower == "location settings" -> intentAction(
+            lower.matchesCommand("open location settings") || lower == "location settings" -> intentAction(
                 id = "open-location-settings",
                 target = "Location Settings",
                 description = "Open location settings",
                 intentAction = Settings.ACTION_LOCATION_SOURCE_SETTINGS
             )
-            lower.contains("open app settings") || lower == "app settings" -> intentAction(
+            lower.matchesCommand("open app settings") || lower == "app settings" -> intentAction(
                 id = "open-app-settings",
                 target = "App Settings",
                 description = "Open app settings",
                 intentAction = Settings.ACTION_APPLICATION_SETTINGS
             )
-            lower.contains("open keyboard settings") || lower.contains("open input settings") -> intentAction(
+            lower.matchesCommand("open keyboard settings") || lower.matchesCommand("open input settings") -> intentAction(
                 id = "open-input-settings",
                 target = "Keyboard Settings",
                 description = "Open keyboard settings",
                 intentAction = Settings.ACTION_INPUT_METHOD_SETTINGS
             )
-            lower.contains("open settings") || lower == "settings" -> intentAction(
+            lower.matchesCommand("open settings") || lower == "settings" -> intentAction(
                 id = "open-settings",
                 target = "Android Settings",
                 description = "Open Android Settings",
                 intentAction = Settings.ACTION_SETTINGS
             )
-            lower == "home" || lower.contains("go home") || lower.contains("home screen") -> AgentAction(
+            lower == "home" || lower.matchesCommand("go home") || lower.matchesCommand("home screen") -> AgentAction(
                 id = "go-home",
                 kind = AgentActionKind.HOME,
                 target = "Home Screen",
@@ -119,7 +119,7 @@ object AgentSystemToolPlanner {
                 status = AgentActionStatus.PENDING_CONFIRMATION,
                 description = "Go to the home screen"
             )
-            lower.contains("recent apps") || lower == "recents" || lower.contains("show recents") -> AgentAction(
+            lower.matchesCommand("recent apps") || lower == "recents" || lower.matchesCommand("show recents") -> AgentAction(
                 id = "show-recents",
                 kind = AgentActionKind.RECENTS,
                 target = "Recent Apps",
@@ -127,7 +127,7 @@ object AgentSystemToolPlanner {
                 status = AgentActionStatus.PENDING_CONFIRMATION,
                 description = "Show recent apps"
             )
-            lower.contains("copy screen text") || lower.contains("copy current screen") -> AgentAction(
+            lower.matchesCommand("copy screen text") || lower.matchesCommand("copy current screen") -> AgentAction(
                 id = "copy-screen-text",
                 kind = AgentActionKind.COPY_SCREEN_TEXT,
                 target = request.screen.foregroundApp,
@@ -135,10 +135,10 @@ object AgentSystemToolPlanner {
                 status = AgentActionStatus.PENDING_CONFIRMATION,
                 description = "Copy current screen text"
             )
-            lower.contains("summarize screen") ||
-                lower.contains("explain screen") ||
-                lower.contains("what is on screen") ||
-                lower.contains("what is this screen") -> AgentAction(
+            lower.matchesCommand("summarize screen") ||
+                lower.matchesCommand("explain screen") ||
+                lower.matchesCommand("what is on screen") ||
+                lower.matchesCommand("what is this screen") -> AgentAction(
                     id = "summarize-screen",
                     kind = AgentActionKind.READ_SCREEN,
                     target = request.screen.foregroundApp,
@@ -146,7 +146,7 @@ object AgentSystemToolPlanner {
                     status = AgentActionStatus.PENDING_CONFIRMATION,
                     description = "Summarize current screen"
                 )
-            lower.contains("read clipboard") || lower.contains("clipboard status") -> AgentAction(
+            lower.matchesCommand("read clipboard") || lower.matchesCommand("clipboard status") -> AgentAction(
                 id = "read-clipboard",
                 kind = AgentActionKind.READ_SCREEN,
                 target = "Clipboard",
@@ -154,14 +154,14 @@ object AgentSystemToolPlanner {
                 status = AgentActionStatus.PENDING_CONFIRMATION,
                 description = "Read clipboard context"
             )
-            lower.contains("clear text") || lower.contains("delete text") -> textEditAction(
+            lower.matchesCommand("clear text") || lower.matchesCommand("delete text") -> textEditAction(
                 id = "clear-focused-text",
                 kind = AgentActionKind.DELETE_TEXT,
                 target = request.screen.inputFields.firstOrNull()?.label?.ifBlank { request.screen.foregroundApp } ?: request.screen.foregroundApp,
                 description = "Clear text from the active input field",
                 fieldBounds = request.screen.inputFields.firstOrNull()?.bounds.orEmpty()
             )
-            lower.contains("paste clipboard") || lower == "paste" -> textEditAction(
+            lower.matchesCommand("paste clipboard") || lower == "paste" -> textEditAction(
                 id = "paste-clipboard",
                 kind = AgentActionKind.PASTE_TEXT,
                 target = request.screen.inputFields.firstOrNull()?.label?.ifBlank { request.screen.foregroundApp } ?: request.screen.foregroundApp,
@@ -177,7 +177,7 @@ object AgentSystemToolPlanner {
                 risk = AgentRisk.MEDIUM,
                 extras = mapOf("extra_text" to goal.substring("share text ".length).trim())
             )
-            lower.contains("open calendar") -> intentAction(
+            lower.matchesCommand("open calendar") -> intentAction(
                 id = "open-calendar",
                 target = "Calendar",
                 description = "Open calendar",
@@ -208,6 +208,7 @@ object AgentSystemToolPlanner {
                     lower.startsWith("save webpage ") -> goal.substring("save webpage ".length).trim()
                     else -> goal.substring("add webpage to knowledge ".length).trim()
                 }
+                val normalized = AgentLocalCommandText.httpUrl(url) ?: return null
                 AgentAction(
                     id = "import-webpage-knowledge",
                     kind = AgentActionKind.IMPORT_WEB_KNOWLEDGE,
@@ -215,7 +216,7 @@ object AgentSystemToolPlanner {
                     risk = AgentRisk.MEDIUM,
                     status = AgentActionStatus.PENDING_CONFIRMATION,
                     description = "Import web page into Agent knowledge",
-                    parameters = mapOf("url" to normalizeUrl(url))
+                    parameters = mapOf("url" to normalized)
                 )
             }
             lower.startsWith("open url ") || lower.startsWith("open website ") -> {
@@ -224,14 +225,15 @@ object AgentSystemToolPlanner {
                 } else {
                     goal.substring("open website ".length).trim()
                 }
+                val normalized = AgentLocalCommandText.httpUrl(url) ?: return null
                 AgentAction(
                     id = "open-url",
                     kind = AgentActionKind.OPEN_URL,
-                    target = normalizeUrl(url),
+                    target = normalized,
                     risk = AgentRisk.MEDIUM,
                     status = AgentActionStatus.PENDING_CONFIRMATION,
                     description = "Open URL",
-                    parameters = mapOf("url" to normalizeUrl(url))
+                    parameters = mapOf("url" to normalized)
                 )
             }
             lower.startsWith("search web ") || lower.startsWith("google ") -> {
@@ -274,7 +276,7 @@ object AgentSystemToolPlanner {
                 lower.contains("open timer") ||
                 lower.contains("\u8ba1\u65f6\u5668") ||
                 lower.contains("\u5012\u8ba1\u65f6") -> timerAction(goal)
-            lower.contains("long press first") || lower.contains("press and hold first") -> {
+            lower.matchesCommand("long press first") || lower.matchesCommand("press and hold first") -> {
                 val firstElement = request.screen.clickableElements.firstOrNull()
                 AgentAction(
                     id = "long-press-first-action",
@@ -291,7 +293,7 @@ object AgentSystemToolPlanner {
     }
 
     private fun commonToolAction(goal: String, lower: String): AgentAction? = when {
-        lower.contains("open wechat") -> packageAction(
+        lower.matchesCommand("open wechat") -> packageAction(
             id = "open-wechat",
             target = "WeChat",
             description = "Open WeChat",
@@ -314,7 +316,7 @@ object AgentSystemToolPlanner {
             input = requireNotNull(AgentDeviceShortcutIntent.parse(goal)).input,
             risk = AgentRisk.MEDIUM
         )
-        lower.contains("open gallery") || lower.contains("open photos") -> intentAction(
+        lower.matchesCommand("open gallery") || lower.matchesCommand("open photos") -> intentAction(
             id = "open-gallery",
             target = "Photos",
             description = "Open photos",
@@ -322,7 +324,7 @@ object AgentSystemToolPlanner {
             uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI.toString(),
             risk = AgentRisk.LOW
         )
-        lower.contains("pick image") || lower.contains("select image") || lower.contains("choose photo") -> intentAction(
+        lower.matchesCommand("pick image") || lower.matchesCommand("select image") || lower.matchesCommand("choose photo") -> intentAction(
             id = "pick-image",
             target = "Image Picker",
             description = "Select image",
@@ -331,7 +333,7 @@ object AgentSystemToolPlanner {
             category = Intent.CATEGORY_OPENABLE,
             risk = AgentRisk.LOW
         )
-        lower.contains("install apk") || lower.contains("install app") -> intentAction(
+        lower.matchesCommand("install apk") || lower.matchesCommand("install app") -> intentAction(
             id = "select-apk-install",
             target = "APK Installer",
             description = "Select an APK for owner-confirmed installation",
@@ -340,9 +342,9 @@ object AgentSystemToolPlanner {
             category = Intent.CATEGORY_OPENABLE,
             risk = AgentRisk.HIGH
         )
-        lower.contains("unknown app sources") ||
-            lower.contains("install unknown apps") ||
-            lower.contains("apk install permission") -> intentAction(
+        lower.matchesCommand("unknown app sources") ||
+            lower.matchesCommand("install unknown apps") ||
+            lower.matchesCommand("apk install permission") -> intentAction(
                 id = "open-unknown-app-sources",
                 target = "Install Unknown Apps",
                 description = "Open install unknown apps permission settings",
@@ -350,15 +352,15 @@ object AgentSystemToolPlanner {
                 uri = "package:com.galaxyssi.chat",
                 risk = AgentRisk.HIGH
             )
-        lower.startsWith("dial ") || lower.startsWith("call ") -> intentAction(
+        AgentLocalCommandText.dialNumber(goal) != null -> intentAction(
             id = "dial-number",
             target = "Phone",
             description = "Open phone dialer with number",
             intentAction = Intent.ACTION_DIAL,
-            uri = "tel:${Uri.encode(goal.substringAfter(' ').trim())}",
+            uri = "tel:${Uri.encode(AgentLocalCommandText.dialNumber(goal))}",
             risk = AgentRisk.HIGH
         )
-        lower.contains("open phone") || lower.contains("open dialer") || lower.contains("make phone call") -> intentAction(
+        lower.matchesCommand("open phone", "open dialer") -> intentAction(
             id = "open-phone",
             target = "Phone",
             description = "Open phone dialer",
@@ -366,23 +368,23 @@ object AgentSystemToolPlanner {
             uri = "tel:",
             risk = AgentRisk.HIGH
         )
-        lower.startsWith("sms ") || lower.startsWith("message ") -> intentAction(
+        AgentLocalCommandText.smsNumber(goal) != null -> intentAction(
             id = "open-sms-thread",
             target = "Messages",
             description = "Open message composer",
             intentAction = Intent.ACTION_VIEW,
-            uri = "sms:${Uri.encode(goal.substringAfter(' ').trim())}",
+            uri = "sms:${Uri.encode(AgentLocalCommandText.smsNumber(goal))}",
             risk = AgentRisk.HIGH
         )
-        lower.contains("open messages") || lower.contains("open sms") || lower.contains("send sms") -> intentAction(
+        lower.matchesCommand("open messages", "open sms") -> intentAction(
             id = "open-messages",
             target = "Messages",
             description = "Open messages",
             intentAction = Intent.ACTION_VIEW,
             uri = "sms:",
-            risk = if (lower.contains("send sms")) AgentRisk.HIGH else AgentRisk.MEDIUM
+            risk = AgentRisk.MEDIUM
         )
-        lower.contains("open browser") -> intentAction(
+        lower.matchesCommand("open browser") -> intentAction(
             id = "open-browser",
             target = "Browser",
             description = "Open browser",
@@ -390,7 +392,7 @@ object AgentSystemToolPlanner {
             uri = "https://www.google.com",
             risk = AgentRisk.LOW
         )
-        lower.contains("open contacts") -> intentAction(
+        lower.matchesCommand("open contacts") -> intentAction(
             id = "open-contacts",
             target = "Contacts",
             description = "Open contacts",
@@ -407,7 +409,7 @@ object AgentSystemToolPlanner {
             risk = AgentRisk.MEDIUM,
             extras = mapOf("contact_name" to goal.substringAfter(' ').substringAfter(' ').trim())
         )
-        lower.contains("open files") || lower.contains("open file manager") -> intentAction(
+        lower.matchesCommand("open files") || lower.matchesCommand("open file manager") -> intentAction(
             id = "open-files",
             target = "Files",
             description = "Open file picker",
@@ -420,35 +422,14 @@ object AgentSystemToolPlanner {
     }
 
     private fun namedAppSettingsAction(request: AgentRequest, lower: String): AgentAction? {
-        if (!lower.startsWith("open ")) return null
-        if (!lower.contains(" app settings") &&
-            !lower.contains(" app info") &&
-            !lower.contains(" app permissions") &&
-            !lower.contains(" permission settings")
-        ) return null
-        if (lower.contains("current app") ||
-            lower.contains("notification") ||
-            lower.contains("accessibility") ||
-            lower.contains("unknown app") ||
-            lower.contains("screen agent")
-        ) return null
-        val query = lower
-            .removePrefix("open ")
-            .replace("app settings", "")
-            .replace("app info", "")
-            .replace("app permissions", "")
-            .replace("permission settings", "")
-            .trim()
-        if (query.isBlank()) return null
-        val app = request.screen.installedApps.firstOrNull { installed ->
+        val match = Regex("open (.+?) (?:app settings|app info|app permissions|permission settings)[.!]?")
+            .matchEntire(lower) ?: return null
+        val query = match.groupValues[1].trim()
+        val app = request.screen.installedApps.filter { installed ->
             val label = installed.label.lowercase()
             val packageName = installed.packageName.lowercase()
-            label == query ||
-                packageName == query ||
-                label.contains(query) ||
-                query.contains(label) ||
-                packageName.contains(query)
-        } ?: return null
+            label == query || packageName == query
+        }.distinctBy { it.packageName }.singleOrNull() ?: return null
         return intentAction(
             id = "open-named-app-settings",
             target = "${app.label} Settings",
@@ -540,7 +521,7 @@ object AgentSystemToolPlanner {
     )
 
     private fun alarmAction(goal: String, lower: String): AgentAction? {
-        val match = Regex("(\\d{1,2}):(\\d{2})").find(lower)
+        val match = Regex("set alarm(?: at| for)? (\\d{1,2}):(\\d{2})[.!]?", RegexOption.IGNORE_CASE).matchEntire(goal)
         val hour = match?.groupValues?.getOrNull(1)?.toIntOrNull()
         val minute = match?.groupValues?.getOrNull(2)?.toIntOrNull()
         val validTime = hour != null && minute != null && hour in 0..23 && minute in 0..59
@@ -579,11 +560,6 @@ object AgentSystemToolPlanner {
                 if (seconds != null) put("timer_seconds", seconds.toString())
             }
         )
-    }
-
-    private fun normalizeUrl(value: String): String {
-        if (value.isBlank()) return ""
-        return if (value.startsWith("http://") || value.startsWith("https://")) value else "https://$value"
     }
 
     private fun String.removePrefixIgnoreCase(prefix: String): String =
