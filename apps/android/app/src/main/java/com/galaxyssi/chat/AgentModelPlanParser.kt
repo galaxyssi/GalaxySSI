@@ -4,7 +4,17 @@ import org.json.JSONObject
 import java.net.URI
 import java.util.Locale
 
+data class AgentModelPlanRejection(val field: String, val code: String, val detail: String) {
+    fun toJson(): String = JSONObject().put("field", field).put("code", code).put("detail", detail).toString()
+}
+
+data class AgentModelPlanParseResult(val plan: AgentPlan?, val rejection: AgentModelPlanRejection?)
+
 object AgentModelPlanParser {
+    private class Rejected(val reason: AgentModelPlanRejection) : RuntimeException()
+
+    private fun reject(field: String, code: String, detail: String): Nothing =
+        throw Rejected(AgentModelPlanRejection(field, code, detail))
     val allowedKinds = setOf(
         AgentActionKind.READ_SCREEN,
         AgentActionKind.SAVE_SCREEN_KNOWLEDGE,
@@ -30,24 +40,36 @@ object AgentModelPlanParser {
         AgentActionKind.CONTROL_DEVICE
     )
 
-    fun parse(request: AgentRequest, raw: String, settings: AgentModelPlannerSettings): AgentPlan? {
-        val json = extractJson(raw) ?: return null
+    fun parse(request: AgentRequest, raw: String, settings: AgentModelPlannerSettings): AgentPlan? =
+        parseWithDiagnostics(request, raw, settings).plan
+
+    fun parseWithDiagnostics(request: AgentRequest, raw: String, settings: AgentModelPlannerSettings): AgentModelPlanParseResult =
+        try { AgentModelPlanParseResult(parseChecked(request, raw, settings), null) }
+        catch (error: Rejected) { AgentModelPlanParseResult(null, error.reason) }
+
+    private fun parseChecked(request: AgentRequest, raw: String, settings: AgentModelPlannerSettings): AgentPlan {
+        val json = extractJson(raw) ?: reject("$", "invalid_json", "Return one JSON object containing actions.")
         val completionRequirements = AgentCompletionRequirements.parse(json.optJSONObject("completion_requirements"))
-        if (json.has("completion_requirements") && completionRequirements == null) return null
-        if (completionRequirements?.canReplace(request.completionRequirements) == false) return null
-        val input = json.optJSONArray("actions") ?: return null
-        if (input.length() !in 1..settings.maxActions.coerceIn(1, MAX_ACTIONS)) return null
+        if (json.has("completion_requirements") && completionRequirements == null)
+            reject("completion_requirements", "invalid_requirements", "Use the advertised completion requirement schema; JSON syntax is valid.")
+        if (completionRequirements?.canReplace(request.completionRequirements) == false)
+            reject("completion_requirements.reason", "unexplained_requirement_change", "Explain why the previous completion requirements need correction.")
+        val input = json.optJSONArray("actions") ?: reject("actions", "array_required", "Provide a non-empty actions array.")
+        val maxActions = settings.maxActions.coerceIn(1, MAX_ACTIONS)
+        if (input.length() !in 1..maxActions)
+            reject("actions", "batch_size", "Received ${input.length()} actions; this response accepts 1..$maxActions. Continue remaining work in later responses.")
         val refs = mutableMapOf<String, Pair<Int, String>>()
         for (index in 0 until input.length()) {
-            val item = input.optJSONObject(index) ?: return null
-            val ref = normalizedRef(item.optString("ref").ifBlank { "step-${index + 1}" }) ?: return null
-            if (refs.containsKey(ref)) return null
+            val item = input.optJSONObject(index) ?: reject("actions[$index]", "object_required", "Each action must be an object.")
+            val ref = normalizedRef(item.optString("ref").ifBlank { "step-${index + 1}" })
+                ?: reject("actions[$index].ref", "invalid_ref", "Use a 1..48 character alphanumeric, hyphen or underscore reference.")
+            if (refs.containsKey(ref)) reject("actions[$index].ref", "duplicate_ref", "References must be unique within this response.")
             refs[ref] = index to "model-${index + 1}-$ref"
         }
         val actions = mutableListOf<AgentAction>()
         for (index in 0 until input.length()) {
-            val item = input.optJSONObject(index) ?: return null
-            val ref = normalizedRef(item.optString("ref").ifBlank { "step-${index + 1}" }) ?: return null
+            val item = input.getJSONObject(index)
+            val ref = requireNotNull(normalizedRef(item.optString("ref").ifBlank { "step-${index + 1}" }))
             val action = parseAction(
                 request = request,
                 json = item,
@@ -55,10 +77,11 @@ object AgentModelPlanParser {
                 actionId = refs.getValue(ref).second,
                 refs = refs,
                 allowCoordination = settings.multiAgentCoordination
-            ) ?: return null
+            ) ?: reject("actions[$index].parameters", "unresolved_action", "Use an available target and parameters from the advertised tool schema.")
             actions += action
         }
-        if (!hasValidDraftPlanSemantics(request, actions)) return null
+        if (!hasValidDraftPlanSemantics(request, actions))
+            reject("actions", "completion_mixed_with_execution", "DRAFT_PLAN target=task-complete must be the only action in a continuation after observed results. First return executable actions only, then review their receipts in the next response.")
         val plan = AgentPlanFactory.actions(request, actions).copy(
             completionRequirements = completionRequirements ?: request.completionRequirements,
             plannerProfile = "model-action-plan",
@@ -68,9 +91,11 @@ object AgentModelPlanParser {
             rollbackStrategy = json.optString("rollback_strategy").trim().take(500)
                 .ifBlank { "Stop execution and restore the last safe checkpoint." }
         )
-        return plan.takeIf {
-            AgentPlanValidator.validate(it).valid && it.toolGraphDepth() <= settings.maxAgentHops
-        }
+        val validation = AgentPlanValidator.validate(plan)
+        if (!validation.valid) reject("actions", "plan_validation", validation.issues.joinToString("; ").take(1500))
+        if (plan.toolGraphDepth() > settings.maxAgentHops)
+            reject("actions.depends_on", "graph_depth", "Graph depth ${plan.toolGraphDepth()} exceeds this response's ${settings.maxAgentHops}; continue in later responses.")
+        return plan
     }
 
     private fun hasValidDraftPlanSemantics(
@@ -94,16 +119,22 @@ object AgentModelPlanParser {
     ): AgentAction? {
         val kind = runCatching {
             AgentActionKind.valueOf(json.optString("kind").trim().uppercase(Locale.US))
-        }.getOrNull()?.takeIf { it in allowedKinds } ?: return null
+        }.getOrNull()?.takeIf { it in allowedKinds }
+            ?: reject("actions[$index].kind", "unsupported_kind", "Use an advertised action kind.")
         val dependencyRefs = json.optJSONArray("depends_on").stringValues()
         val outputRefs = json.optJSONArray("use_outputs_from").stringValues()
-        if (!allowCoordination && (dependencyRefs.isNotEmpty() || outputRefs.isNotEmpty())) return null
-        if (outputRefs.isNotEmpty() && kind != AgentActionKind.CALL_CONNECTOR) return null
-        if (outputRefs.any { it !in dependencyRefs }) return null
-        val dependencyIds = resolvePriorRefs(dependencyRefs, refs, index) ?: return null
-        val outputSourceIds = resolvePriorRefs(outputRefs, refs, index) ?: return null
+        if (!allowCoordination && (dependencyRefs.isNotEmpty() || outputRefs.isNotEmpty()))
+            reject("actions[$index].depends_on", "coordination_unavailable", "This planner does not allow dependency graphs.")
+        if (outputRefs.isNotEmpty() && kind != AgentActionKind.CALL_CONNECTOR)
+            reject("actions[$index].use_outputs_from", "native_output_substitution", "Native actions must leave use_outputs_from empty. Use depends_on for ordering; read actual receipts before using their values.")
+        if (outputRefs.any { it !in dependencyRefs })
+            reject("actions[$index].use_outputs_from", "missing_dependency", "Each output reference must also appear in depends_on.")
+        val dependencyIds = resolvePriorRefs(dependencyRefs, refs, index)
+            ?: reject("actions[$index].depends_on", "invalid_dependency", "References must name earlier actions in this response, not earlier revisions, this action, or future actions.")
+        val outputSourceIds = resolvePriorRefs(outputRefs, refs, index)
+            ?: reject("actions[$index].use_outputs_from", "invalid_output_reference", "Output references must name earlier actions in this response.")
         val nodeRef = refs.entries.firstOrNull { it.value.second == actionId }?.key ?: return null
-        val resolved = resolveParameters(kind, json.optJSONObject("parameters") ?: JSONObject(), request)
+        val resolved = resolveParameters(kind, json.optJSONObject("parameters") ?: JSONObject(), request, "actions[$index].parameters")
             ?: return null
         val parameters = resolved + mapOf(
             "node_ref" to nodeRef,
@@ -154,7 +185,8 @@ object AgentModelPlanParser {
     private fun resolveParameters(
         kind: AgentActionKind,
         input: JSONObject,
-        request: AgentRequest
+        request: AgentRequest,
+        field: String
     ): Map<String, String>? = when (kind) {
         AgentActionKind.TAP,
         AgentActionKind.LONG_PRESS -> resolveElement(
@@ -227,7 +259,7 @@ object AgentModelPlanParser {
         AgentActionKind.CALL_CONNECTOR,
         AgentActionKind.CONTROL_DEVICE -> resolveConnector(kind, input, request)
 
-        AgentActionKind.CALL_NATIVE_TOOL -> resolveNativeTool(input, request)
+        AgentActionKind.CALL_NATIVE_TOOL -> resolveNativeTool(input, request, field)
 
         AgentActionKind.READ_SCREEN,
         AgentActionKind.SAVE_SCREEN_KNOWLEDGE,
@@ -261,15 +293,16 @@ object AgentModelPlanParser {
         )
     }
 
-    private fun resolveNativeTool(input: JSONObject, request: AgentRequest): Map<String, String>? {
+    private fun resolveNativeTool(input: JSONObject, request: AgentRequest, field: String): Map<String, String>? {
         val toolId = input.optString("tool_id").trim()
         val descriptor = request.runtimeContext.nativeTools.firstOrNull {
             it.id == toolId &&
                 request.runtimeContext.isNativeToolExecutable(it.id)
-        } ?: return null
+        } ?: reject("$field.tool_id", "native_tool_unavailable", "Tool '$toolId' is not executable in the current request inventory. Use an exact available tool ID; do not invent a replacement or change JSON syntax.")
         val arguments = input.optJSONObject("arguments") ?: JSONObject()
         val inputJson = arguments.toString()
-        if (inputJson.length > MAX_NATIVE_TOOL_ARGUMENT_CHARACTERS) return null
+        if (inputJson.length > MAX_NATIVE_TOOL_ARGUMENT_CHARACTERS)
+            reject("$field.arguments", "arguments_too_large", "Arguments contain ${inputJson.length} characters; maximum is $MAX_NATIVE_TOOL_ARGUMENT_CHARACTERS. Split data into separate file operations.")
         val effectiveRisk = if (descriptor.id == AgentMcpNativeTools.CALL_TOOL) {
             AgentMcpToolSecurityPolicy.provisionalRisk(arguments.optString("tool_name")).wireValue
         } else {

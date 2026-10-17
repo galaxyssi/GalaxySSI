@@ -93,6 +93,74 @@ class AgentSupervisedToolGraphParsingTest {
             AgentModelPlannerSettings(maxActions = 1)))
     }
 
+    @Test fun `valid file graph has no rejection and unchanged legacy parser semantics`() {
+        val source = plan(action(1, write.id), action(2, read.id, 1))
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
+        assertNotNull(result.plan)
+        assertNull(result.rejection)
+        assertEquals(AgentModelPlanParser.parse(request(), source, settings)!!.actions, result.plan!!.actions)
+    }
+
+    @Test fun `completion must follow file receipts instead of sharing their batch`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+        val source = plan(action(1, write.id), completion)
+        val result = AgentModelPlanParser.parseWithDiagnostics(request().copy(replanReason = "Review prior result"), source, settings)
+        assertNull(result.plan)
+        assertEquals("completion_mixed_with_execution", result.rejection!!.code)
+        assertEquals("actions", result.rejection!!.field)
+        assertTrue(result.rejection!!.detail.contains("next response"))
+        val repair = AgentSupervisedProjectLoop.formatRepairPrompt(request(), source, result.rejection!!.toJson())
+        assertTrue(repair.contains("completion_mixed_with_execution"))
+        assertTrue(repair.contains("Never mix DRAFT_PLAN/task-complete"))
+    }
+
+    @Test fun `unknown tool feedback identifies inventory failure not invalid JSON`() {
+        val source = plan(action(1, "galaxyssi.unavailable.fixture"))
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
+        assertEquals("native_tool_unavailable", result.rejection!!.code)
+        assertEquals("actions[0].parameters.tool_id", result.rejection!!.field)
+        assertTrue(result.rejection!!.detail.contains("galaxyssi.unavailable.fixture"))
+        assertNull(result.plan)
+    }
+
+    @Test fun `dependency feedback identifies the rejected field and preserves all or nothing admission`() {
+        val source = plan(action(1, write.id), action(2, read.id, 7))
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
+        assertNull(result.plan)
+        assertEquals("invalid_dependency", result.rejection!!.code)
+        assertEquals("actions[1].depends_on", result.rejection!!.field)
+    }
+
+    @Test fun `native output substitution returns actionable feedback`() {
+        val source = plan(action(1, write.id), action(2, read.id, 1)
+            .put("use_outputs_from", JSONArray().put("step-1")))
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
+        assertEquals("native_output_substitution", result.rejection!!.code)
+        assertEquals("actions[1].use_outputs_from", result.rejection!!.field)
+    }
+
+    @Test fun `invalid syntax and malformed requirements have distinct reasons`() {
+        assertEquals("invalid_json", AgentModelPlanParser.parseWithDiagnostics(request(), "not json", settings).rejection!!.code)
+        val source = JSONObject(plan(action(1, read.id))).put("completion_requirements", "bad").toString()
+        assertEquals("invalid_requirements", AgentModelPlanParser.parseWithDiagnostics(request(), source, settings).rejection!!.code)
+    }
+
+    @Test fun `batch feedback reports the effective bound without truncating the plan`() {
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), plan(action(1, write.id), action(2, read.id, 1)),
+            AgentModelPlannerSettings(maxActions = 1))
+        assertNull(result.plan)
+        assertEquals("batch_size", result.rejection!!.code)
+        assertTrue(result.rejection!!.detail.contains("Received 2"))
+        assertTrue(result.rejection!!.detail.contains("1..1"))
+    }
+
+    @Test fun `duplicate references are diagnosed before any execution`() {
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), plan(action(1, write.id), action(1, read.id)), settings)
+        assertNull(result.plan)
+        assertEquals("duplicate_ref", result.rejection!!.code)
+        assertEquals("actions[1].ref", result.rejection!!.field)
+    }
+
     private fun action(index: Int, tool: String, dependency: Int? = null): JSONObject = JSONObject()
         .put("ref", "step-$index").put("kind", "CALL_NATIVE_TOOL").put("target", tool)
         .put("description", "Execute fixture step $index")
