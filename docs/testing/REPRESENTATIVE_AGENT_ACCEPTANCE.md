@@ -603,3 +603,34 @@ the normal composer and verify actual output, not merely a terminal task phase.
   as audio currently carry conservative non-idempotent metadata, unlike hardware
   status reads; this explains their different completion-check behavior. This
   increment neither relaxes those checks nor claims uniform semantic proof.
+- Integrated current main, retaining its browser evidence and Desktop planner
+  improvements. All 186 selected JVM tests passed with zero failures, errors or
+  skips; APK assembly, repository checks and whitespace checks passed. This is
+  focused coverage, not a full-suite pass; the two older static-contract size
+  failures remain outside this selection. Installed 1.5.48 / 1331 in place on
+  S20U only, without clearing data or changing settings.
+- Repeated the original normal-composer battery-plus-storage request through
+  App-selected Auto Codex. Both reads were admitted in one plan revision and
+  executed serially before model review. The final answer correctly reported
+  100% battery and approximately 186.1 decimal GB (173.3 GiB) available. An
+  independent native storage observation corroborated the value. This sample
+  took 51.420 seconds and two model requests, compared with 145.160 seconds and
+  six requests in 1.5.47. No plan repair was recorded. These are two individual
+  samples, not a stable latency benchmark or a claim about provider speed.
+- The battery/storage completion still declares no explicit outcome predicates;
+  its correctness was checked against actual receipts independently. The final
+  screenshot also retains the obsolete process row. Neither gap is claimed
+  fixed by this increment. No running Desktop instance was replaced.
+- Repeated the typo-containing media/call-volume query through the normal
+  composer. It returned media 2/15 and call 4/8 in 73.379 seconds, with one native
+  read and three model requests. One completion-evidence correction was still
+  required; the accepted result bound both stream identities and all four
+  reported values to the real receipt. All six streams and other observed audio
+  settings were identical before and after. No mutation tool executed.
+- Local evidence remains outside Git under the acceptance directory:
+  `readonly-plan-1.5.48-tests/`, `battery-storage-*1.5.48*`,
+  `storage-independent-1.5.48.json`, `audio-readonly-*1.5.48*`,
+  `audio-before-1.5.48.json` and `audio-after-1.5.48.json`.
+  No timer, contact, door, camera, recording or unrelated device was operated;
+  world-model learning settings were not changed. Broader goal-execution
+  acceptance remains incomplete.
