@@ -964,3 +964,57 @@ the normal composer and verify actual output, not merely a terminal task phase.
   `progress-state-1.5.54-tests/`, `progress-*-1.5.54.*` and
   `audio-*-1.5.54.json`. No countdown, contact, door, camera, recording, other
   device or learning setting was operated. Desktop was not modified/restarted.
+
+## 2026-10-17: Android 1.5.55 (1338)
+
+- Bind the shortcut-to-supervised recovery barrier to a host-owned observation
+  contract. An arbitrary successful read no longer authorizes another mutation
+  or completion. Match the original conversation/turn, observer tool/version,
+  input hash and affected subject; require a new successful non-replayed receipt
+  after the original effect. A newer relevant failure cannot borrow old success.
+- Reuse the durable native effect recovery query and add optional observation
+  identity fields. Keep that query on successful-but-unverified receipts and
+  their replay; executor metadata cannot invent a host recovery query. Audio
+  mutation adapters bind their query to the affected stream. Browser operation
+  queries also bind their returned request identity.
+- Correct Android system read-tool declarations: read-only and idempotent, while
+  retaining serial execution and all permission/consent checks. Previously even
+  audio status was classified as a mutation and could not satisfy a read barrier.
+- Store compact host provenance with native observations, preserve the original
+  recovery contract through compact checkpoints, and leave legacy receipts
+  without a contract explicitly unverified instead of starting blind repair.
+  No added polling, background work, database scan or model-selection override.
+- This barrier proves that the relevant state was observed, not that the user's
+  goal was achieved. Existing identity-bound outcome and requested-result gates
+  still decide completion. This is not a claim that all failure/recovery paths
+  or arbitrary model repair strategies are now unified.
+- Extend the debug fixture to use the production audio adapter query with a
+  synthetic no-op effect and an actual read-only Android observation. It checks
+  persistence, compact checkpoints, replay, wrong subject, foreign turn and
+  newer failures without changing any setting or calling a model.
+- Final settled sources passed 191 focused JVM tests in 12 suites, with zero
+  failures, errors or skips. APK assembly, repository checks and whitespace
+  checks passed. During development the tests exposed lost private ownership
+  keys in minimal checkpoints; those keys are now retained. Earlier failed
+  builds/test fixtures were corrected and superseded, not counted as passes.
+- Installed the final 1.5.55 / 1338 APK in place on S20U only. The device fixture
+  passed 13 checks, performed one actual audio-status read, zero device
+  mutations and zero model calls, and removed its dedicated checkpoint. The
+  original effect is synthetic: this is recovery-gate acceptance, not a claim
+  that a real model autonomously repaired an injected device failure.
+- A separate normal-composer request through the App-selected Auto Codex route
+  completed in 62.940 seconds with two model calls and one native read. It
+  reported media 4/15 and voice call 4/8. Independent before/after receipts
+  confirmed all six streams and mode, ringer, microphone and speakerphone state
+  unchanged. Host observation provenance was present in the native action's
+  durable evidence. This is one latency sample, not a performance guarantee.
+- Runtime and operation projections moved from WAITING_RESPONSE/waiting_response
+  to COMPLETED/completed while the phone was in another app. No content in that
+  app was operated. Foreground screenshots and visual reentry were not repeated
+  in this round. The persisted completed debug report retained its timestamps
+  after the final fixture-only APK update; no second model test was submitted.
+- Evidence remains outside Git in `galaxyssi-representative-acceptance`:
+  `bound-recovery-1.5.55-tests/`, `bound-recovery-1.5.55-device.json`,
+  `recovery-request*-1.5.55.json`, `recovery-workspace-*-1.5.55.json` and
+  `audio-*-1.5.55.json`. S26U, watches, contacts, doors, countdowns, camera,
+  recording, learning settings and Desktop were not operated or changed.

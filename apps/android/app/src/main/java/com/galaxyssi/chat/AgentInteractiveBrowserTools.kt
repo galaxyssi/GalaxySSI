@@ -118,7 +118,8 @@ internal object AgentInteractiveBrowserTools {
             effectRecoveryProvider = if (!mutation) null else AgentNativeEffectRecoveryProvider { invocation ->
                 if (invocation.input["operation"] == "request_user_control") null
                 else AgentNativeEffectRecoveryQuery(OBSERVE, "1.2.0",
-                    mapOf("operation" to "operation_status", "request_id" to operationId(invocation.context)))
+                    mapOf("operation" to "operation_status", "request_id" to operationId(invocation.context)),
+                    mapOf("/request_id" to operationId(invocation.context)))
             },
             availabilityProvider = AgentNativeToolAvailabilityProvider { availability() },
             executorId = "galaxyssi.phone_interactive_browser"

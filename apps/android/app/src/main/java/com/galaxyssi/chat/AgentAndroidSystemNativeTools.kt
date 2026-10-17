@@ -280,7 +280,8 @@ object AgentAndroidSystemNativeTools {
         permissions: List<String>,
         schema: () -> AgentNativeJsonSchema,
         execute: (AgentNativeToolInvocation) -> AgentNativeToolExecutionResult
-    ) = definition(context, id, title, description, AgentNativeToolRisk.LOW, capabilities, permissions, emptyList(), schema(), execute)
+    ) = definition(context, id, title, description, AgentNativeToolRisk.LOW, capabilities, permissions, emptyList(), schema(), execute,
+        readOnly = true)
 
     private fun writeTool(
         context: Context,
@@ -305,7 +306,8 @@ object AgentAndroidSystemNativeTools {
         permissions: List<String>,
         consents: List<String>,
         schema: AgentNativeJsonSchema,
-        execute: (AgentNativeToolInvocation) -> AgentNativeToolExecutionResult
+        execute: (AgentNativeToolInvocation) -> AgentNativeToolExecutionResult,
+        readOnly: Boolean = false
     ): AgentNativeToolDefinition {
         val availability = permissionAvailability(context, permissions)
         val descriptor = AgentNativeToolDescriptor(
@@ -325,8 +327,10 @@ object AgentAndroidSystemNativeTools {
             requiredPermissions = permissions.map { AgentNativePermissionRequirement(it, it.substringAfterLast('.')) },
             requiredConsents = consents.map { AgentNativeConsentRequirement(it, it.substringAfterLast('.').replace('_', ' ')) },
             timeoutMillis = 30_000L,
-            idempotency = if (risk.weight >= AgentNativeToolRisk.HIGH.weight) AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED
+            idempotency = if (readOnly) AgentNativeToolIdempotency.IDEMPOTENT
+                else if (risk.weight >= AgentNativeToolRisk.HIGH.weight) AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED
                 else AgentNativeToolIdempotency.NON_IDEMPOTENT,
+            effect = if (readOnly) AgentNativeToolEffect.READ_ONLY else AgentNativeToolEffect.MUTATION,
             availability = availability
         )
         return AgentNativeToolDefinition(
@@ -335,6 +339,12 @@ object AgentAndroidSystemNativeTools {
                 runCatching { execute(invocation) }.getOrElse { failure("android_api_error", it.message ?: it.javaClass.simpleName) }
             },
             executorId = EXECUTOR,
+            effectRecoveryProvider = if (id !in setOf(AUDIO_VOLUME_SET, AUDIO_MUTE_SET)) null else
+                AgentNativeEffectRecoveryProvider { invocation ->
+                    val stream = invocation.input["stream"] as String
+                    AgentNativeEffectRecoveryQuery(AUDIO_STATUS, VERSION, emptyMap(),
+                        mapOf("/streams/$stream/stream" to stream))
+                },
             provenanceMetadata = mapOf("platform" to "android", "contract" to "bounded-system-api-v1"),
             availabilityProvider = AgentNativeToolAvailabilityProvider { permissionAvailability(context, permissions) }
         )

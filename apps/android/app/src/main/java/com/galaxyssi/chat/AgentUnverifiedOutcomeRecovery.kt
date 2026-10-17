@@ -13,6 +13,7 @@ internal object AgentUnverifiedOutcomeRecovery {
             AgentGoalEvidence.permitsSuccess(result) || !AgentSupervisedProjectLoop.needsRunnableReviewer(plan)) return false
         val observed = plan.actions.lastOrNull { it.id == action.id } ?: return false
         return observed.status == AgentActionStatus.COMPLETED &&
+            AgentRecoveryObservationEvidence.hasContract(observed) &&
             AgentGoalEvidence.pendingReceipt(listOf(observed))?.canInspect == true
     }
 
@@ -65,15 +66,13 @@ internal object AgentUnverifiedOutcomeRecovery {
         val originIndex = history.indexOfLast { it.id == origin }
         fun readOnly(action: AgentAction): Boolean = action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
             descriptorFor(action.parameters["tool_id"].orEmpty())?.requiresEffectClaim == false
-        val inspected = originIndex >= 0 && history.drop(originIndex + 1).any {
-            it.status == AgentActionStatus.COMPLETED && it.evidence.isNotBlank() && readOnly(it) &&
-                it.parameters["tool_id"] !in AgentToolInspectionTools.toolIds &&
-                !AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(it)
-        }
-        if (inspected) return null
+        val diagnosis = if (originIndex < 0) "origin_missing" else AgentRecoveryObservationEvidence.diagnose(
+            history[originIndex], connector, history.drop(originIndex + 1), descriptorFor)
+        if (diagnosis == null) return null
         return if (proposed.isNotEmpty() && proposed.all(::readOnly)) null
-        else "unverified_outcome_requires_observation: first inspect the affected state with read-only native tools. " +
-            "A schema lookup alone is not state evidence. Do not repeat or combine mutations, or declare completion before observation."
+        else "unverified_outcome_requires_observation: $diagnosis. First inspect the affected state with the origin's " +
+            "host-provided recovery_query. Unrelated, cached, cross-turn or schema-only reads are not evidence. " +
+            "Do not repeat or combine mutations, or declare completion before observation."
     }
 }
 

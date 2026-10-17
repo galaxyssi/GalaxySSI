@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import org.junit.Assert.*
 import org.junit.Test
+import org.json.JSONObject
 
 class AgentUnverifiedOutcomeRecoveryTest {
     private val originKey = AgentUnverifiedOutcomeRecovery.ORIGIN_ACTION
@@ -111,6 +112,56 @@ class AgentUnverifiedOutcomeRecoveryTest {
         assertFalse(AgentGoalEvidence.permitsSuccess(receipt()))
     }
 
+    @Test fun unrelatedReadDoesNotUnlockEffectsOrCompletion() {
+        val connector = recover()!!.actions.single()
+        for (actions in listOf(emptyList(), listOf(origin()))) {
+            assertNotNull(violation(connector, listOf(origin(), read("galaxyssi.android.battery.status")), actions))
+            assertNotNull(violation(connector, listOf(origin(), read().copy(evidence = "{}")), actions))
+        }
+    }
+
+    @Test fun wrongSubjectCannotProveAffectedStreamWasRead() {
+        val read = editRead { it.getJSONObject("streams").remove("media") }
+        assertTrue(violation(recover()!!.actions.single(), listOf(origin(), read), listOf(origin()))!!
+            .contains("observation_subject_mismatch"))
+    }
+
+    @Test fun staleReplayedForeignOrMismatchedReceiptsCannotUnlockEffects() {
+        val mutations: List<(JSONObject) -> Unit> = listOf(
+            { it.put("replayed", true) }, { it.remove("replayed") }, { it.put("started_at_ms", 99) },
+            { it.put("finished_at_ms", 100) }, { it.put("invocation_id", "effect-invocation") },
+            { it.put("invocation_id", "") }, { it.put("conversation_id", "other") },
+            { it.put("turn_id", "other-turn") }, { it.put("status", "failed") },
+            { it.put("tool_version", "other-version") }, { it.put("tool_id", writeTool) },
+            { it.put("input_sha256", "other-subject") })
+        for (mutate in mutations) {
+            val read = editRead { mutate(it.getJSONObject(AgentRecoveryObservationEvidence.KEY)) }
+            assertNotNull(violation(recover()!!.actions.single(), listOf(origin(), read), listOf(origin())))
+        }
+    }
+
+    @Test fun foreignActionsOrConnectorCannotBorrowAnObservation() {
+        val connector = recover()!!.actions.single()
+        assertNotNull(violation(connector, listOf(origin(), read().copy(parameters = read().parameters +
+            (INTERNAL_TURN_ID to "other"))), listOf(origin())))
+        assertNotNull(violation(connector.copy(parameters = connector.parameters + (INTERNAL_TURN_ID to "other")),
+            listOf(origin(), read()), listOf(origin())))
+    }
+
+    @Test fun latestRelevantFailureCannotBorrowAnOlderSuccess() {
+        assertNotNull(violation(recover()!!.actions.single(), listOf(origin(), read(),
+            read().copy(id = "later", status = AgentActionStatus.FAILED)), listOf(origin())))
+    }
+
+    @Test fun missingContractAndUnavailableObserverStayUnverified() {
+        val connector = recover()!!.actions.single()
+        val missing = origin().copy(evidence = """{"state_verified":false}""")
+        assertFalse(AgentUnverifiedOutcomeRecovery.needsReview(plan(missing), missing, receipt()))
+        assertNotNull(violation(connector, listOf(missing, read()), listOf(origin())))
+        assertNotNull(AgentUnverifiedOutcomeRecovery.observationViolation(connector, listOf(origin(), read()),
+            listOf(origin())) { descriptor(it)?.copy(version = "2.0.0") })
+    }
+
     @Test fun failedUnknownEmptyOrOlderObservationDoesNotUnlockEffects() {
         val connector = recover()!!.actions.single()
         for (read in listOf(read().copy(status = AgentActionStatus.FAILED), read().copy(evidence = ""),
@@ -155,6 +206,8 @@ class AgentUnverifiedOutcomeRecoveryTest {
             assertEquals(origin().id, restored.parameters[originKey])
             assertEquals("true", restored.parameters[phoneKey])
             assertTrue(compact.actionHistory.any { it.id == origin().id })
+            assertTrue(AgentRecoveryObservationEvidence.hasContract(compact.actionHistory.first { it.id == origin().id }))
+            assertNull(violation(restored, compact.actionHistory.filter { it.id == origin().id } + read(), listOf(origin())))
             assertTrue(AgentUnverifiedOutcomeRecovery.isPhoneControl(request().copy(executionHistory = listOf(restored))))
         }
     }
@@ -185,7 +238,10 @@ class AgentUnverifiedOutcomeRecoveryTest {
     private fun origin() = AgentAction("original-effect", AgentActionKind.CALL_NATIVE_TOOL, writeTool, AgentRisk.LOW,
         AgentActionStatus.COMPLETED, "Set media volume", mapOf("tool_id" to writeTool,
             INTERNAL_CONVERSATION_ID to "conversation", INTERNAL_TURN_ID to "turn"), requiresConfirmation = false,
-        evidence = """{"state_verified":false,"requested_level":4,"current_level":3,"metadata":{"goal_status":"unknown"}}""")
+        evidence = JSONObject("""{"state_verified":false,"requested_level":4,"current_level":3,"metadata":{"goal_status":"unknown"}}""")
+            .put(AgentRecoveryObservationEvidence.KEY, proof(writeTool, "effect-invocation", 90, 100)
+                .put("recovery_query", JSONObject(AgentNativeEffectRecoveryQuery(readTool, "1.0.0", emptyMap(),
+                    mapOf("/streams/media/stream" to "media")).toJsonValue()))).toString())
     private fun receipt() = AgentActionResult(origin().id, true, "Unverified", mapOf("goal_status" to "unknown",
         "native_tool_id" to writeTool, "native_tool_output" to origin().evidence))
     private fun plan(action: AgentAction = origin()) = AgentPlan("Set media volume", request().screen, emptyList(), listOf(action),
@@ -194,7 +250,17 @@ class AgentUnverifiedOutcomeRecoveryTest {
         AgentActionStatus.PROPOSED, "Reason", parameters = mapOf("connector_id" to "selected", "model_id" to "user-model",
             "manual_model_id" to "user-model", "manual_target_locked" to "true", "agent_reasoning_effort" to "high"))
     private fun read(tool: String = readTool) = AgentAction("read-state", AgentActionKind.CALL_NATIVE_TOOL, tool, AgentRisk.LOW,
-        AgentActionStatus.COMPLETED, "Inspect", mapOf("tool_id" to tool), evidence = """{"current_level":3}""")
+        AgentActionStatus.COMPLETED, "Inspect", mapOf("tool_id" to tool, INTERNAL_CONVERSATION_ID to "conversation",
+            INTERNAL_TURN_ID to "turn"), evidence = JSONObject("""{"streams":{"media":{"stream":"media","current":3}}}""")
+            .put(AgentRecoveryObservationEvidence.KEY, proof(tool, "read-invocation", 110, 120)).toString())
+    private fun proof(tool: String, invocation: String, start: Long, finish: Long) = JSONObject()
+        .put("tool_id", tool).put("tool_version", "1.0.0").put("status", "succeeded")
+        .put("invocation_id", invocation).put("input_sha256", AgentNativeJsonCodec.sha256(emptyMap<String, Any>()))
+        .put("replayed", false).put("started_at_ms", start).put("finished_at_ms", finish)
+        .put("conversation_id", "conversation").put("turn_id", "turn")
+    private fun editRead(edit: (JSONObject) -> Unit): AgentAction = read().let {
+        it.copy(evidence = JSONObject(it.evidence).apply(edit).toString())
+    }
     private fun descriptor(tool: String): AgentNativeToolDescriptor? {
         if (tool !in AgentToolInspectionTools.toolIds && tool !in listOf(readTool, writeTool)) return null
         return AgentNativeToolDescriptor(tool, "1.0.0", "Test", "Test observation", AgentNativeToolLocation.PHONE,
