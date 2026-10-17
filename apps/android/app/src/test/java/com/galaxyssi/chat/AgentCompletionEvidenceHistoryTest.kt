@@ -31,7 +31,7 @@ class AgentCompletionEvidenceHistoryTest {
     @Test fun completionUsesExecutionEvidenceEvenWhenPromptBudgetDropsTheRequiredSource() {
         val source = action("source", read)
         val filler = (1..80).map { action("unrelated-$it", "galaxyssi.fixture.inspect")
-            .copy(result = "x".repeat(2000), evidence = "x".repeat(2000)) }
+            .copy(result = "Unrelated public observation. ".repeat(80), evidence = "") }
         val plan = plan(listOf(action("navigate", act, "navigate"), source) + filler + connector())
         assertFalse(plan.historyForReplan().any { it.id == source.id })
         assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(requirements,
@@ -165,6 +165,23 @@ class AgentCompletionEvidenceHistoryTest {
         assertEquals(scope.turnId, marker.parameters[INTERNAL_TURN_ID])
         assertFalse(marker.parameters.containsKey("prompt"))
         assertTrue(marker.result.isEmpty())
+    }
+
+    @Test fun compactControlMarkersDoNotHideTheActualProviderFailureFromRecovery() {
+        val failed = connector().copy(status = AgentActionStatus.FAILED,
+            evidence = "Provider connection closed before response", result = "Request failed")
+        val foreign = AgentPlanContinuationScope("other", "turn").bind(failed.copy(id = "foreign"))
+        val plan = plan(listOf(failed, foreign))
+        assertEquals(failed, AgentCompletionEvidenceHistory.latestFailure(plan, scope))
+        val request = AgentRequest(plan.goal, plan.screen, emptyList(), memories = emptyList(),
+            runtimeContext = AgentRuntimeContextBuilder.build("runtime", plan.goal, plan.screen,
+                PermissionMode.FULL_ACCESS, false, false, emptyList(), emptyList()),
+            executionHistory = plan.historyForReplan().filter(scope::owns))
+        val prompt = AgentSupervisedProjectLoop.recoveryPrompt(request, failed, "Provider failed")
+        assertTrue(prompt.contains(failed.evidence))
+        assertFalse(prompt.contains("context-30"))
+        assertNull(AgentCompletionEvidenceHistory.latestFailure(plan.copy(actions = listOf(
+            failed.copy(status = AgentActionStatus.COMPLETED))), scope))
     }
 
     private fun needsPostcondition(history: List<AgentAction>) = AgentCompletionEvidenceHistory.needsBusinessPostcondition(

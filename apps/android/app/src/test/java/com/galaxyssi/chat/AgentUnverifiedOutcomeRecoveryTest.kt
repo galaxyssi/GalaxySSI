@@ -112,6 +112,19 @@ class AgentUnverifiedOutcomeRecoveryTest {
         assertFalse(AgentGoalEvidence.permitsSuccess(receipt()))
     }
 
+    @Test fun recoveryValidationUsesDurableOriginEvidenceOutsideThePromptBudget() {
+        val connector = recover()!!.actions.single()
+        val filler = (1..80).map { read("galaxyssi.fixture.inspect").copy(id = "unrelated-$it",
+            result = "Unrelated public observation. ".repeat(80), evidence = "") }
+        val plan = plan().copy(plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
+            actions = listOf(connector), actionHistory = listOf(origin(), read()) + filler)
+        val projection = plan.historyForReplan()
+        assertFalse(projection.any { it.id == read().id })
+        assertNotNull(violation(connector, projection, listOf(origin())))
+        val history = AgentCompletionEvidenceHistory.resolve(plan, AgentPlanContinuationScope("conversation", "turn"))
+        assertNull(violation(connector, history, listOf(origin())))
+    }
+
     @Test fun unrelatedReadDoesNotUnlockEffectsOrCompletion() {
         val connector = recover()!!.actions.single()
         for (actions in listOf(emptyList(), listOf(origin()))) {

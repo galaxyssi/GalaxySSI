@@ -248,7 +248,7 @@ internal object AgentSupervisedProjectLoop {
 
     private fun List<AgentAction>.containsLedgerObservation(action: AgentAction): Boolean =
         any { candidate ->
-            candidate.id == action.id && candidate.status in setOf(
+            !candidate.isSupervisedProjectConnector() && candidate.id == action.id && candidate.status in setOf(
                 AgentActionStatus.COMPLETED,
                 AgentActionStatus.FAILED,
                 AgentActionStatus.BLOCKED,
@@ -1327,11 +1327,10 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val connector = (plan.actionHistory + plan.actions)
         .lastOrNull(AgentAction::isSupervisedProjectConnector)
         ?: return null
-    val plannerHistory = plan.historyForReplan()
     val durableHistory = plan.historyForNextRevision(revision)
-    val failedAction = plannerHistory.lastOrNull { action ->
-        action.status in setOf(AgentActionStatus.FAILED, AgentActionStatus.BLOCKED)
-    } ?: return null
+    val scope = AgentPlanContinuationScope.resolve(plan, activeConversationContext.conversationId,
+        activeConversationTurnId, sessionId) ?: return null
+    val failedAction = AgentCompletionEvidenceHistory.latestFailure(plan, scope) ?: return null
     val request = supervisedProjectRequest(plan, continuation = true)
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,

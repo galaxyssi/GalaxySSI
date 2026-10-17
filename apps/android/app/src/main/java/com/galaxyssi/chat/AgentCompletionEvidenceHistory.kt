@@ -5,9 +5,13 @@ import org.json.JSONObject
 /** Completion reads durable execution facts, never the token-budgeted planner projection. */
 internal object AgentCompletionEvidenceHistory {
     fun resolve(plan: AgentPlan, scope: AgentPlanContinuationScope): List<AgentAction> =
-        AgentProjectHistoryRetentionPolicy.latestSnapshots(
-            (plan.actionHistory + plan.actions).filter(scope::owns)
-        ).filterNot(AgentAction::isSupervisedProjectConnector)
+        scopedSnapshots(plan, scope).filterNot(AgentAction::isSupervisedProjectConnector)
+
+    fun latestFailure(plan: AgentPlan, scope: AgentPlanContinuationScope): AgentAction? =
+        scopedSnapshots(plan, scope).lastOrNull { it.status in setOf(AgentActionStatus.FAILED, AgentActionStatus.BLOCKED) }
+
+    private fun scopedSnapshots(plan: AgentPlan, scope: AgentPlanContinuationScope) =
+        AgentProjectHistoryRetentionPolicy.latestSnapshots((plan.actionHistory + plan.actions).filter(scope::owns))
 
     fun needsBusinessPostcondition(
         requirements: AgentCompletionRequirements?,
