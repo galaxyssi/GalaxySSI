@@ -130,7 +130,9 @@ object AgentModelPlanParser {
         if (outputRefs.any { it !in dependencyRefs })
             reject("actions[$index].use_outputs_from", "missing_dependency", "Each output reference must also appear in depends_on.")
         val dependencyIds = resolvePriorRefs(dependencyRefs, refs, index)
-            ?: reject("actions[$index].depends_on", "invalid_dependency", "References must name earlier actions in this response, not earlier revisions, this action, or future actions.")
+            ?: reject("actions[$index].depends_on", "invalid_dependency",
+                "Dependencies must use earlier ref values, not id, target, tool IDs, earlier revisions, this action or future actions. " +
+                    "Available earlier refs: " + refs.filterValues { it.first < index }.keys.joinToString(",").ifBlank { "(none)" })
         val outputSourceIds = resolvePriorRefs(outputRefs, refs, index)
             ?: reject("actions[$index].use_outputs_from", "invalid_output_reference", "Output references must name earlier actions in this response.")
         val nodeRef = refs.entries.firstOrNull { it.value.second == actionId }?.key ?: return null

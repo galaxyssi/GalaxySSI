@@ -7,6 +7,33 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun phonePlansAdvertiseReferencesAndHostOwnedSerialReadScheduling() {
+        for (continuation in listOf(false, true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240, phoneControl = true)
+            assertTrue(prompt.contains("\"ref\":\"step_name\""))
+            assertTrue(prompt.contains("\"depends_on\":[],\"use_outputs_from\":[]"))
+            assertTrue(prompt.contains("may share one plan even when concurrency=serial"))
+            assertTrue(prompt.contains("not permission to parallelize tools or UI actions"))
+            assertTrue(prompt.contains("not id, target, tool IDs or previous actions"))
+            assertTrue(prompt.contains("stop the plan before that dependent action"))
+        }
+    }
+
+    @Test fun phoneManifestDistinguishesReadOnlyEffectsFromConcurrencyWithoutRelabelingUnknownTools() {
+        val original = context()
+        val serial = original.nativeTools.first().copy(id = AgentHardwareNativeTools.BATTERY_STATUS,
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT, effect = AgentNativeToolEffect.READ_ONLY)
+        val unknown = serial.copy(id = AgentPhoneUiNativeTools.ACT, effect = null)
+        val tools = listOf(serial, unknown)
+        val phone = original.copy(nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(tools, emptyList(), emptyList()))
+        val prompt = AgentSupervisedProjectPromptTemplate.render(phone, false, 240, phoneControl = true)
+        val readLine = prompt.lineSequence().single { it.startsWith("- ${serial.id}") }
+        val unknownLine = prompt.lineSequence().single { it.startsWith("- ${unknown.id}") }
+        assertTrue(readLine.contains("effect=read_only | concurrency=serial"))
+        assertFalse(unknownLine.contains("effect=read_only"))
+    }
+
     @Test fun inlineBrowserEvidenceGuidanceIsOnlyAddedForAnAvailableBrowser() {
         val original = context()
         val tools = original.nativeTools + original.nativeTools.first().copy(id = AgentInteractiveBrowserTools.ACT)
