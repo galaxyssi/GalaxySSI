@@ -758,3 +758,60 @@ the normal composer and verify actual output, not merely a terminal task phase.
   `csv-*-1.5.50*`, `audio-readonly-*1.5.50*` and `audio-*-1.5.50.json`.
   No timer, contact, door, camera, recording, other device or learning setting
   was operated. No running Desktop instance was replaced.
+
+## 2026-10-17: Android 1.5.51 (1334)
+
+- Generic operation context now projects state from its owned durable runtime
+  session instead of treating the last model-plan checkpoint as current execution
+  state. The operation stores both source turn and runtime session identity;
+  wrong-turn, wrong-session, mixed-plan and older-session observations are rejected.
+- The existing session checkpoint remains the single execution-state authority.
+  Projection reads one owned session only when operation context is requested;
+  it adds no timer, subscription, model call or per-progress ledger append. Full
+  receipts stay in that session, with a bounded, explicitly labelled summary and
+  references in follow-up context. No task history or receipt is deleted.
+- Paused, cancelled, blocked, permission-waiting, failed, remote-waiting and
+  interrupted states are distinguished. Cancellation can still be recognized
+  after the runtime clears its plan. Process change alone does not turn a remote
+  wait into failure. Plan-only output is not executed work, and host completion
+  requires terminal execution, completed actions and their matching successful
+  result with no unverified-outcome marker. This reuses the existing runtime's
+  outcome validation; it is not an independent semantic proof of the task.
+- Accepting a model's completion plan no longer writes `completed` to the generic
+  operation checkpoint. Missing runtime state is unknown, not a fallback success.
+  The timer-specific operation path, dispatch/recovery journal, permission grant
+  logic, actual tools and model selection are unchanged.
+- This does not make every arbitrary intent semantically verified or unify every
+  execution path. Goal records are still established by the supervised plan
+  path; the existing runtime owns pre-plan waits and recovery. The obsolete
+  completed process row and broader goal acceptance remain open.
+- Final settled sources passed 108 focused JVM tests in 10 suites (zero failures,
+  errors or skips), APK assembly, repository checks and whitespace checks. This
+  is a focused regression run, not a full-suite claim. Installed 1.5.51 / 1334 in
+  place on S20U only, preserving application data and settings.
+- Nine dedicated debug-device fixture cases passed: plan admission is not
+  completion; reopened executing, remote-waiting, paused and completed state;
+  permission waiting without dispatch; cancellation after clearing the plan;
+  foreign-runtime rejection; and no new ledger events caused by projection.
+  Dedicated fixture records were cleaned up. This verifies store reopen, not
+  process kill or device reboot.
+- One new normal-composer request through the App-selected Auto Codex route
+  read media and call volume without modifying settings. The recorded runtime
+  was waiting for a response, then completed after 57.056 seconds with two
+  completed model calls, one native read and no repair. A mid-run operation
+  audit captured `planning`, and the final audit projected `completed` from
+  the owned terminal session while the raw goal checkpoint remained `prepared`.
+  The live remote-wait projection was not sampled; that specific projection is
+  covered by the JVM and device fixtures, not claimed as a live observation.
+- The answer reported media 5/15 and voice call 4/8, each tied to the native
+  receipt. Independent before/after reads confirmed all six audio streams,
+  mode, microphone, speakerphone and ringer state unchanged. This is one latency
+  sample, not a percentile or speed-improvement claim.
+- The phone remained in another application during the request. Its contents
+  were not inspected or operated, and visual foreground acceptance is pending;
+  runtime records and receipts, not screenshots, support this result. Evidence
+  remains outside Git under `galaxyssi-representative-acceptance`:
+  `operation-runtime-1.5.51-tests/`, `operation-runtime-1.5.51.json`,
+  `audio-runtime-*-1.5.51.json` and `audio-before/after-1.5.51.json`.
+  No timer, contact, door, camera, recording, other device or learning setting
+  was operated. No running Desktop instance was replaced.

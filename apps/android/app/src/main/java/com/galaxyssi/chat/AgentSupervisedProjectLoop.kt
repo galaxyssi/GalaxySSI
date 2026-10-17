@@ -1206,8 +1206,9 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
 
     AgentDeviceOperationStore(appContext).recordPlan(request.conversationContext.conversationId, request.goal,
-        parsed.completionRequirements, parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true,
-        sourceTurnId = connector.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { request.executionTurnId })
+        parsed.completionRequirements,
+        sourceTurnId = connector.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { request.executionTurnId },
+        sourceSessionId = sessionId)
     val revision = plan.revision + 1
     val durableHistory = plan.historyForNextRevision(revision).map { action ->
         if (action.id == connector.id) {

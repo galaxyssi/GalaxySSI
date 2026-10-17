@@ -23,7 +23,9 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                 val checkpointFixture = intent.getBooleanExtra("checkpoint_fixture", false)
                 val timingFixture = intent.getBooleanExtra("timing_fixture", false)
                 val outcomeRecoveryFixture = intent.getBooleanExtra("outcome_recovery_fixture", false)
+                val operationRuntimeFixture = intent.getBooleanExtra("operation_runtime_fixture", false)
                 val report = when {
+                    operationRuntimeFixture -> AgentOperationRuntimeDeviceFixture.run(context.applicationContext)
                     outcomeRecoveryFixture -> verifyUnverifiedOutcomeRecovery(context.applicationContext)
                     timingFixture -> verifyAgentProcessTiming(context.applicationContext)
                     checkpointFixture -> verifyOperationCheckpoints(context.applicationContext)
@@ -38,6 +40,7 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                     else -> runAudit(context.applicationContext)
                 }
                 val fileName = when {
+                    operationRuntimeFixture -> "native-operation-runtime-fixture.json"
                     outcomeRecoveryFixture -> "native-outcome-recovery-fixture.json"
                     timingFixture -> "native-timing-fixture.json"
                     checkpointFixture -> "native-checkpoint-fixture.json"
@@ -63,6 +66,7 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
         val operation = workspace?.conversationId?.let {
             AgentRunEventStore(context).snapshot(AgentDeviceOperationCheckpoint.runId(it))
         }
+        val projectedOperation = workspace?.conversationId?.let { AgentDeviceOperationStore(context).get(it) }
         return JSONObject().put("workspace_id", workspaceId)
             .put("workspace", workspace?.let {
                 JSONObject(AgentWorkspaceJsonCodec.encode(it))
@@ -71,6 +75,8 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
             .put("operation_ledger_state", operation?.state?.name)
             .put("operation_ledger_event", operation?.lastEvent?.type?.name)
             .put("operation_ledger_payload", operation?.lastEvent?.payload?.let(::JSONObject))
+            .put("operation_projected_status", projectedOperation?.status)
+            .put("operation_projected_context", projectedOperation?.context())
     }
 
     private fun verifyOperationCheckpoints(context: Context): JSONObject {
