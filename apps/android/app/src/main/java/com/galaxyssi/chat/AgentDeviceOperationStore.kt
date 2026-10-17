@@ -20,20 +20,33 @@ internal data class AgentDeviceOperation(
     val replacementSeconds: Int? = null,
     val dispatchedAt: Long = 0,
     val durationVerified: Boolean = false,
-    val sourceTurnId: String = ""
+    val sourceTurnId: String = "",
+    val sourceSessionId: String = ""
 ) {
     val label: String get() = "GalaxySSI-${id.take(8)}"
     fun context(): String = if (kind != "timer") "Scoped executable goal: $goal\n" +
-        "operation_id=$id; source_turn_id=$sourceTurnId; status=$status; completion_requirements=$completionJson; latest_evidence=$evidence. " +
+        "operation_id=$id; source_turn_id=$sourceTurnId; source_session_id=$sourceSessionId; status=$status; completion_requirements=$completionJson; latest_evidence=$evidence. " +
         "This is prior state, not an instruction to replay completed work. Apply the latest user request, inspect current state when needed, and do not repeat prior side effects." else
         "Phone operation: kind=$kind; id=$id; duration_seconds=$seconds; " +
         "desired=$desired; status=$status; dispatch_accepted=$dispatched; evidence=$evidence. " +
         "This is a single phone operation, not a recurring schedule. Observe before retrying; do not create duplicates."
 }
 
-internal class AgentDeviceOperationStore(private val ledger: AgentRunEventStore) {
-    constructor(context: Context) : this(AgentRunEventStore(context.applicationContext))
+internal class AgentDeviceOperationStore(
+    private val ledger: AgentRunEventStore,
+    private val sessionLookup: ((String) -> AgentSessionSnapshot?)? = null
+) {
+    constructor(context: Context) : this(AgentRunEventStore(context.applicationContext), { turnId ->
+        SharedPreferencesAgentSessionStore(context.applicationContext, "task:$turnId").load()
+    })
     fun get(conversationId: String): AgentDeviceOperation? {
+        val saved = checkpoint(conversationId) ?: return null
+        val lookup = sessionLookup ?: return saved
+        if (saved.kind != "agent" || saved.sourceTurnId.isBlank()) return saved
+        return AgentOperationRuntimeProjection.project(saved, runCatching { lookup(saved.sourceTurnId) }.getOrNull())
+    }
+
+    private fun checkpoint(conversationId: String): AgentDeviceOperation? {
         if (conversationId.isBlank()) return null
         val p = ledger.latestEvent(runId(conversationId))
             ?.takeIf(AgentDeviceOperationCheckpoint::isSnapshot)?.payload ?: return null
@@ -45,7 +58,7 @@ internal class AgentDeviceOperationStore(private val ledger: AgentRunEventStore)
             p["goal"] as? String ?: "", p["completion_json"] as? String ?: "",
             (p["replacement_seconds"] as? Number)?.toInt()?.takeIf { it > 0 },
             (p["dispatched_at"] as? Number)?.toLong() ?: 0, p["duration_verified"] == true,
-            p["source_turn_id"] as? String ?: "")
+            p["source_turn_id"] as? String ?: "", p["source_session_id"] as? String ?: "")
     }
 
     fun save(value: AgentDeviceOperation): AgentDeviceOperation {
@@ -67,7 +80,7 @@ internal class AgentDeviceOperationStore(private val ledger: AgentRunEventStore)
                 "goal" to record.goal, "completion_json" to record.completionJson,
                 "replacement_seconds" to (record.replacementSeconds ?: 0),
                 "dispatched_at" to record.dispatchedAt, "duration_verified" to record.durationVerified,
-                "source_turn_id" to record.sourceTurnId)
+                "source_turn_id" to record.sourceTurnId, "source_session_id" to record.sourceSessionId)
         )) != null) { "The phone operation checkpoint could not be saved" }
         return record
     }
@@ -82,14 +95,16 @@ internal class AgentDeviceOperationStore(private val ledger: AgentRunEventStore)
     }
 
     fun recordPlan(conversationId: String, goal: String, requirements: AgentCompletionRequirements?,
-        completed: Boolean = false, sourceTurnId: String = "") {
+        sourceTurnId: String = "", sourceSessionId: String = "") {
         if (conversationId.isBlank()) return
-        val prior = get(conversationId)
+        val prior = checkpoint(conversationId)
         val current = if (prior?.kind == "timer" && AgentDeviceIntent.needsOperationContext(goal)) prior else
-            prior?.takeIf { it.kind == "agent" && it.goal == goal } ?: AgentDeviceOperation(conversationId, kind = "agent", goal = goal)
+            prior?.takeIf { it.kind == "agent" && it.goal == goal && it.sourceTurnId == sourceTurnId &&
+                it.sourceSessionId == sourceSessionId } ?: AgentDeviceOperation(conversationId, kind = "agent", goal = goal)
         save(current.copy(completionJson = requirements?.toJson()?.toString().orEmpty(),
             sourceTurnId = sourceTurnId.ifBlank { current.sourceTurnId },
-            status = if (completed && current.kind != "timer") "completed" else current.status))
+            sourceSessionId = sourceSessionId.ifBlank { current.sourceSessionId },
+            status = if (current.kind == "agent") "prepared" else current.status))
     }
 
     private fun runId(conversationId: String) = AgentDeviceOperationCheckpoint.runId(conversationId)
