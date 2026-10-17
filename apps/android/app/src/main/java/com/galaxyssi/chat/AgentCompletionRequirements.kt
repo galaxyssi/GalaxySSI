@@ -3,17 +3,20 @@ package com.galaxyssi.chat
 import org.json.JSONObject
 import org.json.JSONArray
 
-data class AgentArtifactRequirement(val path: String, val sourceSha256: String = "") {
+data class AgentArtifactRequirement(val path: String, val sourceSha256: String = "", val workspaceId: String = "") {
     fun toJson(): JSONObject = JSONObject().put("path", path).put("source_sha256", sourceSha256)
+        .put("workspace_id", workspaceId)
 
     companion object {
         fun parse(value: JSONObject): AgentArtifactRequirement? {
             val path = value.opt("path") as? String ?: return null
             val source = if (value.has("source_sha256")) value.opt("source_sha256") as? String ?: return null else ""
+            val workspace = if (value.has("workspace_id")) value.opt("workspace_id") as? String ?: return null else ""
             if (path.isBlank() || path.length > 4096 || path.startsWith('/') || '\\' in path || ':' in path ||
                 path.split('/').any { it == ".." || it == "." } || path.any { it.code < 32 }) return null
             if (source.isNotEmpty() && !source.matches(Regex("[a-fA-F0-9]{64}"))) return null
-            return AgentArtifactRequirement(path, source.lowercase(java.util.Locale.ROOT))
+            if (workspace.length > 256 || workspace.any { it.code < 32 } || workspace != workspace.trim()) return null
+            return AgentArtifactRequirement(path, source.lowercase(java.util.Locale.ROOT), workspace)
         }
     }
 }

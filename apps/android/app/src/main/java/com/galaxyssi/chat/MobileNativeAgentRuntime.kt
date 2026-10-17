@@ -623,12 +623,16 @@ internal fun MobileNativeAgent.executeActionUntraced(
     }
     val responseLanguage = action.parameters["response_language"].orEmpty()
     val zh = responseLanguage == "zh" || (responseLanguage.isBlank() && currentGoal.any { it in '\u3400'..'\u9fff' })
-    val observedOutput = if (result.isSuccess) AgentDeviceStateEvidence.normalize(toolId,
+    val normalizedOutput = if (result.isSuccess) AgentDeviceStateEvidence.normalize(toolId,
         AgentGoalEvidence.withDeliveryEvidence(result.output, result.metadata, zh), zh)
         else result.output
+    val observedOutput = if (toolId in setOf(AgentPhoneNativeToolCatalog.WORKSPACE_EXPORT, AgentOnDeviceRuntimeTools.EXECUTE)) {
+        normalizedOutput + ("_artifact_receipt" to mapOf("replayed" to result.receipt.replayed,
+            "invocation_id" to result.receipt.invocationId, "original_invocation_id" to result.receipt.originalInvocationId))
+    } else normalizedOutput
     val renderedOutput = AgentNativeJsonCodec.stringify(observedOutput).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
     val developmentFile = action.parameters[PHONE_DEVELOPMENT_FILE_PARAMETER].orEmpty()
-    val userMessage = if (observedOutput !== result.output) {
+    val userMessage = if (normalizedOutput !== result.output) {
         observedOutput["message"].toString()
     } else if (toolId == AgentOnDeviceRuntimeTools.EXECUTE && developmentFile.isNotBlank()) {
         renderPhoneDevelopmentExecution(result.output, nativeMessage, zh)

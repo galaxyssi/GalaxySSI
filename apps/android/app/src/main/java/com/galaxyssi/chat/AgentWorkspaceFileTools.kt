@@ -342,7 +342,7 @@ class AgentWorkspaceFileTools(
                 val exported = resolvePath(root, relativePath(root, directory.resolve(source.fileName)), allowRoot = false)
                 // Replacement is a complete atomic snapshot; never append to an existing delivery.
                 movePath(temporary, exported, replace = true)
-                mapOf("artifacts" to listOf(mapOf(
+                mapOf("workspace_id" to workspaceId, "artifacts" to listOf(mapOf(
                     "relative_path" to relativePath(root, source), "host_path" to exported.toString(),
                     "size_bytes" to size, "sha256" to hash, "artifact_kind" to "file",
                     "openability" to artifactInspector(exported.toFile(), hash, policy.maxZipUncompressedBytes)
