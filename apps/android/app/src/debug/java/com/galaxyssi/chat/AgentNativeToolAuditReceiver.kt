@@ -24,7 +24,11 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                 val timingFixture = intent.getBooleanExtra("timing_fixture", false)
                 val outcomeRecoveryFixture = intent.getBooleanExtra("outcome_recovery_fixture", false)
                 val operationRuntimeFixture = intent.getBooleanExtra("operation_runtime_fixture", false)
+                val observationEvidenceFixture = intent.getBooleanExtra("observation_evidence_fixture", false)
                 val report = when {
+                    observationEvidenceFixture -> AgentObservationEvidenceDeviceFixture.run {
+                        runSingleTool(context.applicationContext, AgentAndroidSystemNativeTools.AUDIO_STATUS, "", "evidence-freshness")
+                    }
                     operationRuntimeFixture -> AgentOperationRuntimeDeviceFixture.run(context.applicationContext)
                     outcomeRecoveryFixture -> verifyUnverifiedOutcomeRecovery(context.applicationContext)
                     timingFixture -> verifyAgentProcessTiming(context.applicationContext)
@@ -40,6 +44,7 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                     else -> runAudit(context.applicationContext)
                 }
                 val fileName = when {
+                    observationEvidenceFixture -> "native-observation-evidence-fixture.json"
                     operationRuntimeFixture -> "native-operation-runtime-fixture.json"
                     outcomeRecoveryFixture -> "native-outcome-recovery-fixture.json"
                     timingFixture -> "native-timing-fixture.json"

@@ -815,3 +815,55 @@ the normal composer and verify actual output, not merely a terminal task phase.
   `audio-runtime-*-1.5.51.json` and `audio-before/after-1.5.51.json`.
   No timer, contact, door, camera, recording, other device or learning setting
   was operated. No running Desktop instance was replaced.
+
+## 2026-10-17: Android 1.5.52 (1335)
+
+- Tighten the shared observed-outcome gate, rather than adding another
+  task-specific executor. A newer malformed/incomplete read or explicit
+  unverified marker cannot fall back to old successful evidence. A clearly
+  different subject remains independent. Wrapper status, tool identity and
+  uncertainty are preserved when reading nested outputs.
+- A declared `after_tool_id` now requires an actually attempted native action
+  from the task history. A still-running action must be reconciled, not retried
+  merely to satisfy a validator. A fresh observation after a failed attempt can
+  establish the actual desired state without repeating the effect.
+- Record the source action status when a plan revision supersedes it. Proposed
+  actions are not observations; superseded running actions are not assumed
+  unexecuted, and a real rollback is not confused with a never-dispatched plan.
+- Structured diagnoses include the rejected action, field issues and next-step
+  guidance, without copying private field values. The existing model repair
+  loop remains responsible for deciding how to inspect or repair the goal.
+- These gates validate declared postconditions against receipts; they do not
+  prove that every arbitrary user goal was fully and correctly translated into
+  those postconditions. Artifact export freshness, all-path semantic coverage
+  and the completed process-row presentation remain separate open items.
+- Final settled sources passed 204 focused JVM tests in 16 suites with zero
+  failures, errors or skips, APK assembly, repository checks and whitespace
+  checks. An earlier test conflated a missing subject pointer with proof of a
+  different subject; it is now split into explicit regressions for both cases.
+  An initial build preceded the final source-status metadata and was not used
+  as acceptance. This is a focused run, not a full-suite claim.
+- Installed 1.5.52 / 1335 on S20U in place. Seven debug-device checks passed
+  using two actual read-only audio status calls plus synthetic fault copies:
+  real receipt acceptance, failed/incomplete/unverified evidence rejection,
+  rejection of an unobserved effect, and recovery using a new real read receipt.
+  No device mutation or user task was injected; the faults were not presented
+  to a real model, so this is gate/repair-evidence acceptance, not an autonomous
+  model fault-recovery claim.
+- A new normal-composer Auto Codex request completed in 61.256 seconds with
+  two model calls and two native reads, no repair. All three requested results
+  were independently declared and evidence-bound: battery 100%, USB connected
+  and full, and 184699342848 available bytes, correctly rendered as 172.01 GiB.
+  Android battery and filesystem observations corroborated the reported values
+  at their displayed precision. Storage here is the app-private storage volume,
+  not enumeration of shared files or a total across removable volumes.
+- Foreground screenshots show processing and then the final answer with a
+  fixed processed duration; the operation projection likewise changed from
+  executing to completed. The obsolete process row remains visible and is not
+  fixed by this increment. The elapsed time is one sample, not a latency target
+  or percentile claim.
+- Evidence stays outside Git under `galaxyssi-representative-acceptance`:
+  `observation-freshness-1.5.52-tests/`, `observation-freshness-1.5.52.json`,
+  `device-evidence-*-1.5.52.json` and `evidence-1.5.52-*.png`.
+  No timer, contact, door, camera, recording, other device or learning setting
+  was operated. No Desktop source or running instance was changed.

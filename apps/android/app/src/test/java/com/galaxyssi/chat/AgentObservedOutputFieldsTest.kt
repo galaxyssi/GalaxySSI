@@ -136,8 +136,17 @@ class AgentObservedOutputFieldsTest {
     }
 
     @Test fun laterDifferentIdentityDoesNotInvalidateTheRequestedIdentity() {
-        val newer = receipt(audio.replace("\"music\"", "\"other\""), "read-2")
+        val different = JSONObject(audio).apply { getJSONObject("streams").getJSONObject("music").put("stream", "other") }
+        val newer = receipt(different.toString(), "read-2")
         assertNull(AgentObservedOutcomeEvidence.diagnose(requirement(), listOf(receipt(), newer)))
+    }
+
+    @Test fun missingSubjectAtItsDeclaredPathIsNotProofOfAnUnrelatedRead() {
+        val newer = receipt(audio.replace("\"music\"", "\"other\""), "read-2")
+        val result = diagnosis(requirement(), receipt(), newer)
+        assertEquals("subject_not_matched", result.getString("code"))
+        assertEquals("read-2", result.getString("action_id"))
+        assertEquals("field_missing_or_null", result.getJSONArray("fields").getJSONObject(0).getString("issue"))
     }
 
     @Test fun laterMutationRequiresFreshEvidenceEvenWhenPointersAreCorrect() {
