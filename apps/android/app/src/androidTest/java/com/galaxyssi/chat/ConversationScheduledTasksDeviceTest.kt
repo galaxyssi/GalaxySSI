@@ -90,6 +90,67 @@ class ConversationScheduledTasksDeviceTest {
         assertEquals("Check", AgentProactiveTaskStore(context).task(task.taskId)?.action?.prompt)
     }
 
+    @Test fun resultAfterInternalExecutionIsVisibleReadableAndNotRedelivered() = isolated { context ->
+        val transcript = AgentTranscriptStore(context)
+        val conversation = transcript.createConversation("Scheduled delivery ownership", privateMode = true)
+        val task = ConversationScheduledTasks.save(context, conversation.id, command("Check"))
+        val store = AgentProactiveTaskStore(context)
+        val run = store.runs(task.taskId).single().copy(status = AgentProactiveRunStatus.COMPLETED,
+            completedAtMillis = System.currentTimeMillis(), resultSummary = "Useful scheduled result")
+        store.upsertRun(run)
+        transcript.append(AgentTranscriptRole.PROCESS, "Internal execution", conversationId = "proactive:${task.taskId}",
+            turnId = run.runId, taskId = run.runId)
+        assertTrue(ConversationScheduledTasks.deliver(context, task, run))
+        val visible = transcript.page(conversation.id).entries.single()
+        assertEquals(ConversationScheduledReplyPolicy.turnId(conversation.id, run.runId), visible.turnId)
+        assertEquals(1, AgentReplyUnreadStore.count(context, conversation.id))
+        AgentReplyUnreadStore.read(context, conversation.id, listOf(visible))
+        assertEquals(0, AgentReplyUnreadStore.count(context, conversation.id))
+        assertFalse(ConversationScheduledTasks.deliver(context, task, requireNotNull(store.run(run.runId))))
+        assertEquals(1, AgentTranscriptStore(context).page(conversation.id).entries.size)
+        assertEquals(0, AgentReplyUnreadStore.count(context, conversation.id))
+    }
+
+    @Test fun legacyResultIsRecoveredButForeignConversationCopyRemainsHidden() = isolated { context ->
+        val transcript = AgentTranscriptStore(context)
+        val conversation = transcript.createConversation("Legacy result ownership", privateMode = true)
+        val other = transcript.createConversation("Unrelated conversation", privateMode = true)
+        val task = ConversationScheduledTasks.save(context, conversation.id, command("Check"))
+        val run = AgentProactiveTaskStore(context).runs(task.taskId).single()
+        transcript.append(AgentTranscriptRole.PROCESS, "Internal execution", conversationId = "proactive:${task.taskId}",
+            turnId = run.runId, taskId = run.runId)
+        for (id in listOf(conversation.id, other.id)) {
+            transcript.append(AgentTranscriptRole.ASSISTANT, "Useful scheduled result", "scheduled-result:${run.runId}",
+                conversationId = id, turnId = run.runId, taskId = run.runId)
+        }
+        assertEquals(1, transcript.reconcileUnreadReplies())
+        assertEquals(1, AgentReplyUnreadStore.count(context, conversation.id))
+        assertEquals(0, AgentReplyUnreadStore.count(context, other.id))
+        assertTrue(transcript.page(other.id).entries.isEmpty())
+        val visible = AgentTranscriptStore(context).page(conversation.id).entries.single()
+        AgentReplyUnreadStore.read(context, conversation.id, listOf(visible))
+        assertEquals(0, AgentReplyUnreadStore.count(context, conversation.id))
+        assertEquals(0, transcript.reconcileUnreadReplies())
+    }
+
+    @Test fun hiddenLegacyDiagnosticsDoNotLeaveUnreadBadgesOrClearOtherReplies() = isolated { context ->
+        val transcript = AgentTranscriptStore(context)
+        val conversation = transcript.createConversation("Legacy schedule diagnostic", privateMode = true)
+        val key = "scheduled-result:legacy-run"
+        transcript.append(AgentTranscriptRole.ASSISTANT,
+            context.getString(R.string.schedule_unverified_result, "Check",
+                context.getString(R.string.schedule_local_unverified)), key, conversationId = conversation.id)
+        assertEquals(0, AgentReplyUnreadStore.count(context, conversation.id))
+        // Reproduce the persisted marker written by an older app, without changing the message.
+        context.getSharedPreferences("agent_reply_unread", Context.MODE_PRIVATE).edit()
+            .putStringSet(conversation.id, setOf(key)).commit()
+        transcript.append(AgentTranscriptRole.ASSISTANT, "A real unread reply", "final:unseen",
+            conversationId = conversation.id)
+        assertEquals(1, transcript.reconcileUnreadReplies())
+        assertEquals(setOf("final:unseen"), AgentReplyUnreadStore.snapshot(context)[conversation.id])
+        assertEquals(0, transcript.reconcileUnreadReplies())
+    }
+
     @Test fun pauseCancelsPendingRunAndLateResultCannotReviveIt() = isolated { context ->
         val task = ConversationScheduledTasks.save(context, "fixture", command("Check"))
         val store = AgentProactiveTaskStore(context)

@@ -869,7 +869,15 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
 
     internal fun reconcileUnreadReplies(): Int = AgentReplyUnreadStore.snapshot(appContext).entries.sumOf { (id, tokens) ->
         synchronized(entryMutationLock) {
-            val missing = tokens.filterNot { entryDatabase.containsUnreadToken(id, it) }.toSet()
+            val missing = tokens.filter { token ->
+                if (!entryDatabase.containsUnreadToken(id, token)) true
+                else if (token.startsWith(ConversationScheduledReplyPolicy.RESULT_PREFIX)) {
+                    // Inspect only pending schedule results, never scan/decrypt the whole history.
+                    val entry = entryDatabase.findByDedupeKey(id, token)
+                    entry != null && (ConversationScheduledTasks.isQuietLegacyStatus(appContext, entry) ||
+                        ownedEntries(listOf(entry)).isEmpty())
+                } else false
+            }.toSet()
             AgentReplyUnreadStore.discard(appContext, id, missing)
         }
     }
@@ -1151,8 +1159,14 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     fun list(conversationId: String = activeConversation().id): List<AgentTranscriptEntry> =
         ownedEntries(entryDatabase.listConversation(conversationId))
 
-    private fun ownedEntries(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> =
-        AgentTranscriptOwnership.filter(entries, ::conversationIdForTurn, ::resolveMergedConversationId)
+    private fun ownedEntries(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
+        val projected = entries.map { entry ->
+            ConversationScheduledReplyPolicy.projectLegacy(entry, ::conversationIdForTurn,
+                { taskId -> AgentProactiveTaskStore(appContext).task(taskId)?.action?.conversationId },
+                ::resolveMergedConversationId)
+        }
+        return AgentTranscriptOwnership.filter(projected, ::conversationIdForTurn, ::resolveMergedConversationId)
+    }
 
     internal fun latestEntriesByConversation(): Map<String, AgentTranscriptEntry> =
         entryDatabase.latestEntriesByConversation()
