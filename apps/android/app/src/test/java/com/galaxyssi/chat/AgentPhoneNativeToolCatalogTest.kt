@@ -114,6 +114,25 @@ class AgentPhoneNativeToolCatalogTest {
     }
 
     @Test
+    fun exportSchemaDescribesNestedReviewEvidenceAndAcceptsActualReceipts() {
+        val schema = registry().descriptors().single { it.id == AgentPhoneNativeToolCatalog.WORKSPACE_EXPORT }.outputSchema
+        val json = AgentNativeJsonCodec.stringify(schema.document)
+        assertTrue(json.contains("artifacts"))
+        assertTrue(json.contains("relative_path"))
+        assertTrue(json.contains("text_complete"))
+        assertTrue(json.contains("characters_read"))
+        for (text in listOf("value\n49\n", "x".repeat(8193))) {
+            fileTools.writeText("test", "review.csv", text)
+            val result = (fileTools.exportArtifact("test", "review.csv") as AgentWorkspaceFileResult.Success).value
+            assertTrue(AgentNativeJsonSchemaValidator.validate(schema, result).isValid)
+        }
+        fileTools.write("test", "invalid.txt", byteArrayOf(0xc3.toByte(), 0x28))
+        val invalid = (fileTools.exportArtifact("test", "invalid.txt") as AgentWorkspaceFileResult.Success).value
+        assertTrue(AgentNativeJsonSchemaValidator.validate(schema, invalid).isValid)
+        assertFalse(AgentNativeJsonSchemaValidator.validate(schema, mapOf("path" to "review.csv", "openability" to "verified")).isValid)
+    }
+
+    @Test
     fun probesPhoneCapabilitiesOncePerCatalogSnapshot() {
         val probes = AtomicInteger()
         val statuses = readyCapabilityStatuses()

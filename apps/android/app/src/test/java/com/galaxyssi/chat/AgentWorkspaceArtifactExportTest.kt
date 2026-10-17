@@ -25,6 +25,9 @@ class AgentWorkspaceArtifactExportTest {
         val inspection = artifact["openability"] as Map<*, *>
         assertEquals("verified", inspection["status"])
         assertEquals(artifact["sha256"], inspection["sha256"])
+        val review = inspection["details"] as Map<*, *>
+        assertEquals(true, review["text_complete"])
+        assertEquals("alpha=7\nbeta=5\n", review["text"])
         val action = AgentAction("export", AgentActionKind.CALL_NATIVE_TOOL, "file", AgentRisk.MEDIUM,
             AgentActionStatus.COMPLETED, "Export", evidence = JSONObject().put("artifacts", listOf(artifact)).toString())
         assertTrue(AgentArtifactCompletionEvidence.missing(listOf(AgentArtifactRequirement("report.txt")), listOf(action)).isEmpty())
@@ -39,6 +42,8 @@ class AgentWorkspaceArtifactExportTest {
         assertNotEquals(first["sha256"], second["sha256"])
         assertEquals("value\n12\n", File(first["host_path"].toString()).readText())
         assertEquals("value\n15\n", File(second["host_path"].toString()).readText())
+        assertEquals("value\n12\n", ((first["openability"] as Map<*, *>)["details"] as Map<*, *>)["text"])
+        assertEquals("value\n15\n", ((second["openability"] as Map<*, *>)["details"] as Map<*, *>)["text"])
     }
 
     @Test fun `repeated export reuses content identity without duplicate artifacts`() {

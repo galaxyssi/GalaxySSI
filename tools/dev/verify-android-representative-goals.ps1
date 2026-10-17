@@ -74,6 +74,13 @@ try {
     $artifact = $export.output.artifacts[0]
     Check 'Export supplies hash-bound openability evidence' ($artifact.openability.status -eq 'verified' -and
         $artifact.sha256 -eq $artifact.openability.sha256 -and $artifact.relative_path -eq 'fixtures/report.md')
+    Check 'Export review contains the exact complete delivered text' ($artifact.openability.details.text_complete -eq $true -and
+        $artifact.openability.details.text -ceq $unicode.Replace('local fixture','verified fixture'))
+    Write-Text 'fixtures/large.txt' ('x' * 8193)
+    $largeExport = Invoke-Tool 'galaxyssi.workspace.file.export' @{workspace_id=$scope; path='fixtures/large.txt'}
+    Check 'Large export validates without a misleading truncated review' ($largeExport.output.artifacts[0].openability.status -eq 'verified' -and
+        $largeExport.output.artifacts[0].openability.details.text_complete -eq $false -and
+        !$largeExport.output.artifacts[0].openability.details.PSObject.Properties['text'])
     Write-Text 'fixtures/report.md' 'changed draft'
     $secondExport = Invoke-Tool 'galaxyssi.workspace.file.export' @{workspace_id=$scope; path='fixtures/report.md'}
     Check 'Edited source produces a separate delivery version' ($secondExport.output.artifacts[0].sha256 -ne $artifact.sha256 -and

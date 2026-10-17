@@ -257,12 +257,12 @@ object AgentPhoneNativeToolCatalog {
         workspaceDefinition(
             id = WORKSPACE_EXPORT,
             title = "Export workspace file",
-            description = "Export an existing phone workspace file as a stable downloadable artifact with host-owned SHA-256 and openability evidence. Works without Linux or shell execution. Use after write/read to deliver text, CSV, PDF, Office or image files. Export each requested file individually; a directory is not accepted. Unverified openability is not a completed user goal.",
+            description = "Export an existing phone workspace file as a stable downloadable artifact with host-owned SHA-256 and openability evidence. Works without Linux or shell execution. Small UTF-8 files include the exact exported content in openability.details.text when text_complete=true; review that content instead of separately reading it again. Larger files omit text and set text_complete=false: inspect them with bounded read/search tools. Use after write/edit to deliver text, CSV, PDF, Office or image files. Export each requested file individually; a directory is not accepted. Openability does not prove semantic correctness; review actual contents before completion.",
             risk = AgentNativeToolRisk.MEDIUM,
             consentId = WORKSPACE_WRITE_CONSENT,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
             inputSchema = workspacePathInputSchema(),
-            outputSchema = AgentNativeJsonSchema.objectSchema(),
+            outputSchema = workspaceExportSchema(),
             execute = { input -> tools.exportArtifact(input.string("workspace_id"), input.string("path")) },
             encode = { it }
         ),
@@ -1388,6 +1388,29 @@ object AgentPhoneNativeToolCatalog {
             "last_modified_epoch_ms" to AgentNativeJsonSchema.integer(minimum = 0)
         ),
         required = setOf("path", "type", "size_bytes", "last_modified_epoch_ms")
+    )
+
+    private fun workspaceExportSchema() = objectSchema(
+        properties = mapOf("artifacts" to AgentNativeJsonSchema.array(objectSchema(
+            properties = mapOf(
+                "relative_path" to outputPathSchema(),
+                "host_path" to AgentNativeJsonSchema.string(),
+                "size_bytes" to AgentNativeJsonSchema.integer(minimum = 0),
+                "sha256" to sha256Schema(),
+                "artifact_kind" to AgentNativeJsonSchema.string(enumValues = listOf("file")),
+                "openability" to AgentNativeJsonSchema.objectSchema(properties = mapOf(
+                    "status" to AgentNativeJsonSchema.string(enumValues = listOf("verified", "unverified")),
+                    "scope" to AgentNativeJsonSchema.string(),
+                    "sha256" to sha256Schema(),
+                    "details" to AgentNativeJsonSchema.objectSchema(properties = mapOf(
+                        "characters_read" to AgentNativeJsonSchema.integer(minimum = 0),
+                        "text_complete" to AgentNativeJsonSchema.boolean(),
+                        "text" to AgentNativeJsonSchema.string(maxLength = AgentArtifactOpenability.MAX_REVIEW_TEXT_CHARACTERS)
+                    ))
+                ), required = setOf("status", "scope"))
+            ), required = setOf("relative_path", "host_path", "size_bytes", "sha256", "artifact_kind", "openability")
+        ), minItems = 1, maxItems = 1)),
+        required = setOf("artifacts")
     )
 
     private fun mutationSchema() = objectSchema(
