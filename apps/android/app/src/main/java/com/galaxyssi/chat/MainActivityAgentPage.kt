@@ -1759,8 +1759,9 @@ internal fun MainActivity.continueAgentGoalSubmission(
                     .joinToString("\n\n")
             )
         }
-        val pendingOperation = if (AgentDeviceIntent.needsOperationContext(originalGoal))
-            AgentDeviceOperationStore(applicationContext).get(conversationId)?.takeUnless { it.status in setOf("cancelled", "completed") } else null
+        val storedOperation = if (AgentSupervisedProjectContinuationPolicy.wantsContext(originalGoal) &&
+            !PhoneAssistantTaskControl.isReadOnly(turnId)) AgentDeviceOperationStore(applicationContext).get(conversationId) else null
+        val pendingOperation = AgentSupervisedProjectContinuationPolicy.scopedOperation(correctedConversationContext, storedOperation)
         val localConversationContext = if (pendingOperation == null) correctedConversationContext else
             correctedConversationContext.copy(summary = listOf(correctedConversationContext.summary, pendingOperation.context())
                 .filter(String::isNotBlank).joinToString("\n"))
@@ -1804,7 +1805,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
         AgentSupervisedProjectContinuationPolicy.mergedGoal(
             latestRequest = originalGoal.ifBlank { executionGoal },
             conversationContext = localConversationContext,
-            independentRequest = PhoneAssistantTaskControl.isReadOnly(turnId)
+            independentRequest = PhoneAssistantTaskControl.isReadOnly(turnId),
+            operation = storedOperation
         )?.let { resumedGoal ->
             executionGoal = resumedGoal
             clearSupersededAgentFailureEntries(conversationId)
@@ -1812,10 +1814,6 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 "GalaxySSIAgent",
                 "restored supervised phone project context turn=${turnId.take(8)}"
             )
-        }
-        if (pendingOperation?.kind == "agent" && AgentDeviceIntent.followup(originalGoal) != null) {
-            executionGoal = "${pendingOperation.goal}\nCurrent user follow-up: $originalGoal\n" +
-                "Resume the pending operation from its checkpoint and observations, not a recurring schedule."
         }
         val activeTurn = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY ||
             PhoneAssistantTaskControl.isReadOnly(turnId)) {
