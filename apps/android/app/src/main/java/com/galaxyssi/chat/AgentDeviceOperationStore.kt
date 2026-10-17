@@ -30,11 +30,12 @@ internal data class AgentDeviceOperation(
         "This is a single phone operation, not a recurring schedule. Observe before retrying; do not create duplicates."
 }
 
-internal class AgentDeviceOperationStore(context: Context) {
-    private val ledger = AgentRunEventStore(context.applicationContext)
+internal class AgentDeviceOperationStore(private val ledger: AgentRunEventStore) {
+    constructor(context: Context) : this(AgentRunEventStore(context.applicationContext))
     fun get(conversationId: String): AgentDeviceOperation? {
         if (conversationId.isBlank()) return null
-        val p = ledger.latestEvent(runId(conversationId))?.payload ?: return null
+        val p = ledger.latestEvent(runId(conversationId))
+            ?.takeIf(AgentDeviceOperationCheckpoint::isSnapshot)?.payload ?: return null
         return AgentDeviceOperation(conversationId, p["operation_id"] as? String ?: return null,
             p["kind"] as? String ?: return null, (p["seconds"] as? Number)?.toInt() ?: return null,
             p["desired"] as? String ?: "start", p["status"] as? String ?: "unknown",
@@ -48,11 +49,16 @@ internal class AgentDeviceOperationStore(context: Context) {
     fun save(value: AgentDeviceOperation): AgentDeviceOperation {
         require(value.conversationId.isNotBlank() && (value.kind != "timer" || value.seconds > 0))
         val record = value.copy(updatedAt = System.currentTimeMillis())
+        val prior = ledger.latestEvent(runId(record.conversationId))
         check(ledger.appendNext(AgentRunControlEvent(
             conversationId = record.conversationId, messageId = "", taskId = runId(record.conversationId),
             runId = runId(record.conversationId), agentId = "phone-operation", deviceId = "local",
-            type = AgentRunControlEventType.CHECKPOINT_SAVED, sequence = 0,
-            payload = mapOf("snapshot_kind" to "device_operation", "operation_id" to record.id,
+            // Repair only the old generic recovery misclassification, never an actual task cancellation.
+            type = if (prior?.let(AgentDeviceOperationCheckpoint::isMisclassifiedFailure) == true)
+                AgentRunControlEventType.RUN_RECOVERED else AgentRunControlEventType.CHECKPOINT_SAVED,
+            sequence = 0,
+            payload = mapOf("snapshot_kind" to "device_operation", "recovery_mode" to "observation_only",
+                "operation_id" to record.id,
                 "kind" to record.kind, "seconds" to record.seconds, "desired" to record.desired,
                 "status" to record.status, "dispatched" to record.dispatched,
                 "evidence" to record.evidence, "updated_at" to record.updatedAt,
@@ -81,7 +87,23 @@ internal class AgentDeviceOperationStore(context: Context) {
             status = if (completed && current.kind != "timer") "completed" else current.status))
     }
 
-    private fun runId(conversationId: String) = "device-operation:" + AgentNativeJsonCodec.sha256(conversationId)
+    private fun runId(conversationId: String) = AgentDeviceOperationCheckpoint.runId(conversationId)
+}
+
+/** Device-operation snapshots are context, not executable Runs for the generic recovery coordinator. */
+internal object AgentDeviceOperationCheckpoint {
+    fun runId(conversationId: String) = "device-operation:" + AgentNativeJsonCodec.sha256(conversationId)
+
+    fun isSnapshot(event: AgentRunControlEvent): Boolean =
+        event.payload["snapshot_kind"] == "device_operation" &&
+            event.agentId == "phone-operation" && event.deviceId == "local" &&
+            event.conversationId.isNotBlank() && event.runId == runId(event.conversationId) &&
+            event.taskId == event.runId && event.messageId.isBlank() &&
+            (event.payload["operation_id"] as? String)?.isNotBlank() == true
+
+    fun isMisclassifiedFailure(event: AgentRunControlEvent): Boolean = isSnapshot(event) &&
+        event.type == AgentRunControlEventType.RUN_FAILED && event.payload["replay_safe"] == false &&
+        event.payload["reason"] == "interrupted_run_cannot_be_replayed_safely"
 }
 
 internal enum class AgentGoalEvidenceStatus { VERIFIED, DISPATCHED, BLOCKED, UNKNOWN, FAILED }
