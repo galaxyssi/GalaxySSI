@@ -920,3 +920,47 @@ the normal composer and verify actual output, not merely a terminal task phase.
   `readonly-workspace-*-1.5.53.json` and `audio-*-1.5.53.json`.
   No countdown, contact, door, camera, recording, other device or learning setting
   was operated. No Desktop source or running instance was changed.
+
+## 2026-10-17: Android 1.5.54 (1337)
+
+- Separate progress presentation status from animation and runtime controls.
+  Completed tasks use a completion icon; paused, blocked, failed and cancelled
+  tasks retain their own labels and static indicators. Waiting for a response
+  remains live and explicitly says it is waiting, not that a tool is executing.
+- Project stale in-flight action snapshots through the owned runtime phase.
+  Older plan revisions cannot supply the active step. A stale completion hint
+  cannot override an active, paused or failed runtime. Transcript rows without
+  a live runtime reuse the already-resolved execution phase without extra I/O.
+- Keep pause/resume and replanning availability tied to the existing runtime
+  action policy, independently of whether an indicator animates. No execution,
+  transport, retry, model-selection or permission policy is changed.
+- Narration is retained as process history, not promoted to verified action
+  completion. Unexecuted steps in a finished run say "Not executed" rather than
+  promising future execution. Existing completed action receipts are preserved.
+- No additional polling, background job, database scan or timer is introduced.
+- Final settled sources passed 115 focused JVM tests in eight suites, including
+  24 progress-policy cases, with zero failures, errors or skips. APK assembly,
+  repository checks and whitespace checks passed. Earlier builds during review
+  were superseded by the final build before installation; this is not a full
+  Android suite claim.
+- Installed 1.5.54 / 1337 in place on S20U only. The prior completed conversation
+  restored with a completion icon and its original 50-second duration. A new
+  normal-composer request used the App-selected Auto Codex route and completed
+  in 44.019 seconds: two model calls and one native audio-status read. The final
+  answer reported media 5/15 and voice call 4/8. Independent before/after receipts
+  confirmed all six stream values and audio mode, ringer, microphone and
+  speakerphone state unchanged.
+- Runtime audit captured WAITING_RESPONSE and then COMPLETED, with a completed
+  durable operation projection after delivery. Screenshots show "Waiting for
+  response", then the completion icon and a fixed processed duration of 43
+  seconds. The detail panel also shows completion without an active spinner.
+  Returning to the launcher and reopening the App retained the same duration
+  and completed state. No model request was repeated during reentry.
+- Paused, blocked, failed, cancelled, stale-action and cached-phase conflicts
+  were covered by deterministic tests, not induced as real-device failures in
+  this round. This sample establishes UI/state consistency, not a latency
+  percentile or comprehensive end-to-end fault-recovery claim.
+- Local evidence remains outside Git in `galaxyssi-representative-acceptance`:
+  `progress-state-1.5.54-tests/`, `progress-*-1.5.54.*` and
+  `audio-*-1.5.54.json`. No countdown, contact, door, camera, recording, other
+  device or learning setting was operated. Desktop was not modified/restarted.

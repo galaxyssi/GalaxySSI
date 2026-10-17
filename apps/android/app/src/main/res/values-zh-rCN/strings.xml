@@ -1845,6 +1845,10 @@
     <string name="agent_plan_progress_running">进行中</string>
     <string name="agent_plan_progress_complete">完成</string>
     <string name="agent_plan_progress_failed">失败</string>
+    <string name="agent_plan_progress_waiting">等待中</string>
+    <string name="agent_plan_progress_stopped">已停止</string>
+    <string name="agent_plan_progress_not_executed">未执行</string>
+    <string name="agent_plan_progress_recorded">过程记录</string>
     <string name="agent_plan_progress_fallback_understand">确认任务与约束</string>
     <string name="agent_plan_progress_fallback_plan">制定执行计划</string>
     <string name="agent_plan_progress_fallback_execute">执行计划</string>

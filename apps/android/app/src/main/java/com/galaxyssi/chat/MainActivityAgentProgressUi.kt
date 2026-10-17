@@ -31,7 +31,7 @@ internal fun MainActivity.agentPlanProgressSummaryRow(
         isFocusable = true
         contentDescription = getString(R.string.agent_plan_progress_open)
         addView(
-            agentPlanProgressSpinner(presentation.running),
+            agentPlanProgressIndicator(presentation.status),
             FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER)
         )
         setOnClickListener {
@@ -63,7 +63,7 @@ internal fun MainActivity.agentPlanProgressSummaryRow(
         marginEnd = dp(7)
     })
     addView(TextView(this@agentPlanProgressSummaryRow).apply {
-        text = localizedAgentProcessText(presentation.summary)
+        text = agentPlanProgressSummaryText(presentation)
         setTextColor(getColorCompat(R.color.text_secondary))
         textSize = 12f
         includeFontPadding = false
@@ -176,7 +176,7 @@ private fun MainActivity.showAgentPlanProgressOverlay(
     if (presentation.recentActivity.isNotEmpty()) {
         panel.addView(agentPlanCurrentActivity(presentation))
     }
-    if (runtime != null && presentation.running) {
+    if (runtime != null && timelineActions.isNotEmpty()) {
         panel.addView(agentPlanProgressControls(entry, runtime, timelineActions))
     }
     root.addView(panel, FrameLayout.LayoutParams(
@@ -207,13 +207,7 @@ private fun MainActivity.agentPlanProgressHeader(
             includeFontPadding = false
         })
         addView(TextView(this@agentPlanProgressHeader).apply {
-            text = getString(
-                if (presentation.running) {
-                    R.string.agent_plan_progress_live
-                } else {
-                    R.string.agent_plan_progress_finished
-                }
-            )
+            text = getString(presentation.status.labelResource())
             setTextColor(getColorCompat(R.color.text_secondary))
             textSize = 11f
             includeFontPadding = false
@@ -241,11 +235,11 @@ private fun MainActivity.agentPlanProgressHeadline(
     orientation = LinearLayout.HORIZONTAL
     gravity = Gravity.CENTER_VERTICAL
     setPadding(0, dp(13), 0, 0)
-    addView(agentPlanProgressSpinner(presentation.running), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+    addView(agentPlanProgressIndicator(presentation.status), LinearLayout.LayoutParams(dp(16), dp(16)).apply {
         marginEnd = dp(8)
     })
     addView(TextView(this@agentPlanProgressHeadline).apply {
-        text = localizedAgentProcessText(presentation.summary)
+        text = agentPlanProgressSummaryText(presentation)
         setTextColor(getColorCompat(R.color.text_primary))
         textSize = 12.5f
         includeFontPadding = false
@@ -337,16 +331,23 @@ private fun MainActivity.agentPlanProgressStepIndicator(
         setImageResource(R.drawable.ic_agent_progress_complete)
         imageTintList = ColorStateList.valueOf(getColorCompat(R.color.composer_send_icon))
     }
-    AgentInteractiveProgressStepState.ACTIVE -> agentPlanProgressSpinner(running = true)
+    AgentInteractiveProgressStepState.ACTIVE -> agentPlanProgressIndicator(AgentInteractiveProgressStatus.RUNNING)
+    AgentInteractiveProgressStepState.WAITING -> agentPlanProgressIndicator(AgentInteractiveProgressStatus.WAITING_CONFIRMATION).apply {
+        contentDescription = getString(R.string.agent_plan_progress_waiting)
+    }
+    AgentInteractiveProgressStepState.PAUSED -> agentPlanProgressIndicator(AgentInteractiveProgressStatus.PAUSED)
+    AgentInteractiveProgressStepState.STOPPED -> agentPlanProgressIndicator(AgentInteractiveProgressStatus.CANCELLED)
     AgentInteractiveProgressStepState.FAILED -> View(this).apply {
         background = progressRingDrawable(getColorCompat(R.color.unread_red))
     }
-    AgentInteractiveProgressStepState.SUPERSEDED -> ImageView(this).apply {
+    AgentInteractiveProgressStepState.SUPERSEDED,
+    AgentInteractiveProgressStepState.RECORDED -> ImageView(this).apply {
         setImageResource(R.drawable.ic_process_analysis)
         imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_secondary))
         scaleType = ImageView.ScaleType.CENTER_INSIDE
     }
-    AgentInteractiveProgressStepState.PENDING -> View(this).apply {
+    AgentInteractiveProgressStepState.PENDING,
+    AgentInteractiveProgressStepState.NOT_EXECUTED -> View(this).apply {
         background = progressRingDrawable(getColorCompat(R.color.separator))
     }
 }
@@ -493,11 +494,32 @@ private fun MainActivity.agentPlanProgressControlButton(
     setOnClickListener { onClick() }
 }
 
-private fun MainActivity.agentPlanProgressSpinner(running: Boolean): ImageView = ImageView(this).apply {
-    setImageResource(R.drawable.ic_agent_plan_progress)
-    imageTintList = ColorStateList.valueOf(getColorCompat(R.color.text_secondary))
+private fun MainActivity.agentPlanProgressSummaryText(
+    presentation: AgentInteractiveProgressPresentation
+): String = if (presentation.status == AgentInteractiveProgressStatus.RUNNING) {
+    localizedAgentProcessText(presentation.summary)
+} else getString(presentation.status.labelResource())
+
+private fun MainActivity.agentPlanProgressIndicator(status: AgentInteractiveProgressStatus): ImageView = ImageView(this).apply {
+    setImageResource(when (status) {
+        AgentInteractiveProgressStatus.RUNNING,
+        AgentInteractiveProgressStatus.WAITING_RESPONSE -> R.drawable.ic_agent_plan_progress
+        AgentInteractiveProgressStatus.COMPLETED -> R.drawable.ic_agent_progress_complete
+        AgentInteractiveProgressStatus.PAUSED -> R.drawable.ic_conversation_paused
+        AgentInteractiveProgressStatus.FAILED,
+        AgentInteractiveProgressStatus.BLOCKED -> R.drawable.ic_conversation_error
+        AgentInteractiveProgressStatus.CANCELLED -> R.drawable.ic_agent_progress_close
+        AgentInteractiveProgressStatus.WAITING_CONFIRMATION -> R.drawable.ic_process_network
+        AgentInteractiveProgressStatus.UNKNOWN -> R.drawable.ic_process_analysis
+    })
+    contentDescription = getString(status.labelResource())
+    imageTintList = ColorStateList.valueOf(getColorCompat(when (status) {
+        AgentInteractiveProgressStatus.COMPLETED -> R.color.composer_send_icon
+        AgentInteractiveProgressStatus.FAILED -> R.color.unread_red
+        else -> R.color.text_secondary
+    }))
     scaleType = ImageView.ScaleType.CENTER_INSIDE
-    if (running) startAttachedRotation()
+    if (status.animating) startAttachedRotation()
 }
 
 private fun ImageView.startAttachedRotation() {
@@ -534,9 +556,26 @@ private fun MainActivity.progressRingDrawable(color: Int): GradientDrawable = Gr
 private fun AgentInteractiveProgressStepState.labelResource(): Int = when (this) {
     AgentInteractiveProgressStepState.PENDING -> R.string.agent_plan_progress_pending
     AgentInteractiveProgressStepState.ACTIVE -> R.string.agent_plan_progress_running
+    AgentInteractiveProgressStepState.WAITING -> R.string.agent_plan_progress_waiting
+    AgentInteractiveProgressStepState.PAUSED -> R.string.agent_loop_timeline_paused
+    AgentInteractiveProgressStepState.STOPPED -> R.string.agent_plan_progress_stopped
+    AgentInteractiveProgressStepState.NOT_EXECUTED -> R.string.agent_plan_progress_not_executed
+    AgentInteractiveProgressStepState.RECORDED -> R.string.agent_plan_progress_recorded
     AgentInteractiveProgressStepState.COMPLETED -> R.string.agent_plan_progress_complete
     AgentInteractiveProgressStepState.SUPERSEDED -> R.string.agent_plan_progress_revised
     AgentInteractiveProgressStepState.FAILED -> R.string.agent_plan_progress_failed
+}
+
+private fun AgentInteractiveProgressStatus.labelResource(): Int = when (this) {
+    AgentInteractiveProgressStatus.RUNNING -> R.string.agent_plan_progress_live
+    AgentInteractiveProgressStatus.WAITING_RESPONSE -> R.string.agent_status_waiting_response
+    AgentInteractiveProgressStatus.WAITING_CONFIRMATION -> R.string.agent_loop_timeline_waiting_confirmation
+    AgentInteractiveProgressStatus.PAUSED -> R.string.agent_loop_timeline_paused
+    AgentInteractiveProgressStatus.BLOCKED -> R.string.agent_loop_timeline_blocked
+    AgentInteractiveProgressStatus.FAILED -> R.string.agent_loop_timeline_failed
+    AgentInteractiveProgressStatus.CANCELLED -> R.string.agent_loop_timeline_cancelled
+    AgentInteractiveProgressStatus.COMPLETED -> R.string.agent_plan_progress_finished
+    AgentInteractiveProgressStatus.UNKNOWN -> R.string.agent_plan_progress_recorded
 }
 
 private class AgentPlanProgressScrollView(context: Context) : ScrollView(context) {

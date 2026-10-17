@@ -1371,7 +1371,8 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         plan = progressState?.plan,
         phase = progressState?.phase,
         processTexts = narrationEntries.map(AgentTranscriptEntry::text),
-        completed = completed
+        completed = completed,
+        fallbackPhase = execution.phase
     )
     return LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
