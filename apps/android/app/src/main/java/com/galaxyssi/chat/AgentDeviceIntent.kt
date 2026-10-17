@@ -33,6 +33,12 @@ internal object AgentDeviceIntent {
         return total.takeIf { it.isFinite() && it >= 1 && it <= Int.MAX_VALUE && it % 1.0 == 0.0 }?.toInt()
     }
 
+    fun completeDurationSeconds(text: String): Int? {
+        val remainder = duration.replace(text.trim(), "")
+            .replace(Regex("\\s+|\\band\\b|\u548c|\u53c8", RegexOption.IGNORE_CASE), "")
+        return seconds(text).takeIf { remainder.isEmpty() }
+    }
+
     private fun number(value: String): Double? {
         value.toDoubleOrNull()?.let { return it }
         englishNumbers[value]?.let { return it.toDouble() }

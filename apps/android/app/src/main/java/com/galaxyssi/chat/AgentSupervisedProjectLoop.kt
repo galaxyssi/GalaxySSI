@@ -656,7 +656,9 @@ internal object AgentSupervisedProjectRoutingPolicy {
         val executableFileRequest = hasAttachments || classification.intent == AgentTaskIntent.FILE
         val executablePhoneControlRequest = classification.intent == AgentTaskIntent.PHONE_CONTROL &&
             "phone-control-action" in classification.matchedSignals
-        return AgentDeviceIntent.requiresReasoning(goal) || AgentCapability.TASK_EXECUTION in requirements.capabilities ||
+        return AgentDeviceIntent.requiresReasoning(goal) || AgentDeviceShortcutIntent.requiresReasoning(goal) ||
+            AgentInstalledAppLaunchPolicy.isPhoneLocalRequest(goal) ||
+            AgentCapability.TASK_EXECUTION in requirements.capabilities ||
             executablePhoneControlRequest ||
             classification.intent in setOf(
                 AgentTaskIntent.DESKTOP_CONTROL,
