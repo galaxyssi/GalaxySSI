@@ -11,24 +11,11 @@ object AgentSystemToolPlanner {
     fun availableTools(): List<AgentSystemTool> = SYSTEM_TOOLS
 
     internal fun isCameraCaptureGoal(goal: String): Boolean {
-        val lower = goal.trim().lowercase()
-        if (lower.contains("open camera") || lower.contains("take photo") || lower.contains("take a photo") ||
-            lower.contains("launch camera") || lower.contains("use phone camera")) return true
-        val hasCamera = lower.contains("\u76f8\u673a") || lower.contains("\u6444\u50cf\u5934")
-        val hasOpenAction = lower.contains("\u6253\u5f00") || lower.contains("\u542f\u52a8") ||
-            lower.contains("\u8c03\u7528") || lower.contains("\u4f7f\u7528")
-        return lower.contains("\u62cd\u7167") || (hasCamera && hasOpenAction)
+        return AgentDeviceShortcutIntent.parse(goal)?.toolId == AgentVisibleCaptureNativeTools.CAMERA_CAPTURE
     }
 
     internal fun isMicrophoneCaptureGoal(goal: String): Boolean {
-        val lower = goal.trim().lowercase()
-        return lower.contains("record audio") ||
-            lower.contains("record voice") ||
-            lower.contains("record with microphone") ||
-            lower.contains("use microphone to record") ||
-            lower.contains("\u5f55\u97f3") ||
-            (lower.contains("\u9ea6\u514b\u98ce") &&
-                listOf("\u8c03\u7528", "\u4f7f\u7528", "\u5f00\u59cb", "\u5f55\u5236").any(lower::contains))
+        return AgentDeviceShortcutIntent.parse(goal)?.toolId == AgentVisibleCaptureNativeTools.MICROPHONE_RECORD
     }
 
     internal fun timerSecondsForGoal(goal: String): Int? {
@@ -37,6 +24,7 @@ object AgentSystemToolPlanner {
 
     fun actionFor(request: AgentRequest): AgentAction? {
         val goal = request.goal.trim()
+        if (AgentDeviceShortcutIntent.requiresReasoning(goal)) return null
         val lower = goal.lowercase()
         namedAppSettingsAction(request, lower)?.let { return it }
         commonToolAction(goal, lower)?.let { return it }
@@ -323,7 +311,7 @@ object AgentSystemToolPlanner {
             target = "Microphone",
             description = "Record user-visible audio",
             toolId = AgentVisibleCaptureNativeTools.MICROPHONE_RECORD,
-            input = mapOf("max_duration_seconds" to (timerSecondsForGoal(goal)?.coerceIn(1, 30) ?: 5)),
+            input = requireNotNull(AgentDeviceShortcutIntent.parse(goal)).input,
             risk = AgentRisk.MEDIUM
         )
         lower.contains("open gallery") || lower.contains("open photos") -> intentAction(

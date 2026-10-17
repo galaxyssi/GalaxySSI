@@ -1308,7 +1308,7 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun multiplePhoneOperationsBypassWholeGoalShortcutButStillPlanPerSegment() {
+    fun compoundMutationCannotBePartiallyExecutedWithoutReasoningProvider() {
         val nativeTools = listOf(
             nativeDescriptor(AgentHardwareNativeTools.FLASHLIGHT_SET, "Request flashlight state", AgentNativeToolRisk.MEDIUM),
             nativeDescriptor(AgentHardwareNativeTools.BATTERY_STATUS, "Read battery status", AgentNativeToolRisk.LOW)
@@ -1318,7 +1318,9 @@ class AgentSystemToolPlannerTest {
         val planner = RuleBasedAgentPlanner()
 
         assertEquals(null, planner.deterministicLocalAction(request))
-        assertEquals(2, planner.actionsFor(request).size)
+        val action = planner.actionsFor(request).single()
+        assertEquals(AgentActionKind.CALL_CONNECTOR, action.kind)
+        assertEquals(UNAVAILABLE_REASONING_CONNECTOR_ID, action.parameters["connector_id"])
     }
 
     @Test
@@ -1452,12 +1454,8 @@ class AgentSystemToolPlannerTest {
         assertEquals("open-installed-app", openWeChat.id)
         assertEquals(AgentActionKind.OPEN_APP, openWeChat.kind)
         assertEquals("android-local", openWeChat.parameters["execution_scope"])
-        val missingPhoneApp = requireNotNull(
-            planner.deterministicLocalAction(request("\u6253\u5f00\u4e0d\u5b58\u5728\u7684\u5e94\u7528", screen, nativeTools))
-        )
-        assertEquals("open-installed-app-unavailable", missingPhoneApp.id)
-        assertEquals(AgentActionKind.OPEN_APP, missingPhoneApp.kind)
-        assertEquals("", missingPhoneApp.parameters["package"])
+        assertEquals(null,
+            planner.deterministicLocalAction(request("\u6253\u5f00\u4e0d\u5b58\u5728\u7684\u5e94\u7528", screen, nativeTools)))
         assertEquals(
             null,
             planner.deterministicLocalAction(request("\u5728\u7535\u8111\u4e0a\u6253\u5f00\u5fae\u4fe1", screen, nativeTools))

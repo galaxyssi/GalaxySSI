@@ -224,7 +224,7 @@ known failures are recorded in `REPRESENTATIVE_AGENT_ACCEPTANCE.md`.
 
 | Contract | Current evidence | Remaining acceptance |
 | --- | --- | --- |
-| Complete request understanding | Native intent regression tests; real phone-qualified app launch and device-status requests | More selected-model typo/ambiguous-request examples outside timers |
+| Complete request understanding | Exact whole-command parsing for flashlight, volume, camera and recording; unique installed-app resolution; native intent regression tests; real phone-qualified app launch and device-status requests | More selected-model typo/ambiguous-request examples outside timers; remaining legacy shortcut families |
 | Executable intent | Real App-selected Codex plans created, exported and modified CSV documents | Additional document/attachment types and broader routes |
 | Scoped context and pending work | Real expense and original-subdirectory follow-ups preserved unaffected rows; operation-checkpoint recovery tests; real composer Stop persisted cancellation and a separate task then started | Real cancellation followed by process/device restart; broader document types |
 | Observed business outcome | Independently checked source/export/download digests and CSV values; corrupt-artifact rejection | These results do not establish recipient delivery or every external tool adapter |
