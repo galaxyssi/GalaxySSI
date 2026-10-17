@@ -1,6 +1,6 @@
 'use strict';
 
-const { browserFailure, checkBrowserNativeDependencies } = require('./browser-session-engine.cjs');
+const { browserFailure, BrowserOperationError, checkBrowserNativeDependencies, browserRuntimeLaunchOptions } = require('./browser-session-engine.cjs');
 const https = require('node:https');
 
 async function verifyTlsInitialization(page, browser) {
@@ -29,11 +29,16 @@ async function verifyBrowser(load = () => require('playwright'), verifyTls = ver
   try {
     const { chromium } = load();
     checkBrowserNativeDependencies();
-    browser = await chromium.launch({ headless: true, timeout: 45000,
+    browser = await chromium.launch({ headless: true, timeout: 45000, ...browserRuntimeLaunchOptions(),
       ...(process.env.GALAXYSSI_BROWSER_EXECUTABLE ? { executablePath: process.env.GALAXYSSI_BROWSER_EXECUTABLE } : {}) });
     const page = await browser.newPage();
     await page.setContent('<title>GalaxySSI readiness</title><p>Local browser verification</p>', { timeout: 15000 });
     if (await page.title() !== 'GalaxySSI readiness') throw new Error('Readiness page mismatch');
+    if (!(await page.locator('body').innerText()).includes('Local browser verification')) {
+      throw new BrowserOperationError('browser_text_rendering_failed',
+        'Chromium started but visible text did not render. Inspect Fontconfig and the browser pack fonts, then repeat readiness.',
+        { goal_terminal: false });
+    }
     await verifyTls(page, browser);
     await browser.close();
     browser = null;

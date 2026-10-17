@@ -8,6 +8,12 @@
   shared ledger monitor. UI recovery and MQTT receipt lookup waited behind it.
 - Browser availability checked the execution backend but not all browser packs.
   An arbitrary exit code 127 was incorrectly classified as missing packages.
+- S26U still had linux-base 1.1.0 and the published browser 1.61.0 pack used
+  `signalasi-browser`. The renamed client only searched for `galaxyssi-browser`.
+- The published image omitted NSS modules loaded with `dlopen`, including
+  `libsoftokn3.so`. A local DOM worked but HTTPS initialization crashed Chromium.
+  Its Fontconfig file also pointed to system directories instead of relocated
+  pack fonts, producing zero-height text and empty `innerText`.
 
 ## Implementation boundaries
 
@@ -17,16 +23,28 @@
 - New loop events use a deterministic run/turn/revision idempotency key. Old events
   use the run/timestamp index and validate the decrypted turn and revision.
   No whole-run decryption or eager event migration is required for deduplication.
+  JSON round-trips preserve nested arrays/nulls and compare numeric values rather
+  than JVM Int/Long widths without losing large-integer precision.
 - Ledger reads no longer acquire the writer monitor. WAL permits receipt and
   snapshot reads alongside writes; sequence allocation and writes remain atomic.
   Root state and its last event are read in one joined query.
 - Browser tools check linux-base, node-js and browser-automation state and
   capabilities. Guest preflight distinguishes missing executables, incorrect
   PATH and failed Node startup. Unknown mutation outcomes retain reconciliation.
-- Installing the browser or Node pack, when all dependencies are ready, invokes
-  a real Chromium launch and local DOM probe. Installation remains recorded even
+- Installing Linux, browser or Node packs, when all dependencies are ready, invokes
+  a real Chromium launch, visible-text probe and offline loopback TLS initialization
+  check. Linux versions older than 1.3.9 cannot bypass catalog upgrade resolution.
+  Both published and renamed launchers are recognized. Installation remains recorded even
   when startup fails. The result instructs the agent to continue its original
   task, not to treat the local probe as a successful website query.
+- Missing NSS modules are reported as specific native dependencies, with a Linux
+  package repair path. TLS verification is never disabled. Pack fonts are referenced
+  through a small private generated Fontconfig file, without editing signed images.
+- The browser image recipe advances the runtime revision to 1.61.1 while retaining
+  Playwright 1.61.0, includes NSS dynamic modules and their dependencies, and fixes
+  relocated font paths. Image validation rejects missing NSS modules. Publishing
+  the rebuilt signed pack remains a release step; a code change is not proof that
+  an existing downloaded image has been replaced.
 - Message encryption, background plaintext clearing, guest isolation, signed
   packs and browser operation receipts are unchanged.
 
@@ -40,6 +58,9 @@
 - Device: `AgentResumeLedgerDeviceTest` uses isolated fixture databases. It checks
   reads during writer contention, legacy revision lookup, atomic replays, the
   SQL query plan, and migration from database version 2 to 3.
+- Device: `AgentForegroundReloadDeviceTest` holds the real Agent monitor while
+  scheduling a foreground reload; the UI must process its next callback within
+  500 ms. It does not create messages, clear data or change the active session.
 - Device: `AgentInteractiveBrowserDeviceTest#installedBrowserLaunchesAndReadsAPublicPageOnThePhone`,
   with instrumentation argument `browser_runtime_probe=true`, starts Chromium,
   verifies a local DOM, reads `https://example.com`, and closes the test session.

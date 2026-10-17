@@ -198,12 +198,14 @@ class AgentInteractiveBrowserDeviceTest {
         println("PUBLIC_BROWSER_READINESS ${ready.toJson()}")
         assertTrue("Chromium was not verified: ${ready.error?.code}", ready.isSuccess)
         assertEquals(true, ready.output["browser_ready"])
+        assertEquals(true, ready.output["tls_initialized"])
         val page = invoke(AgentInteractiveBrowserTools.ACT,
             mapOf("operation" to "create", "url" to "https://example.com"))
         println("PUBLIC_BROWSER_PAGE ${page.toJson()}")
         try {
             assertTrue("Public page failed: ${page.error?.code}", page.isSuccess)
-            assertTrue("No rendered public page content", page.toJson().contains("Example Domain"))
+            assertEquals("Example Domain", page.output["title"])
+            assertTrue("No rendered public page body", (page.output["text"] as? String).orEmpty().length >= 20)
             assertEquals(false, page.output["business_success_verified"])
         } finally {
             page.output["session_id"]?.let { invoke(AgentInteractiveBrowserTools.ACT,

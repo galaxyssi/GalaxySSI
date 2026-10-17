@@ -1,8 +1,9 @@
 'use strict';
 
-const { randomUUID, randomBytes, timingSafeEqual } = require('node:crypto');
-const { existsSync } = require('node:fs');
+const { randomUUID, randomBytes, timingSafeEqual, createHash } = require('node:crypto');
+const { existsSync, mkdirSync, writeFileSync, renameSync, rmSync } = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 class BrowserOperationError extends Error {
   constructor(code, message, details = {}) {
@@ -27,6 +28,27 @@ function checkBrowserNativeDependencies({ platform = process.platform, arch = pr
         { library, executed: false, goal_terminal: false });
     }
   }
+}
+
+function browserRuntimeLaunchOptions({ platform = process.platform, env = process.env,
+  stateRoot = env.GALAXYSSI_BROWSER_STATE_ROOT || path.join(os.homedir(), '.local/state/galaxyssi-browser') } = {}) {
+  if (platform !== 'linux' || !env.FONTCONFIG_FILE || !env.PLAYWRIGHT_BROWSERS_PATH) return {};
+  const fonts = path.resolve(env.PLAYWRIGHT_BROWSERS_PATH, '../../share/fonts');
+  if (!existsSync(fonts) || !existsSync(env.FONTCONFIG_FILE)) return {};
+  const xml = value => value.replace(/[<>&"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[char]));
+  // Published images relocate fonts but retain /usr/share/fonts in their immutable Fontconfig file.
+  const content = '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">' +
+    `<fontconfig><dir>${xml(fonts)}</dir><include ignore_missing="yes">${xml(env.FONTCONFIG_FILE)}</include></fontconfig>`;
+  const file = path.join(stateRoot, `runtime-fonts-${createHash('sha256').update(content).digest('hex')}.conf`);
+  mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+  if (!existsSync(file)) {
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temporary, content, { mode: 0o600, flag: 'wx' });
+      renameSync(temporary, file);
+    } finally { rmSync(temporary, { force: true }); }
+  }
+  return { env: { ...env, FONTCONFIG_FILE: file } };
 }
 
 function websiteUrl(value) {
@@ -114,7 +136,7 @@ class BrowserSessions {
     if (this.closing) throw new BrowserOperationError('browser_closed', 'Browser service is stopping.');
     if (this.browser?.isConnected()) return this.browser;
     checkBrowserNativeDependencies();
-    this.opening ??= this.chromium.launch({ headless: true, ...this.launchOptions }).then(browser => {
+    this.opening ??= this.chromium.launch({ headless: true, ...browserRuntimeLaunchOptions(), ...this.launchOptions }).then(browser => {
       this.browser = browser;
       browser.on('disconnected', () => {
         for (const session of this.sessions.values()) this.markLost(session);
@@ -473,4 +495,5 @@ class BrowserSessions {
   }
 }
 
-module.exports = { BrowserSessions, BrowserOperationError, websiteUrl, publicUrl, browserFailure, checkBrowserNativeDependencies };
+module.exports = { BrowserSessions, BrowserOperationError, websiteUrl, publicUrl, browserFailure,
+  checkBrowserNativeDependencies, browserRuntimeLaunchOptions };

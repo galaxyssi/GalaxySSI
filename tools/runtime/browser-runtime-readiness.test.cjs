@@ -8,7 +8,7 @@ test('launch, local DOM verification and close are all required', async () => {
   const result = await verifyBrowser(() => ({ chromium: { launch: async () => {
     events.push('launch');
     return { newPage: async () => ({ setContent: async () => events.push('content'),
-      title: async () => 'GalaxySSI readiness' }), close: async () => events.push('close') };
+      title: async () => 'GalaxySSI readiness', locator: () => ({ innerText: async () => 'Local browser verification' }) }), close: async () => events.push('close') };
   } } }), async () => events.push('tls'));
   assert.equal(result.result.browser_ready, true);
   assert.equal(result.result.website_verified, false);
@@ -19,12 +19,22 @@ test('launch, local DOM verification and close are all required', async () => {
 test('local DOM success is not readiness when TLS initialization crashes', async () => {
   let closed = false;
   const result = await verifyBrowser(() => ({ chromium: { launch: async () => ({
-    newPage: async () => ({ setContent: async () => {}, title: async () => 'GalaxySSI readiness' }),
+    newPage: async () => ({ setContent: async () => {}, title: async () => 'GalaxySSI readiness',
+      locator: () => ({ innerText: async () => 'Local browser verification' }) }),
     close: async () => { closed = true; }
   }) } }), async () => { throw new Error('Target page, context or browser has been closed'); });
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'browser_target_closed');
   assert.equal(closed, true);
+});
+
+test('a title without rendered body text is not a usable browser', async () => {
+  const result = await verifyBrowser(() => ({ chromium: { launch: async () => ({
+    newPage: async () => ({ setContent: async () => {}, title: async () => 'GalaxySSI readiness',
+      locator: () => ({ innerText: async () => '' }) }), close: async () => {}
+  }) } }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'browser_text_rendering_failed');
 });
 
 test('real Chromium initializes TLS without a network or certificate-validation exception',

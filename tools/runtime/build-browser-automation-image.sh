@@ -2,6 +2,7 @@
 set -euo pipefail
 
 playwright_version="1.61.0"
+runtime_version="1.61.1"
 playwright_image="mcr.microsoft.com/playwright:v${playwright_version}-noble"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,6 +54,7 @@ browser_roots=("${chromium_roots[@]}" "${headless_roots[@]}" "${ffmpeg_roots[@]}
 cp -aL "${browser_roots[@]}" /out/lib/ms-playwright/
 [[ ! -d /etc/fonts ]] || cp -aL /etc/fonts /out/lib/fontconfig
 [[ ! -d /usr/share/fonts ]] || cp -aL /usr/share/fonts /out/share/fonts
+sed -i 's#<dir>/usr/share/fonts</dir>#<dir prefix="relative">../../share/fonts</dir><dir>/usr/share/fonts</dir>#' /out/lib/fontconfig/fonts.conf
 
 # NSS loads these modules with dlopen, so executable ldd output alone misses HTTPS dependencies.
 nss_modules=()
@@ -133,7 +135,7 @@ printf '%s\n' \
 
 node "$repository_root/tools/runtime/build-runtime-image.mjs" \
   --pack-id browser-automation \
-  --version "$playwright_version" \
+  --version "$runtime_version" \
   --source "$source_root" \
   --output "$output" \
   --license "Apache-2.0 AND BSD-3-Clause AND LGPL-2.1-or-later" \

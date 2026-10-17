@@ -37,7 +37,7 @@ function fixture(packId = 'python-uv') {
     for (const name of ['libsoftokn3.so', 'libfreeblpriv3.so', 'libnssckbi.so']) {
       const path = join(source, 'lib/runtime-libs', name);
       writeFileSync(path, 'fixture shared library');
-      chmodSync(path, 0o755);
+      chmodSync(path, 0o644);
     }
   }
   return { root, source };
