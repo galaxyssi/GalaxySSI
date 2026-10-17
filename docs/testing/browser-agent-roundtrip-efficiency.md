@@ -60,6 +60,8 @@ latency and task completion still depend on the selected provider and website.
 
 - 86 browser tests passed with real desktop Chromium enabled.
 - 230 Codex backend tests passed; focused MQTT planner dispatch tests also passed.
+- Final focused Android rerun passed 32/32 browser adapter and prompt-template
+  tests, including inline success/error evidence and conditional browser guidance.
 - Android debug APK and instrumentation APK built. The extended Android suite
   passed 232/235 tests. Three existing prompt-budget/evidence tests remain failing
   in `AgentSupervisedProjectPromptTest`: planning prefix (8,880 versus 5,800
