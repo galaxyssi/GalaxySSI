@@ -1,5 +1,45 @@
 # Representative Agent Acceptance
 
+## 2026-10-17: Android 1.5.59 (1342), foreground transcript ownership
+
+- The preceding device run persisted completed replies but displayed an empty
+  transcript after waking. Code inspection identified a restoration mismatch:
+  foreground restoration reused the conversation captured before backgrounding,
+  although an incoming intent could have selected another conversation. The
+  window controller requested the current conversation, but the transcript
+  refresh rejected it because its rendered owner still pointed to the old one.
+- Restore the current window's selected conversation and reconcile its rendered
+  owner before refreshing. Do not switch task ownership, repeat a model request,
+  reset a task, delete history, or change model-selection policy.
+- Bind asynchronous transcript reads to a conversation and reset generation.
+  Late latest-page and older-page reads cannot repopulate cleared background
+  state or overwrite another foreground lifecycle, even for the same ID. A
+  rejected old pagination callback cannot release a newer page load's flag.
+- Preserve the existing coalesced worker, page sizes, rendering/scroll policy,
+  and normal current-owner updates. No new polling or recurring work. Initial
+  hydration and rendering also respect the existing background plaintext clear.
+- The legacy workspace tool-call projection observed as RUNNING after completion
+  is outside this UI-only increment and remains a separate follow-up. This is
+  not exhaustive acceptance of all six goal-execution requirements.
+- Final settled sources passed 47 JVM tests across eight focused suites, with
+  zero failures, errors or skips. APK assembly, repository and whitespace checks
+  passed. A build begun during review was superseded by a second build of the
+  settled sources before installation; this is not a full Android suite claim.
+- Installed 1.5.59 / 1342 in place on S20U only. Opening the previously completed
+  dedicated audio-read conversation produced three bound transcript rows (user,
+  process, assistant) in startup logs. The process remained alive and the sampled
+  app logs showed no AndroidRuntime exception. This is log evidence, not visual
+  acceptance of every lifecycle transition.
+- The foreground changed to another application before the screenshot check, so
+  capture was skipped and no further foreground takeover was attempted. A fresh
+  read-only request, waiting-to-completed screenshots, same-process background
+  reentry and a background conversation switch remain pending device acceptance.
+  No new test model request was submitted and no countdown or device setting was
+  changed. Desktop and other devices were not operated.
+- Evidence remains outside Git in `galaxyssi-representative-acceptance`, including
+  `foreground-transcript-1.5.59-tests/` and `foreground-startup-1559.log`. Existing
+  messages, accounts and downloaded assets were retained; no app data was cleared.
+
 ## 2026-10-17: Android 1.5.58 (1341), inferred capability routing
 
 - The 1.5.57 negative command test mentioned PDF only to request an explanation.

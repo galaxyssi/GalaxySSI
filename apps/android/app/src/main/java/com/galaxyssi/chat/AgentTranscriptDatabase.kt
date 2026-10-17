@@ -35,6 +35,9 @@ internal data class AgentTranscriptContentPage(
 )
 
 internal class AgentTranscriptWindow {
+    internal data class LoadOwner(val conversationId: String, val generation: Long)
+
+    private var generation = 0L
     var conversationId: String = ""
         private set
     var entries: List<AgentTranscriptEntry> = emptyList()
@@ -47,6 +50,7 @@ internal class AgentTranscriptWindow {
         private set
 
     fun reset(conversationId: String = "") {
+        generation++
         this.conversationId = conversationId
         entries = emptyList()
         nextBeforeSequence = null
@@ -54,7 +58,13 @@ internal class AgentTranscriptWindow {
         hasMore = false
     }
 
+    fun loadOwner(): LoadOwner = LoadOwner(conversationId, generation)
+
+    fun ownsLoad(owner: LoadOwner): Boolean =
+        owner.conversationId == conversationId && owner.generation == generation
+
     fun replace(conversationId: String, page: AgentTranscriptPage) {
+        if (this.conversationId != conversationId) reset(conversationId)
         this.conversationId = conversationId
         entries = page.entries.distinctBy(AgentTranscriptEntry::id)
         nextBeforeSequence = page.nextBeforeSequence

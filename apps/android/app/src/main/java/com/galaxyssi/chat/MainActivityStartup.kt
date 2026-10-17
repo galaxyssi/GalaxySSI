@@ -263,7 +263,7 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                 traceHydration("lifecycle_cleanup")
                 val previewPage = initialPage
                 runOnUiThread {
-                    if (!isFinishing && !isDestroyed && initialAgentHydrationPending) {
+                    if (!isFinishing && !isDestroyed && !runtimePlaintextCleared && initialAgentHydrationPending) {
                         resetAgentTranscriptRendering(initialConversation.id)
                         agentTranscriptWindow.replace(initialConversation.id, previewPage)
                         agentTranscriptAllLoaded = !previewPage.hasMore
@@ -368,6 +368,7 @@ internal fun MainActivity.scheduleAgentInitialHydration() {
                             )
                         )
                     }
+                    if (runtimePlaintextCleared) return@onSuccess
                     if (agentTranscriptWindow.conversationId != hydration.conversation.id) {
                         resetAgentTranscriptRendering(hydration.conversation.id)
                     }

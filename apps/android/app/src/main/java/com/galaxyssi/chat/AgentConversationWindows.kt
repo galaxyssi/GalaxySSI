@@ -303,6 +303,9 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
         refreshList?.invoke()
         val current = activity.agentTranscriptStore.activeConversation().id
         if (current != conversationId) selected(current)
+        if (!activity.runtimePlaintextCleared && activity.agentRenderedConversationId != current) {
+            activity.resetAgentTranscriptRendering(current)
+        }
         activity.refreshAgentConversationHeader()
         activity.refreshAgentTranscriptWindow(current)
     }
