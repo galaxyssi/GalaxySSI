@@ -578,6 +578,7 @@ internal fun MainActivity.handleAgentRichAction(entry: AgentTranscriptEntry, act
         "set_input" -> setAgentRichInput(action.value, submit = false)
         "submit_prompt" -> setAgentRichInput(action.value, submit = true)
         "open_conversation" -> openAgentConversation(action.value)
+        "edit_scheduled_task" -> editScheduledTask(action.value, entry.conversationId)
         "decide_task_permission" -> runAgentRichTaskDecision(entry, action)
         "decide_remote_task_permission" -> runRemoteAgentTaskDecision(entry, action)
         "recover_agent_task" -> runAgentFailureRecovery(entry, action)

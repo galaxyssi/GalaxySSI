@@ -2,6 +2,10 @@
   "schema": "galaxyssi.i18n-linguistic-data.v1",
   "files": [
     {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ConversationScheduleParser.kt",
+      "reason": "Multilingual recurring schedule command grammar, not displayed UI text"
+    },
+    {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentCodeKeywordPolicy.kt",
       "reason": "Multilingual coding-intent and negation matching corpus; not UI copy"
     },

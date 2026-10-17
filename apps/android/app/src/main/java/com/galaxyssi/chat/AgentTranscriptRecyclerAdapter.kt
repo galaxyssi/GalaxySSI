@@ -206,7 +206,8 @@ internal open class AgentTranscriptRecyclerAdapter(
     }
 
     private fun isControlPayload(entry: AgentTranscriptEntry): Boolean =
-        AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
+        ConversationScheduledTasks.isQuietLegacyStatus(activity, entry) ||
+            AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
             entry.text,
             entry.richOutputJson
         )

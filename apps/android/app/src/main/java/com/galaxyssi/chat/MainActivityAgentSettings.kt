@@ -1319,6 +1319,12 @@ internal fun MainActivity.showFeaturePage(title: String, preserveDesktopControlI
     featurePage.visibility = View.VISIBLE
     agentVoiceConversation?.onNavigationChanged()
     featureTitle.text = title
+    findViewById<TextView>(R.id.featureAction).apply {
+        visibility = View.INVISIBLE
+        setOnClickListener(null)
+        contentDescription = null
+    }
+    featureContent.tag = null
     featureContent.removeAllViews()
     featureContent.gravity = Gravity.NO_GRAVITY
     featureContent.setPadding(
