@@ -224,12 +224,12 @@ known failures are recorded in `REPRESENTATIVE_AGENT_ACCEPTANCE.md`.
 
 | Contract | Current evidence | Remaining acceptance |
 | --- | --- | --- |
-| Complete request understanding | Native intent regression tests; real phone-qualified app launch and device-status requests | More selected-model typo/ambiguous-request examples outside timers |
+| Complete request understanding | Exact whole-command parsing for flashlight, volume, camera and recording; unique installed-app resolution; native intent regression tests; real phone-qualified app launch and device-status requests | More selected-model typo/ambiguous-request examples outside timers; remaining legacy shortcut families |
 | Executable intent | Real App-selected Codex plans created, exported and modified CSV documents | Additional document/attachment types and broader routes |
 | Scoped context and pending work | Real expense and original-subdirectory follow-ups preserved unaffected rows; operation-checkpoint recovery tests; real composer Stop persisted cancellation and a separate task then started | Real cancellation followed by process/device restart; broader document types |
-| Observed business outcome | Independently checked source/export/download digests and CSV values; corrupt-artifact rejection | These results do not establish recipient delivery or every external tool adapter |
+| Observed business outcome | Independently checked source/export/download digests and CSV values; corrupt-artifact rejection; audio inspect/mutate/readback regression tests and S20U read-only state check | Actual volume/mute mutation acceptance, torch observation, recipient delivery and other external adapters |
 | Inspect before repair | Stale-patch rejection, missing-file recovery, permission-continuation and effect-journal tests; real model corrected a rejected duplicate-path batch without user intervention | Native scripted repair is not itself proof of model-directed repair in every failure case |
-| Evidence-constrained reply | Real log analysis ignored embedded tool instructions; artifact completion checks rejected invalid evidence pointers; real history UI now includes paged-out earlier work in duration | Broader model-directed rejection/repair examples and provider routes |
+| Evidence-constrained reply | Real log analysis ignored embedded tool instructions; artifact completion checks rejected invalid evidence pointers; unverified device receipts cannot become confirmed UI replies; real history UI includes paged-out earlier work in duration | Unverified direct-shortcut escalation into model-directed recovery; broader rejection/repair examples and provider routes |
 
 Keep synthetic/native, real-model and rendered-UI results separate. A stop test
 must check runtime, durable workspace and late-response/recovery behavior, not

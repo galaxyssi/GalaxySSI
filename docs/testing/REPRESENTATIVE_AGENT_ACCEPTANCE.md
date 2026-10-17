@@ -263,3 +263,83 @@ the normal composer and verify actual output, not merely a terminal task phase.
   A final text/file block was observed, but a new preview/download tap test was
   deferred when another app occupied the screen. Earlier CSV save/preview evidence
   above must not be counted as a new save of this subdirectory test file.
+
+## 2026-10-17: Android 1.5.41 (1324)
+
+- Flashlight, volume, camera and recording shortcuts now require a complete
+  recognized command. Negation, conditions, additional actions and unsupported
+  parameters preserve the whole request for the App-selected model's existing
+  supervised phone-tool loop. With no available reasoning provider they report
+  that missing capability instead of executing a recognized fragment.
+- Volume no longer takes the first number anywhere in a request or silently
+  clamps it. Recording no longer invents five seconds or clamps a longer request
+  to thirty seconds. The exact shortcut uses the capture adapter's existing
+  duration capability; this is not a new limit on the overall user task.
+- Unknown or ambiguous app names now go to model-directed resolution rather
+  than an empty-package launch or an arbitrary first fuzzy match. Exact unique
+  labels/packages and unambiguous existing partial names retain their local path.
+- This is not a complete audit of every legacy shortcut. Other action families,
+  real-model conditional/typo acceptance and actual volume/flashlight outcome
+  readback remain separate work. These changes do not establish that a device
+  mutation succeeded merely because the parser or tool call succeeded.
+- S20U was upgraded in place to 1.5.41 / 1324. Eleven real native-tool scenarios
+  passed, including exact Unicode readback, CSV arithmetic, rejected stale edits,
+  corrected edits, missing-file recovery, ZIP reopening and hash-bound export
+  review. Dedicated fixture cleanup was verified. Local report:
+  `%TEMP%/galaxyssi-representative-acceptance/representative-b3435b9cfbd242bea4ed07aef922d7a8.json`.
+- No foreground acceptance was run while another app occupied S20U. No new timer,
+  recording, photo, contact operation or real-model request was started in this
+  increment; the native suite is not a model-directed semantic acceptance pass.
+- Expanded JVM run: 132 of 135 tests passed, with three failures in the unchanged
+  `AgentSupervisedProjectPromptTest`: the planning prefix is 8,880 characters
+  against 5,800, and the large continuation exceeds its 24,000-character budget.
+  Two tests check the same planning-prefix boundary. Prompt assembly and these
+  thresholds are unchanged here; the failures are retained, not weakened or
+  counted as passing. XML evidence is in
+  `%TEMP%/galaxyssi-representative-acceptance/intent-1.5.41-expanded-tests/`.
+- The final focused run passed all 73 intent, installed-app, system-planner and
+  recovery tests with zero failures or skips; APK assembly passed. Repository
+  checks and whitespace checks passed. Desktop code and version are unchanged.
+
+## 2026-10-17: Android 1.5.42 (1325)
+
+- Audio volume and mute now inspect the stream before a single mutation and read
+  it back afterwards. An already satisfied request performs no mutation. Ignored
+  setters, readback failures and post-dispatch exceptions retain observed facts
+  without inventing the requested state or automatically replaying the effect.
+- Volume maps to the nearest Android step. A target below the device minimum
+  is reported as unsupported without mutating or silently replacing the goal.
+  Receipts keep the requested percentage, mapped target, actual observed
+  index/range and observation timestamp separately. This proves system stream
+  state at observation time, not speaker loudness or a permanently stable state.
+- Volume/mute advertise their real output schemas and allowed stream names.
+  Audio-status reads include stream identities and a timestamp for scoped model
+  postconditions and inspection before retrying.
+- The UI, verification metadata and resumed receipts preserve unverified state.
+  Flashlight submission was already marked unverified by its native adapter but
+  the UI incorrectly rendered it as turned on/off; that success rewrite is gone.
+  A torch-state observation capability is still absent and is reported explicitly.
+- Requested parameters and dispatch acceptance cannot be used as observed
+  postconditions. A partial model-declared postcondition cannot override an
+  explicitly unverified device receipt.
+- This is not a claim that every external tool adapter has now gained
+  business-outcome verification. Escalating an unverified direct shortcut into
+  model-directed recovery remains separate work; this increment supplies the
+  actual state and prevents false success, not universal autonomous repair.
+- All 113 selected JVM tests passed with zero failures, errors or skips; APK
+  assembly passed. The initial test-compile failure was a fake-port JVM setter
+  name collision, corrected before the passing run. Final XML evidence is in
+  `%TEMP%/galaxyssi-representative-acceptance/device-state-1.5.42-tests/`.
+- Installed 1.5.42 / 1325 on S20U only, with App data retained. Eleven native
+  document/data/export scenarios passed again and fixture cleanup was verified.
+  Report: `%TEMP%/galaxyssi-representative-acceptance/representative-76af089a4bfd489380cea81de23b596b.json`.
+- A separate real native audio-status read completed in 181 ms. All six streams
+  returned identity, current/minimum/maximum volume and mute state, plus a host
+  observation timestamp. Media range 0..15 and call range 1..8 matched Android's
+  independent audio dump. This is a read-only state check, not a successful
+  volume/mute change or model-planned end-to-end acceptance. Report:
+  `%TEMP%/galaxyssi-representative-acceptance/audio-status-1.5.42-20261017.json`.
+- S20U remained in another foreground app, so no audio mutation, flashlight,
+  timer, camera, recording, contact action or new model call was started. The
+  existing three prompt-budget failures documented under 1.5.41 are not in this
+  focused run and are not claimed fixed. Desktop is unchanged.

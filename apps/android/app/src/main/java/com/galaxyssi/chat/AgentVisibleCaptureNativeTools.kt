@@ -365,5 +365,5 @@ object AgentVisibleCaptureNativeTools {
     private const val VERSION = "1.0.0"
     private const val EXECUTOR_ID = "galaxyssi.android_visible_capture"
     private const val DEFAULT_AUDIO_DURATION_SECONDS = 5
-    private const val MAX_AUDIO_DURATION_SECONDS = 30
+    internal const val MAX_AUDIO_DURATION_SECONDS = 30
 }

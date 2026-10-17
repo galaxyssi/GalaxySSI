@@ -46,4 +46,22 @@ class AgentInstalledAppLaunchPolicyTest {
         assertEquals("com.sec.android.app.popupcalculator", action?.parameters?.get("package"))
         assertEquals("android-local", action?.parameters?.get("execution_scope"))
     }
+
+    @Test fun unknownOrAmbiguousAppNamesNeedReasoningInsteadOfAFalseMissingAppConclusion() {
+        val planner = RuleBasedAgentPlanner()
+        val apps = listOf(InstalledAppInfo("Calculator", "com.test.calc"),
+            InstalledAppInfo("Calculator Pro", "com.test.pro"))
+        assertEquals("com.test.calc", planner.findInstalledApp(apps, "Calculator")?.packageName)
+        assertEquals("com.test.pro", planner.findInstalledApp(apps, "com.test.pro")?.packageName)
+        assertNull(planner.findInstalledApp(apps, "Calc"))
+        assertNull(planner.findInstalledApp(apps, "Calculatr"))
+        assertNull(planner.findInstalledApp(apps, "Calculator and take a screenshot"))
+        assertTrue(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution("Open Calculatr on my phone"))
+    }
+
+    @Test fun duplicateLabelsDoNotSelectAnArbitraryApplication() {
+        val apps = listOf(InstalledAppInfo("Notes", "com.test.first"), InstalledAppInfo("Notes", "com.test.second"))
+        assertNull(RuleBasedAgentPlanner().findInstalledApp(apps, "Notes"))
+        assertEquals("com.test.second", RuleBasedAgentPlanner().findInstalledApp(apps, "com.test.second")?.packageName)
+    }
 }
