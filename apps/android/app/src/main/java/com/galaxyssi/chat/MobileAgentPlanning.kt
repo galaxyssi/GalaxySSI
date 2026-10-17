@@ -130,6 +130,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             hasAttachments = request.conversationContext.hasAttachments
         ).intent
         return !request.conversationContext.hasAttachments &&
+            !AgentDeviceShortcutIntent.requiresReasoning(request.goal) &&
             !requirements.complexReasoning &&
             requirements.executionHorizon == AgentExecutionHorizon.INTERACTIVE &&
             AgentCapability.TASK_EXECUTION !in requirements.capabilities &&
@@ -172,6 +173,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         }
         notificationReplyAction(request)?.let { return listOf(it) }
         deterministicLocalAction(request)?.let { return listOf(it) }
+        if (AgentDeviceShortcutIntent.requiresReasoning(request.goal) ||
+            AgentInstalledAppLaunchPolicy.isPhoneLocalRequest(request.goal)
+        ) {
+            return supervisedProjectActions(request) ?: listOf(unavailableReasoningAction(request))
+        }
         supervisedProjectActions(request)?.let { return it }
         manualSelectedConnectorAction(request)?.let { return listOf(it) }
         phoneDevelopmentActions(request)?.let { return it }
@@ -510,6 +516,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     internal fun androidSystemNativeToolAction(request: AgentRequest): AgentAction? {
         val goal = request.goal.trim()
+        if (AgentDeviceShortcutIntent.requiresReasoning(goal)) return null
+        AgentDeviceShortcutIntent.parse(goal)?.takeIf {
+            it.toolId == AgentHardwareNativeTools.FLASHLIGHT_SET ||
+                it.toolId == AgentAndroidSystemNativeTools.AUDIO_VOLUME_SET
+        }?.let { return nativeToolAction(request, it.toolId, JSONObject(it.input)) }
         val lower = goal.lowercase(Locale.US)
         val now = System.currentTimeMillis()
         val batteryReadIntent = lower.hasAny(
@@ -528,16 +539,6 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 )
             )
         val selected: Pair<String, JSONObject> = when {
-            lower.hasAny(
-                "turn on flashlight", "turn on the flashlight", "switch on flashlight", "switch on the flashlight",
-                "open flashlight", "flashlight on", "turn on torch", "turn on the torch", "switch on torch", "torch on",
-                "\u6253\u5f00\u624b\u7535\u7b52", "\u5f00\u542f\u624b\u7535\u7b52", "\u6253\u5f00\u95ea\u5149\u706f", "\u5f00\u542f\u95ea\u5149\u706f"
-            ) -> AgentHardwareNativeTools.FLASHLIGHT_SET to JSONObject().put("enabled", true)
-            lower.hasAny(
-                "turn off flashlight", "turn off the flashlight", "switch off flashlight", "switch off the flashlight",
-                "close flashlight", "flashlight off", "turn off torch", "turn off the torch", "switch off torch", "torch off",
-                "\u5173\u95ed\u624b\u7535\u7b52", "\u5173\u6389\u624b\u7535\u7b52", "\u5173\u95ed\u95ea\u5149\u706f", "\u5173\u6389\u95ea\u5149\u706f"
-            ) -> AgentHardwareNativeTools.FLASHLIGHT_SET to JSONObject().put("enabled", false)
             batteryReadIntent ->
                 AgentHardwareNativeTools.BATTERY_STATUS to JSONObject()
             lower.hasAny("power status", "battery saver status", "power saving status", "\u7535\u6e90\u72b6\u6001", "\u7701\u7535\u6a21\u5f0f\u72b6\u6001", "\u67e5\u770b\u7701\u7535\u6a21\u5f0f") ->
@@ -627,10 +628,6 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 lower.startsWith("\u641c\u7d22\u8054\u7cfb\u4eba") || lower.startsWith("\u67e5\u627e\u8054\u7cfb\u4eba") || lower.startsWith("\u67e5\u8054\u7cfb\u4eba") -> {
                 val query = goal.replace(Regex("^(?i:search contacts|find contact)\\s*|^(?:\u641c\u7d22\u8054\u7cfb\u4eba|\u67e5\u627e\u8054\u7cfb\u4eba|\u67e5\u8054\u7cfb\u4eba)\\s*"), "").trim()
                 AgentAndroidSystemNativeTools.CONTACTS_SEARCH to JSONObject().put("query", query).put("limit", 30)
-            }
-            Regex("(?:volume|\u97f3\u91cf)[^0-9]{0,12}(\\d{1,3})", RegexOption.IGNORE_CASE).find(goal) != null -> {
-                val percent = Regex("(\\d{1,3})").find(goal)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100) ?: 50
-                AgentAndroidSystemNativeTools.AUDIO_VOLUME_SET to JSONObject().put("stream", audioStreamFromGoal(lower)).put("percent", percent)
             }
             lower.hasAny("unmute phone", "unmute media", "\u53d6\u6d88\u9759\u97f3", "\u6062\u590d\u58f0\u97f3") ->
                 AgentAndroidSystemNativeTools.AUDIO_MUTE_SET to JSONObject().put("stream", audioStreamFromGoal(lower)).put("muted", false)
@@ -1145,20 +1142,16 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     internal fun installedAppOpenAction(request: AgentRequest): AgentAction? {
         if (!AgentInstalledAppLaunchPolicy.isPhoneLocalRequest(request.goal)) return null
         val query = appOpenQuery(request.goal)
-        val app = findInstalledApp(request.screen.installedApps, query)
+        val app = findInstalledApp(request.screen.installedApps, query) ?: return null
         return AgentAction(
-            id = if (app == null) "open-installed-app-unavailable" else "open-installed-app",
+            id = "open-installed-app",
             kind = AgentActionKind.OPEN_APP,
-            target = app?.label ?: query,
+            target = app.label,
             risk = AgentRisk.LOW,
             status = AgentActionStatus.PENDING_CONFIRMATION,
-            description = if (app == null) {
-                "The requested app is not available on this phone"
-            } else {
-                "Open ${app.label}"
-            },
+            description = "Open ${app.label}",
             parameters = mapOf(
-                "package" to app?.packageName.orEmpty(),
+                "package" to app.packageName,
                 "execution_scope" to "android-local"
             )
         )
@@ -1169,9 +1162,15 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     internal fun findInstalledApp(apps: List<InstalledAppInfo>, query: String): InstalledAppInfo? {
         val normalizedQuery = query.normalizeAppName()
         if (normalizedQuery.isBlank()) return null
-        return apps.firstOrNull { it.label.normalizeAppName() == normalizedQuery } ?:
-            apps.firstOrNull { it.label.normalizeAppName().contains(normalizedQuery) } ?:
-            apps.firstOrNull { it.packageName.normalizeAppName().contains(normalizedQuery) }
+        val distinct = apps.distinctBy { it.packageName }
+        val exact = distinct.filter {
+            it.label.normalizeAppName() == normalizedQuery || it.packageName.normalizeAppName() == normalizedQuery
+        }
+        if (exact.isNotEmpty()) return exact.singleOrNull()
+        return distinct.filter {
+            it.label.normalizeAppName().contains(normalizedQuery) ||
+                it.packageName.normalizeAppName().contains(normalizedQuery)
+        }.singleOrNull()
     }
 
     internal fun String.removeSuffixIgnoreCase(suffix: String): String =

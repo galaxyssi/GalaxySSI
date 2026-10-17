@@ -263,3 +263,40 @@ the normal composer and verify actual output, not merely a terminal task phase.
   A final text/file block was observed, but a new preview/download tap test was
   deferred when another app occupied the screen. Earlier CSV save/preview evidence
   above must not be counted as a new save of this subdirectory test file.
+
+## 2026-10-17: Android 1.5.41 (1324)
+
+- Flashlight, volume, camera and recording shortcuts now require a complete
+  recognized command. Negation, conditions, additional actions and unsupported
+  parameters preserve the whole request for the App-selected model's existing
+  supervised phone-tool loop. With no available reasoning provider they report
+  that missing capability instead of executing a recognized fragment.
+- Volume no longer takes the first number anywhere in a request or silently
+  clamps it. Recording no longer invents five seconds or clamps a longer request
+  to thirty seconds. The exact shortcut uses the capture adapter's existing
+  duration capability; this is not a new limit on the overall user task.
+- Unknown or ambiguous app names now go to model-directed resolution rather
+  than an empty-package launch or an arbitrary first fuzzy match. Exact unique
+  labels/packages and unambiguous existing partial names retain their local path.
+- This is not a complete audit of every legacy shortcut. Other action families,
+  real-model conditional/typo acceptance and actual volume/flashlight outcome
+  readback remain separate work. These changes do not establish that a device
+  mutation succeeded merely because the parser or tool call succeeded.
+- S20U was upgraded in place to 1.5.41 / 1324. Eleven real native-tool scenarios
+  passed, including exact Unicode readback, CSV arithmetic, rejected stale edits,
+  corrected edits, missing-file recovery, ZIP reopening and hash-bound export
+  review. Dedicated fixture cleanup was verified. Local report:
+  `%TEMP%/galaxyssi-representative-acceptance/representative-b3435b9cfbd242bea4ed07aef922d7a8.json`.
+- No foreground acceptance was run while another app occupied S20U. No new timer,
+  recording, photo, contact operation or real-model request was started in this
+  increment; the native suite is not a model-directed semantic acceptance pass.
+- Expanded JVM run: 132 of 135 tests passed, with three failures in the unchanged
+  `AgentSupervisedProjectPromptTest`: the planning prefix is 8,880 characters
+  against 5,800, and the large continuation exceeds its 24,000-character budget.
+  Two tests check the same planning-prefix boundary. Prompt assembly and these
+  thresholds are unchanged here; the failures are retained, not weakened or
+  counted as passing. XML evidence is in
+  `%TEMP%/galaxyssi-representative-acceptance/intent-1.5.41-expanded-tests/`.
+- The final focused run passed all 73 intent, installed-app, system-planner and
+  recovery tests with zero failures or skips; APK assembly passed. Repository
+  checks and whitespace checks passed. Desktop code and version are unchanged.
