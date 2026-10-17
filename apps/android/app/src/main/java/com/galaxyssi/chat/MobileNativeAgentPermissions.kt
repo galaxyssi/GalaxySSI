@@ -40,7 +40,8 @@ internal fun MobileNativeAgent.continueAfterAndroidPermission(expected: AgentRun
         safetySettingsStore.load().executionPaused) return snapshot()
     // Clearing the gate and persisting the ready plan is idempotent; the existing node journal owns dispatch.
     val loop = executionLoop.snapshot
-    if (loop?.phase == AgentExecutionLoopPhase.BLOCKED || loop?.phase == AgentExecutionLoopPhase.PAUSED) {
+    if (loop?.phase == AgentExecutionLoopPhase.PAUSED) return snapshot()
+    if (loop?.phase == AgentExecutionLoopPhase.BLOCKED) {
         if (!advanceExecutionLoop(AgentExecutionLoopPhase.PLAN, "Android permission granted; rechecking original action",
                 pending.actionId, retry = loop.phase.isTerminal)) return snapshot()
     } else if (loop?.phase?.isTerminal == true) return snapshot()

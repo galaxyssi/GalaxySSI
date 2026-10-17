@@ -361,7 +361,8 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
     }.getOrDefault("")
     val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank { persistedRunId }
     val run = agentRunRecorder.run(runId) ?: return
-    val projection = AgentExecutionLoopTimelinePolicy.project(event)
+    val projection = AgentExecutionLoopTimelinePolicy.project(event,
+        permissionWait = AgentRuntimePermissionContinuation.waiting(runtime.snapshot()) != null)
     val revisionRecorded = agentRunEventStore.containsLoopRevision(
         run.runId, turnId, event.snapshot.revision, event.snapshot.updatedAtMillis
     )
@@ -410,7 +411,8 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
 internal fun MainActivity.finalizeAgentExecutionLoop(
     runtime: MobileNativeAgent, turnId: String, state: AgentUiState
 ): AgentUiState = finalizeAgentExecution(runtime, turnId, state, ::recordAgentRunFromState).also {
-    if (it.phase in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) {
+    if (it.phase in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED) &&
+        AgentRuntimePermissionContinuation.waiting(it) == null) {
         PhoneAssistantTaskControl.finish(turnId)
     }
 }
@@ -1229,6 +1231,7 @@ internal fun Context.persistAgentWorkspaceSnapshot(
 
 internal fun MainActivity.recordAgentRunFromState(turnId: String, state: AgentUiState) {
     if (state.phase !in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) return
+    if (AgentRuntimePermissionContinuation.waiting(state) != null) return
     AgentExecutionRunRecorder(this, mobileNativeAgent, agentRunIdsByTurn.remove(turnId).orEmpty())
         .recordAgentRunFromState(turnId, state)
 }

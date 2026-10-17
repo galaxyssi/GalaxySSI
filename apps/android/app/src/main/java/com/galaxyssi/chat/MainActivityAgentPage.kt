@@ -1077,7 +1077,7 @@ internal fun MainActivity.showAgentTimelineMenu(
         ).show()
         return
     }
-    val actions = AgentExecutionLoopTimelinePolicy.actionsForPhase(runtime.snapshot().phase)
+    val actions = AgentExecutionLoopTimelinePolicy.actionsForState(runtime.snapshot())
         .filter { includeCancel || it != AgentExecutionLoopTimelineAction.CANCEL }
     if (actions.isEmpty()) {
         Toast.makeText(
@@ -1115,7 +1115,7 @@ internal fun MainActivity.runAgentTimelineAction(
     runtime: MobileNativeAgent,
     action: AgentExecutionLoopTimelineAction
 ) {
-    if (action !in AgentExecutionLoopTimelinePolicy.actionsForPhase(runtime.snapshot().phase)) {
+    if (action !in AgentExecutionLoopTimelinePolicy.actionsForState(runtime.snapshot())) {
         Toast.makeText(
             this,
             getString(R.string.agent_loop_timeline_action_unavailable),
