@@ -6,6 +6,65 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectObservationBatchPolicyTest {
+    @Test fun serialReadOnlyToolsShareAPlanButRemainSerialAtExecution() {
+        val actions = listOf(action("first", "fixture.read.first"), action("second", "fixture.read.second"))
+        val descriptor = readOnlyRuntimeDescriptor("fixture.read.first").copy(
+            concurrency = AgentNativeToolConcurrency.SERIAL, effect = AgentNativeToolEffect.READ_ONLY)
+        val lookup: (String) -> AgentNativeToolDescriptor? = { descriptor.copy(id = it) }
+        assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(actions, "", lookup))
+        var plan = AgentPlan("Read both", ScreenContext("Test", pageTitle = "Test"), emptyList(), actions)
+        for (index in actions.indices) {
+            val batch = AgentPlanExecutionBatchPolicy.select(plan, descriptorFor = lookup)
+            assertFalse(batch.parallel)
+            assertEquals(listOf(actions[index].id), batch.actions.map { it.id })
+            assertFalse(AgentSupervisedProjectLoop.needsRunnableReviewer(plan))
+            plan = plan.copy(actions = plan.actions.map {
+                if (it.id == actions[index].id) it.copy(status = AgentActionStatus.COMPLETED) else it
+            })
+        }
+        assertTrue(AgentSupervisedProjectLoop.needsRunnableReviewer(plan))
+    }
+
+    @Test fun serialAndParallelReadDeclarationsDoNotBroadenEachOthersConcurrency() {
+        val actions = listOf(action("parallel", "fixture.read.parallel"), action("serial", "fixture.read.serial"))
+        val lookup: (String) -> AgentNativeToolDescriptor? = { id -> readOnlyRuntimeDescriptor(id).copy(
+            effect = AgentNativeToolEffect.READ_ONLY,
+            concurrency = if (id.endsWith("serial")) AgentNativeToolConcurrency.SERIAL
+                else AgentNativeToolConcurrency.PARALLEL_READ_ONLY) }
+        assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(actions, "", lookup))
+        for (order in listOf(actions, actions.reversed())) {
+            val batch = AgentPlanExecutionBatchPolicy.select(
+                AgentPlan("Read both", ScreenContext("Test", pageTitle = "Test"), emptyList(), order),
+                descriptorFor = lookup)
+            assertFalse(batch.parallel)
+            assertEquals(listOf(order.first().id), batch.actions.map { it.id })
+        }
+    }
+
+    @Test fun readOnlyAdmissionDoesNotInferSafetyFromLowRiskOrIdempotencyAlone() {
+        val actions = listOf(action("first", "fixture.first"), action("second", "fixture.second"))
+        val serial = readOnlyRuntimeDescriptor("fixture.first").copy(concurrency = AgentNativeToolConcurrency.SERIAL)
+        for (unsafe in listOf(serial.copy(effect = null), serial.copy(effect = AgentNativeToolEffect.MUTATION),
+            serial.copy(effect = AgentNativeToolEffect.READ_ONLY, idempotency = AgentNativeToolIdempotency.NON_IDEMPOTENT),
+            serial.copy(effect = AgentNativeToolEffect.READ_ONLY, risk = AgentNativeToolRisk.HIGH))) {
+            assertFalse(AgentSupervisedProjectObservationBatchPolicy.accepts(actions, "") { unsafe.copy(id = it) })
+        }
+    }
+
+    @Test fun admittedSerialReadsStillRejectDuplicatesAndWaitForExplicitDependencies() {
+        val first = action("first", "fixture.read")
+        val descriptor = readOnlyRuntimeDescriptor("fixture.read").copy(
+            concurrency = AgentNativeToolConcurrency.SERIAL, effect = AgentNativeToolEffect.READ_ONLY)
+        val lookup: (String) -> AgentNativeToolDescriptor? = { descriptor }
+        assertFalse(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(first, first.copy(id = "again")), "", lookup))
+        val dependent = first.copy(id = "again").withDependency(first.id)
+        assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(first, dependent), "", lookup))
+        val failed = AgentPlan("Read again after success", ScreenContext("Test", pageTitle = "Test"), emptyList(),
+            listOf(first.copy(status = AgentActionStatus.FAILED), dependent)).blockActionsWithFailedDependencies()
+        assertEquals(AgentActionStatus.BLOCKED, failed.actions.last().status)
+        assertTrue(AgentPlanExecutionBatchPolicy.select(failed, descriptorFor = lookup).actions.isEmpty())
+    }
+
     @Test fun phoneReadAndFutureCompletionMustBeSeparateModelDecisions() {
         val read = action("read-audio", AgentAndroidSystemNativeTools.AUDIO_STATUS)
         val complete = action("answer", "task-complete").copy(kind = AgentActionKind.DRAFT_PLAN)

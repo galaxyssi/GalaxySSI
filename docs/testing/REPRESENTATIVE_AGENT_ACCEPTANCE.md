@@ -581,3 +581,25 @@ the normal composer and verify actual output, not merely a terminal task phase.
   post-completion process row. No timer, contact, door, camera or recording
   operation was run; Desktop, S26U, watches and learning settings were unchanged.
   The general goal-execution acceptance is not yet complete.
+
+## 2026-10-17: Android 1.5.48 (1331)
+
+- Separate admission of an observation plan from execution concurrency. Low-risk,
+  explicitly read-only, idempotent tools may share a plan even when their
+  descriptors require serial execution. The existing executor still selects
+  serial reads individually and waits for receipts; it does not upgrade them
+  to parallel tools. Once all executable observations finish, the model reviews
+  their results together. Unknown effects, mutations, duplicate reads, native
+  output substitution and completion mixed with execution remain guarded.
+- Phone planning now advertises `ref`, `depends_on` and `use_outputs_from` using
+  the actual parser contract. Dependency rejection identifies the field and
+  available earlier refs instead of leaving the model to guess between IDs,
+  display targets and tool names. Host metadata distinguishes read-only effect
+  from serial concurrency in the phone tool inventory.
+- This addresses the three batch-plan correction rounds observed in 1.5.47,
+  without special-casing battery/storage identifiers or changing hardware tools,
+  permission gates, resource locks, cancellation or completion validation.
+- Completion evidence coverage remains separate work. Android system reads such
+  as audio currently carry conservative non-idempotent metadata, unlike hardware
+  status reads; this explains their different completion-check behavior. This
+  increment neither relaxes those checks nor claims uniform semantic proof.

@@ -129,7 +129,22 @@ class AgentSupervisedToolGraphParsingTest {
         assertNull(result.plan)
         assertEquals("invalid_dependency", result.rejection!!.code)
         assertEquals("actions[1].depends_on", result.rejection!!.field)
+        assertTrue(result.rejection!!.detail.contains("Available earlier refs: step-1"))
+        assertTrue(result.rejection!!.detail.contains("not id, target, tool IDs"))
     }
+
+    @Test fun `an id or display target cannot silently replace an action ref`() {
+        val first = action(1, write.id).put("id", "invented-id").put("target", "Displayed title")
+        for (invalid in listOf("invented-id", "Displayed title", write.id, "model-1-step-1")) {
+            val next = action(2, read.id).put("depends_on", JSONArray().put(invalid))
+            val rejected = AgentModelPlanParser.parseWithDiagnostics(request(), plan(first, next), settings)
+            assertNull(rejected.plan)
+            assertEquals("invalid_dependency", rejected.rejection!!.code)
+            assertTrue(rejected.rejection!!.detail.endsWith("Available earlier refs: step-1"))
+        }
+        assertNotNull(AgentModelPlanParser.parse(request(), plan(first, action(2, read.id, 1)), settings))
+    }
+
 
     @Test fun `native output substitution returns actionable feedback`() {
         val source = plan(action(1, write.id), action(2, read.id, 1)
