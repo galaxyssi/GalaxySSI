@@ -630,12 +630,18 @@ internal object AgentSupervisedProjectRoutingPolicy {
         AgentDeviceIntent.requiresReasoning(goal) && AgentDeviceIntent.seconds(goal) != null ||
             AgentDeviceIntent.followup(goal) != null && context.summary.contains("Phone operation:")
 
-    fun isPhoneControl(goal: String, context: AgentConversationContext): Boolean =
-        AgentDeviceIntent.requiresReasoning(goal) ||
+    fun isPhoneControl(goal: String, context: AgentConversationContext): Boolean {
+        val statusNeedsReasoning = AgentDeviceStatusShortcutCoverage.requiresReasoning(goal)
+        if (statusNeedsReasoning && AgentDeviceStatusShortcutCoverage.hasExplicitDesktopTarget(goal)) return false
+        return AgentDeviceIntent.requiresReasoning(goal) ||
+            (statusNeedsReasoning &&
+                !AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal) &&
+                AgentTaskIntentClassifier.classify(goal).intent != AgentTaskIntent.DESKTOP_CONTROL) ||
             AgentDeviceIntent.needsOperationContext(goal) && context.summary.contains("Phone operation:") ||
             AgentTaskIntentClassifier.classify(goal, hasAttachments = context.hasAttachments).let {
                 it.intent == AgentTaskIntent.PHONE_CONTROL && "phone-control-action" in it.matchedSignals
             }
+    }
 
     fun requiresModelDirectedExecution(
         goal: String,
