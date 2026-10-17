@@ -337,6 +337,7 @@ class BrowserSessions {
       if (!this.sessions.has(session.id)) { await context.close().catch(() => {}); throw browserFailure(error, 'create'); }
       // Navigation may time out after a useful document or login redirect arrived.
       return { session_id: session.id, pages: this.pages(session), navigation_completed: false,
+        ...(await this.observationAfterAction(session, [...session.pages.values()][0])),
         error: { code: browserFailure(error, 'create').code, details: browserFailure(error, 'create').details,
           message: 'Inspect this live session before retrying navigation.' },
         business_success_verified: false };
@@ -381,7 +382,8 @@ class BrowserSessions {
         controls.push({ node_id: ref, tag: node.tagName.toLowerCase(), role: node.getAttribute('role') || '',
           type: node.type || '', label: (node.getAttribute('aria-label') || node.labels?.[0]?.innerText ||
             node.getAttribute('placeholder') || node.innerText || node.title || '').slice(0, 300),
-          disabled: !!node.disabled, password: node.type === 'password' });
+          disabled: !!node.disabled, password: node.type === 'password',
+          ...(node.tagName === 'A' ? { href: node.href } : {}) });
       }
       const text = document.body?.innerText || '';
       const revision = `${state.documentId}:${state.revision}:${state.sequence}`;
@@ -400,6 +402,8 @@ class BrowserSessions {
       return { frame_id: id, url: publicUrl(frame.url()) };
     });
     for (const [id, frame] of session.frames) { if (frame.isDetached()) session.frames.delete(id); }
+    observation.controls = observation.controls.map(control => control.href
+      ? { ...control, href: publicUrl(control.href) } : control);
     return { ...observation, revision: `${session.controlEpoch || 0}:${observation.revision}`,
       url: publicUrl(target.url()), frames,
       evidence_trust: 'untrusted_page_content' };
@@ -436,6 +440,17 @@ class BrowserSessions {
     finally { page.off('dialog', listener); }
   }
 
+  async observationAfterAction(session, page) {
+    if (!page || page.isClosed() || session.lost || session.dialogs?.size) return { next_action: 'observe' };
+    try {
+      return { observation: { session_id: session.id, page_id: this.registerPage(session, page),
+        ...(await this.observe(session, page)) }, next_action: 'use_observation' };
+    } catch (error) {
+      // Reading a redirecting page may fail; retain the original operation outcome.
+      return { observation_error: { code: browserFailure(error, 'observe').code }, next_action: 'observe' };
+    }
+  }
+
   async operate(session, input) {
     if (input.operation === 'close') {
       await session.context.close();
@@ -463,10 +478,21 @@ class BrowserSessions {
     }
     if (input.operation === 'observe') return { session_id: session.id, page_id: input.page_id,
       ...(input.frame_id ? { frame_id: input.frame_id } : {}), ...(await this.observe(session, page, target, input)) };
-    if (input.operation === 'navigate') {
-      await page.goto(websiteUrl(input.url), { waitUntil: 'domcontentloaded' });
-    } else if (input.operation === 'back') {
-      await page.goBack({ waitUntil: 'domcontentloaded' });
+    if (['navigate', 'back'].includes(input.operation)) {
+      let response;
+      try {
+        if (input.operation === 'navigate') response = await page.goto(websiteUrl(input.url), { waitUntil: 'domcontentloaded' });
+        else response = await page.goBack({ waitUntil: 'domcontentloaded' });
+      } catch (error) {
+        const failure = browserFailure(error, input.operation);
+        failure.details = { ...failure.details, session_id: session.id, page_id: input.page_id, navigation_completed: false,
+          ...(await this.observationAfterAction(session, page)) };
+        throw failure;
+      }
+      return { session_id: session.id, page_id: input.page_id, action_dispatched: true,
+        navigation_completed: true, business_success_verified: false,
+        ...(response ? { http_status: response.status() } : {}),
+        ...(await this.observationAfterAction(session, page)) };
     } else if (input.operation === 'screenshot') {
       const data = await page.screenshot({ type: 'jpeg', quality: 70, fullPage: false });
       return { session_id: session.id, page_id: input.page_id, mime_type: 'image/jpeg', data_b64: data.toString('base64') };

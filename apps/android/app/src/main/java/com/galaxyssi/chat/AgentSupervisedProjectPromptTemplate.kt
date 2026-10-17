@@ -55,6 +55,9 @@ internal object AgentSupervisedProjectPromptTemplate {
                 append("Persist observable postconditions in completion_requirements.outcomes=[{id,tool_id,subject:{\"/identity_field\":\"observed identity\"},checks:{\"/state_field\":\"expected value\"},after_tool_id:\"mutation tool id\"}]. JSON-pointer fields refer to actual native output, not prose. Match the exact file, operation or recipient/message identity; use the latest observation after mutation. Only use fields exposed by tool schemas/observations, never invent them. ")
                 append("API acceptance, queueing, opening a UI or exit_code=0 alone are not business completion. Files require hash-bound export plus opening/format verification; delivery requires receiver acknowledgement. When such observation is unavailable, return a truthful unverified/blocked result and preserve the goal; do not claim completion or silently weaken its checks.\n")
                 append("For unclear signatures inspect galaxyssi.tools.describe: tool_id, schema_path=/input_schema or /description.\n")
+                if (toolManifest.contains(AgentInteractiveBrowserTools.ACT)) {
+                    append("Browser: navigate/back and terminal operation_status can return observation (text/links/revision), even on timeout. Use it without rereading known evidence. Check status only for uncertain effects. Batch independent sources.\n")
+                }
                 append("Available phone tools:\n")
                 append(toolManifest)
                 append("Working-set policy: phase-blocked tools reappear when evidence changes; compact signatures remain callable, and used or failed tools regain detailed signatures. Call only listed tools.\n")

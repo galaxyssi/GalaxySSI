@@ -401,7 +401,18 @@ class CodexAppServer:
             else self._with_execution_contract(base_turn_prompt, run.execution_policy)
         )
         turn_images = local_images if reused_thread else restored_images
+        planner_receipt = None
         try:
+            if clean_conversation_id.startswith("phone-planner-v1:") and self._experiment_boundary is None:
+                from codex_planner_continuation import PlannerContinuations
+                with self._lock:
+                    if not hasattr(self, "_planner_continuations"):
+                        self._planner_continuations = PlannerContinuations()
+                original_prompt, original_images = turn_prompt, turn_images
+                turn_prompt, turn_images, planner_receipt = self._planner_continuations.prepare(
+                    run.thread_id, turn_prompt, turn_images)
+                log.info("Phone planner continuation reused=%s prompt_chars=%s->%s images=%s->%s",
+                    reused_thread, len(original_prompt), len(turn_prompt), len(original_images), len(turn_images))
             execution_harness.begin_attempt()
             execution_harness.account_usage(
                 input_tokens=estimate_text_tokens(turn_prompt),
@@ -432,6 +443,7 @@ class CodexAppServer:
                         approval_policy=approval_policy,
                         sandbox=sandbox,
                     )
+                planner_receipt = None  # A lost provider thread needs the complete prompt and images again.
                 self.on_event(task_id, {
                     "status": "starting", "thread_id": run.thread_id,
                     "current_step": "Starting a fresh Codex thread",
@@ -454,6 +466,8 @@ class CodexAppServer:
             raise
         run.turn_id = str((response.get("turn") or {}).get("id") or "")
         if run.turn_id:
+            if planner_receipt is not None:
+                self._planner_continuations.commit(run.thread_id, planner_receipt)
             self._turn_tasks[run.turn_id] = task_id
         threading.Thread(
             target=self._watch_run,
@@ -1774,6 +1788,13 @@ class CodexAppServer:
     def _handle_event(self, message: dict) -> None:
         method = str(message.get("method") or "")
         params = message.get("params") or {}
+        if method == "thread/compacted" or (
+            method in {"item/started", "item/completed"}
+            and (params.get("item") or {}).get("type") == "contextCompaction"
+        ):
+            continuations = getattr(self, "_planner_continuations", None)
+            if continuations is not None:
+                continuations.forget(str(params.get("threadId") or ""))
         if self._experiment_boundary is not None and "id" in message:
             if method == "item/tool/call":
                 self._write_server_response(message["id"], {"success": False, "contentItems": [
