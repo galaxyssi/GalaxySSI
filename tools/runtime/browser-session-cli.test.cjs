@@ -230,7 +230,9 @@ test('CLI integration retains a live browser across independent tool processes a
       const isolated = await command({ operation: 'operation_status', request_id: id }, 'e'.repeat(64));
       assert.equal(isolated.result.state, 'unknown');
       assert.equal(isolated.result.missing_receipt_means_not_executed, false);
-      assert.ok(!JSON.stringify(settled).includes('Server committed once'));
+      assert.match(settled.result.observation.text, /Server committed once/);
+      assert.equal(settled.result.next_action, 'use_observation');
+      assert.equal(isolated.result.observation, undefined);
     });
 
     await t.test('model IPC cannot acquire, operate or release host user control', async () => {

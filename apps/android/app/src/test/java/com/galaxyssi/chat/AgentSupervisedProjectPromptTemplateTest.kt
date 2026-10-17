@@ -34,6 +34,21 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertFalse(unknownLine.contains("effect=read_only"))
     }
 
+    @Test fun inlineBrowserEvidenceGuidanceIsOnlyAddedForAnAvailableBrowser() {
+        val original = context()
+        val tools = original.nativeTools + original.nativeTools.first().copy(id = AgentInteractiveBrowserTools.ACT)
+        val browser = original.copy(nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(tools, emptyList(), emptyList()))
+        for (continuation in listOf(false, true)) {
+            val withoutBrowser = AgentSupervisedProjectPromptTemplate.render(original, continuation, 240)
+            val withBrowser = AgentSupervisedProjectPromptTemplate.render(browser, continuation, 240)
+            assertFalse(withoutBrowser.contains("Browser: navigate/back"))
+            assertTrue(withBrowser.contains("Browser: navigate/back"))
+            assertTrue(withBrowser.contains("Use it without rereading known evidence"))
+            assertTrue(withBrowser.contains("Batch independent sources"))
+        }
+    }
+
     @Test fun phonePlansSeparateExecutionFromEvidenceBoundCompletion() {
         for (continuation in listOf(false, true)) {
             val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240, phoneControl = true)

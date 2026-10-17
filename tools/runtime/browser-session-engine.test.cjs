@@ -145,6 +145,20 @@ test('returned URLs redact common authentication parameters', () => {
   assert.ok(!safe.includes('secret') && !safe.includes('otp') && !safe.includes('password'));
 });
 
+test('failed inline observation cannot turn a dispatched action into a retriable failure', async () => {
+  const engine = new BrowserSessions({});
+  engine.registerPage = () => 'page';
+  engine.observe = async () => { throw new Error('private-page-text'); };
+  const session = { id: 'session', dialogs: new Map() };
+  const result = await engine.observationAfterAction(session, { isClosed: () => false });
+  assert.equal(result.next_action, 'observe');
+  assert.ok(result.observation_error.code);
+  assert.ok(!JSON.stringify(result).includes('private-page-text'));
+  assert.deepEqual(await engine.observationAfterAction(session, { isClosed: () => true }), { next_action: 'observe' });
+  session.dialogs.set('dialog', {});
+  assert.deepEqual(await engine.observationAfterAction(session, { isClosed: () => false }), { next_action: 'observe' });
+});
+
 test('interactive browser fixture: authentication, stale controls, contexts, frames and pagination',
   { skip: process.env.GALAXYSSI_BROWSER_INTEGRATION !== '1' }, async t => {
     const { chromium } = require('playwright');
@@ -152,6 +166,15 @@ test('interactive browser fixture: authentication, stale controls, contexts, fra
       process.env.GALAXYSSI_BROWSER_TEST_EXECUTABLE ? { executablePath: process.env.GALAXYSSI_BROWSER_TEST_EXECUTABLE } : {} });
     const server = http.createServer((req, res) => {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      if (req.url === '/partial') {
+        res.write('<h1>Usable partial article</h1><p>The document body has arrived.</p>');
+        return; // Deliberately never finish DOMContentLoaded.
+      }
+      if (req.url === '/links') {
+        res.end('<h1>Source directory</h1><a href="https://example.com/article?code=secret&page=2">Read source</a>');
+        return;
+      }
+      if (req.url === '/missing') { res.statusCode = 404; res.end('<h1>Missing article</h1>'); return; }
       if (req.url === '/login' && req.method === 'POST') {
         let body = '';
         req.on('data', chunk => { body += chunk; });
@@ -196,6 +219,38 @@ test('interactive browser fixture: authentication, stale controls, contexts, fra
       assert.ok(node, `Missing observed control: ${label}`);
       return engine.execute({ ...scope(result), operation, revision: view.revision, node_id: node.node_id, value });
     }
+
+    await t.test('navigate and back return fresh text and actionable links without an extra tool call', async () => {
+      const result = await engine.execute({ ...scope(bob), operation: 'navigate', url: `${base}/links` });
+      assert.equal(result.next_action, 'use_observation');
+      assert.equal(result.navigation_completed, true);
+      assert.equal(result.http_status, 200);
+      assert.equal(result.business_success_verified, false);
+      assert.match(result.observation.text, /Source directory/);
+      assert.equal(result.observation.page_id, bob.page_id);
+      const link = result.observation.controls.find(control => control.label === 'Read source');
+      assert.equal(new URL(link.href).searchParams.get('page'), '2');
+      assert.ok(!link.href.includes('secret'));
+      const back = await engine.execute({ ...scope(bob), operation: 'back' });
+      assert.match(back.observation.text, /Fixture sign in/);
+    });
+    await t.test('an HTTP error keeps its status and readable body instead of claiming task success', async () => {
+      const result = await engine.execute({ ...scope(bob), operation: 'navigate', url: `${base}/missing` });
+      assert.equal(result.http_status, 404);
+      assert.equal(result.business_success_verified, false);
+      assert.match(result.observation.text, /Missing article/);
+      await engine.execute({ ...scope(bob), operation: 'navigate', url: base });
+    });
+    await t.test('navigation timeout returns the readable document with the original failure', async () => {
+      await assert.rejects(engine.execute({ ...scope(bob), operation: 'navigate', url: `${base}/partial` }), error => {
+        assert.equal(error.code, 'browser_navigation_timeout');
+        assert.equal(error.details.navigation_completed, false);
+        assert.match(error.details.observation.text, /Usable partial article/);
+        assert.equal(error.details.next_action, 'use_observation');
+        return true;
+      });
+      await engine.execute({ ...scope(bob), operation: 'navigate', url: base });
+    });
 
     await t.test('actual form login preserves cookies and never returns password values', async () => {
       await act(alice, 'fill', 'Name', 'alice');

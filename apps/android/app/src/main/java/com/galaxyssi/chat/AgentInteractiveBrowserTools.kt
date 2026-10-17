@@ -36,7 +36,9 @@ internal object AgentInteractiveBrowserTools {
             descriptor = AgentNativeToolDescriptor(
                 id = id, version = "1.2.0", title = if (mutation) "Operate an interactive browser" else "Observe an interactive browser",
                 description = "Real Playwright browser in phone Linux. create returns an isolated live session; cookies persist within it. " +
-                    "Observe before acting; click/fill/select require the observed revision and node_id. Choose frame_id for iframe controls. " +
+                    "create returns page text; navigate/back and terminal operation_status include a fresh observation when readable, including after navigation errors. " +
+                    "Use the returned observation directly; do not request another observe or operation_status for an already known outcome. " +
+                    "Observe before acting only when no current observation is available; click/fill/select require its revision and node_id. Choose frame_id for iframe controls. " +
                     "Inspect results to verify login, pagination and task success. User-only authentication requires user takeover, not bypass. " +
                     "Use request_user_control with live session_id/page_id when a user must sign in or interact personally. " +
                     "It opens the same browser for the user and returns handoff_id. A supervised planner yields durably until control returns; do not poll the model. " +

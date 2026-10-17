@@ -148,7 +148,15 @@ async function serve(directory, socketName, token, configuredHostToken) {
         }
         for (const [id, expiry] of cancelledRequests) if (expiry < Date.now()) cancelledRequests.delete(id);
         if (request.input.operation === 'operation_status') {
-          socket.end(`${JSON.stringify({ ok: true, result: receipts.status(request.input.request_id) })}\n`);
+          const status = receipts.status(request.input.request_id);
+          if (['completed', 'failed'].includes(status.state) && status.session_id && status.page_id) {
+            try {
+              status.observation = await engine.execute({ operation: 'observe',
+                session_id: status.session_id, page_id: status.page_id });
+              status.next_action = 'use_observation';
+            } catch (error) { status.observation_error = { code: safeFailure(error).error.code }; }
+          }
+          socket.end(`${JSON.stringify({ ok: true, result: status })}\n`);
         } else if (request.input.operation === 'cancel_operation') {
           if (typeof request.input.request_id !== 'string' || request.input.request_id.length > 160 || !request.input.request_id) {
             throw new BrowserOperationError('invalid_cancellation_id', 'Provide the browser operation request ID.');
