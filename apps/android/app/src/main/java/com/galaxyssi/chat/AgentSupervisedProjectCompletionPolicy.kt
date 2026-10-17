@@ -19,6 +19,7 @@ internal object AgentSupervisedProjectCompletionPolicy {
             .toSet()
         return buildList {
             addAll(AgentArtifactCompletionEvidence.missing(requirements.artifacts, history))
+            addAll(AgentObservedOutcomeEvidence.missing(requirements.outcomes, history))
             if (requirements.phoneLinux && AgentOnDeviceRuntimeTools.EXECUTE !in completedTools) {
                 add("a successful galaxyssi.runtime.execute receipt from the phone Linux guest")
             }
@@ -44,7 +45,7 @@ internal object AgentSupervisedProjectCompletionPolicy {
         result: AgentActionResult,
         requirements: AgentCompletionRequirements? = null
     ): AgentVerifiedProjectCompletion? {
-        if (!result.success || result.metadata["awaiting_response"] == "true") return null
+        if (!AgentGoalEvidence.permitsSuccess(result) || result.metadata["awaiting_response"] == "true") return null
         if (completedAction.kind != AgentActionKind.CALL_NATIVE_TOOL) return null
         if (completedAction.parameters[MODEL_TERMINAL_OUTCOME_PARAMETER] != "true") return null
         val toolId = completedAction.parameters["tool_id"].orEmpty().ifBlank { completedAction.target }

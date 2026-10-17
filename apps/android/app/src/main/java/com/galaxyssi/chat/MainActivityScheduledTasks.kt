@@ -164,6 +164,8 @@ internal fun MainActivity.showScheduledTaskEditor(task: AgentProactiveTask? = nu
 }
 
 internal fun MainActivity.handleConversationSchedule(goal: String, conversationId: String, turnId: String): Boolean {
+    if (AgentDeviceIntent.followup(goal) != null && AgentDeviceOperationStore(applicationContext).get(conversationId)
+            ?.let { it.kind == "agent" && it.status !in setOf("completed", "cancelled") } == true) return false
     val command = ConversationScheduleParser.parse(goal) ?: return false
     val tasks = ConversationScheduledTasks.tasks(this, conversationId)
     if (command.operation == ConversationScheduleOperation.SAVE && command.trigger == null && tasks.isEmpty()) return false

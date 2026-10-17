@@ -1488,7 +1488,10 @@ object AgentNativeToolAgentActionAdapter {
         risk = invocation.descriptor.risk.toLegacyRisk(),
         status = AgentActionStatus.RUNNING,
         description = description,
-        parameters = parameters,
+        parameters = if (kind == AgentActionKind.SET_ALARM) parameters + mapOf(
+            INTERNAL_CONVERSATION_ID to invocation.context.conversationId,
+            INTERNAL_TURN_ID to invocation.context.turnId
+        ) else parameters,
         requiresConfirmation = false
     )
 
@@ -1506,8 +1509,9 @@ object AgentNativeToolAgentActionAdapter {
                 output = output,
                 message = result.message,
                 error = AgentNativeToolError(
-                    code = "agent_action_failed",
-                    message = result.message.ifBlank { "Legacy AgentAction execution failed" }
+                    code = result.metadata["error_code"] ?: result.metadata["goal_status"] ?: "agent_action_failed",
+                    message = result.message.ifBlank { "Legacy AgentAction execution failed" },
+                    details = result.metadata
                 )
             )
         }

@@ -610,7 +610,6 @@ internal fun MobileNativeAgent.executeActionUntraced(
                 ).orEmpty()}"
             }
     )
-    val renderedOutput = AgentNativeJsonCodec.stringify(result.output).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
     val cancellationReason = toolCancellation.reason
     val nativeMessage = if (
         result.status == AgentNativeToolResultStatus.CANCELLED && cancellationReason.isNotBlank()
@@ -621,8 +620,13 @@ internal fun MobileNativeAgent.executeActionUntraced(
     }
     val responseLanguage = action.parameters["response_language"].orEmpty()
     val zh = responseLanguage == "zh" || (responseLanguage.isBlank() && currentGoal.any { it in '\u3400'..'\u9fff' })
+    val observedOutput = if (result.isSuccess) AgentGoalEvidence.withDeliveryEvidence(result.output, result.metadata, zh)
+        else result.output
+    val renderedOutput = AgentNativeJsonCodec.stringify(observedOutput).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
     val developmentFile = action.parameters[PHONE_DEVELOPMENT_FILE_PARAMETER].orEmpty()
-    val userMessage = if (toolId == AgentOnDeviceRuntimeTools.EXECUTE && developmentFile.isNotBlank()) {
+    val userMessage = if (observedOutput !== result.output) {
+        observedOutput["message"].toString()
+    } else if (toolId == AgentOnDeviceRuntimeTools.EXECUTE && developmentFile.isNotBlank()) {
         renderPhoneDevelopmentExecution(result.output, nativeMessage, zh)
     } else {
         renderNativeToolResult(toolId, nativeMessage, result.output, zh)
@@ -648,7 +652,8 @@ internal fun MobileNativeAgent.executeActionUntraced(
             "started_at_millis" to result.receipt.startedAtEpochMillis.toString(),
             "completed_at_millis" to result.receipt.finishedAtEpochMillis.toString(),
             "provenance" to result.provenance.executorId
-        ) + AgentNativeActionObservation.from(result)?.let { mapOf(AgentNativeActionObservation.KEY to it) }.orEmpty() +
+        ) + AgentGoalEvidence.metadata(observedOutput) +
+            AgentNativeActionObservation.from(result)?.let { mapOf(AgentNativeActionObservation.KEY to it) }.orEmpty() +
             richOutput.takeIf(String::isNotBlank)?.let { mapOf("rich_output" to it) }.orEmpty()
     )
 }

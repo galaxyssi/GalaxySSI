@@ -689,7 +689,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 scheduleConnectorTimeouts(runtime, sourceId, conversationId, turnId)
             }
             renderAgentState(state, conversationId, turnId)
-            requestMissingAgentNativePermissions(state)
+            requestMissingAgentNativePermissions(state, runtime, conversationId, turnId)
             consumePendingAgentConnectorResponses()
             outcome.exceptionOrNull()?.takeUnless { state.phase == AgentPhase.CANCELLED }?.let { error ->
                 provisionalAgentTasks.remove(runtime)
@@ -869,7 +869,7 @@ internal fun MainActivity.executeDirectSystemAction(
             .firstOrNull { it.id == toolId }
             ?.requiredPermissions
             .orEmpty()
-            .filter { it.required && checkSelfPermission(it.id) != PackageManager.PERMISSION_GRANTED }
+            .filter { it.required && supportedAgentRuntimePermission(it.id) && checkSelfPermission(it.id) != PackageManager.PERMISSION_GRANTED }
             .map { it.id }
             .distinct()
     } else {
@@ -877,7 +877,7 @@ internal fun MainActivity.executeDirectSystemAction(
     }
     if (missingPermissions.isNotEmpty()) {
         pendingDirectSystemAction = PendingDirectSystemAction(contextualAction, conversationId, turnId)
-        requestPermissions(missingPermissions.toTypedArray(), REQUEST_AGENT_NATIVE_PERMISSIONS)
+        if (pendingAgentRuntimePermission == null) requestPermissions(missingPermissions.toTypedArray(), REQUEST_AGENT_NATIVE_PERMISSIONS)
         return
     }
     val screen = mobileNativeAgent.snapshot().currentScreen
@@ -903,7 +903,9 @@ internal fun MainActivity.executeDirectSystemAction(
             val result = outcome.getOrElse { error ->
                 AgentActionResult(contextualAction.id, false, error.message ?: "Agent operation failed")
             }
+            if (recoverDeviceOperation(contextualAction, conversationId, turnId, result)) return@runOnUiThread
             appendDirectSystemResult(contextualAction, conversationId, turnId, result)
+            offerDeviceOperationAccess(result, conversationId)
             if (result.metadata["awaiting_response"] != "true") {
                 recordDirectAgentRun(turnId, contextualAction, result)
             }
@@ -1602,37 +1604,6 @@ internal fun MainActivity.appendDirectSystemResult(
         taskId = turnId
     )
     refreshAgentTranscriptWindow(conversationId)
-}
-
-internal fun MainActivity.requestMissingAgentNativePermissions(state: AgentUiState): Boolean {
-    val runtimePermissions = setOf(
-        android.Manifest.permission.READ_PHONE_STATE,
-        android.Manifest.permission.READ_SMS,
-        android.Manifest.permission.SEND_SMS,
-        android.Manifest.permission.READ_CONTACTS,
-        android.Manifest.permission.WRITE_CONTACTS,
-        android.Manifest.permission.READ_CALENDAR,
-        android.Manifest.permission.WRITE_CALENDAR,
-        android.Manifest.permission.ACCESS_FINE_LOCATION,
-        android.Manifest.permission.ACCESS_COARSE_LOCATION,
-        android.Manifest.permission.BLUETOOTH_CONNECT,
-        android.Manifest.permission.BLUETOOTH_SCAN,
-        android.Manifest.permission.CAMERA,
-        android.Manifest.permission.RECORD_AUDIO
-    )
-    val missing = state.plan?.requiredPermissions.orEmpty()
-        .asSequence()
-        .filterNot { it.granted }
-        .map { it.id }
-        .filter { it in runtimePermissions }
-        .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-        .distinct()
-        .toList()
-    if (missing.isNotEmpty()) {
-        requestPermissions(missing.toTypedArray(), REQUEST_AGENT_NATIVE_PERMISSIONS)
-        return true
-    }
-    return false
 }
 
 internal fun MainActivity.refreshAgentConversationHeader(

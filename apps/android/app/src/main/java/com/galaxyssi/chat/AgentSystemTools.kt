@@ -32,25 +32,7 @@ object AgentSystemToolPlanner {
     }
 
     internal fun timerSecondsForGoal(goal: String): Int? {
-        val chineseMatch = Regex("""(\d+)\s*(\u79d2\u949f?|\u5206\u949f?|\u5c0f\u65f6)""").find(goal)
-        if (chineseMatch != null) {
-            val amount = chineseMatch.groupValues[1].toIntOrNull() ?: return null
-            return when {
-                chineseMatch.groupValues[2].startsWith("\u5c0f\u65f6") -> amount * 3_600
-                chineseMatch.groupValues[2].startsWith("\u5206") -> amount * 60
-                else -> amount
-            }.coerceIn(1, 24 * 60 * 60)
-        }
-        val match = Regex(
-            """(\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|forty-five|fifty|sixty)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b"""
-        ).find(goal.lowercase()) ?: return null
-        val amount = match.groupValues[1].toIntOrNull() ?: SPOKEN_NUMBERS[match.groupValues[1]] ?: return null
-        val unit = match.groupValues[2]
-        return when {
-            unit.startsWith("h") -> amount * 3_600
-            unit.startsWith("m") -> amount * 60
-            else -> amount
-        }.coerceIn(1, 24 * 60 * 60)
+        return AgentDeviceIntent.seconds(goal)
     }
 
     fun actionFor(request: AgentRequest): AgentAction? {
@@ -303,7 +285,7 @@ object AgentSystemToolPlanner {
                 lower.contains("open timers") ||
                 lower.contains("open timer") ||
                 lower.contains("\u8ba1\u65f6\u5668") ||
-                lower.contains("\u5012\u8ba1\u65f6") -> timerAction(goal, lower)
+                lower.contains("\u5012\u8ba1\u65f6") -> timerAction(goal)
             lower.contains("long press first") || lower.contains("press and hold first") -> {
                 val firstElement = request.screen.clickableElements.firstOrNull()
                 AgentAction(
@@ -569,10 +551,13 @@ object AgentSystemToolPlanner {
         parameters = mapOf("package" to packageName)
     )
 
-    private fun alarmAction(goal: String, lower: String): AgentAction {
+    private fun alarmAction(goal: String, lower: String): AgentAction? {
         val match = Regex("(\\d{1,2}):(\\d{2})").find(lower)
         val hour = match?.groupValues?.getOrNull(1)?.toIntOrNull()
         val minute = match?.groupValues?.getOrNull(2)?.toIntOrNull()
+        val validTime = hour != null && minute != null && hour in 0..23 && minute in 0..59
+        val explicitOpen = Regex("^(open alarms?|(?:\u6253\u5f00|\u67e5\u770b|\u6253\u958b)(?:\u624b\u673a|\u624b\u6a5f|\u672c\u673a)?(?:\u95f9\u949f|\u9b27\u9418))[。.!！]?$", RegexOption.IGNORE_CASE).matches(goal.trim())
+        if (!validTime && !explicitOpen) return null
         val parameters = buildMap {
             put("label", goal)
             if (hour != null && minute != null && hour in 0..23 && minute in 0..59) {
@@ -591,8 +576,9 @@ object AgentSystemToolPlanner {
         )
     }
 
-    private fun timerAction(goal: String, lower: String): AgentAction {
-        val seconds = timerSecondsForGoal(lower)
+    private fun timerAction(goal: String): AgentAction? {
+        val seconds = AgentDeviceIntent.exactTimerSeconds(goal)
+        if (seconds == null && !AgentDeviceIntent.explicitlyOpenTimer(goal)) return null
         return AgentAction(
             id = if (seconds == null) "open-timer" else "set-timer",
             kind = AgentActionKind.SET_ALARM,
@@ -606,13 +592,6 @@ object AgentSystemToolPlanner {
             }
         )
     }
-
-    private val SPOKEN_NUMBERS = mapOf(
-        "one" to 1, "two" to 2, "three" to 3, "four" to 4, "five" to 5,
-        "six" to 6, "seven" to 7, "eight" to 8, "nine" to 9, "ten" to 10,
-        "fifteen" to 15, "twenty" to 20, "thirty" to 30, "forty" to 40,
-        "forty-five" to 45, "fifty" to 50, "sixty" to 60
-    )
 
     private fun normalizeUrl(value: String): String {
         if (value.isBlank()) return ""

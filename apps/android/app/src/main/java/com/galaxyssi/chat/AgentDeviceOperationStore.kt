@@ -1,0 +1,175 @@
+package com.galaxyssi.chat
+
+import android.content.Context
+import java.util.UUID
+import org.json.JSONObject
+
+/** A scoped goal survives the model context and process, independently of recurring schedules. */
+internal data class AgentDeviceOperation(
+    val conversationId: String,
+    val id: String = UUID.randomUUID().toString(),
+    val kind: String = "timer",
+    val seconds: Int = 0,
+    val desired: String = "start",
+    val status: String = "prepared",
+    val dispatched: Boolean = false,
+    val evidence: String = "",
+    val updatedAt: Long = System.currentTimeMillis(),
+    val goal: String = "",
+    val completionJson: String = "",
+    val replacementSeconds: Int? = null,
+    val dispatchedAt: Long = 0,
+    val durationVerified: Boolean = false
+) {
+    val label: String get() = "GalaxySSI-${id.take(8)}"
+    fun context(): String = if (kind != "timer") "Pending executable goal: $goal\n" +
+        "operation_id=$id; status=$status; completion_requirements=$completionJson; latest_evidence=$evidence. " +
+        "Continue from verified state, not from an old chat assertion; do not repeat prior side effects." else
+        "Phone operation: kind=$kind; id=$id; duration_seconds=$seconds; " +
+        "desired=$desired; status=$status; dispatch_accepted=$dispatched; evidence=$evidence. " +
+        "This is a single phone operation, not a recurring schedule. Observe before retrying; do not create duplicates."
+}
+
+internal class AgentDeviceOperationStore(context: Context) {
+    private val ledger = AgentRunEventStore(context.applicationContext)
+    fun get(conversationId: String): AgentDeviceOperation? {
+        if (conversationId.isBlank()) return null
+        val p = ledger.latestEvent(runId(conversationId))?.payload ?: return null
+        return AgentDeviceOperation(conversationId, p["operation_id"] as? String ?: return null,
+            p["kind"] as? String ?: return null, (p["seconds"] as? Number)?.toInt() ?: return null,
+            p["desired"] as? String ?: "start", p["status"] as? String ?: "unknown",
+            p["dispatched"] == true, p["evidence"] as? String ?: "",
+            (p["updated_at"] as? Number)?.toLong() ?: 0,
+            p["goal"] as? String ?: "", p["completion_json"] as? String ?: "",
+            (p["replacement_seconds"] as? Number)?.toInt()?.takeIf { it > 0 },
+            (p["dispatched_at"] as? Number)?.toLong() ?: 0, p["duration_verified"] == true)
+    }
+
+    fun save(value: AgentDeviceOperation): AgentDeviceOperation {
+        require(value.conversationId.isNotBlank() && (value.kind != "timer" || value.seconds > 0))
+        val record = value.copy(updatedAt = System.currentTimeMillis())
+        check(ledger.appendNext(AgentRunControlEvent(
+            conversationId = record.conversationId, messageId = "", taskId = runId(record.conversationId),
+            runId = runId(record.conversationId), agentId = "phone-operation", deviceId = "local",
+            type = AgentRunControlEventType.CHECKPOINT_SAVED, sequence = 0,
+            payload = mapOf("snapshot_kind" to "device_operation", "operation_id" to record.id,
+                "kind" to record.kind, "seconds" to record.seconds, "desired" to record.desired,
+                "status" to record.status, "dispatched" to record.dispatched,
+                "evidence" to record.evidence, "updated_at" to record.updatedAt,
+                "goal" to record.goal, "completion_json" to record.completionJson,
+                "replacement_seconds" to (record.replacementSeconds ?: 0),
+                "dispatched_at" to record.dispatchedAt, "duration_verified" to record.durationVerified)
+        )) != null) { "The phone operation checkpoint could not be saved" }
+        return record
+    }
+
+    fun claimContinuation(value: AgentDeviceOperation): Boolean {
+        val event = ledger.latestEvent(runId(value.conversationId)) ?: return false
+        if (event.payload["operation_id"] != value.id || event.payload["status"] != "waiting_accessibility") return false
+        return ledger.appendRecoveryIfCurrent(event.copy(eventId = UUID.randomUUID().toString(),
+            idempotencyKey = "", actionId = "", sequence = 0, timestampMillis = System.currentTimeMillis(),
+            payload = event.payload + mapOf("status" to "resuming", "updated_at" to System.currentTimeMillis())),
+            event.sequence) != null
+    }
+
+    fun recordPlan(conversationId: String, goal: String, requirements: AgentCompletionRequirements?, completed: Boolean = false) {
+        if (conversationId.isBlank()) return
+        val prior = get(conversationId)
+        val current = if (prior?.kind == "timer" && AgentDeviceIntent.needsOperationContext(goal)) prior else
+            prior?.takeIf { it.kind == "agent" && it.goal == goal } ?: AgentDeviceOperation(conversationId, kind = "agent", goal = goal)
+        save(current.copy(completionJson = requirements?.toJson()?.toString().orEmpty(),
+            status = if (completed && current.kind != "timer") "completed" else current.status))
+    }
+
+    private fun runId(conversationId: String) = "device-operation:" + AgentNativeJsonCodec.sha256(conversationId)
+}
+
+internal enum class AgentGoalEvidenceStatus { VERIFIED, DISPATCHED, BLOCKED, UNKNOWN, FAILED }
+
+/** Transport/API acceptance and business completion are deliberately separate. */
+internal object AgentGoalEvidence {
+    data class PendingReceipt(val message: String, val requiredCapability: String, val nextAction: String) {
+        val canInspect: Boolean get() = requiredCapability.isBlank()
+    }
+
+    fun permitsSuccess(result: AgentActionResult?): Boolean {
+        if (result?.success != true || result.metadata["business_success_verified"] == "false") return false
+        if (result.metadata["goal_status"] in setOf("dispatched", "blocked", "unknown", "failed")) return false
+        // Durable receipts may predate normalized goal metadata; retain their explicit delivery caveat.
+        val raw = runCatching { JSONObject(result.metadata["native_tool_output"].orEmpty()) }.getOrNull()
+        val output = raw?.optJSONObject("output") ?: raw
+        return output?.opt("delivery_verified") != false &&
+            output?.optJSONObject("metadata")?.optString("business_success_verified") != "false"
+    }
+
+    fun notificationReply(action: AgentAction, reply: AgentNotificationReplyResult, zh: Boolean): AgentActionResult {
+        val identity = mapOf("notification_key_sha256" to AgentNativeJsonCodec.sha256(action.parameters["notification_key"].orEmpty()),
+            "notification_package" to reply.notificationPackage.ifBlank { action.parameters["notification_package"].orEmpty() },
+            "reply_length" to action.parameters["reply_text"].orEmpty().length.toString())
+        if (!reply.success) return result(action, AgentGoalEvidenceStatus.FAILED, reply.message,
+            extra = identity + ("error_code" to reply.code))
+        val output = withDeliveryEvidence(mapOf("dispatch_accepted" to true, "delivery_verified" to false),
+            mapOf("handoff_only" to true, "delivery_receipt_available" to false), zh)
+        return AgentActionResult(action.id, true, output["message"] as String, identity + metadata(output))
+    }
+
+    /** Preserve native delivery caveats in both planner evidence and UI verification. */
+    fun withDeliveryEvidence(output: AgentNativeJsonObject, nativeMetadata: AgentNativeJsonObject,
+        zh: Boolean): AgentNativeJsonObject {
+        if (output["delivery_verified"] != false && nativeMetadata["delivery_receipt_available"] != false) return output
+        val prior = output["metadata"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val accepted = output["dispatch_accepted"] == true || nativeMetadata["handoff_only"] == true
+        val message = if (zh) {
+            if (accepted) "\u5df2\u63d0\u4ea4\u53d1\u9001\u8bf7\u6c42\uff0c\u5c1a\u672a\u786e\u8ba4\u5bf9\u65b9\u6536\u5230\u3002"
+            else "\u5c1a\u672a\u786e\u8ba4\u6d88\u606f\u9001\u8fbe\u3002"
+        } else if (accepted) "The send request was submitted; recipient delivery is not confirmed."
+        else "Message delivery is not confirmed."
+        val unavailable = nativeMetadata["delivery_receipt_available"] == false || output["delivery_receipt_available"] == false
+        return output + mapOf("message" to message, "metadata" to (prior + mapOf(
+            "goal_status" to if (accepted) "dispatched" else "unknown",
+            "business_success_verified" to "false", "goal_evidence" to "recipient_delivery_unverified",
+            "next_action" to "inspect_delivery_receipt_before_retrying") +
+            if (unavailable) mapOf("required_capability" to "recipient_delivery_receipt") else emptyMap<String, String>()))
+    }
+
+    fun hasVerifiedOutcome(history: List<AgentAction>): Boolean = history.lastOrNull {
+        it.kind == AgentActionKind.CALL_NATIVE_TOOL
+    }?.let { action ->
+        if (action.status != AgentActionStatus.COMPLETED) false else {
+            val raw = runCatching { JSONObject(action.evidence) }.getOrNull()
+            val output = raw?.optJSONObject("output") ?: raw
+            output?.optJSONObject("metadata")?.optString("goal_status") == "verified"
+        }
+    } == true
+
+    fun metadata(output: AgentNativeJsonObject): Map<String, String> {
+        val source = output["metadata"] as? Map<*, *> ?: return emptyMap()
+        return source.entries.filter { it.key in setOf("goal_status", "business_success_verified", "goal_evidence",
+            "required_capability", "operation_id", "error_code", "next_action") && it.value is String }
+            .associate { it.key as String to it.value as String }
+    }
+
+    fun unverifiedOutcome(history: List<AgentAction>): String? = pendingReceipt(history)?.message
+
+    fun pendingReceipt(history: List<AgentAction>): PendingReceipt? {
+        for (action in history.asReversed()) {
+            if (action.kind != AgentActionKind.CALL_NATIVE_TOOL) continue
+            val raw = runCatching { JSONObject(action.evidence) }.getOrNull() ?: continue
+            val output = raw.optJSONObject("output") ?: raw
+            val metadata = output.optJSONObject("metadata") ?: continue
+            val status = metadata.optString("goal_status")
+            if (status.isEmpty()) continue
+            return if (status == "verified" && action.status == AgentActionStatus.COMPLETED) null
+            else PendingReceipt(output.optString("message").ifBlank { "The requested outcome has not been verified." },
+                metadata.optString("required_capability"), metadata.optString("next_action"))
+        }
+        return null
+    }
+
+    fun result(action: AgentAction, status: AgentGoalEvidenceStatus, message: String,
+        evidence: String = "", extra: Map<String, String> = emptyMap()): AgentActionResult = AgentActionResult(
+        action.id, status == AgentGoalEvidenceStatus.VERIFIED || status == AgentGoalEvidenceStatus.DISPATCHED,
+        message, extra + mapOf("goal_status" to status.name.lowercase(),
+            "business_success_verified" to (status == AgentGoalEvidenceStatus.VERIFIED).toString(),
+            "goal_evidence" to evidence))
+}

@@ -8,6 +8,7 @@ internal object PhoneAssistantToolPolicy {
         id.startsWith("galaxyssi.hardware.") || id.startsWith("galaxyssi.notifications.") ||
         id in setOf(AgentVisibleCaptureNativeTools.CAMERA_CAPTURE, AgentVisibleCaptureNativeTools.MICROPHONE_RECORD,
             AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.OPEN_APP),
+            AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM),
             AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.BACK),
             AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.HOME))
 }

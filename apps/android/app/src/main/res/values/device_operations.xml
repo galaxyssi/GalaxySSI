@@ -1,0 +1,28 @@
+<resources>
+    <string name="device_operation_access_title">Continue operation</string>
+    <string name="device_operation_access_message">Enable GalaxySSI screen access to verify and continue the pending operation without creating another timer.</string>
+    <string name="device_operation_enable">Enable</string>
+    <string name="device_operation_busy">Another timer operation is running. Try again shortly.</string>
+    <string name="device_operation_scope_missing">Conversation identity is missing. No timer was created.</string>
+    <string name="device_operation_invalid">Invalid timer operation. Nothing was executed.</string>
+    <string name="device_operation_duration_invalid">The duration must be a positive whole number of seconds. Nothing was executed.</string>
+    <string name="device_operation_replace_duration">A replacement needs a valid duration. Nothing was executed.</string>
+    <string name="device_operation_stale">The pending operation changed. The stale request was not executed.</string>
+    <string name="device_operation_missing">This conversation has no pending timer. Specify a duration first.</string>
+    <string name="device_operation_replacement_required">A timer already exists. Use replace to change its duration without duplicates.</string>
+    <string name="device_operation_unknown">The timer start result is unknown. The request was not sent again.</string>
+    <string name="device_operation_dispatched">Sent a %1$d-second timer start request; running state is not yet verified.</string>
+    <string name="device_operation_access_needed">Screen access is required to continue controlling this timer.</string>
+    <string name="device_operation_not_found">The matching timer could not be verified. No duplicate was created and no other timer was changed.</string>
+    <string name="device_operation_control_missing">The matching control is unavailable. Further inspection is needed.</string>
+    <string name="device_operation_ui_changed">The page changed and the action is unverified. No repeated tap was sent.</string>
+    <string name="device_operation_cancel_unknown">Cancellation is unverified. No replacement timer was created.</string>
+    <string name="device_operation_cancelled">Timer cancelled.</string>
+    <string name="device_operation_paused">Timer paused.</string>
+    <string name="device_operation_running">Timer is running, with %1$d seconds remaining.</string>
+    <string name="device_operation_resumed">Timer resumed.</string>
+    <string name="device_operation_started">Started the %1$d-second timer.</string>
+    <string name="device_operation_unverified">The request was executed, but the timer state is unverified. No duplicate will be created.</string>
+    <string name="device_operation_alarm_invalid">The alarm time is incomplete or invalid. Nothing was executed.</string>
+    <string name="device_operation_time_missing">Provide a timer duration or alarm time. The request was not downgraded to opening Clock.</string>
+</resources>

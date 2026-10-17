@@ -1244,7 +1244,7 @@ object AgentPhoneNativeToolCatalog {
         AgentActionKind.LOCK_SCREEN -> "Requests the Android accessibility lock-screen global action."
         AgentActionKind.OPEN_APP -> "Hands an explicit bounded app or intent request to Android."
         AgentActionKind.OPEN_URL -> "Hands a bounded URL to an Android activity."
-        AgentActionKind.SET_ALARM -> "Hands a bounded alarm or timer request to Android."
+        AgentActionKind.SET_ALARM -> "Control this conversation's phone timer: start/pause/resume/cancel/replace/inspect. timer_seconds is required for a new timer or replacement. Reuse operation_id; never recreate an unverified timer. goal_status and business_success_verified distinguish dispatch from observed completion. Alarm handoffs are unverified."
         AgentActionKind.REPLY_NOTIFICATION -> "Replies to one reply-capable notification through the existing listener service."
         else -> error("Unsupported phone-native action kind: $kind")
     }
@@ -1312,9 +1312,11 @@ object AgentPhoneNativeToolCatalog {
             }
             AgentActionKind.SET_ALARM -> {
                 properties = mapOf(
-                    "timer_seconds" to coordinate,
-                    "hour" to coordinate,
-                    "minute" to coordinate
+                    "timer_seconds" to AgentNativeJsonSchema.integer(1, Int.MAX_VALUE.toLong()),
+                    "timer_operation" to AgentNativeJsonSchema.string(enumValues = listOf("start", "pause", "resume", "cancel", "replace", "inspect")),
+                    "operation_id" to AgentNativeJsonSchema.string(maxLength = 128),
+                    "hour" to AgentNativeJsonSchema.integer(0, 23),
+                    "minute" to AgentNativeJsonSchema.integer(0, 59)
                 )
                 required = emptySet()
             }

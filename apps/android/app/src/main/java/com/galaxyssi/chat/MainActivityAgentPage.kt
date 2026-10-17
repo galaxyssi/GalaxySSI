@@ -1646,10 +1646,12 @@ internal fun MainActivity.continueAgentGoalSubmission(
 ) {
     if (isSubmissionCancelled()) return
     if (!scheduleChecked && forcedAction == null && AgentTurnAttachmentRegistry.get(turnId).isEmpty() &&
-        ConversationScheduleParser.parse(originalGoal) != null) {
+        (ConversationScheduleParser.parse(originalGoal) != null ||
+            AgentDeviceIntent.exactTimerSeconds(originalGoal) != null || AgentDeviceIntent.followup(originalGoal) != null)) {
         agentRoutingExecutor.execute {
             if (isSubmissionCancelled()) return@execute
-            if (handleConversationSchedule(originalGoal, conversationId, turnId)) {
+            if (handleConversationDeviceOperation(originalGoal, conversationId, turnId) ||
+                handleConversationSchedule(originalGoal, conversationId, turnId)) {
                 agentContextBeforeTurn.remove(turnId)
                 AgentTurnMentionRegistry.remove(turnId)
             } else runOnUiThread {
@@ -1744,7 +1746,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
         val correctionContext = voiceCorrectionJournal.contextBlock(conversationId)
-        val localConversationContext = if (correctionContext.isBlank()) {
+        val correctedConversationContext = if (correctionContext.isBlank()) {
             baseConversationContext
         } else {
             baseConversationContext.copy(
@@ -1753,6 +1755,11 @@ internal fun MainActivity.continueAgentGoalSubmission(
                     .joinToString("\n\n")
             )
         }
+        val pendingOperation = if (AgentDeviceIntent.needsOperationContext(originalGoal))
+            AgentDeviceOperationStore(applicationContext).get(conversationId)?.takeUnless { it.status in setOf("cancelled", "completed") } else null
+        val localConversationContext = if (pendingOperation == null) correctedConversationContext else
+            correctedConversationContext.copy(summary = listOf(correctedConversationContext.summary, pendingOperation.context())
+                .filter(String::isNotBlank).joinToString("\n"))
         val turnAttachments = AgentTurnAttachmentRegistry.get(turnId)
         val clarification = AgentClarificationPolicy.decide(
             goal = originalGoal,
@@ -1801,6 +1808,10 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 "GalaxySSIAgent",
                 "restored supervised phone project context turn=${turnId.take(8)}"
             )
+        }
+        if (pendingOperation?.kind == "agent" && AgentDeviceIntent.followup(originalGoal) != null) {
+            executionGoal = "${pendingOperation.goal}\nCurrent user follow-up: $originalGoal\n" +
+                "Resume the pending operation from its checkpoint and observations, not a recurring schedule."
         }
         val activeTurn = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY ||
             PhoneAssistantTaskControl.isReadOnly(turnId)) {

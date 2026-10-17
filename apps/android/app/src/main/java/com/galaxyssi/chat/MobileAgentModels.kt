@@ -469,7 +469,7 @@ data class AgentVerificationResult(
             recovery: AgentRecoveryOutcome
         ): AgentVerificationResult = AgentVerificationResult(
             actionId = actionId,
-            success = actionResult?.success == true,
+            success = AgentGoalEvidence.permitsSuccess(actionResult),
             observedApp = recovery.observation.screen.foregroundApp,
             observedTitle = recovery.observation.screen.pageTitle,
             visibleTextCount = recovery.observation.screen.visibleTextCount,

@@ -457,6 +457,7 @@ internal fun MobileNativeAgent.executeParallelActions(
         saveTaskRecord()
         return snapshot()
     }
+    if (selected.actions.any { waitForNativePermissions(it) }) return snapshot()
 
     val autonomySettings = AgentModelPlannerSettingsStore(appContext).load()
     val blockedAction = selected.actions.firstOrNull { action ->
@@ -720,6 +721,7 @@ internal fun MobileNativeAgent.executePlannedAction(
         saveTaskRecord()
         return snapshot()
     }
+    if (waitForNativePermissions(hardenedAction)) return snapshot()
     val autonomySettings = AgentModelPlannerSettingsStore(appContext).load()
     val autonomyDecision = if (trustedHandoffReplay) {
         AgentAutonomyDecision(allowed = true)
@@ -2298,7 +2300,7 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
         .addVerification(
             AgentVerificationResult(
                 actionId = action.id,
-                success = true,
+                success = AgentGoalEvidence.permitsSuccess(result),
                 observedApp = currentScreen.foregroundApp,
                 observedTitle = currentScreen.pageTitle,
                 visibleTextCount = currentScreen.visibleTexts.size,

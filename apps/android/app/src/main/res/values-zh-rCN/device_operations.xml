@@ -1,0 +1,28 @@
+<resources>
+    <string name="device_operation_access_title">继续执行</string>
+    <string name="device_operation_access_message">开启 GalaxySSI 屏幕访问后，将核对并接续刚才的操作，不会重复创建倒计时。</string>
+    <string name="device_operation_enable">去开启</string>
+    <string name="device_operation_busy">另一项计时器操作正在执行，请稍后重试。</string>
+    <string name="device_operation_scope_missing">缺少会话标识，未创建计时器。</string>
+    <string name="device_operation_invalid">计时器操作参数无效，没有执行。</string>
+    <string name="device_operation_duration_invalid">倒计时时长必须是正整数秒；没有执行。</string>
+    <string name="device_operation_replace_duration">修改倒计时需要给出有效时长；没有执行。</string>
+    <string name="device_operation_stale">待处理操作已变化，没有执行旧请求。</string>
+    <string name="device_operation_missing">当前会话没有可接续的倒计时，请先给出时长。</string>
+    <string name="device_operation_replacement_required">已有倒计时。修改时长请使用 replace，避免重复创建。</string>
+    <string name="device_operation_unknown">计时器启动结果未知，未重复发送。</string>
+    <string name="device_operation_dispatched">已发送 %1$d 秒倒计时启动请求，尚未确认运行。</string>
+    <string name="device_operation_access_needed">需要屏幕访问权限才能继续控制这个倒计时。</string>
+    <string name="device_operation_not_found">找不到可核对的对应计时器，未重复创建或操作其他计时器。</string>
+    <string name="device_operation_control_missing">未找到对应控制按钮，需要进一步检查。</string>
+    <string name="device_operation_ui_changed">页面已变化，操作未确认；没有重复点击。</string>
+    <string name="device_operation_cancel_unknown">取消结果尚未确认，没有创建替代计时器。</string>
+    <string name="device_operation_cancelled">已取消倒计时。</string>
+    <string name="device_operation_paused">倒计时已暂停。</string>
+    <string name="device_operation_running">倒计时运行中，剩余 %1$d 秒。</string>
+    <string name="device_operation_resumed">倒计时已继续。</string>
+    <string name="device_operation_started">已开始 %1$d 秒倒计时。</string>
+    <string name="device_operation_unverified">已执行请求，但尚未确认倒计时状态；不会重复创建。</string>
+    <string name="device_operation_alarm_invalid">闹钟时间参数不完整或无效，没有执行。</string>
+    <string name="device_operation_time_missing">请提供倒计时时长或闹钟时间；未降级为打开时钟。</string>
+</resources>

@@ -12,7 +12,18 @@ class AgentArtifactCompletionEvidenceTest {
     private fun receipt(hash: String, exit: Int = 0, path: String = requirement.path) = AgentAction(
         id = "export", kind = AgentActionKind.CALL_NATIVE_TOOL, target = AgentOnDeviceRuntimeTools.EXECUTE,
         risk = AgentRisk.LOW, status = AgentActionStatus.COMPLETED, description = "Export result",
-        evidence = """{"exit_code":$exit,"artifacts":[{"relative_path":"$path","sha256":"$hash","size_bytes":123}]}""")
+        evidence = """{"exit_code":$exit,"artifacts":[{"relative_path":"$path","sha256":"$hash","size_bytes":123,"openability":{"status":"verified","sha256":"$hash"}}]}""")
+
+    @Test fun fileHashAloneOrInspectionOfDifferentBytesCannotProveOpenability() {
+        val value = JSONObject(receipt(output).evidence)
+        val artifact = value.getJSONArray("artifacts").getJSONObject(0)
+        artifact.remove("openability")
+        assertTrue(AgentArtifactCompletionEvidence.missing(listOf(requirement),
+            listOf(receipt(output).copy(evidence = value.toString()))).single().contains("openability"))
+        artifact.put("openability", JSONObject().put("status", "verified").put("sha256", source))
+        assertTrue(AgentArtifactCompletionEvidence.missing(listOf(requirement),
+            listOf(receipt(output).copy(evidence = value.toString()))).single().contains("openability"))
+    }
 
     @Test fun unchangedCopyIsNotAnEditedArtifact() {
         assertTrue(AgentArtifactCompletionEvidence.missing(listOf(requirement), listOf(receipt(source))).single().contains("unchanged"))

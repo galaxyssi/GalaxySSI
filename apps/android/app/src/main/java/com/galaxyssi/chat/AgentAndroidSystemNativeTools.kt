@@ -414,7 +414,9 @@ object AgentAndroidSystemNativeTools {
         val parts = manager.divideMessage(message)
         if (parts.size == 1) manager.sendTextMessage(number, null, message, null, null)
         else manager.sendMultipartTextMessage(number, null, parts, null, null)
-        return success(mapOf("phone_number" to number, "parts" to parts.size), "SMS submitted to Android telephony")
+        return success(mapOf("phone_number" to number, "parts" to parts.size,
+            "dispatch_accepted" to true, "delivery_verified" to false, "delivery_receipt_available" to false),
+            "SMS submitted to Android telephony; recipient delivery is not confirmed")
     }
 
     private fun contactsSearch(context: Context, invocation: AgentNativeToolInvocation): AgentNativeToolExecutionResult {

@@ -25,6 +25,9 @@ object AppForegroundTracker {
     fun isForeground(): Boolean = foregroundActivities.isNotEmpty()
 
     @Synchronized
+    fun isActivityForeground(activity: Any): Boolean = activity in foregroundActivities
+
+    @Synchronized
     fun onConversationVisible(activity: Any, contactId: String) {
         if (contactId.isNotBlank()) visibleConversations[activity] = contactId
     }
