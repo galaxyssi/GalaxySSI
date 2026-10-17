@@ -874,7 +874,7 @@ object AgentPhoneNativeToolCatalog {
             description = description,
             location = AgentNativeToolLocation.APPLICATION,
             inputSchema = inputSchema,
-            outputSchema = outputSchema,
+            outputSchema = workspaceOutputSchema(outputSchema),
             risk = risk,
             capabilities = setOf("workspace.app_private", "workspace.file.bounded"),
             requiredPermissions = listOf(
@@ -904,11 +904,13 @@ object AgentPhoneNativeToolCatalog {
             invocation.checkpoint()
             when (val result = execute(invocation.input)) {
                 is AgentWorkspaceFileResult.Success -> AgentNativeToolExecutionResult.success(
-                    output = encode(result.value),
+                    output = encode(result.value) + ("workspace_id" to invocation.input.string("workspace_id")),
                     message = "Workspace operation completed",
                     metadata = mapOf("storage_scope" to "app_private")
                 )
-                is AgentWorkspaceFileResult.Failure -> workspaceFailure(result.error)
+                is AgentWorkspaceFileResult.Failure -> workspaceFailure(result.error).let { failure ->
+                    failure.copy(output = failure.output + ("workspace_id" to invocation.input.string("workspace_id")))
+                }
             }
         },
         executorId = FILE_EXECUTOR_ID,
@@ -919,6 +921,16 @@ object AgentPhoneNativeToolCatalog {
             "result_policy" to "bounded-v1"
         )
     )
+
+    private fun workspaceOutputSchema(schema: AgentNativeJsonSchema): AgentNativeJsonSchema {
+        val properties = (schema.document["properties"] as? Map<*, *>).orEmpty()
+            .entries.associate { it.key.toString() to it.value }
+        val required = (schema.document["required"] as? List<*>).orEmpty().filterIsInstance<String>()
+        return AgentNativeJsonSchema(schema.document + mapOf(
+            "properties" to (properties + ("workspace_id" to workspaceIdSchema().document)),
+            "required" to (required + "workspace_id").distinct()
+        ))
+    }
 
     private class DeferredWorkspaceDefinition(
         private val create: (AgentWorkspaceFileTools) -> AgentNativeToolDefinition

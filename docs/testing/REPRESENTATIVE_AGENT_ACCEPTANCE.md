@@ -867,3 +867,56 @@ the normal composer and verify actual output, not merely a terminal task phase.
   `device-evidence-*-1.5.52.json` and `evidence-1.5.52-*.png`.
   No timer, contact, door, camera, recording, other device or learning setting
   was operated. No Desktop source or running instance was changed.
+
+## 2026-10-17: Android 1.5.53 (1336)
+
+- Extend the shared artifact completion gate to the latest relevant operation,
+  rather than accumulating successful exports forever. Failed/incomplete exports,
+  attempted source writes, patches, moves, deletes, archive extraction, runtime
+  changes and checkpoint rollback invalidate older completion evidence. Pending
+  operations must settle before an export can establish completion. Proven
+  unrelated paths/workspaces and ordinary read-only tools remain independent.
+- Native workspace receipts now include the actual host-bound workspace ID,
+  including file-operation failures, and their public schemas describe it.
+  Artifact requirements can bind to an observed workspace; ambiguous same-path
+  exports cannot silently select another workspace. Model-authored workspace
+  arguments are not accepted as ownership evidence because the host rebinds them.
+- Preserve native artifact receipt replay provenance in supervised execution.
+  A cached successful receipt is not a new inspection after later edits. Repair
+  guidance calls for inspection and fresh export, not blind mutation replay.
+  Existing exported snapshots, data, dispatch and permission policies are retained.
+- These checks cover declared artifacts and the tracked native file/runtime
+  operations. They do not prove arbitrary semantic correctness, detect every
+  external/untracked file modification, or unify all remote execution paths.
+  Arbitrary runtime programs require a fresh export unless a host receipt proves
+  no workspace change. No filesystem scan or background polling was added.
+- Final settled sources: 192 focused JVM test cases in 16 suites, 191 passed,
+  zero failures/errors, one symbolic-link case skipped because this Windows host
+  lacks link-creation privilege. APK assembly, repository checks and whitespace
+  checks passed. Initial broader regression exposed two old routing assertions:
+  model-directed file execution had been conflated with software development.
+  Those assertions now distinguish the two, with an explicit file-planning
+  regression; production routing was not changed by this increment.
+- Installed 1.5.53 / 1336 in place on S20U only. Six device fixture checks passed
+  using 12 real native file calls in an isolated temporary root: export and
+  openability, append invalidation, fresh changed-byte export, missing-file export
+  failure, restore/re-export, and same-path workspace separation. Temporary
+  fixture files were removed. This is deterministic gate acceptance, not a claim
+  that a real model autonomously repaired these faults.
+- One normal-composer request through the App-selected Auto Codex route read
+  media and voice-call volume. It completed in 51.334 seconds with two completed
+  model calls and one native read. Separate declared results bind current/max
+  values to each audio stream: media 5/15 and voice call 4/8. Independent before
+  and after reads confirmed all six streams, audio mode, microphone, speakerphone
+  and ringer state unchanged. This is one latency sample, not a speed guarantee.
+- Runtime audit captured WAITING_RESPONSE / projected waiting_response, then
+  COMPLETED / projected completed. Foreground screenshots show processing,
+  the final answer and a fixed processed duration of 50 seconds that remains
+  unchanged in a later screenshot. The old process-row circle still remains
+  visible after completion; that presentation issue is not fixed here.
+- Local evidence remains outside Git in `galaxyssi-representative-acceptance`:
+  `artifact-freshness-1.5.53-tests/`, the initial test report directory,
+  `artifact-evidence-1.5.53.json`, `readonly-state-*-1.5.53.*`,
+  `readonly-workspace-*-1.5.53.json` and `audio-*-1.5.53.json`.
+  No countdown, contact, door, camera, recording, other device or learning setting
+  was operated. No Desktop source or running instance was changed.
