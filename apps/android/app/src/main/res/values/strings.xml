@@ -1950,6 +1950,10 @@
     <string name="agent_plan_progress_running">In progress</string>
     <string name="agent_plan_progress_complete">Done</string>
     <string name="agent_plan_progress_failed">Failed</string>
+    <string name="agent_plan_progress_waiting">Waiting</string>
+    <string name="agent_plan_progress_stopped">Stopped</string>
+    <string name="agent_plan_progress_not_executed">Not executed</string>
+    <string name="agent_plan_progress_recorded">Process record</string>
     <string name="agent_plan_progress_fallback_understand">Confirm the task and constraints</string>
     <string name="agent_plan_progress_fallback_plan">Prepare the execution plan</string>
     <string name="agent_plan_progress_fallback_execute">Execute the plan</string>
