@@ -5,7 +5,8 @@ import java.lang.ref.WeakReference
 internal data class AgentSupervisedProjectProgressSnapshot(
     val temporarilyBlockedToolIds: Set<String>,
     val detailedToolIds: Set<String>,
-    val promptLedger: String?
+    val promptLedger: String?,
+    val latestObservation: String = ""
 )
 
 internal object AgentSupervisedProjectProgressSnapshotCache {
@@ -19,11 +20,13 @@ internal object AgentSupervisedProjectProgressSnapshotCache {
 
     fun compile(history: List<AgentAction>): AgentSupervisedProjectProgressSnapshot =
         compile(history) { actions ->
+            val ledger = AgentSupervisedProjectProgressPolicy.promptParts(actions)
             AgentSupervisedProjectProgressSnapshot(
                 temporarilyBlockedToolIds =
                     AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(actions),
                 detailedToolIds = AgentSupervisedProjectProgressPolicy.detailedToolIds(actions),
-                promptLedger = AgentSupervisedProjectProgressPolicy.promptBlock(actions)
+                promptLedger = ledger?.full,
+                latestObservation = ledger?.latest.orEmpty()
             )
         }
 

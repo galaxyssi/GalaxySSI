@@ -227,7 +227,13 @@ internal object AgentSupervisedProjectProgressPolicy {
             "and no project mutation has occurred since it ran. Choose a different next action."
     }
 
-    fun promptBlock(history: List<AgentAction>): String? {
+    internal data class PromptParts(val earlier: String, val latest: String) {
+        val full: String get() = earlier + latest
+    }
+
+    fun promptBlock(history: List<AgentAction>): String? = promptParts(history)?.full
+
+    fun promptParts(history: List<AgentAction>): PromptParts? {
         val observed = history.asSequence()
             .filterNot(AgentAction::isSupervisedProjectConnector)
             .filter { it.status in terminalStatuses }
@@ -235,29 +241,26 @@ internal object AgentSupervisedProjectProgressPolicy {
         if (observed.isEmpty()) return null
         val recent = compactVisibleLedger(observed)
 
-        return buildString {
+        val earlier = buildString {
             append("Verified project progress ledger. This is GalaxySSI-owned context and host facts:\n")
             append(lifecycleSnapshot(observed)).append('\n')
             append("Do not replay a successful action with equivalent inputs unless a later verified mutation made its observation stale. ")
             append("The JSON action must perform the immediate next step described by summary. ")
             append("The current-state projection follows in chronological order; the newest observation is last. ")
             append("Superseded observations and resolved failures are omitted, while lifecycle milestones and current failures remain visible.\n")
-            recent.forEach { entry ->
-                val action = entry.action
-                append("- status=").append(action.status.name)
-                append("; tool=").append(action.toolId().ifBlank { action.kind.name })
-                if (entry.repeatCount > 1) {
-                    append("; repeat_count=").append(entry.repeatCount)
-                }
-                entry.observation?.let { observation ->
-                    append("; observation=").append(observation)
-                }
-                entry.outputFields?.let { fields ->
-                    append("; observed_output_fields=").append(fields)
-                }
-                append('\n')
-            }
+            recent.dropLast(1).forEach { append(renderEntry(it)) }
         }
+        return PromptParts(earlier, recent.lastOrNull()?.let(::renderEntry).orEmpty())
+    }
+
+    private fun renderEntry(entry: LedgerEntry): String = buildString {
+        val action = entry.action
+        append("- status=").append(action.status.name)
+        append("; tool=").append(action.toolId().ifBlank { action.kind.name })
+        if (entry.repeatCount > 1) append("; repeat_count=").append(entry.repeatCount)
+        entry.observation?.let { append("; observation=").append(it) }
+        entry.outputFields?.let { append("; observed_output_fields=").append(it) }
+        append('\n')
     }
 
     private fun compactVisibleLedger(actions: List<AgentAction>): List<LedgerEntry> {
