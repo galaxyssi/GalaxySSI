@@ -42,6 +42,42 @@ class AgentArtifactOpenabilityTest {
         assertEquals("unverified", inspect(file)["status"])
     }
 
+    @Test fun completeSmallTextCanBeReviewedFromTheHashBoundReceipt() {
+        val text = "\uFEFFitem,quantity,total\n\u7b14,4,20\n\uD83D\uDD0D,1,0\n"
+        val file = temporary.newFile("review.csv").apply { writeText(text) }
+        val result = inspect(file)
+        val details = result["details"] as Map<*, *>
+        assertEquals("verified", result["status"])
+        assertEquals(digest(file), result["sha256"])
+        assertEquals(true, details["text_complete"])
+        assertEquals(text, details["text"])
+        assertEquals(text.length.toLong(), details["characters_read"])
+    }
+
+    @Test fun largeTextStillFullyValidatesButNeverReturnsAPartialReview() {
+        val file = temporary.newFile("large.txt")
+        val limit = AgentArtifactOpenability.MAX_REVIEW_TEXT_CHARACTERS
+        file.writeText("x".repeat(limit))
+        assertEquals(true, (inspect(file)["details"] as Map<*, *>)["text_complete"])
+        file.appendText("\uD83D\uDD0D")
+        val result = inspect(file)
+        val details = result["details"] as Map<*, *>
+        assertEquals("verified", result["status"])
+        assertEquals((limit + 2).toLong(), details["characters_read"])
+        assertEquals(false, details["text_complete"])
+        assertFalse(details.containsKey("text"))
+        file.appendBytes(byteArrayOf(0xc3.toByte(), 0x28))
+        assertEquals("unverified", inspect(file)["status"])
+    }
+
+    @Test fun emptyTextIsCompleteButInvalidBytesOrHashNeverExposeReviewEvidence() {
+        val file = temporary.newFile("empty.txt")
+        assertEquals("", (inspect(file)["details"] as Map<*, *>)["text"])
+        assertFalse(inspector.inspect(file, "a".repeat(64)).containsKey("details"))
+        file.writeBytes(byteArrayOf(0xc3.toByte(), 0x28))
+        assertFalse(inspect(file).containsKey("details"))
+    }
+
     @Test fun officeExtensionAloneDoesNotProveDocumentOpenability() {
         val empty = zip("invalid.docx", mapOf("readme.txt" to "not a Word document"))
         assertEquals("unverified", inspect(empty)["status"])

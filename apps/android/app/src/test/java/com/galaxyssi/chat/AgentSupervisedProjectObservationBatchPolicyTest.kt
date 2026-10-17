@@ -99,6 +99,24 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
             file("read", READ, "result.txt").withDependency("write"))))
     }
 
+    @Test fun `known file write and export share one plan without premature completion`() {
+        val write = file("write", WRITE, "result.csv")
+        val export = file("export", EXPORT, "result.csv").withDependency("write")
+        val plan = AgentPlan("Write then export", ScreenContext("Test", pageTitle = "Test"), emptyList(),
+            listOf(write, export), confirmationRequired = false)
+        assertTrue(acceptsGraph(plan.actions))
+        assertFalse(acceptsGraph(listOf(write, file("export", EXPORT, "result.csv"))))
+        assertEquals(listOf("write"), AgentPlanExecutionBatchPolicy.select(plan, descriptorFor = ::descriptor).actions.map { it.id })
+        val completedWrite = plan.copy(actions = listOf(write.copy(status = AgentActionStatus.COMPLETED), export))
+        assertEquals(listOf("export"), AgentPlanExecutionBatchPolicy.select(completedWrite, descriptorFor = ::descriptor).actions.map { it.id })
+        val failedWrite = plan.copy(actions = listOf(write.copy(status = AgentActionStatus.FAILED), export))
+            .blockActionsWithFailedDependencies()
+        assertEquals(AgentActionStatus.BLOCKED, failedWrite.actions.last().status)
+        assertTrue(AgentPlanExecutionBatchPolicy.select(failedWrite, descriptorFor = ::descriptor).actions.isEmpty())
+        val final = export.copy(kind = AgentActionKind.DRAFT_PLAN, target = "task-complete")
+        assertFalse(acceptsGraph(listOf(write, final)))
+    }
+
     @Test fun `accepts a transitive dependency chain including repeated verification`() {
         assertTrue(acceptsGraph(listOf(file("before", READ, "result.txt"),
             file("write", WRITE, "result.txt").withDependency("before"),
@@ -190,6 +208,7 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
     private fun descriptor(id: String): AgentNativeToolDescriptor? = when (id) {
         WRITE -> writeDescriptor
         READ -> writeDescriptor.copy(id = READ, concurrency = AgentNativeToolConcurrency.PARALLEL_READ_ONLY)
+        EXPORT -> writeDescriptor.copy(id = EXPORT)
         else -> null
     }
 
@@ -242,5 +261,6 @@ class AgentSupervisedProjectObservationBatchPolicyTest {
     private companion object {
         const val WRITE = AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT
         const val READ = AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT
+        const val EXPORT = AgentPhoneNativeToolCatalog.WORKSPACE_EXPORT
     }
 }

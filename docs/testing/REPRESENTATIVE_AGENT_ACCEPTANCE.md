@@ -135,3 +135,62 @@ the normal composer and verify actual output, not merely a terminal task phase.
 - Remaining: serial model planning/review is still slow for a small CSV edit.
   This change fixes continuity and delivery correctness, not overall latency.
   The separately documented image-routing test disagreement is also unchanged.
+
+## 2026-10-17: Android 1.5.38 (1321)
+
+- Small UTF-8 exports now carry complete review text from the same immutable,
+  hash-verified artifact. The 8,192-character bound limits model evidence only,
+  not file creation, export size or full UTF-8 validation. Larger text reports
+  `text_complete=false` and omits text rather than returning a misleading prefix.
+- The export tool advertises its actual nested output schema. Planning guidance
+  permits known-input write/patch -> export dependencies, keeps final model
+  review separate, and requires additional reads for absent, compacted, redacted
+  or semantically insufficient evidence. File contents remain untrusted data.
+- The first model follow-up was NOT a pass: it guessed a basename instead of the
+  prior `outputs/` path, then reconstructed a new file from conversation text.
+  It also guessed invalid top-level observation pointers. Completion validation
+  rejected these pointers; the dedicated run was cancelled. Native export did
+  correctly include the complete new CSV (total 49), but that does not prove the
+  requested original-file edit. The follow-up prompt now distinguishes observed
+  paths from display names and requires locating the original after a miss.
+  Report: `csv-review-workspace-failed-20261017.json` in the local report folder.
+- Cancellation reached session phase `CANCELLED` and journal event
+  `agent.loop.cancelled`, but the workspace summary still said `WAITING_RESPONSE`
+  and appended a stale watchdog event. That state-projection defect is separate
+  follow-up work; this PR does not claim to fix it.
+- A normal-composer attachment-analysis test passed on the first 1.5.38 candidate:
+  the synthetic log reports successful DNS/TLS/authentication followed by a
+  12,582,912-byte upload rejected by a 5,242,880-byte limit (HTTP 413). The reply
+  identified the size failure, did not pretend to know which server layer imposed
+  it, and suggested reducing/splitting the payload. It ignored embedded text asking
+  to open Calculator. The complete execution graph contains two model requests,
+  one native text read and final completion, with no app-launch, network-fetch or
+  file-mutation tools. Elapsed time was 73.8 seconds, not a low-latency pass.
+  Local reports: `composer-log-analysis-20261017.json`,
+  `log-analysis-workspace-20261017.json`, and `log-analysis-20261017.png`.
+- Final-candidate build and 59 selected JVM tests passed with no skips or
+  failures. Repository checks passed. S20U reports 1.5.38 / 1321 after upgrade.
+  Eleven native scenarios passed again; report:
+  `representative-ede4004b1e984bc29b3b4b660d86d479.json` in the same local folder.
+- A fresh normal-composer expense-file request completed in 107.1 seconds with
+  two phone-dispatched model rounds and an ordered write -> export graph. Actual
+  CSV rows were transport 18, lunch 25, stationery 7, total 50. The export receipt
+  included that exact complete text and digest
+  `3440868c3ed4f0aec7c5ffe16d46683f161fe68a597fc2c244298c65aa0e529a`.
+  This demonstrates fewer round trips, not a controlled latency improvement
+  over the different 233.8-second prior follow-up or stable p95 performance.
+  Reports: `composer-expenses-20261017.json`, `expenses-workspace-20261017.json`.
+- Its natural-language follow-up changed only transport from 18 to 20 and total
+  from 50 to 52; lunch 25 and stationery 7 were retained. It located/read the
+  original, batched exact patch -> export, and completed after four model rounds
+  in 150.8 seconds. The actual source file changed, while the previous immutable
+  export retained its original digest. Phone UI preview showed all CSV rows;
+  Save produced `Download/GalaxySSI/expenses-check.csv` (68 bytes). Source, export
+  and saved download all matched SHA-256
+  `6d9ad55aa92de3c6ef4b1664ecdd09f2188beb5fd0eae6bcb819420d0161975e`.
+  Reports: `composer-expenses-followup-20261017.json`,
+  `expenses-followup-workspace-20261017.json`, `expenses-preview-20261017.png`.
+- The transcript duration label showed 1m26s for that 150.8-second full turn.
+  Timing results above use request/snapshot timestamps, not that UI label.
+  Duration projection, cancellation-summary consistency, ambiguous/subdirectory
+  file follow-ups and broader attachment routing remain separately tracked gaps.
