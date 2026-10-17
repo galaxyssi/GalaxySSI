@@ -1451,9 +1451,13 @@ internal fun MobileNativeAgent.captureArtifactRichOutput(
     return AgentRichContentCodec.encode(AgentRichContentCodec.fromText(message) + mediaBlock)
 }
 
-internal fun MobileNativeAgent.formatBytes(bytes: Long): String {
-    val gib = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-    return if (gib >= 1.0) String.format(Locale.US, "%.1f GB", gib) else String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+internal fun MobileNativeAgent.formatBytes(bytes: Long): String = formatAgentBytes(bytes)
+
+internal fun formatAgentBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f GiB", bytes / (1024.0 * 1024.0 * 1024.0))
+    bytes >= 1024L * 1024L -> String.format(Locale.US, "%.1f MiB", bytes / (1024.0 * 1024.0))
+    bytes >= 1024L -> String.format(Locale.US, "%.1f KiB", bytes / 1024.0)
+    else -> "$bytes B"
 }
 
 internal fun MobileNativeAgent.formatCoordinate(value: Double?): String = value?.let { String.format(Locale.US, "%.6f", it) } ?: "-"

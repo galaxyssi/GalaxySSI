@@ -91,6 +91,12 @@ class AgentSupervisedProjectCompletionPolicyTest {
         }
     }
 
+    @Test fun publicationCannotAutoFinishAdditionalRequestedAnswers() {
+        val action = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
+        val withAnswers = pr.copy(results = listOf(AgentGoalResultRequirement("explanation", "Explain the verified change")))
+        assertNull(outcome(withAnswers, action, nativeResult(action.target, action.evidence)))
+    }
+
     @Test fun publicationMessagesUseStructuredReceiptsAndGoalOnlyForLanguage() {
         val action = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
         assertEquals("GitHub PR #2241 was created and is open: https://github.com/galaxyssi/GalaxySSI/pull/2241",

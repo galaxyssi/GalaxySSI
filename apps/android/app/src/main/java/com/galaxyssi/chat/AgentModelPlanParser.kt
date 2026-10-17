@@ -51,9 +51,11 @@ object AgentModelPlanParser {
         val json = extractJson(raw) ?: reject("$", "invalid_json", "Return one JSON object containing actions.")
         val completionRequirements = AgentCompletionRequirements.parse(json.optJSONObject("completion_requirements"))
         if (json.has("completion_requirements") && completionRequirements == null)
-            reject("completion_requirements", "invalid_requirements", "Use the advertised completion requirement schema; JSON syntax is valid.")
+            reject("completion_requirements", "invalid_requirements", json.optJSONObject("completion_requirements")
+                ?.let { AgentCompletionRequirements.rejectionDetail(it) }
+                ?: "completion_requirements must be an object using the advertised schema; JSON syntax is valid.")
         if (completionRequirements?.canReplace(request.completionRequirements) == false)
-            reject("completion_requirements.reason", "unexplained_requirement_change", "Explain why the previous completion requirements need correction.")
+            reject("completion_requirements", "unexplained_requirement_change", "Preserve every previous outcome and requested result ID; explain corrections in reason. Do not drop unfinished requested results.")
         val input = json.optJSONArray("actions") ?: reject("actions", "array_required", "Provide a non-empty actions array.")
         val maxActions = settings.maxActions.coerceIn(1, MAX_ACTIONS)
         if (input.length() !in 1..maxActions)
@@ -146,8 +148,9 @@ object AgentModelPlanParser {
                 (kind == AgentActionKind.CALL_NATIVE_TOOL && json.optBoolean("completes_goal", false)).toString()
         )
         val target = resolveTarget(kind, json.optString("target"), parameters, request)
-        val description = json.optString("description").trim().take(300)
-            .ifBlank { defaultDescription(kind, target) }
+        val rawDescription = json.optString("description").trim()
+        val description = (if (kind == AgentActionKind.DRAFT_PLAN && target.equals(TASK_COMPLETE_TARGET, ignoreCase = true))
+            rawDescription else rawDescription.take(300)).ifBlank { defaultDescription(kind, target) }
         return AgentAction(
             id = actionId,
             kind = kind,

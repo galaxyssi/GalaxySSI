@@ -1123,10 +1123,10 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             return supervisedFormatRepairDecision(plan, connector, request, response,
                 "action_plan:" + parsing.rejection?.toJson().orEmpty())
         }
-    if (!AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, rawParsed.actions,
-            phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
+    val phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
                 connector.parameters[AgentUnverifiedOutcomeRecovery.PHONE_CONTROL] == "true" ||
-                AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext))) {
+                AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
+    if (!AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, rawParsed.actions, phoneControl = phoneControl)) {
         logSupervisedPlanRejection("execution_tool_policy", normalizedResponse)
         return supervisedFormatRepairDecision(plan, connector, request, response,
             "execution_tool_policy: The plan parses correctly, but an action is not permitted by this execution route. Select tools from this route's Available phone tools; do not rewrite JSON syntax or broaden permissions.")
@@ -1138,6 +1138,10 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             AgentSupervisedProjectProgressPolicy.canonicalize(action, plannerHistory)
         }
     )
+
+    AgentGoalResultEvidence.planningViolation(parsed.completionRequirements, phoneControl)?.let { violation ->
+        return supervisedFormatRepairDecision(plan, connector, request, response, violation)
+    }
 
     AgentUnverifiedOutcomeRecovery.observationViolation(connector, plannerHistory, parsed.actions) { toolId ->
         nativeToolRegistry.lookup(toolId)?.descriptor
@@ -1195,7 +1199,9 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             it.publication == AgentPublicationRequirement.NONE } == true
         val missingEvidence = AgentSupervisedProjectCompletionPolicy.missingEvidence(
             parsed.completionRequirements,
-            plannerHistory
+            plannerHistory,
+            finalAnswer = parsed.actions.single().description,
+            requireResults = phoneControl
         ) + (pendingOutcome?.let { listOf("The latest business outcome is still unverified: ${it.message}. " +
             "Inspect before retrying (${it.nextAction.ifBlank { "choose an available observation tool" }}), repair only missing work, " +
             "then provide an identity-bound postcondition. Do not repeat the accepted side effect.") }.orEmpty()) +

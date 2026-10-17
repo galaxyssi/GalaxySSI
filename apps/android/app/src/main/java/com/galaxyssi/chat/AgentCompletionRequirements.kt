@@ -28,7 +28,8 @@ data class AgentCompletionRequirements(
     val phoneLinux: Boolean,
     val reason: String = "",
     val artifacts: List<AgentArtifactRequirement> = emptyList(),
-    val outcomes: List<AgentObservedOutcome> = emptyList()
+    val outcomes: List<AgentObservedOutcome> = emptyList(),
+    val results: List<AgentGoalResultRequirement> = emptyList()
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("publication", publication.wireValue)
@@ -36,15 +37,36 @@ data class AgentCompletionRequirements(
         .put("reason", reason)
         .put("artifacts", JSONArray(artifacts.map(AgentArtifactRequirement::toJson)))
         .put("outcomes", JSONArray(outcomes.map(AgentObservedOutcome::toJson)))
+        .put("results", JSONArray(results.map(AgentGoalResultRequirement::toJson)))
 
     fun changesOutcome(previous: AgentCompletionRequirements): Boolean =
-        publication != previous.publication || phoneLinux != previous.phoneLinux || artifacts != previous.artifacts || outcomes != previous.outcomes
+        publication != previous.publication || phoneLinux != previous.phoneLinux || artifacts != previous.artifacts ||
+            outcomes != previous.outcomes || results != previous.results
 
     fun canReplace(previous: AgentCompletionRequirements?): Boolean =
         previous == null || outcomes.map { it.id }.containsAll(previous.outcomes.map { it.id }) &&
+            results.map { it.id }.containsAll(previous.results.map { it.id }) &&
             (!changesOutcome(previous) || reason.isNotBlank())
 
     companion object {
+        fun rejectionDetail(json: JSONObject): String {
+            val outcomes = json.optJSONArray("outcomes")
+            if (outcomes != null) for (index in 0 until outcomes.length()) {
+                val value = outcomes.optJSONObject(index) ?: continue
+                if (AgentObservedOutcome.parse(value) != null) continue
+                val subject = value.optJSONObject("subject") ?: continue
+                for (path in subject.keys()) {
+                    if (subject.opt(path) !is String) {
+                        return "completion_requirements.outcomes[$index].subject[$path] requires a string identity value, " +
+                            "not a numeric/boolean/null value. Keep checks numeric when the receipt field is numeric. " +
+                            "Correct the identity type or omit non-identity metadata; preserve the actual observed values. JSON syntax is valid."
+                    }
+                }
+            }
+            return "Use the advertised completion requirement schema: outcomes need string-valued subject identities " +
+                "and scalar checks; results need unique id, description, string-list outcome_ids/artifact_paths and string answer. JSON syntax is valid."
+        }
+
         fun parse(json: JSONObject?): AgentCompletionRequirements? {
             if (json == null) return null
             val publication = AgentPublicationRequirement.entries.firstOrNull {
@@ -67,7 +89,13 @@ data class AgentCompletionRequirements(
                 for (index in 0 until array.length()) outcomes += AgentObservedOutcome.parse(array.optJSONObject(index) ?: return null) ?: return null
                 if (outcomes.map { it.id }.distinct().size != outcomes.size) return null
             }
-            return AgentCompletionRequirements(publication, phoneLinux, reason.trim(), artifacts, outcomes)
+            val results = mutableListOf<AgentGoalResultRequirement>()
+            if (json.has("results")) {
+                val array = json.optJSONArray("results") ?: return null
+                for (index in 0 until array.length()) results += AgentGoalResultRequirement.parse(array.optJSONObject(index) ?: return null) ?: return null
+                if (results.map { it.id }.distinct().size != results.size) return null
+            }
+            return AgentCompletionRequirements(publication, phoneLinux, reason.trim(), artifacts, outcomes, results)
         }
     }
 }
