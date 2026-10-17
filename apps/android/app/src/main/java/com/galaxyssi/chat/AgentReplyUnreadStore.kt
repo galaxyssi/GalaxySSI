@@ -29,6 +29,7 @@ internal object AgentReplyUnreadStore {
 
     @Synchronized
     fun record(context: Context, entry: AgentTranscriptEntry, previous: AgentTranscriptEntry? = null) {
+        if (ConversationScheduledTasks.isQuietLegacyStatus(context, entry)) return
         val token = AgentReplyUnreadPolicy.token(entry) ?: return
         if (!AgentReplyUnreadPolicy.isNewReply(entry, previous)) return
         val prefs = preferences(context)

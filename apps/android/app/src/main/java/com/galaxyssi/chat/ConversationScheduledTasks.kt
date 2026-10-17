@@ -83,7 +83,8 @@ internal object ConversationScheduledTasks {
             task.name, run.resultSummary.ifBlank { context.getString(R.string.schedule_empty_result) })
         val inserted = transcript.append(AgentTranscriptRole.ASSISTANT, text,
             dedupeKey = "scheduled-result:${run.runId}", conversationId = conversationId,
-            turnId = run.runId, taskId = run.runId, richOutputJson = run.resultRichOutputJson)
+            turnId = ConversationScheduledReplyPolicy.turnId(conversationId, run.runId),
+            taskId = run.runId, richOutputJson = run.resultRichOutputJson)
         store.upsertRun(run.copy(deliveryRecorded = true))
         return inserted
     }
