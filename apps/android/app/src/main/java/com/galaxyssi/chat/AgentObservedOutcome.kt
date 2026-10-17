@@ -111,7 +111,7 @@ internal object AgentObservedOutcomeEvidence {
 
     private fun toolId(action: AgentAction): String = action.parameters["tool_id"].orEmpty().ifBlank { action.target }
 
-    private fun isUndispatched(action: AgentAction): Boolean =
+    internal fun isUndispatched(action: AgentAction): Boolean =
         action.status in setOf(AgentActionStatus.PROPOSED, AgentActionStatus.PENDING_CONFIRMATION) ||
             action.status == AgentActionStatus.ROLLED_BACK && action.parameters[SUPERSEDED_SOURCE_STATUS_PARAMETER] in
                 setOf(AgentActionStatus.PROPOSED.name, AgentActionStatus.PENDING_CONFIRMATION.name)
