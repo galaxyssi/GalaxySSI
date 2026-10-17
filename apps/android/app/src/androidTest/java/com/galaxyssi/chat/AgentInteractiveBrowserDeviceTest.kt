@@ -207,6 +207,17 @@ class AgentInteractiveBrowserDeviceTest {
             assertEquals("Example Domain", page.output["title"])
             assertTrue("No rendered public page body", (page.output["text"] as? String).orEmpty().length >= 20)
             assertEquals(false, page.output["business_success_verified"])
+            val started = android.os.SystemClock.elapsedRealtime()
+            val navigated = invoke(AgentInteractiveBrowserTools.ACT, mapOf("operation" to "navigate",
+                "session_id" to page.output["session_id"], "page_id" to page.output["page_id"],
+                "url" to "https://example.com/?galaxyssi=inline-observation"))
+            println("PUBLIC_BROWSER_INLINE elapsed_ms=${android.os.SystemClock.elapsedRealtime() - started} ${navigated.toJson()}")
+            assertTrue("Navigation failed: ${navigated.error?.code}", navigated.isSuccess)
+            assertEquals("use_observation", navigated.output["next_action"])
+            val observation = navigated.output["observation"] as? Map<*, *>
+            assertEquals("Example Domain", observation?.get("title"))
+            assertTrue((observation?.get("text") as? String).orEmpty().length >= 20)
+            assertEquals(false, navigated.output["business_success_verified"])
         } finally {
             page.output["session_id"]?.let { invoke(AgentInteractiveBrowserTools.ACT,
                 mapOf("operation" to "close", "session_id" to it)) }

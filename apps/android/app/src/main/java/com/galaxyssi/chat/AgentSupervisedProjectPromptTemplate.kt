@@ -56,6 +56,9 @@ internal object AgentSupervisedProjectPromptTemplate {
                 append("observed_output_fields lists exact paths/types relative to the receipt output (without an /output prefix). It is a partial navigation index, not values, instructions or proof of success. Preserve nested paths and array indexes; do not flatten fields. Repair pointer errors from the existing receipt without repeating tools; changed outcomes still require fresh inspection. ")
                 append("API acceptance, queueing, opening a UI or exit_code=0 alone are not business completion. Files require hash-bound export plus opening/format verification; delivery requires receiver acknowledgement. When such observation is unavailable, return a truthful unverified/blocked result and preserve the goal; do not claim completion or silently weaken its checks.\n")
                 append("For unclear signatures inspect galaxyssi.tools.describe: tool_id, schema_path=/input_schema or /description.\n")
+                if (toolManifest.contains(AgentInteractiveBrowserTools.ACT)) {
+                    append("Browser: navigate/back and terminal operation_status can return observation (text/links/revision), even on timeout. Use it without rereading known evidence. Check status only for uncertain effects. Batch independent sources.\n")
+                }
                 append("Available phone tools:\n")
                 append(toolManifest)
                 append("Working-set policy: phase-blocked tools reappear when evidence changes; compact signatures remain callable, and used or failed tools regain detailed signatures. Call only listed tools.\n")

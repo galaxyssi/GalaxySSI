@@ -82,6 +82,36 @@ class AgentInteractiveBrowserToolsTest {
         assertEquals(false, result.error?.details?.get("outcome_unknown"))
     }
 
+    @Test fun inlineObservationsReachThePlannerWithoutAnotherBrowserExecution() {
+        for (operation in listOf("navigate", "back", "operation_status")) {
+            var executions = 0
+            val registry = registry {
+                executions++
+                response("""{"ok":true,"result":{"next_action":"use_observation","business_success_verified":false,"observation":{"text":"Rendered public evidence","revision":"r2","controls":[{"href":"https://example.com/source"}]}}}""")
+            }
+            val tool = if (operation == "operation_status") AgentInteractiveBrowserTools.OBSERVE else AgentInteractiveBrowserTools.ACT
+            val result = registry.invoke(tool, mapOf("operation" to operation), context)
+            assertTrue(result.isSuccess)
+            assertEquals(1, executions)
+            assertEquals("use_observation", result.output["next_action"])
+            val observation = result.output["observation"] as Map<*, *>
+            assertEquals("Rendered public evidence", observation["text"])
+            assertEquals("r2", observation["revision"])
+            assertTrue(result.toJson().contains("https://example.com/source"))
+            assertEquals(false, result.output["business_success_verified"])
+        }
+    }
+
+    @Test fun navigationTimeoutRetainsReadableEvidenceAndTheOriginalFailure() {
+        val registry = registry { response("""{"ok":false,"error":{"code":"navigation_timeout","message":"Inspect the partial page.","details":{"navigation_completed":false,"next_action":"use_observation","observation":{"text":"Partial public evidence","revision":"r3"}}}}""") }
+        val result = registry.invoke(AgentInteractiveBrowserTools.ACT, mapOf("operation" to "navigate"), context)
+        assertFalse(result.isSuccess)
+        assertEquals("navigation_timeout", result.error?.code)
+        assertEquals(false, result.error?.details?.get("navigation_completed"))
+        assertEquals("use_observation", result.error?.details?.get("next_action"))
+        assertEquals("Partial public evidence", (result.error?.details?.get("observation") as Map<*, *>)["text"])
+    }
+
     @Test fun readOnlyBrowserToolCannotDispatchMutations() {
         val registry = registry { error("Invalid input must not execute") }
         assertFalse(registry.invoke(AgentInteractiveBrowserTools.OBSERVE, mapOf("operation" to "click"), context).isSuccess)

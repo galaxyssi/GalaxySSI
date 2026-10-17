@@ -5706,9 +5706,16 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
     if agent_id == "codex" and not programmatic_video_requested:
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
+        from phone_planner_session import phone_planner_session
         codex_conversation_id = backend_conversation_id
+        planner_session = phone_planner_session(
+            mode=connector_task_mode, client_route=client_route_id,
+            conversation=codex_conversation_id, turn=client_turn_id,
+            model=selected_agent_model or "gpt-5.6-sol",
+        ) if plan_only and not read_only_screen_analysis and codex_experiment is None else ""
         codex_run_conversation_id = (
             codex_conversation_id if codex_experiment is not None
+            else planner_session if planner_session
             else "" if plan_only or read_only_screen_analysis else codex_conversation_id
         )
         parallel_codex_task = codex_experiment is None and (plan_only or read_only_screen_analysis)
@@ -5772,10 +5779,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
                 active_conversation_task = None
                 parallel_codex_task = True
-                # An unscoped Codex run gets a fresh thread. GalaxySSI still
-                # owns the durable mobile conversation and returns this result
-                # under the original client turn.
-                codex_run_conversation_id = ""
+                # Phone planning reuses only its goal-scoped thread; other
+                # parallel work remains unscoped. Never steer the chat run.
+                codex_run_conversation_id = planner_session
         add_task_trace("desktop_task_created", task.task_id)
         codex_execution_generation = task.execution_generation
         from agent_execution_mutations import AgentExecutionMutations
@@ -6492,7 +6498,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         thread_id=task.thread_id,
                         turn_id=task.turn_id,
                         original_prompt=content,
-                        conversation_id=codex_conversation_id,
+                        conversation_id=codex_run_conversation_id,
                         elapsed_seconds=elapsed_seconds,
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
@@ -6742,8 +6748,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     if not parallel_codex_task and codex_experiment is None:
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
                 except CodexConversationBusyError as busy:
-                    if codex_experiment is not None:
-                        raise  # Do not turn a busy experimental identity into a new provider thread.
+                    if codex_experiment is not None or planner_session:
+                        raise  # Never fork or steer a different goal when its scoped thread is busy.
                     busy_task = agent_task_manager.get(busy.active_task_id)
                     busy_decision = (
                         classify_active_turn(
