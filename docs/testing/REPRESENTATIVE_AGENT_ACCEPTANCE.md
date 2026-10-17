@@ -430,3 +430,43 @@ the normal composer and verify actual output, not merely a terminal task phase.
   latency result. The three older prompt-budget failures are outside this focused
   selection and remain unresolved; no claim of complete goal acceptance is made.
   Desktop, S26U, watches, contacts and device settings were not changed.
+
+## 2026-10-17: Android 1.5.45 (1328)
+
+- Prompt compaction now reserves the complete, bounded latest host-rendered
+  progress entry before compacting older context. Static reminders precede the
+  ledger, so duplicate trailing instructions cannot displace the newest receipt.
+  Failed observations remain failures; missing observations are not invented.
+- The existing progress snapshot cache supplies the pinned entry in the same
+  history scan. Tool inventory, conversation transport, subject-bound outcome
+  validation and durable full history retain their existing policies. This is
+  not a claim that every historical receipt fits in every model request.
+- Synchronized with merged PR #3570. The expanded JVM run passed 192 of 194 tests,
+  including seven new receipt-retention/cache cases. The previously failing
+  large-continuation test now preserves all executable tool IDs, the latest user
+  constraint and the latest actual tool observation within 24,000 characters.
+- Two pre-existing static-contract size assertions still fail: the planning
+  contract is 9,253 characters against its 5,800-character target. Their limits
+  are unchanged. These failures remain separate work and are not counted as
+  passing. Baseline and expanded XML reports are outside Git in
+  `%TEMP%/galaxyssi-representative-acceptance/prompt-1.5.44-baseline/` and
+  `prompt-1.5.45-expanded-tests/` respectively.
+- APK assembly and repository checks passed. Installed 1.5.45 / 1328 in place on
+  S20U only. A fresh normal-composer request containing a typo asked for both
+  media and call volume without changing settings. The App-selected Auto Codex
+  route executed one native audio-status read and returned media 2/15 and call
+  4/8. All six audio streams matched the independent before/after observations.
+- That real request took 84.687 seconds and four model requests, including two
+  plan-format repair rounds. It is a truthful end-result pass, not a first-attempt
+  or latency pass. The final screenshot also retained an obsolete plan-repair
+  progress row after completion; that UI issue is not fixed by this increment.
+  Reports: `audio-readonly-composer-1.5.45.json`,
+  `audio-readonly-workspace-1.5.45.json`, `audio-before-1.5.45.json`,
+  `audio-after-1.5.45.json` and `audio-readonly-1.5.45.png` in the local directory.
+- Rechecked the earlier stopped workspace after upgrade: session and workspace
+  remain CANCELLED with cancellation requested. The original subdirectory CSV
+  still totals 44 and retains SHA-256
+  `6883a0992dad52a68ab93dd04580c55cb3466b9ec5b9d97f51fdf460a28ea127`.
+  These are persistence checks, not new stop/edit trials. No timer, contact,
+  camera, recording or door action was executed. Desktop and other devices are
+  unchanged; the general goal-execution acceptance is not yet complete.

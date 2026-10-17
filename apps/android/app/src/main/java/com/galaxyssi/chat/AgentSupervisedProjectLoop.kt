@@ -396,7 +396,8 @@ internal object AgentSupervisedProjectLoop {
                 !AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext),
             maximumCharacters = maximumCharacters,
             minimumBaseCharacters = MINIMUM_BASE_PROMPT_CHARACTERS,
-            completionRequirements = request.completionRequirements
+            completionRequirements = request.completionRequirements,
+            latestObservation = progress.latestObservation
         )
         return AgentPlanningTiming.measure("prompt") {
             AgentSupervisedProjectBasePromptCache.render(key) { compilePrompt(key) }
@@ -420,16 +421,14 @@ internal object AgentSupervisedProjectLoop {
         if (key.conversationTransport.isNotBlank()) {
             append(key.conversationTransport).append('\n')
         }
-        if (key.progressLedger.isNotBlank()) {
-            append(key.progressLedger).append('\n')
-        }
         append("Context precedence: verified observations are chronological, and the newest verified tool observation overrides older assistant statements or older observations about the same state. Never preserve an older inference when a newer host-owned fact contradicts it.\n")
         append("Preserve requested edits during recovery: copying or re-encoding inputs is not completion. Inspect and repair unavailable tool capabilities (including missing encoders), then verify the requested change. Reuse verified outputs when asked to display/send them.\n")
-        append("For files set completion_requirements.artifacts=[{\"path\":\"outputs/result.png\",\"source_sha256\":\"\"}]. source_sha256 means the observed PRE-EDIT input hash only for requested transformations, never the new/exported output hash. New files and unchanged downloads leave it empty; host receipts verify output hashes. Export via galaxyssi.workspace.file.export or runtime artifact_paths. Unchanged copies fail requested edits; inspect edits too.\n")
+        if (key.progressLedger.isNotBlank()) append(key.progressLedger)
     }.let { prompt ->
-        AgentSupervisedProjectPromptCodec.preserveToolInventory(
+        AgentSupervisedProjectPromptCodec.preserveLatestObservation(
             prompt,
-            key.maximumCharacters.coerceAtLeast(key.minimumBaseCharacters)
+            key.maximumCharacters.coerceAtLeast(key.minimumBaseCharacters),
+            key.latestObservation
         )
     }
 
