@@ -217,3 +217,49 @@ the normal composer and verify actual output, not merely a terminal task phase.
   This run does not claim a new real-model cancellation/continuation pass or a
   phone reboot test. Normal-composer stop, subdirectory-file follow-ups, duration
   projection and broader attachment routing remain explicit acceptance gaps.
+
+## 2026-10-17: Android 1.5.40 (1323)
+
+- Paged transcripts previously measured duration from the oldest visible process
+  row when the user request had left the 24-row page. The expense follow-up was
+  shown as 86.740 seconds instead of its full 150.306-second turn.
+- The existing asynchronous timing lookup now reads a conversation-and-turn scoped
+  scalar timestamp through the turn index. It does not load/decrypt message bodies
+  or read the database on the UI thread. The cached timestamp survives row rebinds;
+  completion authority and task execution are unchanged.
+- All 55 selected JVM tests passed, with zero failures or skips. One stale test
+  was aligned with the existing v1.5.13 behavior: recoverable waiting/blocked states
+  do not end the clock. This PR does not change that production behavior.
+- Five isolated real SQLite checks passed on S20U: paged-start recovery, frozen
+  terminal duration, conversation/turn isolation, missing/invalid timestamps, and
+  database close/reopen. The fixture database was deleted. Report:
+  `%TEMP%/galaxyssi-representative-acceptance/timing-fixture-final-20261017.json`.
+- Reopening the original expense conversation now displays `2m30s`, without
+  rerunning the model or changing its output. Screenshot:
+  `whole-turn-clock-20261017.png` in the same local report directory.
+- The normal composer cancellation regression from 1.5.39 was exercised against a
+  new, read-only synthetic-log task while it was in `WAITING_RESPONSE` without an
+  execution lease. Sending Stop persisted `CANCELLED` in both session and workspace,
+  with `cancellation_requested=true`. A later inspection showed unchanged terminal
+  state and no post-cancellation watchdog event. Reports: `stop-workspace-before`,
+  `stop-workspace-after`, and `stop-workspace-stable` (all `-20261017.json`).
+  This verifies local durable cancellation, not a Desktop process termination or
+  real phone-reboot claim. A separate file task subsequently started normally.
+- A fresh normal-composer task created `outputs/purchase-check-1017.csv` in 67.7
+  seconds (two model rounds): folders 3 x 8 = 24, pens 2 x 5 = 10, total 34.
+  A follow-up without repeating the path changed pens to four, retained the other
+  values and modified that original subdirectory file, not a new root-level copy.
+- The follow-up initially used two patches for one path in the multi-file atomic
+  batch tool. Its duplicate-path preflight rejected the plan before changing the
+  file. The model received that failure, switched to one exact patch, exported the
+  changed file and reviewed complete evidence. It finished in 175.1 seconds after
+  four actual model rounds; the rejected batch remains visible in the audit.
+  This is a real recovery pass, not a clean first-attempt or low-latency pass.
+- Original source and new immutable export both contain pens 4 x 5 = 20 and total
+  44, with SHA-256 `6883a0992dad52a68ab93dd04580c55cb3466b9ec5b9d97f51fdf460a28ea127`.
+  The old immutable export retains total 34 and its original digest. Scoped reports:
+  `composer-subdir-create-20261017.json`, `subdir-create-workspace-20261017.json`,
+  `composer-subdir-followup-20261017.json`, `subdir-followup-workspace-20261017.json`.
+  A final text/file block was observed, but a new preview/download tap test was
+  deferred when another app occupied the screen. Earlier CSV save/preview evidence
+  above must not be counted as a new save of this subdirectory test file.

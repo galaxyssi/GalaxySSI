@@ -1313,7 +1313,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         processEntries.ifEmpty { listOf(entry) }
     )
     val hasProcessDetails = processSegments.isNotEmpty()
-    val startedAt = AgentProcessClockPolicy.startedAt(entry, turnEntries,
+    val startedAt = agentProcessStartTimestamp(entry, turnEntries,
         processEntries.firstOrNull()?.timestampMillis ?: entry.timestampMillis)
     val completedAt = agentProcessCompletionTimestamp(entry, turnEntries)
     val execution = agentExecutionPresentation(

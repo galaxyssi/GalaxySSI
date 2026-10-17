@@ -1064,6 +1064,24 @@ internal fun MainActivity.agentProcessIsRunning(entry: AgentTranscriptEntry): Bo
     AgentProcessClockPolicy.isRunning(agentTimelineRuntime(entry)?.snapshot()?.phase
         ?: agentExecutionPresentations[entry.taskId]?.phase)
 
+internal fun MainActivity.agentProcessStartTimestamp(
+    entry: AgentTranscriptEntry,
+    entries: List<AgentTranscriptEntry>,
+    fallback: Long
+): Long {
+    val workspaceId = entry.turnId.trim()
+    val cached = agentProcessCompletionLookups[workspaceId]
+    val requestVisible = entries.any {
+        it.role == AgentTranscriptRole.USER && AgentProcessClockPolicy.sameTurn(entry, it) && it.timestampMillis > 0
+    }
+    if (!requestVisible && workspaceId.isNotBlank() && cached?.startedAtMillis == null &&
+        (cached == null || SystemClock.elapsedRealtime() - cached.checkedAtElapsedRealtime >=
+            AGENT_PROCESS_COMPLETION_LOOKUP_RETRY_MS)) {
+        scheduleAgentProcessCompletionLookup(entry, workspaceId)
+    }
+    return AgentProcessClockPolicy.startedAt(entry, entries, fallback, cached?.startedAtMillis)
+}
+
 internal fun MainActivity.agentProcessCompletionTimestamp(
     entry: AgentTranscriptEntry,
     entries: List<AgentTranscriptEntry>
@@ -1100,14 +1118,17 @@ private fun MainActivity.scheduleAgentProcessCompletionLookup(
     if (!agentProcessCompletionLookupInFlight.add(workspaceId)) return
     agentTranscriptContentExecutor.execute {
         val lookup = runCatching {
-            EncryptedAgentWorkspaceStore(this).find(workspaceId)
+            val workspace = EncryptedAgentWorkspaceStore(this).find(workspaceId)
                 ?.takeIf { it.conversationId == entry.conversationId }
+            val startedAt = agentTranscriptStore.firstTimestampForTurn(entry.conversationId, workspaceId)
+                ?: workspace?.createdAtMillis?.takeIf { it > 0L }
+            workspace to startedAt
         }
         if (lookup.isFailure) {
             agentProcessCompletionLookupInFlight.remove(workspaceId)
             return@execute
         }
-        val workspace = lookup.getOrNull()
+        val (workspace, startedAtMillis) = lookup.getOrThrow()
         val completedAtMillis = workspace?.takeIf {
             AgentTranscriptPresentationPolicy.processClockStopsFor(it.status)
         }?.updatedAtMillis?.takeIf { it > 0L }
@@ -1115,10 +1136,12 @@ private fun MainActivity.scheduleAgentProcessCompletionLookup(
         agentProcessCompletionLookups[workspaceId] = AgentProcessCompletionLookup(
             completedAtMillis = completedAtMillis,
             checkedAtElapsedRealtime = SystemClock.elapsedRealtime(),
-            status = workspace?.status
+            status = workspace?.status,
+            startedAtMillis = startedAtMillis
         )
         agentProcessCompletionLookupInFlight.remove(workspaceId)
-        if (previous != null && previous.completedAtMillis == completedAtMillis && previous.status == workspace?.status) return@execute
+        if (previous != null && previous.completedAtMillis == completedAtMillis &&
+            previous.status == workspace?.status && previous.startedAtMillis == startedAtMillis) return@execute
         runOnUiThread {
             if (isFinishing || isDestroyed || !isAgentTranscriptAdapterInitialized()) {
                 return@runOnUiThread

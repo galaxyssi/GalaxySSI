@@ -37,6 +37,35 @@ class AgentProcessClockPolicyTest {
         assertEquals(1000L, AgentProcessClockPolicy.startedAt(process, listOf(user.copy(turnId = "other")), 1000))
     }
 
+    @Test fun pagedHistoryUsesTheWholeTurnStartNotTheFirstVisibleToolStep() {
+        val requestedAt = 1792201020731L
+        val firstVisibleAt = 1792201084297L
+        val completedAt = 1792201171037L
+        val lateStep = process.copy(timestampMillis = firstVisibleAt)
+        val start = AgentProcessClockPolicy.startedAt(lateStep, listOf(lateStep), firstVisibleAt, requestedAt)
+        assertEquals(150306L, AgentProcessClock(start, completedAt).elapsed(completedAt + 60_000))
+        assertEquals(86740L, completedAt - firstVisibleAt)
+    }
+
+    @Test fun loadingEarlierPagesOrRebindingCannotChangeAResolvedStart() {
+        val user = process.copy(role = AgentTranscriptRole.USER, timestampMillis = 500)
+        val pagedStart = AgentProcessClockPolicy.startedAt(process, listOf(process), 1000, 500)
+        val expandedStart = AgentProcessClockPolicy.startedAt(process, listOf(user, process), 1000, 500)
+        assertEquals(pagedStart, expandedStart)
+        assertEquals(500L, pagedStart)
+    }
+
+    @Test fun visibleUserRequestIncludesPreparationBeforeWorkspaceCreation() {
+        val user = process.copy(role = AgentTranscriptRole.USER, timestampMillis = 500)
+        assertEquals(500L, AgentProcessClockPolicy.startedAt(process, listOf(user), 1000, 700))
+    }
+
+    @Test fun invalidPersistentStartDoesNotBorrowAnotherTurnsUserMessage() {
+        val other = process.copy(role = AgentTranscriptRole.USER, turnId = "other", timestampMillis = 100)
+        assertEquals(1000L, AgentProcessClockPolicy.startedAt(process, listOf(other), 1000, 0))
+        assertEquals(1000L, AgentProcessClockPolicy.startedAt(process, listOf(other), 1000, -1))
+    }
+
     @Test fun completionFreezesEvenWhenAProjectionTemporarilyLosesTheEvent() {
         val clock = AgentProcessClock(1000)
         assertEquals(1000L, clock.elapsed(2000))
