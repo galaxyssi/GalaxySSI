@@ -913,7 +913,9 @@ internal fun MobileNativeAgent.executePlannedAction(
         }
     }
     val updatedPlan = observedPlan?.let { candidate ->
-        ensureSupervisedProjectContinuation(candidate, hardenedAction, lastActionResult)
+        continueUnverifiedOutcome(
+            ensureSupervisedProjectContinuation(candidate, hardenedAction, lastActionResult),
+            hardenedAction, lastActionResult)
     }
     Log.i(
         "GalaxySSIAgentLifecycle",

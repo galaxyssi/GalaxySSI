@@ -223,9 +223,11 @@ internal object AgentSupervisedProjectLoop {
         val unknownOutcome = AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(failedAction)
         val recovery = buildString {
             if (unknownOutcome) {
-                append("\nThe last phone action stopped reporting progress, but its outcome is unknown rather than proven failed. ")
+                append(if (failedAction.status == AgentActionStatus.COMPLETED)
+                    "\nThe last phone action returned a receipt, but its business outcome remains unverified. "
+                else "\nThe last phone action stopped reporting progress, but its outcome is unknown rather than proven failed. ")
                 append("Inspect durable receipts, repository state, artifacts, or process state before deciding whether to continue, verify, or retry. ")
-                append("Do not repeat a mutation blindly. Watchdog observation: ")
+                append("Do not repeat a mutation blindly. Recovery observation: ")
             } else {
                 append("\nThe last phone action failed. Diagnose the observed evidence before choosing a different next step. ")
                 append("Do not repeat the same action with unchanged arguments. Failure reason: ")
@@ -370,6 +372,7 @@ internal object AgentSupervisedProjectLoop {
                     temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
                     detailedToolIds = progress.detailedToolIds,
                     phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId) ||
+                        AgentUnverifiedOutcomeRecovery.isPhoneControl(request) ||
                         AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
                 )
             },
@@ -1115,6 +1118,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         }
     if (!AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, rawParsed.actions,
             phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
+                connector.parameters[AgentUnverifiedOutcomeRecovery.PHONE_CONTROL] == "true" ||
                 AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext))) {
         logSupervisedPlanRejection("execution_tool_policy", normalizedResponse)
         return supervisedFormatRepairDecision(plan, connector, request, response,
@@ -1127,6 +1131,12 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             AgentSupervisedProjectProgressPolicy.canonicalize(action, plannerHistory)
         }
     )
+
+    AgentUnverifiedOutcomeRecovery.observationViolation(connector, plannerHistory, parsed.actions) { toolId ->
+        nativeToolRegistry.lookup(toolId)?.descriptor
+    }?.let { violation ->
+        return supervisedFormatRepairDecision(plan, connector, request, response, violation)
+    }
 
     if (rawParsed.completionRequirements?.canReplace(plan.completionRequirements) == false) {
         return supervisedFormatRepairDecision(plan, connector, request, response,

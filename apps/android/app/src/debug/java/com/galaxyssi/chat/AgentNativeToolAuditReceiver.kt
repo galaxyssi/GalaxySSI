@@ -22,7 +22,9 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                 val workspaceId = intent.getStringExtra("inspect_workspace_id").orEmpty()
                 val checkpointFixture = intent.getBooleanExtra("checkpoint_fixture", false)
                 val timingFixture = intent.getBooleanExtra("timing_fixture", false)
+                val outcomeRecoveryFixture = intent.getBooleanExtra("outcome_recovery_fixture", false)
                 val report = when {
+                    outcomeRecoveryFixture -> verifyUnverifiedOutcomeRecovery(context.applicationContext)
                     timingFixture -> verifyAgentProcessTiming(context.applicationContext)
                     checkpointFixture -> verifyOperationCheckpoints(context.applicationContext)
                     workspaceId.isNotBlank() -> inspectWorkspace(context.applicationContext, workspaceId)
@@ -36,6 +38,7 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                     else -> runAudit(context.applicationContext)
                 }
                 val fileName = when {
+                    outcomeRecoveryFixture -> "native-outcome-recovery-fixture.json"
                     timingFixture -> "native-timing-fixture.json"
                     checkpointFixture -> "native-checkpoint-fixture.json"
                     workspaceId.isNotBlank() -> "native-workspace-audit.json"
