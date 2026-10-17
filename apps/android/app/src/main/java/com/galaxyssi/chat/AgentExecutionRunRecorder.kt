@@ -24,6 +24,7 @@ internal class AgentExecutionRunRecorder(
 
     fun recordAgentRunFromState(turnId: String, state: AgentUiState) {
         if (state.phase !in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) return
+        if (AgentRuntimePermissionContinuation.waiting(state) != null) return
         val persistedRunId = runCatching {
             EncryptedAgentWorkspaceStore(context).find(turnId)?.parentRunId.orEmpty()
         }.getOrDefault("")

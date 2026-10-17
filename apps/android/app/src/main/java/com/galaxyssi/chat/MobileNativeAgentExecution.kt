@@ -2124,6 +2124,7 @@ internal fun MobileNativeAgent.applyRecoveryMetadata(
 )
 
 internal fun MobileNativeAgent.cancelCurrentTask(): AgentUiState {
+    val permissionWait = phase == AgentPhase.BLOCKED && AgentRuntimePermissionContinuation.waiting(snapshot()) != null
     AgentCloudDispatchRegistry.cancel(lastActionResult)
     PhoneExecutionAuthority.requestCancellation(sessionId)
     phase = AgentPhase.CANCELLED
@@ -2138,13 +2139,22 @@ internal fun MobileNativeAgent.cancelCurrentTask(): AgentUiState {
     currentGoal = ""
     currentPlan = null
     recordAudit(AgentAuditEvent.TASK_CANCELLED, "cancelled")
+    if (permissionWait && executionLoop.snapshot?.phase == AgentExecutionLoopPhase.BLOCKED) {
+        advanceExecutionLoop(AgentExecutionLoopPhase.CANCELLED, "Task cancelled")
+    }
     return reconcileExecutionLoop(snapshot())
 }
 
 internal fun MobileNativeAgent.pauseCurrentTask(): AgentUiState {
+    val permissionWait = AgentRuntimePermissionContinuation.parse(lastActionResult)?.let { pending ->
+        val scope = currentPlan?.let { AgentPlanContinuationScope.resolve(it,
+            activeConversationContext.conversationId, activeConversationTurnId, sessionId) }
+        scope != null && pending.matches(sessionId, scope.conversationId,
+            scope.turnId.ifBlank { sessionId }, phase, currentPlan)
+    } == true
     if ((currentPlan == null && pendingPlanning == null) ||
         phase == AgentPhase.OBSERVING ||
-        phase == AgentPhase.BLOCKED ||
+        (phase == AgentPhase.BLOCKED && !permissionWait) ||
         phase == AgentPhase.COMPLETED ||
         phase == AgentPhase.FAILED ||
         phase == AgentPhase.CANCELLED
@@ -2158,6 +2168,9 @@ internal fun MobileNativeAgent.pauseCurrentTask(): AgentUiState {
         message = "Task paused"
     )
     recordAudit(AgentAuditEvent.TASK_PAUSED, "paused")
+    if (permissionWait && executionLoop.snapshot?.phase == AgentExecutionLoopPhase.BLOCKED) {
+        persistExecutionLoopEvent(executionLoop.pause("Task paused"))
+    }
     return reconcileExecutionLoop(snapshot())
 }
 

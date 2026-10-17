@@ -113,8 +113,8 @@ private fun MainActivity.showAgentPlanProgressOverlay(
     dismissAgentPlanProgressOverlay()
     val viewport = findViewById<FrameLayout>(R.id.agentOutputViewport)
     val runtime = agentTimelineRuntime(entry)
-    val timelineActions = runtime?.snapshot()?.phase
-        ?.let(AgentExecutionLoopTimelinePolicy::actionsForPhase)
+    val timelineActions = runtime?.snapshot()
+        ?.let(AgentExecutionLoopTimelinePolicy::actionsForState)
         .orEmpty()
     val root = FrameLayout(this).apply {
         isClickable = true

@@ -1,5 +1,52 @@
 # Representative Agent Acceptance
 
+## 2026-10-17: Android 1.5.56 (1339), permission-wait control
+
+- A pre-dispatch Android runtime-permission wait used `BLOCKED`, which the
+  runtime pause method ignored. The permission callback also accepted `PAUSED`.
+  An authorized callback must not override a user's pause.
+- Only an exactly scoped permission wait gains pause/cancel controls; unrelated
+  blocked tasks retain their existing actions. Pause keeps the original plan and
+  action, persists a paused loop, and explicit resume rechecks permissions before
+  dispatch. A late or duplicate grant cannot dispatch paused/cancelled work.
+- The loop now permits control-only BLOCKED -> PAUSED/CANCELLED transitions,
+  without counting a tool call or retry. It still rejects direct BLOCKED -> ACT
+  without explicit recovery. Resume from this pause returns to PLAN for checks.
+- Permission waits emit TOOL_PERMISSION_REQUIRED rather than RUN_FAILED, and
+  neither foreground nor background run recording finalizes them as failures.
+  Other blocks and genuine terminal failures keep their previous semantics.
+- The debug permission-continuation fixture injects permission state and writes
+  one dedicated synthetic cache file through the production runtime. It does not
+  request/revoke real Android permissions, call a model, or access calendar data.
+  This is runtime/checkpoint acceptance, not a claim that an actual Android
+  permission dialog was exercised.
+- Final settled sources passed 143 focused JVM tests in eight suites, with zero
+  failures, errors or skips. APK assembly, repository and whitespace checks passed.
+  Earlier builds were superseded; the installed APK contains the final scoped
+  pause/cancel transitions, verified in the compiled runtime class.
+- Installed 1.5.56 / 1339 in place on S20U only. The device fixture passed all
+  13 checks, including exact-action restoration, late/duplicate grant rejection,
+  explicit resume, permission recheck and durable cancellation. It wrote the
+  dedicated test file exactly once, made zero model calls and zero system
+  permission changes, and cleaned up its session, file and ledger database.
+- One separate normal-composer request used the App-selected Auto Codex route.
+  Runtime observation showed WAITING_RESPONSE followed by COMPLETED; the durable
+  operation projection was completed. The answer arrived in 63.614 seconds and
+  reported media volume 4/15 and voice-call volume 4/8. The native action was an
+  audio-status read. A fresh independent post-run read corroborated both values.
+  The attempted pre-run audit used an invalid diagnostic scope and was rejected;
+  its stale report was discarded, not counted as a before/after comparison.
+- A foreground screenshot shows the completion icon and fixed processed duration
+  of 1 minute 3 seconds. This is one sample, not a latency guarantee. A real
+  Android permission dialog, process death and all execution paths were not
+  exhaustively exercised by this increment.
+- Local evidence stays outside Git in `galaxyssi-representative-acceptance`:
+  `permission-wait-1.5.56-tests/`, `permission-wait-1.5.56-device.json`,
+  `permission-readonly-1.5.56.json`, `permission-readonly-1.5.56.png`,
+  `permission-workspace-1.5.56.json` and `audio-verification-1.5.56.json`.
+  No countdown, contacts, doors, camera, recording, learning setting, S26U or
+  watch was operated. Desktop was not modified or restarted.
+
 ## Scope
 
 Use S20U only, synthetic data and dedicated conversations/workspaces. Do not run

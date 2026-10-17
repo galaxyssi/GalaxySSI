@@ -17,7 +17,7 @@ class AgentRuntimePermissionContinuationTest {
         assertFalse(AgentGoalEvidence.permitsSuccess(result))
         assertEquals("false", result.metadata["dispatch_accepted"])
         assertTrue(pending.matches("session", "conversation", "turn", AgentPhase.BLOCKED, plan()))
-        assertTrue(pending.matches("session", "conversation", "turn", AgentPhase.PAUSED, plan()))
+        assertFalse(pending.matches("session", "conversation", "turn", AgentPhase.PAUSED, plan()))
     }
 
     @Test fun differentConversationTurnSessionOrPlanCannotResume() {

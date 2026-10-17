@@ -22,12 +22,18 @@ internal data class AgentRuntimePermissionContinuation(
 
     fun matches(session: String, conversation: String, turn: String, phase: AgentPhase, plan: AgentPlan?): Boolean =
         sessionId == session && conversationId == conversation && turnId == turn &&
-            phase in setOf(AgentPhase.BLOCKED, AgentPhase.PAUSED) && plan?.planId == planId &&
+            phase == AgentPhase.BLOCKED && plan?.planId == planId &&
             plan.revision == revision && plan.actions.any {
                 it.id == actionId && it.status in setOf(AgentActionStatus.PROPOSED, AgentActionStatus.PENDING_CONFIRMATION)
             }
 
     companion object {
+        fun waiting(state: AgentUiState): AgentRuntimePermissionContinuation? {
+            val pending = parse(state.lastActionResult) ?: return null
+            val scope = state.plan?.let { AgentPlanContinuationScope.resolve(it, "", "", state.sessionId) } ?: return null
+            return pending.takeIf { it.matches(state.sessionId, scope.conversationId, scope.turnId, state.phase, state.plan) }
+        }
+
         val runtimePermissions = setOf(
             "android.permission.READ_PHONE_STATE", "android.permission.READ_SMS", "android.permission.SEND_SMS",
             "android.permission.READ_CONTACTS", "android.permission.WRITE_CONTACTS",

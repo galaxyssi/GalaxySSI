@@ -12,6 +12,47 @@ import org.junit.Test
 import org.json.JSONObject
 
 class AgentExecutionLoopTest {
+    @Test fun permissionWaitCanPausePersistAndResumeWithoutDispatch() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("permission-task", AgentExecutionLoopBudget())
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "previous", toolCall = true)
+        loop.transition(AgentExecutionLoopPhase.OBSERVE)
+        val blocked = loop.transition(AgentExecutionLoopPhase.BLOCKED, "Permission required", "pending")
+        val paused = loop.pause()
+        assertEquals(AgentExecutionLoopPhase.PAUSED, paused.phase)
+        assertEquals(blocked.snapshot.usage, paused.snapshot.usage)
+        assertEquals("pending", paused.snapshot.lastActionId)
+        val restored = AgentExecutionLoop.restore(requireNotNull(AgentExecutionLoopJsonCodec.decode(
+            AgentExecutionLoopJsonCodec.encode(paused.snapshot))))
+        assertEquals(AgentExecutionLoopPhase.PAUSED, restored.snapshot?.phase)
+        val resumed = restored.resume()
+        assertEquals(AgentExecutionLoopPhase.PLAN, resumed.phase)
+        assertEquals(1, resumed.snapshot.usage.toolCalls)
+        assertEquals(0, resumed.snapshot.usage.retries)
+    }
+
+    @Test fun blockedCancellationIsTerminalWithoutRetryingOrDispatching() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("permission-task", AgentExecutionLoopBudget())
+        loop.transition(AgentExecutionLoopPhase.BLOCKED)
+        val cancelled = loop.transition(AgentExecutionLoopPhase.CANCELLED)
+        assertEquals(0, cancelled.snapshot.usage.toolCalls)
+        assertEquals(0, cancelled.snapshot.usage.retries)
+        assertThrows(IllegalArgumentException::class.java) { loop.pause() }
+        assertThrows(IllegalArgumentException::class.java) {
+            loop.transition(AgentExecutionLoopPhase.PLAN, retry = true)
+        }
+    }
+
+    @Test fun blockedWorkStillCannotDispatchWithoutExplicitRecovery() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("permission-task", AgentExecutionLoopBudget())
+        loop.transition(AgentExecutionLoopPhase.BLOCKED)
+        assertThrows(IllegalArgumentException::class.java) {
+            loop.transition(AgentExecutionLoopPhase.ACT, toolCall = true)
+        }
+    }
+
     @Test
     fun happyPathPersistsTheCanonicalExecutionSequence() {
         var now = 1_000L
