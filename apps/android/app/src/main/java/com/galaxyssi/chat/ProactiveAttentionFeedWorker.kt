@@ -46,7 +46,7 @@ class ProactiveAttentionFeedCollector(
 ) {
     fun collect(now: Long = System.currentTimeMillis()): AttentionFeedCycle {
         val preferences = ProactiveAttentionStore(context).preferences()
-        if (!preferences.configured || !preferences.enabled || !GlobalAgentRepository(context).settings().enabled)
+        if (!preferences.configured || !preferences.enabled)
             return AttentionFeedCycle()
         val topics = preferences.topics.filter { it.enabled }
         val store = ProactiveAttentionFeedStore(context)

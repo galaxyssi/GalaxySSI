@@ -233,6 +233,7 @@ class ProactiveAttentionCoordinator(context: Context) {
     private val repository = GlobalAgentRepository(appContext)
 
     fun reconcile() = synchronized(LOCK) {
+        if (!repository.settings().enabled) return@synchronized
         val preferences = store.preferences()
         if (!preferences.configured) return@synchronized
         val existing = repository.researchTasks().associateBy(GlobalResearchTask::id)

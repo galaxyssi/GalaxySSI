@@ -2,6 +2,10 @@ package com.galaxyssi.chat
 
 /** Builds a notification from messages already admitted by the delivery and permission policies. */
 object GlobalProactiveNotificationPolicy {
+    fun enabledFor(message: GlobalProactiveMessage, settings: GlobalAgentSettings): Boolean =
+        settings.notificationsEnabled && (message.id.startsWith("attention-feed:") ||
+            (settings.enabled && settings.proactiveInsightsEnabled))
+
     fun candidate(messages: List<GlobalProactiveMessage>): GlobalAgentNotificationCandidate? {
         if (messages.isEmpty()) return null
         val primary = messages.lastOrNull(GlobalProactiveMessage::urgent) ?: messages.last()

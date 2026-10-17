@@ -15,6 +15,57 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class BackgroundHeatDeviceTest {
+    @Test fun pauseInstalledWorldModelWithoutDeletingMessages() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("pause_installed_learning") == "true")
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = GlobalAgentRepository(context)
+        val before = repository.settings()
+        val preferences = ProactiveAttentionStore(context).preferences()
+        val newsIds = repository.proactiveMessages().map { it.id }.toSet()
+        val conversations = AgentTranscriptStore(context).conversations(true).map { it.id }.toSet()
+        val runtime = GlobalSuperAgentRuntime.get(context)
+        runtime.updateSettings { it.copy(enabled = false) }
+        assertEquals(before.copy(enabled = false), GlobalAgentRepository(context).settings())
+        val pending = repository.pendingEventCount()
+        assertEquals(0, runtime.processPending().processedEventCount)
+        assertEquals(pending, repository.pendingEventCount())
+        assertEquals(preferences, ProactiveAttentionStore(context).preferences())
+        assertTrue(repository.proactiveMessages().map { it.id }.toSet().containsAll(newsIds))
+        assertTrue(AgentTranscriptStore(context).conversations(true).map { it.id }.toSet().containsAll(conversations))
+        assertLearningWorkStopped(context)
+        AndroidCognitionScheduler.requestImmediate(context)
+        AndroidCognitionScheduler.requestImmediate(context, explicit = true)
+        AndroidCognitionScheduler.requestAttention(context)
+        AndroidCognitionScheduler.requestAttention(context, 15_000)
+        AndroidCognitionScheduler.scheduleAt(context, System.currentTimeMillis() + 60_000)
+        AndroidCognitionScheduler.scheduleDynamic(context, runtime)
+        android.os.SystemClock.sleep(1_000)
+        assertLearningWorkStopped(context)
+        Log.i("GalaxySSIHeatTest", "learning_paused=true active_learning_work=0 preserved_news=${newsIds.size} preserved_conversations=${conversations.size}")
+    }
+
+    @Test fun installedPauseSurvivesProcessRestart() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("verify_installed_pause") == "true")
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertFalse(GlobalAgentRepository(context).settings().enabled)
+        GlobalSuperAgentRuntime.get(context)
+        android.os.SystemClock.sleep(5_000)
+        assertFalse(GlobalSuperAgentRuntime.get(context).cachedSettings().enabled)
+        assertLearningWorkStopped(context)
+        Log.i("GalaxySSIHeatTest", "learning_pause_restored=true active_learning_work=0")
+    }
+
+    private fun assertLearningWorkStopped(context: Context) {
+        val manager = androidx.work.WorkManager.getInstance(context)
+        val deadline = android.os.SystemClock.elapsedRealtime() + 20_000
+        fun active() = AndroidCognitionScheduler.learningWorkNames.flatMap {
+            manager.getWorkInfosForUniqueWork(it).get(10, java.util.concurrent.TimeUnit.SECONDS)
+        }.filterNot { it.state.isFinished }
+        while (active().isNotEmpty() && android.os.SystemClock.elapsedRealtime() < deadline)
+            android.os.SystemClock.sleep(100)
+        assertTrue("Learning work still active", active().isEmpty())
+    }
+
     @Test fun migrateOneThousandEncryptedRecordsAndAppendWithoutRewritingHistory() = isolated { database ->
         val records = (1..1_000).map { record("fixture-$it", it.toLong()) }
         database.writeString(GlobalDeadLetterStore.LEGACY, JSONArray(records).toString())

@@ -11,14 +11,6 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 
-data class GlobalAgentProcessingBatch(
-    val processedEventCount: Int,
-    val changedWorldItemCount: Int,
-    val queuedResearchTasks: List<GlobalResearchTask>,
-    val proactiveMessages: List<GlobalProactiveMessage>,
-    val queuedCognitionTasks: List<GlobalCognitionTask> = emptyList()
-)
-
 data class GlobalAgentDashboardSnapshot(
     val pendingEventCount: Int = 0,
     val retryingEventCount: Int = 0,
@@ -40,15 +32,6 @@ data class GlobalAgentDashboardSnapshot(
     val feedbackCount: Int = 0,
     val learnedTopicCount: Int = 0,
     val updatedAtMillis: Long = 0L
-)
-
-data class GlobalAgentNotificationCandidate(
-    val title: String,
-    val content: String,
-    val conversationId: String,
-    val messageIds: Set<String>,
-    val attention: Boolean = false,
-    val important: Boolean = false
 )
 
 data class GlobalPromptContextSnapshot(
@@ -1787,6 +1770,11 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val startedAt = SystemClock.elapsedRealtime()
         val settings = repository.settings()
         cachedSettings = settings
+        if (!settings.enabled) {
+            AndroidCognitionScheduler.cancelLearning(appContext)
+            Log.i("GalaxySSIStartup", "global_runtime_background_disabled")
+            return
+        }
         val recoveredAfterUpgrade = if (settings.enabled) {
             repository.recoverDeadLettersAfterUpgrade(repository.appVersionCode())
         } else 0
@@ -1810,13 +1798,13 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     }
 
     fun processPending(maxEvents: Int = 100, retractionsOnly: Boolean = false): GlobalAgentProcessingBatch = synchronized(PROCESS_LOCK) {
+        val settings = settings()
+        if (!settings.enabled) {
+            return@synchronized GlobalAgentProcessingBatch(0, 0, emptyList(), emptyList())
+        }
         if (!syntheticEvalArtifactsPurged) {
             repository.purgeSyntheticConversation(AgentEvalSideEffectPolicy.SYNTHETIC_CONVERSATION_ID)
             syntheticEvalArtifactsPurged = true
-        }
-        val settings = repository.settings()
-        if (!settings.enabled) {
-            return@synchronized GlobalAgentProcessingBatch(0, 0, emptyList(), emptyList())
         }
         if (!retractionsOnly) {
             synchronizePersistentContext()
@@ -1856,7 +1844,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         var changedItems = 0
         val handledEventIds = mutableSetOf<String>()
         val retryingEventIds = repository.eventFailures().mapTo(mutableSetOf(), GlobalEventProcessingFailure::eventId)
-        events.forEach { event ->
+        // Commit the completed portion of this batch when learning is paused between events.
+        events.asSequence().takeWhile { cachedSettings.enabled }.forEach { event ->
             val worldBefore = world
             val topicGraphBefore = topicGraph
             val memoryInboxBefore = memoryInbox
@@ -2271,6 +2260,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     }
 
     fun prewarmContextSnapshot() {
+        if (!settings().enabled) return
         repository.promptContextSnapshot()
         realtimeContext.prewarm()
     }
@@ -2495,7 +2485,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val updated = transform(previous)
         repository.saveSettings(updated)
         cachedSettings = updated
-        if (updated.proactiveDiscoveryEnabled && updated.modelUnderstandingEnabled && (
+        if (updated.enabled && updated.proactiveDiscoveryEnabled && updated.modelUnderstandingEnabled && (
                 !previous.proactiveDiscoveryEnabled || !previous.modelUnderstandingEnabled
             )
         ) {
@@ -2505,6 +2495,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             if (!previous.enabled) repository.savePersistentContextSyncVersion(0)
             AgentMemoryRetractionRecovery.enqueue(appContext)
             GlobalConversationEventBus.requestProcessing(appContext)
+        } else {
+            AndroidCognitionScheduler.cancelLearning(appContext)
         }
         scheduleNextWake()
         return updated
@@ -2841,20 +2833,22 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         delivered: List<GlobalProactiveMessage>
     ): GlobalAgentNotificationCandidate? {
         val settings = repository.settings()
-        if (!settings.enabled || !settings.proactiveInsightsEnabled || !settings.notificationsEnabled) return null
+        if (!settings.notificationsEnabled) return null
         val attention = ProactiveAttentionStore(appContext).preferences()
         val messages = delivered.filter { it.notifiedAtMillis <= 0L &&
             (it.deliveredConversationId.isNotBlank() || it.id.startsWith("attention-feed:")) }
+            .filter { GlobalProactiveNotificationPolicy.enabledFor(it, settings) }
             .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it, attention) }
         return GlobalProactiveNotificationPolicy.candidate(messages)
     }
 
     fun unnotifiedDeliveredMessages(limit: Int = 24): List<GlobalProactiveMessage> {
         val settings = repository.settings()
-        if (!settings.enabled || !settings.proactiveInsightsEnabled || !settings.notificationsEnabled) return emptyList()
+        if (!settings.notificationsEnabled) return emptyList()
         val attention = ProactiveAttentionStore(appContext).preferences()
         return repository.proactiveMessages()
             .asSequence()
+            .filter { GlobalProactiveNotificationPolicy.enabledFor(it, settings) }
             .filter {
                 it.status == GlobalProactiveMessageStatus.DELIVERED &&
                     it.notifiedAtMillis <= 0L &&

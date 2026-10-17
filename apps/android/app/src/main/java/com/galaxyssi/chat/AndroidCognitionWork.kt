@@ -72,6 +72,7 @@ object AndroidCognitionScheduler {
 
     fun requestAttention(context: Context, delayMillis: Long = 0L) {
         val app = context.applicationContext
+        if (!GlobalAgentRepository(app).settings().enabled) return
         if (delayMillis > 0L) {
             enqueue(app, ATTENTION_TIMER, AndroidCognitionWorkMode.ATTENTION, delayMillis, ExistingWorkPolicy.REPLACE)
         } else requestAttentionWake(app)
@@ -94,7 +95,7 @@ object AndroidCognitionScheduler {
                             it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED
                         }
                     if (!pending) enqueue(app, ATTENTION_WORK, AndroidCognitionWorkMode.ATTENTION, 0L,
-                        ExistingWorkPolicy.APPEND_OR_REPLACE).result.get(10, TimeUnit.SECONDS)
+                        ExistingWorkPolicy.APPEND_OR_REPLACE)?.result?.get(10, TimeUnit.SECONDS)
                 }.onFailure {
                     Log.w("GalaxySSICognition", "attention_wake_deferred type=${it.javaClass.simpleName}")
                     requestAttention(app, 60_000L)
@@ -141,6 +142,10 @@ object AndroidCognitionScheduler {
     }
 
     fun scheduleDynamic(context: Context, runtime: GlobalSuperAgentRuntime) {
+        if (!runtime.settings().enabled) {
+            cancelLearning(context)
+            return
+        }
         val continuity = runtime.continuitySnapshot()
         val dashboard = runtime.dashboard()
         val activeResearch = runtime.researchTasks().count { task ->
@@ -166,11 +171,25 @@ object AndroidCognitionScheduler {
         mode: AndroidCognitionWorkMode,
         delayMillis: Long,
         policy: ExistingWorkPolicy
-    ): androidx.work.Operation {
+    ): androidx.work.Operation? {
+        if (!allowsWork(mode, GlobalAgentRepository(context).settings().enabled)) return null
         val request = buildRequest(mode, delayMillis, uniqueName == ATTENTION_TIMER || uniqueName == SCHEDULED_WORK)
         return WorkManager.getInstance(context.applicationContext)
             .enqueueUniqueWork(uniqueName, policy, request)
     }
+
+    internal fun allowsWork(mode: AndroidCognitionWorkMode, learningEnabled: Boolean): Boolean =
+        learningEnabled || mode == AndroidCognitionWorkMode.PROJECTION
+
+    fun cancelLearning(context: Context) {
+        synchronized(attentionWakeLock) { attentionWakePending = false }
+        val manager = WorkManager.getInstance(context.applicationContext)
+        learningWorkNames.forEach(manager::cancelUniqueWork)
+    }
+
+    internal val learningWorkNames get() = listOf(
+        EVENT_WORK, ATTENTION_WORK, ATTENTION_TIMER, SCHEDULED_WORK, SCHEDULED_NOW, EXPLICIT_WORK
+    )
 
     internal fun buildRequest(mode: AndroidCognitionWorkMode, delayMillis: Long, timer: Boolean) =
         OneTimeWorkRequestBuilder<AndroidCognitionWorker>()
@@ -200,6 +219,13 @@ class AndroidCognitionWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        val mode = runCatching {
+            AndroidCognitionWorkMode.valueOf(inputData.getString(AndroidCognitionScheduler.KEY_MODE).orEmpty())
+        }.getOrDefault(AndroidCognitionWorkMode.SCHEDULED)
+        if (!AndroidCognitionScheduler.allowsWork(mode, GlobalAgentRepository(applicationContext).settings().enabled)) {
+            Log.i(LOG_TAG, "run_skipped mode=$mode reason=background_disabled")
+            return Result.success()
+        }
         if (inputData.getBoolean(AndroidCognitionScheduler.KEY_TIMER, false)) {
             if (inputData.getString(AndroidCognitionScheduler.KEY_MODE) == AndroidCognitionWorkMode.ATTENTION.name)
                 AndroidCognitionScheduler.requestAttention(applicationContext)

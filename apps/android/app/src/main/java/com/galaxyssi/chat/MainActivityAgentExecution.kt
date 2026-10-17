@@ -1729,19 +1729,19 @@ internal fun MainActivity.refreshGlobalAgentCognition() {
         return
     }
     thread(name = "galaxyssi-global-agent-cognition") {
-        runCatching { globalSuperAgentRuntime.processPending() }
-        runCatching { globalSuperAgentRuntime.processLongHorizonCycle() }
-        runCatching { globalSuperAgentRuntime.processProactiveDiscoveryCycle() }
-        runCatching { globalSuperAgentRuntime.executeCognitionCycle() }
-        runCatching { globalSuperAgentRuntime.executeAutonomousCycle() }
-        runCatching { globalSuperAgentRuntime.executeResearchCycle() }
-        runCatching { globalSuperAgentRuntime.processPending() }
-        runCatching { globalSuperAgentRuntime.processLongHorizonCycle() }
-        runCatching { globalSuperAgentRuntime.processProactiveDiscoveryCycle() }
-        runCatching { globalSuperAgentRuntime.scheduleNextWake() }
-        val delivered = runCatching {
-            globalSuperAgentRuntime.deliverPending(agentTranscriptStore)
-        }.getOrDefault(emptyList())
+        val delivered = if (globalSuperAgentRuntime.settings().enabled) {
+            runCatching { globalSuperAgentRuntime.processPending() }
+            runCatching { globalSuperAgentRuntime.processLongHorizonCycle() }
+            runCatching { globalSuperAgentRuntime.processProactiveDiscoveryCycle() }
+            runCatching { globalSuperAgentRuntime.executeCognitionCycle() }
+            runCatching { globalSuperAgentRuntime.executeAutonomousCycle() }
+            runCatching { globalSuperAgentRuntime.executeResearchCycle() }
+            runCatching { globalSuperAgentRuntime.processPending() }
+            runCatching { globalSuperAgentRuntime.processLongHorizonCycle() }
+            runCatching { globalSuperAgentRuntime.processProactiveDiscoveryCycle() }
+            runCatching { globalSuperAgentRuntime.scheduleNextWake() }
+            runCatching { globalSuperAgentRuntime.deliverPending(agentTranscriptStore) }.getOrDefault(emptyList())
+        } else emptyList()
         if (delivered.isNotEmpty()) {
             runCatching {
                 val attention = delivered.filter { it.sourceEventId.startsWith("research:${ProactiveAttentionPolicy.TASK_PREFIX}") }
