@@ -67,6 +67,8 @@ internal object AgentSessionPersistencePolicy {
         "repository_url",
         "working_directory",
         "command",
+        INTERNAL_CONVERSATION_ID,
+        INTERNAL_TURN_ID,
         AgentUnverifiedOutcomeRecovery.ORIGIN_ACTION,
         AgentUnverifiedOutcomeRecovery.PHONE_CONTROL
     )
@@ -222,12 +224,14 @@ internal object AgentSessionPersistencePolicy {
         description = action.description.take(if (minimal) 256 else 1_024),
         parameters = compactMetadata(action.parameters).entries.sortedBy {
             if (it.key == AgentUnverifiedOutcomeRecovery.ORIGIN_ACTION ||
-                it.key == AgentUnverifiedOutcomeRecovery.PHONE_CONTROL) 0 else 1
+                it.key == AgentUnverifiedOutcomeRecovery.PHONE_CONTROL ||
+                it.key == INTERNAL_CONVERSATION_ID || it.key == INTERNAL_TURN_ID) 0 else 1
         }
             .take(if (minimal) 8 else MAX_RECOVERY_METADATA_ENTRIES)
             .associate { (key, value) -> key to value.take(if (minimal) 256 else 1_024) },
         result = action.result.take(if (minimal) 256 else MAX_RECOVERY_RESULT_CHARACTERS),
-        evidence = action.evidence.take(if (minimal) 256 else MAX_RECOVERY_RESULT_CHARACTERS)
+        evidence = AgentRecoveryObservationEvidence.compactOriginEvidence(action.evidence,
+            if (minimal) 256 else MAX_RECOVERY_RESULT_CHARACTERS)
     )
 
     private fun recoveryDependencyIds(action: AgentAction): List<String> = listOf(

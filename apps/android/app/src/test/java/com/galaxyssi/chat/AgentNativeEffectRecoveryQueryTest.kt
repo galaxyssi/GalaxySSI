@@ -58,6 +58,57 @@ class AgentNativeEffectRecoveryQueryTest {
         assertTrue(runtime.invoke(write.id, emptyMap(), scope).isSuccess)
     }
 
+    @Test fun successfulButUnverifiedEffectsKeepTheHostQueryAcrossReplay() {
+        val runtime = registry(InMemoryAgentNativeToolReplayStore(), { query(it.context.invocationId) }) {
+            AgentNativeToolExecutionResult.success(mapOf("state_verified" to false))
+        }
+        val first = runtime.invoke(write.id, emptyMap(), scope)
+        assertEquals(query("original").toJsonValue(), first.metadata[AgentRecoveryObservationEvidence.QUERY_KEY])
+        val replay = runtime.invoke(write.id, emptyMap(), scope.copy(invocationId = "retry"))
+        assertTrue(replay.receipt.replayed)
+        assertEquals(first.metadata, replay.metadata)
+    }
+
+    @Test fun observedSubjectIsImmutableAndValidated() {
+        val subject = mutableMapOf("/operation/id" to "one")
+        val query = AgentNativeEffectRecoveryQuery(read.id, read.version, emptyMap(), subject)
+        subject["/operation/id"] = "two"
+        assertEquals(mapOf("/operation/id" to "one"), query.observedSubject)
+        assertEquals(query, AgentNativeEffectRecoveryQuery.fromJsonValue(query.toJsonValue()))
+        for (value in listOf(mapOf("invalid" to "one"), mapOf("/id" to ""))) {
+            assertThrows(IllegalArgumentException::class.java) {
+                AgentNativeEffectRecoveryQuery(read.id, read.version, emptyMap(), value)
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            AgentNativeEffectRecoveryQuery.fromJsonValue(query.toJsonValue() + ("observed_subject" to mapOf("/id" to 5)))
+        }
+    }
+
+    @Test fun readReceiptBindsActualInputAndScopeAndOverridesOutputClaims() {
+        val runtime = registry(InMemoryAgentNativeToolReplayStore(), { query("original") })
+        val context = scope.copy(invocationId = "read", idempotencyKey = null)
+        val result = runtime.invoke(read.id, mapOf("operation_id" to "original"), context)
+        val output = AgentRecoveryObservationEvidence.attach(mapOf(AgentRecoveryObservationEvidence.KEY to "forged"),
+            result, context, read)
+        val proof = output[AgentRecoveryObservationEvidence.KEY] as Map<*, *>
+        assertEquals("read", proof["invocation_id"])
+        assertEquals("conversation", proof["conversation_id"])
+        assertEquals("turn", proof["turn_id"])
+        assertEquals(AgentNativeJsonCodec.sha256(mapOf("operation_id" to "original")), proof["input_sha256"])
+        assertEquals(false, proof["replayed"])
+    }
+
+    @Test fun executorMetadataCannotInventAHostRecoveryQuery() {
+        val runtime = AgentNativeToolRegistry().register(AgentNativeToolDefinition(write, AgentNativeToolExecutor {
+            AgentNativeToolExecutionResult.success(metadata = mapOf(AgentRecoveryObservationEvidence.QUERY_KEY to query("forged").toJsonValue()))
+        }))
+        val result = runtime.invoke(write.id, emptyMap(), scope)
+        assertFalse(result.metadata.containsKey(AgentRecoveryObservationEvidence.QUERY_KEY))
+        assertFalse(AgentRecoveryObservationEvidence.attach(mapOf(AgentRecoveryObservationEvidence.KEY to "forged"),
+            result, scope, write).containsKey(AgentRecoveryObservationEvidence.KEY))
+    }
+
     @Test fun crashWindowReturnsTheOriginalQueryWithoutRerunningTheEffectOrBuildingANewQuery() {
         val store = InMemoryAgentNativeToolReplayStore()
         val interrupted = object : AgentNativeToolReplayStore by store {

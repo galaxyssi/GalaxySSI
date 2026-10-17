@@ -626,10 +626,11 @@ internal fun MobileNativeAgent.executeActionUntraced(
     val normalizedOutput = if (result.isSuccess) AgentDeviceStateEvidence.normalize(toolId,
         AgentGoalEvidence.withDeliveryEvidence(result.output, result.metadata, zh), zh)
         else result.output
+    val recoveryOutput = AgentRecoveryObservationEvidence.attach(normalizedOutput, result, invocationContext, descriptor)
     val observedOutput = if (toolId in setOf(AgentPhoneNativeToolCatalog.WORKSPACE_EXPORT, AgentOnDeviceRuntimeTools.EXECUTE)) {
-        normalizedOutput + ("_artifact_receipt" to mapOf("replayed" to result.receipt.replayed,
+        recoveryOutput + ("_artifact_receipt" to mapOf("replayed" to result.receipt.replayed,
             "invocation_id" to result.receipt.invocationId, "original_invocation_id" to result.receipt.originalInvocationId))
-    } else normalizedOutput
+    } else recoveryOutput
     val renderedOutput = AgentNativeJsonCodec.stringify(observedOutput).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
     val developmentFile = action.parameters[PHONE_DEVELOPMENT_FILE_PARAMETER].orEmpty()
     val userMessage = if (normalizedOutput !== result.output) {

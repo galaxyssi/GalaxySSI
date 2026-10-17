@@ -1107,7 +1107,10 @@ class AgentNativeToolRegistry(
                 status = status,
                 output = output,
                 message = message,
-                metadata = metadata,
+                metadata = (metadata - AgentRecoveryObservationEvidence.QUERY_KEY) + claimedRecoveryQuery?.let {
+                    mapOf(AgentRecoveryObservationEvidence.QUERY_KEY to it.toJsonValue())
+                }.orEmpty() + if (replayed) metadata.filterKeys { it == AgentRecoveryObservationEvidence.QUERY_KEY }
+                    else emptyMap(),
                 error = observedError,
                 verification = verification,
                 receipt = AgentNativeToolReceipt(
