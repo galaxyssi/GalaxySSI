@@ -11,13 +11,17 @@ internal data class AgentVerifiedProjectCompletion(
 internal object AgentSupervisedProjectCompletionPolicy {
     const val MODEL_TERMINAL_OUTCOME_PARAMETER = "model_terminal_outcome"
 
-    fun missingEvidence(requirements: AgentCompletionRequirements?, history: List<AgentAction>): List<String> {
+    fun missingEvidence(
+        requirements: AgentCompletionRequirements?, history: List<AgentAction>,
+        finalAnswer: String? = null, requireResults: Boolean = false
+    ): List<String> {
         if (requirements == null) return listOf("model-declared completion_requirements (publication and phone_linux)")
         val completedTools = history.asSequence()
             .filter(::hasVerifiedCompletionReceipt)
             .map(::toolId)
             .toSet()
         return buildList {
+            addAll(AgentGoalResultEvidence.missing(requirements, finalAnswer, requireResults))
             addAll(AgentArtifactCompletionEvidence.missing(requirements.artifacts, history))
             addAll(AgentObservedOutcomeEvidence.missing(requirements.outcomes, history))
             if (requirements.phoneLinux && AgentOnDeviceRuntimeTools.EXECUTE !in completedTools) {
@@ -47,6 +51,8 @@ internal object AgentSupervisedProjectCompletionPolicy {
     ): AgentVerifiedProjectCompletion? {
         if (!AgentGoalEvidence.permitsSuccess(result) || result.metadata["awaiting_response"] == "true") return null
         if (completedAction.kind != AgentActionKind.CALL_NATIVE_TOOL) return null
+        // A publication receipt cannot replace the model's answers to additional requested results.
+        if (!requirements?.results.isNullOrEmpty()) return null
         if (completedAction.parameters[MODEL_TERMINAL_OUTCOME_PARAMETER] != "true") return null
         val toolId = completedAction.parameters["tool_id"].orEmpty().ifBlank { completedAction.target }
         if (result.metadata["native_tool_id"] != toolId ||

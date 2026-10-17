@@ -7,6 +7,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun phoneResultsAreDeclaredBeforeExecutionAndBoundToEveryFinalAnswer() {
+        for (continuation in listOf(false, true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240, phoneControl = true)
+            assertTrue(prompt.contains("Before execution declare completion_requirements.results"))
+            assertTrue(prompt.contains("EVERY user-requested deliverable, not tool steps"))
+            assertTrue(prompt.contains("preserve their IDs across revisions and recovery"))
+            assertTrue(prompt.contains("Include every result.answer verbatim in the final description"))
+            assertTrue(prompt.contains("This also applies to read-only tools"))
+        }
+    }
+
     @Test fun phonePlansAdvertiseReferencesAndHostOwnedSerialReadScheduling() {
         for (continuation in listOf(false, true)) {
             val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240, phoneControl = true)

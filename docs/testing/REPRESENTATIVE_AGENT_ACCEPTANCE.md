@@ -634,3 +634,69 @@ the normal composer and verify actual output, not merely a terminal task phase.
   No timer, contact, door, camera, recording or unrelated device was operated;
   world-model learning settings were not changed. Broader goal-execution
   acceptance remains incomplete.
+
+## 2026-10-17: Android 1.5.49 (1332)
+
+- Add persistent requested-result declarations to completion requirements. A
+  result has a stable ID, user-facing requirement, evidence references and its
+  concise answer. Phone-control plans declare all requested deliverables before
+  execution; a pending result does not require fabricated values or evidence.
+  Revisions may correct or extend the plan with a reason but cannot silently
+  remove result IDs. Existing session and operation checkpoints serialize the
+  declarations together with the rest of the requirements.
+- Completion requires every declared result to reference declared observed
+  outcomes or artifacts, supply an answer, and include that answer in the final
+  response. The existing host checks still verify actual outcomes, identity,
+  freshness and hash-bound artifact openability. Model claims and a list of
+  evidence IDs alone cannot pass. Publication receipts cannot auto-close a task
+  that still needs model-authored requested answers.
+- The schema is shared; mandatory pre-execution result admission applies to the
+  supervised phone-control route. Existing project declarations without results
+  remain valid. Other model/tool loops have not all been unified. The host can
+  detect missing declared deliverables, not prove that a model's initial
+  interpretation captured every nuance or that all prose is semantically true.
+  Broader semantic intent coverage and source-faithful summarization still need
+  independent acceptance; this is not full-goal completion.
+- The first real battery/storage trial exercised both persistent result entries
+  and their actual field checks, but is NOT an answer-accuracy pass. It used four
+  model calls and 118.785 seconds: a numeric timestamp in a string-only subject
+  identity caused two format repairs, and the final reply copied an existing
+  misleading binary quantity labelled GB. Retained this failed trial locally.
+- Corrected the shared native byte-summary formatter to label powers of 1024 as
+  KiB/MiB/GiB (including storage, memory and file summaries), and expose the exact
+  invalid subject field/type in completion-requirement diagnostics. The planner
+  contract now states identity types, pure-read ordering and unit conventions.
+  No observed value is silently coerced or weakened by the validator.
+- Completion-only answers also bypass the ordinary 300-character action-label
+  truncation. Otherwise a valid multi-part answer could lose its later result
+  before the coverage check. Executable action labels remain bounded, and the
+  existing durable active-plan path retains the complete final answer.
+- Final settled sources passed all 226 selected JVM tests (zero failures, errors
+  or skips), APK assembly, repository checks and whitespace checks. The earlier
+  compile that overlapped the final parser edit failed the new truncation test;
+  a cleanly sequenced rerun passed. This is focused coverage, not a full-suite
+  result; older static-contract size failures remain outside this selection.
+- Installed the final 1.5.49 / 1332 APK in place on S20U only. The repeated normal
+  composer battery/storage request through App-selected Auto Codex completed in
+  58.389 seconds with two model calls, two serial native reads and no plan repair.
+  Both requested results had separate observed outcomes. The answer reported
+  100% and 172.48 GiB, correctly derived from 185201082368 available bytes; a
+  subsequent independent read corroborated the rounded value. This supersedes
+  the first trial's accuracy failure, without deleting that trial's evidence.
+- The typo-containing media/call-volume request completed in 45.128 seconds,
+  using two model calls and one native read with no completion repair. The model
+  retained two requested-result IDs and bound both stream identities and all
+  four values to observations: media 2/15 and call 4/8. Independent before/after
+  observations of all six streams, audio mode, microphone, speakerphone and
+  ringer state were identical. No mutation tool executed.
+- Reopened session and operation stores retained the requested-result evidence;
+  this verifies durable reads, not a new process-death or device-reboot trial.
+  Screenshots confirm both final answers and still show the obsolete completed
+  process row. That UI issue and broader semantic-intent acceptance are not
+  claimed fixed. Latencies are individual samples, not p95 measurements.
+- Local evidence stays outside Git in `galaxyssi-representative-acceptance`:
+  `goal-results-1.5.49-tests/`, `battery-storage-*1.5.49-units.json`,
+  `storage-independent-1.5.49-units.json`, `audio-readonly-*1.5.49*`,
+  `audio-before-1.5.49.json`, `audio-after-1.5.49.json` and final screenshots.
+  No timer, contact, door, camera, recording, other device or learning setting
+  was operated; no running Desktop instance was replaced.

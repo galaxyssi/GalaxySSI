@@ -176,6 +176,46 @@ class AgentSupervisedToolGraphParsingTest {
         assertEquals("actions[1].ref", result.rejection!!.field)
     }
 
+    @Test fun `requested results survive parsing and cannot disappear during a repair`() {
+        val original = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false, results = listOf(
+            AgentGoalResultRequirement("first", "First requested result"),
+            AgentGoalResultRequirement("second", "Second requested result")))
+        val source = JSONObject(plan(action(1, read.id))).put("completion_requirements", original.toJson()).toString()
+        assertEquals(original, AgentModelPlanParser.parse(request(), source, settings)?.completionRequirements)
+        val dropped = original.copy(results = original.results.take(1), reason = "Only the first result is ready")
+        val correction = JSONObject(source).put("completion_requirements", dropped.toJson()).toString()
+        val rejected = AgentModelPlanParser.parseWithDiagnostics(request().copy(completionRequirements = original), correction, settings)
+        assertNull(rejected.plan)
+        assertEquals("unexplained_requirement_change", rejected.rejection!!.code)
+        assertTrue(rejected.rejection!!.detail.contains("Do not drop unfinished requested results"))
+    }
+
+    @Test fun `invalid outcome identity reports the exact field without rejecting JSON syntax`() {
+        val required = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false,
+            outcomes = listOf(AgentObservedOutcome("value", read.id, mapOf("/scope" to "phone"), mapOf("/value" to 2))))
+        val json = required.toJson()
+        json.getJSONArray("outcomes").getJSONObject(0).getJSONObject("subject").put("/observed_at_epoch_ms", 1234)
+        val source = JSONObject(plan(action(1, read.id))).put("completion_requirements", json).toString()
+        val rejection = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings).rejection!!
+        assertEquals("invalid_requirements", rejection.code)
+        assertTrue(rejection.detail.contains("outcomes[0].subject[/observed_at_epoch_ms]"))
+        assertTrue(rejection.detail.contains("requires a string identity value"))
+        assertTrue(rejection.detail.contains("JSON syntax is valid"))
+        json.getJSONArray("outcomes").getJSONObject(0).getJSONObject("subject").remove("/observed_at_epoch_ms")
+        assertNotNull(AgentModelPlanParser.parse(request(), JSONObject(source).put("completion_requirements", json).toString(), settings))
+    }
+
+    @Test fun `completion answers are not truncated to an ordinary action label`() {
+        val answer = "First requested result. ".repeat(30) + "\nFinal requested result must remain visible."
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", answer).put("parameters", JSONObject())
+        val parsed = AgentModelPlanParser.parse(request().copy(replanReason = "Observed all requested results"),
+            plan(completion), settings)!!
+        assertEquals(answer, parsed.actions.single().description)
+        val executable = action(1, read.id).put("description", answer)
+        assertEquals(300, AgentModelPlanParser.parse(request(), plan(executable), settings)!!.actions.single().description.length)
+    }
+
     private fun action(index: Int, tool: String, dependency: Int? = null): JSONObject = JSONObject()
         .put("ref", "step-$index").put("kind", "CALL_NATIVE_TOOL").put("target", tool)
         .put("description", "Execute fixture step $index")
