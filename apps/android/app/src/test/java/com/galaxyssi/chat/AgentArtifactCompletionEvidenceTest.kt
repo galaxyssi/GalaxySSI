@@ -26,7 +26,10 @@ class AgentArtifactCompletionEvidenceTest {
     }
 
     @Test fun unchangedCopyIsNotAnEditedArtifact() {
-        assertTrue(AgentArtifactCompletionEvidence.missing(listOf(requirement), listOf(receipt(source))).single().contains("unchanged"))
+        val feedback = AgentArtifactCompletionEvidence.missing(listOf(requirement), listOf(receipt(source))).single()
+        assertTrue(feedback.contains("unchanged"))
+        assertTrue(feedback.contains("not an output checksum"))
+        assertTrue(feedback.contains("Never change correct content"))
         assertTrue(AgentArtifactCompletionEvidence.missing(listOf(requirement), listOf(receipt(output))).isEmpty())
     }
 

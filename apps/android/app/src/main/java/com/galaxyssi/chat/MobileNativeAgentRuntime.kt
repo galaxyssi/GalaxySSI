@@ -633,7 +633,7 @@ internal fun MobileNativeAgent.executeActionUntraced(
             .ifBlank { renderedOutput }
     }
     val richOutput = when {
-        toolId == AgentOnDeviceRuntimeTools.EXECUTE ->
+        toolId == AgentOnDeviceRuntimeTools.EXECUTE || toolId == AgentPhoneNativeToolCatalog.WORKSPACE_EXPORT ->
             AgentRuntimeArtifactUi.artifactOutput(result.output, developmentFile, zh)
         result.isSuccess && (toolId in AgentVisibleCaptureNativeTools.toolIds ||
             toolId in setOf(AgentPhoneUiNativeTools.CAPTURE, AgentPhoneUiNativeTools.RECORD)) ->

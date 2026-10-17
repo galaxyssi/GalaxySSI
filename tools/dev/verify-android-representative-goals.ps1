@@ -69,10 +69,20 @@ try {
         source_paths=@('fixtures/report.md','fixtures/budget.csv'); create_parents=$true}
     $listed = Invoke-Tool 'galaxyssi.workspace.zip.list' @{workspace_id=$scope; archive_path='fixtures/bundle.zip'}
     Check 'Document bundle created and reopened' ($listed.output.entries.Count -eq 2)
+
+    $export = Invoke-Tool 'galaxyssi.workspace.file.export' @{workspace_id=$scope; path='fixtures/report.md'}
+    $artifact = $export.output.artifacts[0]
+    Check 'Export supplies hash-bound openability evidence' ($artifact.openability.status -eq 'verified' -and
+        $artifact.sha256 -eq $artifact.openability.sha256 -and $artifact.relative_path -eq 'fixtures/report.md')
+    Write-Text 'fixtures/report.md' 'changed draft'
+    $secondExport = Invoke-Tool 'galaxyssi.workspace.file.export' @{workspace_id=$scope; path='fixtures/report.md'}
+    Check 'Edited source produces a separate delivery version' ($secondExport.output.artifacts[0].sha256 -ne $artifact.sha256 -and
+        $secondExport.output.artifacts[0].host_path -ne $artifact.host_path)
 } catch { $failure = $_.Exception.Message }
 finally {
     try {
         $null = Invoke-Tool 'galaxyssi.workspace.entry.delete' @{workspace_id=$scope; path='fixtures'; recursive=$true}
+        $null = Invoke-Tool 'galaxyssi.workspace.entry.delete' @{workspace_id=$scope; path='.galaxyssi-artifacts'; recursive=$true}
         $cleanup = $true
     } catch { Write-Warning "Test fixture cleanup not confirmed: $($_.Exception.Message)" }
     $null = New-Item -ItemType Directory -Path $ReportDirectory -Force
