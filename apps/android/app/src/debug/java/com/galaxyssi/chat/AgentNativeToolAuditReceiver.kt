@@ -19,7 +19,11 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
             try {
                 val toolId = intent.getStringExtra("tool_id").orEmpty()
                 val encodedGoal = intent.getStringExtra("goal_base64").orEmpty()
+                val workspaceId = intent.getStringExtra("inspect_workspace_id").orEmpty()
+                val checkpointFixture = intent.getBooleanExtra("checkpoint_fixture", false)
                 val report = when {
+                    checkpointFixture -> verifyOperationCheckpoints(context.applicationContext)
+                    workspaceId.isNotBlank() -> inspectWorkspace(context.applicationContext, workspaceId)
                     encodedGoal.isNotBlank() -> runGoal(context.applicationContext, encodedGoal)
                     toolId.isNotBlank() -> runSingleTool(
                         context.applicationContext,
@@ -30,6 +34,8 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                     else -> runAudit(context.applicationContext)
                 }
                 val fileName = when {
+                    checkpointFixture -> "native-checkpoint-fixture.json"
+                    workspaceId.isNotBlank() -> "native-workspace-audit.json"
                     encodedGoal.isNotBlank() -> GOAL_REPORT_FILE
                     toolId.isNotBlank() -> SINGLE_REPORT_FILE
                     else -> REPORT_FILE
@@ -42,6 +48,60 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                 pending.finish()
             }
         }.start()
+    }
+
+    private fun inspectWorkspace(context: Context, workspaceId: String): JSONObject {
+        require(UUID.fromString(workspaceId).toString() == workspaceId) { "A single workspace UUID is required" }
+        val store = SharedPreferencesAgentSessionStore(context, "task:$workspaceId")
+        val workspace = EncryptedAgentWorkspaceStore(context).find(workspaceId)
+        val operation = workspace?.conversationId?.let {
+            AgentRunEventStore(context).snapshot(AgentDeviceOperationCheckpoint.runId(it))
+        }
+        return JSONObject().put("workspace_id", workspaceId)
+            .put("workspace", workspace?.let {
+                JSONObject(AgentWorkspaceJsonCodec.encode(it))
+            })
+            .put("session", store.load()?.let(store::encodeSession))
+            .put("operation_ledger_state", operation?.state?.name)
+            .put("operation_ledger_event", operation?.lastEvent?.type?.name)
+            .put("operation_ledger_payload", operation?.lastEvent?.payload?.let(::JSONObject))
+    }
+
+    private fun verifyOperationCheckpoints(context: Context): JSONObject {
+        val database = "debug-operation-${UUID.randomUUID()}.db"
+        var ledger = AgentRunEventStore(context, database)
+        try {
+            val first = AgentDeviceOperation("debug-operation", kind = "agent", goal = "create a synthetic document",
+                status = "waiting_accessibility", dispatched = true, evidence = "existing-effect-receipt")
+            var store = AgentDeviceOperationStore(ledger)
+            store.save(first)
+            check(ledger.latestEvent(AgentDeviceOperationCheckpoint.runId(first.conversationId))
+                ?.payload?.get("recovery_mode") == "observation_only")
+            ledger.close()
+            ledger = AgentRunEventStore(context, database)
+            store = AgentDeviceOperationStore(ledger)
+            check(store.get(first.conversationId)?.id == first.id)
+            val old = requireNotNull(ledger.latestEvent(AgentDeviceOperationCheckpoint.runId(first.conversationId)))
+            ledger.appendNext(old.copy(eventId = UUID.randomUUID().toString(), idempotencyKey = UUID.randomUUID().toString(),
+                type = AgentRunControlEventType.RUN_FAILED, payload = (old.payload - "recovery_mode") +
+                    mapOf("reason" to "interrupted_run_cannot_be_replayed_safely", "replay_safe" to false)))
+            check(ledger.snapshot(old.runId)?.state == AgentRunControlState.FAILED)
+            val restored = requireNotNull(store.get(first.conversationId))
+            store.save(restored)
+            check(store.get(first.conversationId)?.let {
+                it.id == first.id && it.status == first.status && it.dispatched && it.evidence == first.evidence
+            } == true)
+            check(ledger.latestEvent(old.runId)?.type == AgentRunControlEventType.RUN_RECOVERED)
+            store.recordPlan(first.conversationId, "modify the synthetic document", null)
+            check(store.get(first.conversationId)?.goal == "modify the synthetic document")
+            check(store.get("another-conversation") == null)
+            return JSONObject().put("passed", true).put("cases", JSONArray(listOf(
+                "observation_only_checkpoint", "reopen_preserves_identity", "legacy_failure_repaired_without_execution",
+                "follow_up_checkpoint_saved", "conversation_isolation")))
+        } finally {
+            ledger.close()
+            check(context.deleteDatabase(database)) { "Fixture database cleanup failed" }
+        }
     }
 
     private fun runGoal(context: Context, encodedGoal: String): JSONObject {
