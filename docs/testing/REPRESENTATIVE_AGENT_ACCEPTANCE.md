@@ -398,3 +398,35 @@ the normal composer and verify actual output, not merely a terminal task phase.
   The three older prompt-budget failures noted above are outside this focused
   run and are not claimed fixed. No timer, contact, door, camera or recording
   operation was run; S26U and watches were untouched. Desktop is unchanged.
+
+## 2026-10-17: Android 1.5.44 (1327)
+
+- Native output receipts now provide an exact JSON-pointer/type index to the
+  existing supervised planner. It is derived from actual nested objects and
+  arrays, not a model-generated schema or a per-tool hand-written path hint.
+  The index contains no values and is explicitly marked partial when bounded.
+  Only the two recent receipts are indexed, inside the existing ledger budget
+  and snapshot cache; this does not add a model call or remove stored evidence.
+- Outcome validation now distinguishes missing observations, stale observations,
+  invalid receipts, wrong subjects, unverified state, missing/null fields and
+  mismatched values. Missing-field diagnostics include bounded, same-leaf path
+  alternatives. These are navigation hints only: no automatic substitution,
+  identity broadening, expected-value change or acceptance on a partial index.
+- The original latest-subject/after-mutation rules remain authoritative. A failed
+  or explicitly unverified observation cannot borrow an older successful state;
+  an unrelated recipient/file cannot satisfy the requested object's checks.
+- This follows the 1.5.43 real-query failure where correct media values were
+  available but the model declared root-level instead of nested evidence paths.
+  It is a general diagnosis/prompt improvement, not proof that every real model
+  will now choose valid postconditions on its first attempt.
+- Synchronized with merged PR #3569 before final validation. All 155 selected
+  JVM tests passed with zero failures, errors or skips, including 24 new field
+  index/diagnosis tests and the previous 18 shortcut-recovery tests. The debug
+  APK assembled successfully as 1.5.44 / 1327. Repository and whitespace checks
+  passed. XML reports are saved outside Git at
+  `%TEMP%/galaxyssi-representative-acceptance/observed-fields-1.5.44-tests/`.
+- S20U was in another foreground app, so this increment did not install over the
+  running 1.5.43 package or start another real-model task. There is no new device
+  latency result. The three older prompt-budget failures are outside this focused
+  selection and remain unresolved; no claim of complete goal acceptance is made.
+  Desktop, S26U, watches, contacts and device settings were not changed.

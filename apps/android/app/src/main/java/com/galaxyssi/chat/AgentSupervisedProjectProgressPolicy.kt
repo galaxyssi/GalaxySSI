@@ -252,6 +252,9 @@ internal object AgentSupervisedProjectProgressPolicy {
                 entry.observation?.let { observation ->
                     append("; observation=").append(observation)
                 }
+                entry.outputFields?.let { fields ->
+                    append("; observed_output_fields=").append(fields)
+                }
                 append('\n')
             }
         }
@@ -272,6 +275,8 @@ internal object AgentSupervisedProjectProgressPolicy {
             compactedByIdentity[identity] = LedgerEntry(
                 action = action,
                 observation = observation,
+                outputFields = if (index >= actions.size - RECENT_FULL_OBSERVATIONS)
+                    AgentObservedOutputFields.promptIndex(action) else null,
                 repeatCount = (previous?.repeatCount ?: 0) + 1
             )
         }
@@ -327,7 +332,7 @@ internal object AgentSupervisedProjectProgressPolicy {
     private fun LedgerEntry.estimatedPromptCharacters(): Int =
         LEDGER_ENTRY_PROMPT_OVERHEAD +
             action.toolId().ifBlank { action.kind.name }.length +
-            observation.orEmpty().length
+            observation.orEmpty().length + outputFields.orEmpty().length
 
     private fun AgentAction.failureLedgerKey(): String =
         "${workspaceId()}:${toolId().ifBlank { kind.name }}:${status.name}"
@@ -342,6 +347,7 @@ internal object AgentSupervisedProjectProgressPolicy {
     private data class LedgerEntry(
         val action: AgentAction,
         val observation: String?,
+        val outputFields: String? = null,
         val repeatCount: Int = 1
     )
 
