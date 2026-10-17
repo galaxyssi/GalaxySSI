@@ -53,10 +53,12 @@ class AgentDeviceIntentTest {
         assertNotNull(ConversationScheduleParser.parse("每分钟打开闹钟"))
     }
     @Test fun genericPendingContextRoutesToExecutableModelLoop() {
-        val context = AgentConversationContext("one", "Pending executable goal: export a readable PDF", emptyList(), false)
-        assertTrue(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution("开始", context))
-        assertFalse(AgentSupervisedProjectRoutingPolicy.isPhoneControl("开始", context))
-        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution("开始", context.copy(summary = "")))
+        for (label in listOf("Pending executable goal:", "Scoped executable goal:")) {
+            val context = AgentConversationContext("one", "$label export a readable PDF", emptyList(), false)
+            assertTrue(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution("开始", context))
+            assertFalse(AgentSupervisedProjectRoutingPolicy.isPhoneControl("开始", context))
+            assertFalse(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution("开始", context.copy(summary = "")))
+        }
     }
     @Test fun executableTypoCannotEndWithAProseOnlySuccess() {
         val context = AgentConversationContext("fixture", "", emptyList(), false)

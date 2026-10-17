@@ -650,7 +650,8 @@ internal object AgentSupervisedProjectRoutingPolicy {
         conversationContext: AgentConversationContext
     ): Boolean = requiresModelDirectedExecution(goal, conversationContext.hasAttachments) ||
         AgentDeviceIntent.needsOperationContext(goal) && (conversationContext.summary.contains("Phone operation:") ||
-            conversationContext.summary.contains("Pending executable goal:"))
+            conversationContext.summary.contains("Pending executable goal:") ||
+            conversationContext.summary.contains("Scoped executable goal:"))
 
     fun requiresModelDirectedExecution(
         goal: String,
@@ -730,32 +731,6 @@ internal class AgentPhoneReasoningProviderPlanner(
             plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
             routeRationale =
                 "The selected provider reasons about the request while Android executes validated phone tools."
-        )
-    }
-}
-
-internal object AgentSupervisedProjectContinuationPolicy {
-    fun mergedGoal(
-        latestRequest: String,
-        conversationContext: AgentConversationContext,
-        independentRequest: Boolean = false
-    ): String? {
-        if (independentRequest) return null
-        val request = latestRequest.trim()
-        if (!AgentActiveTurnPolicy.continuesPriorTask(request)) return null
-        val priorGoal = conversationContext.turns.asReversed()
-            .asSequence()
-            .filter { entry -> entry.role == AgentTranscriptRole.USER }
-            .map { entry -> entry.text.trim() }
-            .firstOrNull { candidate ->
-                candidate.isNotBlank() &&
-                    AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(candidate)
-            }
-            ?: return null
-        return AgentActiveTurnPolicy.supersedingGoal(
-            activeGoal = priorGoal,
-            intervention = request,
-            kind = AgentActiveTurnInterventionKind.CONSTRAINT
         )
     }
 }
@@ -1231,7 +1206,8 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
 
     AgentDeviceOperationStore(appContext).recordPlan(request.conversationContext.conversationId, request.goal,
-        parsed.completionRequirements, parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true)
+        parsed.completionRequirements, parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true,
+        sourceTurnId = connector.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { request.executionTurnId })
     val revision = plan.revision + 1
     val durableHistory = plan.historyForNextRevision(revision).map { action ->
         if (action.id == connector.id) {

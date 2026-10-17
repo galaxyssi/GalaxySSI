@@ -700,3 +700,61 @@ the normal composer and verify actual output, not merely a terminal task phase.
   `audio-before-1.5.49.json`, `audio-after-1.5.49.json` and final screenshots.
   No timer, contact, door, camera, recording, other device or learning setting
   was operated; no running Desktop instance was replaced.
+
+## 2026-10-17: Android 1.5.50 (1333)
+
+- Bind generic operation checkpoints to their source user-turn ID. Context reuse
+  requires the same conversation and nearest user turn; a late checkpoint from
+  an older turn cannot retarget a follow-up just because it has a newer timestamp.
+  Completed results remain available as prior state, explicitly not permission
+  to replay completed effects. Dedicated timer execution is unchanged.
+- Replace the backward search for any executable old request with a nearest-goal
+  continuation policy. Bare continuation chains may reach their nearest root,
+  but intervening requests, cancellation or unresolved substantive constraints
+  are not silently skipped. A matching checkpoint retains the effective goal
+  and earlier constraints. Foreign/forwarded messages and summary text alone
+  cannot supply an automatic executable root. Ambiguous language still goes to
+  the selected model with conversation context, rather than a guessed target.
+- Distinguish explicit continuation leads from broad references such as `this
+  phone`; new standalone requests must not be merged into a previous goal.
+  Preserve executable routing for both the old and scoped context labels.
+- Ambiguous schedule edits and bare stop/pause commands require a host-generated
+  schedule card tied to the nearest user turn and an existing task ID. Merely
+  having an old recurring task in the conversation is insufficient. Explicit
+  schedule requests retain their entry point. No real timer or scheduled task
+  is created for this acceptance; those routing boundaries use synthetic tests.
+- This increment does not unify all live execution-state projection into generic
+  operation snapshots, prove arbitrary semantic intent, or fix the completed
+  process-row UI. Those broader goal-execution gaps remain open.
+- Final settled sources passed 158 focused JVM tests in 14 suites (zero failures,
+  errors or skips), APK assembly, repository checks and whitespace checks. The
+  earlier continuation test failures were repaired before the successful build;
+  no production source changed after it. This is not a full-suite claim.
+- Installed 1.5.50 / 1333 in place on S20U only. Seven debug checkpoint cases
+  passed, including store reopen, owner-turn persistence, stale-turn rejection
+  and conversation isolation. This is a durable-store reopen test, not a process
+  or device-reboot acceptance run.
+- Through the normal composer and App-selected Auto Codex, created a dedicated
+  nested CSV, exported/read back its full contents, and correctly reported total
+  12 in 61.294 seconds with two completed model calls. A second turn changed the
+  pear quantity from three to four while retaining its unit price and the apple
+  row. It read the original first, rejected a duplicate-path batch before any
+  write, then autonomously repaired the plan with one exact in-place patch and
+  verified total 14. This took 115.787 seconds and four completed model calls;
+  a fifth planned connector action was rolled back, not dispatched.
+- Independent filesystem reads and SHA-256 checks confirmed that both turns
+  used the same source file/workspace, with only the requested CSV values changed.
+  The effective goal retained earlier constraints and the checkpoint owner became
+  the second user-turn ID. No schedule create/update action ran. Immutable export
+  artifacts are retained for receipts; the source was not replaced by a new copy.
+- The real media/call-volume read completed in 52.495 seconds, with one native
+  read and two model calls, no repair, and two separately evidence-bound answers:
+  media 2/15 and voice call 4/8. Independent before/after reads confirmed all six
+  audio streams, mode, microphone, speakerphone and ringer state unchanged.
+- Screenshots confirm the final answers but still contain the obsolete process
+  row; that UI issue is not fixed here. Latencies are individual samples, not p95.
+  Evidence remains outside Git under `galaxyssi-representative-acceptance`:
+  `goal-continuation-1.5.50-tests/`, `checkpoint-1.5.50.json`,
+  `csv-*-1.5.50*`, `audio-readonly-*1.5.50*` and `audio-*-1.5.50.json`.
+  No timer, contact, door, camera, recording, other device or learning setting
+  was operated. No running Desktop instance was replaced.

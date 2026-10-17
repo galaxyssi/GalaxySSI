@@ -98,12 +98,23 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                 it.id == first.id && it.status == first.status && it.dispatched && it.evidence == first.evidence
             } == true)
             check(ledger.latestEvent(old.runId)?.type == AgentRunControlEventType.RUN_RECOVERED)
-            store.recordPlan(first.conversationId, "modify the synthetic document", null)
+            store.recordPlan(first.conversationId, "modify the synthetic document", null, sourceTurnId = "fixture-turn")
             check(store.get(first.conversationId)?.goal == "modify the synthetic document")
+            ledger.close()
+            ledger = AgentRunEventStore(context, database)
+            store = AgentDeviceOperationStore(ledger)
+            val reopened = requireNotNull(store.get(first.conversationId))
+            check(reopened.sourceTurnId == "fixture-turn")
+            val conversation = AgentConversationContext(first.conversationId, "", listOf(AgentTranscriptEntry(
+                "fixture-user", AgentTranscriptRole.USER, "modify the synthetic document", 1,
+                conversationId = first.conversationId, turnId = "fixture-turn")), false)
+            check(AgentSupervisedProjectContinuationPolicy.scopedOperation(conversation, reopened)?.id == reopened.id)
+            check(AgentSupervisedProjectContinuationPolicy.scopedOperation(conversation.copy(turns = listOf(
+                conversation.turns.single().copy(turnId = "new-independent-turn"))), reopened) == null)
             check(store.get("another-conversation") == null)
             return JSONObject().put("passed", true).put("cases", JSONArray(listOf(
                 "observation_only_checkpoint", "reopen_preserves_identity", "legacy_failure_repaired_without_execution",
-                "follow_up_checkpoint_saved", "conversation_isolation")))
+                "follow_up_checkpoint_saved", "conversation_isolation", "turn_owner_survives_reopen", "stale_turn_context_rejected")))
         } finally {
             ledger.close()
             check(context.deleteDatabase(database)) { "Fixture database cleanup failed" }
