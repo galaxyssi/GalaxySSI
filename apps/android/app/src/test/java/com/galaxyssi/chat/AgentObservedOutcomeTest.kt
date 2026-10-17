@@ -6,7 +6,7 @@ import org.junit.Test
 
 class AgentObservedOutcomeTest {
     private fun outcome(tool: String = "galaxyssi.delivery.status", path: String = "/delivery_status", value: Any = "RX_STORED") =
-        AgentObservedOutcome("delivery", tool, mapOf("/message_id" to "message-1", "/recipient_id" to "peer-1"), mapOf(path to value), "galaxyssi.message.send")
+        AgentObservedOutcome("delivery", tool, mapOf("/message_id" to "message-1", "/recipient_id" to "peer-1"), mapOf(path to value))
     private fun receipt(tool: String, output: String) = AgentAction("fixture", AgentActionKind.CALL_NATIVE_TOOL,
         tool, AgentRisk.LOW, AgentActionStatus.COMPLETED, "fixture", mapOf("tool_id" to tool), evidence = output)
     private val ack = """{"message_id":"message-1","recipient_id":"peer-1","delivery_status":"RX_STORED"}"""
@@ -27,7 +27,7 @@ class AgentObservedOutcomeTest {
     }
     @Test fun observationBeforeLatestMutationIsStale() {
         val history = listOf(receipt(outcome().toolId, ack), receipt("galaxyssi.message.send", "{}"))
-        assertFalse(AgentObservedOutcomeEvidence.missing(listOf(outcome()), history).isEmpty())
+        assertFalse(AgentObservedOutcomeEvidence.missing(listOf(outcome().copy(afterToolId = "galaxyssi.message.send")), history).isEmpty())
     }
     @Test fun bareAcceptanceAndModelProseAreNotPostconditions() {
         for (path in listOf("/success", "/accepted", "/text", "/message", "/exit_code", "/ui_changed"))
@@ -35,7 +35,7 @@ class AgentObservedOutcomeTest {
     }
     @Test fun fileOpeningCanBeCheckedIndependentlyOfExistence() {
         val file = AgentObservedOutcome("file", "galaxyssi.file.inspect", mapOf("/path" to "outputs/report.pdf"),
-            mapOf("/exists" to true, "/readable" to true, "/format_valid" to true), "galaxyssi.file.write")
+            mapOf("/exists" to true, "/readable" to true, "/format_valid" to true))
         val corrupt = receipt(file.toolId, """{"path":"outputs/report.pdf","exists":true,"readable":true,"format_valid":false}""")
         assertFalse(AgentObservedOutcomeEvidence.missing(listOf(file), listOf(corrupt)).isEmpty())
         assertTrue(AgentObservedOutcomeEvidence.missing(listOf(file), listOf(corrupt.copy(evidence = corrupt.evidence.replace("false", "true")))).isEmpty())

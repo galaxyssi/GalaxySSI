@@ -59,32 +59,68 @@ internal object AgentObservedOutcomeEvidence {
 
     internal fun diagnose(requirement: AgentObservedOutcome, history: List<AgentAction>): JSONObject? {
         val lastMutation = if (requirement.afterToolId.isEmpty()) -1 else history.indexOfLast {
-            it.parameters["tool_id"] == requirement.afterToolId && it.status != AgentActionStatus.PENDING_CONFIRMATION
+            it.kind == AgentActionKind.CALL_NATIVE_TOOL && toolId(it) == requirement.afterToolId &&
+                !isUndispatched(it) && it.status != AgentActionStatus.BLOCKED
+        }
+        if (requirement.afterToolId.isNotEmpty() && lastMutation < 0)
+            return failure(requirement, "required_action_not_observed").put("after_tool_id", requirement.afterToolId)
+        if (lastMutation >= 0 && history[lastMutation].status in setOf(AgentActionStatus.RUNNING, AgentActionStatus.WAITING_RESPONSE))
+            return failure(requirement, "required_action_still_pending", history[lastMutation])
+        if (lastMutation >= 0 && history[lastMutation].status == AgentActionStatus.ROLLED_BACK) {
+            val action = history[lastMutation]
+            val superseded = action.evidence.startsWith("superseded_by_plan_revision:") ||
+                action.parameters.containsKey(SUPERSEDED_SOURCE_STATUS_PARAMETER)
+            return failure(requirement, if (superseded) "required_action_superseded_unresolved" else "required_action_rolled_back", action)
         }
         var latestMismatch: JSONObject? = null
         var stale = false
         for (index in history.indices.reversed()) {
             val action = history[index]
             if (action.kind != AgentActionKind.CALL_NATIVE_TOOL ||
-                action.parameters["tool_id"] != requirement.toolId) continue
+                toolId(action) != requirement.toolId || isUndispatched(action)) continue
             if (index < lastMutation) { stale = true; continue }
-            val output = AgentObservedOutputFields.output(action)
-            if (output == null) {
-                if (latestMismatch == null) latestMismatch = failure(requirement, "invalid_receipt", action)
-                continue
-            }
+            val raw = runCatching { JSONObject(action.evidence) }.getOrNull()
+                ?: return failure(requirement, "invalid_receipt", action)
+            val output = raw.optJSONObject("output") ?: raw
             if (requirement.subject.any { (path, value) -> AgentObservedOutputFields.at(output, path)?.toString() != value }) {
-                if (latestMismatch == null) latestMismatch = failure(requirement, "subject_not_matched", action,
-                    issues(requirement.subject, output, identity = true))
+                val mismatch = failure(requirement, "subject_not_matched", action, issues(requirement.subject, output, identity = true))
+                // A proven different subject is unrelated; a missing identity is uncertainty, not permission to use old success.
+                val differentSubject = requirement.subject.any { (path, value) ->
+                    AgentObservedOutputFields.at(output, path)?.toString()?.let { it != value } == true
+                }
+                if (!differentSubject) return mismatch
+                if (latestMismatch == null) latestMismatch = mismatch
                 continue
             }
             // Only the latest matching subject can prove state; old success must not hide new failure.
             if (action.status != AgentActionStatus.COMPLETED) return failure(requirement, "observation_not_completed", action)
-            if (output.opt("state_verified") == false) return failure(requirement, "state_unverified", action)
+            if (raw.optJSONObject("output") != null) {
+                if (raw.has("tool_id") && raw.optString("tool_id") != requirement.toolId)
+                    return failure(requirement, "receipt_tool_mismatch", action)
+                if (raw.has("status") && raw.optString("status") != "succeeded" ||
+                    raw.optJSONObject("receipt")?.let { it.has("status") && it.optString("status") != "succeeded" } == true)
+                    return failure(requirement, "receipt_not_succeeded", action)
+            }
+            if (isUnverified(output) || raw !== output && isUnverified(raw))
+                return failure(requirement, "state_unverified", action)
             val checkIssues = issues(requirement.checks, output, identity = false)
             return if (checkIssues.isEmpty()) null else failure(requirement, "checks_not_satisfied", action, checkIssues)
         }
         return latestMismatch ?: failure(requirement, if (stale) "observation_stale" else "observation_missing")
+    }
+
+    private fun toolId(action: AgentAction): String = action.parameters["tool_id"].orEmpty().ifBlank { action.target }
+
+    private fun isUndispatched(action: AgentAction): Boolean =
+        action.status in setOf(AgentActionStatus.PROPOSED, AgentActionStatus.PENDING_CONFIRMATION) ||
+            action.status == AgentActionStatus.ROLLED_BACK && action.parameters[SUPERSEDED_SOURCE_STATUS_PARAMETER] in
+                setOf(AgentActionStatus.PROPOSED.name, AgentActionStatus.PENDING_CONFIRMATION.name)
+
+    private fun isUnverified(output: JSONObject): Boolean {
+        val metadata = output.optJSONObject("metadata")
+        return output.opt("state_verified") == false || output.opt("delivery_verified") == false ||
+            metadata?.opt("business_success_verified")?.toString() == "false" ||
+            metadata?.optString("goal_status") in setOf("dispatched", "blocked", "unknown", "failed")
     }
 
     private fun issues(expected: Map<String, Any>, output: JSONObject, identity: Boolean): List<JSONObject> {
@@ -107,6 +143,15 @@ internal object AgentObservedOutcomeEvidence {
         issues: List<JSONObject> = emptyList()
     ): JSONObject = JSONObject().put("code", code).put("outcome_id", requirement.id)
         .put("tool_id", requirement.toolId).also { result ->
+            result.put("next_action", when (code) {
+                "required_action_not_observed" -> "inspect_execution_history; correct after_tool_id only for a genuinely read-only goal; never replay an effect solely to manufacture evidence"
+                "required_action_still_pending" -> "resolve the existing action using its status or receipt before declaring completion; do not dispatch it again"
+                "required_action_superseded_unresolved" -> "the plan replaced an action without proof it never executed; reconcile its receipt and current state, do not resend the effect"
+                "required_action_rolled_back" -> "the prior action was rolled back; inspect current state and the latest user goal, never reapply it without a current request"
+                "invalid_receipt", "observation_not_completed", "receipt_tool_mismatch", "receipt_not_succeeded", "state_unverified", "observation_stale", "observation_missing" ->
+                    "obtain a fresh read-only observation of the requested subject; preserve the goal and do not repeat mutations blindly"
+                else -> "inspect receipt fields and actual state; correct pointer errors without rerunning tools, otherwise repair missing work and verify again"
+            })
             action?.let { result.put("action_id", it.id).put("action_status", it.status.name) }
             if (issues.isNotEmpty()) {
                 result.put("fields", JSONArray(issues.take(8)))
