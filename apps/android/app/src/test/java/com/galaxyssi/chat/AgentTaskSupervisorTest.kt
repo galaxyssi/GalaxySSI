@@ -16,6 +16,55 @@ import org.junit.Test
 
 class AgentTaskSupervisorTest {
     @Test
+    fun workspacePersistsTheLatestToolReceiptInsteadOfTheFirstSnapshot() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(workspace("tool-state", AgentWorkspaceStatus.RUNNING))
+        val supervisor = AgentTaskSupervisor(store)
+        try {
+            val started = AgentToolCallRecord("same-action", "codex", AgentToolCallStatus.RUNNING,
+                resultJson = "{\"awaiting_response\":true}")
+            supervisor.recordExecutionSnapshot("workspace-tool-state", AgentWorkspaceExecutionSnapshot(toolCalls = listOf(started)))
+            val completed = started.copy(status = AgentToolCallStatus.SUCCEEDED,
+                resultJson = "{\"message\":\"Completed\"}", completedAtMillis = 50L)
+            supervisor.recordExecutionSnapshot("workspace-tool-state", AgentWorkspaceExecutionSnapshot(
+                status = AgentWorkspaceStatus.COMPLETED, toolCalls = listOf(completed)))
+            val stored = requireNotNull(store.find("workspace-tool-state"))
+            assertEquals(AgentWorkspaceStatus.COMPLETED, stored.status)
+            assertEquals(listOf(completed), stored.toolCalls)
+        } finally { supervisor.close() }
+    }
+
+    @Test
+    fun completingAWorkspaceDoesNotFabricateOutcomesForOtherCalls() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(workspace("partial-tools", AgentWorkspaceStatus.RUNNING))
+        val supervisor = AgentTaskSupervisor(store)
+        try {
+            val unobserved = AgentToolCallRecord("unobserved", "tool", AgentToolCallStatus.PENDING)
+            supervisor.recordExecutionSnapshot("workspace-partial-tools", AgentWorkspaceExecutionSnapshot(toolCalls = listOf(unobserved)))
+            supervisor.recordExecutionSnapshot("workspace-partial-tools", AgentWorkspaceExecutionSnapshot(status = AgentWorkspaceStatus.COMPLETED))
+            assertEquals(listOf(unobserved), store.find("workspace-partial-tools")?.toolCalls)
+        } finally { supervisor.close() }
+    }
+
+    @Test
+    fun repeatedActionIdsAreIsolatedBetweenWorkspaces() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(workspace("owner-a", AgentWorkspaceStatus.RUNNING))
+        store.upsert(workspace("owner-b", AgentWorkspaceStatus.RUNNING))
+        val supervisor = AgentTaskSupervisor(store)
+        try {
+            val running = AgentToolCallRecord("shared-id", "tool", AgentToolCallStatus.RUNNING)
+            for (owner in listOf("a", "b")) supervisor.recordExecutionSnapshot("workspace-owner-$owner",
+                AgentWorkspaceExecutionSnapshot(toolCalls = listOf(running)))
+            supervisor.recordExecutionSnapshot("workspace-owner-a", AgentWorkspaceExecutionSnapshot(
+                toolCalls = listOf(running.copy(status = AgentToolCallStatus.SUCCEEDED))))
+            assertEquals(AgentToolCallStatus.SUCCEEDED, store.find("workspace-owner-a")?.toolCalls?.single()?.status)
+            assertEquals(AgentToolCallStatus.RUNNING, store.find("workspace-owner-b")?.toolCalls?.single()?.status)
+        } finally { supervisor.close() }
+    }
+
+    @Test
     fun explicitlyReopensInterruptedFailedWorkspaceWithAuditEvent() {
         val store = InMemoryAgentWorkspaceStore()
         val failed = store.upsert(

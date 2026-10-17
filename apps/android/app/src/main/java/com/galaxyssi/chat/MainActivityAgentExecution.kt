@@ -1099,51 +1099,9 @@ internal fun Context.persistAgentWorkspaceSnapshot(
     required: Boolean = false
 ) {
     val persisted = runCatching {
-        val actions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
-            .distinctBy(AgentAction::id)
+        val actions = AgentWorkspaceToolCallProjection.actions(state.plan)
         val result = state.lastActionResult
-        val toolCalls = actions
-            .filter { it.kind == AgentActionKind.CALL_NATIVE_TOOL || it.kind == AgentActionKind.CALL_CONNECTOR }
-            .map { action ->
-                val isLast = result?.actionId == action.id
-                AgentToolCallRecord(
-                    id = if (isLast) result?.metadata?.get("invocation_id").orEmpty()
-                        .ifBlank { action.id } else action.id,
-                    toolName = action.parameters["tool_id"].orEmpty()
-                        .ifBlank { action.parameters["connector_id"].orEmpty() }
-                        .ifBlank { action.kind.name.lowercase(Locale.ROOT) },
-                    status = when (action.status) {
-                        AgentActionStatus.PROPOSED,
-                        AgentActionStatus.PENDING_CONFIRMATION -> AgentToolCallStatus.PENDING
-                        AgentActionStatus.RUNNING,
-                        AgentActionStatus.WAITING_RESPONSE -> AgentToolCallStatus.RUNNING
-                        AgentActionStatus.COMPLETED -> AgentToolCallStatus.SUCCEEDED
-                        AgentActionStatus.FAILED,
-                        AgentActionStatus.BLOCKED,
-                        AgentActionStatus.ROLLED_BACK -> AgentToolCallStatus.FAILED
-                    },
-                    argumentsJson = action.parameters["input_json"].orEmpty()
-                        .ifBlank { JSONObject(action.parameters).toString() },
-                    resultJson = if (isLast) {
-                        result?.metadata?.get("native_tool_output").orEmpty()
-                            .ifBlank { JSONObject(result?.metadata.orEmpty()).put("message", result?.message.orEmpty()).toString() }
-                    } else {
-                        JSONObject().put("message", action.result).toString()
-                    },
-                    errorMessage = if (action.status in setOf(
-                            AgentActionStatus.FAILED,
-                            AgentActionStatus.BLOCKED,
-                            AgentActionStatus.ROLLED_BACK
-                        )
-                    ) action.result else "",
-                    startedAtMillis = if (isLast) {
-                        result?.metadata?.get("started_at_millis")?.toLongOrNull() ?: 0L
-                    } else 0L,
-                    completedAtMillis = if (isLast) {
-                        result?.metadata?.get("completed_at_millis")?.toLongOrNull() ?: 0L
-                    } else 0L
-                )
-            }
+        val toolCalls = AgentWorkspaceToolCallProjection.records(actions, result)
         val pendingScope = state.pendingAction?.let(AgentConfirmationPolicy::consentKey).orEmpty()
         val grantIds = if (pendingScope.isBlank()) emptyList() else {
             EncryptedAgentPermissionGrantStore(this).list(includeInactive = false)

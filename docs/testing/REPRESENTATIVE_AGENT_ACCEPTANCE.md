@@ -1,5 +1,61 @@
 # Representative Agent Acceptance
 
+## 2026-10-17: Android 1.5.60 (1343), workspace tool-state projection
+
+- The prior read-only device run completed in its session and operation ledger,
+  but its workspace retained RUNNING connector records with awaiting-response
+  metadata. The old concatenation followed by distinctBy kept the first snapshot
+  for an action, discarding its later completion receipt.
+- Merge each logical tool action by its latest incoming snapshot. Keep other
+  actions independent and retain full observations when a later same-state
+  history snapshot only contains a summary. A new attempt or changed state does
+  not borrow the previous result or completion timestamp.
+- Use the same logical action identity in foreground and recovery snapshots;
+  native invocation receipts retain their separate identity in the native
+  ledger. Current actions supersede older history copies. This prevents a native
+  invocation ID from creating another workspace record for the same action.
+- Tool status still comes from the owned action status, not result.success or
+  workspace completion. Acceptance remains RUNNING, unrelated pending actions
+  remain pending, and failed/cancelled records are not promoted to success.
+  This index is not itself a business-outcome verification mechanism.
+- No transport, retry, model-selection, permission or background-work policy was
+  changed. The merge remains linear in the bounded workspace index. Old stored
+  records are not mass-migrated or declared complete without a new owned
+  execution snapshot.
+- Synced merged main through PR #3587, then rebuilt the settled sources. All
+  85 focused JVM tests across eight suites passed with zero failures, errors or
+  skips; APK assembly, repository checks and whitespace checks passed. An earlier
+  80-test build was superseded before installation. This is not a full-suite
+  or performance-percentile claim.
+- Installed 1.5.60 / 1343 in place on S20U only. One normal-composer request used
+  the App-selected Auto Codex route, two model calls and one native audio-status
+  read. It completed in 84.250 seconds and reported media 6/15 and voice call 4/8.
+  Independent before/after reads confirmed all six stream values and mode,
+  ringer, microphone and speakerphone state unchanged. Latency remains material.
+- The debug request captured WAITING_RESPONSE; the final owned workspace,
+  session and durable operation projection all recorded completion. All three
+  logical tool entries were SUCCEEDED, with no duplicate native invocation
+  entry or retained awaiting-response metadata. The initial workspace inspection
+  used a runtime session ID and returned no workspace; it is not counted as a
+  successful waiting-workspace inspection. The subsequent audit used the turn ID.
+- Screenshots show waiting, then a completion icon, the correct answer and a
+  fixed 1 minute 23 second duration. Same-process launcher reentry retained the
+  answer. Opening a different dedicated completed test conversation from the
+  background and then returning restored each conversation's own answer and
+  duration. The process ID and all three tool records remained unchanged; no
+  new model request was sent for these navigation checks.
+- Full-receipt/timestamp retention, retry evidence reset, cancellation, pending
+  calls and same-action-ID cross-workspace isolation have deterministic test
+  coverage. This device run does not establish every real failure/retry path or
+  repair legacy stored projections. The broader six-part execution goal remains
+  incomplete pending cross-path outcome and recovery acceptance; tool completion
+  alone must not be treated as verified business success.
+- Evidence remains outside Git in `galaxyssi-representative-acceptance`:
+  `workspace-tool-state-1.5.60-tests/`, `workspace-request-*-1560.json`,
+  `workspace-state-*-1560.json`, `workspace-audio-*-1560.json` and
+  `workspace-*-1560.png`. No countdown, contact, door, camera, recording,
+  learning setting, Desktop instance or other device was operated or changed.
+
 ## 2026-10-17: Android 1.5.59 (1342), foreground transcript ownership
 
 - The preceding device run persisted completed replies but displayed an empty
