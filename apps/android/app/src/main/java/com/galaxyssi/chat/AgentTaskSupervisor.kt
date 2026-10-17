@@ -1111,6 +1111,7 @@ class AgentTaskSupervisor(
             )
         }
         return withEvent.copy(
+            cancellationRequested = current.cancellationRequested || nextStatus == AgentWorkspaceStatus.CANCELLED,
             currentPlanSnapshot = snapshot.planSnapshot.ifBlank { current.currentPlanSnapshot },
             resultJson = snapshot.resultJson.ifBlank { current.resultJson },
             errorMessage = snapshot.errorMessage.ifBlank { current.errorMessage },

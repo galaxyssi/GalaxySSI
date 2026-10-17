@@ -303,6 +303,109 @@ class AgentTaskSupervisorTest {
     }
 
     @Test
+    fun deferredTaskCanBeDurablyCancelledAfterItsExecutionLeaseIsReleased() = runBlocking {
+        var now = 1_000L
+        val store = InMemoryAgentWorkspaceStore(clock = { now })
+        val supervisor = AgentTaskSupervisor(store, clock = { now }, livenessPolicy = livenessPolicy())
+        try {
+            supervisor.submit(workspace("deferred-cancel")) {
+                checkpoint("before-response", stateJson = "{\"receipt\":\"retained\"}")
+                recordExecutionSnapshot(AgentWorkspaceExecutionSnapshot(handoffIds = listOf("codex:731")))
+                waitForResponse("Remote analysis is pending")
+            }.join()
+            assertEquals(null, supervisor.cancellationSource("task-deferred-cancel"))
+            assertTrue(supervisor.activeWorkspaces().isEmpty())
+
+            assertTrue(supervisor.cancelWorkspace("workspace-deferred-cancel", "User stopped analysis"))
+            val cancelled = requireNotNull(store.find("workspace-deferred-cancel"))
+            assertEquals(AgentWorkspaceStatus.CANCELLED, cancelled.status)
+            assertTrue(cancelled.cancellationRequested)
+            assertEquals("{\"receipt\":\"retained\"}", cancelled.checkpoints.single().stateJson)
+            assertEquals(listOf("codex:731"), cancelled.handoffIds)
+            assertEquals(null, supervisor.reconcileLateConnectorResponse("workspace-deferred-cancel", 731L))
+            now += 2_000L
+            assertTrue(supervisor.sweepLiveness().isEmpty())
+            assertTrue(supervisor.recoverableTasks().isEmpty())
+        } finally {
+            supervisor.shutdown()
+        }
+    }
+
+    @Test
+    fun cancelledExecutionSnapshotAlsoPersistsTheCancellationFlag() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(workspace("cancel-snapshot", AgentWorkspaceStatus.WAITING_RESPONSE))
+        val supervisor = AgentTaskSupervisor(store)
+        try {
+            val cancelled = supervisor.recordExecutionSnapshot("workspace-cancel-snapshot",
+                AgentWorkspaceExecutionSnapshot(status = AgentWorkspaceStatus.CANCELLED, resultJson = "stopped"))
+            assertEquals(AgentWorkspaceStatus.CANCELLED, cancelled.status)
+            assertTrue(cancelled.cancellationRequested)
+            assertEquals("stopped", cancelled.resultJson)
+        } finally {
+            supervisor.close()
+        }
+    }
+
+    @Test
+    fun cancellationIsIdempotentAndScopedToTheOriginalWorkspace() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(workspace("stopped", AgentWorkspaceStatus.WAITING_RESPONSE))
+        val sibling = store.upsert(workspace("sibling", AgentWorkspaceStatus.WAITING_RESPONSE))
+        val supervisor = AgentTaskSupervisor(store)
+        try {
+            assertTrue(supervisor.cancelWorkspace("workspace-stopped"))
+            val cancelled = store.find("workspace-stopped")
+            assertFalse(supervisor.cancelWorkspace("workspace-stopped"))
+            assertEquals(cancelled, store.find("workspace-stopped"))
+            assertEquals(sibling, store.find("workspace-sibling"))
+            assertEquals(listOf("workspace-sibling"), supervisor.recoverableTasks().map { it.workspaceId })
+        } finally {
+            supervisor.close()
+        }
+    }
+
+    @Test
+    fun staleWaitingSnapshotCannotOverwriteCancellationOrResumeAfterSupervisorRecreation() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(workspace("late-snapshot", AgentWorkspaceStatus.WAITING_RESPONSE))
+        val supervisor = AgentTaskSupervisor(store)
+        supervisor.cancelWorkspace("workspace-late-snapshot")
+        supervisor.close()
+        val reopened = AgentTaskSupervisor(store)
+        try {
+            val failure = runCatching {
+                reopened.recordExecutionSnapshot("workspace-late-snapshot",
+                    AgentWorkspaceExecutionSnapshot(status = AgentWorkspaceStatus.WAITING_RESPONSE))
+            }.exceptionOrNull()
+            assertTrue(failure is IllegalArgumentException)
+            assertTrue(runCatching {
+                reopened.resume("workspace-late-snapshot", hook = AgentTaskResumeHook { _, _ -> })
+            }.isFailure)
+            assertEquals(AgentWorkspaceStatus.CANCELLED, store.find("workspace-late-snapshot")?.status)
+            assertTrue(reopened.recoverableTasks().isEmpty())
+        } finally {
+            reopened.close()
+        }
+    }
+
+    @Test
+    fun cancellationDoesNotRewriteAlreadyCompletedOrFailedResults() {
+        val store = InMemoryAgentWorkspaceStore()
+        val completed = store.upsert(workspace("done", AgentWorkspaceStatus.COMPLETED).copy(resultJson = "verified"))
+        val failed = store.upsert(workspace("failed-before-stop", AgentWorkspaceStatus.FAILED).copy(errorMessage = "failure"))
+        val supervisor = AgentTaskSupervisor(store)
+        try {
+            assertFalse(supervisor.cancelWorkspace(completed.workspaceId))
+            assertFalse(supervisor.cancelWorkspace(failed.workspaceId))
+            assertEquals(completed, store.find(completed.workspaceId))
+            assertEquals(failed, store.find(failed.workspaceId))
+        } finally {
+            supervisor.close()
+        }
+    }
+
+    @Test
     fun taskCancellationPropagatesToNativeToolTokenExactlyOnce() {
         val cancellation = AgentTaskCancellationSource(Job()) { false }
         val token = cancellation.asNativeToolCancellationToken()

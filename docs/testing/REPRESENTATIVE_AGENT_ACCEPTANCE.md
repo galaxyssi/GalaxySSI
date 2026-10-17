@@ -194,3 +194,26 @@ the normal composer and verify actual output, not merely a terminal task phase.
   Timing results above use request/snapshot timestamps, not that UI label.
   Duration projection, cancellation-summary consistency, ambiguous/subdirectory
   file follow-ups and broader attachment routing remain separately tracked gaps.
+
+## 2026-10-17: Android 1.5.39 (1322)
+
+- The normal-composer stop/supersede path and timeline Cancel now cancel the
+  durable workspace, not only an optional in-memory execution lease. Deferred
+  `WAITING_RESPONSE` tasks have released that lease, which explained the earlier
+  cancelled session retaining a waiting workspace and receiving a watchdog event.
+- The composer also finalizes and persists the cancelled runtime snapshot.
+  Recording any cancelled execution snapshot sets `cancellationRequested=true`.
+  Existing terminal-state guards continue to reject stale waiting snapshots and
+  late connector results; already completed/failed outcomes are not rewritten.
+- 67 selected JVM tests passed, with zero failures or skips. Five added tests
+  cover deferred cancellation without a lease, snapshot cancellation flags,
+  idempotency and sibling isolation, stale-result/recreation recovery rejection,
+  and preserving already completed/failed results. APK assembly and repository
+  checks passed. S20U was upgraded in place to 1.5.39 / 1322.
+- Eleven native-tool scenarios passed on S20U, with dedicated fixture cleanup
+  verified. Local report:
+  `%TEMP%/galaxyssi-representative-acceptance/representative-86e2aeefb943439383f57e620b7c2cac.json`.
+- Foreground testing was deferred while S20U was being used in another app.
+  This run does not claim a new real-model cancellation/continuation pass or a
+  phone reboot test. Normal-composer stop, subdirectory-file follow-ups, duration
+  projection and broader attachment routing remain explicit acceptance gaps.
