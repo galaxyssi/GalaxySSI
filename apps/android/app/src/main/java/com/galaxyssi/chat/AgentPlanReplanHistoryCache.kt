@@ -66,7 +66,19 @@ internal object AgentPlanReplanHistoryCache {
             }
         )
         return if (supervised) {
-            AgentProjectHistoryRetentionPolicy.retain(terminalActions)
+            // Planner requests repeat prior context; they are not tool observations. Budgeting them
+            // first can evict the fresh receipt that the next model turn needs to finish the goal.
+            val retainedIds = AgentProjectHistoryRetentionPolicy.retain(
+                terminalActions.filterNot(AgentAction::isSupervisedProjectConnector)
+            ).mapTo(hashSetOf(), AgentAction::id)
+            terminalActions.mapNotNull { action ->
+                when {
+                    action.isSupervisedProjectConnector() -> action.copy(description = "", result = "", evidence = "",
+                        parameters = action.parameters.filterKeys { it in CONTROL_MARKER_KEYS })
+                    action.id in retainedIds -> action
+                    else -> null
+                }
+            }
         } else {
             terminalActions.takeLast(AgentProjectHistoryRetentionPolicy.NON_PROJECT_RECENT_ACTION_LIMIT)
         }
@@ -97,4 +109,7 @@ internal object AgentPlanReplanHistoryCache {
     )
 
     private const val MAX_CACHED_HISTORIES = 8
+    private val CONTROL_MARKER_KEYS = setOf("connector_task_mode", "supervised_iteration",
+        AgentUnverifiedOutcomeRecovery.ORIGIN_ACTION, AgentUnverifiedOutcomeRecovery.PHONE_CONTROL,
+        INTERNAL_CONVERSATION_ID, INTERNAL_TURN_ID, PLAN_REVISION_PARAMETER)
 }

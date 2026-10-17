@@ -199,6 +199,7 @@ internal object AgentSupervisedProjectLoop {
             suffix = buildString {
                 append("\nCompletion requires a model-declared completion_requirements object and matching verified receipts. ")
                 append("Check the user's actual intent, including exclusions. Declare or correct the requirements with a reason; perform only genuinely missing work. ")
+                append("Reuse existing source observations for read-only research. Navigation is not a business mutation; never navigate again just to manufacture an after_tool_id chain. Use stable source identity, not changing view parameters. ")
                 append("Missing evidence: ").append(missingEvidence.joinToString("; ")).append('.')
             }
         )
@@ -247,7 +248,7 @@ internal object AgentSupervisedProjectLoop {
 
     private fun List<AgentAction>.containsLedgerObservation(action: AgentAction): Boolean =
         any { candidate ->
-            candidate.id == action.id && candidate.status in setOf(
+            !candidate.isSupervisedProjectConnector() && candidate.id == action.id && candidate.status in setOf(
                 AgentActionStatus.COMPLETED,
                 AgentActionStatus.FAILED,
                 AgentActionStatus.BLOCKED,
@@ -1107,10 +1108,14 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             "execution_tool_policy: The plan parses correctly, but an action is not permitted by this execution route. Select tools from this route's Available phone tools; do not rewrite JSON syntax or broaden permissions.")
     }
 
+    val evidenceScope = AgentPlanContinuationScope.resolve(plan, activeConversationContext.conversationId,
+        activeConversationTurnId, sessionId) ?: return supervisedFormatRepairDecision(plan, connector,
+        request, response, "execution_scope_conflict: execution evidence belongs to a different conversation or turn")
+    val executionHistory = AgentCompletionEvidenceHistory.resolve(plan, evidenceScope)
     val parsed = rawParsed.copy(
         completionRequirements = rawParsed.completionRequirements ?: plan.completionRequirements,
         actions = rawParsed.actions.map { action ->
-            AgentSupervisedProjectProgressPolicy.canonicalize(action, plannerHistory)
+            AgentSupervisedProjectProgressPolicy.canonicalize(action, executionHistory)
         }
     )
 
@@ -1118,7 +1123,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         return supervisedFormatRepairDecision(plan, connector, request, response, violation)
     }
 
-    AgentUnverifiedOutcomeRecovery.observationViolation(connector, plannerHistory, parsed.actions) { toolId ->
+    AgentUnverifiedOutcomeRecovery.observationViolation(connector, executionHistory, parsed.actions) { toolId ->
         nativeToolRegistry.lookup(toolId)?.descriptor
     }?.let { violation ->
         return supervisedFormatRepairDecision(plan, connector, request, response, violation)
@@ -1140,7 +1145,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     val progressViolation = parsed.actions.firstNotNullOfOrNull { proposedAction ->
         AgentSupervisedProjectProgressPolicy.violation(
             proposedAction,
-            plannerHistory,
+            executionHistory,
             durablePullRequestEvidence = hasDurablePullRequestEvidence(
                 proposedAction.bindSupervisedProjectContext(connector)
             )
@@ -1160,28 +1165,24 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
 
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
-        val observedMissing = AgentObservedOutcomeEvidence.missing(parsed.completionRequirements?.outcomes.orEmpty(), plannerHistory)
-        val pendingOutcome = AgentGoalEvidence.pendingReceipt(plannerHistory)?.takeUnless {
+        val observedMissing = AgentObservedOutcomeEvidence.missing(parsed.completionRequirements?.outcomes.orEmpty(), executionHistory)
+        val pendingOutcome = AgentGoalEvidence.pendingReceipt(executionHistory)?.takeUnless {
             !parsed.completionRequirements?.outcomes.isNullOrEmpty() && observedMissing.isEmpty()
         }
         if (pendingOutcome != null && !pendingOutcome.canInspect)
             return AgentSupervisedProjectPlanDecision.finalResponse(pendingOutcome.message)
-        val mutationNeedsPostcondition = plannerHistory.any { action ->
-            action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
-                nativeToolRegistry.lookup(action.parameters["tool_id"].orEmpty())?.descriptor?.requiresEffectClaim == true &&
-                !AgentGoalEvidence.hasVerifiedOutcome(listOf(action))
-        } && parsed.completionRequirements?.let { it.outcomes.isEmpty() && it.artifacts.isEmpty() &&
-            it.publication == AgentPublicationRequirement.NONE } == true
+        val mutationNeedsPostcondition = AgentCompletionEvidenceHistory.needsBusinessPostcondition(
+            parsed.completionRequirements, executionHistory) { nativeToolRegistry.lookup(it)?.descriptor }
         val missingEvidence = AgentSupervisedProjectCompletionPolicy.missingEvidence(
             parsed.completionRequirements,
-            plannerHistory,
+            executionHistory,
             finalAnswer = parsed.actions.single().description,
             requireResults = phoneControl
         ) + (pendingOutcome?.let { listOf("The latest business outcome is still unverified: ${it.message}. " +
             "Inspect before retrying (${it.nextAction.ifBlank { "choose an available observation tool" }}), repair only missing work, " +
             "then provide an identity-bound postcondition. Do not repeat the accepted side effect.") }.orEmpty()) +
             (if (mutationNeedsPostcondition) listOf("Declare an observable, identity-bound postcondition in completion_requirements.outcomes and verify it; API acceptance is insufficient") else emptyList()) +
-            if (AgentDeviceIntent.requiresReasoning(request.goal) && plannerHistory.none { action ->
+            if (AgentDeviceIntent.requiresReasoning(request.goal) && executionHistory.none { action ->
             action.kind == AgentActionKind.SET_ALARM ||
                 action.parameters["tool_id"] == AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM)
         }) listOf("Execute the requested timer via a phone tool before claiming completion; text alone is not execution") else emptyList()
@@ -1326,11 +1327,10 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val connector = (plan.actionHistory + plan.actions)
         .lastOrNull(AgentAction::isSupervisedProjectConnector)
         ?: return null
-    val plannerHistory = plan.historyForReplan()
     val durableHistory = plan.historyForNextRevision(revision)
-    val failedAction = plannerHistory.lastOrNull { action ->
-        action.status in setOf(AgentActionStatus.FAILED, AgentActionStatus.BLOCKED)
-    } ?: return null
+    val scope = AgentPlanContinuationScope.resolve(plan, activeConversationContext.conversationId,
+        activeConversationTurnId, sessionId) ?: return null
+    val failedAction = AgentCompletionEvidenceHistory.latestFailure(plan, scope) ?: return null
     val request = supervisedProjectRequest(plan, continuation = true)
     val routing = AgentResourceRouter(appContext).route(
         goal = currentGoal,
@@ -1545,7 +1545,7 @@ private fun MobileNativeAgent.supervisedIncompleteCompletionPlan(
     val retry = route.connector.copy(
         id = "supervise-phone-project-completion-$revision-${route.attempt + 1}",
         status = AgentActionStatus.PENDING_CONFIRMATION,
-        description = "Continue until the requested publication result is verified",
+        description = "Resolve the missing completion evidence for the requested result",
         parameters = route.connector.parameters + mapOf(
             "prompt" to AgentSupervisedProjectLoop.incompleteCompletionPrompt(request, missingEvidence),
             SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "completion",
