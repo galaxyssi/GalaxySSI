@@ -343,3 +343,58 @@ the normal composer and verify actual output, not merely a terminal task phase.
   timer, camera, recording, contact action or new model call was started. The
   existing three prompt-budget failures documented under 1.5.41 are not in this
   focused run and are not claimed fixed. Desktop is unchanged.
+
+## 2026-10-17: Android 1.5.43 (1326)
+
+- A completed direct native shortcut with an explicitly unverified business
+  outcome can now continue through the existing App-selected reasoning provider.
+  It retains the task identity, turn, original receipt, completion requirements
+  and artifacts. Verified shortcuts do not gain an extra model round. Missing
+  inspection capability, explicit local-only requests, missing reasoning routes,
+  stopped tasks and plan-only requests do not trigger this continuation.
+- The first recovery batch must contain read-only native operations. A mutation,
+  mixed read/write batch or completion-only response is rejected until a fresh
+  successful observation has been recorded after the original effect. Merely
+  looking up a tool schema does not unlock mutation. This gate enforces ordering;
+  semantic relevance and final identity-bound postconditions still need review.
+- Audio inspection and the existing volume/mute tools are included in the phone
+  reasoning inventory. This does not add SMS/contact access or bypass the tools'
+  existing permissions and consent checks. No particular model is hardcoded.
+- Recovery markers and the original receipt survive durable session storage and
+  compact fallback checkpoints. Unknown outcomes remain distinct from proven
+  failures. No already-completed effect is inserted into the executable queue.
+- All 105 selected JVM tests passed, including 18 new recovery tests, with zero
+  failures/errors/skips; APK assembly passed. Initial failures were missing
+  registered routes in synthetic provider fixtures, corrected without weakening
+  production validation. Both initial and final XML reports are retained in
+  `%TEMP%/galaxyssi-representative-acceptance/outcome-recovery-1.5.43-*-tests/`.
+- Installed 1.5.43 / 1326 on S20U only, preserving data. Eleven native file/data/
+  export scenarios passed with cleanup verified. Report:
+  `representative-499997aeefc946d2a7e87f855ced6b82.json` in the same local directory.
+- Five on-device synthetic checkpoint/admission checks passed: original receipt
+  and selected provider restored; no effect requeued; completion/mutation refused
+  before observation; a fresh read enables the next decision; cancelled state
+  stays cancelled after reload. Dedicated checkpoint cleanup passed. Report:
+  `outcome-recovery-1.5.43-20261017.json`. This does not prove real-model recovery
+  from a hardware failure or a full phone reboot.
+- Re-read the earlier stopped task after installation: both workspace and session
+  remain CANCELLED. The earlier follow-up CSV remains in its original `outputs/`
+  subdirectory, totals 44, and retains digest
+  `6883a0992dad52a68ab93dd04580c55cb3466b9ec5b9d97f51fdf460a28ea127`.
+  These are post-upgrade persistence checks, not new stop/edit trials.
+- A fresh normal-composer request with a typo for media volume used the App's
+  selected Auto Codex route. It called `galaxyssi.android.audio.status` exactly
+  once and replied current 5, maximum 15. All six streams matched the independent
+  before/after native reads, with no mutation tool executed. The model initially
+  declared root-level evidence pointers; validation rejected them and it repaired
+  them to `/streams/music/current` and `/streams/music/max` without reading again.
+  Three model rounds completed in 79.574 seconds. This is a functional recovery
+  pass, not a latency pass or a first-attempt pass. Local reports:
+  `audio-readonly-composer-1.5.43.json`, `audio-readonly-workspace-1.5.43.json`,
+  `audio-before-1.5.43.json`, `audio-after-1.5.43.json`; the final reply was also
+  checked in `audio-readonly-1.5.43.png`.
+- The actual accepted-but-unverified shortcut escalation remains covered by
+  synthetic receipts and admission tests, not a forced hardware-failure trial.
+  The three older prompt-budget failures noted above are outside this focused
+  run and are not claimed fixed. No timer, contact, door, camera or recording
+  operation was run; S26U and watches were untouched. Desktop is unchanged.

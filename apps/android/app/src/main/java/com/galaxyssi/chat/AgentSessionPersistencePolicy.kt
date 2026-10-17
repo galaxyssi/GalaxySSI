@@ -66,7 +66,9 @@ internal object AgentSessionPersistencePolicy {
         "workspace_id",
         "repository_url",
         "working_directory",
-        "command"
+        "command",
+        AgentUnverifiedOutcomeRecovery.ORIGIN_ACTION,
+        AgentUnverifiedOutcomeRecovery.PHONE_CONTROL
     )
 
     private const val MAX_NON_PROJECT_ACTION_HISTORY = 24
@@ -112,11 +114,19 @@ internal object AgentSessionPersistencePolicy {
             .map { compactRecoveryAction(it, minimal) }
         val retainedActionIds = selectedActions.mapTo(linkedSetOf(), AgentAction::id)
         val historyLimit = if (minimal) MINIMAL_RECOVERY_HISTORY else MAX_RECOVERY_HISTORY
-        val selectedHistory = buildList {
+        val outcomeOrigins = selectedActions.mapNotNull {
+            it.parameters[AgentUnverifiedOutcomeRecovery.ORIGIN_ACTION]
+        }.toSet()
+        val protectedHistory = plan.actionHistory.filter { it.id in outcomeOrigins }.takeLast(historyLimit)
+        val selectedHistory = (protectedHistory + buildList {
             plan.actionHistory.filter { it.id in anchorIds }.forEach(::add)
             plan.actionHistory.takeLast(historyLimit).forEach(::add)
         }.distinctBy { action -> listOf(action.id, action.status.name, action.result) }
-            .takeLast(historyLimit)
+            .filterNot { it.id in outcomeOrigins }
+            .takeLast((historyLimit - protectedHistory.size).coerceAtLeast(0)))
+            .let { history ->
+                if (outcomeOrigins.isEmpty()) history else history.sortedBy { plan.actionHistory.indexOf(it) }
+            }
             .map { compactRecoveryAction(it, minimal) }
         val verificationLimit = if (minimal) 1 else MAX_RECOVERY_VERIFICATIONS
         val selectedVerifications = buildList {
@@ -210,7 +220,10 @@ internal object AgentSessionPersistencePolicy {
         id = action.id.take(512),
         target = action.target.take(512),
         description = action.description.take(if (minimal) 256 else 1_024),
-        parameters = compactMetadata(action.parameters).entries
+        parameters = compactMetadata(action.parameters).entries.sortedBy {
+            if (it.key == AgentUnverifiedOutcomeRecovery.ORIGIN_ACTION ||
+                it.key == AgentUnverifiedOutcomeRecovery.PHONE_CONTROL) 0 else 1
+        }
             .take(if (minimal) 8 else MAX_RECOVERY_METADATA_ENTRIES)
             .associate { (key, value) -> key to value.take(if (minimal) 256 else 1_024) },
         result = action.result.take(if (minimal) 256 else MAX_RECOVERY_RESULT_CHARACTERS),
