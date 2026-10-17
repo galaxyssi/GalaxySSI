@@ -81,7 +81,7 @@ class AgentBrowserRuntimeReadinessTest {
                         assertTrue(it.source.contains("browser-runtime-readiness.cjs"))
                         AgentRuntimeExecutionResponse(if (success) 0 else 127,
                             if (success) """{"ok":true,"result":{"browser_ready":true}}""" else "", "private diagnostic", 1)
-                    }, emptyList())
+                    }, { emptyList() })
                 })
             }
             val result = AgentNativeToolRegistry().registerAll(listOf(definition)).invoke(definition.descriptor.id,
@@ -94,5 +94,28 @@ class AgentBrowserRuntimeReadinessTest {
             } else assertEquals(true, result.output["browser_ready"])
             assertFalse(result.toJson().contains("private diagnostic"))
         }
+    }
+
+    @Test fun standaloneReadinessDoesNotNeedOrTransmitConversationAuthority() {
+        val registry = AgentNativeToolRegistry().registerAll(AgentInteractiveBrowserTools.definitions({ request ->
+            assertEquals("browser-readiness", request.workspaceId)
+            assertTrue(request.secretEnvironment.isEmpty())
+            AgentRuntimeExecutionResponse(0, """{"ok":true,"result":{"browser_ready":true}}""", "", 1)
+        }, hostCapability = { error("A local readiness probe must not obtain conversation authority") }))
+        assertTrue(registry.invoke(AgentInteractiveBrowserTools.OBSERVE, mapOf("operation" to "readiness"),
+            AgentNativeToolInvocationContext()).isSuccess)
+    }
+
+    @Test fun helperPreparationFailureDoesNotClaimPackInstallationFailed() {
+        val base = AgentInteractiveBrowserTools.definitions({ error("unused") }).first()
+        val definition = AgentNativeToolDefinition(base.descriptor, AgentNativeToolExecutor { invocation ->
+            AgentBrowserRuntimeReadiness.verifyInstalled(invocation, mapOf("installed" to listOf("node-js")),
+                { error("must not execute") }, { error("private fixture path") })
+        })
+        val result = AgentNativeToolRegistry().registerAll(listOf(definition)).invoke(base.descriptor.id,
+            mapOf("operation" to "readiness"), AgentNativeToolInvocationContext())
+        assertEquals("browser_readiness_unobserved", result.error?.code)
+        assertEquals(true, result.error?.details?.get("packs_installed"))
+        assertFalse(result.toJson().contains("private fixture path"))
     }
 }

@@ -36,15 +36,15 @@ internal object AgentBrowserRuntimeReadiness {
         invocation: AgentNativeToolInvocation,
         output: Map<String, Any?>,
         execute: (AgentRuntimeExecutionRequest) -> AgentRuntimeExecutionResponse,
-        helpers: List<AgentRuntimeHostInput>
+        helpers: () -> List<AgentRuntimeHostInput>
     ): AgentNativeToolExecutionResult {
         invocation.reportProgress("verify", "Starting Chromium and verifying a local page before continuing the task")
-        val request = AgentInteractiveBrowserTools.runtimeRequest(invocation, helpers, readinessOnly = true).copy(
-            source = shellPrelude() + "exec galaxyssi-browser .galaxyssi-inputs/browser/browser-runtime-readiness.cjs",
-            requestId = invocation.context.invocationId + "-browser-readiness",
-            secretEnvironment = emptyMap(), networkEnabled = false
-        )
-        val response = try { execute(request) } catch (error: Exception) {
+        val response = try {
+            execute(AgentInteractiveBrowserTools.runtimeRequest(invocation, helpers(), readinessOnly = true).copy(
+                requestId = invocation.context.invocationId + "-browser-readiness",
+                networkEnabled = false
+            ))
+        } catch (error: Exception) {
             if (error is AgentNativeToolCancelledException || error is java.util.concurrent.CancellationException ||
                 error is InterruptedException) throw error
             return AgentNativeToolExecutionResult.failure("browser_readiness_unobserved",

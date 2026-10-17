@@ -81,7 +81,8 @@ internal object AgentInteractiveBrowserTools {
                         ?: AgentNativeToolExecutionResult.failure("browser_user_control_unavailable", "User control is not connected in this runtime.",
                             details = mapOf("executed" to false, "goal_terminal" to false))
                 }
-                val request = try { runtimeRequest(invocation, helpers(), hostCapability(invocation.context)) }
+                val request = try { runtimeRequest(invocation, helpers(),
+                    if (invocation.input["operation"] == "readiness") null else hostCapability(invocation.context)) }
                 catch (error: IllegalArgumentException) {
                     return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("browser_scope_or_input_invalid",
                         error.message ?: "Check the browser input and conversation scope.",
@@ -100,7 +101,8 @@ internal object AgentInteractiveBrowserTools {
                         "browser_result_unobserved", "No structured browser outcome was observed. Inspect the live session before repeating a mutation.",
                         details = reconciliationDetails(invocation, mutation) + mapOf("goal_terminal" to false, "exit_code" to response.exitCode))
                 if (envelope.optBoolean("ok", false)) {
-                    AgentNativeToolExecutionResult.success(mapOf("request_id" to operationId(invocation.context)) +
+                    AgentNativeToolExecutionResult.success(mapOf("request_id" to
+                        if (invocation.input["operation"] == "readiness") invocation.context.invocationId else operationId(invocation.context)) +
                         envelope.optJSONObject("result").toNativeObject(), "Browser observation received")
                 } else {
                     val error = envelope.optJSONObject("error")
@@ -133,7 +135,9 @@ internal object AgentInteractiveBrowserTools {
     internal fun operationId(context: AgentNativeToolInvocationContext): String = AgentNativeJsonCodec.sha256(
         mapOf("scope" to scope(context), "turn_id" to context.turnId, "invocation_id" to context.invocationId))
 
-    private fun reconciliationDetails(invocation: AgentNativeToolInvocation, mutation: Boolean): AgentNativeJsonObject = mapOf(
+    private fun reconciliationDetails(invocation: AgentNativeToolInvocation, mutation: Boolean): AgentNativeJsonObject =
+        if (invocation.input["operation"] == "readiness") mapOf("browser_ready" to false, "verification_required" to true)
+        else mapOf(
         "request_id" to operationId(invocation.context), "outcome_unknown" to mutation,
         "reconciliation_tool" to OBSERVE, "reconciliation_operation" to "operation_status",
         "verification_required" to true
@@ -146,9 +150,12 @@ internal object AgentInteractiveBrowserTools {
             "exec galaxyssi-browser .galaxyssi-inputs/browser/browser-runtime-readiness.cjs"
         else "exec galaxyssi-browser .galaxyssi-inputs/browser/browser-session-cli.cjs ${shellSingleQuote(scope(invocation.context))}",
         arguments = emptyList(), timeoutMillis = TIMEOUT, networkEnabled = true, artifactPaths = emptyList(),
-        workspaceId = invocation.context.attributes["workspace_id"].orEmpty().ifBlank { invocation.context.conversationId },
+        workspaceId = invocation.context.attributes["workspace_id"].orEmpty().ifBlank {
+            invocation.context.conversationId.ifBlank { "browser-readiness" }
+        },
         requestId = invocation.context.invocationId, cancellationToken = invocation.cancellationToken,
-        secretEnvironment = secretEnvironment(invocation.input, hostCapability, operationId(invocation.context)),
+        secretEnvironment = if (readinessOnly || invocation.input["operation"] == "readiness") emptyMap()
+            else secretEnvironment(invocation.input, hostCapability, operationId(invocation.context)),
         hostInputFiles = helpers,
         resourceLimits = AgentRuntimeResourceLimits(wallClockMillis = TIMEOUT, cpuMillis = TIMEOUT, maxOutputBytes = 4L * 1024 * 1024),
         workspaceMutationExpected = false, discoverBuildArtifacts = false,

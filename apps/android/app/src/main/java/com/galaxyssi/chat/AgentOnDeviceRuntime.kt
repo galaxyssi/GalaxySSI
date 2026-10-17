@@ -1386,7 +1386,7 @@ object AgentOnDeviceRuntimeTools {
             if (requestedPack in setOf("browser-automation", "node-js") &&
                 AgentBrowserRuntimeReadiness.availability(manager.cachedStatus()).status == AgentNativeToolAvailabilityStatus.AVAILABLE) {
                 return AgentBrowserRuntimeReadiness.verifyInstalled(invocation, output, manager::execute,
-                    AgentInteractiveBrowserTools.stageHelpers(context.applicationContext))
+                    { AgentInteractiveBrowserTools.stageHelpers(context.applicationContext) })
             }
             return AgentNativeToolExecutionResult.success(output, "Trusted runtime pack is ready")
         }
