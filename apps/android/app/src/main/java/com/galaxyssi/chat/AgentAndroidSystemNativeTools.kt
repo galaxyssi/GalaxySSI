@@ -203,13 +203,13 @@ object AgentAndroidSystemNativeTools {
             },
             readTool(app, AUDIO_STATUS, "Read audio status", "Reads bounded stream volume, ringer mode, and audio route state.",
                 setOf("audio.status"), emptyList(), ::emptyInput) { audioStatus(app) },
-            writeTool(app, AUDIO_VOLUME_SET, "Set Android stream volume", "Sets one Android audio stream to a bounded percentage.",
+            writeTool(app, AUDIO_VOLUME_SET, "Set Android stream volume", "Maps a percentage to the nearest supported volume step and reads back actual state. Inspect audio status before retrying an unverified change.",
                 AgentNativeToolRisk.MEDIUM, setOf("audio.volume"), emptyList(),
-                input(mapOf("stream" to string(32), "percent" to integer(0, 100)), setOf("stream", "percent")),
+                input(mapOf("stream" to AgentNativeJsonSchema.string(AgentAudioStateControl.streams), "percent" to integer(0, 100)), setOf("stream", "percent")),
                 listOf(CONSENT_AUDIO_CHANGE)) { invocation -> audioSetVolume(app, invocation) },
-            writeTool(app, AUDIO_MUTE_SET, "Set Android stream mute", "Mutes or unmutes one Android audio stream.",
+            writeTool(app, AUDIO_MUTE_SET, "Set Android stream mute", "Inspects, mutes or unmutes one Android audio stream, then verifies actual mute state. Inspect before retrying.",
                 AgentNativeToolRisk.MEDIUM, setOf("audio.mute"), emptyList(),
-                input(mapOf("stream" to string(32), "muted" to AgentNativeJsonSchema.boolean()), setOf("stream", "muted")),
+                input(mapOf("stream" to AgentNativeJsonSchema.string(AgentAudioStateControl.streams), "muted" to AgentNativeJsonSchema.boolean()), setOf("stream", "muted")),
                 listOf(CONSENT_AUDIO_CHANGE)) { invocation -> audioSetMute(app, invocation) },
             writeTool(app, DOWNLOAD_ENQUEUE, "Enqueue Android download", "Enqueues one HTTPS download through DownloadManager.",
                 AgentNativeToolRisk.MEDIUM, setOf("download.enqueue"), listOf(Manifest.permission.INTERNET),
@@ -315,7 +315,11 @@ object AgentAndroidSystemNativeTools {
             description = description,
             location = AgentNativeToolLocation.ANDROID_SYSTEM,
             inputSchema = schema,
-            outputSchema = AgentNativeJsonSchema.objectSchema(),
+            outputSchema = when (id) {
+                AUDIO_VOLUME_SET -> AgentAudioStateControl.outputSchema(volume = true)
+                AUDIO_MUTE_SET -> AgentAudioStateControl.outputSchema(volume = false)
+                else -> AgentNativeJsonSchema.objectSchema()
+            },
             risk = risk,
             capabilities = capabilities,
             requiredPermissions = permissions.map { AgentNativePermissionRequirement(it, it.substringAfterLast('.')) },
@@ -573,34 +577,43 @@ object AgentAndroidSystemNativeTools {
 
     private fun audioStatus(context: Context): AgentNativeToolExecutionResult {
         val audio = context.getSystemService(AudioManager::class.java)
-        val streams = listOf("music", "ring", "alarm", "notification", "voice_call").associateWith { name ->
+        val streams = AgentAudioStateControl.streams.associateWith { name ->
             val stream = audioStream(name)
-            mapOf("current" to audio.getStreamVolume(stream), "max" to audio.getStreamMaxVolume(stream),
+            mapOf("stream" to name, "current" to audio.getStreamVolume(stream), "max" to audio.getStreamMaxVolume(stream),
+                "min" to if (Build.VERSION.SDK_INT >= 28) audio.getStreamMinVolume(stream) else 0,
                 "muted" to audio.isStreamMute(stream))
         }
         return success(mapOf("ringer_mode" to audio.ringerMode, "mode" to audio.mode,
             "speakerphone_on" to audio.isSpeakerphoneOn, "microphone_muted" to audio.isMicrophoneMute,
-            "streams" to streams), "Audio status read")
+            "streams" to streams, "observation_scope" to "android_audio_streams",
+            "observed_at_epoch_millis" to System.currentTimeMillis()), "Audio status read")
     }
 
     private fun audioSetVolume(context: Context, invocation: AgentNativeToolInvocation): AgentNativeToolExecutionResult {
-        val audio = context.getSystemService(AudioManager::class.java)
         val name = invocation.text("stream", 32).lowercase(Locale.US)
-        val stream = audioStream(name)
-        val percent = invocation.int("percent", 50).coerceIn(0, 100)
-        val max = audio.getStreamMaxVolume(stream).coerceAtLeast(1)
-        val value = ((percent / 100.0) * max).toInt().coerceIn(0, max)
-        audio.setStreamVolume(stream, value, AudioManager.FLAG_SHOW_UI)
-        return success(mapOf("stream" to name, "percent" to percent, "volume" to value, "max" to max), "Audio volume changed")
+        val output = AgentAudioStateControl.volume(name, requireNotNull(invocation.input["percent"] as? Number).toInt(),
+            audioPort(context, name))
+        return success(output, if (output["state_verified"] == true) "Audio volume state verified" else "Audio volume outcome unverified")
     }
 
     private fun audioSetMute(context: Context, invocation: AgentNativeToolInvocation): AgentNativeToolExecutionResult {
-        val audio = context.getSystemService(AudioManager::class.java)
         val name = invocation.text("stream", 32).lowercase(Locale.US)
+        val output = AgentAudioStateControl.mute(name, requireNotNull(invocation.input["muted"] as? Boolean), audioPort(context, name))
+        return success(output, if (output["state_verified"] == true) "Audio mute state verified" else "Audio mute outcome unverified")
+    }
+
+    private fun audioPort(context: Context, name: String): AgentAudioControlPort {
+        require(name in AgentAudioStateControl.streams)
+        val audio = context.getSystemService(AudioManager::class.java)
         val stream = audioStream(name)
-        val muted = invocation.bool("muted")
-        audio.adjustStreamVolume(stream, if (muted) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI)
-        return success(mapOf("stream" to name, "muted" to audio.isStreamMute(stream)), "Audio mute state changed")
+        return object : AgentAudioControlPort {
+            override fun read() = AgentAudioState(audio.getStreamVolume(stream), audio.getStreamMaxVolume(stream),
+                if (Build.VERSION.SDK_INT >= 28) audio.getStreamMinVolume(stream) else 0,
+                audio.isStreamMute(stream), System.currentTimeMillis())
+            override fun setVolume(value: Int) = audio.setStreamVolume(stream, value, AudioManager.FLAG_SHOW_UI)
+            override fun setMuted(value: Boolean) = audio.adjustStreamVolume(stream,
+                if (value) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI)
+        }
     }
 
     private fun downloadEnqueue(context: Context, invocation: AgentNativeToolInvocation): AgentNativeToolExecutionResult {
