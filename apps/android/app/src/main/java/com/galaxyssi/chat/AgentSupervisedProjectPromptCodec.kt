@@ -7,6 +7,18 @@ internal object AgentSupervisedProjectPromptCodec {
         schemaShape(document, depth = 0)
             .take(maximumCharacters.coerceAtLeast(MINIMUM_SCHEMA_CHARACTERS))
 
+    /** Reserve a complete host-rendered receipt before compacting older context. */
+    fun preserveLatestObservation(prompt: String, maximumCharacters: Int, latestObservation: String): String {
+        val limit = maximumCharacters.coerceAtLeast(MINIMUM_PROMPT_CHARACTERS)
+        if (latestObservation.isEmpty() || prompt.length <= limit) return preserveToolInventory(prompt, limit)
+        require(prompt.endsWith(latestObservation)) { "Latest observation must be the host-rendered ledger suffix" }
+        require(latestObservation.length <= limit - MINIMUM_PROMPT_CHARACTERS) {
+            "Latest observation exceeds the reserved prompt evidence budget"
+        }
+        val earlier = prompt.removeSuffix(latestObservation)
+        return preserveToolInventory(earlier, limit - latestObservation.length) + latestObservation
+    }
+
     fun preserveToolInventory(prompt: String, maximumCharacters: Int): String {
         val limit = maximumCharacters.coerceAtLeast(MINIMUM_PROMPT_CHARACTERS)
         if (prompt.length <= limit) return prompt

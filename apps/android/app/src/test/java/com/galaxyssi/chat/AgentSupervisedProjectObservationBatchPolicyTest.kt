@@ -6,6 +6,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectObservationBatchPolicyTest {
+    @Test fun phoneReadAndFutureCompletionMustBeSeparateModelDecisions() {
+        val read = action("read-audio", AgentAndroidSystemNativeTools.AUDIO_STATUS)
+        val complete = action("answer", "task-complete").copy(kind = AgentActionKind.DRAFT_PLAN)
+        for (candidate in listOf(complete, complete.withDependency(read.id))) {
+            assertEquals("non_native_batch", AgentSupervisedProjectObservationBatchPolicy.rejectionReason(
+                listOf(read, candidate)))
+        }
+        assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(read)))
+        assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(complete)))
+    }
+
     @Test
     fun `accepts one action of any supported kind`() {
         assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(listOf(action("write", WRITE))))

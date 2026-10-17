@@ -343,3 +343,172 @@ the normal composer and verify actual output, not merely a terminal task phase.
   timer, camera, recording, contact action or new model call was started. The
   existing three prompt-budget failures documented under 1.5.41 are not in this
   focused run and are not claimed fixed. Desktop is unchanged.
+
+## 2026-10-17: Android 1.5.43 (1326)
+
+- A completed direct native shortcut with an explicitly unverified business
+  outcome can now continue through the existing App-selected reasoning provider.
+  It retains the task identity, turn, original receipt, completion requirements
+  and artifacts. Verified shortcuts do not gain an extra model round. Missing
+  inspection capability, explicit local-only requests, missing reasoning routes,
+  stopped tasks and plan-only requests do not trigger this continuation.
+- The first recovery batch must contain read-only native operations. A mutation,
+  mixed read/write batch or completion-only response is rejected until a fresh
+  successful observation has been recorded after the original effect. Merely
+  looking up a tool schema does not unlock mutation. This gate enforces ordering;
+  semantic relevance and final identity-bound postconditions still need review.
+- Audio inspection and the existing volume/mute tools are included in the phone
+  reasoning inventory. This does not add SMS/contact access or bypass the tools'
+  existing permissions and consent checks. No particular model is hardcoded.
+- Recovery markers and the original receipt survive durable session storage and
+  compact fallback checkpoints. Unknown outcomes remain distinct from proven
+  failures. No already-completed effect is inserted into the executable queue.
+- All 105 selected JVM tests passed, including 18 new recovery tests, with zero
+  failures/errors/skips; APK assembly passed. Initial failures were missing
+  registered routes in synthetic provider fixtures, corrected without weakening
+  production validation. Both initial and final XML reports are retained in
+  `%TEMP%/galaxyssi-representative-acceptance/outcome-recovery-1.5.43-*-tests/`.
+- Installed 1.5.43 / 1326 on S20U only, preserving data. Eleven native file/data/
+  export scenarios passed with cleanup verified. Report:
+  `representative-499997aeefc946d2a7e87f855ced6b82.json` in the same local directory.
+- Five on-device synthetic checkpoint/admission checks passed: original receipt
+  and selected provider restored; no effect requeued; completion/mutation refused
+  before observation; a fresh read enables the next decision; cancelled state
+  stays cancelled after reload. Dedicated checkpoint cleanup passed. Report:
+  `outcome-recovery-1.5.43-20261017.json`. This does not prove real-model recovery
+  from a hardware failure or a full phone reboot.
+- Re-read the earlier stopped task after installation: both workspace and session
+  remain CANCELLED. The earlier follow-up CSV remains in its original `outputs/`
+  subdirectory, totals 44, and retains digest
+  `6883a0992dad52a68ab93dd04580c55cb3466b9ec5b9d97f51fdf460a28ea127`.
+  These are post-upgrade persistence checks, not new stop/edit trials.
+- A fresh normal-composer request with a typo for media volume used the App's
+  selected Auto Codex route. It called `galaxyssi.android.audio.status` exactly
+  once and replied current 5, maximum 15. All six streams matched the independent
+  before/after native reads, with no mutation tool executed. The model initially
+  declared root-level evidence pointers; validation rejected them and it repaired
+  them to `/streams/music/current` and `/streams/music/max` without reading again.
+  Three model rounds completed in 79.574 seconds. This is a functional recovery
+  pass, not a latency pass or a first-attempt pass. Local reports:
+  `audio-readonly-composer-1.5.43.json`, `audio-readonly-workspace-1.5.43.json`,
+  `audio-before-1.5.43.json`, `audio-after-1.5.43.json`; the final reply was also
+  checked in `audio-readonly-1.5.43.png`.
+- The actual accepted-but-unverified shortcut escalation remains covered by
+  synthetic receipts and admission tests, not a forced hardware-failure trial.
+  The three older prompt-budget failures noted above are outside this focused
+  run and are not claimed fixed. No timer, contact, door, camera or recording
+  operation was run; S26U and watches were untouched. Desktop is unchanged.
+
+## 2026-10-17: Android 1.5.44 (1327)
+
+- Native output receipts now provide an exact JSON-pointer/type index to the
+  existing supervised planner. It is derived from actual nested objects and
+  arrays, not a model-generated schema or a per-tool hand-written path hint.
+  The index contains no values and is explicitly marked partial when bounded.
+  Only the two recent receipts are indexed, inside the existing ledger budget
+  and snapshot cache; this does not add a model call or remove stored evidence.
+- Outcome validation now distinguishes missing observations, stale observations,
+  invalid receipts, wrong subjects, unverified state, missing/null fields and
+  mismatched values. Missing-field diagnostics include bounded, same-leaf path
+  alternatives. These are navigation hints only: no automatic substitution,
+  identity broadening, expected-value change or acceptance on a partial index.
+- The original latest-subject/after-mutation rules remain authoritative. A failed
+  or explicitly unverified observation cannot borrow an older successful state;
+  an unrelated recipient/file cannot satisfy the requested object's checks.
+- This follows the 1.5.43 real-query failure where correct media values were
+  available but the model declared root-level instead of nested evidence paths.
+  It is a general diagnosis/prompt improvement, not proof that every real model
+  will now choose valid postconditions on its first attempt.
+- Synchronized with merged PR #3569 before final validation. All 155 selected
+  JVM tests passed with zero failures, errors or skips, including 24 new field
+  index/diagnosis tests and the previous 18 shortcut-recovery tests. The debug
+  APK assembled successfully as 1.5.44 / 1327. Repository and whitespace checks
+  passed. XML reports are saved outside Git at
+  `%TEMP%/galaxyssi-representative-acceptance/observed-fields-1.5.44-tests/`.
+- S20U was in another foreground app, so this increment did not install over the
+  running 1.5.43 package or start another real-model task. There is no new device
+  latency result. The three older prompt-budget failures are outside this focused
+  selection and remain unresolved; no claim of complete goal acceptance is made.
+  Desktop, S26U, watches, contacts and device settings were not changed.
+
+## 2026-10-17: Android 1.5.45 (1328)
+
+- Prompt compaction now reserves the complete, bounded latest host-rendered
+  progress entry before compacting older context. Static reminders precede the
+  ledger, so duplicate trailing instructions cannot displace the newest receipt.
+  Failed observations remain failures; missing observations are not invented.
+- The existing progress snapshot cache supplies the pinned entry in the same
+  history scan. Tool inventory, conversation transport, subject-bound outcome
+  validation and durable full history retain their existing policies. This is
+  not a claim that every historical receipt fits in every model request.
+- Synchronized with merged PR #3570. The expanded JVM run passed 192 of 194 tests,
+  including seven new receipt-retention/cache cases. The previously failing
+  large-continuation test now preserves all executable tool IDs, the latest user
+  constraint and the latest actual tool observation within 24,000 characters.
+- Two pre-existing static-contract size assertions still fail: the planning
+  contract is 9,253 characters against its 5,800-character target. Their limits
+  are unchanged. These failures remain separate work and are not counted as
+  passing. Baseline and expanded XML reports are outside Git in
+  `%TEMP%/galaxyssi-representative-acceptance/prompt-1.5.44-baseline/` and
+  `prompt-1.5.45-expanded-tests/` respectively.
+- APK assembly and repository checks passed. Installed 1.5.45 / 1328 in place on
+  S20U only. A fresh normal-composer request containing a typo asked for both
+  media and call volume without changing settings. The App-selected Auto Codex
+  route executed one native audio-status read and returned media 2/15 and call
+  4/8. All six audio streams matched the independent before/after observations.
+- That real request took 84.687 seconds and four model requests, including two
+  plan-format repair rounds. It is a truthful end-result pass, not a first-attempt
+  or latency pass. The final screenshot also retained an obsolete plan-repair
+  progress row after completion; that UI issue is not fixed by this increment.
+  Reports: `audio-readonly-composer-1.5.45.json`,
+  `audio-readonly-workspace-1.5.45.json`, `audio-before-1.5.45.json`,
+  `audio-after-1.5.45.json` and `audio-readonly-1.5.45.png` in the local directory.
+- Rechecked the earlier stopped workspace after upgrade: session and workspace
+  remain CANCELLED with cancellation requested. The original subdirectory CSV
+  still totals 44 and retains SHA-256
+  `6883a0992dad52a68ab93dd04580c55cb3466b9ec5b9d97f51fdf460a28ea127`.
+  These are persistence checks, not new stop/edit trials. No timer, contact,
+  camera, recording or door action was executed. Desktop and other devices are
+  unchanged; the general goal-execution acceptance is not yet complete.
+
+## 2026-10-17: Android 1.5.46 (1329)
+
+- Phone-control planning now explicitly separates executable work from a later,
+  evidence-bound completion-only response. A dependency cannot make a speculative
+  completion action valid in the same model response as an unread tool result.
+- Read-only queries may bind previously unknown output fields after observation,
+  rather than inventing paths or using a literal `observed` placeholder. Adding
+  or correcting checks requires an explanation and retains previous outcome IDs.
+  A mutation's expected state still comes from the requested outcome, not an
+  unsuccessful receipt. No runtime validation or permission gate is relaxed.
+- This follows two actual repair rounds in 1.5.45: a mixed read/completion batch,
+  then a corrected outcome declaration without its required change reason.
+  Native semantic tools remain preferred, scoped short follow-ups are retained,
+  and UI frame/permission/account boundaries remain in the phone contract.
+- Six new tests cover planning/review stages, no speculative completion batches,
+  post-observation field declarations and explained corrections without dropping
+  prior outcomes. The two pre-existing project-contract size failures and the
+  obsolete post-completion UI progress text are outside this increment.
+- All 113 selected JVM tests passed with zero failures, errors or skips. APK
+  assembly, repository checks and whitespace checks passed. Installed 1.5.46 /
+  1329 in place on S20U only, preserving the existing data and configuration.
+- Repeated the same normal-composer dual-volume query through App-selected Auto
+  Codex. It returned media 2/15 and call 4/8 in 69.631 seconds, using one native
+  read and three model requests. All six audio streams matched independent
+  before/after observations. The previous mixed execution/completion batch did
+  not recur, but one completion-evidence repair was still needed. This single
+  sample is not proof of stable latency or first-attempt success.
+- A new composite request for battery percentage and remaining internal storage
+  exposed a separate shortcut-coverage defect: it completed in 7.132 seconds
+  after reading only battery, omitting storage entirely. This is a failed
+  full-goal acceptance, not a passing fast response. The recorded plan contains
+  only the battery native action and no model request. Independent reads found
+  battery 100% and approximately 186.49 GB available on the app-private volume.
+  The shortcut coverage defect requires a separate improvement.
+- Local reports and screenshots are under
+  `%TEMP%/galaxyssi-representative-acceptance/`: `phone-stage-1.5.46-tests/`,
+  `audio-readonly-composer-1.5.46.json`, `audio-readonly-workspace-1.5.46.json`,
+  `audio-before-1.5.46.json`, `audio-after-1.5.46.json`,
+  `audio-readonly-1.5.46.png`, `battery-storage-composer-1.5.46.json`,
+  `battery-storage-workspace-1.5.46.json` and `battery-storage-1.5.46.png`.
+  No timer, contact, door or unrelated device was operated; Desktop is unchanged.
