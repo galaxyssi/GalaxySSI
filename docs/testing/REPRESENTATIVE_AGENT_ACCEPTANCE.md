@@ -470,3 +470,45 @@ the normal composer and verify actual output, not merely a terminal task phase.
   These are persistence checks, not new stop/edit trials. No timer, contact,
   camera, recording or door action was executed. Desktop and other devices are
   unchanged; the general goal-execution acceptance is not yet complete.
+
+## 2026-10-17: Android 1.5.46 (1329)
+
+- Phone-control planning now explicitly separates executable work from a later,
+  evidence-bound completion-only response. A dependency cannot make a speculative
+  completion action valid in the same model response as an unread tool result.
+- Read-only queries may bind previously unknown output fields after observation,
+  rather than inventing paths or using a literal `observed` placeholder. Adding
+  or correcting checks requires an explanation and retains previous outcome IDs.
+  A mutation's expected state still comes from the requested outcome, not an
+  unsuccessful receipt. No runtime validation or permission gate is relaxed.
+- This follows two actual repair rounds in 1.5.45: a mixed read/completion batch,
+  then a corrected outcome declaration without its required change reason.
+  Native semantic tools remain preferred, scoped short follow-ups are retained,
+  and UI frame/permission/account boundaries remain in the phone contract.
+- Six new tests cover planning/review stages, no speculative completion batches,
+  post-observation field declarations and explained corrections without dropping
+  prior outcomes. The two pre-existing project-contract size failures and the
+  obsolete post-completion UI progress text are outside this increment.
+- All 113 selected JVM tests passed with zero failures, errors or skips. APK
+  assembly, repository checks and whitespace checks passed. Installed 1.5.46 /
+  1329 in place on S20U only, preserving the existing data and configuration.
+- Repeated the same normal-composer dual-volume query through App-selected Auto
+  Codex. It returned media 2/15 and call 4/8 in 69.631 seconds, using one native
+  read and three model requests. All six audio streams matched independent
+  before/after observations. The previous mixed execution/completion batch did
+  not recur, but one completion-evidence repair was still needed. This single
+  sample is not proof of stable latency or first-attempt success.
+- A new composite request for battery percentage and remaining internal storage
+  exposed a separate shortcut-coverage defect: it completed in 7.132 seconds
+  after reading only battery, omitting storage entirely. This is a failed
+  full-goal acceptance, not a passing fast response. The recorded plan contains
+  only the battery native action and no model request. Independent reads found
+  battery 100% and approximately 186.49 GB available on the app-private volume.
+  The shortcut coverage defect requires a separate improvement.
+- Local reports and screenshots are under
+  `%TEMP%/galaxyssi-representative-acceptance/`: `phone-stage-1.5.46-tests/`,
+  `audio-readonly-composer-1.5.46.json`, `audio-readonly-workspace-1.5.46.json`,
+  `audio-before-1.5.46.json`, `audio-after-1.5.46.json`,
+  `audio-readonly-1.5.46.png`, `battery-storage-composer-1.5.46.json`,
+  `battery-storage-workspace-1.5.46.json` and `battery-storage-1.5.46.png`.
+  No timer, contact, door or unrelated device was operated; Desktop is unchanged.

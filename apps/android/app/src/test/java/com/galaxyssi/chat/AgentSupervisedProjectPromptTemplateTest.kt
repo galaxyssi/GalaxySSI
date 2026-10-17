@@ -7,6 +7,44 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun phonePlansSeparateExecutionFromEvidenceBoundCompletion() {
+        for (continuation in listOf(false, true)) {
+            val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240, phoneControl = true)
+            assertTrue(prompt.contains("Never mix DRAFT_PLAN/task-complete with executable actions"))
+            assertTrue(prompt.contains("even with depends_on"))
+            assertTrue(prompt.contains("separate completion-only ActionPlan"))
+            assertTrue(prompt.contains("\"kind\":\"DRAFT_PLAN\",\"target\":\"task-complete\""))
+            assertTrue(prompt.contains("Retain completion_requirements and its verified identity-bound checks"))
+        }
+    }
+
+    @Test fun phoneReadQueriesBindRealFieldsWithoutWeakeningMutationTargets() {
+        val prompt = AgentSupervisedProjectPromptTemplate.render(context(), false, 240, phoneControl = true)
+        assertTrue(prompt.contains("unknown field paths/values can be declared after reading"))
+        assertTrue(prompt.contains("never use placeholder values such as 'observed' as checks"))
+        assertTrue(prompt.contains("Preserve existing outcome IDs and requested targets"))
+        assertTrue(prompt.contains("completion_requirements.reason explaining the evidence-based change"))
+        assertTrue(prompt.contains("do not weaken a mutation's expected state"))
+        assertTrue(prompt.contains("observed_output_fields"))
+    }
+
+    @Test fun phonePlanningAndReviewUseDistinctStagesWithoutLosingTheExecutionBoundary() {
+        val original = context()
+        val planning = AgentSupervisedProjectPromptTemplate.render(original, false, 240, phoneControl = true)
+        val review = AgentSupervisedProjectPromptTemplate.render(original, true, 240, phoneControl = true)
+        assertNotSame(planning, review)
+        assertTrue(planning.contains("planned actions and expected_result are not evidence"))
+        assertTrue(review.contains("Review the latest actual receipt"))
+        for (prompt in listOf(planning, review)) {
+            assertTrue(prompt.contains("Android owns execution and authorization"))
+            assertTrue(prompt.contains("Prefer native semantic tools before UI"))
+            assertTrue(prompt.contains("A one-time duration is not a recurring schedule"))
+            assertTrue(prompt.contains("preserve the pending goal"))
+            assertTrue(prompt.contains("Never replace SET with OPEN"))
+            assertTrue(prompt.contains("Android permission/security dialogs require the user"))
+        }
+    }
+
     @Test fun runtimeContractDistinguishesProjectChecksFromArbitraryCommands() {
         for (continuation in listOf(false, true)) {
             val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240)
