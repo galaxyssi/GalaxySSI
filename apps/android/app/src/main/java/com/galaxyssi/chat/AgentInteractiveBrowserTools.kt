@@ -18,7 +18,7 @@ internal object AgentInteractiveBrowserTools {
         val helpers by lazy { stageHelpers(context.applicationContext) }
         val host = AgentBrowserUserControl(context.applicationContext, manager::execute)
         return definitions(manager::execute,
-            { AgentOnDeviceRuntimeTools.executionAvailability(manager.cachedStatus()) }, { helpers },
+            { AgentBrowserRuntimeReadiness.availability(manager.cachedStatus()) }, { helpers },
             { AgentBrowserHostAuthority.token(context.applicationContext, scope(it)) }, host::request)
     }
 
@@ -31,7 +31,7 @@ internal object AgentInteractiveBrowserTools {
     ): List<AgentNativeToolDefinition> = listOf(false, true).map { mutation ->
         val id = if (mutation) ACT else OBSERVE
         val operations = if (mutation) listOf("create", "navigate", "back", "click", "fill", "select", "dialog", "close", "request_user_control")
-            else listOf("observe", "pages", "screenshot", "wait_for_user", "operation_status")
+            else listOf("observe", "pages", "screenshot", "wait_for_user", "operation_status", "readiness")
         AgentNativeToolDefinition(
             descriptor = AgentNativeToolDescriptor(
                 id = id, version = "1.2.0", title = if (mutation) "Operate an interactive browser" else "Observe an interactive browser",
@@ -44,7 +44,9 @@ internal object AgentInteractiveBrowserTools {
                     "After control returns, observe again; completion is not proof of login or business success. " +
                     "An unobserved outcome includes request_id; query operation_status through browser.observe, then inspect the page. " +
                     "Running requests must not be resubmitted; completed receipts do not prove business success. Missing receipts do not prove non-execution. " +
-                    "Install browser-automation if its launcher is missing; static browser.session tools do not support login.",
+                    "Use browser.observe operation=readiness to verify a real Chromium launch after installation. " +
+                    "Install missing packs, but inspect PATH, mounted packs or native startup errors instead of blindly reinstalling ready packs. " +
+                    "Static browser.session tools do not support login.",
                 location = AgentNativeToolLocation.PHONE,
                 inputSchema = AgentNativeJsonSchema.objectSchema(
                     properties = mapOf(
@@ -93,11 +95,6 @@ internal object AgentInteractiveBrowserTools {
                         "browser_result_unobserved", "The runtime did not return a browser outcome. Reconcile this operation before repeating a mutation.",
                         details = reconciliationDetails(invocation, mutation) + mapOf("goal_terminal" to false))
                 }
-                if (response.exitCode == 127) return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                    "browser_runtime_missing", "Install or update browser-automation and node-js, then inspect readiness.",
-                    details = mapOf("executed" to false, "goal_terminal" to false, "required_packs" to listOf("browser-automation", "node-js"),
-                        "installation_tool" to AgentOnDeviceRuntimeTools.INSTALL_PACK)
-                )
                 val envelope = runCatching { JSONObject(response.stdout.trim()) }.getOrNull()
                     ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
                         "browser_result_unobserved", "No structured browser outcome was observed. Inspect the live session before repeating a mutation.",
@@ -143,10 +140,11 @@ internal object AgentInteractiveBrowserTools {
     )
 
     internal fun runtimeRequest(invocation: AgentNativeToolInvocation, helpers: List<AgentRuntimeHostInput> = emptyList(),
-        hostCapability: String? = null): AgentRuntimeExecutionRequest = AgentRuntimeExecutionRequest(
+        hostCapability: String? = null, readinessOnly: Boolean = false): AgentRuntimeExecutionRequest = AgentRuntimeExecutionRequest(
         language = AgentRuntimeLanguage.SHELL,
-        source = "command -v galaxyssi-browser >/dev/null 2>&1 || exit 127\n" +
-            "exec galaxyssi-browser .galaxyssi-inputs/browser/browser-session-cli.cjs ${shellSingleQuote(scope(invocation.context))}",
+        source = AgentBrowserRuntimeReadiness.shellPrelude() + if (readinessOnly || invocation.input["operation"] == "readiness")
+            "exec galaxyssi-browser .galaxyssi-inputs/browser/browser-runtime-readiness.cjs"
+        else "exec galaxyssi-browser .galaxyssi-inputs/browser/browser-session-cli.cjs ${shellSingleQuote(scope(invocation.context))}",
         arguments = emptyList(), timeoutMillis = TIMEOUT, networkEnabled = true, artifactPaths = emptyList(),
         workspaceId = invocation.context.attributes["workspace_id"].orEmpty().ifBlank { invocation.context.conversationId },
         requestId = invocation.context.invocationId, cancellationToken = invocation.cancellationToken,
@@ -173,7 +171,7 @@ internal object AgentInteractiveBrowserTools {
 
     internal fun stageHelpers(context: Context): List<AgentRuntimeHostInput> {
         val payloads = listOf("browser-session-engine.cjs", "browser-session-cli.cjs", "browser-user-control.cjs",
-            "browser-service-supervisor.cjs", "browser-operation-receipts.cjs").associateWith { name ->
+            "browser-service-supervisor.cjs", "browser-operation-receipts.cjs", "browser-runtime-readiness.cjs").associateWith { name ->
             context.assets.open("interactive-browser/$name").use { it.readBytes() }
         }
         val digest = MessageDigest.getInstance("SHA-256")

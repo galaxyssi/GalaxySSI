@@ -131,7 +131,7 @@ tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeMe
 val stageInteractiveBrowserHelpers = tasks.register<Sync>("stageInteractiveBrowserHelpers") {
     from(rootProject.file("../../tools/runtime")) {
         include("browser-session-engine.cjs", "browser-session-cli.cjs", "browser-user-control.cjs", "browser-service-supervisor.cjs",
-            "browser-operation-receipts.cjs")
+            "browser-operation-receipts.cjs", "browser-runtime-readiness.cjs")
         into("interactive-browser")
     }
     into(layout.buildDirectory.dir("generated/interactive-browser-assets"))
@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1319
-        versionName = "1.5.36"
+        versionCode = 1320
+        versionName = "1.5.37"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")

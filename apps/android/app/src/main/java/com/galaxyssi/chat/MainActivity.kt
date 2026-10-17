@@ -422,6 +422,9 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val agentTaskLivenessExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskEventExecutor = Executors.newSingleThreadExecutor()
     internal val navigationContentExecutor = Executors.newFixedThreadPool(2)
+    internal val foregroundAgentReload = AgentForegroundReload<AgentUiState>(
+        navigationContentExecutor, java.util.concurrent.Executor { handler.post(it) }
+    )
     internal val navigationContentGate = NavigationContentGate()
     internal val cloudExecutor = Executors.newCachedThreadPool()
     internal val activeCloudStreams = ConcurrentHashMap<String, ActiveCloudStream>()
@@ -1190,6 +1193,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onDestroy() {
+        foregroundAgentReload.invalidate()
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         if (::conversationWindow.isInitialized) conversationWindow.destroy()
         agentVoiceConversation?.end()
@@ -1337,27 +1341,11 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         prepareHighAccuracyAsrIfSelected()
         traceResume("listeners")
         val initialResume = !completedInitialResume
-        val reloadedAgentState = if (!initialResume) {
-            mobileNativeAgent.reloadSession()
-        } else {
-            completedInitialResume = true
-            null
-        }
+        completedInitialResume = true
+        if (!initialResume || restoredRuntimePlaintext) requestForegroundAgentReload()
         traceResume("agent_session")
         if (!initialResume) requestAgentRegistrySnapshotSync()
         traceResume("registry")
-        val restoredAgentState = reloadedAgentState?.let { state ->
-            if (state.runningTaskCount == 0 && ScreenPerceptionState.hasRecentVisualCapture()) {
-                mobileNativeAgent.observeCurrentScreen()
-            } else {
-                state
-            }
-        }
-        if (activeMainTab == PAGE_AGENT && !initialAgentHydrationPending && restoredAgentState != null) {
-            renderAgentState(restoredAgentState, syncTranscript = false)
-        } else if (restoredRuntimePlaintext && activeMainTab == PAGE_AGENT && !initialAgentHydrationPending) {
-            renderAgentState(mobileNativeAgent.reloadSession(), syncTranscript = false)
-        }
         traceResume("agent_render")
         if (featurePage.visibility == View.VISIBLE && controlCenterDestination != null) {
             renderCurrentControlCenterDestination()
@@ -1379,6 +1367,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onPause() {
+        foregroundAgentReload.invalidate()
         if (::conversationWindow.isInitialized) conversationWindow.pause()
         agentVoiceConversation?.onForeground(false)
         AppForegroundTracker.onActivityBackground(this)

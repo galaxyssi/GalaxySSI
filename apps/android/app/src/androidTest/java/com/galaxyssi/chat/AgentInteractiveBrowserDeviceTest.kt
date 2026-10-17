@@ -163,7 +163,7 @@ class AgentInteractiveBrowserDeviceTest {
         assertTrue(cli.contains("'supervise'"))
         assertTrue(cli.contains("receipts.status(request.input.request_id)"))
         assertTrue(receipts.contains("class BrowserOperationReceipts"))
-        assertEquals(5, AgentInteractiveBrowserTools.stageHelpers(context).size)
+        assertEquals(6, AgentInteractiveBrowserTools.stageHelpers(context).size)
     }
 
     @Test fun lostBrowserResponseExposesTheSameOperationIdUsedByTheRuntime() {
@@ -184,6 +184,32 @@ class AgentInteractiveBrowserDeviceTest {
         assertEquals(AgentInteractiveBrowserTools.operationId(scope), result.error?.details?.get("request_id"))
     }
 
+    @Test fun installedBrowserLaunchesAndReadsAPublicPageOnThePhone() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("browser_runtime_probe") == "true")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val registry = AgentNativeToolRegistry().registerAll(AgentInteractiveBrowserTools.definitions(context))
+        val owner = "public-readiness-${UUID.randomUUID()}"
+        fun invoke(tool: String, input: AgentNativeJsonObject): AgentNativeToolResult = registry.invoke(tool, input,
+            AgentNativeToolInvocationContext(conversationId = owner, sessionId = owner, turnId = owner,
+                invocationId = UUID.randomUUID().toString(), idempotencyKey = UUID.randomUUID().toString(),
+                attributes = mapOf("workspace_id" to owner, "permission_mode" to "full_access")))
+        val ready = invoke(AgentInteractiveBrowserTools.OBSERVE, mapOf("operation" to "readiness"))
+        println("PUBLIC_BROWSER_READINESS ${ready.toJson()}")
+        assertTrue("Chromium was not verified: ${ready.error?.code}", ready.isSuccess)
+        assertEquals(true, ready.output["browser_ready"])
+        val page = invoke(AgentInteractiveBrowserTools.ACT,
+            mapOf("operation" to "create", "url" to "https://example.com"))
+        println("PUBLIC_BROWSER_PAGE ${page.toJson()}")
+        try {
+            assertTrue("Public page failed: ${page.error?.code}", page.isSuccess)
+            assertTrue("No rendered public page content", page.toJson().contains("Example Domain"))
+            assertEquals(false, page.output["business_success_verified"])
+        } finally {
+            page.output["session_id"]?.let { invoke(AgentInteractiveBrowserTools.ACT,
+                mapOf("operation" to "close", "session_id" to it)) }
+        }
+    }
+
     @Test fun publicMissingSessionProbeRunsThroughThePhoneRuntimeAndReturnsRecoveryEvidence() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("browser_runtime_probe") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -196,7 +222,8 @@ class AgentInteractiveBrowserDeviceTest {
         println("PUBLIC_BROWSER_RUNTIME_PROBE status=${result.status} code=${result.error?.code}")
         assertFalse(result.isSuccess)
         assertTrue("Unexpected runtime blocker: ${result.error?.code}",
-            result.error?.code in setOf("browser_runtime_missing", "session_lost"))
+            result.error?.code in setOf("node_missing", "node_path_missing", "node_start_failed",
+                "browser_launcher_missing", "browser_launcher_path_missing", "session_lost"))
         assertEquals(false, result.error?.details?.get("goal_terminal"))
     }
 }

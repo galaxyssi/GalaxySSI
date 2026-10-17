@@ -98,6 +98,9 @@ object AgentRunTimelineContract {
 }
 
 object AgentExecutionLoopTimelinePolicy {
+    fun eventKey(runId: String, turnId: String, revision: Long): String =
+        "agent-loop-event:${runId.length}:$runId:${turnId.length}:$turnId:$revision"
+
     fun actionsForPhase(phase: AgentPhase): List<AgentExecutionLoopTimelineAction> = when (phase) {
         AgentPhase.PLANNING,
         AgentPhase.WAITING_CONFIRMATION,

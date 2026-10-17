@@ -33,13 +33,32 @@ class AgentInteractiveBrowserToolsTest {
         assertEquals("workspace-a", request.workspaceId)
     }
 
-    @Test fun missingBrowserRuntimeReturnsInstallationEvidenceWithoutPretendingTheGoalFailed() {
+    @Test fun arbitraryExit127DoesNotClaimMissingPackagesOrSafeReplay() {
         val registry = registry { AgentRuntimeExecutionResponse(127, "", "", 1) }
         val result = registry.invoke(AgentInteractiveBrowserTools.ACT, mapOf("operation" to "create"), context)
-        assertEquals("browser_runtime_missing", result.error?.code)
-        assertEquals(false, result.error?.details?.get("executed"))
+        assertEquals("browser_result_unobserved", result.error?.code)
+        assertEquals(true, result.error?.details?.get("outcome_unknown"))
         assertEquals(false, result.error?.details?.get("goal_terminal"))
-        assertEquals(listOf("browser-automation", "node-js"), result.error?.details?.get("required_packs"))
+        assertNull(result.error?.details?.get("required_packs"))
+    }
+
+    @Test fun provenPreflightFailureIsDistinctFromAnUnobservedMutation() {
+        for (code in listOf("node_missing", "node_path_missing", "node_start_failed", "browser_launcher_missing", "browser_launcher_path_missing")) {
+            val registry = registry { response("""{"ok":false,"error":{"code":"$code","message":"Inspect runtime.","details":{"executed":false}}}""") }
+            val result = registry.invoke(AgentInteractiveBrowserTools.ACT, mapOf("operation" to "click"), context.copy(idempotencyKey = code))
+            assertEquals(code, result.error?.code)
+            assertEquals(false, result.error?.details?.get("outcome_unknown"))
+            assertEquals(false, result.error?.details?.get("executed"))
+        }
+    }
+
+    @Test fun readinessUsesAnIsolatedProbeInsteadOfNavigatingTheUserSession() {
+        var request: AgentRuntimeExecutionRequest? = null
+        val result = registry { request = it; response("""{"ok":true,"result":{"browser_ready":true,"website_verified":false}}""") }
+            .invoke(AgentInteractiveBrowserTools.OBSERVE, mapOf("operation" to "readiness"), context)
+        assertTrue(result.isSuccess)
+        assertTrue(request!!.source.contains("browser-runtime-readiness.cjs"))
+        assertFalse(request!!.source.contains("exec galaxyssi-browser .galaxyssi-inputs/browser/browser-session-cli.cjs"))
     }
 
     @Test fun lostBrowserResultDoesNotClaimAnActionFailedOrAutomaticallyRepeatIt() {

@@ -230,7 +230,10 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
         states.save(key, conversationId, snapshot())
     }
 
-    fun beforeSelection() { save() }
+    fun beforeSelection() {
+        activity.foregroundAgentReload.invalidate()
+        save()
+    }
 
     fun selected(id: String) {
         if (activity.initialAgentHydrationPending || id == conversationId) return

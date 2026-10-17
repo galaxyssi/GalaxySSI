@@ -1382,16 +1382,21 @@ object AgentOnDeviceRuntimeTools {
         invocation: AgentNativeToolInvocation,
         requestedPack: String
     ): AgentNativeToolExecutionResult {
+        fun installedResult(output: Map<String, Any?>): AgentNativeToolExecutionResult {
+            if (requestedPack in setOf("browser-automation", "node-js") &&
+                AgentBrowserRuntimeReadiness.availability(manager.cachedStatus()).status == AgentNativeToolAvailabilityStatus.AVAILABLE) {
+                return AgentBrowserRuntimeReadiness.verifyInstalled(invocation, output, manager::execute,
+                    AgentInteractiveBrowserTools.stageHelpers(context.applicationContext))
+            }
+            return AgentNativeToolExecutionResult.success(output, "Trusted runtime pack is ready")
+        }
         if (requestedPack !in AgentOnDeviceRuntimeManager.REQUIRED_PACKS) {
             return AgentNativeToolExecutionResult.failure(
                 "invalid_runtime_pack", "Runtime pack is invalid"
             )
         }
         readyRuntimePackInstallOutput(requestedPack, manager.packStatuses())?.let { output ->
-            return AgentNativeToolExecutionResult.success(
-                output,
-                "Trusted runtime pack is already ready"
-            )
+            return installedResult(output)
         }
         val catalogManager = AgentRuntimePackCatalogManager(context)
         return try {
@@ -1444,10 +1449,7 @@ object AgentOnDeviceRuntimeTools {
                     )
                 }
             }
-            AgentNativeToolExecutionResult.success(
-                mapOf("requested_pack" to requestedPack, "installed" to installed),
-                "Trusted runtime pack is ready"
-            )
+            installedResult(mapOf("requested_pack" to requestedPack, "installed" to installed))
         } catch (error: AgentNativeToolCancelledException) {
             throw error
         } catch (error: Throwable) {

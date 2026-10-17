@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import android.view.View
 
 internal fun MainActivity.clearRuntimePlaintextForBackground() {
+    foregroundAgentReload.invalidate()
     if (runtimePlaintextCleared || isChangingConfigurations) return
     runtimePlaintextCleared = true
     RuntimeSensitiveCaches.clearAll()

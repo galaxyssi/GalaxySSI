@@ -51,6 +51,9 @@ class AgentRunEventStore internal constructor(context: Context, private val data
     internal fun containsIdempotencyKey(runId: String, key: String): Boolean =
         ledger.containsIdempotencyKey(runId, key)
 
+    internal fun containsLoopRevision(runId: String, turnId: String, revision: Long, timestampMillis: Long): Boolean =
+        ledger.containsLoopRevision(runId, turnId, revision, timestampMillis)
+
     internal fun snapshotEvent(kind: String, runId: String): AgentRunControlEvent? =
         ledger.findSnapshot(kind, null, runId)
 
@@ -121,6 +124,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
     null,
     DATABASE_VERSION
 ) {
+    private val writeLock = Any()
     private val snapshotMigrationLock = Any()
     @Volatile private var snapshotIndexReady = false
     @Volatile private var legacyMigrationComplete = false
@@ -177,6 +181,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
             "CREATE INDEX run_events_time_order " +
                 "ON run_events(timestamp_millis, event_id_hash)"
         )
+        createLoopLookupIndex(db)
         AgentRunSnapshotIndex.create(db)
         db.execSQL("INSERT INTO ledger_metadata(metadata_key,metadata_value) VALUES (?,?)",
             arrayOf(AgentRunSnapshotIndex.MIGRATION_KEY, "done"))
@@ -184,9 +189,14 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) AgentRunSnapshotIndex.create(db)
+        if (oldVersion < 3) createLoopLookupIndex(db)
     }
 
-    fun appendInitialIfAbsent(event: AgentRunControlEvent): Boolean = synchronized(this) {
+    private fun createLoopLookupIndex(db: SQLiteDatabase) = db.execSQL(
+        "CREATE INDEX IF NOT EXISTS run_events_run_time ON run_events(run_key,timestamp_millis)"
+    )
+
+    fun appendInitialIfAbsent(event: AgentRunControlEvent): Boolean = synchronized(writeLock) {
         val canonical = AgentRunKernelContract.canonical(event).copy(sequence = 1L)
         writableDatabase.inTransactionResult {
             val root = readRoot(canonical.runId)
@@ -200,7 +210,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
         }
     }
 
-    fun appendExact(event: AgentRunControlEvent): Boolean = synchronized(this) {
+    fun appendExact(event: AgentRunControlEvent): Boolean = synchronized(writeLock) {
         val canonical = AgentRunKernelContract.canonical(event)
         require(canonical.sequence > 0L) { "Run event sequence must be positive" }
         writableDatabase.inTransactionResult {
@@ -221,7 +231,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
         }
     }
 
-    fun appendNextAll(events: List<AgentRunControlEvent>): List<AgentRunControlEvent> = synchronized(this) {
+    fun appendNextAll(events: List<AgentRunControlEvent>): List<AgentRunControlEvent> = synchronized(writeLock) {
         if (events.isEmpty()) return@synchronized emptyList()
         val canonicalEvents = events.map(AgentRunKernelContract::canonical)
         val runId = canonicalEvents.first().runId
@@ -255,7 +265,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
     }
 
     fun appendRecoveryIfCurrent(event: AgentRunControlEvent, expectedSequence: Long): AgentRunControlEvent? =
-        synchronized(this) {
+        synchronized(writeLock) {
             writableDatabase.inTransactionResult {
                 val current = snapshot(event.runId)
                 if (current == null || current.lastSequence != expectedSequence || current.state.isTerminal()) null
@@ -263,23 +273,36 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
             }
         }
 
-    fun events(runId: String): List<AgentRunControlEvent> = synchronized(this) {
+    fun events(runId: String): List<AgentRunControlEvent> =
         queryEvents(runId, afterSequence = 0L, limit = null)
-    }
 
-    fun containsIdempotencyKey(runId: String, key: String): Boolean = synchronized(this) {
+    fun containsIdempotencyKey(runId: String, key: String): Boolean =
         readableDatabase.query(TABLE_EVENTS, arrayOf(COLUMN_SEQUENCE),
             "$COLUMN_RUN_KEY = ? AND $COLUMN_IDEMPOTENCY_HASH = ?",
             arrayOf(digest(runId.trim()), digest(key.trim())), null, null, null, "1").use { it.moveToFirst() }
-    }
 
-    fun eventsPage(runId: String, afterSequence: Long, limit: Int): List<AgentRunControlEvent> = synchronized(this) {
-        queryEvents(runId, afterSequence.coerceAtLeast(0L), limit.coerceAtLeast(1))
-    }
-
-    fun latestEvent(runId: String): AgentRunControlEvent? = synchronized(this) {
+    fun containsLoopRevision(runId: String, turnId: String, revision: Long, timestampMillis: Long): Boolean {
+        if (containsIdempotencyKey(runId, AgentExecutionLoopTimelinePolicy.eventKey(runId, turnId, revision))) return true
+        // Old releases used random event ids. Their stable snapshot time permits an indexed lookup,
+        // without decrypting or migrating the entire run on the first resumed event.
         val runKey = digest(runId.trim())
-        readableDatabase.query(
+        return readableDatabase.query(TABLE_EVENTS, arrayOf(COLUMN_SEQUENCE, COLUMN_ENCRYPTED_EVENT),
+            "$COLUMN_RUN_KEY = ? AND $COLUMN_TIMESTAMP_MILLIS = ?",
+            arrayOf(runKey, timestampMillis.toString()), null, null, null).use { cursor ->
+            while (cursor.moveToNext()) {
+                val event = decodeEvent(cursor, runKey)
+                if (event?.turnId == turnId && AgentExecutionLoopTimelinePolicy.isSameRevision(event, revision)) return@use true
+            }
+            false
+        }
+    }
+
+    fun eventsPage(runId: String, afterSequence: Long, limit: Int): List<AgentRunControlEvent> =
+        queryEvents(runId, afterSequence.coerceAtLeast(0L), limit.coerceAtLeast(1))
+
+    fun latestEvent(runId: String): AgentRunControlEvent? {
+        val runKey = digest(runId.trim())
+        return readableDatabase.query(
             TABLE_EVENTS,
             arrayOf(COLUMN_SEQUENCE, COLUMN_ENCRYPTED_EVENT),
             "$COLUMN_RUN_KEY = ?",
@@ -296,10 +319,10 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
     fun findSnapshot(kind: String, lookup: AgentRunSnapshotLookup?, value: String): AgentRunControlEvent? {
         if (value.isBlank()) return null
         ensureSnapshotIndex()
-        return synchronized(this) {
+        return run {
             val pointer = AgentRunSnapshotIndex.find(readableDatabase, kind, lookup, value)
-                ?: return@synchronized null
-            readSnapshotEvent(pointer).also { event ->
+                ?: return@run null
+            readSnapshotEvent(pointer)?.also { event ->
                 check(AgentRunSnapshotContract.matches(event, kind, lookup, value)) {
                     "Run snapshot lookup identity failed validation"
                 }
@@ -309,11 +332,11 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
 
     fun snapshotPage(kind: String, beforeOrdinal: Long?, limit: Int): AgentRunSnapshotPage {
         ensureSnapshotIndex()
-        return synchronized(this) {
+        return run {
             val size = limit.coerceIn(1, 256)
             val pointers = AgentRunSnapshotIndex.page(readableDatabase, kind, beforeOrdinal, size)
-            val events = pointers.map { pointer ->
-                readSnapshotEvent(pointer).also {
+            val events = pointers.mapNotNull { pointer ->
+                readSnapshotEvent(pointer)?.also {
                     check(AgentRunSnapshotContract.describe(it)?.kind == kind) { "Run snapshot kind failed validation" }
                 }
             }
@@ -323,7 +346,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
 
     fun removeSnapshotRuns(kind: String) {
         ensureSnapshotIndex()
-        synchronized(this) { writableDatabase.inTransaction { AgentRunSnapshotIndex.removeRuns(this, kind) } }
+        synchronized(writeLock) { writableDatabase.inTransaction { AgentRunSnapshotIndex.removeRuns(this, kind) } }
     }
 
     private fun ensureSnapshotIndex() {
@@ -333,7 +356,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
         }
     }
 
-    fun backfillSnapshotIndexPage(): Boolean = synchronized(this) {
+    fun backfillSnapshotIndexPage(): Boolean = synchronized(writeLock) {
         if (snapshotIndexReady) return@synchronized false
         val saved = metadata(AgentRunSnapshotIndex.MIGRATION_KEY)
         if (saved == "done") {
@@ -368,11 +391,11 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
         }
     }
 
-    private fun readSnapshotEvent(pointer: AgentRunSnapshotPointer): AgentRunControlEvent =
+    private fun readSnapshotEvent(pointer: AgentRunSnapshotPointer): AgentRunControlEvent? =
         readableDatabase.query(TABLE_EVENTS, arrayOf(COLUMN_SEQUENCE, COLUMN_ENCRYPTED_EVENT),
             "$COLUMN_RUN_KEY=? AND $COLUMN_SEQUENCE=?", arrayOf(pointer.runKey, pointer.sequence.toString()),
             null, null, null, "1").use { cursor ->
-            check(cursor.moveToFirst()) { "Run snapshot event is missing" }
+            if (!cursor.moveToFirst()) return@use null // A concurrent deletion may remove this immutable row.
             checkNotNull(decodeEvent(cursor, pointer.runKey)) { "Run snapshot event could not be decoded" }.also {
                 check(digest(it.runId) == pointer.runKey && it.sequence == pointer.sequence) {
                     "Run snapshot pointer identity failed validation"
@@ -380,41 +403,40 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
             }
         }
 
-    fun snapshot(runId: String): AgentRunControlSnapshot? = synchronized(this) {
-        val root = readRoot(runId) ?: return@synchronized null
-        val last = latestEvent(runId) ?: return@synchronized null
+    fun snapshot(runId: String): AgentRunControlSnapshot? = readableDatabase.rawQuery(
+        "SELECT e.sequence,e.encrypted_event,r.state FROM run_roots r JOIN run_events e " +
+            "ON e.run_key=r.run_key AND e.sequence=r.last_sequence WHERE r.run_key=?",
+        arrayOf(digest(runId.trim()))
+    ).use { cursor ->
+        if (!cursor.moveToFirst()) return@use null
+        val last = decodeEvent(cursor, digest(runId.trim())) ?: return@use null
         AgentRunControlSnapshot(
             runId = last.runId,
             taskId = last.taskId,
-            state = root.state,
+            state = enumValueOf(cursor.getString(2)),
             agentId = last.agentId,
             deviceId = last.deviceId,
-            lastSequence = root.lastSequence,
+            lastSequence = last.sequence,
             lastEvent = last
         )
     }
 
-    fun recoverableRuns(): List<AgentRunControlSnapshot> = synchronized(this) {
-        readableDatabase.query(
-            TABLE_ROOTS,
-            arrayOf(COLUMN_RUN_KEY, COLUMN_ENCRYPTED_ROOT),
-            "$COLUMN_STATE NOT IN (?,?,?)",
-            TERMINAL_STATE_NAMES,
-            null,
-            null,
-            "$COLUMN_UPDATED_AT_MILLIS ASC"
+    fun recoverableRuns(): List<AgentRunControlSnapshot> =
+        readableDatabase.rawQuery(
+            "SELECT e.sequence,e.encrypted_event,r.run_key,r.state FROM run_roots r JOIN run_events e " +
+                "ON e.run_key=r.run_key AND e.sequence=r.last_sequence " +
+                "WHERE r.state NOT IN (?,?,?) ORDER BY r.updated_at_millis ASC", TERMINAL_STATE_NAMES
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
-                    decodeRunId(cursor.getString(0), cursor.getString(1))
-                        ?.let(::snapshot)
-                        ?.let(::add)
+                    val last = decodeEvent(cursor, cursor.getString(2)) ?: continue
+                    add(AgentRunControlSnapshot(last.runId, last.taskId, enumValueOf(cursor.getString(3)),
+                        last.agentId, last.deviceId, last.sequence, last))
                 }
             }
         }
-    }
 
-    fun storedRunIds(limit: Int): List<String> = synchronized(this) {
+    fun storedRunIds(limit: Int): List<String> =
         readableDatabase.query(
             TABLE_ROOTS,
             arrayOf(COLUMN_RUN_KEY, COLUMN_ENCRYPTED_ROOT),
@@ -431,9 +453,8 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
                 }
             }.asReversed()
         }
-    }
 
-    fun removeRuns(runIds: Set<String>) = synchronized(this) {
+    fun removeRuns(runIds: Set<String>) = synchronized(writeLock) {
         if (runIds.isEmpty()) return@synchronized
         writableDatabase.inTransaction {
             runIds.map(String::trim).filter(String::isNotEmpty).forEach { runId ->
@@ -442,7 +463,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
         }
     }
 
-    fun clear() = synchronized(this) {
+    fun clear() = synchronized(writeLock) {
         writableDatabase.inTransaction {
             delete(TABLE_ROOTS, null, null)
         }
@@ -455,7 +476,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
             legacyMigrationComplete = true
             return
         }
-        synchronized(this) {
+        synchronized(writeLock) {
             if (legacyMigrationComplete || metadata(LEGACY_MIGRATION_KEY) == "done") {
                 legacyMigrationComplete = true
                 return
@@ -668,7 +689,7 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
     }
 
     companion object {
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
         private const val LEGACY_DATABASE = "galaxyssi_run_control_v1"
         private const val LEGACY_MIGRATION_KEY = "legacy_encrypted_array_v1"
         private const val TABLE_ROOTS = "run_roots"

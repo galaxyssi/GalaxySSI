@@ -7,6 +7,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentExecutionLoopTimelineTest {
+    @Test fun eventIdsAreStableAndIsolatedAcrossRunsTurnsAndRevisions() {
+        val key = AgentExecutionLoopTimelinePolicy.eventKey("run", "turn", 1)
+        assertEquals(key, AgentExecutionLoopTimelinePolicy.eventKey("run", "turn", 1))
+        assertFalse(key == AgentExecutionLoopTimelinePolicy.eventKey("other-run", "turn", 1))
+        assertFalse(key == AgentExecutionLoopTimelinePolicy.eventKey("run", "other-turn", 1))
+        assertFalse(key == AgentExecutionLoopTimelinePolicy.eventKey("run", "turn", 2))
+        assertFalse(AgentExecutionLoopTimelinePolicy.eventKey("run:part", "turn", 1) ==
+            AgentExecutionLoopTimelinePolicy.eventKey("run", "part:turn", 1))
+    }
+
     @Test
     fun canonicalPhasesMapToStructuredRunEvents() {
         val loop = AgentExecutionLoop.create { 1_000L }

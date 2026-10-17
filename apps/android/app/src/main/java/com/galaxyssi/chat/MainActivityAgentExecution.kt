@@ -362,12 +362,9 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
     val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank { persistedRunId }
     val run = agentRunRecorder.run(runId) ?: return
     val projection = AgentExecutionLoopTimelinePolicy.project(event)
-    val revisionRecorded = agentRunEventStore.events(run.runId).any { recorded ->
-        AgentExecutionLoopTimelinePolicy.isSameRevision(
-            recorded,
-            event.snapshot.revision
-        )
-    }
+    val revisionRecorded = agentRunEventStore.containsLoopRevision(
+        run.runId, turnId, event.snapshot.revision, event.snapshot.updatedAtMillis
+    )
     if (!revisionRecorded) {
         appendRunControlEvent(
             run = run,
@@ -378,7 +375,8 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
             payload = projection.payload,
             stepId = projection.stepId,
             toolCallId = projection.toolCallId,
-            timestampMillis = event.snapshot.updatedAtMillis
+            timestampMillis = event.snapshot.updatedAtMillis,
+            eventId = AgentExecutionLoopTimelinePolicy.eventKey(run.runId, turnId, event.snapshot.revision)
         )
     }
     val label = projection.label ?: return
@@ -1495,11 +1493,13 @@ internal fun Context.appendRunControlEvent(
     payload: AgentNativeJsonObject = emptyMap(),
     stepId: String = "",
     toolCallId: String = "",
-    timestampMillis: Long = System.currentTimeMillis()
+    timestampMillis: Long = System.currentTimeMillis(),
+    eventId: String = UUID.randomUUID().toString()
 ) {
     val profile = AppStore.profile(this)
     AgentRunEventStore(this).appendNext(
         AgentRunControlEvent(
+            eventId = eventId,
             conversationId = run.conversationId,
             messageId = messageId,
             taskId = taskId,
