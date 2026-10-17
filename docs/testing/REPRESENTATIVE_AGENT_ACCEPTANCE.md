@@ -95,3 +95,43 @@ the normal composer and verify actual output, not merely a terminal task phase.
   was `com.sec.android.app.popupcalculator/.Calculator`, not a Desktop app.
 - A separate normal-composer device-status request completed. Its 100% battery
   and charging state matched Android `dumpsys battery`; no timer was started.
+
+## 2026-10-17: Android 1.5.37 (1320)
+
+- The stalled CSV follow-up was not a missing model response: Desktop completed
+  its plan and the phone acknowledged durable receipt. The phone task journal
+  repeatedly recorded `The phone operation checkpoint could not be saved`.
+- The original conversation's operation snapshot had business status `completed`,
+  but generic restart recovery had changed its ledger Run to `FAILED` with reason
+  `interrupted_run_cannot_be_replayed_safely`. The next model plan could therefore
+  not append its checkpoint. This is not a CSV-specific parsing failure.
+- Device-operation context is now explicitly observation-only. Recovery also
+  recognizes correctly scoped legacy operation snapshots. Saving repairs only
+  the exact old generic-recovery misclassification, not user cancellation,
+  completion, unrelated failures, or any executable task. Existing receipts and
+  operation status are preserved without replaying effects.
+- 33 selected JVM tests passed, with zero failures or skips. Repository checks
+  and APK assembly passed. Version 1.5.37 was installed on S20U with data retained.
+- Five real SQLite fixture checks passed: observation-only marking, close/reopen
+  identity retention, legacy failure repair without execution, follow-up save,
+  and conversation isolation. The dedicated fixture database was deleted.
+- Nine native-tool scenarios passed again. Local report:
+  `%TEMP%/galaxyssi-representative-acceptance/representative-981c61b6598f429f851a052e86e2cf22.json`.
+- Two additional normal-composer reasoning cases passed on the preceding 1.5.36
+  diagnostic build: conflicting meeting availability was correctly rejected;
+  after updating one participant's availability, only that condition changed and
+  a valid shared time was returned. Neither case created a real meeting/schedule.
+  Local report: `composer-constraints-20261017.json` in the same report directory.
+- The original CSV conversation's new model-driven follow-up completed in 233.8
+  seconds. It read the prior document, applied an exact patch, read back the new
+  content, exported it, and returned text plus a file. Notebook quantity/price
+  remained 2/12; pen quantity/price became 4/5; subtotals were 24/20 and total 44.
+- Real UI preview displayed the complete CSV. Saving created
+  `Download/GalaxySSI/shopping-check.csv` (82 bytes, no extra `.txt` extension).
+  The saved SHA-256 matched its delivery receipt:
+  `714431ca7a1a0f7d58da3bc457fa09ecbbc5b6ddb36f771d0160ef19c75a6651`.
+  Report: `composer-csv-recovered-20261017.json`; preview screenshot:
+  `csv-preview-20261017.png`, in the local report directory above.
+- Remaining: serial model planning/review is still slow for a small CSV edit.
+  This change fixes continuity and delivery correctness, not overall latency.
+  The separately documented image-routing test disagreement is also unchanged.
