@@ -401,8 +401,7 @@ class AgentLongTaskRecoveryWorker(
         taskContext: AgentTaskContext,
         state: AgentUiState
     ) {
-        val actions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
-            .distinctBy(AgentAction::id)
+        val actions = AgentWorkspaceToolCallProjection.actions(state.plan)
         val result = state.lastActionResult
         val planJson = JSONArray().apply {
             actions.forEach { action ->
@@ -436,45 +435,13 @@ class AgentLongTaskRecoveryWorker(
                 } else {
                     ""
                 },
-                toolCalls = actions.mapNotNull(::toolCallRecord)
+                toolCalls = AgentWorkspaceToolCallProjection.records(actions, result)
             )
         )
         taskContext.checkpoint(
             checkpointId = "recovery-${state.executionLoop?.revision ?: 0L}",
             planSnapshot = planJson,
             stateJson = stateJson
-        )
-    }
-
-    private fun toolCallRecord(action: AgentAction): AgentToolCallRecord? {
-        if (action.kind !in setOf(AgentActionKind.CALL_NATIVE_TOOL, AgentActionKind.CALL_CONNECTOR)) {
-            return null
-        }
-        return AgentToolCallRecord(
-            id = action.id,
-            toolName = action.parameters["tool_id"].orEmpty()
-                .ifBlank { action.parameters["connector_id"].orEmpty() }
-                .ifBlank { action.kind.name.lowercase(Locale.ROOT) },
-            status = when (action.status) {
-                AgentActionStatus.PROPOSED,
-                AgentActionStatus.PENDING_CONFIRMATION -> AgentToolCallStatus.PENDING
-                AgentActionStatus.RUNNING,
-                AgentActionStatus.WAITING_RESPONSE -> AgentToolCallStatus.RUNNING
-                AgentActionStatus.COMPLETED -> AgentToolCallStatus.SUCCEEDED
-                AgentActionStatus.FAILED,
-                AgentActionStatus.BLOCKED,
-                AgentActionStatus.ROLLED_BACK -> AgentToolCallStatus.FAILED
-            },
-            argumentsJson = action.parameters["input_json"].orEmpty()
-                .ifBlank { JSONObject(action.parameters).toString() },
-            resultJson = JSONObject().put("message", action.result).toString(),
-            errorMessage = action.result.takeIf {
-                action.status in setOf(
-                    AgentActionStatus.FAILED,
-                    AgentActionStatus.BLOCKED,
-                    AgentActionStatus.ROLLED_BACK
-                )
-            }.orEmpty()
         )
     }
 

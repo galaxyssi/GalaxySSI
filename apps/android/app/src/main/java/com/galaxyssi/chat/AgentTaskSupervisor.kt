@@ -1115,8 +1115,7 @@ class AgentTaskSupervisor(
             currentPlanSnapshot = snapshot.planSnapshot.ifBlank { current.currentPlanSnapshot },
             resultJson = snapshot.resultJson.ifBlank { current.resultJson },
             errorMessage = snapshot.errorMessage.ifBlank { current.errorMessage },
-            toolCalls = (current.toolCalls + snapshot.toolCalls)
-                .distinctBy(AgentToolCallRecord::id)
+            toolCalls = AgentWorkspaceToolCallProjection.merge(current.toolCalls, snapshot.toolCalls)
                 .takeLast(AgentWorkspaceLimits.MAX_TOOL_CALLS),
             artifacts = (current.artifacts + snapshot.artifacts)
                 .distinctBy(AgentArtifactReference::id)
