@@ -120,7 +120,8 @@ internal object AgentGoalEvidence {
         // Durable receipts may predate normalized goal metadata; retain their explicit delivery caveat.
         val raw = runCatching { JSONObject(result.metadata["native_tool_output"].orEmpty()) }.getOrNull()
         val output = raw?.optJSONObject("output") ?: raw
-        return output?.opt("delivery_verified") != false &&
+        if (result.metadata["native_tool_id"] in AgentDeviceStateEvidence.tools && output?.opt("state_verified") != true) return false
+        return output?.opt("state_verified") != false && output?.opt("delivery_verified") != false &&
             output?.optJSONObject("metadata")?.optString("business_success_verified") != "false"
     }
 
@@ -160,7 +161,7 @@ internal object AgentGoalEvidence {
         if (action.status != AgentActionStatus.COMPLETED) false else {
             val raw = runCatching { JSONObject(action.evidence) }.getOrNull()
             val output = raw?.optJSONObject("output") ?: raw
-            output?.optJSONObject("metadata")?.optString("goal_status") == "verified"
+            output?.opt("state_verified") != false && output?.optJSONObject("metadata")?.optString("goal_status") == "verified"
         }
     } == true
 
@@ -178,8 +179,9 @@ internal object AgentGoalEvidence {
             if (action.kind != AgentActionKind.CALL_NATIVE_TOOL) continue
             val raw = runCatching { JSONObject(action.evidence) }.getOrNull() ?: continue
             val output = raw.optJSONObject("output") ?: raw
-            val metadata = output.optJSONObject("metadata") ?: continue
-            val status = metadata.optString("goal_status")
+            val unverifiedState = output.opt("state_verified") == false
+            val metadata = output.optJSONObject("metadata") ?: if (unverifiedState) JSONObject() else continue
+            val status = if (unverifiedState) "unknown" else metadata.optString("goal_status")
             if (status.isEmpty()) continue
             return if (status == "verified" && action.status == AgentActionStatus.COMPLETED) null
             else PendingReceipt(output.optString("message").ifBlank { "The requested outcome has not been verified." },

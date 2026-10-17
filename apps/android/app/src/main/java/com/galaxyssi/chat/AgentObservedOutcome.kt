@@ -36,7 +36,8 @@ data class AgentObservedOutcome(
                 if (!validPath(key) || value !is String && value !is Boolean && value !is Number) return null
                 // Accepting/queuing a command or model-authored prose cannot prove an external outcome.
                 if (key.substringAfterLast('/') in setOf("accepted", "success", "message", "summary", "text",
-                        "exit_code", "queued", "dispatched", "ui_changed")) return null
+                        "exit_code", "queued", "dispatched", "ui_changed", "request_accepted", "dispatch_attempted",
+                        "requested_enabled", "requested_percent", "target_volume", "requested_muted")) return null
                 if (value is String && value.length > 1024) return null
                 checks[key] = value
             }
@@ -61,7 +62,8 @@ internal object AgentObservedOutcomeEvidence {
                 val raw = runCatching { JSONObject(action.evidence) }.getOrNull() ?: return@firstNotNullOfOrNull null
                 val output = raw.optJSONObject("output") ?: raw
                 if (requirement.subject.any { (path, value) -> at(output, path)?.toString() != value }) return@firstNotNullOfOrNull null
-                (action.status == AgentActionStatus.COMPLETED) && requirement.checks.all { (path, value) ->
+                (action.status == AgentActionStatus.COMPLETED) && output.opt("state_verified") != false &&
+                    requirement.checks.all { (path, value) ->
                     val actual = at(output, path)
                     if (value is Number && actual is Number) value.toDouble() == actual.toDouble() else actual == value
                 }

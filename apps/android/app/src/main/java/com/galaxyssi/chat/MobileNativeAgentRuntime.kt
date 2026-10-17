@@ -620,7 +620,8 @@ internal fun MobileNativeAgent.executeActionUntraced(
     }
     val responseLanguage = action.parameters["response_language"].orEmpty()
     val zh = responseLanguage == "zh" || (responseLanguage.isBlank() && currentGoal.any { it in '\u3400'..'\u9fff' })
-    val observedOutput = if (result.isSuccess) AgentGoalEvidence.withDeliveryEvidence(result.output, result.metadata, zh)
+    val observedOutput = if (result.isSuccess) AgentDeviceStateEvidence.normalize(toolId,
+        AgentGoalEvidence.withDeliveryEvidence(result.output, result.metadata, zh), zh)
         else result.output
     val renderedOutput = AgentNativeJsonCodec.stringify(observedOutput).take(MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS)
     val developmentFile = action.parameters[PHONE_DEVELOPMENT_FILE_PARAMETER].orEmpty()
@@ -752,6 +753,8 @@ internal fun MobileNativeAgent.renderNativeToolResult(
     zh: Boolean
 ): String {
     if (output.isEmpty()) return renderNativeToolFailure(message, zh)
+    if (toolId in AgentDeviceStateEvidence.tools)
+        return AgentDeviceStateEvidence.normalize(toolId, output, zh)["message"].toString()
     if (toolId == AgentWebMediaNativeTools.WEB_SEARCH) return renderPhoneWebSearchResult(output, zh)
     if (toolId in AgentWebIntelligenceNativeTools.toolIds) {
         return renderPhoneWebIntelligenceResult(toolId, output, zh)
@@ -861,10 +864,6 @@ internal fun MobileNativeAgent.renderNativeToolResult(
             val values = (output["values"] as? Iterable<*>)?.joinToString(", ") { it.toString() }.orEmpty()
             "One ${text("type")} sample: $values."
         }
-        AgentHardwareNativeTools.FLASHLIGHT_SET -> {
-            val enabled = bool("requested_enabled")
-            if (enabled) "Flashlight turned on." else "Flashlight turned off."
-        }
         AgentHardwareNativeTools.BLUETOOTH_STATUS ->
             if (!bool("supported")) "This phone does not support Bluetooth." else "Bluetooth is ${if (bool("enabled")) "on" else "off"}."
         AgentHardwareNativeTools.BLUETOOTH_DISCOVERY_FOREGROUND -> {
@@ -884,23 +883,6 @@ internal fun MobileNativeAgent.renderNativeToolResult(
         AgentHardwareNativeTools.PACKAGE_DETAIL ->
             if (!bool("visible")) renderPackageUnavailable(text("package_name"), false)
             else "${text("label").ifBlank { text("package_name") }} ${text("version_name")} (${text("package_name")})."
-        AgentAndroidSystemNativeTools.AUDIO_VOLUME_SET -> {
-            val volume = long("volume") ?: 0L
-            val max = long("max") ?: 0L
-            val actualPercent = if (max > 0L) {
-                ((volume * 100L + max / 2L) / max).coerceIn(0L, 100L)
-            } else {
-                long("percent") ?: 0L
-            }
-            val stream = audioStreamLabel(text("stream"), zh)
-            if (zh) "$stream\u97f3\u91cf\u5df2\u8bbe\u4e3a $actualPercent%\u3002" else "$stream volume is now $actualPercent%."
-        }
-        AgentAndroidSystemNativeTools.AUDIO_MUTE_SET -> {
-            val stream = audioStreamLabel(text("stream"), zh)
-            val muted = bool("muted")
-            if (zh) "$stream\u5df2${if (muted) "\u9759\u97f3" else "\u53d6\u6d88\u9759\u97f3"}\u3002"
-            else "$stream is ${if (muted) "muted" else "unmuted"}."
-        }
         AgentHardwareNativeTools.BLUETOOTH_PAIRING_HANDOFF,
         AgentAndroidSystemNativeTools.WIFI_PANEL_OPEN,
         AgentAndroidSystemNativeTools.WIFI_HOTSPOT_PANEL_OPEN,
@@ -1246,6 +1228,8 @@ internal fun MobileNativeAgent.renderNativeToolResultChinese(
     message: String,
     output: AgentNativeJsonObject
 ): String {
+    if (toolId in AgentDeviceStateEvidence.tools)
+        return AgentDeviceStateEvidence.normalize(toolId, output, zh = true)["message"].toString()
     fun bool(name: String) = output[name] as? Boolean ?: false
     fun long(name: String) = (output[name] as? Number)?.toLong()
     fun number(name: String) = (output[name] as? Number)?.toDouble()
@@ -1340,8 +1324,6 @@ internal fun MobileNativeAgent.renderNativeToolResultChinese(
             val values = (output["values"] as? Iterable<*>)?.joinToString(", ") { it.toString() }.orEmpty()
             "${text("type")} \u5355\u6b21\u91c7\u6837\uff1a$values\u3002"
         }
-        AgentHardwareNativeTools.FLASHLIGHT_SET ->
-            if (bool("requested_enabled")) "\u5df2\u6253\u5f00\u624b\u7535\u7b52\u3002" else "\u5df2\u5173\u95ed\u624b\u7535\u7b52\u3002"
         AgentHardwareNativeTools.BLUETOOTH_STATUS ->
             if (!bool("supported")) "\u8fd9\u53f0\u624b\u673a\u4e0d\u652f\u6301\u84dd\u7259\u3002"
             else "\u84dd\u7259${if (bool("enabled")) "\u5df2\u5f00\u542f" else "\u672a\u5f00\u542f"}\u3002"
@@ -1361,14 +1343,6 @@ internal fun MobileNativeAgent.renderNativeToolResultChinese(
         AgentHardwareNativeTools.PACKAGE_DETAIL ->
             if (!bool("visible")) renderPackageUnavailable(text("package_name"), true)
             else "${text("label").ifBlank { text("package_name") }} ${text("version_name")}\uff08${text("package_name")}\uff09\u3002"
-        AgentAndroidSystemNativeTools.AUDIO_VOLUME_SET -> {
-            val volume = long("volume") ?: 0L
-            val max = long("max") ?: 0L
-            val percent = if (max > 0L) ((volume * 100L + max / 2L) / max).coerceIn(0L, 100L) else 0L
-            "${audioStreamLabel(text("stream"), true)}\u97f3\u91cf\u5df2\u8bbe\u4e3a $percent%\u3002"
-        }
-        AgentAndroidSystemNativeTools.AUDIO_MUTE_SET ->
-            "${audioStreamLabel(text("stream"), true)}\u5df2${if (bool("muted")) "\u9759\u97f3" else "\u53d6\u6d88\u9759\u97f3"}\u3002"
         AgentHardwareNativeTools.BLUETOOTH_PAIRING_HANDOFF,
         AgentAndroidSystemNativeTools.WIFI_PANEL_OPEN,
         AgentAndroidSystemNativeTools.WIFI_HOTSPOT_PANEL_OPEN,
@@ -1480,15 +1454,6 @@ internal fun MobileNativeAgent.formatBytes(bytes: Long): String {
 }
 
 internal fun MobileNativeAgent.formatCoordinate(value: Double?): String = value?.let { String.format(Locale.US, "%.6f", it) } ?: "-"
-
-internal fun MobileNativeAgent.audioStreamLabel(stream: String, zh: Boolean): String = when (stream.lowercase(Locale.US)) {
-    "music", "media" -> if (zh) "\u5a92\u4f53" else "Media"
-    "ring" -> if (zh) "\u94c3\u58f0" else "Ringer"
-    "alarm" -> if (zh) "\u95f9\u949f" else "Alarm"
-    "notification" -> if (zh) "\u901a\u77e5" else "Notification"
-    "voice_call" -> if (zh) "\u901a\u8bdd" else "Call"
-    else -> if (zh) "\u7cfb\u7edf" else "System"
-}
 
 internal fun MobileNativeAgent.renderAndroidSystemToolValue(value: Any?): String = when (value) {
     null -> "-"

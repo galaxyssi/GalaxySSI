@@ -300,3 +300,46 @@ the normal composer and verify actual output, not merely a terminal task phase.
 - The final focused run passed all 73 intent, installed-app, system-planner and
   recovery tests with zero failures or skips; APK assembly passed. Repository
   checks and whitespace checks passed. Desktop code and version are unchanged.
+
+## 2026-10-17: Android 1.5.42 (1325)
+
+- Audio volume and mute now inspect the stream before a single mutation and read
+  it back afterwards. An already satisfied request performs no mutation. Ignored
+  setters, readback failures and post-dispatch exceptions retain observed facts
+  without inventing the requested state or automatically replaying the effect.
+- Volume maps to the nearest Android step. A target below the device minimum
+  is reported as unsupported without mutating or silently replacing the goal.
+  Receipts keep the requested percentage, mapped target, actual observed
+  index/range and observation timestamp separately. This proves system stream
+  state at observation time, not speaker loudness or a permanently stable state.
+- Volume/mute advertise their real output schemas and allowed stream names.
+  Audio-status reads include stream identities and a timestamp for scoped model
+  postconditions and inspection before retrying.
+- The UI, verification metadata and resumed receipts preserve unverified state.
+  Flashlight submission was already marked unverified by its native adapter but
+  the UI incorrectly rendered it as turned on/off; that success rewrite is gone.
+  A torch-state observation capability is still absent and is reported explicitly.
+- Requested parameters and dispatch acceptance cannot be used as observed
+  postconditions. A partial model-declared postcondition cannot override an
+  explicitly unverified device receipt.
+- This is not a claim that every external tool adapter has now gained
+  business-outcome verification. Escalating an unverified direct shortcut into
+  model-directed recovery remains separate work; this increment supplies the
+  actual state and prevents false success, not universal autonomous repair.
+- All 113 selected JVM tests passed with zero failures, errors or skips; APK
+  assembly passed. The initial test-compile failure was a fake-port JVM setter
+  name collision, corrected before the passing run. Final XML evidence is in
+  `%TEMP%/galaxyssi-representative-acceptance/device-state-1.5.42-tests/`.
+- Installed 1.5.42 / 1325 on S20U only, with App data retained. Eleven native
+  document/data/export scenarios passed again and fixture cleanup was verified.
+  Report: `%TEMP%/galaxyssi-representative-acceptance/representative-76af089a4bfd489380cea81de23b596b.json`.
+- A separate real native audio-status read completed in 181 ms. All six streams
+  returned identity, current/minimum/maximum volume and mute state, plus a host
+  observation timestamp. Media range 0..15 and call range 1..8 matched Android's
+  independent audio dump. This is a read-only state check, not a successful
+  volume/mute change or model-planned end-to-end acceptance. Report:
+  `%TEMP%/galaxyssi-representative-acceptance/audio-status-1.5.42-20261017.json`.
+- S20U remained in another foreground app, so no audio mutation, flashlight,
+  timer, camera, recording, contact action or new model call was started. The
+  existing three prompt-budget failures documented under 1.5.41 are not in this
+  focused run and are not claimed fixed. Desktop is unchanged.
