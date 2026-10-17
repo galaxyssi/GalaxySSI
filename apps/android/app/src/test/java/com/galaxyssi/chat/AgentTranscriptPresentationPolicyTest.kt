@@ -575,11 +575,8 @@ class AgentTranscriptPresentationPolicyTest {
     }
 
     @Test
-    fun stopsProcessClockForUserControlledAndTerminalWorkspaceStates() {
+    fun stopsProcessClockOnlyForTerminalWorkspaceStates() {
         val stopped = setOf(
-            AgentWorkspaceStatus.WAITING_CONFIRMATION,
-            AgentWorkspaceStatus.PAUSED,
-            AgentWorkspaceStatus.BLOCKED,
             AgentWorkspaceStatus.COMPLETED,
             AgentWorkspaceStatus.FAILED,
             AgentWorkspaceStatus.CANCELLED
@@ -587,6 +584,7 @@ class AgentTranscriptPresentationPolicyTest {
 
         AgentWorkspaceStatus.entries.forEach { status ->
             assertEquals(
+                status.name,
                 status in stopped,
                 AgentTranscriptPresentationPolicy.processClockStopsFor(status)
             )

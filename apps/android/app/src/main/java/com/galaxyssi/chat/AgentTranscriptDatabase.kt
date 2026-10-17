@@ -379,6 +379,18 @@ internal class AgentTranscriptEntryDatabase(
         )
     }
 
+    /** Read only indexed timing metadata, not encrypted message bodies or content chunks. */
+    internal fun firstTimestampForTurn(conversationId: String, turnId: String): Long? {
+        if (conversationId.isBlank() || turnId.isBlank()) return null
+        // MIN would otherwise favor the conversation/time index and scan earlier turns.
+        return readableDatabase.rawQuery(
+            "SELECT MIN(timestamp_millis) FROM $TABLE_ENTRIES INDEXED BY transcript_entries_turn " +
+                "WHERE conversation_id = ? AND turn_id = ? AND timestamp_millis > 0",
+            arrayOf(conversationId, turnId)).use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+        }
+    }
+
     fun listTurn(turnId: String): List<AgentTranscriptEntry> =
         readableDatabase.query(
             TABLE_ENTRIES,

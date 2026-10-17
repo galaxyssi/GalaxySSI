@@ -214,3 +214,24 @@ acceptance.
 - Follow-up acceptance now moves to representative file, data, application and
   failure-recovery tasks. Plan-validation feedback remains a separate open issue;
   native timer success is not evidence that all model-driven goals succeed.
+
+## Current representative acceptance scope
+
+The user's later instruction replaces further countdown testing with varied
+representative tasks. Do not resume the opt-in timer examples above. They remain
+historical evidence, not the current test plan. Current per-version results and
+known failures are recorded in `REPRESENTATIVE_AGENT_ACCEPTANCE.md`.
+
+| Contract | Current evidence | Remaining acceptance |
+| --- | --- | --- |
+| Complete request understanding | Native intent regression tests; real phone-qualified app launch and device-status requests | More selected-model typo/ambiguous-request examples outside timers |
+| Executable intent | Real App-selected Codex plans created, exported and modified CSV documents | Additional document/attachment types and broader routes |
+| Scoped context and pending work | Real expense and original-subdirectory follow-ups preserved unaffected rows; operation-checkpoint recovery tests; real composer Stop persisted cancellation and a separate task then started | Real cancellation followed by process/device restart; broader document types |
+| Observed business outcome | Independently checked source/export/download digests and CSV values; corrupt-artifact rejection | These results do not establish recipient delivery or every external tool adapter |
+| Inspect before repair | Stale-patch rejection, missing-file recovery, permission-continuation and effect-journal tests; real model corrected a rejected duplicate-path batch without user intervention | Native scripted repair is not itself proof of model-directed repair in every failure case |
+| Evidence-constrained reply | Real log analysis ignored embedded tool instructions; artifact completion checks rejected invalid evidence pointers; real history UI now includes paged-out earlier work in duration | Broader model-directed rejection/repair examples and provider routes |
+
+Keep synthetic/native, real-model and rendered-UI results separate. A stop test
+must check runtime, durable workspace and late-response/recovery behavior, not
+only the text shown in the conversation. Do not operate another foreground app
+to make these tests pass.
