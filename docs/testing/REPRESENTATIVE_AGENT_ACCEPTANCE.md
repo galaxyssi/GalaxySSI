@@ -512,3 +512,72 @@ the normal composer and verify actual output, not merely a terminal task phase.
   `audio-readonly-1.5.46.png`, `battery-storage-composer-1.5.46.json`,
   `battery-storage-workspace-1.5.46.json` and `battery-storage-1.5.46.png`.
   No timer, contact, door or unrelated device was operated; Desktop is unchanged.
+
+## 2026-10-17: Android 1.5.47 (1330)
+
+- Added whole-command coverage admission for common device-status shortcuts.
+  Known single-status queries keep their local path. Multiple subjects, extra
+  requested fields, conditions, negation and additional deliverables use the
+  selected reasoning provider with the entire original goal, instead of taking
+  the first substring match and reporting partial work as completion.
+- This directly addresses the 1.5.46 battery-plus-storage acceptance failure.
+  Compound requests stay owned by the phone execution loop; they are not sent
+  to Desktop to inspect the computer's hardware. Without a reasoning provider,
+  the request reports the missing provider rather than executing a partial read.
+- Nine new tests cover single-query admission, composite requests in English
+  and Chinese, additional fields and constraints, routing ownership and provider
+  absence. English subject boundaries prevent `ram` inside `program` from
+  being interpreted as a memory request. Conceptual discussion, project work
+  and explicit Desktop tasks retain their existing execution type.
+  Existing mutating-command admission
+  and outcome validation are unchanged. This is not an unrestricted natural
+  language parser or a claim that every legacy shortcut now has full coverage.
+- While the new build was running, the still-installed 1.5.46 package completed
+  a separate synthetic meeting-summary test through the selected Codex route.
+  It understood a typo and preserved Alice/Bob and their Friday deadline, but
+  inferred a third report-writing task from background discussion to fill three
+  requested lines. This is not a strict source-fidelity pass (29.477 seconds).
+  A same-conversation correction removed that third item and retained both
+  explicit assignments (27.042 seconds). Both turns contained only a connector
+  call and no native device/file action. Reports are the local
+  `meeting-summary-*` and `meeting-followup-*` 1.5.46 JSON files. This observation
+  is not attributed to the new status-shortcut change.
+- Synchronized with merged PR #3572. All 137 selected JVM tests passed, with
+  zero failures, errors or skips; APK assembly, repository checks and whitespace
+  checks passed. Installed 1.5.47 / 1330 in place on S20U only. Focused XML
+  reports are outside Git in `device-coverage-1.5.47-tests/` under the same local
+  acceptance directory. The two older static-contract size failures remain
+  outside this selection and are not claimed fixed.
+- Retried the original battery-plus-storage request through the normal composer
+  and App-selected Auto Codex route. Both native status tools executed, and the
+  final answer contained battery 100% and approximately 186.5 decimal GB free.
+  An independent storage read corroborated the latter on the app-private volume.
+  This fixes the observed omitted-result defect, but is not a first-attempt or
+  latency pass: 145.160 seconds and six model requests included three batch-plan
+  repair rounds before the model switched to separate reads. The final plan
+  still declared no explicit outcome predicates for these two tools; their
+  actual observations were inspected independently for this acceptance result.
+- A separate normal-composer query with a typo requested media and call volume
+  without changing settings. It returned 2/15 and 4/8 in 79.058 seconds, using
+  one native audio-status read and three model requests. One completion-evidence
+  repair was still required; the accepted completion bound all four values and
+  both stream identities to the observed receipt. All six streams and other
+  observed audio settings matched independent before/after reads. No mutation
+  tool executed. This is a correctness pass, not a stable-speed claim.
+- Re-ran the representative native-file fixture on S20U: all 11 checks passed
+  and dedicated fixture cleanup was verified. These cover Unicode readback,
+  CSV arithmetic, stale-edit rejection, corrected edits, missing-file recovery,
+  path containment, ZIP reopening, hash-bound export and revised delivery.
+  This is real native-tool coverage, not 11 model-planned end-to-end passes.
+  Report: `representative-d488281760734874b81f5b81f2e6046d.json`.
+- The earlier stopped task remains CANCELLED after upgrade; the earlier CSV
+  retains its `outputs/` location and SHA-256
+  `6883a0992dad52a68ab93dd04580c55cb3466b9ec5b9d97f51fdf460a28ea127`.
+  These are persistence checks, not new stop/edit trials. Local evidence includes
+  `battery-storage-*`, `audio-readonly-*`, `audio-before-*`, `audio-after-*`,
+  `storage-after-*` and `stop-persistence-*` 1.5.47 reports and screenshots.
+- Remaining work includes efficient multi-read planning, complete outcome
+  coverage for status queries, source-faithful summarization and the obsolete
+  post-completion process row. No timer, contact, door, camera or recording
+  operation was run; Desktop, S26U, watches and learning settings were unchanged.
+  The general goal-execution acceptance is not yet complete.

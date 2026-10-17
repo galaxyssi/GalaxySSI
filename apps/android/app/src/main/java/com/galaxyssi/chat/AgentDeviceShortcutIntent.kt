@@ -8,7 +8,8 @@ internal object AgentDeviceShortcutIntent {
 
     private enum class Family { FLASHLIGHT, VOLUME, CAMERA, MICROPHONE }
 
-    fun requiresReasoning(goal: String): Boolean = family(goal) != null && parse(goal) == null
+    fun requiresReasoning(goal: String): Boolean =
+        family(goal) != null && parse(goal) == null || AgentDeviceStatusShortcutCoverage.requiresReasoning(goal)
 
     fun parse(goal: String): Parsed? {
         val command = normalize(goal)
