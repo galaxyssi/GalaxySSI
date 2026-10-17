@@ -6,10 +6,14 @@ import java.util.Locale
 internal object AgentDeviceStatusShortcutCoverage {
     fun hasExplicitDesktopTarget(goal: String): Boolean = EXPLICIT_DESKTOP.containsMatchIn(goal)
 
-    fun requiresReasoning(goal: String): Boolean {
-        val text = goal.trim().lowercase(Locale.ROOT)
+    private fun normalized(goal: String): String = goal.trim().lowercase(Locale.ROOT)
             .trimEnd('.', '!', '?', '\u3002', '\uff01', '\uff1f').trim()
             .replace(SHORT_REPLY, "").trim()
+
+    fun isCompleteQuery(goal: String): Boolean = normalized(goal).let { text -> completeQueries.any { it.matches(text) } }
+
+    fun requiresReasoning(goal: String): Boolean {
+        val text = normalized(goal)
         if (completeQueries.any { it.matches(text) }) return false
         if (subjects.none { it.containsMatchIn(text) }) return false
         if (READ_REQUEST.containsMatchIn(text)) return true

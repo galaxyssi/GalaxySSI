@@ -1,5 +1,47 @@
 # Representative Agent Acceptance
 
+## 2026-10-17: Android 1.5.57 (1340), whole-command admission
+
+- Legacy system/navigation/picker and parameterless native shortcuts matched
+  substrings, so negation, conditions or additional steps could be discarded.
+  They now match complete aliases, allowing only harmless polite framing and
+  sentence-ending punctuation. Rejected shortcuts retain the original request
+  for the configured reasoning path; no external effect is dispatched by parsing.
+- Typed package, download and dial arguments must consume the whole request.
+  URLs are parsed as one HTTP(S) URI, named application settings require one
+  exact installed identity, sensor reads require an explicit supported type,
+  and alarm time extraction cannot ignore other requested conditions.
+- Existing explicit commands, permission checks, model selection and native
+  execution adapters are retained. This does not claim universal semantic
+  interpretation of every free-text payload or all external application adapters.
+- Reuse the existing whole-query grammar for single read-only status requests,
+  preserving phrases such as "Check battery saver status" and available-memory
+  questions. Polite-prefix removal does not consume the first character of the
+  Chinese word for "request". No new polling, model override or background job.
+- Final sources passed 203 focused JVM tests in 15 suites, with zero failures,
+  errors or skips. APK assembly, repository checks and whitespace checks passed.
+  Earlier failures exposed a status-query regression and incorrect test fixtures;
+  they were corrected and superseded, not counted as passes.
+- Installed 1.5.57 / 1340 in place on S20U only. A normal-composer negative request
+  (explain settings/PDF commands without operating the phone) preserved the full
+  request and dispatched no settings or picker action, but found no available
+  reasoning provider. Its explicit failed state is not a successful model test.
+  This increment does not resolve or explain that initial availability failure.
+- A subsequent normal-composer request used the App-selected Auto Codex route
+  and performed two native reads: battery and active-network status. It completed
+  in 84.917 seconds and reported 76%, charging, Wi-Fi and validated connectivity,
+  matching its own tool receipts. Independent later reads corroborated network
+  and charging status; battery had changed to 75%, not an identical-state claim.
+- Captured WAITING_RESPONSE/waiting_response, then COMPLETED/completed in the
+  runtime and durable operation projection. The task completed while another
+  application was foreground. No content in that application was operated, and
+  no successful final foreground screenshot was obtained in this round.
+- Evidence remains outside Git in `galaxyssi-representative-acceptance`, under
+  `whole-command-1.5.57-tests/` and `whole-command-*-1557.*`. No countdown, actual
+  dial/SMS, contact, door, camera, recording, other device or learning setting was
+  operated. Desktop was neither modified nor restarted. These samples are not a
+  latency guarantee or exhaustive six-requirement acceptance.
+
 ## 2026-10-17: Android 1.5.56 (1339), permission-wait control
 
 - A pre-dispatch Android runtime-permission wait used `BLOCKED`, which the
