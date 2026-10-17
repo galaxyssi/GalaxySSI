@@ -1,5 +1,61 @@
 # Representative Agent Acceptance
 
+## 2026-10-17: Android 1.5.58 (1341), inferred capability routing
+
+- The 1.5.57 negative command test mentioned PDF only to request an explanation.
+  Keyword analysis nevertheless inferred KNOWLEDGE_SEARCH, and the resource
+  router treated it as mandatory. The Codex interpreter does not advertise that
+  capability. This deterministic rejection explains a false unavailable-provider
+  path; it is not evidence of a broker or Desktop outage.
+- Mark keyword-derived capabilities as inferred preferences. Matching topics
+  can improve ranking, but missing topic capabilities do not reject an interpreter
+  or accumulate a negative capability score. The model still receives the whole
+  request and decides whether an execution tool is actually needed.
+- Explicitly declared requirements retain the existing hard capability gate by
+  default. Capability copies preserve their source, and the gate is recomputed
+  from the current set rather than retaining stale requirements. Privacy, trust,
+  health, network, budget, capacity, tool permission and outcome checks remain.
+- This increment changes the resource router, not every team-planning heuristic.
+  It does not claim that all causes of provider unavailability are resolved or
+  that inference grants new tools or permissions. No polling or model override
+  was added.
+- Keep the existing 500-point full-match baseline and ordinary partial-match
+  scores; only inferred capability penalties have a zero floor. This avoids
+  inflating the baseline used by quality-aware routing when many topics occur.
+- Final settled sources passed 102 focused JVM tests in nine suites, with zero
+  failures, errors or skips. APK assembly, repository checks and whitespace
+  checks passed. An earlier successful build was superseded after score-scale
+  review and was not installed. This is not a full Android test-suite claim.
+- Installed 1.5.58 / 1341 in place on S20U only. The same negative explanation
+  request now used the App-selected Auto Codex route and completed in 49.024
+  seconds. It explained both commands without dispatching a native action.
+  Routing evidence retains partial_match:KNOWLEDGE_SEARCH and
+  capability_source:inferred; the original instruction was not discarded.
+- A second normal-composer request read media and voice-call volume using the
+  App-selected Auto Codex route. Two model calls and one native audio read
+  completed in 71.663 seconds. The answer reported media 3/15 and voice call 4/8,
+  with separate identity-bound outcome/result declarations. Independent reads
+  during and after the task corroborated all six streams and audio modes. The
+  attempted pre-run audit used an unknown tool ID and was rejected; it is not
+  counted as a pre-run observation or a successful check.
+- Both requests captured WAITING_RESPONSE then COMPLETED in runtime/session
+  state. The audio request also captured waiting_response then completed in the
+  durable operation projection. These are individual samples, not latency or
+  reliability-percentile claims. Desktop was neither changed nor restarted.
+- Visual acceptance remains incomplete: after waking the phone, the active
+  conversation header appeared but the transcript area stayed blank in two
+  screenshots, despite a persisted final reply. A later reentry capture was
+  discarded because the foreground had changed to another application; no
+  subsequent UI operation was attempted. The old workspace tool-call projection
+  also retained RUNNING for a completed connector entry, while its session and
+  current action were COMPLETED. Neither residual display/projection issue is
+  claimed fixed by this routing increment.
+- Evidence is outside Git under `galaxyssi-representative-acceptance`:
+  `capability-routing-1.5.58-tests/`, `capability-negative-*-1558.json`,
+  `capability-readonly-*-1558.json`, `capability-audio-*-1558.json` and the two
+  `capability-completed*-1558.png` captures. No countdown, contact, door, camera,
+  recording, other device or learning setting was operated.
+
 ## 2026-10-17: Android 1.5.57 (1340), whole-command admission
 
 - Legacy system/navigation/picker and parameterless native shortcuts matched
