@@ -9,11 +9,31 @@ test('launch, local DOM verification and close are all required', async () => {
     events.push('launch');
     return { newPage: async () => ({ setContent: async () => events.push('content'),
       title: async () => 'GalaxySSI readiness' }), close: async () => events.push('close') };
-  } } }));
+  } } }), async () => events.push('tls'));
   assert.equal(result.result.browser_ready, true);
   assert.equal(result.result.website_verified, false);
-  assert.deepEqual(events, ['launch', 'content', 'close']);
+  assert.equal(result.result.tls_initialized, true);
+  assert.deepEqual(events, ['launch', 'content', 'tls', 'close']);
 });
+
+test('local DOM success is not readiness when TLS initialization crashes', async () => {
+  let closed = false;
+  const result = await verifyBrowser(() => ({ chromium: { launch: async () => ({
+    newPage: async () => ({ setContent: async () => {}, title: async () => 'GalaxySSI readiness' }),
+    close: async () => { closed = true; }
+  }) } }), async () => { throw new Error('Target page, context or browser has been closed'); });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'browser_target_closed');
+  assert.equal(closed, true);
+});
+
+test('real Chromium initializes TLS without a network or certificate-validation exception',
+  { skip: process.env.GALAXYSSI_BROWSER_INTEGRATION !== '1' }, async () => {
+    const result = await verifyBrowser();
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.result.tls_initialized, true);
+    assert.equal(result.result.website_verified, false);
+  });
 test('missing module differs from missing executable and missing native library', async () => {
   for (const [error, code] of [
     [Object.assign(new Error('private path'), { code: 'MODULE_NOT_FOUND' }), 'browser_module_missing'],

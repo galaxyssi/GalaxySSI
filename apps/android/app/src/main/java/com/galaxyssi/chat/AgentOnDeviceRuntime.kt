@@ -1383,7 +1383,7 @@ object AgentOnDeviceRuntimeTools {
         requestedPack: String
     ): AgentNativeToolExecutionResult {
         fun installedResult(output: Map<String, Any?>): AgentNativeToolExecutionResult {
-            if (requestedPack in setOf("browser-automation", "node-js") &&
+            if (requestedPack in setOf("linux-base", "browser-automation", "node-js") &&
                 AgentBrowserRuntimeReadiness.availability(manager.cachedStatus()).status == AgentNativeToolAvailabilityStatus.AVAILABLE) {
                 return AgentBrowserRuntimeReadiness.verifyInstalled(invocation, output, manager::execute,
                     { AgentInteractiveBrowserTools.stageHelpers(context.applicationContext) })
@@ -1471,6 +1471,8 @@ object AgentOnDeviceRuntimeTools {
                 status.state == AgentRuntimePackState.READY &&
                 status.manifest != null
         } ?: return null
+        if (requestedPack == "linux-base" &&
+            !AgentBrowserRuntimeReadiness.supportsLinuxVersion(ready.manifest!!.version)) return null
         return mapOf(
             "requested_pack" to requestedPack,
             "installed" to listOf(

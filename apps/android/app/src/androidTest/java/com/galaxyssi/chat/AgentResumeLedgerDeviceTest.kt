@@ -22,7 +22,7 @@ class AgentResumeLedgerDeviceTest {
         try {
             store.appendNext(event("fixture-run", 1))
             val ledger = store.javaClass.getDeclaredField("ledger").apply { isAccessible = true }.get(store)
-            val lock = ledger.javaClass.getDeclaredField("writeLock").apply { isAccessible = true }.get(ledger)
+            val lock = requireNotNull(ledger.javaClass.getDeclaredField("writeLock").apply { isAccessible = true }.get(ledger))
             val writer = pool.submit { synchronized(lock) { held.countDown(); release.await(10, TimeUnit.SECONDS) } }
             assertTrue(held.await(2, TimeUnit.SECONDS))
             val read = pool.submit<Boolean> {
@@ -47,15 +47,18 @@ class AgentResumeLedgerDeviceTest {
             assertTrue(store.containsLoopRevision("fixture-run", "turn", 250, 250))
             assertFalse(store.containsLoopRevision("fixture-run", "other-turn", 250, 250))
             assertFalse(store.containsLoopRevision("other-run", "turn", 250, 250))
-            val next = event("fixture-run", 301).copy(eventId = AgentExecutionLoopTimelinePolicy.eventKey("fixture-run", "turn", 301))
+            val nextKey = AgentExecutionLoopTimelinePolicy.eventKey("fixture-run", "turn", 301)
+            val next = event("fixture-run", 301).copy(eventId = nextKey, idempotencyKey = nextKey, actionId = nextKey)
             assertNotNull(store.appendNext(next))
             assertNull(store.appendNext(next))
             assertTrue(store.containsLoopRevision("fixture-run", "turn", 301, 301))
+            val otherKey = AgentExecutionLoopTimelinePolicy.eventKey("other-run", "turn", 301)
             assertNotNull(store.appendNext(event("other-run", 301).copy(
-                eventId = AgentExecutionLoopTimelinePolicy.eventKey("other-run", "turn", 301))))
+                eventId = otherKey, idempotencyKey = otherKey, actionId = otherKey)))
             assertEquals(301L, store.latestEvent("fixture-run")!!.sequence)
             val reopened = AgentRunEventStore(context, name)
-            assertTrue(reopened.containsLoopRevision("fixture-run", "turn", 301, 301))
+            try { assertTrue(reopened.containsLoopRevision("fixture-run", "turn", 301, 301)) }
+            finally { reopened.close() }
             val db = android.database.sqlite.SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null,
                 android.database.sqlite.SQLiteDatabase.OPEN_READONLY)
             db.use { database ->

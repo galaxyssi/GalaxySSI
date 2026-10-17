@@ -147,9 +147,10 @@ internal object AgentInteractiveBrowserTools {
         hostCapability: String? = null, readinessOnly: Boolean = false): AgentRuntimeExecutionRequest = AgentRuntimeExecutionRequest(
         language = AgentRuntimeLanguage.SHELL,
         source = AgentBrowserRuntimeReadiness.shellPrelude() + if (readinessOnly || invocation.input["operation"] == "readiness")
-            "exec galaxyssi-browser .galaxyssi-inputs/browser/browser-runtime-readiness.cjs"
-        else "exec galaxyssi-browser .galaxyssi-inputs/browser/browser-session-cli.cjs ${shellSingleQuote(scope(invocation.context))}",
-        arguments = emptyList(), timeoutMillis = TIMEOUT, networkEnabled = true, artifactPaths = emptyList(),
+            "exec \"\$GALAXYSSI_BROWSER_LAUNCHER\" .galaxyssi-inputs/browser/browser-runtime-readiness.cjs"
+        else "exec \"\$GALAXYSSI_BROWSER_LAUNCHER\" .galaxyssi-inputs/browser/browser-session-cli.cjs ${shellSingleQuote(scope(invocation.context))}",
+        arguments = emptyList(), timeoutMillis = TIMEOUT,
+        networkEnabled = !(readinessOnly || invocation.input["operation"] == "readiness"), artifactPaths = emptyList(),
         workspaceId = invocation.context.attributes["workspace_id"].orEmpty().ifBlank {
             invocation.context.conversationId.ifBlank { "browser-readiness" }
         },

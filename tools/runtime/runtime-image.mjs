@@ -31,7 +31,8 @@ export const PACK_ENTRYPOINTS = new Map([
   ['java', ['bin/java', 'bin/javac']],
   ['gradle', ['bin/gradle']],
   ['android-sdk', ['bin/aapt2', 'bin/aidl', 'bin/zipalign', 'bin/apksigner', 'bin/d8']],
-  ['browser-automation', ['bin/galaxyssi-browser', 'bin/playwright']],
+  ['browser-automation', ['bin/galaxyssi-browser', 'bin/playwright',
+    'lib/runtime-libs/libsoftokn3.so', 'lib/runtime-libs/libfreeblpriv3.so', 'lib/runtime-libs/libnssckbi.so']],
   ['ffmpeg', ['bin/ffmpeg', 'bin/ffprobe']],
 ]);
 

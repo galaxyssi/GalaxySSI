@@ -3,8 +3,12 @@ package com.galaxyssi.chat
 import org.json.JSONObject
 
 internal object AgentBrowserRuntimeReadiness {
+    private const val MINIMUM_LINUX_VERSION = "1.3.9"
     private val dependencies = mapOf("linux-base" to "shell.execute", "node-js" to "javascript.execute",
         "browser-automation" to "browser.automation.execute")
+
+    fun supportsLinuxVersion(version: String): Boolean =
+        AgentEmbeddedRuntimeBootstrap.compareVersions(version, MINIMUM_LINUX_VERSION) >= 0
 
     fun availability(status: AgentOnDeviceRuntimeStatus): AgentNativeToolAvailability {
         val missing = dependencies.filter { (id, capability) ->
@@ -14,6 +18,13 @@ internal object AgentBrowserRuntimeReadiness {
         if (missing.isNotEmpty()) return AgentNativeToolAvailability(AgentNativeToolAvailabilityStatus.REQUIRES_SETUP,
             "Browser dependencies are not ready: ${missing.joinToString()}. Use ${AgentOnDeviceRuntimeTools.INSTALL_PACK}, " +
                 "then browser.observe operation=readiness. Installation alone does not confirm a browser launch.")
+        val linuxVersion = status.packs.first { it.id == "linux-base" }.manifest!!.version
+        if (!supportsLinuxVersion(linuxVersion)) {
+            return AgentNativeToolAvailability(AgentNativeToolAvailabilityStatus.REQUIRES_SETUP,
+                "Installed linux-base $linuxVersion is too old for the browser runtime. Upgrade linux-base to " +
+                    "$MINIMUM_LINUX_VERSION or newer using ${AgentOnDeviceRuntimeTools.INSTALL_PACK}, then verify browser readiness. " +
+                    "Do not reinstall ready Node.js or browser packs to repair the base runtime.")
+        }
         val backend = AgentOnDeviceRuntimeTools.executionAvailability(status)
         return if (backend.status == AgentNativeToolAvailabilityStatus.AVAILABLE) backend.copy(
             reason = "Dependencies installed; execution checks Node.js and the launcher. Use operation=readiness to verify Chromium startup.") else backend
@@ -22,7 +33,7 @@ internal object AgentBrowserRuntimeReadiness {
     /** Only pre-dispatch checks may assert executed=false. An arbitrary process exit cannot. */
     fun shellPrelude(): String = buildString {
         append("browser_setup_error() { printf '%s\\n' \"{\\\"ok\\\":false,\\\"error\\\":{\\\"code\\\":\\\"\$1\\\",\\\"message\\\":\\\"\$2\\\",\\\"details\\\":{\\\"executed\\\":false,\\\"goal_terminal\\\":false}}}\"; exit 0; }\n")
-        for ((command, pack) in listOf("node" to "node-js", "galaxyssi-browser" to "browser-automation")) {
+        for ((command, pack) in listOf("node" to "node-js")) {
             val code = if (command == "node") "node" else "browser_launcher"
             append("if ! command -v $command >/dev/null 2>&1; then\n")
             append("  if [ -x /opt/galaxyssi/packs/$pack/bin/$command ]; then\n")
@@ -30,6 +41,15 @@ internal object AgentBrowserRuntimeReadiness {
             append("  else browser_setup_error ${code}_missing 'Executable is missing from the mounted $pack pack. Inspect runtime.diagnose and installed pack mounts.'; fi\nfi\n")
         }
         append("node --version >/dev/null 2>&1 || browser_setup_error node_start_failed 'Node.js was found but could not start. Inspect the guest executable and native libraries.'\n")
+        // The signed 1.61.0 pack predates the product rename; keep its published entrypoint usable.
+        append("GALAXYSSI_BROWSER_LAUNCHER=\$(command -v galaxyssi-browser 2>/dev/null || command -v signalasi-browser 2>/dev/null || true)\n")
+        append("if [ -z \"\$GALAXYSSI_BROWSER_LAUNCHER\" ]; then\n")
+        append("  for root in /opt/galaxyssi/packs /opt/signalasi/packs; do\n")
+        append("    for launcher in galaxyssi-browser signalasi-browser; do\n")
+        append("      if [ -x \"\$root/browser-automation/bin/\$launcher\" ]; then\n")
+        append("        browser_setup_error browser_launcher_path_missing 'Installed browser launcher is absent from PATH. Inspect runtime.diagnose and the guest PATH; do not reinstall blindly.'\n")
+        append("      fi\n    done\n  done\n")
+        append("  browser_setup_error browser_launcher_missing 'Browser launcher is missing from the mounted browser-automation pack. Inspect runtime.diagnose and installed pack mounts.'\nfi\n")
     }
 
     fun verifyInstalled(

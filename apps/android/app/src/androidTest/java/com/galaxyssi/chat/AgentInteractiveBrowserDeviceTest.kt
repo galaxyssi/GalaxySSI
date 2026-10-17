@@ -187,6 +187,7 @@ class AgentInteractiveBrowserDeviceTest {
     @Test fun installedBrowserLaunchesAndReadsAPublicPageOnThePhone() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("browser_runtime_probe") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        AgentEmbeddedRuntimeBootstrap.ensureInstalled(context)
         val registry = AgentNativeToolRegistry().registerAll(AgentInteractiveBrowserTools.definitions(context))
         val owner = "public-readiness-${UUID.randomUUID()}"
         fun invoke(tool: String, input: AgentNativeJsonObject): AgentNativeToolResult = registry.invoke(tool, input,

@@ -3,7 +3,22 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { BrowserSessions, websiteUrl, publicUrl, browserFailure } = require('./browser-session-engine.cjs');
+const { BrowserSessions, websiteUrl, publicUrl, browserFailure, checkBrowserNativeDependencies } = require('./browser-session-engine.cjs');
+
+test('NSS dlopen dependencies are checked in pack and system library paths before dispatch', () => {
+  const modules = ['libsoftokn3.so', 'libfreeblpriv3.so', 'libnssckbi.so'];
+  for (const missing of modules) {
+    assert.throws(() => checkBrowserNativeDependencies({ platform: 'linux', arch: 'arm64', libraryPath: '/pack/libs',
+      exists: file => file.startsWith('/pack/libs/') && !file.endsWith(missing) }), error =>
+      error.code === 'browser_native_library_missing' && error.details.library === missing &&
+      error.details.executed === false && error.message.includes('libnss3'));
+  }
+  for (const directory of ['/pack/libs', '/usr/lib/aarch64-linux-gnu']) {
+    assert.doesNotThrow(() => checkBrowserNativeDependencies({ platform: 'linux', arch: 'arm64',
+      libraryPath: '/pack/libs', exists: file => modules.some(name => file === `${directory}/${name}`) }));
+  }
+  assert.doesNotThrow(() => checkBrowserNativeDependencies({ platform: 'win32', exists: () => false }));
+});
 
 test('a cancelled queued mutation never executes or claims an unknown side effect', async () => {
   const engine = new BrowserSessions({});

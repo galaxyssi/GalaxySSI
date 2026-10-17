@@ -1,12 +1,31 @@
 'use strict';
 
 const { randomUUID, randomBytes, timingSafeEqual } = require('node:crypto');
+const { existsSync } = require('node:fs');
+const path = require('node:path');
 
 class BrowserOperationError extends Error {
   constructor(code, message, details = {}) {
     super(message);
     this.code = code;
     this.details = details;
+  }
+}
+
+function checkBrowserNativeDependencies({ platform = process.platform, arch = process.arch,
+  libraryPath = process.env.LD_LIBRARY_PATH || '', exists = existsSync } = {}) {
+  if (platform !== 'linux') return;
+  const triple = { arm64: 'aarch64-linux-gnu', x64: 'x86_64-linux-gnu' }[arch];
+  const roots = [...libraryPath.split(':').filter(Boolean), '/usr/lib', '/lib', '/usr/lib64', '/lib64',
+    ...(triple ? [`/usr/lib/${triple}`, `/lib/${triple}`] : [])];
+  for (const library of ['libsoftokn3.so', 'libfreeblpriv3.so', 'libnssckbi.so']) {
+    if (!roots.some(root => exists(path.posix.join(root, library)))) {
+      throw new BrowserOperationError('browser_native_library_missing',
+        `Chromium HTTPS dependency ${library} is missing. Install the distribution NSS package ` +
+        '(Debian/Ubuntu: libnss3) using runtime.execute, or update the browser pack; then run browser readiness ' +
+        'and continue the original task. Do not disable TLS certificate validation.',
+        { library, executed: false, goal_terminal: false });
+    }
   }
 }
 
@@ -94,6 +113,7 @@ class BrowserSessions {
   async getBrowser() {
     if (this.closing) throw new BrowserOperationError('browser_closed', 'Browser service is stopping.');
     if (this.browser?.isConnected()) return this.browser;
+    checkBrowserNativeDependencies();
     this.opening ??= this.chromium.launch({ headless: true, ...this.launchOptions }).then(browser => {
       this.browser = browser;
       browser.on('disconnected', () => {
@@ -453,4 +473,4 @@ class BrowserSessions {
   }
 }
 
-module.exports = { BrowserSessions, BrowserOperationError, websiteUrl, publicUrl, browserFailure };
+module.exports = { BrowserSessions, BrowserOperationError, websiteUrl, publicUrl, browserFailure, checkBrowserNativeDependencies };

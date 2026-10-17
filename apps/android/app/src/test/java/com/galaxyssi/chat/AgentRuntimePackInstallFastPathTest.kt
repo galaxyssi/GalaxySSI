@@ -36,6 +36,20 @@ class AgentRuntimePackInstallFastPathTest {
         )
     }
 
+    @Test
+    fun oldLinuxBaseMustResolveAnUpgradeInsteadOfReturningAlreadyReady() {
+        for (version in listOf("1.1.0", "1.3.8", "1.3.9-rc1")) {
+            assertNull(AgentOnDeviceRuntimeTools.readyRuntimePackInstallOutput("linux-base",
+                listOf(status("linux-base", AgentRuntimePackState.READY,
+                    manifest(version).copy(id = "linux-base")))))
+        }
+        for (version in listOf("1.3.9", "1.4.0")) {
+            assertEquals("linux-base", AgentOnDeviceRuntimeTools.readyRuntimePackInstallOutput("linux-base",
+                listOf(status("linux-base", AgentRuntimePackState.READY,
+                    manifest(version).copy(id = "linux-base"))))?.get("requested_pack"))
+        }
+    }
+
     private fun status(
         id: String,
         state: AgentRuntimePackState,

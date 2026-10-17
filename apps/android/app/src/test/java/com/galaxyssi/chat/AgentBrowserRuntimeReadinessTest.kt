@@ -7,7 +7,7 @@ class AgentBrowserRuntimeReadinessTest {
     private fun status(packs: List<AgentRuntimePackStatus>) = AgentOnDeviceRuntimeStatus(
         AgentOnDeviceRuntimeBackend.QEMU_TCG, false, "Starts on demand", "arm64-v8a", "qemu", false, packs)
     private fun pack(id: String, capability: String) = AgentRuntimePackStatus(id, AgentRuntimePackState.READY,
-        manifest = AgentRuntimePackManifest(id, "1.0", "arm64-v8a", "$id.img", "a".repeat(64),
+        manifest = AgentRuntimePackManifest(id, "1.3.9", "arm64-v8a", "$id.img", "a".repeat(64),
             listOf(capability), emptyList(), 1, "MIT", "key", "signature"))
     private val packs = listOf(pack("linux-base", "shell.execute"), pack("node-js", "javascript.execute"),
         pack("browser-automation", "browser.automation.execute"))
@@ -37,6 +37,15 @@ class AgentBrowserRuntimeReadinessTest {
         assertTrue(result.reason.contains("verify Chromium startup"))
         assertEquals(AgentNativeToolAvailabilityStatus.REQUIRES_SETUP,
             AgentBrowserRuntimeReadiness.availability(status(packs).copy(backend = AgentOnDeviceRuntimeBackend.NONE)).status)
+    }
+
+    @Test fun obsoleteLinuxBaseDoesNotClaimBrowserReadyWhenNodeAndBrowserAreInstalled() {
+        for (version in listOf("1.1.0", "1.3.8", "1.3.9-rc1")) {
+            val changed = packs.toMutableList().apply { this[0] = this[0].copy(manifest = this[0].manifest!!.copy(version = version)) }
+            val result = AgentBrowserRuntimeReadiness.availability(status(changed))
+            assertEquals(AgentNativeToolAvailabilityStatus.REQUIRES_SETUP, result.status)
+            assertTrue(result.reason.contains("Upgrade linux-base"))
+        }
     }
 
     @Test fun preflightClassifiesMissingPathAndFailedNodeSeparately() {
@@ -96,8 +105,26 @@ class AgentBrowserRuntimeReadinessTest {
         }
     }
 
+    @Test fun publishedAndRenamedLaunchersAreResolvedBeforeDispatch() {
+        val shell = java.io.File(if (System.getProperty("os.name").orEmpty().startsWith("Windows"))
+            "C:/Program Files/Git/bin/bash.exe" else "/bin/sh")
+        org.junit.Assume.assumeTrue(shell.isFile)
+        for (launcher in listOf("galaxyssi-browser", "signalasi-browser")) {
+            val process = ProcessBuilder(shell.path).start()
+            process.outputStream.bufferedWriter().use {
+                it.write("PATH=; export PATH\nnode() { return 0; }\n" +
+                    "command() { case \"\$2\" in node) printf /fixture/node;; $launcher) printf /fixture/$launcher;; *) return 1;; esac; }\n" +
+                    AgentBrowserRuntimeReadiness.shellPrelude() + "printf '%s' \"\$GALAXYSSI_BROWSER_LAUNCHER\"")
+            }
+            assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals(process.errorStream.bufferedReader().readText(), 0, process.exitValue())
+            assertEquals("/fixture/$launcher", process.inputStream.bufferedReader().readText())
+        }
+    }
+
     @Test fun standaloneReadinessDoesNotNeedOrTransmitConversationAuthority() {
         val registry = AgentNativeToolRegistry().registerAll(AgentInteractiveBrowserTools.definitions({ request ->
+            assertFalse(request.networkEnabled)
             assertEquals("browser-readiness", request.workspaceId)
             assertTrue(request.secretEnvironment.isEmpty())
             AgentRuntimeExecutionResponse(0, """{"ok":true,"result":{"browser_ready":true}}""", "", 1)
