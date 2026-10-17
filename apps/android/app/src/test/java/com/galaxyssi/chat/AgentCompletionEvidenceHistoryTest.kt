@@ -29,7 +29,8 @@ class AgentCompletionEvidenceHistoryTest {
     }
 
     @Test fun completionUsesExecutionEvidenceEvenWhenPromptBudgetDropsTheRequiredSource() {
-        val source = action("source", read)
+        val source = action("source", read).copy(evidence = JSONObject(receipt)
+            .put("text", "Verified public location. ".repeat(200)).toString())
         val filler = (1..80).map { action("unrelated-$it", "galaxyssi.fixture.inspect")
             .copy(result = "Unrelated public observation. ".repeat(80), evidence = "") }
         val plan = plan(listOf(action("navigate", act, "navigate"), source) + filler + connector())
