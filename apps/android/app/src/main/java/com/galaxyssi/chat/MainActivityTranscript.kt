@@ -758,6 +758,7 @@ internal fun MainActivity.scrollAgentTranscriptToBottom() {
 }
 
 internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
+    if (isFinishing || isDestroyed || runtimePlaintextCleared) return
     refreshCollaborationStrip(bindPanel = false)
     val renderStartedAt = SystemClock.elapsedRealtime()
     val activeConversationId = agentRenderedConversationId

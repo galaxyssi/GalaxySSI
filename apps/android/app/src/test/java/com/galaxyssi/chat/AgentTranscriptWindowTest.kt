@@ -7,6 +7,84 @@ import org.junit.Test
 
 class AgentTranscriptWindowTest {
     @Test
+    fun `background clear rejects pending reads even for the same conversation`() {
+        val window = AgentTranscriptWindow()
+        window.reset("conversation")
+        val pending = window.loadOwner()
+        window.reset("conversation")
+
+        assertFalse(window.ownsLoad(pending))
+        assertTrue(window.entries.isEmpty())
+    }
+
+    @Test
+    fun `foreground restoration loads the currently selected conversation`() {
+        val window = AgentTranscriptWindow()
+        window.reset("old")
+        val oldRead = window.loadOwner()
+        window.reset("conversation")
+        val resumedRead = window.loadOwner()
+
+        assertFalse(window.ownsLoad(oldRead))
+        assertEquals("conversation", resumedRead.conversationId)
+        assertTrue(window.ownsLoad(resumedRead))
+        window.replace(resumedRead.conversationId, page(entry("answer", text = "Completed")))
+        assertEquals("Completed", window.entries.single().text)
+    }
+
+    @Test
+    fun `leaving and returning to the same conversation does not revive old reads`() {
+        val window = AgentTranscriptWindow()
+        window.reset("conversation")
+        val pending = window.loadOwner()
+        window.reset("other")
+        window.reset("conversation")
+
+        assertFalse(window.ownsLoad(pending))
+        assertTrue(window.ownsLoad(window.loadOwner()))
+    }
+
+    @Test
+    fun `current refresh keeps ownership valid for older page loading`() {
+        val window = AgentTranscriptWindow()
+        window.reset("conversation")
+        val pendingOlder = window.loadOwner()
+        window.replace("conversation", page(entry("answer")))
+
+        assertTrue(window.ownsLoad(pendingOlder))
+        window.prependOlder("conversation", page(entry("question")))
+        assertEquals(listOf("question", "answer"), window.entries.map { it.id })
+    }
+
+    @Test
+    fun `replacement with a different conversation invalidates previous owner`() {
+        val window = AgentTranscriptWindow()
+        window.reset("old")
+        val pending = window.loadOwner()
+        window.replace("conversation", page(entry("answer")))
+
+        assertFalse(window.ownsLoad(pending))
+        assertEquals("conversation", window.loadOwner().conversationId)
+    }
+
+    @Test
+    fun `old refresh cannot overwrite a completed response after foreground restore`() {
+        val window = AgentTranscriptWindow()
+        window.reset("conversation")
+        val pending = window.loadOwner()
+        window.reset("conversation")
+        window.replace("conversation", page(entry("answer", text = "Verified result")))
+
+        if (window.ownsLoad(pending)) {
+            window.replace("conversation", page(entry("running", text = "Waiting")))
+        }
+        assertEquals("Verified result", window.entries.single().text)
+    }
+
+    private fun page(vararg entries: AgentTranscriptEntry) =
+        AgentTranscriptPage(entries.toList(), null, false, entries.size.toLong())
+
+    @Test
     fun `older pages prepend without discarding the latest transcript`() {
         val window = AgentTranscriptWindow()
         window.replace(

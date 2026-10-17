@@ -671,9 +671,11 @@ private const val MAX_AGENT_MENTION_CHOICES = 12
 private const val AGENT_MENTION_REFRESH_MILLIS = 1_000L
 
 internal fun MainActivity.loadOlderAgentTranscriptEntries() {
-    if (agentTranscriptPageLoading || agentTranscriptAllLoaded || agentRenderedConversationId.isBlank()) return
+    if (isFinishing || isDestroyed || runtimePlaintextCleared ||
+        agentTranscriptPageLoading || agentTranscriptAllLoaded || agentRenderedConversationId.isBlank()) return
     agentTranscriptPageLoading = true
     val conversationId = agentRenderedConversationId
+    val owner = agentTranscriptWindow.loadOwner()
     val beforeSequence = agentTranscriptWindow.nextBeforeSequence
     if (beforeSequence == null) {
         agentTranscriptAllLoaded = true
@@ -689,8 +691,8 @@ internal fun MainActivity.loadOlderAgentTranscriptEntries() {
             )
         }
         runOnUiThread {
-            if (conversationId != agentRenderedConversationId) {
-                agentTranscriptPageLoading = false
+            if (isFinishing || isDestroyed || runtimePlaintextCleared ||
+                conversationId != agentRenderedConversationId || !agentTranscriptWindow.ownsLoad(owner)) {
                 return@runOnUiThread
             }
             val page = pageResult.getOrElse {
@@ -718,6 +720,7 @@ internal fun MainActivity.clearAgentTranscriptRows() {
 }
 
 internal fun MainActivity.resetAgentTranscriptRendering(conversationId: String = "") {
+    agentTranscriptRefreshRequested = false
     dismissAgentPlanProgressOverlay()
     clearAgentTranscriptRows()
     expandedAgentTranscriptEntries.clear()
@@ -761,7 +764,7 @@ internal fun MainActivity.requestAgentTranscriptWindowRefresh(conversationId: St
         handler.post { requestAgentTranscriptWindowRefresh(cleanConversationId) }
         return
     }
-    if (isFinishing || isDestroyed || agentRenderedConversationId != cleanConversationId) return
+    if (isFinishing || isDestroyed || runtimePlaintextCleared || agentRenderedConversationId != cleanConversationId) return
     agentTranscriptRefreshConversationId = cleanConversationId
     agentTranscriptRefreshPageSize = maxOf(
         INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS,
@@ -772,8 +775,10 @@ internal fun MainActivity.requestAgentTranscriptWindowRefresh(conversationId: St
 }
 
 private fun MainActivity.startNextAgentTranscriptWindowRefresh() {
-    if (agentTranscriptRefreshInProgress || !agentTranscriptRefreshRequested) return
+    if (isFinishing || isDestroyed || runtimePlaintextCleared ||
+        agentTranscriptRefreshInProgress || !agentTranscriptRefreshRequested) return
     val conversationId = agentTranscriptRefreshConversationId
+    val owner = agentTranscriptWindow.loadOwner()
     val pageSize = agentTranscriptRefreshPageSize
     agentTranscriptRefreshRequested = false
     agentTranscriptRefreshInProgress = true
@@ -787,7 +792,8 @@ private fun MainActivity.startNextAgentTranscriptWindowRefresh() {
         }
         handler.post {
             pageResult.onSuccess { page ->
-                if (!isFinishing && !isDestroyed && agentRenderedConversationId == conversationId) {
+                if (!isFinishing && !isDestroyed && !runtimePlaintextCleared &&
+                    agentRenderedConversationId == conversationId && agentTranscriptWindow.ownsLoad(owner)) {
                     agentTranscriptWindow.replace(conversationId, page)
                     agentTranscriptAllLoaded = !page.hasMore
                     retirePersistedAgentConnectorStreams(

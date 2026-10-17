@@ -57,6 +57,8 @@ internal fun MainActivity.restoreRuntimePlaintextAfterForeground(): Boolean {
         ?.let { contactId ->
             loadLatestChatHistory(contactId, force = true, scrollAfterLoad = false)
         }
+    // Selection can change while hidden (for example an incoming conversation intent).
+    runtimePlaintextConversationId = agentTranscriptStore.activeConversation().id
     resetAgentTranscriptRendering(runtimePlaintextConversationId)
     renderAgentInputAttachments()
     renderPeerComposerAttachments()
