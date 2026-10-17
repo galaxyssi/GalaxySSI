@@ -36,6 +36,7 @@ enum class AgentResourceTrust { PHONE_SYSTEM, VERIFIED_PAIRED, PRIVATE_CONFIGURE
 enum class AgentResourceEnergy { MINIMAL, LOW, MODERATE, HIGH }
 enum class AgentDataSensitivity { PUBLIC, PERSONAL, CONFIDENTIAL, RESTRICTED }
 enum class AgentExecutionHorizon { INTERACTIVE, BACKGROUND, LONG_RUNNING }
+enum class AgentCapabilityRequirementSource { DECLARED, INFERRED }
 
 data class AgentResourceDescriptor(
     val id: String,
@@ -68,8 +69,32 @@ data class AgentTaskRequirements(
     val complexReasoning: Boolean,
     val estimatedInputTokens: Int,
     val dataSensitivity: AgentDataSensitivity = AgentDataSensitivity.PERSONAL,
-    val executionHorizon: AgentExecutionHorizon = AgentExecutionHorizon.INTERACTIVE
+    val executionHorizon: AgentExecutionHorizon = AgentExecutionHorizon.INTERACTIVE,
+    val capabilitySource: AgentCapabilityRequirementSource = AgentCapabilityRequirementSource.DECLARED
 )
+
+internal object AgentCapabilityRoutingPolicy {
+    private val mandatoryCapabilities = setOf(
+        AgentCapability.LIVE_DATA,
+        AgentCapability.CODE,
+        AgentCapability.DEVICE_CONTROL,
+        AgentCapability.APP_NAVIGATION,
+        AgentCapability.KNOWLEDGE_SEARCH,
+        AgentCapability.MCP,
+        AgentCapability.SKILL
+    )
+
+    fun missingRequired(requirements: AgentTaskRequirements, available: Set<AgentCapability>): Set<AgentCapability> =
+        if (requirements.capabilitySource == AgentCapabilityRequirementSource.INFERRED) emptySet()
+        else requirements.capabilities.intersect(mandatoryCapabilities) - available
+
+    fun fitScore(requirements: AgentTaskRequirements, available: Set<AgentCapability>): Int {
+        val score = 500 - requirements.capabilities.count { it !in available } * 180
+        // Preserve the calibrated score scale, without turning topic hints into rejection.
+        return if (requirements.capabilitySource == AgentCapabilityRequirementSource.INFERRED) score.coerceAtLeast(0)
+        else score
+    }
+}
 
 data class AgentRuntimeEnvironment(
     val batteryPercent: Int = -1,
@@ -370,7 +395,8 @@ object AgentTaskRequirementAnalyzer {
             complexReasoning = complex,
             estimatedInputTokens = max(64, goal.length / 3),
             dataSensitivity = sensitivity,
-            executionHorizon = horizon
+            executionHorizon = horizon,
+            capabilitySource = AgentCapabilityRequirementSource.INFERRED
         )
     }
 
@@ -1013,8 +1039,7 @@ class AgentResourceRouter(context: Context) {
             )
         }
         val missing = requirements.capabilities - resource.capabilities
-        val mandatory = requirements.capabilities.intersect(MANDATORY_CAPABILITIES)
-        val missingMandatory = mandatory - resource.capabilities
+        val missingMandatory = AgentCapabilityRoutingPolicy.missingRequired(requirements, resource.capabilities)
         if (missingMandatory.isNotEmpty()) {
             return AgentResourceCandidate(
                 resource,
@@ -1022,7 +1047,7 @@ class AgentResourceRouter(context: Context) {
                 listOf("mandatory_capability_missing:${missingMandatory.joinToString(",") { it.name }}")
             )
         }
-        var score = 500 - (missing.size * 180)
+        var score = AgentCapabilityRoutingPolicy.fitScore(requirements, resource.capabilities)
         val profilePerformance = resource.providerProfile?.performance
         if (profilePerformance != null && profilePerformance.attempts > 0) {
             score -= (profilePerformance.failureRate * 220.0).toInt().coerceAtMost(220)
@@ -1076,6 +1101,7 @@ class AgentResourceRouter(context: Context) {
         if (requirements.mode == AgentRoutingMode.ECONOMY && resource.cost <= AgentResourceCost.LOW) score += 120
         if (requirements.mode == AgentRoutingMode.QUALITY && resource.quality == AgentResourceQuality.FRONTIER) score += 160
         if (missing.isEmpty()) reasons += "capability_match" else reasons += "partial_match:${missing.joinToString(",") { it.name }}"
+        reasons += "capability_source:${requirements.capabilitySource.name.lowercase(Locale.US)}"
         reasons += "health:${health.reliabilityPercent}"
         reasons += "domain:${resource.failureDomain.ifBlank { "none" }}"
         reasons += "domain_health:${domainHealth.reliabilityPercent}"
@@ -1101,18 +1127,6 @@ class AgentResourceRouter(context: Context) {
         if (environment.networkMetered) reasons += "metered_network"
         reasons += "task_budget:${taskBudget.profile.wireValue}"
         return AgentResourceCandidate(resource, score, reasons)
-    }
-
-    private companion object {
-        val MANDATORY_CAPABILITIES = setOf(
-            AgentCapability.LIVE_DATA,
-            AgentCapability.CODE,
-            AgentCapability.DEVICE_CONTROL,
-            AgentCapability.APP_NAVIGATION,
-            AgentCapability.KNOWLEDGE_SEARCH,
-            AgentCapability.MCP,
-            AgentCapability.SKILL
-        )
     }
 }
 
