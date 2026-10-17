@@ -348,9 +348,12 @@ internal fun MobileNativeAgent.snapshot(): AgentUiState {
     )
 }
 
-internal fun MobileNativeAgent.reloadSession(): AgentUiState {
-    restoreSession(sessionStore.load())
-    return snapshot()
+internal fun MobileNativeAgent.reloadSession(stillCurrent: () -> Boolean = { true }): AgentUiState = synchronized(this) {
+    if (stillCurrent()) {
+        val saved = sessionStore.load()
+        if (stillCurrent()) restoreSession(saved)
+    }
+    snapshot()
 }
 
 internal fun MobileNativeAgent.agentRegistrySnapshot(): List<AgentRegistration> = connectorRegistry.registrations()

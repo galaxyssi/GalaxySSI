@@ -131,7 +131,7 @@ tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeMe
 val stageInteractiveBrowserHelpers = tasks.register<Sync>("stageInteractiveBrowserHelpers") {
     from(rootProject.file("../../tools/runtime")) {
         include("browser-session-engine.cjs", "browser-session-cli.cjs", "browser-user-control.cjs", "browser-service-supervisor.cjs",
-            "browser-operation-receipts.cjs")
+            "browser-operation-receipts.cjs", "browser-runtime-readiness.cjs")
         into("interactive-browser")
     }
     into(layout.buildDirectory.dir("generated/interactive-browser-assets"))

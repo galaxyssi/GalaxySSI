@@ -91,7 +91,10 @@ export function validateRuntimeImageSource(
   };
   visit(root);
 
-  for (const entrypoint of PACK_ENTRYPOINTS.get(packId)) {
+  const executables = PACK_ENTRYPOINTS.get(packId);
+  const requiredFiles = packId === 'browser-automation'
+    ? ['lib/runtime-libs/libsoftokn3.so', 'lib/runtime-libs/libfreeblpriv3.so', 'lib/runtime-libs/libnssckbi.so'] : [];
+  for (const entrypoint of [...executables, ...requiredFiles]) {
     const path = resolve(root, entrypoint);
     const resolvedEntrypoint = (() => {
       try {
@@ -105,7 +108,7 @@ export function validateRuntimeImageSource(
       throw new Error(`runtime entrypoint escapes the source root: ${entrypoint}`);
     }
     const metadata = statSync(path);
-    if (!metadata.isFile() || (platform !== 'win32' && (metadata.mode & 0o111) === 0)) {
+    if (!metadata.isFile() || (executables.includes(entrypoint) && platform !== 'win32' && (metadata.mode & 0o111) === 0)) {
       throw new Error(`runtime entrypoint is not executable: ${entrypoint}`);
     }
   }

@@ -1,6 +1,9 @@
 'use strict';
 
-const { randomUUID, randomBytes, timingSafeEqual } = require('node:crypto');
+const { randomUUID, randomBytes, timingSafeEqual, createHash } = require('node:crypto');
+const { existsSync, mkdirSync, writeFileSync, renameSync, rmSync } = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
 
 class BrowserOperationError extends Error {
   constructor(code, message, details = {}) {
@@ -8,6 +11,44 @@ class BrowserOperationError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+function checkBrowserNativeDependencies({ platform = process.platform, arch = process.arch,
+  libraryPath = process.env.LD_LIBRARY_PATH || '', exists = existsSync } = {}) {
+  if (platform !== 'linux') return;
+  const triple = { arm64: 'aarch64-linux-gnu', x64: 'x86_64-linux-gnu' }[arch];
+  const roots = [...libraryPath.split(':').filter(Boolean), '/usr/lib', '/lib', '/usr/lib64', '/lib64',
+    ...(triple ? [`/usr/lib/${triple}`, `/lib/${triple}`] : [])];
+  for (const library of ['libsoftokn3.so', 'libfreeblpriv3.so', 'libnssckbi.so']) {
+    if (!roots.some(root => exists(path.posix.join(root, library)))) {
+      throw new BrowserOperationError('browser_native_library_missing',
+        `Chromium HTTPS dependency ${library} is missing. Install the distribution NSS package ` +
+        '(Debian/Ubuntu: libnss3) using runtime.execute, or update the browser pack; then run browser readiness ' +
+        'and continue the original task. Do not disable TLS certificate validation.',
+        { library, executed: false, goal_terminal: false });
+    }
+  }
+}
+
+function browserRuntimeLaunchOptions({ platform = process.platform, env = process.env,
+  stateRoot = env.GALAXYSSI_BROWSER_STATE_ROOT || path.join(os.homedir(), '.local/state/galaxyssi-browser') } = {}) {
+  if (platform !== 'linux' || !env.FONTCONFIG_FILE || !env.PLAYWRIGHT_BROWSERS_PATH) return {};
+  const fonts = path.resolve(env.PLAYWRIGHT_BROWSERS_PATH, '../../share/fonts');
+  if (!existsSync(fonts) || !existsSync(env.FONTCONFIG_FILE)) return {};
+  const xml = value => value.replace(/[<>&"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[char]));
+  // Published images relocate fonts but retain /usr/share/fonts in their immutable Fontconfig file.
+  const content = '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">' +
+    `<fontconfig><dir>${xml(fonts)}</dir><include ignore_missing="yes">${xml(env.FONTCONFIG_FILE)}</include></fontconfig>`;
+  const file = path.join(stateRoot, `runtime-fonts-${createHash('sha256').update(content).digest('hex')}.conf`);
+  mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+  if (!existsSync(file)) {
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temporary, content, { mode: 0o600, flag: 'wx' });
+      renameSync(temporary, file);
+    } finally { rmSync(temporary, { force: true }); }
+  }
+  return { env: { ...env, FONTCONFIG_FILE: file } };
 }
 
 function websiteUrl(value) {
@@ -94,7 +135,8 @@ class BrowserSessions {
   async getBrowser() {
     if (this.closing) throw new BrowserOperationError('browser_closed', 'Browser service is stopping.');
     if (this.browser?.isConnected()) return this.browser;
-    this.opening ??= this.chromium.launch({ headless: true, ...this.launchOptions }).then(browser => {
+    checkBrowserNativeDependencies();
+    this.opening ??= this.chromium.launch({ headless: true, ...browserRuntimeLaunchOptions(), ...this.launchOptions }).then(browser => {
       this.browser = browser;
       browser.on('disconnected', () => {
         for (const session of this.sessions.values()) this.markLost(session);
@@ -453,4 +495,5 @@ class BrowserSessions {
   }
 }
 
-module.exports = { BrowserSessions, BrowserOperationError, websiteUrl, publicUrl, browserFailure };
+module.exports = { BrowserSessions, BrowserOperationError, websiteUrl, publicUrl, browserFailure,
+  checkBrowserNativeDependencies, browserRuntimeLaunchOptions };

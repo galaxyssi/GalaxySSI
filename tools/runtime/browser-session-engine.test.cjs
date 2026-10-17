@@ -3,7 +3,46 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { BrowserSessions, websiteUrl, publicUrl, browserFailure } = require('./browser-session-engine.cjs');
+const { BrowserSessions, websiteUrl, publicUrl, browserFailure, checkBrowserNativeDependencies,
+  browserRuntimeLaunchOptions } = require('./browser-session-engine.cjs');
+
+test('published pack fonts are available without writing into the signed image', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'browser-fonts-'));
+  try {
+    const fonts = path.join(root, 'pack/share/fonts');
+    const original = path.join(root, 'pack/lib/fontconfig/fonts.conf');
+    fs.mkdirSync(fonts, { recursive: true });
+    fs.mkdirSync(path.dirname(original), { recursive: true });
+    fs.writeFileSync(original, 'original config');
+    const env = { FONTCONFIG_FILE: original, PLAYWRIGHT_BROWSERS_PATH: path.join(root, 'pack/lib/ms-playwright') };
+    const options = { platform: 'linux', env, stateRoot: path.join(root, 'state') };
+    const first = browserRuntimeLaunchOptions(options);
+    assert.equal(first.env.PLAYWRIGHT_BROWSERS_PATH, env.PLAYWRIGHT_BROWSERS_PATH);
+    assert.ok(fs.readFileSync(first.env.FONTCONFIG_FILE, 'utf8').includes(fonts));
+    assert.equal(browserRuntimeLaunchOptions(options).env.FONTCONFIG_FILE, first.env.FONTCONFIG_FILE);
+    assert.equal(fs.readdirSync(options.stateRoot).length, 1);
+    assert.equal(fs.readFileSync(original, 'utf8'), 'original config');
+    assert.equal(env.FONTCONFIG_FILE, original);
+    assert.deepEqual(browserRuntimeLaunchOptions({ ...options, platform: 'win32' }), {});
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('NSS dlopen dependencies are checked in pack and system library paths before dispatch', () => {
+  const modules = ['libsoftokn3.so', 'libfreeblpriv3.so', 'libnssckbi.so'];
+  for (const missing of modules) {
+    assert.throws(() => checkBrowserNativeDependencies({ platform: 'linux', arch: 'arm64', libraryPath: '/pack/libs',
+      exists: file => file.startsWith('/pack/libs/') && !file.endsWith(missing) }), error =>
+      error.code === 'browser_native_library_missing' && error.details.library === missing &&
+      error.details.executed === false && error.message.includes('libnss3'));
+  }
+  for (const directory of ['/pack/libs', '/usr/lib/aarch64-linux-gnu']) {
+    assert.doesNotThrow(() => checkBrowserNativeDependencies({ platform: 'linux', arch: 'arm64',
+      libraryPath: '/pack/libs', exists: file => modules.some(name => file === `${directory}/${name}`) }));
+  }
+  assert.doesNotThrow(() => checkBrowserNativeDependencies({ platform: 'win32', exists: () => false }));
+});
 
 test('a cancelled queued mutation never executes or claims an unknown side effect', async () => {
   const engine = new BrowserSessions({});
