@@ -21,7 +21,9 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                 val encodedGoal = intent.getStringExtra("goal_base64").orEmpty()
                 val workspaceId = intent.getStringExtra("inspect_workspace_id").orEmpty()
                 val checkpointFixture = intent.getBooleanExtra("checkpoint_fixture", false)
+                val timingFixture = intent.getBooleanExtra("timing_fixture", false)
                 val report = when {
+                    timingFixture -> verifyAgentProcessTiming(context.applicationContext)
                     checkpointFixture -> verifyOperationCheckpoints(context.applicationContext)
                     workspaceId.isNotBlank() -> inspectWorkspace(context.applicationContext, workspaceId)
                     encodedGoal.isNotBlank() -> runGoal(context.applicationContext, encodedGoal)
@@ -34,6 +36,7 @@ class AgentNativeToolAuditReceiver : BroadcastReceiver() {
                     else -> runAudit(context.applicationContext)
                 }
                 val fileName = when {
+                    timingFixture -> "native-timing-fixture.json"
                     checkpointFixture -> "native-checkpoint-fixture.json"
                     workspaceId.isNotBlank() -> "native-workspace-audit.json"
                     encodedGoal.isNotBlank() -> GOAL_REPORT_FILE

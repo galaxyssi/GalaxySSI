@@ -63,15 +63,24 @@ internal class AgentArtifactOpenability(private val context: Context? = null) {
                     val decoder = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                         .onUnmappableCharacter(CodingErrorAction.REPORT)
                     var count = 0L
+                    val text = StringBuilder()
                     InputStreamReader(file.inputStream(), decoder).use { reader ->
                         val buffer = CharArray(8192)
                         while (true) {
                             val read = reader.read(buffer)
                             if (read < 0) break
                             count += read
+                            if (count <= MAX_REVIEW_TEXT_CHARACTERS) text.append(buffer, 0, read)
+                            else text.setLength(0)
                         }
                     }
-                    mapOf("characters_read" to count)
+                    // Return all or none: a partial preview must not masquerade as reviewed full content.
+                    val complete = count <= MAX_REVIEW_TEXT_CHARACTERS
+                    buildMap {
+                        put("characters_read", count)
+                        put("text_complete", complete)
+                        if (complete) put("text", text.toString())
+                    }
                 }
                 else -> emptyMap()
             }
@@ -135,5 +144,6 @@ internal class AgentArtifactOpenability(private val context: Context? = null) {
             "py", "js", "ts", "kt", "java", "c", "cpp", "h", "css", "yaml", "yml", "toml", "log", "sh")
         private const val MAX_XML_PACKAGE_BYTES = 24L * 1024 * 1024
         private const val MAX_ARCHIVE_ENTRIES = 50_000
+        internal const val MAX_REVIEW_TEXT_CHARACTERS = 8192
     }
 }

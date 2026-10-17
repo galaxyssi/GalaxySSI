@@ -1218,6 +1218,9 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return if (cleanTurnId.isBlank()) emptyList() else entryDatabase.listTurn(cleanTurnId)
     }
 
+    internal fun firstTimestampForTurn(conversationId: String, turnId: String): Long? =
+        entryDatabase.firstTimestampForTurn(conversationId.trim(), turnId.trim())
+
     internal fun entriesForTask(taskId: String): List<AgentTranscriptEntry> {
         val cleanTaskId = taskId.trim()
         return if (cleanTaskId.isBlank()) emptyList() else entryDatabase.listTask(cleanTaskId)
