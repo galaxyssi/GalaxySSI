@@ -44,44 +44,73 @@ data class AgentObservedOutcome(
             return AgentObservedOutcome(id, tool, subject, checks, after)
         }
 
-        private fun validPath(value: String): Boolean = value.startsWith('/') && value.length <= 512 &&
+        internal fun validPath(value: String): Boolean = value.startsWith('/') && value.length <= 512 &&
             value.split('/').drop(1).all { it.isNotEmpty() && it.all { c -> c.isLetterOrDigit() || c in "_.-~" } }
     }
 }
 
 internal object AgentObservedOutcomeEvidence {
     fun missing(requirements: List<AgentObservedOutcome>, history: List<AgentAction>): List<String> =
-        requirements.mapNotNull { requirement ->
-            val lastMutation = if (requirement.afterToolId.isEmpty()) -1 else history.indexOfLast {
-                it.parameters["tool_id"] == requirement.afterToolId && it.status != AgentActionStatus.PENDING_CONFIRMATION
-            }
-            // Check the newest subject-matched observation, never an older successful state.
-            val observed = history.withIndex().toList().asReversed().firstNotNullOfOrNull { (index, action) ->
-                if (index < lastMutation || action.kind != AgentActionKind.CALL_NATIVE_TOOL ||
-                    action.parameters["tool_id"] != requirement.toolId) return@firstNotNullOfOrNull null
-                val raw = runCatching { JSONObject(action.evidence) }.getOrNull() ?: return@firstNotNullOfOrNull null
-                val output = raw.optJSONObject("output") ?: raw
-                if (requirement.subject.any { (path, value) -> at(output, path)?.toString() != value }) return@firstNotNullOfOrNull null
-                (action.status == AgentActionStatus.COMPLETED) && output.opt("state_verified") != false &&
-                    requirement.checks.all { (path, value) ->
-                    val actual = at(output, path)
-                    if (value is Number && actual is Number) value.toDouble() == actual.toDouble() else actual == value
-                }
-            }
-            if (observed == true) null else "Observed outcome ${requirement.id}: require fresh ${requirement.toolId} " +
-                "evidence for ${requirement.subject} with ${requirement.checks}; do not repeat mutations blindly"
-        }
+        requirements.mapNotNull { requirement -> diagnose(requirement, history)?.let { diagnosis ->
+            "Observed outcome ${requirement.id}: $diagnosis. Missing fields: correct pointers from the receipt; " +
+                "alternative paths are hints, not equivalent identities. Mismatched/unverified state: inspect and repair " +
+                "actual state, never weaken expected checks or repeat mutations blindly."
+        } }
 
-    private fun at(root: JSONObject, pointer: String): Any? {
-        var value: Any? = root
-        for (part in pointer.removePrefix("/").split('/')) {
-            val key = part.replace("~1", "/").replace("~0", "~")
-            value = when (val current = value) {
-                is JSONObject -> current.opt(key)
-                is JSONArray -> key.toIntOrNull()?.let(current::opt)
-                else -> null
+    internal fun diagnose(requirement: AgentObservedOutcome, history: List<AgentAction>): JSONObject? {
+        val lastMutation = if (requirement.afterToolId.isEmpty()) -1 else history.indexOfLast {
+            it.parameters["tool_id"] == requirement.afterToolId && it.status != AgentActionStatus.PENDING_CONFIRMATION
+        }
+        var latestMismatch: JSONObject? = null
+        var stale = false
+        for (index in history.indices.reversed()) {
+            val action = history[index]
+            if (action.kind != AgentActionKind.CALL_NATIVE_TOOL ||
+                action.parameters["tool_id"] != requirement.toolId) continue
+            if (index < lastMutation) { stale = true; continue }
+            val output = AgentObservedOutputFields.output(action)
+            if (output == null) {
+                if (latestMismatch == null) latestMismatch = failure(requirement, "invalid_receipt", action)
+                continue
+            }
+            if (requirement.subject.any { (path, value) -> AgentObservedOutputFields.at(output, path)?.toString() != value }) {
+                if (latestMismatch == null) latestMismatch = failure(requirement, "subject_not_matched", action,
+                    issues(requirement.subject, output, identity = true))
+                continue
+            }
+            // Only the latest matching subject can prove state; old success must not hide new failure.
+            if (action.status != AgentActionStatus.COMPLETED) return failure(requirement, "observation_not_completed", action)
+            if (output.opt("state_verified") == false) return failure(requirement, "state_unverified", action)
+            val checkIssues = issues(requirement.checks, output, identity = false)
+            return if (checkIssues.isEmpty()) null else failure(requirement, "checks_not_satisfied", action, checkIssues)
+        }
+        return latestMismatch ?: failure(requirement, if (stale) "observation_stale" else "observation_missing")
+    }
+
+    private fun issues(expected: Map<String, Any>, output: JSONObject, identity: Boolean): List<JSONObject> {
+        val index by lazy { AgentObservedOutputFields.index(output) }
+        return expected.mapNotNull { (path, value) ->
+            val actual = AgentObservedOutputFields.at(output, path)
+            val matches = if (identity) actual?.toString() == value
+                else if (value is Number && actual is Number) value.toDouble() == actual.toDouble() else actual == value
+            if (matches) null else JSONObject().put("path", path)
+                .put("issue", if (actual == null) "field_missing_or_null" else "value_mismatch")
+                .also {
+                    if (actual == null) it.put("alternative_paths", JSONArray(AgentObservedOutputFields.alternatives(index, path)))
+                        .put("index_partial", index.partial)
+                }
+        }
+    }
+
+    private fun failure(
+        requirement: AgentObservedOutcome, code: String, action: AgentAction? = null,
+        issues: List<JSONObject> = emptyList()
+    ): JSONObject = JSONObject().put("code", code).put("outcome_id", requirement.id)
+        .put("tool_id", requirement.toolId).also { result ->
+            action?.let { result.put("action_id", it.id).put("action_status", it.status.name) }
+            if (issues.isNotEmpty()) {
+                result.put("fields", JSONArray(issues.take(8)))
+                result.put("fields_partial", issues.size > 8)
             }
         }
-        return value?.takeUnless { it == JSONObject.NULL }
-    }
 }
