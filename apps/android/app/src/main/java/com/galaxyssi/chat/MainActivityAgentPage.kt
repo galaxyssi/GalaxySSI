@@ -1143,14 +1143,13 @@ internal fun MainActivity.runAgentTimelineAction(
             AgentExecutionLoopTimelineAction.RETRY -> runtime.retryFailedAction()
             AgentExecutionLoopTimelineAction.REPLAN -> runtime.replanCurrentTask()
             AgentExecutionLoopTimelineAction.CANCEL -> {
-                remoteCancellationFailed =
-                    publishRemoteAgentTaskCancellation(runtime.snapshot()) == false
                 val turnId = entry.turnId.ifBlank {
                     agentRuntimeTurnIds[runtime].orEmpty()
                 }
                 turnId.takeIf(String::isNotBlank)
-                    ?.let { AgentTaskRuntime.supervisor(this).cancellationSource(it) }
-                    ?.cancel("User cancelled the Agent task")
+                    ?.let { AgentTaskRuntime.supervisor(this).cancelWorkspace(it, "User cancelled the Agent task") }
+                remoteCancellationFailed =
+                    publishRemoteAgentTaskCancellation(runtime.snapshot()) == false
                 runtime.cancelCurrentTask()
             }
         }
@@ -1234,13 +1233,18 @@ internal fun MainActivity.cancelActiveAgentTurn(
     active: ActiveAgentTurn,
     interventionTurnId: String
 ) {
+    // Waiting tasks release their execution lease, so cancellation must address
+    // the durable workspace rather than an optional in-memory cancellation source.
+    AgentTaskRuntime.supervisor(this).cancelWorkspace(
+        active.turnId,
+        "Superseded by a newer user instruction"
+    )
     if (active.isDesktopTask) {
         publishRemoteAgentTaskCancellation(active.state)
     }
-    AgentTaskRuntime.supervisor(this).cancellationSource(active.turnId)
-        ?.cancel("Superseded by a newer user instruction")
     PhoneExecutionAuthority.requestCancellation(active.state.sessionId)
-    val cancelled = active.runtime.cancelCurrentTask()
+    val cancelled = finalizeAgentExecutionLoop(active.runtime, active.turnId, active.runtime.cancelCurrentTask())
+    persistAgentWorkspaceSnapshot(active.turnId, cancelled, active.runtime)
     val runId = agentRunIdsByTurn[active.turnId].orEmpty()
     agentRunRecorder.run(runId)?.let { run ->
         appendRunControlEvent(
