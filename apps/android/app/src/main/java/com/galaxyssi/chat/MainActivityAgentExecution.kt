@@ -361,8 +361,10 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
     }.getOrDefault("")
     val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank { persistedRunId }
     val run = agentRunRecorder.run(runId) ?: return
+    val state = runtime.snapshot()
     val projection = AgentExecutionLoopTimelinePolicy.project(event,
-        permissionWait = AgentRuntimePermissionContinuation.waiting(runtime.snapshot()) != null)
+        permissionWait = AgentRuntimePermissionContinuation.waiting(state) != null,
+        outcomeWait = AgentOutcomeCompletion.isBlocked(state.phase, state.lastActionResult))
     val revisionRecorded = agentRunEventStore.containsLoopRevision(
         run.runId, turnId, event.snapshot.revision, event.snapshot.updatedAtMillis
     )
@@ -381,7 +383,7 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
         )
     }
     val label = projection.label ?: return
-    if (runtime.snapshot().plan?.isSupervisedProjectPlan() == true && label in setOf(
+    if (state.plan?.isSupervisedProjectPlan() == true && label in setOf(
             AgentExecutionLoopTimelineLabel.ACT,
             AgentExecutionLoopTimelineLabel.OBSERVE,
             AgentExecutionLoopTimelineLabel.VERIFY,
@@ -391,7 +393,6 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
     ) {
         return
     }
-    val state = runtime.snapshot()
     agentTranscriptStore.append(
         AgentTranscriptRole.PROCESS,
         agentExecutionLoopTimelineText(label),
@@ -412,7 +413,7 @@ internal fun MainActivity.finalizeAgentExecutionLoop(
     runtime: MobileNativeAgent, turnId: String, state: AgentUiState
 ): AgentUiState = finalizeAgentExecution(runtime, turnId, state, ::recordAgentRunFromState).also {
     if (it.phase in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED) &&
-        AgentRuntimePermissionContinuation.waiting(it) == null) {
+        !AgentBlockedStatePolicy.retainsRun(it)) {
         PhoneAssistantTaskControl.finish(turnId)
     }
 }
@@ -700,7 +701,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             AgentPhase.WAITING_CONFIRMATION -> waitForConfirmation(state.pendingAction?.description.orEmpty())
             AgentPhase.WAITING_RESPONSE -> waitForResponse(state.lastActionResult?.message.orEmpty())
             AgentPhase.PAUSED -> pause(state.lastActionResult?.message.orEmpty())
-            AgentPhase.BLOCKED -> blockTask(state.plan?.safetyReview?.reason.orEmpty())
+            AgentPhase.BLOCKED -> blockTask(AgentBlockedStatePolicy.reason(state))
             AgentPhase.FAILED -> error(state.lastActionResult?.message.orEmpty().ifBlank { "Agent task failed" })
             AgentPhase.CANCELLED -> cancellationSource.cancel("Agent task cancelled")
             else -> Unit
@@ -1138,9 +1139,11 @@ internal fun Context.persistAgentWorkspaceSnapshot(
                 status = state.phase.toWorkspaceStatus(),
                 planSnapshot = planJson,
                 resultJson = resultJson,
-                errorMessage = if (state.phase in setOf(AgentPhase.FAILED, AgentPhase.BLOCKED)) {
-                    result?.message.orEmpty()
-                } else "",
+                errorMessage = when (state.phase) {
+                    AgentPhase.BLOCKED -> AgentBlockedStatePolicy.reason(state)
+                    AgentPhase.FAILED -> result?.message.orEmpty()
+                    else -> ""
+                },
                 toolCalls = toolCalls,
                 artifacts = runtimeArtifactsFromResult(result?.metadata?.get("native_tool_output").orEmpty()),
                 permissionGrantIds = grantIds,
@@ -1189,8 +1192,9 @@ internal fun Context.persistAgentWorkspaceSnapshot(
 
 internal fun MainActivity.recordAgentRunFromState(turnId: String, state: AgentUiState) {
     if (state.phase !in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) return
-    if (AgentRuntimePermissionContinuation.waiting(state) != null) return
-    AgentExecutionRunRecorder(this, mobileNativeAgent, agentRunIdsByTurn.remove(turnId).orEmpty())
+    val runId = if (AgentBlockedStatePolicy.retainsRun(state)) agentRunIdsByTurn[turnId]
+        else agentRunIdsByTurn.remove(turnId)
+    AgentExecutionRunRecorder(this, mobileNativeAgent, runId.orEmpty())
         .recordAgentRunFromState(turnId, state)
 }
 

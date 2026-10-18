@@ -32,6 +32,14 @@ internal class AgentExecutionRunRecorder(
         val run = agentRunRecorder.run(runId)
             ?.takeIf { it.status == AgentRecordedRunStatus.RUNNING }
             ?: return
+        if (AgentOutcomeCompletion.isBlocked(state.phase, state.lastActionResult)) {
+            val profile = AppStore.profile(context)
+            AgentBlockedStatePolicy.outcomeWaitEvent(state, run.runId, run.conversationId, turnId,
+                profile.optString("device_id").ifBlank { profile.optString("galaxyssi_id") })?.let {
+                agentRunEventStore.appendNext(it)
+            }
+            return
+        }
         val result = state.lastActionResult
         val nativeActions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
             .distinctBy { it.id }

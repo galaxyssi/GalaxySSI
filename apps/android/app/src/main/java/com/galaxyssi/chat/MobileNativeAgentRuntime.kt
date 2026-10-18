@@ -245,7 +245,7 @@ internal fun MobileNativeAgent.reconcileExecutionLoop(state: AgentUiState): Agen
         }
         AgentPhase.BLOCKED -> advanceExecutionLoop(
             AgentExecutionLoopPhase.BLOCKED,
-            state.plan?.safetyReview?.reason.orEmpty().ifBlank { "Task blocked" },
+            AgentBlockedStatePolicy.reason(state),
             state.pendingAction?.id.orEmpty()
         )
         AgentPhase.FAILED -> advanceExecutionLoop(

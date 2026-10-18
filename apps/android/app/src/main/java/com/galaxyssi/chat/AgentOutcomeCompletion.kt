@@ -8,9 +8,12 @@ internal data class AgentRuntimeOutcomeContinuation(
     val sessionId: String, val conversationId: String, val turnId: String,
     val planId: String, val revision: Int, val actionIdsDigest: String
 ) {
-    fun matches(session: String, scope: AgentPlanContinuationScope, plan: AgentPlan): Boolean =
+    private fun owns(session: String, scope: AgentPlanContinuationScope, plan: AgentPlan): Boolean =
         sessionId == session && conversationId == scope.conversationId && turnId == scope.turnId &&
-            planId == plan.planId && revision == plan.revision && actionIdsDigest == pendingDigest(plan, scope)
+            planId == plan.planId && revision == plan.revision
+
+    fun matches(session: String, scope: AgentPlanContinuationScope, plan: AgentPlan): Boolean =
+        owns(session, scope, plan) && actionIdsDigest == pendingDigest(plan, scope)
 
     fun bind(result: AgentActionResult): AgentActionResult = result.copy(metadata = result.metadata + (KEY to
         JSONObject().put("session_id", sessionId).put("conversation_id", conversationId).put("turn_id", turnId)
@@ -18,6 +21,16 @@ internal data class AgentRuntimeOutcomeContinuation(
 
     companion object {
         const val KEY = "unverified_outcome_continuation"
+
+        // Presentation does not decode historical receipts; execution still checks the full digest and journal.
+        fun forControls(state: AgentUiState): AgentRuntimeOutcomeContinuation? {
+            if (!AgentOutcomeCompletion.isBlocked(state.phase, state.lastActionResult)) return null
+            val saved = parse(state.lastActionResult) ?: return null
+            val plan = state.plan ?: return null
+            val scope = AgentPlanContinuationScope.resolve(plan, "", "", state.sessionId) ?: return null
+            return saved.takeIf { !plan.safetyReview.blocked && it.owns(state.sessionId, scope, plan) }
+        }
+
         private fun pendingDigest(plan: AgentPlan, scope: AgentPlanContinuationScope): String? {
             val ids = AgentGoalEvidence.pendingReceipts(AgentCompletionEvidenceHistory.resolve(plan, scope))
                 .map { it.actionId }.sorted()
@@ -46,6 +59,9 @@ internal data class AgentRuntimeOutcomeContinuation(
 internal object AgentOutcomeCompletion {
     const val FAILURE_KIND = "business_outcome_unverified"
 
+    fun isBlocked(phase: AgentPhase, result: AgentActionResult?): Boolean =
+        phase == AgentPhase.BLOCKED && result?.metadata?.get("failure_kind") == FAILURE_KIND
+
     fun blockedResult(base: AgentActionResult, receipts: List<AgentGoalEvidence.PendingReceipt>): AgentActionResult {
         require(receipts.isNotEmpty())
         return base.copy(success = false, message = receipts.map { it.message }.distinct().joinToString("\n"),
@@ -70,8 +86,7 @@ internal object AgentOutcomeCompletion {
 
 internal fun MobileNativeAgent.guardOutcomeCompletion() {
     val plan = currentPlan ?: return
-    if (phase != AgentPhase.COMPLETED && !(phase == AgentPhase.BLOCKED &&
-            lastActionResult?.metadata?.get("failure_kind") == AgentOutcomeCompletion.FAILURE_KIND)) return
+    if (phase != AgentPhase.COMPLETED && !AgentOutcomeCompletion.isBlocked(phase, lastActionResult)) return
     val scope = AgentPlanContinuationScope.resolve(plan, activeConversationContext.conversationId,
         activeConversationTurnId, sessionId)
     val receipts = AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, plan, scope) {

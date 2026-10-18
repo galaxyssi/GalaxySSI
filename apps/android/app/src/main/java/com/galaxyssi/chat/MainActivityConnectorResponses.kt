@@ -886,7 +886,7 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                         state.lastActionResult?.message.orEmpty()
                     )
                     AgentPhase.PAUSED -> context.pause(state.lastActionResult?.message.orEmpty())
-                    AgentPhase.BLOCKED -> context.blockTask(state.plan?.safetyReview?.reason.orEmpty())
+                    AgentPhase.BLOCKED -> context.blockTask(AgentBlockedStatePolicy.reason(state))
                     AgentPhase.FAILED -> throw IllegalStateException(
                         state.lastActionResult?.message.orEmpty().ifBlank { "Agent task failed" }
                     )

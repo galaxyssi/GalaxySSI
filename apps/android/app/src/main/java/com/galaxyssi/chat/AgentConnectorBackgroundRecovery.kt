@@ -152,7 +152,7 @@ internal class AgentConnectorBackgroundDelivery(
                         AgentPhase.WAITING_CONFIRMATION -> taskContext.waitForConfirmation(state.pendingAction?.description.orEmpty())
                         AgentPhase.WAITING_RESPONSE -> taskContext.waitForResponse(state.lastActionResult?.message.orEmpty())
                         AgentPhase.PAUSED -> taskContext.pause(state.lastActionResult?.message.orEmpty())
-                        AgentPhase.BLOCKED -> taskContext.blockTask(state.plan?.safetyReview?.reason.orEmpty())
+                        AgentPhase.BLOCKED -> taskContext.blockTask(AgentBlockedStatePolicy.reason(state))
                         AgentPhase.CANCELLED -> taskContext.transition(AgentWorkspaceStatus.CANCELLED,
                             AgentTaskEventKinds.CANCELLED, "Task cancelled")
                         AgentPhase.FAILED -> taskContext.transition(AgentWorkspaceStatus.FAILED,
