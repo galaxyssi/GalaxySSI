@@ -5,6 +5,7 @@ import android.view.View
 internal fun MainActivity.clearRuntimePlaintextForBackground() {
     foregroundAgentReload.invalidate()
     if (runtimePlaintextCleared || isChangingConfigurations) return
+    peerChatViewport.suspend(capturePeerChatScrollAnchor())
     runtimePlaintextCleared = true
     RuntimeSensitiveCaches.clearAll()
     KnowledgeSemanticSearch.clearRuntime(suspend = true)
@@ -48,10 +49,11 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
 internal fun MainActivity.restoreRuntimePlaintextAfterForeground(): Boolean {
     if (!runtimePlaintextCleared) return false
     runtimePlaintextCleared = false
+    peerChatViewport.resume()
     KnowledgeSemanticSearch.resumeRuntime()
     AgentEncryptedPreferenceCache.clearAll()
 
-    loadChatOverview(force = true)
+    loadChatOverview(force = true, reloadSelectedChat = false)
     runtimePlaintextContactId
         .takeIf(String::isNotBlank)
         ?.let { contactId ->

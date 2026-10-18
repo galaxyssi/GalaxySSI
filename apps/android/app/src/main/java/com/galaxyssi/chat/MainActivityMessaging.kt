@@ -305,14 +305,29 @@ internal fun MainActivity.configureMessages() {
         onDeleteMessage = { messageId -> deleteMessageById(messageId) },
         onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
     messageList.apply {
-        layoutManager = LinearLayoutManager(this@configureMessages).apply {
+        layoutManager = ChatMessageLayoutManager(this@configureMessages, ::schedulePeerChatBottomAlignment).apply {
             stackFromEnd = ChatMessageViewportPolicy.stackFromEnd()
         }
         adapter = messageAdapter
         addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            private var userScrolling = false
+
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    userScrolling = true
+                    peerChatViewport.beginUserScroll()
+                }
+                if (userScrolling) {
+                    peerChatViewport.userScroll(isMessageListNearBottom(), selectedContact?.id == CONTACT_SYSTEM.id)
+                }
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) userScrolling = false
+            }
+
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (!userScrolling) return
                 val layout = recyclerView.layoutManager as? LinearLayoutManager ?: return
                 val contactId = selectedContact?.id ?: return
+                peerChatViewport.userScroll(isMessageListNearBottom(), contactId == CONTACT_SYSTEM.id)
                 if (
                     dy < 0 &&
                     layout.findFirstVisibleItemPosition() <= CHAT_HISTORY_PREFETCH_POSITION
