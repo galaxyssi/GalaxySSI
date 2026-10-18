@@ -3,7 +3,8 @@
 ## Interaction
 
 Android 1.5.71 adds an independent reminder action to the direct-contact composer;
-1.5.72 separates playback lifetime from the transient reminder window.
+1.5.72 separates playback lifetime from the transient reminder window. Android
+1.5.73 adds an authorized background-panel route with an independent task.
 It reuses the Agent voice-entry waveform artwork, not the Agent voice handler.
 An empty, idle contact composer shows the reminder icon. Editing and attachment
 selection retain the existing more/send controls. Tapping the reminder does not
@@ -15,13 +16,26 @@ sound; Ignore dismisses it; Got it acknowledges it to the sender. Swipe up or Ba
 mutes and collapses the incoming panel. The sender can cancel an active reminder.
 Status is stored in the contact conversation without creating an Agent run.
 
-Long-press the contact reminder icon for receiving preferences. Receiving and
-alarm-stream sound in silent mode are on by default; the lockscreen panel is off
-by default. System notification, full-screen-intent, alarm volume, DND, and background
+Long-press the contact reminder icon or use the panel's settings button for
+receiving preferences and OS authorization status. Receiving, alarm-stream sound,
+background panels, and lockscreen panels default to on in 1.5.73. Previously
+saved opt-outs are preserved. System notification, full-screen-intent, alarm volume, DND, and background
 execution policies still apply. No keyguard dismissal or global volume change is
 performed. A detected phone/VoIP call or active recording receives a quiet notification. Missing phone
 state permission limits detection to Android audio mode. MQTT is not a guaranteed
 OS wake-up or push service: offline/force-stopped peers may miss the lifetime.
+
+An unlocked background app opens the top panel only after the user grants
+`SYSTEM_ALERT_WINDOW` in system settings. Android documents that permission as a
+[background activity launch exception](https://developer.android.com/guide/components/activities/background-starts).
+The panel uses its own translucent task so it does not bring the main chat page
+over the app the user is using. On a locked phone, this authorized route is
+preferred; otherwise an allowed full-screen notification can launch the panel.
+Without either authorization, only the ordinary notification is posted. No
+permission is silently granted, no accessibility service is used to bypass the
+platform, and blocked notifications cannot trigger a background panel. Calls and
+recording retain quiet delivery. Debug route logs distinguish a requested launch
+from the Activity's actual visible callback; neither replaces a device screenshot.
 
 Desktop 1.5.4 receives these reminders in an independent compact panel and returns
 acknowledgements. Its existing voice recording controls are unchanged. A background
@@ -132,3 +146,22 @@ instrumentation tests, and 11 composer regression tests passed in targeted runs.
 The expiry fixture blocks live-device interaction with its synthetic reminder so
 an unrelated acknowledgement cannot replace the expiration being tested.
 No further live bidirectional test was performed after S26U reconnected.
+
+### Background-panel follow-up (1.5.73)
+
+The previous implementation opened the custom panel only while the app was in
+the foreground; a background notification was not equivalent to showing that
+panel. Both phones also lacked overlay authorization. Android 1.5.73 was installed
+in place on S20U and S26U, and the user authorized enabling overlay access on both
+through system settings. The user subsequently reported that testing passed.
+
+S20U diagnostics at 23:42:57 recorded `foreground=false`, `locked=false`, and
+`route=PANEL`, followed 44 ms later by the Activity visible callback. UI inspection
+also found the incoming panel with its three actions. This is a background-display
+observation, not a general latency benchmark. No separate locked-device acceptance
+was completed before the user's request to submit the fix.
+
+Both APKs built successfully, 26 reminder/presentation policy unit tests passed,
+and repository checks plus the 74-library 16 KB audit passed. Instrumentation
+coverage was extended and compiled; the updated instrumentation suite was not
+rerun before submission. The earlier 1.5.72 device-test results remain separate.

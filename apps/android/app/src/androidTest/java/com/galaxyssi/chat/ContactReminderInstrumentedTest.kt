@@ -61,6 +61,17 @@ class ContactReminderInstrumentedTest {
         }
     }
 
+    @Test fun reminderPanelHasItsOwnTaskAndDeclaresOverlayAuthorization() {
+        val component = android.content.ComponentName(context, ContactReminderActivity::class.java)
+        val info = context.packageManager.getActivityInfo(component, 0)
+        val main = context.packageManager.getActivityInfo(android.content.ComponentName(context, MainActivity::class.java), 0)
+        assertEquals("com.galaxyssi.chat.reminder", info.taskAffinity)
+        assertNotEquals(main.taskAffinity, info.taskAffinity)
+        val permissions = context.packageManager.getPackageInfo(context.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty()
+        assertTrue(permissions.contains(android.Manifest.permission.SYSTEM_ALERT_WINDOW))
+    }
+
     @Test fun incomingPanelUsesTopFifthAndExpiresWithoutSendingAnything() {
         val contacts = AppStore.contacts(context)
         val contactId = (0 until contacts.length()).mapNotNull { contacts.optJSONObject(it)?.let { row ->
@@ -88,6 +99,9 @@ class ContactReminderInstrumentedTest {
                 assertTrue("A visible reminder must accept a subsequent reminder in the foreground",
                     AppForegroundTracker.isActivityForeground(activity))
                 val root = activity.findViewById<ViewGroup>(android.R.id.content)
+                assertTrue(descendants(root).filterIsInstance<ImageButton>().any {
+                    it.contentDescription == activity.getString(R.string.contact_reminder_settings)
+                })
                 val buttons = descendants(root).filterIsInstance<Button>()
                 buttons.forEach { it.isEnabled = false }
                 assertEquals(3, buttons.size)

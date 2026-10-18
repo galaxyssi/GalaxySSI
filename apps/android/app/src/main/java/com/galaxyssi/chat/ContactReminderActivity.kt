@@ -16,6 +16,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.ImageView
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -75,6 +76,14 @@ class ContactReminderActivity : Activity() {
         title = TextView(this).apply { textSize = 16f; setTextColor(Color.rgb(28, 34, 37)); maxLines = 1 }
         labels.addView(title)
         header.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(ImageButton(this).apply {
+            setImageResource(R.drawable.ic_tab_settings)
+            background = null
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            contentDescription = getString(R.string.contact_reminder_settings)
+            tooltipText = contentDescription
+            setOnClickListener { ContactReminderSettings.show(this@ContactReminderActivity) }
+        }, LinearLayout.LayoutParams(dp(44), dp(44)))
         root.addView(header, LinearLayout.LayoutParams(-1, dp(maxOf(42, (24 * fontScale).toInt()))))
         status = TextView(this).apply { textSize = 15f; setTextColor(Color.DKGRAY); gravity = Gravity.CENTER_VERTICAL; maxLines = 2 }
         root.addView(status, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -156,7 +165,11 @@ class ContactReminderActivity : Activity() {
     }
     @Deprecated("Back dismisses the reminder panel")
     override fun onBackPressed() = collapse()
-    override fun onResume() { super.onResume(); AppForegroundTracker.onActivityForeground(this) }
+    override fun onResume() {
+        super.onResume()
+        AppForegroundTracker.onActivityForeground(this)
+        if (BuildConfig.DEBUG) android.util.Log.d("GalaxySSIReminderPanel", "Panel visible; locked=${getSystemService(KeyguardManager::class.java).isKeyguardLocked}")
+    }
     // The bounded sound session belongs to the reminder, not this transient window.
     override fun onPause() { AppForegroundTracker.onActivityBackground(this); super.onPause() }
     override fun onDestroy() { main.removeCallbacksAndMessages(null); ContactReminders.observers.remove(observer); super.onDestroy() }

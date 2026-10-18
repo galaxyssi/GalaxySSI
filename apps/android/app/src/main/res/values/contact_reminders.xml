@@ -25,4 +25,11 @@
     <string name="contact_reminder_silent_sound">Use alarm sound in silent mode</string>
     <string name="contact_reminder_lockscreen">Show reminder panel on lock screen</string>
     <string name="contact_reminder_system_settings">Notification settings</string>
+    <string name="contact_reminder_background">Show top panel while app is in background</string>
+    <string name="contact_reminder_panel_permissions">Panel permissions</string>
+    <string name="contact_reminder_overlay_permission">Display over other apps</string>
+    <string name="contact_reminder_fullscreen_permission">Full-screen lock screen notifications</string>
+    <string name="contact_reminder_allowed">Allowed</string>
+    <string name="contact_reminder_not_allowed">Not allowed</string>
+    <string name="contact_reminder_settings_unavailable">System settings could not be opened</string>
 </resources>
