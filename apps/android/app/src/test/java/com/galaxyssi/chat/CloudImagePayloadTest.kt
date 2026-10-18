@@ -24,6 +24,19 @@ class CloudImagePayloadTest {
         )
     }
 
+    @Test fun explicitOriginalAcceptsImageWithoutTheCompressedLimit() {
+        val original = CloudImagePayload("original.jpg", "image/jpeg", ByteArray(512_001), original = true)
+        assertEquals(512_001, original.bytes.size)
+        assertTrue(original.original)
+    }
+
+    @Test fun originalDoesNotBypassExistingAttachmentMemoryBound() {
+        assertTrue(runCatching {
+            CloudImagePayload("oversize.jpg", "image/jpeg",
+                ByteArray(AgentImagePipeline.MAX_ORIGINAL_BYTES + 1), original = true)
+        }.isFailure)
+    }
+
     @Test
     fun openAiCompatiblePayloadAddsCompressedImageToLatestUserTurn() {
         val conversation = JSONArray()

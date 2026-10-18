@@ -87,23 +87,24 @@ internal fun MainActivity.acceptPickedAttachments(files: List<ComposerAttachment
             return
         }
         sendPeerAttachments(contact, emptyList(), attachmentsOverride = documents.map { it.inputAttachment() })
+    } else if (route == ROUTE_AGENT && documents.isNotEmpty()) {
+        // A picker result belongs to its captured conversation, never the currently visible one.
+        if (agentTranscriptStore.conversation(target) == null) {
+            Toast.makeText(this, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
+            return
+        }
+        submitAgentGoal(goalOverride = "", attachmentsOverride = documents.map { it.inputAttachment() },
+            pendingVoiceConversationId = target)
     }
-    val pending = if (route == ROUTE_PEER) files.filter { it.isImage } else files
+    val pending = files.filter { it.isImage }
     if (pending.isEmpty()) return
     val limit = if (route == ROUTE_AGENT) MAX_AGENT_ATTACHMENTS else 12
     val combined = (base + pending).distinctBy { it.uri }.take(limit)
     if (combined.size < (base + pending).distinctBy { it.uri }.size) {
         Toast.makeText(this, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
     }
-    if (pending.none { it.isImage }) {
-        handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_OK,
-            Intent().putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(combined))
-                .putExtra(ComposerAttachmentEditorActivity.ROUTE, route)
-                .putExtra(ComposerAttachmentEditorActivity.TARGET, target))
-    } else {
-        launchComposerEditor(combined, route, target,
-            combined.indexOfFirst { it.id == pending.first { file -> file.isImage }.id }.coerceAtLeast(0), camera)
-    }
+    launchComposerEditor(combined, route, target,
+        combined.indexOfFirst { it.id == pending.first().id }.coerceAtLeast(0), camera)
 }
 
 private fun MainActivity.launchComposerEditor(items: List<ComposerAttachmentItem>, route: String,
@@ -156,7 +157,7 @@ internal fun MainActivity.handleComposerAttachmentResult(requestCode: Int, resul
     return true
 }
 
-internal fun ComposerAttachmentItem.inputAttachment() = AgentInputAttachment(id, Uri.parse(uri), name, mime, size, originalUri)
+internal fun ComposerAttachmentItem.inputAttachment() = AgentInputAttachment(id, Uri.parse(uri), name, mime, size, originalUri, sendOriginal)
 
 internal fun MainActivity.peerComposerAttachments(contactId: String = selectedContact?.id.orEmpty()): List<AgentInputAttachment> =
     composerAttachments().peers[contactId].orEmpty().map { it.inputAttachment() }

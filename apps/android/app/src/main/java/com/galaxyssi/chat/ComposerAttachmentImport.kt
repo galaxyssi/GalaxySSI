@@ -11,7 +11,7 @@ internal object ComposerAttachmentImport {
     fun retain(context: Context, source: AgentInputAttachment, maxBytes: Long = Long.MAX_VALUE): AgentInputAttachment {
         LocalAttachmentUris.resolve(context, source.uri)?.let { file ->
             require(file.length() <= maxBytes) { "Attachment is too large" }
-            return source.copy(sizeBytes = file.length())
+            return normalizeImageMime(source.copy(sizeBytes = file.length()), file)
         }
         require(source.sizeBytes <= maxBytes) { "Attachment is too large" }
         val extension = source.displayName.substringAfterLast('.', "bin")
@@ -20,12 +20,20 @@ internal object ComposerAttachmentImport {
             copyToPrivate(it, context.filesDir, maxBytes, extension)
         } ?: error("Attachment source is unavailable")
         return try {
-            source.copy(uri = LocalAttachmentUris.forFile(context, file, source.displayName, source.mimeType),
-                sizeBytes = file.length())
+            val retained = normalizeImageMime(source.copy(sizeBytes = file.length()), file)
+            retained.copy(uri = LocalAttachmentUris.forFile(context, file, retained.displayName, retained.mimeType))
         } catch (error: Exception) {
             file.delete()
             throw error
         }
+    }
+
+    private fun normalizeImageMime(source: AgentInputAttachment, file: File): AgentInputAttachment {
+        if (source.mimeType.isNotBlank() && !source.mimeType.equals("application/octet-stream", true)) return source
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        runCatching { file.inputStream().use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) } }
+        return if (bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outMimeType?.startsWith("image/") == true)
+            source.copy(mimeType = bounds.outMimeType) else source
     }
 
     internal fun copyToPrivate(input: InputStream, filesDir: File, maxBytes: Long,
