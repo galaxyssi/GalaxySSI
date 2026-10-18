@@ -50,6 +50,20 @@ internal interface AgentPlanNodeJournal {
 
 /** Applies only evidence belonging to the currently checkpointed node attempt. */
 internal object AgentPlanNodeRecovery {
+    fun resumePhase(plan: AgentPlan, loopResumePhase: AgentExecutionLoopPhase?): AgentPhase = when {
+        plan.safetyReview.blocked -> AgentPhase.BLOCKED
+        plan.actions.any { it.status == AgentActionStatus.WAITING_RESPONSE } -> AgentPhase.WAITING_RESPONSE
+        plan.actions.any { it.status == AgentActionStatus.PENDING_CONFIRMATION } ->
+            if (plan.safetyReview.requiresConfirmation) AgentPhase.WAITING_CONFIRMATION else AgentPhase.PLANNING
+        // Restored receipts can create a new reviewer even when the old loop was finalizing.
+        plan.actions.any { it.status == AgentActionStatus.PROPOSED } ->
+            if (plan.safetyReview.requiresConfirmation) AgentPhase.WAITING_CONFIRMATION else AgentPhase.PLANNING
+        loopResumePhase in setOf(AgentExecutionLoopPhase.VERIFY, AgentExecutionLoopPhase.FINALIZE,
+            AgentExecutionLoopPhase.LEARN) -> AgentPhase.COMPLETED
+        plan.actions.isNotEmpty() && plan.actions.all { it.status == AgentActionStatus.COMPLETED } -> AgentPhase.COMPLETED
+        else -> AgentPhase.PLANNING
+    }
+
     fun restoreOrReport(session: AgentSessionSnapshot, journal: AgentPlanNodeJournal): AgentSessionSnapshot = try {
         restore(session, journal)
     } catch (failure: Exception) {
@@ -100,7 +114,7 @@ internal object AgentPlanNodeRecovery {
         }
         return plan.addArtifactRichOutput(result.metadata["rich_output"].orEmpty())
             .markAction(action.id, status, result)
-            .addVerification(AgentVerificationResult(actionId = action.id, success = result.success,
+            .addVerification(AgentVerificationResult(actionId = action.id, success = AgentGoalEvidence.permitsSuccess(result),
                 observedApp = "", observedTitle = "", visibleTextCount = 0, clickableNodeCount = 0,
                 evidence = observation.evidence.ifBlank { "durable_plan_node_observation" }))
     }

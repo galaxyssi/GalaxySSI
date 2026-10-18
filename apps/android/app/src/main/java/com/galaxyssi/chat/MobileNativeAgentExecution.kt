@@ -594,7 +594,7 @@ internal fun MobileNativeAgent.executeParallelActions(
     val firstFailure = completed.firstOrNull { (_, result) -> !result.success }
     if (firstFailure == null) {
         val (lastAction, lastResult) = completed.last()
-        updatedPlan = ensureSupervisedProjectContinuation(updatedPlan, lastAction, lastResult)
+        updatedPlan = continueObservedOutcomes(updatedPlan, completed)
         AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
             goal = currentGoal,
             history = updatedPlan.actionHistory + updatedPlan.actions,
@@ -915,9 +915,7 @@ internal fun MobileNativeAgent.executePlannedAction(
         }
     }
     val updatedPlan = observedPlan?.let { candidate ->
-        continueUnverifiedOutcome(
-            ensureSupervisedProjectContinuation(candidate, hardenedAction, lastActionResult),
-            hardenedAction, lastActionResult)
+        continueObservedOutcomes(candidate, listOfNotNull(lastActionResult?.let { hardenedAction to it }))
     }
     Log.i(
         "GalaxySSIAgentLifecycle",
@@ -2257,17 +2255,7 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
     val loopResumePhase = executionLoop.snapshot
         ?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }
         ?.resumePhase
-    phase = when {
-        loopResumePhase in setOf(
-            AgentExecutionLoopPhase.VERIFY,
-            AgentExecutionLoopPhase.FINALIZE,
-            AgentExecutionLoopPhase.LEARN
-        ) -> AgentPhase.COMPLETED
-        plan.actions.any { it.status == AgentActionStatus.WAITING_RESPONSE } -> AgentPhase.WAITING_RESPONSE
-        plan.actions.any { it.status == AgentActionStatus.PENDING_CONFIRMATION } -> AgentPhase.WAITING_CONFIRMATION
-        plan.actions.isNotEmpty() && plan.actions.all { it.status == AgentActionStatus.COMPLETED } -> AgentPhase.COMPLETED
-        else -> AgentPhase.PLANNING
-    }
+    phase = AgentPlanNodeRecovery.resumePhase(plan, loopResumePhase)
     // A waiting dispatch result is also its routing receipt; a generic resume message must not replace it.
     if (!recoveredNodes && phase != AgentPhase.WAITING_RESPONSE) lastActionResult = AgentActionResult(
         actionId = "agent-resumed",
@@ -2332,7 +2320,7 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
             completeVerifiedProjectOutcome(observedPlan, action, result, verifiedCompletion)
         )
     }
-    val continuedPlan = ensureSupervisedProjectContinuation(observedPlan, action, result)
+    val continuedPlan = continueObservedOutcomes(observedPlan, listOf(action to result))
     currentPlan = continuedPlan
     appendAudits(
         AgentAuditRecord(

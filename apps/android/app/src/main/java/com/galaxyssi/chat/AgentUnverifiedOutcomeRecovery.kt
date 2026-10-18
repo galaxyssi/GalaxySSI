@@ -6,6 +6,28 @@ internal object AgentUnverifiedOutcomeRecovery {
     const val PHONE_CONTROL = "goal_recovery_phone_control"
     private const val PHONE_REVIEW_REASON = "inspect_unverified_phone_outcome"
 
+    fun reviewCandidate(plan: AgentPlan, scope: AgentPlanContinuationScope,
+        descriptorFor: (String) -> AgentNativeToolDescriptor?,
+        resultFor: (AgentAction) -> AgentActionResult?): Pair<AgentAction, AgentActionResult>? {
+        if (plan.isSupervisedProjectPlan() || plan.executionMode == AgentTaskExecutionMode.PLAN_ONLY ||
+            !AgentSupervisedProjectLoop.needsRunnableReviewer(plan)) return null
+        val pending = AgentPendingOutcomeEvidence.unresolved(plan.completionRequirements,
+            AgentCompletionEvidenceHistory.resolve(plan, scope), descriptorFor)
+            .filter { it.canInspect }.mapTo(hashSetOf()) { it.receipt.actionId }
+        // Read only the exact pending node's durable result, never infer it from a later success.
+        for (action in plan.actions) {
+            if (action.id !in pending || !scope.owns(action)) continue
+            val result = resultFor(action) ?: continue
+            if (needsReview(plan, action, result)) return action to result
+        }
+        return null
+    }
+
+    fun reviewAllowed(phase: AgentPhase, executionPaused: Boolean, connectorCallsAllowed: Boolean,
+        cancelled: Boolean, resumingPausedTask: Boolean): Boolean =
+        !executionPaused && connectorCallsAllowed && !cancelled && phase != AgentPhase.CANCELLED &&
+            (phase != AgentPhase.PAUSED || resumingPausedTask)
+
     fun needsReview(plan: AgentPlan, action: AgentAction, result: AgentActionResult?): Boolean {
         if (plan.isSupervisedProjectPlan() || plan.executionMode == AgentTaskExecutionMode.PLAN_ONLY ||
             action.kind != AgentActionKind.CALL_NATIVE_TOOL || result?.actionId != action.id ||
@@ -77,10 +99,14 @@ internal object AgentUnverifiedOutcomeRecovery {
 }
 
 internal fun MobileNativeAgent.continueUnverifiedOutcome(
-    plan: AgentPlan, action: AgentAction, result: AgentActionResult?
+    plan: AgentPlan, action: AgentAction, result: AgentActionResult?, resumingPausedTask: Boolean = false
 ): AgentPlan {
-    if (!AgentUnverifiedOutcomeRecovery.needsReview(plan, action, result) || planningWasStopped() ||
-        safetySettingsStore.load().executionPaused || !safetySettingsStore.load().connectorCallsAllowed ||
+    fun allowed(): Boolean {
+        val settings = safetySettingsStore.load()
+        return AgentUnverifiedOutcomeRecovery.reviewAllowed(phase, settings.executionPaused,
+            settings.connectorCallsAllowed, PhoneExecutionAuthority.isCancelled(sessionId), resumingPausedTask)
+    }
+    if (!AgentUnverifiedOutcomeRecovery.needsReview(plan, action, result) || !allowed() ||
         AgentTaskRequirementAnalyzer.analyze(currentGoal).localOnly) return plan
     val request = supervisedProjectRequest(plan, continuation = true)
     val provider = RuleBasedAgentPlanner(appContext).informationQueryAction(request)
@@ -88,8 +114,27 @@ internal fun MobileNativeAgent.continueUnverifiedOutcome(
     val reviewed = AgentActionRiskHardener.enforce(appContext, recovered).let {
         it.withSafetyReview(safetyPolicy.review(it, sessionId))
     }
-    if (planningWasStopped()) return plan
+    if (!allowed()) return plan
     recordAudit(AgentAuditEvent.PLAN_REPLANNED,
         "unverified_outcome_review:action=${action.id}; revision=${reviewed.revision}")
     return reviewed
+}
+
+/** All native completion paths use the same review, including restored and earlier batch nodes. */
+internal fun MobileNativeAgent.continueObservedOutcomes(
+    plan: AgentPlan, completed: List<Pair<AgentAction, AgentActionResult>>, resumingPausedTask: Boolean = false
+): AgentPlan {
+    val last = completed.lastOrNull()
+    val continued = if (last == null) plan else ensureSupervisedProjectContinuation(plan, last.first, last.second)
+    if (continued.isSupervisedProjectPlan()) return continued
+    val scope = AgentPlanContinuationScope.resolve(continued, activeConversationContext.conversationId,
+        activeConversationTurnId, sessionId) ?: return continued
+    val receipts = completed.associate { it.first.id to it.second }
+    val candidate = AgentUnverifiedOutcomeRecovery.reviewCandidate(continued, scope,
+        { nativeToolRegistry.lookup(it)?.descriptor }) { action ->
+        receipts[action.id] ?: AgentPlanNodeKey.from(sessionId, continued, action)?.let { key ->
+            planNodeJournal.read(key)?.result
+        }
+    } ?: return continued
+    return continueUnverifiedOutcome(continued, candidate.first, candidate.second, resumingPausedTask)
 }

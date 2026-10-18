@@ -146,6 +146,35 @@ class AgentPlanNodeRecoveryTest {
         }
     }
 
+    @Test fun `accepted but unverified receipt is not recorded as verified goal success`() {
+        val unknown = result(first).copy(metadata = mapOf("goal_status" to "unknown", "business_success_verified" to "false"))
+        val restored = AgentPlanNodeRecovery.applyVerified(plan, first, AgentPlanNodeObservation(unknown, true))
+        assertEquals(AgentActionStatus.COMPLETED, restored.actions.first().status)
+        assertFalse(restored.verificationResults.single().success)
+    }
+
+    @Test fun `recovered reviewer takes precedence over a saved finalizing loop phase`() {
+        val review = first.copy(kind = AgentActionKind.CALL_CONNECTOR, status = AgentActionStatus.PROPOSED)
+        for (loopPhase in listOf(AgentExecutionLoopPhase.VERIFY, AgentExecutionLoopPhase.FINALIZE, AgentExecutionLoopPhase.LEARN)) {
+            assertEquals(AgentPhase.PLANNING, AgentPlanNodeRecovery.resumePhase(plan.copy(actions = listOf(review),
+                safetyReview = plan.safetyReview.copy(requiresConfirmation = false)), loopPhase))
+            assertEquals(AgentPhase.WAITING_CONFIRMATION,
+                AgentPlanNodeRecovery.resumePhase(plan.copy(actions = listOf(review)), loopPhase))
+            assertEquals(AgentPhase.WAITING_RESPONSE, AgentPlanNodeRecovery.resumePhase(plan.copy(
+                actions = listOf(review.copy(status = AgentActionStatus.WAITING_RESPONSE))), loopPhase))
+            assertEquals(AgentPhase.WAITING_CONFIRMATION, AgentPlanNodeRecovery.resumePhase(plan.copy(
+                actions = listOf(review.copy(status = AgentActionStatus.PENDING_CONFIRMATION))), loopPhase))
+        }
+    }
+
+    @Test fun `settled restored plan still completes without another review`() {
+        val completed = plan.copy(actions = plan.actions.map { it.copy(status = AgentActionStatus.COMPLETED) })
+        assertEquals(AgentPhase.COMPLETED, AgentPlanNodeRecovery.resumePhase(completed, null))
+        assertEquals(AgentPhase.COMPLETED, AgentPlanNodeRecovery.resumePhase(completed, AgentExecutionLoopPhase.VERIFY))
+        assertEquals(AgentPhase.BLOCKED, AgentPlanNodeRecovery.resumePhase(completed.copy(
+            safetyReview = completed.safetyReview.copy(blocked = true)), AgentExecutionLoopPhase.VERIFY))
+    }
+
     @Test fun `cold boot keeps durable pending observations instead of replacing them with interruption failures`() {
         val store = MemoryJournal()
         store.record(key(first), AgentPlanNodeObservation(result(first), false))
