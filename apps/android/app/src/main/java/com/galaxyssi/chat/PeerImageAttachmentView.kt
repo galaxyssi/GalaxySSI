@@ -43,7 +43,7 @@ internal class PeerImageAttachmentView(context: Context) : FrameLayout(context) 
         onOpen: () -> Unit,
         onLongPress: () -> Unit
     ) {
-        requestKey = "${attachment.artifactUri}|${attachment.uri}|${attachment.transferId}"
+        requestKey = "${PeerImageThumbnailPolicy.cacheIdentity(attachment)}|${attachment.artifactUri}|${attachment.transferId}"
         contentDescription = attachment.name
         image.setImageResource(R.drawable.ic_process_image)
         image.imageTintList = ColorStateList.valueOf(Color.parseColor("#8B929A"))
