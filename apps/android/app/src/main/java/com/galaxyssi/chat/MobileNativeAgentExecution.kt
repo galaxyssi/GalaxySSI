@@ -600,7 +600,8 @@ internal fun MobileNativeAgent.executeParallelActions(
             history = updatedPlan.actionHistory + updatedPlan.actions,
             completedAction = lastAction,
             result = lastResult,
-            requirements = updatedPlan.completionRequirements
+            requirements = updatedPlan.completionRequirements,
+            descriptorFor = { nativeToolRegistry.lookup(it)?.descriptor }
         )?.let { completion ->
             currentPlan = updatedPlan
             lastActionResult = lastResult
@@ -900,7 +901,8 @@ internal fun MobileNativeAgent.executePlannedAction(
                 history = observedPlan.actionHistory + observedPlan.actions,
                 completedAction = hardenedAction,
                 result = observedResult,
-                requirements = observedPlan.completionRequirements
+                requirements = observedPlan.completionRequirements,
+                descriptorFor = { nativeToolRegistry.lookup(it)?.descriptor }
             )
             if (verifiedCompletion != null) {
                 return completeVerifiedProjectOutcome(
@@ -1405,18 +1407,12 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
         )
         if (decision.disposition == AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE) {
             val finalResponse = decision.finalResponse
-            currentPlan = AgentPlanLifecyclePolicy.normalize(responsePlan).plan
-            lastActionResult = completedResult.copy(
-                message = finalResponse,
-                metadata = completedResult.metadata + mapOf(
-                    "supervised_direct_response" to "true",
-                    "reasoning_recorded_separately" to "false"
-                )
-            )
-            phase = AgentPhase.COMPLETED
+            currentPlan = AgentPlanLifecyclePolicy.normalize(decision.plan ?: responsePlan).plan
+            lastActionResult = decision.finalResult(completedResult)
+            phase = decision.finalPhase
             recordAudit(
                 AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED,
-                "source_message_id=$sourceMessageId; contact=$contactId; success=true; direct_response=true"
+                "source_message_id=$sourceMessageId; contact=$contactId; success=${lastActionResult?.success}; direct_response=true"
             )
             saveTaskRecord(result = finalResponse)
             return snapshot()
@@ -2328,7 +2324,8 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
         history = observedPlan.actionHistory + observedPlan.actions,
         completedAction = action,
         result = result,
-        requirements = observedPlan.completionRequirements
+        requirements = observedPlan.completionRequirements,
+        descriptorFor = { nativeToolRegistry.lookup(it)?.descriptor }
     )
     if (verifiedCompletion != null) {
         return reconcileExecutionLoop(

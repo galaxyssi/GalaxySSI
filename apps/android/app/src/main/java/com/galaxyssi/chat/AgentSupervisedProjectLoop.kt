@@ -19,8 +19,24 @@ internal data class AgentSupervisedProjectPlanDecision(
     val finalResponse: String = "",
     val failureKind: String = "",
     val failureMessage: String = "",
-    val repairAttempts: Int = 0
+    val repairAttempts: Int = 0,
+    val unresolvedOutcomes: List<AgentGoalEvidence.PendingReceipt> = emptyList()
 ) {
+    val finalPhase: AgentPhase get() = if (unresolvedOutcomes.isEmpty()) AgentPhase.COMPLETED else AgentPhase.BLOCKED
+
+    fun finalResult(base: AgentActionResult): AgentActionResult = base.copy(
+        success = base.success && unresolvedOutcomes.isEmpty(),
+        message = finalResponse,
+        metadata = base.metadata + mapOf("supervised_direct_response" to "true", "reasoning_recorded_separately" to "false") +
+            if (unresolvedOutcomes.isEmpty()) emptyMap() else mapOf(
+                "goal_status" to "blocked", "business_success_verified" to "false",
+                "failure_kind" to "business_outcome_unverified",
+                "unverified_outcomes" to JSONArray(unresolvedOutcomes.map { receipt ->
+                    JSONObject().put("action_id", receipt.actionId).put("tool_id", receipt.toolId)
+                        .put("required_capability", receipt.requiredCapability).put("next_action", receipt.nextAction)
+                }).toString())
+    )
+
     val semanticallyExecutable: Boolean
         get() = disposition == AgentSupervisedProjectPlanDisposition.EXECUTABLE && plan != null
 
@@ -43,6 +59,13 @@ internal data class AgentSupervisedProjectPlanDecision(
             disposition = AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE,
             finalResponse = response
         )
+
+        fun blockedResponse(plan: AgentPlan, receipts: List<AgentGoalEvidence.PendingReceipt>): AgentSupervisedProjectPlanDecision {
+            require(receipts.isNotEmpty())
+            return AgentSupervisedProjectPlanDecision(AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE,
+                plan = plan, finalResponse = receipts.map { it.message }.distinct().joinToString("\n"),
+                unresolvedOutcomes = receipts)
+        }
 
         fun rejected(kind: String, message: String, attempts: Int = 0) =
             AgentSupervisedProjectPlanDecision(
@@ -1165,12 +1188,12 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
 
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
-        val observedMissing = AgentObservedOutcomeEvidence.missing(parsed.completionRequirements?.outcomes.orEmpty(), executionHistory)
-        val pendingOutcome = AgentGoalEvidence.pendingReceipt(executionHistory)?.takeUnless {
-            !parsed.completionRequirements?.outcomes.isNullOrEmpty() && observedMissing.isEmpty()
+        val pendingOutcomes = AgentPendingOutcomeEvidence.unresolved(parsed.completionRequirements, executionHistory) {
+            nativeToolRegistry.lookup(it)?.descriptor
         }
-        if (pendingOutcome != null && !pendingOutcome.canInspect)
-            return AgentSupervisedProjectPlanDecision.finalResponse(pendingOutcome.message)
+        if (pendingOutcomes.isNotEmpty() && pendingOutcomes.none { it.canInspect })
+            return AgentSupervisedProjectPlanDecision.blockedResponse(
+                plan.copy(completionRequirements = parsed.completionRequirements), pendingOutcomes.map { it.receipt })
         val mutationNeedsPostcondition = AgentCompletionEvidenceHistory.needsBusinessPostcondition(
             parsed.completionRequirements, executionHistory) { nativeToolRegistry.lookup(it)?.descriptor }
         val missingEvidence = AgentSupervisedProjectCompletionPolicy.missingEvidence(
@@ -1178,9 +1201,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             executionHistory,
             finalAnswer = parsed.actions.single().description,
             requireResults = phoneControl
-        ) + (pendingOutcome?.let { listOf("The latest business outcome is still unverified: ${it.message}. " +
-            "Inspect before retrying (${it.nextAction.ifBlank { "choose an available observation tool" }}), repair only missing work, " +
-            "then provide an identity-bound postcondition. Do not repeat the accepted side effect.") }.orEmpty()) +
+        ) + pendingOutcomes.map { it.missingEvidence() } +
             (if (mutationNeedsPostcondition) listOf("Declare an observable, identity-bound postcondition in completion_requirements.outcomes and verify it; API acceptance is insufficient") else emptyList()) +
             if (AgentDeviceIntent.requiresReasoning(request.goal) && executionHistory.none { action ->
             action.kind == AgentActionKind.SET_ALARM ||

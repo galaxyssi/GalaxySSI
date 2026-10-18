@@ -1,5 +1,54 @@
 # Representative Agent Acceptance
 
+## 2026-10-18: Android 1.5.61 (1344), per-action unresolved outcomes
+
+- Completion previously considered only the latest explicit goal receipt. An
+  unrelated verified action, or any set of satisfied model outcomes, could hide
+  an earlier unconfirmed business effect. Enumerate unresolved logical actions
+  from their latest snapshots instead of treating one success as global proof.
+- Resolve each uncertain effect only with its host-owned recovery query and an
+  identity-bound model postcondition. The exact fresh, successful, non-replayed
+  observation must match tool/version, input hash, conversation/turn and subject,
+  and must satisfy the declared checks. Newer conflicting evidence still wins.
+- A later mutation for a provably different host-bound subject does not invalidate
+  the first subject's observation. Missing subject identity remains conservative.
+  Read-only tasks do not acquire an artificial recovery-contract requirement.
+  Definitive failed/blocked attempts are not mistaken for accepted uncertain
+  effects; an explicit unknown-outcome caveat still requires observation.
+- Apply the same guard to model completion and automatic commit/push/PR closure.
+  Automatic closure uses current-scope latest snapshots; foreign evidence cannot
+  satisfy or block it. Pending outcomes with no available observation contract or
+  required capability end as BLOCKED with unverified metadata, not successful
+  completion or an impossible repeated completion-repair request.
+- Preserve the original plan, requirements, action identity and receipts for
+  subsequent inspection. Do not retry the effect, add polling, override model
+  selection, change permissions, alter transport, or clear user data.
+- This increment covers explicit unverified receipts in the supervised execution
+  path. It does not prove semantic success for every opaque tool, unify every
+  execution adapter, or validate a real model's repair of every failure. The
+  broader six-part goal remains incomplete.
+- Synced merged main through PR #3588. Settled sources passed 148 focused JVM
+  tests across ten suites, with zero failures, errors or skips. APK assembly,
+  repository checks and whitespace checks passed. The final build used a fresh
+  single-use Gradle daemon; intermediate builds were superseded, including one
+  source/test timing mismatch and one deliberately cancelled obsolete build.
+- An earlier broader selection ran 206 tests, with two failures in existing
+  prompt-size assertions in AgentSupervisedProjectPromptTest (planning contract
+  10,029 characters versus a 5,800-character budget). The prompt builder was
+  compared with HEAD and is unchanged, as are the template and codec. Those two
+  failures are not fixed or counted as passes; no test budget was increased.
+  This is not a full-suite, performance or latency acceptance claim.
+- S20U installation and normal-composer waiting-to-completed verification remain
+  pending. ADB and mDNS found no devices, and Windows reported Bluetooth entries
+  but no USB/ADB interface, including after the user reported reconnecting. No
+  phone app data, settings, contacts, countdowns or Desktop instance was changed.
+- Synthetic tests cover partial multi-effect verification, foreign/stale/replayed
+  evidence, newer failures, unavailable contracts, blocked delivery, checkpoint
+  restoration and independent publication requirements. They do not substitute
+  for a real device or real model recovery trial. Evidence remains outside Git
+  in `galaxyssi-representative-acceptance/pending-outcome-1.5.61-tests/` and
+  `pending-outcome-1.5.61-initial-tests/`.
+
 ## 2026-10-17: Android 1.5.60 (1343), workspace tool-state projection
 
 - The prior read-only device run completed in its session and operation ledger,

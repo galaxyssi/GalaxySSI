@@ -130,7 +130,8 @@ internal enum class AgentGoalEvidenceStatus { VERIFIED, DISPATCHED, BLOCKED, UNK
 
 /** Transport/API acceptance and business completion are deliberately separate. */
 internal object AgentGoalEvidence {
-    data class PendingReceipt(val message: String, val requiredCapability: String, val nextAction: String) {
+    data class PendingReceipt(val message: String, val requiredCapability: String, val nextAction: String,
+        val actionId: String = "", val toolId: String = "") {
         val canInspect: Boolean get() = requiredCapability.isBlank()
     }
 
@@ -194,21 +195,27 @@ internal object AgentGoalEvidence {
 
     fun unverifiedOutcome(history: List<AgentAction>): String? = pendingReceipt(history)?.message
 
-    fun pendingReceipt(history: List<AgentAction>): PendingReceipt? {
-        for (action in history.asReversed()) {
-            if (action.kind != AgentActionKind.CALL_NATIVE_TOOL) continue
-            val raw = runCatching { JSONObject(action.evidence) }.getOrNull() ?: continue
+    fun pendingReceipt(history: List<AgentAction>): PendingReceipt? = pendingReceipts(history).lastOrNull()
+
+    fun pendingReceipts(history: List<AgentAction>): List<PendingReceipt> =
+        AgentProjectHistoryRetentionPolicy.latestSnapshots(history).mapNotNull { action ->
+            if (action.kind != AgentActionKind.CALL_NATIVE_TOOL || AgentObservedOutcomeEvidence.isUndispatched(action))
+                return@mapNotNull null
+            val raw = runCatching { JSONObject(action.evidence) }.getOrNull() ?: return@mapNotNull null
             val output = raw.optJSONObject("output") ?: raw
-            val unverifiedState = output.opt("state_verified") == false
-            val metadata = output.optJSONObject("metadata") ?: if (unverifiedState) JSONObject() else continue
-            val status = if (unverifiedState) "unknown" else metadata.optString("goal_status")
-            if (status.isEmpty()) continue
-            return if (status == "verified" && action.status == AgentActionStatus.COMPLETED) null
-            else PendingReceipt(output.optString("message").ifBlank { "The requested outcome has not been verified." },
-                metadata.optString("required_capability"), metadata.optString("next_action"))
+            val metadata = output.optJSONObject("metadata") ?: JSONObject()
+            val unknown = AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(action)
+            if (!unknown && action.status in setOf(AgentActionStatus.FAILED, AgentActionStatus.BLOCKED) &&
+                metadata.optString("goal_status") in setOf("failed", "blocked")) return@mapNotNull null
+            val uncertain = unknown ||
+                metadata.opt("business_success_verified")?.toString() == "false"
+            val status = if (uncertain) "unknown" else metadata.optString("goal_status")
+            if (status.isEmpty() || status == "verified" && action.status == AgentActionStatus.COMPLETED)
+                return@mapNotNull null
+            PendingReceipt(output.optString("message").ifBlank { "The requested outcome has not been verified." },
+                metadata.optString("required_capability"), metadata.optString("next_action"),
+                action.id, action.parameters["tool_id"].orEmpty().ifBlank { action.target })
         }
-        return null
-    }
 
     fun result(action: AgentAction, status: AgentGoalEvidenceStatus, message: String,
         evidence: String = "", extra: Map<String, String> = emptyMap()): AgentActionResult = AgentActionResult(
