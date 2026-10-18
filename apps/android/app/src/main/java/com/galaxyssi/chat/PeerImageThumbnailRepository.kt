@@ -18,14 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
-internal object PeerImageThumbnailPolicy {
-    fun cacheIdentity(attachment: PeerChatAttachment): String =
-        attachment.uri.ifBlank { attachment.artifactUri }
-            .ifBlank { attachment.transferId }
-            .ifBlank { attachment.sha256 }
-            .ifBlank { "${attachment.name}:${attachment.sizeBytes}" }
-}
-
 internal object PeerImageThumbnailRepository : RuntimeSensitiveCache {
     private const val CACHE_TTL_MILLIS = RuntimeCachePolicy.SENSITIVE_TTL_MILLIS
     private const val MIN_CACHE_BYTES = 4 * 1024 * 1024
@@ -33,7 +25,6 @@ internal object PeerImageThumbnailRepository : RuntimeSensitiveCache {
     private const val MAX_STORED_THUMBNAIL_BYTES = 100_000
     private const val MIN_JPEG_QUALITY = 42
     private const val MAX_JPEG_QUALITY = 84
-    private const val THUMBNAIL_FILE = ".peer-image-thumbnail-v1.sasie"
 
     private data class CacheEntry(val bitmap: Bitmap, val expiresAt: Long)
     private data class PendingLoad(
@@ -88,15 +79,18 @@ internal object PeerImageThumbnailRepository : RuntimeSensitiveCache {
 
         val appContext = context.applicationContext
         executor.execute {
-            val encryptedThumbnail = encryptedThumbnailUri(appContext, original)
+            val thumbnailFile = LocalAttachmentUris.resolve(appContext, original)
+                ?.let { PeerImageThumbnailPolicy.storedFile(it, attachment) }
+            val encryptedThumbnail = encryptedThumbnailUri(appContext, thumbnailFile)
             var bitmap = AgentImagePipeline.loadPreview(
                 appContext,
                 encryptedThumbnail ?: original,
                 maxWidth.coerceAtLeast(1),
                 maxHeight.coerceAtLeast(1)
             )
+            val loadedStoredThumbnail = bitmap != null && encryptedThumbnail != null
             if (bitmap == null && encryptedThumbnail != null) {
-                encryptedThumbnailFile(appContext, original)?.delete()
+                thumbnailFile?.delete()
                 bitmap = AgentImagePipeline.loadPreview(
                     appContext,
                     original,
@@ -104,9 +98,9 @@ internal object PeerImageThumbnailRepository : RuntimeSensitiveCache {
                     maxHeight.coerceAtLeast(1)
                 )
             }
-            if (bitmap != null && encryptedThumbnail == null) {
+            if (bitmap != null && !loadedStoredThumbnail && thumbnailFile != null) {
                 runCatching {
-                    persistEncryptedThumbnail(appContext, original, bitmap)
+                    persistEncryptedThumbnail(thumbnailFile, bitmap)
                 }.onFailure { error ->
                     Log.w("GalaxySSIPeerImage", "Could not persist encrypted image thumbnail", error)
                 }
@@ -178,9 +172,8 @@ internal object PeerImageThumbnailRepository : RuntimeSensitiveCache {
         return null
     }
 
-    private fun encryptedThumbnailUri(context: Context, original: Uri): Uri? {
-        val thumbnail = encryptedThumbnailFile(context, original)
-            ?.takeIf(AttachmentLocalStore::isStored)
+    private fun encryptedThumbnailUri(context: Context, file: File?): Uri? {
+        val thumbnail = file?.takeIf(AttachmentLocalStore::isStored)
             ?: return null
         return LocalAttachmentUris.forFile(
             context,
@@ -190,16 +183,13 @@ internal object PeerImageThumbnailRepository : RuntimeSensitiveCache {
         )
     }
 
-    private fun encryptedThumbnailFile(context: Context, original: Uri): File? =
-        LocalAttachmentUris.resolve(context, original)?.parentFile?.let { File(it, THUMBNAIL_FILE) }
-
-    private fun persistEncryptedThumbnail(context: Context, original: Uri, bitmap: Bitmap) {
-        val destination = encryptedThumbnailFile(context, original) ?: return
+    private fun persistEncryptedThumbnail(destination: File, bitmap: Bitmap) {
         synchronized(thumbnailWriteLock) {
             if (AttachmentLocalStore.isStored(destination)) return
             val bytes = encodeStoredThumbnail(bitmap) ?: return
             try {
                 AttachmentLocalStore.storeBytes(bytes, destination)
+                File(destination.parentFile, PeerImageThumbnailPolicy.LEGACY_FILE_NAME).delete()
             } finally {
                 bytes.fill(0)
             }
