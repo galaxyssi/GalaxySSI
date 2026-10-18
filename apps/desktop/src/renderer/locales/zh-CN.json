@@ -1128,4 +1128,12 @@
 , "The original attachment has changed. Restore the original file before retrying this delivery.": "原附件已更改，请恢复原文件后重试此次发送。"
 , "The attachment could not be prepared for transfer.": "附件传输准备失败。"
 , "The transfer checkpoint could not be saved. Check local storage and retry.": "无法保存传输检查点，请检查本机存储后重试。"
+, "A contact is reminding you": "收到联系人提醒"
+, "Your contact is reminding you": "联系人正在提醒你"
+, "Reminder silenced": "提醒已静音"
+, "Contact reminder": "联系人提醒"
+, "Mute": "静音"
+, "Ignore": "忽略"
+, "Got it": "知道了"
+, "Receipt was not queued. Please retry.": "回执未发出，请重试。"
 }

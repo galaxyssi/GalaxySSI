@@ -3171,7 +3171,7 @@ def _publish_phone_payload(
         log.warning("Phone publish rejected: original task recipient is not authorized")
         return observed(False, "recipient_not_authorized")
     channel = "control" if reply_payload.get("type") in {
-        "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest",
+        "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest", "peer_attention",
         "agent_task_approval_result",
         ARTIFACT_RECEIPT_TYPE,
         INPUT_ATTACHMENT_RECEIPT_TYPE,
@@ -7567,6 +7567,16 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
             _publish_phone_payload(mqttc, wire_payload, receipt.payload())
         return
 
+    if payload.get("type") == "peer_attention":
+        from peer_reminders import peer_reminders, reply_payload
+        if str(payload.get("contact_id") or "") != desktop_id():
+            raise ValueError("Reminder target is not this Desktop")
+        reminder = peer_reminders().receive(client_route_id, str(paired_client.get("profile_name")
+            or paired_client.get("display_name") or paired_client.get("device_name") or "GalaxySSI"), payload)
+        if reminder and payload.get("reminder_action") == "request":
+            _publish_phone_payload(mqttc, wire_payload, reply_payload(reminder), durable=True)
+        return
+
     if _route_peer_message_payload(
         payload,
         client_route_id=client_route_id,
@@ -8604,7 +8614,7 @@ def _outbound_delivery_priority(payload: dict) -> int:
     if payload_type in {
         INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE, "artifact_redelivery_result",
         "agent_task_recovery_result", "agent_task_result_page", "agent_task_result_receipt_confirmed",
-        "agent_task_cancel", "pairing_revoked",
+        "agent_task_cancel", "pairing_revoked", "peer_attention",
     }:
         return OUTBOUND_PRIORITY_DEPENDENCY
     if payload_type == ARTIFACT_CHUNK_TYPE:
@@ -8632,7 +8642,7 @@ def _outbound_delivery_priority(payload: dict) -> int:
 
 def _outbound_transport_traffic(payload: dict) -> str:
     payload_type = str(payload.get("type") or "").strip().lower()
-    if payload_type in {"agent_task_cancel", "pairing_revoked"}:
+    if payload_type in {"agent_task_cancel", "pairing_revoked", "peer_attention"}:
         return "control"
     if payload_type == "delivery_ack":
         return "receipt"

@@ -1534,6 +1534,7 @@ async function connectTaskStream() {
       if (payload.type === "desktop_tasks_snapshot" && Array.isArray(payload.tasks)) {
         state.tasks = payload.tasks;
         state.peerMessages = Array.isArray(payload.peer_messages) ? payload.peer_messages : [];
+        window.GalaxySSIPeerReminders?.restore(payload.peer_reminders);
         observeConversationUnread("tasks", state.tasks);
         observeConversationUnread("messages", state.peerMessages);
         selectActiveEvolutionTask();
@@ -1541,6 +1542,8 @@ async function connectTaskStream() {
         renderConversation();
       } else if (payload.type === "desktop_task_update") {
         mergeTaskUpdate(payload.task);
+      } else if (payload.type === "desktop_peer_reminder") {
+        window.GalaxySSIPeerReminders?.receive(payload.reminder);
       } else if (payload.type === "desktop_peer_message" && payload.message?.message_id) {
         observeConversationUnread("messages", [payload.message], false);
         const index = state.peerMessages.findIndex((item) => item.message_id === payload.message.message_id);

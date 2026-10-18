@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="contact_reminder_title">联系人提醒</string>
+    <string name="contact_reminder_send">提醒对方</string>
+    <string name="contact_reminder_message">请查看消息</string>
+    <string name="contact_reminder_sent">提醒对方</string>
+    <string name="contact_reminder_received">收到联系人提醒</string>
+    <string name="contact_reminder_waiting">等待送达与确认</string>
+    <string name="contact_reminder_delivered">已送达 · 等待确认</string>
+    <string name="contact_reminder_quiet">已静默送达 · 等待确认</string>
+    <string name="contact_reminder_muted">已停止本次响铃</string>
+    <string name="contact_reminder_acknowledged">已确认</string>
+    <string name="contact_reminder_dismissed">已忽略</string>
+    <string name="contact_reminder_cancelled">提醒已取消</string>
+    <string name="contact_reminder_expired">提醒已过期，未收到确认</string>
+    <string name="contact_reminder_failed">提醒发送失败</string>
+    <string name="contact_reminder_disabled">对方已关闭联系人提醒</string>
+    <string name="contact_reminder_mute">静音</string>
+    <string name="contact_reminder_ignore">忽略</string>
+    <string name="contact_reminder_confirm">知道了</string>
+    <string name="contact_reminder_cancel">取消提醒</string>
+    <string name="contact_reminder_close">关闭</string>
+    <string name="contact_reminder_settings">联系人提醒设置</string>
+    <string name="contact_reminder_enable">接收已配对联系人的提醒</string>
+    <string name="contact_reminder_silent_sound">静音时使用闹钟声音提醒</string>
+    <string name="contact_reminder_lockscreen">锁屏时显示提醒面板</string>
+    <string name="contact_reminder_system_settings">系统通知设置</string>
+</resources>

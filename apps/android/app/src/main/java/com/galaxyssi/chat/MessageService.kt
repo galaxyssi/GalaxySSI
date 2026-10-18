@@ -57,6 +57,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
         GalaxySSIMqttClient.connect(this)
         registerNetworkRecoveryCallback()
         ProactiveAttentionPush.start(this)
+        ContactReminders.restore(this)
         thread(name = "galaxyssi-runtime-bootstrap") {
             runCatching { AgentProactiveTaskScheduler.restoreAll(this@MessageService, conversationOnly = true) }
                 .onFailure { Log.w("GalaxySSISchedule", "Could not restore schedules", it) }

@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld("galaxyssi", {
   listPeerMessages: (clientRouteId = "", limit = 500) =>
     ipcRenderer.invoke("peer-messages:list", clientRouteId, limit),
   sendPeerMessage: (payload) => ipcRenderer.invoke("peer-messages:send", payload),
+  respondPeerReminder: (id, action) => ipcRenderer.invoke("peer-reminders:respond", id, action),
+  updateReminderNotification: (value) => ipcRenderer.send("peer-reminders:notification", value),
   preparePeerMessageContext: (payload) => ipcRenderer.send("peer-messages:context-target", payload),
   onPeerMessageDeleted: (callback) => {
     const listener = (_event, messageId) => callback(messageId);

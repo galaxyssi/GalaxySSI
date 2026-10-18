@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, powerMonitor } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, powerMonitor, Notification } = require("electron");
 const { spawn, spawnSync, execFile } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -32,6 +32,8 @@ if (UI_SMOKE) {
 }
 
 let mainWindow;
+const updateReminderNotification = require("./peer_reminder_notifications").createReminderNotifications({ Notification,
+  getWindow: () => mainWindow, translate: (key, language) => loadLocale(String(language).startsWith("zh") ? "zh-CN" : "en")[key] || key });
 let peerContextTarget = null;
 const windowsTaskbarBadge = process.platform === "win32" ? new WindowsTaskbarBadge() : null;
 const conversationUnreadIndicator = createConversationUnreadIndicator({ getWindow: () => mainWindow, nativeImage,
@@ -2927,6 +2929,16 @@ ipcMain.handle("mobile:sync-status", syncMobileStatus);
 ipcMain.handle("peer-messages:list", (_event, clientRouteId, limit) =>
   listPeerMessages(clientRouteId, limit));
 ipcMain.handle("peer-messages:send", (_event, payload) => sendPeerMessage(payload));
+ipcMain.handle("peer-reminders:respond", (_event, id, action) => {
+  if (!mainWindow || _event.sender !== mainWindow.webContents ||
+      !/^[a-zA-Z0-9-]{16,64}$/.test(String(id)) || !["muted", "dismissed", "acknowledged"].includes(action)) {
+    throw new Error("Invalid reminder action");
+  }
+  return fetchJson(`/api/peer/reminders/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+});
+ipcMain.on("peer-reminders:notification", (event, value) => {
+  if (mainWindow && event.sender === mainWindow.webContents) updateReminderNotification(value);
+});
 ipcMain.on("peer-messages:context-target", (_event, payload) => {
   if (!mainWindow || _event.sender !== mainWindow.webContents || !payload?.routeId || !payload?.messageId) return;
   peerContextTarget = {
