@@ -1,5 +1,34 @@
 # Representative Agent Acceptance
 
+## 2026-10-18: Android 1.5.62 (1345)
+
+- Use one outcome-review continuation for normal native execution, parallel
+  batches, recovered dispatch receipts and recovered plan-node observations.
+  An earlier uncertain effect is not hidden by a later successful read. Load
+  its exact checkpointed result when it is no longer the most recent result;
+  never reconstruct success from display text or replay the original executor.
+- Select one supervising reviewer and preserve all unresolved receipts in its
+  history. Reuse App model selection and the existing host-bound read-first
+  barrier. Already satisfied identity-bound postconditions, ordinary reads,
+  unavailable observers, foreign turns and missing receipts do not start a
+  speculative review. No additional polling or background work is introduced.
+- Resuming a saved task may prepare a reviewer while its old UI phase is paused,
+  but still respects Pause All, connector restrictions and cancellation. A new
+  reviewer or pending permission/response takes precedence over an old loop
+  finalization phase. Restored tool acceptance is not recorded as verified
+  business success when its outcome remains explicitly unknown.
+- Final settled sources passed 172 focused JVM tests in 12 suites, with zero
+  failures, errors or skips; APK assembly, repository checks and whitespace
+  checks passed. The initial run had one failing regression that exposed an
+  already-approved recovered reviewer waiting for confirmation again. Its
+  phase selection was corrected and the complete selected suite rerun.
+- Evidence is outside Git under `galaxyssi-representative-acceptance` in
+  `outcome-continuation-1.5.62-tests/` and the separate initial-test directory.
+  This is not a full Android suite or all-path failure-recovery claim.
+- S20U remains absent from ADB; no installation or real-device/model acceptance
+  is claimed for this version. Countdown tests, other devices and Desktop are
+  outside this increment.
+
 ## 2026-10-18: Android 1.5.61 (1344), per-action unresolved outcomes
 
 - Completion previously considered only the latest explicit goal receipt. An

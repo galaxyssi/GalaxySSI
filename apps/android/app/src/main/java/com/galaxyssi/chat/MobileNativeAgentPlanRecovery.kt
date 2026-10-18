@@ -14,7 +14,7 @@ internal fun MobileNativeAgent.executeJournaledPlanAction(
 internal fun MobileNativeAgent.resumePersistedPlanObservations(): Boolean {
     val plan = currentPlan ?: return false
     var changed = false
-    var lastRecovered: Pair<AgentAction, AgentActionResult>? = null
+    val recovered = mutableListOf<Pair<AgentAction, AgentActionResult>>()
     plan.actions.filter { it.evidence == AGENT_NODE_OBSERVATION_PENDING }.forEach { action ->
         val key = requireNotNull(AgentPlanNodeKey.from(sessionId, plan, action))
         val saved = requireNotNull(planNodeJournal.read(key)) { "Persisted node observation is missing" }
@@ -29,12 +29,12 @@ internal fun MobileNativeAgent.resumePersistedPlanObservations(): Boolean {
         }
         currentPlan = AgentPlanNodeRecovery.applyVerified(requireNotNull(currentPlan), action, observed)
         lastActionResult = observed.result
-        lastRecovered = action to observed.result
+        recovered += action to observed.result
         changed = true
         persistSession()
     }
-    lastRecovered?.let { (action, result) ->
-        currentPlan = ensureSupervisedProjectContinuation(requireNotNull(currentPlan), action, result)
+    if (recovered.isNotEmpty()) {
+        currentPlan = continueObservedOutcomes(requireNotNull(currentPlan), recovered, resumingPausedTask = true)
         saveTaskRecord()
         persistSession()
     }

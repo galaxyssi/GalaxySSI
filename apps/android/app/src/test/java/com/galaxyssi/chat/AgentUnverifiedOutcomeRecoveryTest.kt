@@ -15,6 +15,106 @@ class AgentUnverifiedOutcomeRecoveryTest {
         assertTrue(AgentUnverifiedOutcomeRecovery.needsReview(plan(), origin(), receipt()))
     }
 
+    @Test fun batchReviewFindsAnEarlierUnknownEffectInsteadOfUsingTheLastSuccess() {
+        val batch = plan().copy(actions = listOf(origin(), read()))
+        val queried = mutableListOf<String>()
+        val candidate = candidate(batch) { action -> queried += action.id; receipt() }!!
+        assertEquals(origin().id, candidate.first.id)
+        assertEquals(listOf(origin().id), queried)
+        val recovered = AgentUnverifiedOutcomeRecovery.create(batch, candidate.first, candidate.second,
+            request(), provider())!!
+        assertEquals(origin().id, recovered.actions.single().parameters[originKey])
+        assertEquals(2, recovered.actionHistory.size)
+        assertEquals(1, recovered.actions.size)
+    }
+
+    @Test fun sequentialFinalReadRecoversTheEarlierReceiptFromItsJournal() {
+        val first = origin()
+        val checkpointed = plan().copy(actions = listOf(first, read()))
+            .addCheckpoint(AgentExecutionContinuity.checkpointBefore(first, request().screen, 1))
+        val key = AgentPlanNodeKey.from("runtime", checkpointed, first)!!
+        val journal = mapOf(key to receipt())
+        val candidate = candidate(checkpointed) { action ->
+            AgentPlanNodeKey.from("runtime", checkpointed, action)?.let(journal::get)
+        }!!
+        assertEquals(receipt(), candidate.second)
+        val retry = checkpointed.addCheckpoint(AgentExecutionContinuity.checkpointBefore(first, request().screen, 1))
+        assertNull(candidate(retry) { action -> AgentPlanNodeKey.from("runtime", retry, action)?.let(journal::get) })
+    }
+
+    @Test fun restoredParallelNodesKeepUnknownOutcomeAndResumeExactlyOneReviewer() {
+        var restored = plan().copy(actions = listOf(origin().copy(status = AgentActionStatus.RUNNING),
+            read().copy(status = AgentActionStatus.RUNNING)))
+        restored = AgentPlanNodeRecovery.applyVerified(restored, origin(), AgentPlanNodeObservation(receipt(), true))
+        restored = AgentPlanNodeRecovery.applyVerified(restored, read(), AgentPlanNodeObservation(
+            AgentActionResult(read().id, true, "Read state", mapOf("native_tool_output" to read().evidence)), true))
+        assertFalse(restored.verificationResults.first().success)
+        val storage = MemoryStorage()
+        SharedPreferencesAgentSessionStore(storage).save(AgentSessionSnapshot("runtime", AgentPhase.PAUSED,
+            restored.goal, restored.screen, restored, emptyList(), null, updatedAtMillis = 1000))
+        val reloaded = SharedPreferencesAgentSessionStore(storage).load()!!.currentPlan!!
+        val candidate = candidate(reloaded) { receipt() }!!
+        val recovered = AgentUnverifiedOutcomeRecovery.create(reloaded, candidate.first, candidate.second,
+            request(), provider())!!
+        assertEquals(AgentPhase.WAITING_CONFIRMATION,
+            AgentPlanNodeRecovery.resumePhase(recovered, AgentExecutionLoopPhase.VERIFY))
+        assertEquals(AgentPhase.PLANNING, AgentPlanNodeRecovery.resumePhase(recovered.copy(
+            safetyReview = recovered.safetyReview.copy(requiresConfirmation = false)), AgentExecutionLoopPhase.VERIFY))
+        assertNull(candidate(recovered) { fail("Must not load another receipt once a reviewer exists"); null })
+        assertEquals("user-model", recovered.actions.single().parameters["model_id"])
+    }
+
+    @Test fun everyPendingEffectRemainsInHistoryButOnlyOneReviewerIsCreated() {
+        val second = origin().copy(id = "second-effect")
+        val batch = plan().copy(actions = listOf(origin(), second, read()))
+        val selected = candidate(batch) { receipt().copy(actionId = it.id) }!!
+        val recovered = AgentUnverifiedOutcomeRecovery.create(batch, selected.first, selected.second,
+            request(), provider())!!
+        assertEquals(listOf(origin().id, second.id), AgentGoalEvidence.pendingReceipts(recovered.actionHistory).map { it.actionId })
+        assertEquals(1, recovered.actions.count { it.kind == AgentActionKind.CALL_CONNECTOR })
+    }
+
+    @Test fun fulfilledBoundPostconditionNeedsNoModelReviewOrJournalRead() {
+        val fulfilled = plan().copy(actions = listOf(origin(), read()), completionRequirements = requirements.copy(
+            outcomes = listOf(AgentObservedOutcome("requested-volume", readTool,
+                mapOf("/streams/media/stream" to "media"), mapOf("/streams/media/current" to 3), afterToolId = writeTool))))
+        assertNull(candidate(fulfilled) { fail("Verified outcome must not reload receipts"); null })
+        assertNull(candidate(plan(read())) { fail("Read-only completion needs no recovery"); null })
+    }
+
+    @Test fun unavailableObserverOrForeignScopeDoesNotStartRecovery() {
+        assertNull(AgentUnverifiedOutcomeRecovery.reviewCandidate(plan(), AgentPlanContinuationScope("conversation", "turn"),
+            { null }) { fail("Unavailable observation must not load receipts"); null })
+        val foreign = origin().copy(parameters = origin().parameters + (INTERNAL_TURN_ID to "other-turn"))
+        assertNull(candidate(plan(foreign)) { fail("Foreign turn must not load receipts"); null })
+    }
+
+    @Test fun missingOrMismatchedReceiptIsNotFabricatedFromActionText() {
+        assertNull(candidate(plan()) { null })
+        assertNull(candidate(plan()) { receipt().copy(actionId = "unrelated") })
+        assertNull(candidate(plan()) { receipt().copy(success = false) })
+    }
+
+    @Test fun reviewWaitsForRemainingActionsAndDoesNotInterfereWithPlanOnly() {
+        val remaining = plan().copy(actions = listOf(origin(), read().copy(status = AgentActionStatus.PROPOSED)))
+        for (candidatePlan in listOf(remaining, plan().copy(executionMode = AgentTaskExecutionMode.PLAN_ONLY))) {
+            assertNull(candidate(candidatePlan) { fail("Review is not runnable yet"); null })
+        }
+    }
+
+    @Test fun explicitRestoreCanReviewAPausedTaskButNeverOverridesPauseAllOrCancellation() {
+        fun allowed(phase: AgentPhase = AgentPhase.PAUSED, paused: Boolean = false, connectors: Boolean = true,
+            cancelled: Boolean = false, resume: Boolean = true) =
+            AgentUnverifiedOutcomeRecovery.reviewAllowed(phase, paused, connectors, cancelled, resume)
+        assertTrue(allowed())
+        assertTrue(allowed(phase = AgentPhase.VERIFYING, resume = false))
+        assertFalse(allowed(resume = false))
+        assertFalse(allowed(paused = true))
+        assertFalse(allowed(connectors = false))
+        assertFalse(allowed(cancelled = true))
+        assertFalse(allowed(phase = AgentPhase.CANCELLED))
+    }
+
     @Test fun verifiedAndPendingAndFailedResultsDoNotStartAnotherLoop() {
         val verified = receipt().copy(metadata = mapOf("goal_status" to "verified"))
         for (result in listOf(null, verified, receipt().copy(success = false), receipt().copy(actionId = "other"),
@@ -246,6 +346,9 @@ class AgentUnverifiedOutcomeRecoveryTest {
     }
 
     private fun recover(plan: AgentPlan = plan()) = AgentUnverifiedOutcomeRecovery.create(plan, origin(), receipt(), request(), provider())
+    private fun candidate(plan: AgentPlan, resultFor: (AgentAction) -> AgentActionResult?) =
+        AgentUnverifiedOutcomeRecovery.reviewCandidate(plan, AgentPlanContinuationScope("conversation", "turn"),
+            ::descriptor, resultFor)
     private fun violation(connector: AgentAction, history: List<AgentAction>, actions: List<AgentAction>) =
         AgentUnverifiedOutcomeRecovery.observationViolation(connector, history, actions, ::descriptor)
     private fun origin() = AgentAction("original-effect", AgentActionKind.CALL_NATIVE_TOOL, writeTool, AgentRisk.LOW,
