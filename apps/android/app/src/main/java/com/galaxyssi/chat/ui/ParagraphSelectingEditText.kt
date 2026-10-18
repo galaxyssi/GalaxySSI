@@ -1,6 +1,7 @@
 package com.galaxyssi.chat.ui
 
 import android.content.Context
+import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ViewConfiguration
@@ -41,10 +42,12 @@ class ParagraphSelectingEditText @JvmOverloads constructor(
     private var pendingAnchor = 0
     private var downX = 0f
     private var downY = 0f
+    private var blankTapPending = false
+    private var longPressHandled = false
     private var paragraphSelectionPending = false
     private val expandParagraphSelection = Runnable {
         paragraphSelectionPending = false
-        if (!isFocused) return@Runnable
+        if (!isFocused || !hasSelection()) return@Runnable
         val range = ParagraphSelectionPolicy.rangeAt(text ?: return@Runnable, pendingAnchor)
         if (range.endExclusive > range.start) {
             setSelection(range.start, range.endExclusive)
@@ -52,32 +55,76 @@ class ParagraphSelectingEditText @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_UP && blankTapPending &&
+            !longPressHandled && event.eventTime - event.downTime < ViewConfiguration.getLongPressTimeout()) {
+            // Native Editor opens insertion actions on the following UP. Do this before forwarding
+            // that UP, rather than selecting a word or synthesizing another touch sequence.
+            performLongClick()
+        }
         val handled = super.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 pendingAnchor = getOffsetForPosition(event.x, event.y).coerceAtLeast(0)
                 downX = event.x
                 downY = event.y
-                paragraphSelectionPending = true
+                longPressHandled = false
+                val onText = isTouchOnText(event.x, event.y)
+                blankTapPending = isFocused && !onText
+                paragraphSelectionPending = onText
                 removeCallbacks(expandParagraphSelection)
-                postDelayed(
-                    expandParagraphSelection,
-                    ViewConfiguration.getLongPressTimeout().toLong() + SELECTION_HANDLE_SETTLE_MILLIS
-                )
+                if (onText) {
+                    postDelayed(
+                        expandParagraphSelection,
+                        ViewConfiguration.getLongPressTimeout().toLong() + SELECTION_HANDLE_SETTLE_MILLIS
+                    )
+                }
             }
             MotionEvent.ACTION_MOVE -> {
-                if (paragraphSelectionPending &&
-                    (abs(event.x - downX) > touchSlop || abs(event.y - downY) > touchSlop)
-                ) {
+                if (abs(event.x - downX) > touchSlop || abs(event.y - downY) > touchSlop) {
+                    blankTapPending = false
                     cancelPendingParagraphSelection()
                 }
             }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                blankTapPending = false
+                cancelPendingParagraphSelection()
+            }
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
+                blankTapPending = false
                 if (paragraphSelectionPending) cancelPendingParagraphSelection()
             }
         }
         return handled
+    }
+
+    override fun performLongClick(): Boolean {
+        longPressHandled = true
+        return super.performLongClick()
+    }
+
+    private fun isTouchOnText(x: Float, y: Float): Boolean {
+        val textLayout = layout ?: return false
+        val localX = x - totalPaddingLeft + scrollX
+        val localY = y - totalPaddingTop + scrollY
+        if (localY < 0 || localY >= textLayout.height) return false
+        val line = textLayout.getLineForVertical(localY.toInt())
+        return localX >= textLayout.getLineLeft(line) && localX <= textLayout.getLineRight(line) &&
+            textLayout.getLineLeft(line) < textLayout.getLineRight(line)
+    }
+
+    override fun onFocusChanged(focused: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        if (!focused) {
+            blankTapPending = false
+            cancelPendingParagraphSelection()
+        }
+        super.onFocusChanged(focused, direction, previouslyFocusedRect)
+    }
+
+    override fun onDetachedFromWindow() {
+        blankTapPending = false
+        cancelPendingParagraphSelection()
+        super.onDetachedFromWindow()
     }
 
     private fun cancelPendingParagraphSelection() {
