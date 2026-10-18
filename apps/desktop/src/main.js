@@ -7,6 +7,7 @@ const os = require("node:os");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { preparePeerVoicePlayback } = require("./peer_voice_playback");
+const { transcribeComposerSpeech } = require("./composer_stt");
 const { buildTextContextMenuTemplate } = require("./text_context_menu");
 const { createConversationUnreadIndicator } = require("./conversation_unread_indicator");
 const { WindowsTaskbarBadge } = require("./windows_taskbar_badge");
@@ -399,16 +400,8 @@ async function runUiSmoke() {
         const separator = document.querySelector(".header-separator");
         const statusDot = document.querySelector("#routeStatusDot");
         const route = document.querySelector("#routeText");
-        const originalRecognition = window.SpeechRecognition;
         app.classList.add("peer-mode");
         route.textContent = "GalaxySSI Link encrypted";
-        window.SpeechRecognition = class {
-          start() {
-            this.onresult?.({ results: [[{ transcript: "device voice input" }]] });
-            this.onend?.();
-          }
-          stop() { this.onend?.(); }
-        };
         prompt.value = "";
         button.click();
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -424,14 +417,13 @@ async function runUiSmoke() {
           route: route.textContent
         };
         app.classList.remove("peer-mode");
-        window.SpeechRecognition = originalRecognition;
         prompt.value = "";
         return result;
       })()
     `);
     if (peerVoiceInput.display === "none"
         || peerVoiceInput.disabled
-        || peerVoiceInput.transcript !== "device voice input"
+        || peerVoiceInput.transcript !== ""
         || peerVoiceInput.taskStateDisplay !== "none"
         || peerVoiceInput.separatorDisplay !== "none"
         || peerVoiceInput.statusDotDisplay === "none"
@@ -2895,6 +2887,9 @@ ipcMain.handle("conversations:unread", (event, count, representations) => {
   return conversationUnreadIndicator.update(count, representations);
 });
 ipcMain.handle("tts:synthesize", (_event, payload) => synthesizeSpeech(payload));
+ipcMain.handle("stt:transcribe", (_event, payload) => transcribeComposerSpeech(payload, {
+  startBackend, origin: BACKEND_ORIGIN, token: desktopTaskStreamToken
+}));
 ipcMain.handle("backend:start", startBackend);
 ipcMain.handle("backend:status", backendStatus);
 ipcMain.handle("runtime:diagnostics", (_event, refresh = false) => runtimeDiagnostics(Boolean(refresh)));

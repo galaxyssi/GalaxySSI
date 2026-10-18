@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("galaxyssi", {
   getAppVersion: () => ipcRenderer.invoke("app:version"),
   setConversationUnread: (count, representations) => ipcRenderer.invoke("conversations:unread", count, representations),
   synthesizeSpeech: (payload) => ipcRenderer.invoke("tts:synthesize", payload),
+  transcribeSpeech: (payload) => ipcRenderer.invoke("stt:transcribe", payload),
   startBackend: () => ipcRenderer.invoke("backend:start"),
   backendStatus: () => ipcRenderer.invoke("backend:status"),
   getRuntimeDiagnostics: (refresh = false) => ipcRenderer.invoke("runtime:diagnostics", refresh),
