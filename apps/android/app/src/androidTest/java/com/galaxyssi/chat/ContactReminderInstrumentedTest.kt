@@ -78,6 +78,10 @@ class ContactReminderInstrumentedTest {
         val activity = instrumentation.startActivitySync(Intent(context, ContactReminderActivity::class.java)
             .putExtra("reminder_id", id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ContactReminderActivity
         try {
+            // This synthetic expiry fixture must not publish receipts when the live device is touched.
+            instrumentation.runOnMainSync {
+                activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+            }
             SystemClock.sleep(750)
             instrumentation.waitForIdleSync()
             instrumentation.runOnMainSync {
@@ -85,6 +89,7 @@ class ContactReminderInstrumentedTest {
                     AppForegroundTracker.isActivityForeground(activity))
                 val root = activity.findViewById<ViewGroup>(android.R.id.content)
                 val buttons = descendants(root).filterIsInstance<Button>()
+                buttons.forEach { it.isEnabled = false }
                 assertEquals(3, buttons.size)
                 assertTrue(buttons.any { it.text == activity.getString(R.string.contact_reminder_confirm) })
                 val fraction = activity.window.attributes.height.toFloat() / activity.resources.displayMetrics.heightPixels
