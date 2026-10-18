@@ -166,6 +166,100 @@ class AgentPendingOutcomeEvidenceTest {
         assertTrue(ordinary.finalResult(AgentActionResult("planner", true, "Answer")).success)
     }
 
+    @Test fun nativeCompletionKeepsEachUnknownEffectBlockedAfterALaterSuccess() {
+        val plan = plan().copy(actions = listOf(origin("a"), observation("b")))
+        val pending = AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, plan, scope, ::descriptor)
+        val base = AgentActionResult("read-b", true, "Read succeeded", mapOf("invocation_id" to "original-read"))
+        val result = AgentOutcomeCompletion.blockedResult(base, pending)
+        assertEquals("read-b", result.actionId)
+        assertEquals("original-read", result.metadata["invocation_id"])
+        assertFalse(result.success)
+        assertFalse(AgentGoalEvidence.permitsSuccess(result))
+        assertEquals("Outcome a not verified", result.message)
+        assertEquals("blocked", result.metadata["goal_status"])
+        assertEquals(AgentActionStatus.COMPLETED, plan.actions.first().status)
+        assertFalse(result.metadata.containsKey("supervised_direct_response"))
+    }
+
+    @Test fun onlyFinalizationIsGuardedWithoutPollingOrChangingActiveControlStates() {
+        val plan = plan().copy(actions = listOf(origin("a")))
+        for (phase in AgentPhase.entries.filter { it != AgentPhase.COMPLETED }) {
+            assertTrue(AgentOutcomeCompletion.pending(phase, plan, scope) {
+                fail("Active states must not inspect completion evidence"); null
+            }.isEmpty())
+        }
+        assertTrue(AgentOutcomeCompletion.pending(AgentPhase.COMPLETED,
+            plan.copy(executionMode = AgentTaskExecutionMode.PLAN_ONLY), scope) { fail("Plan only"); null }.isEmpty())
+    }
+
+    @Test fun satisfiedOutcomesAndExplanationsStillCompleteNormally() {
+        val completed = plan().copy(actions = listOf(origin("a"), observation("a")),
+            completionRequirements = requirements(listOf(outcome("a"))))
+        assertTrue(AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, completed, scope, ::descriptor).isEmpty())
+        assertTrue(AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, plan().copy(actions = listOf(observation("a"))),
+            scope, ::descriptor).isEmpty())
+        assertTrue(AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, plan(), scope, ::descriptor).isEmpty())
+    }
+
+    @Test fun missingVerificationCapabilityNeverTurnsAnAcceptedEffectIntoCompletion() {
+        val pending = AgentOutcomeCompletion.pending(AgentPhase.COMPLETED,
+            plan().copy(actions = listOf(origin("a"))), scope) { null }
+        assertEquals(listOf("effect-a"), pending.map { it.actionId })
+        val noContract = origin("a").copy(evidence = """{"delivery_verified":false,"message":"Delivery unconfirmed"}""")
+        assertEquals("Delivery unconfirmed", AgentOutcomeCompletion.pending(AgentPhase.COMPLETED,
+            plan().copy(actions = listOf(noContract)), scope, ::descriptor).single().message)
+    }
+
+    @Test fun conflictingScopeDoesNotBorrowForeignHistoryOrDeclareCompletion() {
+        val mixed = plan().copy(actions = listOf(origin("a")), actionHistory = listOf(origin("secret")))
+        val pending = AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, mixed, null, ::descriptor)
+        assertEquals(listOf("effect-a"), pending.map { it.actionId })
+        assertEquals("valid_task_ownership", pending.single().requiredCapability)
+        assertFalse(pending.single().message.contains("secret"))
+        val foreign = origin("a").copy(parameters = origin("a").parameters + (INTERNAL_TURN_ID to "foreign"))
+        assertTrue(AgentOutcomeCompletion.pending(AgentPhase.COMPLETED,
+            plan().copy(actionHistory = listOf(foreign)), scope, ::descriptor).isEmpty())
+    }
+
+    @Test fun outcomeContinuationBindsSessionConversationTurnPlanRevisionAndPendingEffects() {
+        val plan = plan().copy(actions = listOf(origin("a")))
+        val token = AgentRuntimeOutcomeContinuation.forPlan("session", scope, plan)!!
+        assertTrue(token.matches("session", scope, plan))
+        assertFalse(token.matches("other-session", scope, plan))
+        assertFalse(token.matches("session", scope.copy(conversationId = "other"), plan))
+        assertFalse(token.matches("session", scope.copy(turnId = "other"), plan))
+        assertFalse(token.matches("session", scope, plan.copy(planId = "other")))
+        assertFalse(token.matches("session", scope, plan.copy(revision = plan.revision + 1)))
+        assertFalse(token.matches("session", scope, plan.copy(actions = listOf(origin("b")))))
+        assertFalse(token.matches("session", scope, plan.copy(actions = listOf(observation("a")))))
+        assertNull(AgentRuntimeOutcomeContinuation.forPlan("session", scope, plan()))
+    }
+
+    @Test fun compactMetadataRetainsBoundContinuationWithoutAnUnboundedActionList() {
+        val plan = plan().copy(actions = (1..300).map { origin("item-$it") })
+        val pending = AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, plan, scope, ::descriptor)
+        val noisy = (1..40).associate { "ordinary-$it" to "value-$it" }
+        val blocked = AgentOutcomeCompletion.blockedResult(AgentActionResult("last", true, "", noisy), pending)
+        val token = AgentRuntimeOutcomeContinuation.forPlan("session", scope, plan)!!
+        val bound = token.bind(blocked)
+        assertTrue(bound.metadata.getValue(AgentRuntimeOutcomeContinuation.KEY).length < 512)
+        val compact = bound.copy(metadata = AgentSessionPersistencePolicy.compactMetadata(bound.metadata))
+        assertEquals(token, AgentRuntimeOutcomeContinuation.parse(compact))
+        assertFalse(AgentGoalEvidence.permitsSuccess(compact))
+        assertTrue(AgentRuntimeOutcomeContinuation.parse(compact)!!.matches("session", scope, plan))
+    }
+
+    @Test fun malformedOrOrdinaryResultsCannotPretendToBeOutcomeContinuation() {
+        val base = AgentActionResult("last", false, "Unverified", mapOf("failure_kind" to AgentOutcomeCompletion.FAILURE_KIND))
+        assertNull(AgentRuntimeOutcomeContinuation.parse(base))
+        assertNull(AgentRuntimeOutcomeContinuation.parse(base.copy(metadata = base.metadata +
+            (AgentRuntimeOutcomeContinuation.KEY to "invalid"))))
+        val token = AgentRuntimeOutcomeContinuation.forPlan("session", scope, plan().copy(actions = listOf(origin("a"))))!!
+        assertNull(AgentRuntimeOutcomeContinuation.parse(token.bind(base).copy(metadata = token.bind(base).metadata - "failure_kind")))
+        assertNull(AgentRuntimeOutcomeContinuation.parse(token.copy(revision = 0).bind(base)))
+        assertNull(AgentRuntimeOutcomeContinuation.parse(token.copy(actionIdsDigest = "").bind(base)))
+    }
+
     private fun unresolved(history: List<AgentAction>, outcomes: List<AgentObservedOutcome>) =
         AgentPendingOutcomeEvidence.unresolved(requirements(outcomes), history, ::descriptor)
     private fun requirements(outcomes: List<AgentObservedOutcome>) =

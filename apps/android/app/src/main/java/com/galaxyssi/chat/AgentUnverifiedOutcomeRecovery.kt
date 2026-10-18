@@ -8,17 +8,19 @@ internal object AgentUnverifiedOutcomeRecovery {
 
     fun reviewCandidate(plan: AgentPlan, scope: AgentPlanContinuationScope,
         descriptorFor: (String) -> AgentNativeToolDescriptor?,
+        resumingBlockedOutcome: Boolean = false,
         resultFor: (AgentAction) -> AgentActionResult?): Pair<AgentAction, AgentActionResult>? {
-        if (plan.isSupervisedProjectPlan() || plan.executionMode == AgentTaskExecutionMode.PLAN_ONLY ||
+        if ((plan.isSupervisedProjectPlan() && !resumingBlockedOutcome) || plan.executionMode == AgentTaskExecutionMode.PLAN_ONLY ||
             !AgentSupervisedProjectLoop.needsRunnableReviewer(plan)) return null
+        val history = AgentCompletionEvidenceHistory.resolve(plan, scope)
         val pending = AgentPendingOutcomeEvidence.unresolved(plan.completionRequirements,
-            AgentCompletionEvidenceHistory.resolve(plan, scope), descriptorFor)
+            history, descriptorFor)
             .filter { it.canInspect }.mapTo(hashSetOf()) { it.receipt.actionId }
         // Read only the exact pending node's durable result, never infer it from a later success.
-        for (action in plan.actions) {
+        for (action in if (resumingBlockedOutcome) history else plan.actions) {
             if (action.id !in pending || !scope.owns(action)) continue
             val result = resultFor(action) ?: continue
-            if (needsReview(plan, action, result)) return action to result
+            if (needsReview(plan, action, result, resumingBlockedOutcome)) return action to result
         }
         return null
     }
@@ -28,20 +30,21 @@ internal object AgentUnverifiedOutcomeRecovery {
         !executionPaused && connectorCallsAllowed && !cancelled && phase != AgentPhase.CANCELLED &&
             (phase != AgentPhase.PAUSED || resumingPausedTask)
 
-    fun needsReview(plan: AgentPlan, action: AgentAction, result: AgentActionResult?): Boolean {
-        if (plan.isSupervisedProjectPlan() || plan.executionMode == AgentTaskExecutionMode.PLAN_ONLY ||
+    fun needsReview(plan: AgentPlan, action: AgentAction, result: AgentActionResult?, resumingBlockedOutcome: Boolean = false): Boolean {
+        if ((plan.isSupervisedProjectPlan() && !resumingBlockedOutcome) || plan.executionMode == AgentTaskExecutionMode.PLAN_ONLY ||
             action.kind != AgentActionKind.CALL_NATIVE_TOOL || result?.actionId != action.id ||
             result.success != true || result.metadata["awaiting_response"] == "true" ||
             AgentGoalEvidence.permitsSuccess(result) || !AgentSupervisedProjectLoop.needsRunnableReviewer(plan)) return false
-        val observed = plan.actions.lastOrNull { it.id == action.id } ?: return false
+        val observed = (if (resumingBlockedOutcome) plan.actionHistory + plan.actions else plan.actions)
+            .lastOrNull { it.id == action.id } ?: return false
         return observed.status == AgentActionStatus.COMPLETED &&
             AgentRecoveryObservationEvidence.hasContract(observed) &&
             AgentGoalEvidence.pendingReceipt(listOf(observed))?.canInspect == true
     }
 
     fun create(plan: AgentPlan, action: AgentAction, result: AgentActionResult?, request: AgentRequest,
-        provider: AgentAction?): AgentPlan? {
-        if (!needsReview(plan, action, result) || provider?.kind != AgentActionKind.CALL_CONNECTOR ||
+        provider: AgentAction?, resumingBlockedOutcome: Boolean = false): AgentPlan? {
+        if (!needsReview(plan, action, result, resumingBlockedOutcome) || provider?.kind != AgentActionKind.CALL_CONNECTOR ||
             provider.parameters["connector_id"].isNullOrBlank() ||
             provider.parameters["connector_id"] == UNAVAILABLE_REASONING_CONNECTOR_ID ||
             AgentTaskRequirementAnalyzer.analyze(request.goal).localOnly) return null
@@ -99,18 +102,19 @@ internal object AgentUnverifiedOutcomeRecovery {
 }
 
 internal fun MobileNativeAgent.continueUnverifiedOutcome(
-    plan: AgentPlan, action: AgentAction, result: AgentActionResult?, resumingPausedTask: Boolean = false
+    plan: AgentPlan, action: AgentAction, result: AgentActionResult?, resumingPausedTask: Boolean = false,
+    resumingBlockedOutcome: Boolean = false
 ): AgentPlan {
     fun allowed(): Boolean {
         val settings = safetySettingsStore.load()
         return AgentUnverifiedOutcomeRecovery.reviewAllowed(phase, settings.executionPaused,
             settings.connectorCallsAllowed, PhoneExecutionAuthority.isCancelled(sessionId), resumingPausedTask)
     }
-    if (!AgentUnverifiedOutcomeRecovery.needsReview(plan, action, result) || !allowed() ||
+    if (!AgentUnverifiedOutcomeRecovery.needsReview(plan, action, result, resumingBlockedOutcome) || !allowed() ||
         AgentTaskRequirementAnalyzer.analyze(currentGoal).localOnly) return plan
     val request = supervisedProjectRequest(plan, continuation = true)
     val provider = RuleBasedAgentPlanner(appContext).informationQueryAction(request)
-    val recovered = AgentUnverifiedOutcomeRecovery.create(plan, action, result, request, provider) ?: return plan
+    val recovered = AgentUnverifiedOutcomeRecovery.create(plan, action, result, request, provider, resumingBlockedOutcome) ?: return plan
     val reviewed = AgentActionRiskHardener.enforce(appContext, recovered).let {
         it.withSafetyReview(safetyPolicy.review(it, sessionId))
     }

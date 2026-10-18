@@ -8,6 +8,29 @@ import org.json.JSONObject
 import org.junit.Test
 
 class AgentSessionPersistencePolicyTest {
+    @Test fun unverifiedOutcomeRestoresWithoutResettingTheAcceptedAction() {
+        val scope = AgentPlanContinuationScope("conversation", "turn")
+        val accepted = scope.bind(AgentAction("accepted", AgentActionKind.CALL_NATIVE_TOOL, "write", AgentRisk.LOW,
+            AgentActionStatus.COMPLETED, "Accepted", mapOf("tool_id" to "write"),
+            evidence = """{"state_verified":false,"message":"Outcome unverified"}"""))
+        val plan = AgentPlan("Verify the outcome", ScreenContext("Test", pageTitle = "Test"), emptyList(),
+            listOf(accepted), planId = "retained-plan")
+        val token = AgentRuntimeOutcomeContinuation.forPlan("session", scope, plan)!!
+        val blocked = token.bind(AgentOutcomeCompletion.blockedResult(AgentActionResult("accepted", true, "Accepted"),
+            AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, plan, scope) { null }))
+        val snapshot = AgentSessionSnapshot("session", AgentPhase.BLOCKED, plan.goal, plan.screen, plan, emptyList(), blocked,
+            updatedAtMillis = 1_000L)
+        val store = SharedPreferencesAgentSessionStore(MemoryCheckpointStorage())
+        store.save(snapshot)
+        val restored = requireNotNull(store.load())
+        assertEquals(AgentPhase.BLOCKED, restored.phase)
+        assertEquals(AgentActionStatus.COMPLETED, restored.currentPlan!!.actions.single().status)
+        assertEquals(accepted.evidence, restored.currentPlan!!.actions.single().evidence)
+        assertFalse(AgentGoalEvidence.permitsSuccess(restored.lastActionResult))
+        assertEquals(token, AgentRuntimeOutcomeContinuation.parse(restored.lastActionResult))
+        assertTrue(token.matches(restored.sessionId, scope, restored.currentPlan!!))
+    }
+
     @Test fun teamRecoveryOwnershipAndPauseMarkerSurviveNoisyMetadata() {
         val recovery = mapOf("team_run_id" to "run", "team_id" to "team", "resource_location" to "distributed",
             "team_recovery_paused" to "true", "team_state" to "interrupted", "conversation_id" to "group",

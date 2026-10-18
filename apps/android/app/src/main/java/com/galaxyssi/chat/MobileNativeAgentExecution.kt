@@ -362,6 +362,7 @@ private fun MobileNativeAgent.executePendingPlanBatch(): AgentUiState {
             }
         ) {
             phase = AgentPhase.COMPLETED
+            guardOutcomeCompletion()
             saveTaskRecord(result = lastActionResult?.message.orEmpty())
             return snapshot()
         }
@@ -670,6 +671,7 @@ internal fun MobileNativeAgent.executeParallelActions(
         hasNextAction -> AgentPhase.WAITING_CONFIRMATION
         else -> AgentPhase.COMPLETED
     }
+    guardOutcomeCompletion()
     recordAudit(
         AgentAuditEvent.INVOCATION_AUDIT,
         "parallel_batch_completed:mode=${selected.parallelMode.auditValue()}; " +
@@ -1009,6 +1011,7 @@ internal fun MobileNativeAgent.executePlannedAction(
         hasNextAction -> AgentPhase.WAITING_CONFIRMATION
         else -> AgentPhase.COMPLETED
     }
+    guardOutcomeCompletion()
     val continueImmediately = phase == AgentPhase.PLANNING && hasNextAction
     val completionAudits = mutableListOf(
         AgentAuditRecord(AgentAuditEvent.SCREEN_VERIFIED, recovery.observation.evidence)
@@ -1191,8 +1194,9 @@ internal fun MobileNativeAgent.completeVerifiedTaskMarker(action: AgentAction): 
     }
     phase = AgentPhase.COMPLETED
     lastActionResult = result
+    guardOutcomeCompletion()
     recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
-    saveTaskRecord(result = result.message)
+    saveTaskRecord(result = lastActionResult?.message.orEmpty())
     Log.i(
         "GalaxySSILatency",
         "agent_execute stage=completion_marker_closed action=${action.id.take(24)}"
@@ -1225,12 +1229,13 @@ internal fun MobileNativeAgent.completeVerifiedProjectOutcome(
         return snapshot()
     }
     phase = AgentPhase.COMPLETED
+    guardOutcomeCompletion()
     recordAudit(
         AgentAuditEvent.SCREEN_VERIFIED,
         "verified_terminal_outcome:tool=${completion.terminalToolId}; evidence=${completion.evidence.take(2_000)}"
     )
     recordAudit(AgentAuditEvent.ACTION_EXECUTED, "action:${action.kind}:${AgentActionStatus.COMPLETED}")
-    saveTaskRecord(result = finalResult.message)
+    saveTaskRecord(result = lastActionResult?.message.orEmpty())
     Log.i(
         "GalaxySSILatency",
         "agent_execute stage=verified_terminal_outcome tool=${completion.terminalToolId.take(48)}"
@@ -1404,15 +1409,15 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             force = !decision.semanticallyAccepted
         )
         if (decision.disposition == AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE) {
-            val finalResponse = decision.finalResponse
             currentPlan = AgentPlanLifecyclePolicy.normalize(decision.plan ?: responsePlan).plan
             lastActionResult = decision.finalResult(completedResult)
             phase = decision.finalPhase
+            guardOutcomeCompletion()
             recordAudit(
                 AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED,
                 "source_message_id=$sourceMessageId; contact=$contactId; success=${lastActionResult?.success}; direct_response=true"
             )
-            saveTaskRecord(result = finalResponse)
+            saveTaskRecord(result = lastActionResult?.message.orEmpty())
             return snapshot()
         }
         if (decision.disposition == AgentSupervisedProjectPlanDisposition.REJECTED || decision.plan == null) {
@@ -1553,11 +1558,12 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
     } else {
         AgentPhase.COMPLETED
     }
+    guardOutcomeCompletion()
     recordAudit(
         AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED,
         "source_message_id=$sourceMessageId; contact=$contactId; success=$effectiveSuccess; chars=${response.length}"
     )
-    saveTaskRecord(result = response)
+    saveTaskRecord(result = lastActionResult?.message.orEmpty())
     return if (
         !continuedPlan.safetyReview.blocked &&
         !continuedPlan.safetyReview.requiresConfirmation &&
@@ -2262,6 +2268,7 @@ internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
         success = true,
         message = "Task resumed"
     )
+    guardOutcomeCompletion()
     recordAudit(AgentAuditEvent.TASK_RESUMED, "resumed")
     executionLoop.snapshot?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }?.let {
         persistExecutionLoopEvent(executionLoop.resume("Task resumed"))
@@ -2340,6 +2347,7 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
         hasNextAction -> AgentPhase.PLANNING
         else -> AgentPhase.COMPLETED
     }
+    guardOutcomeCompletion()
     persistSession()
     return if (hasNextAction && !continuedPlan.safetyReview.requiresConfirmation) {
         reconcileExecutionLoop(executeFirstPendingAction())
@@ -2351,6 +2359,7 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
 internal fun MobileNativeAgent.continueCurrentTask(): AgentUiState {
     val plan = currentPlan ?: return snapshot()
     return when {
+        phase == AgentPhase.BLOCKED && AgentRuntimeOutcomeContinuation.parse(lastActionResult) != null -> continueBlockedOutcome()
         phase == AgentPhase.PAUSED -> resumeCurrentTask()
         plan.actions.any { it.status == AgentActionStatus.FAILED } -> retryFailedAction()
         phase == AgentPhase.FAILED -> replanCurrentTask()
