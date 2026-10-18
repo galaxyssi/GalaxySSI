@@ -1,5 +1,37 @@
 # Representative Agent Acceptance
 
+## 2026-10-18: Android 1.5.63 (1346)
+
+- Guard native, parallel, resumed, connector and verified-marker finalization
+  with the same per-action outcome evidence policy. An accepted effect whose
+  business result is explicitly unknown remains BLOCKED, not COMPLETED, even
+  when a later read succeeds or an observation capability is unavailable.
+- Keep accepted actions and their durable receipts unchanged. Bind explicit
+  continuation to the session, conversation, turn, plan revision and digest of
+  pending action identities. Persist this compact binding with the unverified
+  result, including when ordinary result metadata is compacted.
+- An explicit continuation can reopen a settled supervised plan only with its
+  exact checkpointed effect receipt, available observer and App-selected model.
+  It reuses read-first recovery and identity-bound goal verification, preserves
+  loop usage, and never resets the original effect for replay. Missing receipts,
+  changed ownership, active work, cancellation and existing policy restrictions
+  do not authorize a retry. No new polling or background work is introduced.
+- This is not a migration of every legacy completed task or a guarantee that a
+  severely truncated checkpoint can resume. Missing retained identities fail
+  closed. Opaque tools without explicit outcome evidence still need their own
+  verification contracts; the broader six-part execution goal is incomplete.
+- Final sources passed 243 focused JVM tests in 15 suites, with zero failures,
+  errors or skips. APK assembly, repository checks and whitespace checks passed.
+  An initial test compilation exposed a missing fixture timestamp; it was
+  supplied and all selected tests rerun. This is not a full Android-suite claim;
+  the previously documented prompt-size test failures are outside this change.
+- Test XML reports remain outside Git in
+  `galaxyssi-representative-acceptance/unverified-completion-1.5.63-tests/`.
+- Device acceptance is pending: ADB and mDNS currently report no devices.
+  Windows exposes S20U Bluetooth entries but no USB/ADB interface. No phone
+  was installed, no real-model request submitted and no Desktop, countdown,
+  contact, door, other device or learning setting was changed in this increment.
+
 ## 2026-10-18: Android 1.5.62 (1345)
 
 - Use one outcome-review continuation for normal native execution, parallel

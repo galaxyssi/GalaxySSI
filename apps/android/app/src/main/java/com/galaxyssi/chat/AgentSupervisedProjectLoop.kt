@@ -25,17 +25,9 @@ internal data class AgentSupervisedProjectPlanDecision(
     val finalPhase: AgentPhase get() = if (unresolvedOutcomes.isEmpty()) AgentPhase.COMPLETED else AgentPhase.BLOCKED
 
     fun finalResult(base: AgentActionResult): AgentActionResult = base.copy(
-        success = base.success && unresolvedOutcomes.isEmpty(),
         message = finalResponse,
-        metadata = base.metadata + mapOf("supervised_direct_response" to "true", "reasoning_recorded_separately" to "false") +
-            if (unresolvedOutcomes.isEmpty()) emptyMap() else mapOf(
-                "goal_status" to "blocked", "business_success_verified" to "false",
-                "failure_kind" to "business_outcome_unverified",
-                "unverified_outcomes" to JSONArray(unresolvedOutcomes.map { receipt ->
-                    JSONObject().put("action_id", receipt.actionId).put("tool_id", receipt.toolId)
-                        .put("required_capability", receipt.requiredCapability).put("next_action", receipt.nextAction)
-                }).toString())
-    )
+        metadata = base.metadata + mapOf("supervised_direct_response" to "true", "reasoning_recorded_separately" to "false")
+    ).let { if (unresolvedOutcomes.isEmpty()) it else AgentOutcomeCompletion.blockedResult(it, unresolvedOutcomes) }
 
     val semanticallyExecutable: Boolean
         get() = disposition == AgentSupervisedProjectPlanDisposition.EXECUTABLE && plan != null

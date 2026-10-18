@@ -35,6 +35,16 @@ class AgentOperationRuntimeProjectionTest {
         }
     }
 
+    @Test fun unknownOutcomeRemainsBlockedEvenWhenTheLastActionWasAccepted() {
+        val receipt = AgentGoalEvidence.PendingReceipt("Outcome unverified", "state_observer", "inspect",
+            "node", "write")
+        val blocked = AgentOutcomeCompletion.blockedResult(AgentActionResult("node", true, "Accepted"), listOf(receipt))
+        val state = snapshot(AgentPhase.BLOCKED, AgentExecutionLoopPhase.BLOCKED).copy(lastActionResult = blocked)
+        assertEquals("blocked", project(state).status)
+        assertEquals(AgentActionStatus.COMPLETED, state.currentPlan!!.actions.single().status)
+        assertFalse(AgentGoalEvidence.permitsSuccess(blocked))
+    }
+
     @Test fun loopControlStateWinsWhileTheSessionPhaseIsCatchingUp() {
         for ((loop, status) in listOf(AgentExecutionLoopPhase.CANCELLED to "cancelled",
             AgentExecutionLoopPhase.PAUSED to "paused", AgentExecutionLoopPhase.FAILED to "failed",

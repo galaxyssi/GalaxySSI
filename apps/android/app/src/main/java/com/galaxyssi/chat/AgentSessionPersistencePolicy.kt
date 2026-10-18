@@ -70,7 +70,11 @@ internal object AgentSessionPersistencePolicy {
         INTERNAL_CONVERSATION_ID,
         INTERNAL_TURN_ID,
         AgentUnverifiedOutcomeRecovery.ORIGIN_ACTION,
-        AgentUnverifiedOutcomeRecovery.PHONE_CONTROL
+        AgentUnverifiedOutcomeRecovery.PHONE_CONTROL,
+        AgentRuntimeOutcomeContinuation.KEY,
+        "failure_kind",
+        "goal_status",
+        "business_success_verified"
     )
 
     private const val MAX_NON_PROJECT_ACTION_HISTORY = 24

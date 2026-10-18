@@ -12,6 +12,21 @@ import org.junit.Test
 import org.json.JSONObject
 
 class AgentExecutionLoopTest {
+    @Test fun unverifiedOutcomeContinuationRetainsUsageAndDoesNotDispatchTheEffectAgain() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("outcome-task", AgentExecutionLoopBudget())
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "accepted-effect", toolCall = true)
+        loop.transition(AgentExecutionLoopPhase.OBSERVE)
+        val blocked = loop.transition(AgentExecutionLoopPhase.BLOCKED, "Outcome unverified")
+        val restored = AgentExecutionLoop.restore(requireNotNull(AgentExecutionLoopJsonCodec.decode(
+            AgentExecutionLoopJsonCodec.encode(blocked.snapshot))))
+        val resumed = restored.transition(AgentExecutionLoopPhase.PLAN, "Inspect before recovery", retry = true)
+        assertEquals(AgentExecutionLoopPhase.PLAN, resumed.phase)
+        assertEquals(blocked.snapshot.usage.toolCalls, resumed.snapshot.usage.toolCalls)
+        assertEquals(blocked.snapshot.usage.actions, resumed.snapshot.usage.actions)
+        assertEquals(blocked.snapshot.usage.retries + 1, resumed.snapshot.usage.retries)
+    }
+
     @Test fun permissionWaitCanPausePersistAndResumeWithoutDispatch() {
         val loop = AgentExecutionLoop.create { 1_000L }
         loop.start("permission-task", AgentExecutionLoopBudget())

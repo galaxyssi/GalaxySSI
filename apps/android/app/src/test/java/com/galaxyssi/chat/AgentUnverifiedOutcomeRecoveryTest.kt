@@ -115,6 +115,34 @@ class AgentUnverifiedOutcomeRecoveryTest {
         assertFalse(allowed(phase = AgentPhase.CANCELLED))
     }
 
+    @Test fun explicitBlockedContinuationReadsHistoricalEffectWithoutReplayingIt() {
+        val supervisor = provider().copy(status = AgentActionStatus.COMPLETED)
+        val blocked = plan().copy(plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
+            actions = listOf(supervisor), actionHistory = listOf(origin()))
+        assertNull(candidate(blocked) { fail("Ordinary completion must not reopen a settled supervisor"); null })
+        val selected = AgentUnverifiedOutcomeRecovery.reviewCandidate(blocked, AgentPlanContinuationScope("conversation", "turn"),
+            ::descriptor, resumingBlockedOutcome = true) { receipt() }!!
+        val resumed = AgentUnverifiedOutcomeRecovery.create(blocked, selected.first, selected.second, request(), provider(),
+            resumingBlockedOutcome = true)!!
+        assertEquals(blocked.planId, resumed.planId)
+        assertEquals("user-model", resumed.actions.single().parameters["model_id"])
+        assertEquals(origin().id, resumed.actions.single().parameters[originKey])
+        assertEquals(origin().evidence, resumed.actionHistory.first { it.id == origin().id }.evidence)
+        assertNotNull(violation(resumed.actions.single(), resumed.actionHistory, listOf(origin())))
+        assertNull(violation(resumed.actions.single(), resumed.actionHistory, listOf(read())))
+    }
+
+    @Test fun blockedContinuationCannotBypassLiveWorkOrUnavailableEvidence() {
+        val running = plan().copy(plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE,
+            actions = listOf(provider().copy(status = AgentActionStatus.WAITING_RESPONSE)), actionHistory = listOf(origin()))
+        assertNull(AgentUnverifiedOutcomeRecovery.reviewCandidate(running, AgentPlanContinuationScope("conversation", "turn"),
+            ::descriptor, resumingBlockedOutcome = true) { fail("Still waiting"); null })
+        assertNull(AgentUnverifiedOutcomeRecovery.reviewCandidate(plan(), AgentPlanContinuationScope("conversation", "turn"),
+            { null }, resumingBlockedOutcome = true) { fail("No observer"); null })
+        assertNull(AgentUnverifiedOutcomeRecovery.create(plan(), origin(), receipt(), request("offline local only"),
+            provider(), resumingBlockedOutcome = true))
+    }
+
     @Test fun verifiedAndPendingAndFailedResultsDoNotStartAnotherLoop() {
         val verified = receipt().copy(metadata = mapOf("goal_status" to "verified"))
         for (result in listOf(null, verified, receipt().copy(success = false), receipt().copy(actionId = "other"),
@@ -348,7 +376,7 @@ class AgentUnverifiedOutcomeRecoveryTest {
     private fun recover(plan: AgentPlan = plan()) = AgentUnverifiedOutcomeRecovery.create(plan, origin(), receipt(), request(), provider())
     private fun candidate(plan: AgentPlan, resultFor: (AgentAction) -> AgentActionResult?) =
         AgentUnverifiedOutcomeRecovery.reviewCandidate(plan, AgentPlanContinuationScope("conversation", "turn"),
-            ::descriptor, resultFor)
+            ::descriptor, resultFor = resultFor)
     private fun violation(connector: AgentAction, history: List<AgentAction>, actions: List<AgentAction>) =
         AgentUnverifiedOutcomeRecovery.observationViolation(connector, history, actions, ::descriptor)
     private fun origin() = AgentAction("original-effect", AgentActionKind.CALL_NATIVE_TOOL, writeTool, AgentRisk.LOW,
