@@ -75,7 +75,7 @@ def transcribe(data: bytearray, language: str) -> dict:
             try:
                 from huggingface_hub.errors import LocalEntryNotFoundError
 
-                name = os.environ.get("GALAXYSSI_COMPOSER_WHISPER_MODEL", "base")
+                name = os.environ.get("GALAXYSSI_COMPOSER_WHISPER_MODEL", "medium")
                 options = dict(device="cpu", compute_type="int8", cpu_threads=min(4, os.cpu_count() or 1), num_workers=1)
                 # A fully cached model must not wait for a network metadata check.
                 try:
