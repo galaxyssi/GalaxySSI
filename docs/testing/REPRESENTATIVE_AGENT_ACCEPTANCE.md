@@ -1,5 +1,37 @@
 # Representative Agent Acceptance
 
+## 2026-10-18: Android 1.5.64 (1347)
+
+- Preserve the actual business blocker across foreground execution, background
+  connector delivery, long-task recovery and durable workspace snapshots. A real
+  policy denial takes precedence; an empty or informational safety review no
+  longer erases a failed observation's reason.
+- Keep an explicitly unverified outcome pending in the recorded run and control
+  ledger instead of finalizing it as failure or triggering completed-run learning.
+  Retain phone-task control and the recorded run identity for later observation,
+  cancellation or completion. Repeated persistence uses a stable, turn-owned
+  wait-event key rather than adding a new event each time.
+- Offer resume/cancel for a valid owned outcome continuation. Resume, retry and
+  replan all enter the existing read-first continuation, which still validates
+  the full pending-receipt digest and durable journal before execution. Missing
+  or foreign bindings offer cancellation only; UI controls are not execution
+  authority. Ordinary failures and permission waits keep their prior controls.
+- No new polling, background job, automatic device mutation, model override or
+  history migration is added. This does not repair legacy recorded runs that
+  were already finalized as failed before this change.
+- Final sources passed 362 focused JVM tests in 23 suites, with zero failures,
+  errors or skips, and built the debug APK. Repository and whitespace checks
+  passed. The added supervisor-restart test uses an in-memory store and synthetic
+  receipts: it verifies coordinator reconstruction, not device process death or
+  a real model's autonomous repair.
+- S20U was not visible to ADB during this round, including after the reported
+  reconnection. Windows exposed Bluetooth entries but no Samsung USB/ADB
+  interface. No installation, device interaction or real-model request occurred;
+  read-only device acceptance remains pending. S26U, watches, contacts, doors,
+  countdowns, other applications, learning settings and Desktop were untouched.
+- XML evidence remains outside Git in
+  `galaxyssi-representative-acceptance/blocked-controls-1.5.64-tests/`.
+
 ## 2026-10-18: Android 1.5.63 (1346)
 
 - Guard native, parallel, resumed, connector and verified-marker finalization

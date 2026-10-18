@@ -459,9 +459,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
                 R.string.agent_schedule_approval_required,
                 state.pendingAction?.description.orEmpty().ifBlank { workflow.goal }
             )
-            state.phase == AgentPhase.BLOCKED -> state.plan?.safetyReview?.reason
-                ?.ifBlank { getString(R.string.agent_status_blocked) }
-                ?: getString(R.string.agent_status_blocked)
+            state.phase == AgentPhase.BLOCKED -> AgentBlockedStatePolicy.reason(state, getString(R.string.agent_status_blocked))
             state.phase == AgentPhase.WAITING_RESPONSE -> getString(R.string.agent_status_waiting_response)
             state.lastActionResult != null -> state.lastActionResult.message
             else -> getString(R.string.agent_schedule_started)

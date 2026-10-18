@@ -16,6 +16,37 @@ import org.junit.Test
 
 class AgentTaskSupervisorTest {
     @Test
+    fun blockedOutcomeKeepsItsReasonAndReceiptAcrossSupervisorRestart() = runBlocking {
+        val store = InMemoryAgentWorkspaceStore()
+        val receipt = AgentToolCallRecord("accepted-effect", "synthetic-write", AgentToolCallStatus.SUCCEEDED,
+            resultJson = "{\"state_verified\":false}")
+        val first = AgentTaskSupervisor(store)
+        try {
+            first.submit(workspace("outcome-wait")) {
+                recordExecutionSnapshot(AgentWorkspaceExecutionSnapshot(toolCalls = listOf(receipt)))
+                blockTask("The effect was accepted; its result needs observation")
+            }.join()
+            val blocked = requireNotNull(store.find("workspace-outcome-wait"))
+            assertEquals(AgentWorkspaceStatus.BLOCKED, blocked.status)
+            assertFalse(blocked.status.isTerminal)
+            assertEquals("The effect was accepted; its result needs observation", blocked.eventJournal.last().message)
+            assertEquals(listOf(receipt), blocked.toolCalls)
+            assertTrue(first.activeWorkspaces().isEmpty())
+        } finally { first.shutdown() }
+        val restored = AgentTaskSupervisor(store)
+        val observations = AtomicInteger(0)
+        try {
+            restored.resume("workspace-outcome-wait", hook = AgentTaskResumeHook { _, saved ->
+                assertEquals(listOf(receipt), saved.toolCalls)
+                observations.incrementAndGet()
+            }).join()
+            assertEquals(1, observations.get())
+            assertEquals(AgentWorkspaceStatus.COMPLETED, store.find("workspace-outcome-wait")?.status)
+            assertEquals(listOf(receipt), store.find("workspace-outcome-wait")?.toolCalls)
+        } finally { restored.shutdown() }
+    }
+
+    @Test
     fun workspacePersistsTheLatestToolReceiptInsteadOfTheFirstSnapshot() {
         val store = InMemoryAgentWorkspaceStore()
         store.upsert(workspace("tool-state", AgentWorkspaceStatus.RUNNING))

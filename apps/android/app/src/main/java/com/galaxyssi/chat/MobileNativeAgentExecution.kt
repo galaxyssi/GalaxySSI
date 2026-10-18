@@ -2175,6 +2175,7 @@ internal fun MobileNativeAgent.pauseCurrentTask(): AgentUiState {
 }
 
 internal fun MobileNativeAgent.resumeCurrentTask(): AgentUiState {
+    if (AgentOutcomeCompletion.isBlocked(phase, lastActionResult)) return continueBlockedOutcome()
     if (phase == AgentPhase.PAUSED && pendingPlanning?.isReplanning == true) {
         if (safetySettingsStore.load().executionPaused) return snapshot()
         return resumePendingReplanning()
@@ -2359,7 +2360,7 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
 internal fun MobileNativeAgent.continueCurrentTask(): AgentUiState {
     val plan = currentPlan ?: return snapshot()
     return when {
-        phase == AgentPhase.BLOCKED && AgentRuntimeOutcomeContinuation.parse(lastActionResult) != null -> continueBlockedOutcome()
+        AgentOutcomeCompletion.isBlocked(phase, lastActionResult) -> continueBlockedOutcome()
         phase == AgentPhase.PAUSED -> resumeCurrentTask()
         plan.actions.any { it.status == AgentActionStatus.FAILED } -> retryFailedAction()
         phase == AgentPhase.FAILED -> replanCurrentTask()
@@ -2371,6 +2372,7 @@ internal fun MobileNativeAgent.continueCurrentTask(): AgentUiState {
 }
 
 internal fun MobileNativeAgent.retryFailedAction(): AgentUiState {
+    if (AgentOutcomeCompletion.isBlocked(phase, lastActionResult)) return continueBlockedOutcome()
     val plan = currentPlan ?: return snapshot()
     val failedAction = plan.actions.lastOrNull { it.status == AgentActionStatus.FAILED } ?: return snapshot()
     val resetPlan = plan.resetActionForRetry(failedAction.id)
@@ -2403,6 +2405,7 @@ internal fun MobileNativeAgent.retryFailedAction(): AgentUiState {
 }
 
 internal fun MobileNativeAgent.replanCurrentTask(): AgentUiState {
+    if (AgentOutcomeCompletion.isBlocked(phase, lastActionResult)) return continueBlockedOutcome()
     val plan = currentPlan ?: return snapshot()
     currentScreen = captureScreen()
     if (!advanceExecutionLoop(
