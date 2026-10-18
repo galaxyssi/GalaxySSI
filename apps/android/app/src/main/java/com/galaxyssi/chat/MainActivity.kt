@@ -302,6 +302,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal lateinit var agentComposerRow: LinearLayout
     internal lateinit var agentPrimaryActionSlot: FrameLayout
     internal var agentVoiceConversation: AgentVoiceConversation? = null
+    internal var contactReminderComposer: ContactReminderComposer? = null
     internal var voicePlaybackEpoch = 0L
     internal lateinit var agentActionTray: LinearLayout
     internal lateinit var agentRecordingCenter: View
@@ -1199,6 +1200,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         if (::conversationWindow.isInitialized) conversationWindow.destroy()
         agentVoiceConversation?.end()
+        contactReminderComposer?.destroy()
         initialAgentHydrationReady.countDown()
         if (::voiceInteractionCoordinator.isInitialized && voiceCoordinatorObserverId.isNotBlank()) {
             voiceInteractionCoordinator.removeObserver(voiceCoordinatorObserverId)

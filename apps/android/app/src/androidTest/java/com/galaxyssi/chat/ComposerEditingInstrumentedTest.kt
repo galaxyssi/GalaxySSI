@@ -27,6 +27,8 @@ class ComposerEditingInstrumentedTest {
             try {
                 insertionMenus = 0
                 main {
+                    // Keep OEM remote smart-selection callbacks from outliving this short-lived test host.
+                    activity.input.setTextClassifier(android.view.textclassifier.TextClassifier.NO_OP)
                     activity.input.customInsertionActionModeCallback = object : ActionMode.Callback {
                         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                             insertionMenus++

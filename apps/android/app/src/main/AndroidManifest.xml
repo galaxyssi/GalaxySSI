@@ -33,6 +33,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission
@@ -89,6 +90,11 @@
             android:theme="@style/Theme.GalaxySSI.Main"
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".NfcWatchContactActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
+        <activity android:name=".ContactReminderActivity" android:exported="false"
+            android:excludeFromRecents="true" android:launchMode="singleTop"
+            android:showWhenLocked="true" android:turnScreenOn="true"
+            android:theme="@style/Theme.GalaxySSI.Reminder" />
+        <receiver android:name=".ContactReminderActionReceiver" android:exported="false" />
         <activity android:name=".WatchSetupActivity" android:exported="false" android:configChanges="orientation|screenSize|uiMode" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".DoorAccessActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ProactiveAttentionActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />

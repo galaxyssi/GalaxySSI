@@ -679,6 +679,16 @@ def api_peer_messages(
     }
 
 
+@app.post("/api/peer/reminders/{reminder_id}/{action}")
+def api_respond_peer_reminder(reminder_id: str, action: str, request: Request):
+    require_desktop_api_token(request)
+    from peer_reminders import respond
+    try:
+        return respond(reminder_id, action)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/peer/messages")
 def api_send_peer_message(req: PeerMessageReq, request: Request):
     require_desktop_api_token(request)
@@ -3891,6 +3901,8 @@ async def desktop_task_stream(ws: WebSocket):
     from peer_chat_store import peer_chat_store
 
     peers = peer_chat_store()
+    from peer_reminders import peer_reminders
+    reminders = peer_reminders()
 
     def offer_update(payload: dict[str, Any]) -> None:
         def offer() -> None:
@@ -3938,12 +3950,14 @@ async def desktop_task_stream(ws: WebSocket):
     task_subscription_id = agent_task_manager.subscribe(enqueue_agent_task)
     evolution_subscription_id = evolution_manager.subscribe(enqueue_evolution_task)
     peer_subscription_id = peers.subscribe(enqueue_peer_message)
+    reminder_subscription_id = reminders.subscribe(lambda value: offer_update({"type": "desktop_peer_reminder", "reminder": value}))
     try:
         tasks = _desktop_task_rows(500, evolution_manager)
         await ws.send_json({
             "type": "desktop_tasks_snapshot",
             "tasks": tasks,
             "peer_messages": peers.list_messages(limit=2_000),
+            "peer_reminders": reminders.active(),
         })
         while True:
             try:
@@ -3954,7 +3968,7 @@ async def desktop_task_stream(ws: WebSocket):
                     "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
                 })
                 continue
-            if task.get("type") == "desktop_peer_message":
+            if task.get("type") in {"desktop_peer_message", "desktop_peer_reminder"}:
                 await ws.send_json(task)
             else:
                 await ws.send_json({"type": "desktop_task_update", "task": task})
@@ -3966,6 +3980,7 @@ async def desktop_task_stream(ws: WebSocket):
         agent_task_manager.unsubscribe(task_subscription_id)
         evolution_manager.unsubscribe(evolution_subscription_id)
         peers.unsubscribe(peer_subscription_id)
+        reminders.unsubscribe(reminder_subscription_id)
 
 
 @app.websocket("/ws/{contact_id}")

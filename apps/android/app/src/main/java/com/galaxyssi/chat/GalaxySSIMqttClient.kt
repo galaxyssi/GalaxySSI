@@ -2287,6 +2287,7 @@ object GalaxySSIMqttClient {
     }
 
     private fun dispatchPhonePayload(context: Context, payload: JSONObject, senderId: String, routes: GalaxySSILinkProtocol.Routes) {
+        if (ContactReminders.receive(context, senderId, payload)) return
         if (GalaxySSITransportPrivacyPolicy.isLocalOnly(payload)) {
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
@@ -2356,6 +2357,7 @@ object GalaxySSIMqttClient {
         }
         val link = GalaxySSILinkProtocol.serverLink(context, sourceDesktopId)
             ?.takeIf { it.paired } ?: run { retryStoredIncoming(payload); return }
+        if (ContactReminders.receive(context, sourceDesktopId, payload)) return
         if (payload.optString("type") == "artifact_blob_offer") {
             AndroidBlobArtifactReceives.receive(context, sourceDesktopId, payload.optString("conversation_id"), payload) { result ->
                 result.onSuccess {

@@ -346,6 +346,7 @@ internal fun MainActivity.configureMessages() {
 }
 
 internal fun MainActivity.configureInput() {
+    contactReminderComposer = ContactReminderComposer(this)
     sendButton.setOnClickListener {
         exitChatComposerTextMode(hideKeyboard = true)
         sendText()
@@ -426,12 +427,14 @@ internal fun MainActivity.updateInputActions() {
     val composerState = AgentComposerUiPolicy.resolve(
         hasInput = hasText || peerComposerAttachments().isNotEmpty(),
         textModeActive = chatComposerTextMode,
-        actionTrayRequested = isChatActionTrayExpanded()
+        actionTrayRequested = isChatActionTrayExpanded(),
+        voiceEntryAvailable = selectedContact?.let { AppStore.isDirectPeerContact(this, it.id) } == true
     )
     setChatActionTrayRequested(composerState.showActionTray)
     chatPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
     imageButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
     sendButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
+    contactReminderComposer?.update(composerState.showVoiceButton)
     renderChatActionTray(composerState.showActionTray)
     imageButton.renderComposerMoreButton(composerState.showActionTray)
     imageButton.contentDescription = getString(
