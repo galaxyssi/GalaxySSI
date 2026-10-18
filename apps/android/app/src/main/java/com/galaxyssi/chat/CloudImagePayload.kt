@@ -9,11 +9,14 @@ internal data class CloudImagePayload(
     val displayName: String,
     val mimeType: String,
     val bytes: ByteArray,
-    val sourceUri: String = ""
+    val sourceUri: String = "",
+    val original: Boolean = false
 ) {
     init {
         require(bytes.isNotEmpty()) { "Cloud image payload must not be empty" }
-        require(bytes.size <= MAX_BYTES) { "Cloud image payload exceeds the 100 KB limit" }
+        require(bytes.size <= if (original) AgentImagePipeline.MAX_ORIGINAL_BYTES else MAX_BYTES) {
+            "Cloud image payload exceeds the selected quality limit"
+        }
         require(mimeType.startsWith("image/")) { "Cloud image payload must use an image MIME type" }
     }
 
@@ -42,7 +45,8 @@ internal object CloudImagePayloadFactory {
                 displayName = encoded.transportName(attachment.displayName),
                 mimeType = encoded.mimeType,
                 bytes = encoded.bytes,
-                sourceUri = attachment.uri.toString()
+                sourceUri = attachment.uri.toString(),
+                original = attachment.sendOriginal
             )
         }
 }

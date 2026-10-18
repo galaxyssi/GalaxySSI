@@ -49,7 +49,7 @@ internal class AgentWindowStateStore(context: Context) {
                 val file = files.getJSONObject(index)
                 add(AgentInputAttachment(file.getString("id"), Uri.parse(file.getString("uri")),
                     file.getString("name"), file.getString("mime_type"), file.optLong("size"),
-                    file.optString("original_uri")))
+                    file.optString("original_uri"), file.optBoolean("send_original", false)))
             }
         }, json.optString("entry"), json.optInt("offset"), json.optBoolean("follow", true))
     }.getOrDefault(AgentWindowDraft())

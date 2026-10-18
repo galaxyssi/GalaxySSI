@@ -9,10 +9,13 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.CheckBox
+import android.widget.ImageButton
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
+import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import com.canhub.cropper.CropImageOptions
@@ -33,6 +36,10 @@ class ComposerAttachmentEditorActivity : Activity() {
     private var pendingRotation = 0
     private var fineRotation = 0
     private var selectedRatio = 0
+    private var advancedCrop = false
+    private var previewRevision = 0
+    private val previewSizes = mutableMapOf<String, Long>()
+    private var previewTask: java.util.concurrent.Future<*>? = null
     private lateinit var root: LinearLayout
     private lateinit var image: CropImageView
     private lateinit var title: TextView
@@ -41,6 +48,7 @@ class ComposerAttachmentEditorActivity : Activity() {
     private lateinit var thumbnails: LinearLayout
     private lateinit var strip: HorizontalScrollView
     private lateinit var document: TextView
+    private lateinit var sizeLabel: TextView
     private var rotationLabel: TextView? = null
     private var cameraId: String = ""
     private var pendingCropFile: File? = null
@@ -57,6 +65,7 @@ class ComposerAttachmentEditorActivity : Activity() {
         if (!items[selected].isImage) cropping = false
         fineRotation = state?.getInt("fine_rotation") ?: 0
         selectedRatio = state?.getInt("ratio") ?: 0
+        advancedCrop = state?.getBoolean("advanced_crop") ?: false
         createdFiles.addAll(state?.getStringArrayList("created").orEmpty())
         val page = getColor(R.color.page_bg)
         window.statusBarColor = page
@@ -70,7 +79,7 @@ class ComposerAttachmentEditorActivity : Activity() {
         done = label(R.string.composer_crop_done).apply { setTextColor(accent); setOnClickListener { complete() } }
         header.addView(done, rowParams(72, 52))
         root.addView(header)
-        val canvas = FrameLayout(this).apply { setBackgroundColor(Color.rgb(32, 36, 39)) }
+        val canvas = FrameLayout(this).apply { setPadding(dp(12), dp(8), dp(12), dp(16)) }
         image = CropImageView(this).apply {
             id = R.id.composerCropImage
             setImageCropOptions(CropImageOptions(multiTouchEnabled = true, maxZoom = 12,
@@ -86,12 +95,17 @@ class ComposerAttachmentEditorActivity : Activity() {
             setOnCropImageCompleteListener { _, result -> persistCrop(result) }
         }
         canvas.addView(image, FrameLayout.LayoutParams(-1, -1))
-        document = label(R.string.composer_attachment_preview).apply { setTextColor(Color.WHITE) }
+        document = label(R.string.composer_attachment_preview)
         canvas.addView(document, FrameLayout.LayoutParams(-1, -1))
         root.addView(canvas, LinearLayout.LayoutParams(-1, 0, 1f))
         thumbnails = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(8)) }
         strip = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(thumbnails) }
         root.addView(strip, LinearLayout.LayoutParams(-1, dp(88)))
+        sizeLabel = label(R.string.composer_image_preparing).apply {
+            textSize = 12f; setTextColor(getColor(R.color.text_secondary)); gravity = Gravity.END
+            setPadding(dp(20), 0, dp(20), dp(4))
+        }
+        root.addView(sizeLabel, rowParams(-1, 28))
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(controls)
         setContentView(root)
@@ -102,8 +116,9 @@ class ComposerAttachmentEditorActivity : Activity() {
         if (items.isEmpty()) { complete(); return }
         selected = selected.coerceIn(items.indices)
         val item = items[selected]
-        title.setText(if (cropping) R.string.composer_crop else if (isCameraItem())
+        title.setText(if (cropping) R.string.composer_crop else if (item.isImage)
             R.string.composer_photo_preview else R.string.composer_attachment_preview)
+        done.setText(if (cropping) R.string.composer_crop_use else R.string.composer_crop_done)
         image.visibility = if (item.isImage) View.VISIBLE else View.GONE
         document.visibility = if (item.isImage) View.GONE else View.VISIBLE
         document.text = item.name + "\n" + AgentInputAttachment.humanSize(item.size)
@@ -115,6 +130,7 @@ class ComposerAttachmentEditorActivity : Activity() {
         done.isEnabled = !cropping
         renderThumbnails()
         renderControls()
+        refreshSize()
     }
 
     private fun renderThumbnails() {
@@ -141,32 +157,7 @@ class ComposerAttachmentEditorActivity : Activity() {
 
     private fun renderControls() {
         controls.removeAllViews()
-        if (cropping) {
-            val ratios = LinearLayout(this)
-            listOf(getString(R.string.composer_crop_free), getString(R.string.composer_crop_original), "1:1", "4:3", "16:9")
-                .forEachIndexed { index, name ->
-                    ratios.addView(TextView(this).apply {
-                        text = name; textSize = 14f; gravity = Gravity.CENTER
-                        setTextColor(if (index == selectedRatio) accent else getColor(R.color.text_primary))
-                        setOnClickListener {
-                            if (!loaded || saving) return@setOnClickListener
-                            selectedRatio = index
-                            for (i in 0 until ratios.childCount) (ratios.getChildAt(i) as TextView).setTextColor(
-                                if (i == index) accent else getColor(R.color.text_primary))
-                            when (index) {
-                                0 -> image.clearAspectRatio()
-                                1 -> image.wholeImageRect?.let { rect ->
-                                    if (image.rotatedDegrees % 180 == 0) image.setAspectRatio(rect.width(), rect.height())
-                                    else image.setAspectRatio(rect.height(), rect.width())
-                                }
-                                2 -> image.setAspectRatio(1, 1)
-                                3 -> image.setAspectRatio(4, 3)
-                                else -> image.setAspectRatio(16, 9)
-                            }
-                        }
-                    }, LinearLayout.LayoutParams(0, dp(44), 1f))
-                }
-            controls.addView(ratios)
+        if (cropping && advancedCrop) {
             rotationLabel = TextView(this).apply { text = "$fineRotation\u00b0"; gravity = Gravity.CENTER; textSize = 12f }
             controls.addView(rotationLabel)
             controls.addView(SeekBar(this).apply {
@@ -191,13 +182,51 @@ class ComposerAttachmentEditorActivity : Activity() {
         val actions = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(12), dp(4), dp(12), dp(8)) }
         if (cropping) {
             tool(actions, R.drawable.ic_composer_rotate, R.string.composer_crop_rotate) { image.rotateImage(-90) }
-            tool(actions, R.drawable.ic_composer_flip, R.string.composer_crop_flip) { image.flipImageHorizontally() }
+            val ratios = listOf(getString(R.string.composer_crop_free), getString(R.string.composer_crop_original), "1:1", "4:3", "16:9")
+            actions.addView(TextView(this).apply {
+                text = ratios[selectedRatio]; textSize = 14f; gravity = Gravity.CENTER
+                setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, R.drawable.ic_chevron_down, 0)
+                contentDescription = getString(R.string.composer_crop_ratio)
+                setOnClickListener { anchor ->
+                    if (!loaded || saving) return@setOnClickListener
+                    PopupMenu(this@ComposerAttachmentEditorActivity, anchor).apply {
+                        ratios.forEachIndexed { index, name -> menu.add(0, index, index, name) }
+                        setOnMenuItemClickListener { entry ->
+                            selectedRatio = entry.itemId
+                            when (selectedRatio) {
+                                0 -> image.clearAspectRatio()
+                                1 -> image.wholeImageRect?.let { rect ->
+                                    if (image.rotatedDegrees % 180 == 0) image.setAspectRatio(rect.width(), rect.height())
+                                    else image.setAspectRatio(rect.height(), rect.width())
+                                }
+                                2 -> image.setAspectRatio(1, 1)
+                                3 -> image.setAspectRatio(4, 3)
+                                else -> image.setAspectRatio(16, 9)
+                            }
+                            renderControls(); true
+                        }
+                        show()
+                    }
+                }
+            }, LinearLayout.LayoutParams(0, dp(52), 1f))
             tool(actions, R.drawable.ic_reset_data, R.string.composer_crop_reset) {
                 image.clearAspectRatio(); image.resetCropRect(); fineRotation = 0; selectedRatio = 0; renderControls()
             }
+            iconTool(actions, R.drawable.ic_more_horizontal, R.string.composer_crop_more) { anchor ->
+                PopupMenu(this, anchor).apply {
+                    menu.add(0, 0, 0, R.string.composer_crop_flip)
+                    menu.add(0, 1, 1, R.string.composer_crop_fine_rotation)
+                    setOnMenuItemClickListener { entry ->
+                        if (entry.itemId == 0) image.flipImageHorizontally()
+                        else { advancedCrop = !advancedCrop; renderControls() }
+                        true
+                    }
+                    show()
+                }
+            }
         } else {
             if (isCameraItem()) {
-                tool(actions, android.R.drawable.ic_menu_camera, R.string.composer_crop_retake) {
+                iconTool(actions, android.R.drawable.ic_menu_camera, R.string.composer_crop_retake) {
                     accepted = false
                     setResult(RESULT_OK, Intent().putExtra(ROUTE, intent.getStringExtra(ROUTE))
                         .putExtra(TARGET, intent.getStringExtra(TARGET)).putExtra("retake", true))
@@ -208,26 +237,80 @@ class ComposerAttachmentEditorActivity : Activity() {
                 tool(actions, R.drawable.ic_composer_crop, R.string.composer_crop) {
                     cropping = true; fineRotation = 0; selectedRatio = 0; showSelected()
                 }
-                tool(actions, R.drawable.ic_composer_rotate, R.string.composer_crop_rotate) {
-                    cropping = true; fineRotation = 0; selectedRatio = 0; pendingRotation = -90; showSelected()
-                }
             }
-            tool(actions, android.R.drawable.ic_menu_delete, R.string.agent_attachment_remove) {
+            iconTool(actions, R.drawable.ic_delete, R.string.agent_attachment_remove) {
                 items.removeAt(selected); if (items.isEmpty()) complete() else showSelected()
+            }
+            if (items[selected].isImage) {
+                actions.addView(CheckBox(this).apply {
+                    tag = "composer_original_quality"
+                    textSize = 14f
+                    text = getString(if (items[selected].isCropped) R.string.composer_image_high_quality else R.string.composer_image_original)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(accent)
+                    isChecked = items[selected].sendOriginal
+                    setOnCheckedChangeListener { _, checked ->
+                        items[selected] = items[selected].copy(sendOriginal = checked)
+                        refreshSize()
+                    }
+                }, rowParams(-2, 52))
             }
         }
         controls.addView(actions)
     }
 
+    private fun iconTool(row: LinearLayout, icon: Int, text: Int, action: (View) -> Unit) {
+        row.addView(ImageButton(this).apply {
+            setImageResource(icon); setBackgroundColor(Color.TRANSPARENT)
+            imageTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.text_primary))
+            contentDescription = getString(text); tooltipText = getString(text)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setOnClickListener { if (!saving && (!cropping || loaded)) action(it) }
+        }, rowParams(48, 48))
+    }
+
+    private fun refreshSize() {
+        previewTask?.cancel(false)
+        val revision = ++previewRevision
+        val item = items.getOrNull(selected) ?: return
+        sizeLabel.visibility = if (!cropping && item.isImage) View.VISIBLE else View.GONE
+        if (cropping || !item.isImage) return
+        if (item.sendOriginal) {
+            sizeLabel.text = AgentInputAttachment.humanSize(item.size)
+            return
+        }
+        val limit = if (intent.getStringExtra(ROUTE) == "peer") AgentImagePipeline.CONTACT_TRANSPORT_BYTES
+            else AgentMediaNetworkDetector.detect(this).imageTargetBytes
+        val key = "${item.uri}:$limit"
+        fun showSize(bytes: Long) { sizeLabel.text = getString(R.string.composer_image_estimated, AgentInputAttachment.humanSize(bytes)) }
+        previewSizes[key]?.let { showSize(it); return }
+        sizeLabel.setText(R.string.composer_image_preparing)
+        val owner = java.lang.ref.WeakReference(this)
+        val app = applicationContext
+        previewTask = ComposerImagePreviewWorker.submit {
+            val size = runCatching {
+                AgentImagePipeline.encodeForTransport(app, item.inputAttachment(), limit)?.let { encoded ->
+                    try { encoded.bytes.size.toLong() } finally { encoded.wipe() }
+                }
+            }.getOrNull()
+            owner.get()?.runOnUiThread {
+                val activity = owner.get() ?: return@runOnUiThread
+                if (activity.isFinishing || activity.isDestroyed || activity.previewRevision != revision) return@runOnUiThread
+                if (size != null) { activity.previewSizes[key] = size; activity.sizeLabel.text = activity.getString(
+                    R.string.composer_image_estimated, AgentInputAttachment.humanSize(size)) }
+                else activity.sizeLabel.setText(R.string.composer_image_estimate_failed)
+            }
+        }
+    }
+
     private fun tool(row: LinearLayout, icon: Int, text: Int, action: () -> Unit) {
         row.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; isFocusable = true
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; isFocusable = true
             contentDescription = getString(text)
             setOnClickListener { if (!saving && (!cropping || loaded)) action() }
             addView(ImageView(context).apply { setImageResource(icon); imageTintList = android.content.res.ColorStateList.valueOf(
                 if (text == R.string.composer_crop) accent else getColor(R.color.text_primary)) }, rowParams(24, 24))
-            addView(label(text).apply { textSize = 12f }, rowParams(-2, 28))
-        }, LinearLayout.LayoutParams(0, dp(64), 1f))
+            addView(label(text).apply { textSize = 14f; setPadding(dp(6), 0, 0, 0) }, rowParams(-2, 28))
+        }, LinearLayout.LayoutParams(0, dp(52), 1f))
     }
 
     private fun complete() {
@@ -286,7 +369,8 @@ class ComposerAttachmentEditorActivity : Activity() {
                 pendingCropFile = null
                 stored.onSuccess { item ->
                     createdFiles.add(file.absolutePath)
-                    items[selected] = item; cropping = false; fineRotation = 0; showSelected()
+                    items[selected] = item; cropping = false; fineRotation = 0
+                    complete()
                 }.onFailure { file.delete(); showError(it) }
             }
         }
@@ -301,6 +385,7 @@ class ComposerAttachmentEditorActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         out.putString(ITEMS, ComposerAttachmentItem.encode(items)); out.putInt(INDEX, selected)
         out.putBoolean("cropping", cropping); out.putInt("fine_rotation", fineRotation)
+        out.putBoolean("advanced_crop", advancedCrop)
         out.putInt("ratio", selectedRatio)
         out.putString("camera_id", cameraId)
         out.putStringArrayList("created", ArrayList(createdFiles))
@@ -308,6 +393,8 @@ class ComposerAttachmentEditorActivity : Activity() {
     }
 
     override fun onDestroy() {
+        previewRevision++
+        previewTask?.cancel(false)
         if (::image.isInitialized) {
             image.setOnSetImageUriCompleteListener(null)
             image.setOnCropImageCompleteListener(null)

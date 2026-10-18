@@ -34,6 +34,8 @@ internal data class AgentTransportImage(
 
 internal object AgentImagePipeline {
     const val TARGET_TRANSPORT_BYTES = 100_000
+    const val CONTACT_TRANSPORT_BYTES = 512 * 1024
+    const val MAX_ORIGINAL_BYTES = 20 * 1024 * 1024
 
     private const val MAX_TRANSPORT_DIMENSION = 2_400
     private const val MIN_TRANSPORT_DIMENSION = 240
@@ -49,9 +51,15 @@ internal object AgentImagePipeline {
         attachment: AgentInputAttachment,
         byteLimit: Int = TARGET_TRANSPORT_BYTES,
         taskId: String = "",
-        timing: AgentRuntimeTiming = if (taskId.isBlank()) AgentRuntimeTiming.NONE else AgentLatencyTelemetry.runtime(context)
+        timing: AgentRuntimeTiming = if (taskId.isBlank()) AgentRuntimeTiming.NONE else AgentLatencyTelemetry.runtime(context),
+        originalByteLimit: Int = MAX_ORIGINAL_BYTES
     ): AgentTransportImage? = timing.measure(taskId, "image_prepare", { if (it == null) "failed" else "completed" }) {
-        prepareForTransport(context, attachment, byteLimit, taskId, timing)
+        if (attachment.sendOriginal) {
+            // Never silently recompress an explicit original selection, including inline fallbacks.
+            readOriginalWithinLimit(context, attachment, originalByteLimit)?.let {
+                AgentTransportImage(it, attachment.mimeType, lossless = true)
+            }
+        } else prepareForTransport(context, attachment, byteLimit, taskId, timing)
     }
 
     private fun prepareForTransport(
@@ -61,7 +69,7 @@ internal object AgentImagePipeline {
         taskId: String,
         timing: AgentRuntimeTiming
     ): AgentTransportImage? {
-        val target = minOf(byteLimit, TARGET_TRANSPORT_BYTES)
+        val target = minOf(byteLimit, CONTACT_TRANSPORT_BYTES)
         if (target < MIN_TRANSPORT_BUDGET) return null
 
         // A probe miss is an ordinary transition to decoding, not a failed image request.

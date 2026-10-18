@@ -34,7 +34,7 @@ class ComposerAttachmentRoutingInstrumentedTest {
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
         val item = ComposerAttachmentItem("routing-fixture", LocalAttachmentUris.forFile(context, file, "test.png", "image/png").toString(),
-            "test.png", "image/png", file.length())
+            "test.png", "image/png", file.length(), sendOriginal = true)
         var originalDraft: AgentWindowDraft? = null
         var originalContact: Contact? = null
         val firstPeer = "crop-test-first-${UUID.randomUUID()}"
@@ -51,11 +51,7 @@ class ComposerAttachmentRoutingInstrumentedTest {
                 assertTrue(activity.handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_OK, result))
                 assertEquals(listOf(item.uri), activity.agentInputAttachments.map { it.uri.toString() })
                 assertEquals(goal, activity.agentGoalInput.text.toString())
-                val document = item.copy(id = "document-fixture", uri = item.uri + "?document-fixture",
-                    name = "fixture.pdf", mime = "application/pdf")
-                activity.acceptPickedAttachments(listOf(document), listOf(item), "agent", target)
-                assertEquals(listOf(item.id, document.id), activity.agentInputAttachments.map { it.id })
-                assertEquals(goal, activity.agentGoalInput.text.toString())
+                assertTrue(activity.agentInputAttachments.single().sendOriginal)
                 activity.handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_OK, result)
                 assertTrue(activity.handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_CANCELED, null))
                 assertEquals(1, activity.agentInputAttachments.size)
@@ -65,6 +61,7 @@ class ComposerAttachmentRoutingInstrumentedTest {
                     .putExtra(ComposerAttachmentEditorActivity.TARGET, firstPeer)
                 activity.handleComposerAttachmentResult(REQUEST_COMPOSER_ATTACHMENT_EDIT, Activity.RESULT_OK, result)
                 assertEquals(1, activity.peerComposerAttachments(firstPeer).size)
+                assertTrue(activity.peerComposerAttachments(firstPeer).single().sendOriginal)
                 assertTrue(activity.peerComposerAttachments(secondPeer).isEmpty())
                 assertTrue(activity.messages[firstPeer].isNullOrEmpty())
                 assertEquals(1, activity.agentInputAttachments.size)

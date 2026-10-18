@@ -351,9 +351,10 @@ internal object AgentOutboundAttachmentTransferStore {
         var transportName = attachment.displayName.ifBlank { "attachment-${ordinal + 1}" }
         var transportMime = attachment.mimeType.ifBlank { "application/octet-stream" }
         var transportSize = 0L
+        val preserveBytes = preserveOriginalBytes || attachment.sendOriginal
         val digest = MessageDigest.getInstance("SHA-256")
         try {
-            if (attachment.isImage && !preserveOriginalBytes) {
+            if (attachment.isImage && !preserveBytes) {
                 val encoded = AgentImagePipeline.encodeForTransport(
                     context,
                     attachment,
@@ -415,11 +416,11 @@ internal object AgentOutboundAttachmentTransferStore {
                 .put("chunk_size_bytes", CHUNK_BYTES)
                 .put(
                     "transport_profile",
-                    if (preserveOriginalBytes) "peer-original" else mediaProfile.id
+                    if (preserveOriginalBytes) "peer-original" else if (preserveBytes) "original" else mediaProfile.id
                 )
                 .put(
                     "requires_validated_network",
-                    !preserveOriginalBytes &&
+                    !preserveBytes &&
                         mediaProfile.deferMediaUpload &&
                         attachment.isTransportMedia()
                 )

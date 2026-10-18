@@ -10,7 +10,8 @@ internal data class ComposerAttachmentItem(
     val name: String,
     val mime: String,
     val size: Long,
-    val originalUri: String = ""
+    val originalUri: String = "",
+    val sendOriginal: Boolean = false
 ) {
     val isImage: Boolean get() = mime.startsWith("image/", ignoreCase = true)
     val source: String get() = originalUri.ifBlank { uri }
@@ -18,6 +19,7 @@ internal data class ComposerAttachmentItem(
 
     fun descriptor(): JSONObject = JSONObject().put("id", id).put("uri", uri)
         .put("name", name).put("mime_type", mime).put("size", size).put("original_uri", originalUri)
+        .put("send_original", sendOriginal)
 
     fun cropped(uri: String, name: String, size: Long, mime: String): ComposerAttachmentItem {
         require(isImage) { "Only image attachments can be cropped" }
@@ -27,7 +29,8 @@ internal data class ComposerAttachmentItem(
 
     companion object {
         fun from(json: JSONObject) = ComposerAttachmentItem(json.getString("id"), json.getString("uri"),
-            json.getString("name"), json.getString("mime_type"), json.optLong("size"), json.optString("original_uri"))
+            json.getString("name"), json.getString("mime_type"), json.optLong("size"), json.optString("original_uri"),
+            json.optBoolean("send_original", false))
         fun decode(value: String): List<ComposerAttachmentItem> {
             val array = JSONArray(value)
             return (0 until array.length()).map { from(array.getJSONObject(it)) }

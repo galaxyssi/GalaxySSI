@@ -64,4 +64,23 @@ class ComposerAttachmentEditSessionTest {
         val file = photo.copy(size = -1)
         assertEquals(-1L, ComposerAttachmentItem.from(file.descriptor()).size)
     }
+
+    @Test fun imagesDefaultToCompressedRegardlessOfPickerUri() {
+        assertFalse(photo.sendOriginal)
+        assertFalse(photo.copy(uri = "content://documents/image").sendOriginal)
+        assertFalse(ComposerAttachmentItem.from(photo.descriptor().apply { remove("send_original") }).sendOriginal)
+    }
+
+    @Test fun originalSelectionSurvivesDraftRoundTripAndCrop() {
+        val selected = photo.copy(sendOriginal = true)
+        val cropped = selected.cropped("content://local/cropped", "one-cropped.jpg", 800, "image/jpeg")
+        assertTrue(cropped.sendOriginal)
+        assertEquals(photo.uri, cropped.source)
+        assertEquals(cropped, ComposerAttachmentItem.decode(ComposerAttachmentItem.encode(listOf(cropped))).single())
+    }
+
+    @Test fun qualityBelongsToEachImageNotTheBatch() {
+        val files = listOf(photo.copy(sendOriginal = true), photo.copy(id = "second", uri = "content://image/2"))
+        assertEquals(listOf(true, false), ComposerAttachmentItem.decode(ComposerAttachmentItem.encode(files)).map { it.sendOriginal })
+    }
 }

@@ -11,7 +11,8 @@ data class AgentInputAttachment(
     val displayName: String,
     val mimeType: String,
     val sizeBytes: Long,
-    val originalUri: String = ""
+    val originalUri: String = "",
+    val sendOriginal: Boolean = false
 ) {
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)
 
@@ -25,7 +26,8 @@ data class AgentInputAttachment(
         fallbackText = displayName,
         metadata = mapOf(
             "size_bytes" to sizeBytes.coerceAtLeast(0L).toString(),
-            "source" to "user_attachment"
+            "source" to "user_attachment",
+            "send_original" to sendOriginal.toString()
         )
     )
 
@@ -35,6 +37,7 @@ data class AgentInputAttachment(
         .put("mime_type", mimeType)
         .put("size", sizeBytes)
         .put("uri", uri.toString())
+        .put("send_original", sendOriginal)
 
     fun draftDescriptor(): JSONObject = descriptor().put("original_uri", originalUri)
 

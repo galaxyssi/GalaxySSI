@@ -53,8 +53,8 @@ class ComposerAttachmentEditorInstrumentedTest {
         click(editor, R.string.composer_crop)
         await { onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).cropRect != null } }
         onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).cropRect = Rect(120, 160, 680, 840) }
-        click(editor, R.string.composer_crop_done)
-        await { !state(editor).getBoolean("cropping") }
+        click(editor, R.string.composer_crop_use)
+        await { onMain { editor.isFinishing } }
         val cropped = ComposerAttachmentItem.decode(state(editor).getString(ComposerAttachmentEditorActivity.ITEMS)!!).single()
         assertTrue(cropped.isCropped)
         assertEquals(before, digest(original))
@@ -62,9 +62,16 @@ class ComposerAttachmentEditorInstrumentedTest {
         assertEquals(560, bitmap.width)
         assertEquals(680, bitmap.height)
         bitmap.recycle()
-        click(editor, R.string.composer_crop)
-        await { onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).cropRect != null } }
-        assertEquals(cropped.source, onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).imageUri.toString() })
+        assertTrue(onMain { editor.isFinishing })
+        val reopened = launch(listOf(cropped))
+        try {
+            click(reopened, R.string.composer_crop)
+            await { onMain { reopened.findViewById<CropImageView>(R.id.composerCropImage).cropRect != null } }
+            assertEquals(cropped.source, onMain { reopened.findViewById<CropImageView>(R.id.composerCropImage).imageUri.toString() })
+        } finally {
+            onMain { reopened.finish() }
+            LocalAttachmentUris.resolve(context, android.net.Uri.parse(cropped.uri))?.delete()
+        }
     }
 
     @Test fun rotationFlipRatioAndResetRemainInteractive() = withEditor { editor, _ ->
@@ -72,9 +79,11 @@ class ComposerAttachmentEditorInstrumentedTest {
         await { onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).cropRect != null } }
         click(editor, R.string.composer_crop_rotate)
         assertEquals(270, onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).rotatedDegrees })
-        click(editor, R.string.composer_crop_flip)
+        click(editor, R.string.composer_crop_more)
+        clickPopup(context.getString(R.string.composer_crop_flip))
         assertTrue(onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).isFlippedHorizontally })
-        onMain { findText(editor.window.decorView, "1:1")!!.performClick() }
+        click(editor, R.string.composer_crop_ratio)
+        clickPopup("1:1")
         assertTrue(onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).isFixAspectRatio })
         click(editor, R.string.composer_crop_reset)
         assertFalse(onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).isFixAspectRatio })
@@ -109,6 +118,36 @@ class ComposerAttachmentEditorInstrumentedTest {
                 await { onMain { replacement.findViewById<CropImageView>(R.id.composerCropImage).cropRect != null } }
             } finally { close(replacement) }
         } finally { instrumentation.removeMonitor(monitor) }
+    }
+
+    @Test fun originalQualityDefaultsOffAndSurvivesRecreation() = withEditor { editor, original ->
+        val checkbox = onMain { editor.window.decorView.findViewWithTag<android.widget.CheckBox>("composer_original_quality") }
+        assertFalse(onMain { checkbox.isChecked })
+        val hash = digest(original)
+        onMain { checkbox.performClick() }
+        assertTrue(ComposerAttachmentItem.decode(state(editor).getString(ComposerAttachmentEditorActivity.ITEMS)!!).single().sendOriginal)
+        val monitor = instrumentation.addMonitor(ComposerAttachmentEditorActivity::class.java.name, null, false)
+        try {
+            onMain { editor.recreate() }
+            val replacement = instrumentation.waitForMonitorWithTimeout(monitor, 15_000) as ComposerAttachmentEditorActivity
+            try {
+                assertTrue(onMain { replacement.window.decorView.findViewWithTag<android.widget.CheckBox>("composer_original_quality").isChecked })
+                assertEquals(hash, digest(original))
+            } finally { onMain { replacement.finish() } }
+        } finally { instrumentation.removeMonitor(monitor) }
+    }
+
+    private fun clickPopup(text: String) {
+        await {
+            instrumentation.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(text)
+                ?.any { match ->
+                    // Popup labels can be non-clickable children of the actual menu row.
+                    var node: android.view.accessibility.AccessibilityNodeInfo? = match
+                    while (node != null && !node.isClickable) node = node.parent
+                    node?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK) == true
+                } == true
+        }
+        instrumentation.waitForIdleSync()
     }
 
     private fun withEditor(test: (ComposerAttachmentEditorActivity, File) -> Unit) {

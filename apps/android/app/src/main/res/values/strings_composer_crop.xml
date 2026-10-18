@@ -3,6 +3,15 @@
     <string name="composer_photo_preview">Photo preview</string>
     <string name="composer_crop">Crop</string>
     <string name="composer_crop_done">Done</string>
+    <string name="composer_crop_use">Use</string>
+    <string name="composer_crop_ratio">Crop ratio</string>
+    <string name="composer_crop_more">More crop options</string>
+    <string name="composer_crop_fine_rotation">Fine rotation</string>
+    <string name="composer_image_original">Original</string>
+    <string name="composer_image_high_quality">High quality</string>
+    <string name="composer_image_estimated">Estimated %1$s</string>
+    <string name="composer_image_preparing">Calculating compressed size</string>
+    <string name="composer_image_estimate_failed">Image could not be compressed</string>
     <string name="composer_crop_rotate">Rotate</string>
     <string name="composer_crop_flip">Flip</string>
     <string name="composer_crop_reset">Reset</string>

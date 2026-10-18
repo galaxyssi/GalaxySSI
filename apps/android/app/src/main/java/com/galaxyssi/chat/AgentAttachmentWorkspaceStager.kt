@@ -13,7 +13,8 @@ data class AgentStagedAttachment(
     val relativePath: String,
     val mimeType: String,
     val sizeBytes: Long,
-    val sha256: String
+    val sha256: String,
+    val sendOriginal: Boolean = false
 )
 
 /** Copies user-authorized content into the active conversation's app-private project. */
@@ -68,7 +69,8 @@ object AgentAttachmentWorkspaceStager {
                     relativePath = "inputs/$turnId/$safeName",
                     mimeType = attachment.mimeType,
                     sizeBytes = size,
-                    sha256 = digest.digest().joinToString("") { "%02x".format(it) }
+                    sha256 = digest.digest().joinToString("") { "%02x".format(it) },
+                    sendOriginal = attachment.sendOriginal
                 )
             }
             writeManifest(inputDirectory, staged)
@@ -124,7 +126,8 @@ object AgentAttachmentWorkspaceStager {
                         mimeType = record.mimeType.ifBlank {
                             block.mimeType.ifBlank { "application/octet-stream" }
                         },
-                        sizeBytes = record.sizeBytes
+                        sizeBytes = record.sizeBytes,
+                        sendOriginal = record.sendOriginal
                     )
                 }
                 .toList()
@@ -188,7 +191,8 @@ object AgentAttachmentWorkspaceStager {
             uri = Uri.fromFile(source),
             displayName = record.name,
             mimeType = record.mimeType.ifBlank { "application/octet-stream" },
-            sizeBytes = record.sizeBytes
+            sizeBytes = record.sizeBytes,
+            sendOriginal = record.sendOriginal
         )
     }
 
@@ -207,6 +211,7 @@ object AgentAttachmentWorkspaceStager {
                             .put("mime_type", attachment.mimeType)
                             .put("size_bytes", attachment.sizeBytes)
                             .put("sha256", attachment.sha256)
+                            .put("send_original", attachment.sendOriginal)
                     )
                 }
             })
@@ -233,7 +238,8 @@ object AgentAttachmentWorkspaceStager {
                         relativePath = item.optString("relative_path").take(512),
                         mimeType = item.optString("mime_type").take(160),
                         sizeBytes = size,
-                        sha256 = digest
+                        sha256 = digest,
+                        sendOriginal = item.optBoolean("send_original", false)
                     )
                 )
             }
