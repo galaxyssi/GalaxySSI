@@ -9,6 +9,8 @@ const required = [
   "src/main.js",
   "src/preload.js",
   "src/peer_hold_to_talk.js",
+  "src/composer_voice_capture.js",
+  "src/composer_stt.js",
   "src/peer_conversation_preview.js",
   "src/conversation_unread.js",
   "src/conversation_unread_indicator.js",
@@ -276,10 +278,12 @@ if (!main.includes('ipcMain.handle("peer-conversations:delete"') ||
   throw new Error("Desktop device chats must share selection, menus, deletion, and sidebar width with task conversations");
 }
 if (!html.includes('id="voiceButton"') ||
-    !workspaceRenderer.includes("function startVoiceInput()") ||
+    !workspaceRenderer.includes("function setupComposerVoice()") ||
+    workspaceRenderer.includes("window.SpeechRecognition") ||
+    !workspaceRenderer.includes("window.galaxyssi.transcribeSpeech") ||
     !workspaceRenderer.includes('voiceButton.addEventListener("click"') ||
     styles.includes(".peer-mode #voiceButton { display: none")) {
-  throw new Error("Desktop device chats must share the standard conversation voice input control and transcription flow");
+  throw new Error("Desktop must keep device voice recording and use local composer transcription");
 }
 if (!html.includes('id="peerVoiceHoldOverlay"') ||
     !html.includes('src="../peer_hold_to_talk.js"') ||

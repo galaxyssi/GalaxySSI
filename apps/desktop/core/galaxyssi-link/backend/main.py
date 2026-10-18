@@ -625,6 +625,11 @@ def require_desktop_api_token(request: Request) -> None:
         )
 
 
+from composer_stt import create_router as create_composer_stt_router
+
+app.include_router(create_composer_stt_router(require_desktop_api_token))
+
+
 class DesktopSpeechSynthesisReq(BaseModel):
     text: str = Field(min_length=1, max_length=20_000)
     language: str = Field(default="zh-CN", max_length=16)

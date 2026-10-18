@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Composer voice integration test</title>
+<body><script>
+const { ipcRenderer } = require("electron");
+const { createCapture } = require("../src/composer_voice_capture");
+async function runVoiceSmoke(durationMs) {
+  const result = { text: "", errors: [], phases: [] };
+  let stream;
+  let releasedAt;
+  let done;
+  const completed = new Promise((resolve) => { done = resolve; });
+  const capture = createCapture({
+    getUserMedia: async (constraints) => { stream = await navigator.mediaDevices.getUserMedia(constraints); return stream; },
+    Recorder: MediaRecorder,
+    transcribe: (payload) => ipcRenderer.invoke("test:transcribe", payload),
+    language: () => "zh-CN", context: () => "isolated-synthetic-test",
+    onText: (text) => { result.text = text; },
+    onError: (error) => result.errors.push(error),
+    onState: ({ phase }) => {
+      if (result.phases.at(-1) !== phase) result.phases.push(phase);
+      if (phase === "idle") done();
+    }
+  });
+  await capture.begin(1, 100);
+  if (capture.busy) {
+    await new Promise((resolve) => setTimeout(resolve, durationMs));
+    releasedAt = performance.now();
+    capture.finish(true, 1);
+  }
+  await completed;
+  result.afterReleaseMs = Math.round(performance.now() - releasedAt);
+  result.tracksEnded = stream?.getTracks().every((track) => track.readyState === "ended") || false;
+  return result;
+}
+</script></body></html>
