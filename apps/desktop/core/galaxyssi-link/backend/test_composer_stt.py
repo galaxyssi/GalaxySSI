@@ -56,6 +56,32 @@ def test_busy_does_not_queue_or_reload_models():
     assert not any(audio)
 
 
+@pytest.mark.parametrize("override,expected", [(None, "medium"), ("small", "small")])
+def test_composer_model_default_override_and_reuse(monkeypatch, override, expected):
+    import faster_whisper
+
+    loads = []
+    def factory(name, **options):
+        loads.append((name, options))
+        return types.SimpleNamespace(transcribe=lambda *a, **k: (
+            iter([types.SimpleNamespace(text="hello")]), types.SimpleNamespace(language="en")
+        ))
+    monkeypatch.setattr(stt, "_model", None)
+    monkeypatch.setattr(faster_whisper, "WhisperModel", factory)
+    monkeypatch.delenv("GALAXYSSI_COMPOSER_WHISPER_MODEL", raising=False)
+    # The existing remote ASR setting must not change the composer model.
+    monkeypatch.setenv("GALAXYSSI_WHISPER_MODEL", "large-v3")
+    if override is not None:
+        monkeypatch.setenv("GALAXYSSI_COMPOSER_WHISPER_MODEL", override)
+    for _ in range(2):
+        assert stt.transcribe(wav(), "auto")["text"] == "hello"
+    assert len(loads) == 1
+    assert loads[0][0] == expected
+    assert loads[0][1]["local_files_only"] is True
+    assert loads[0][1]["device"] == "cpu"
+    assert loads[0][1]["compute_type"] == "int8"
+
+
 def test_model_load_failure_clears_audio(monkeypatch):
     import faster_whisper
     def fail(*args, **kwargs):
