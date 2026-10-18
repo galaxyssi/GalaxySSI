@@ -97,7 +97,7 @@ class ContactReminderActivity : Activity() {
         open(intent)
     }
 
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); stopSound(); setIntent(intent); open(intent) }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); open(intent) }
     private fun open(intent: Intent) {
         id = intent.getStringExtra("reminder_id").orEmpty()
         ContactReminders.load(this, id) { value ->
@@ -157,7 +157,8 @@ class ContactReminderActivity : Activity() {
     @Deprecated("Back dismisses the reminder panel")
     override fun onBackPressed() = collapse()
     override fun onResume() { super.onResume(); AppForegroundTracker.onActivityForeground(this) }
-    override fun onPause() { AppForegroundTracker.onActivityBackground(this); stopSound(); super.onPause() }
-    override fun onDestroy() { main.removeCallbacksAndMessages(null); stopSound(); ContactReminders.observers.remove(observer); super.onDestroy() }
+    // The bounded sound session belongs to the reminder, not this transient window.
+    override fun onPause() { AppForegroundTracker.onActivityBackground(this); super.onPause() }
+    override fun onDestroy() { main.removeCallbacksAndMessages(null); ContactReminders.observers.remove(observer); super.onDestroy() }
     private fun dp(value: Int) = (resources.displayMetrics.density * value).toInt()
 }

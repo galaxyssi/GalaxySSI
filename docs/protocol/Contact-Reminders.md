@@ -2,7 +2,8 @@
 
 ## Interaction
 
-Android 1.5.71 adds an independent reminder action to the direct-contact composer.
+Android 1.5.71 adds an independent reminder action to the direct-contact composer;
+1.5.72 separates playback lifetime from the transient reminder window.
 It reuses the Agent voice-entry waveform artwork, not the Agent voice handler.
 An empty, idle contact composer shows the reminder icon. Editing and attachment
 selection retain the existing more/send controls. Tapping the reminder does not
@@ -60,6 +61,10 @@ topic, attachment, audio stream, WebRTC session, or Agent execution is introduce
 - Requests have a maximum 120-second lifetime and 30-second sound, independent of
   notification/ringer volume when silent-mode sound is enabled. The OS alarm
   volume and DND policy still apply; no global volume is raised.
+- Reopening, backgrounding, or destroying the panel does not stop the sound.
+  Explicit mute/ignore/acknowledge/cancel, audio focus loss, a call/recording,
+  or the sound deadline stops it. Only opaque state is retained by the bounded
+  application-owned player; it never retains the Activity.
 - A reminder ID binds the authenticated peer, creation time, and expiry time.
 - State is persisted before sound/UI side effects; duplicate delivery does not ring again.
 - A cancellation arriving first creates a tombstone. Terminal state cannot regress.
@@ -104,3 +109,26 @@ tests; neither fixture results nor broker ACKs prove human acknowledgement.
 These checks verify audio routing, not a microphone recording of audible output.
 Real carrier-call interruption, OEM lockscreen/full-screen permissions, force-stop,
 and alarm-blocking DND configurations still require separate device acceptance.
+
+### Audible-output follow-up
+
+The user reported that the 1.5.71 test was not audible despite active playback
+telemetry. Do not treat that telemetry as successful acoustic acceptance.
+The follow-up fixes a confirmed lifecycle defect: panel `onPause`, `onDestroy`,
+and `onNewIntent` used to stop the independent sound, including a notification
+reopening the already-visible panel. Debug builds now log non-sensitive start,
+skip, and stop reasons; release builds do not emit these diagnostics.
+
+`ContactReminderAudioDeviceTest` is deliberately opt-in (`-e reminderAudioProbe
+true`). It plays but never records audio or sends messages. It checks real
+playback across panel reopen/background/destruction, explicit stop, and unchanged
+ringer/volume settings. `-e probeSeconds 8` adds an eight-second listening window.
+This remains a playback-state test; human hearing confirmation is separate.
+
+Android 1.5.72 / 1355 was subsequently installed in place on both phones. The
+S20U real-audio probe passed, preserving SILENT mode and alarm volume 11/15, and
+the user confirmed hearing the sound. The 13 policy unit tests, 3 reminder
+instrumentation tests, and 11 composer regression tests passed in targeted runs.
+The expiry fixture blocks live-device interaction with its synthetic reminder so
+an unrelated acknowledgement cannot replace the expiration being tested.
+No further live bidirectional test was performed after S26U reconnected.
