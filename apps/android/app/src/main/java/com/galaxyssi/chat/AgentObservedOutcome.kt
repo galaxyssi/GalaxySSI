@@ -60,7 +60,7 @@ internal object AgentObservedOutcomeEvidence {
     internal fun diagnose(requirement: AgentObservedOutcome, history: List<AgentAction>): JSONObject? {
         val lastMutation = if (requirement.afterToolId.isEmpty()) -1 else history.indexOfLast {
             it.kind == AgentActionKind.CALL_NATIVE_TOOL && toolId(it) == requirement.afterToolId &&
-                !isUndispatched(it) && it.status != AgentActionStatus.BLOCKED
+                !isUndispatched(it) && it.status != AgentActionStatus.BLOCKED && affectsSubject(requirement, it)
         }
         if (requirement.afterToolId.isNotEmpty() && lastMutation < 0)
             return failure(requirement, "required_action_not_observed").put("after_tool_id", requirement.afterToolId)
@@ -110,6 +110,15 @@ internal object AgentObservedOutcomeEvidence {
     }
 
     private fun toolId(action: AgentAction): String = action.parameters["tool_id"].orEmpty().ifBlank { action.target }
+
+    private fun affectsSubject(requirement: AgentObservedOutcome, action: AgentAction): Boolean {
+        val query = AgentRecoveryObservationEvidence.recoveryQuery(action) ?: return true
+        if (query.toolId != requirement.toolId) return true
+        // Only an explicit host-bound different identity is unrelated; missing identity stays conservative.
+        return query.observedSubject.none { (path, value) ->
+            requirement.subject[path]?.let { it != value } == true
+        }
+    }
 
     internal fun isUndispatched(action: AgentAction): Boolean =
         action.status in setOf(AgentActionStatus.PROPOSED, AgentActionStatus.PENDING_CONFIRMATION) ||

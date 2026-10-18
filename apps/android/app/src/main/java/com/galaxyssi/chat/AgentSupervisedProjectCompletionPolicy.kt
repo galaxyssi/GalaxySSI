@@ -47,7 +47,8 @@ internal object AgentSupervisedProjectCompletionPolicy {
         history: List<AgentAction>,
         completedAction: AgentAction,
         result: AgentActionResult,
-        requirements: AgentCompletionRequirements? = null
+        requirements: AgentCompletionRequirements? = null,
+        descriptorFor: (String) -> AgentNativeToolDescriptor? = { null }
     ): AgentVerifiedProjectCompletion? {
         if (!AgentGoalEvidence.permitsSuccess(result) || result.metadata["awaiting_response"] == "true") return null
         if (completedAction.kind != AgentActionKind.CALL_NATIVE_TOOL) return null
@@ -61,7 +62,11 @@ internal object AgentSupervisedProjectCompletionPolicy {
         ) {
             return null
         }
-        if (missingEvidence(requirements, history).isNotEmpty()) return null
+        val scope = AgentPlanContinuationScope(completedAction.parameters[INTERNAL_CONVERSATION_ID].orEmpty(),
+            completedAction.parameters[INTERNAL_TURN_ID].orEmpty())
+        val scopedHistory = AgentProjectHistoryRetentionPolicy.latestSnapshots(history.filter(scope::owns))
+        if (missingEvidence(requirements, scopedHistory).isNotEmpty()) return null
+        if (AgentPendingOutcomeEvidence.unresolved(requirements, scopedHistory, descriptorFor).isNotEmpty()) return null
         val outputText = result.metadata["native_tool_output"].orEmpty()
         val output = runCatching { JSONObject(outputText) }.getOrNull() ?: return null
         val chinese = goal.any { character -> character in '\u3400'..'\u9fff' }

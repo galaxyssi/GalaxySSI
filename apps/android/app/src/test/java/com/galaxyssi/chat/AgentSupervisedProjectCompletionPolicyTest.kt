@@ -97,6 +97,40 @@ class AgentSupervisedProjectCompletionPolicyTest {
         assertNull(outcome(withAnswers, action, nativeResult(action.target, action.evidence)))
     }
 
+    @Test fun publicationCannotHideAnotherUnconfirmedBusinessResult() {
+        val pending = completed("galaxyssi.fixture.message.send").copy(
+            evidence = """{"delivery_verified":false,"message":"Delivery unconfirmed","metadata":{"goal_status":"dispatched","required_capability":"recipient_delivery_receipt"}}""")
+        for ((requirements, tool) in publicationCases()) {
+            val action = completed(tool)
+            assertNull(tool, AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome("Publish and notify",
+                listOf(pending, action), action, nativeResult(tool, action.evidence), requirements))
+        }
+    }
+
+    @Test fun automaticCompletionDoesNotBorrowOrBlockOnForeignTurnEvidence() {
+        val scope = AgentPlanContinuationScope("current-conversation", "current-turn")
+        val action = scope.bind(completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST))
+        val pending = completed("galaxyssi.fixture.message.send").copy(evidence = """{"delivery_verified":false}""")
+        for (foreign in listOf(AgentPlanContinuationScope("other-conversation", "current-turn"),
+            AgentPlanContinuationScope("current-conversation", "other-turn"))) {
+            assertNotNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome("Publish",
+                listOf(foreign.bind(pending), action), action, nativeResult(action.target, action.evidence), pr))
+            val guest = completed(AgentOnDeviceRuntimeTools.EXECUTE)
+            assertNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome("Run on phone and publish",
+                listOf(foreign.bind(guest), action), action, nativeResult(action.target, action.evidence), pr.copy(phoneLinux = true)))
+            assertNotNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome("Run on phone and publish",
+                listOf(scope.bind(guest), action), action, nativeResult(action.target, action.evidence), pr.copy(phoneLinux = true)))
+        }
+    }
+
+    @Test fun automaticCompletionUsesLatestSnapshotInsteadOfOldSuccessfulEvidence() {
+        val action = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
+        val guest = completed(AgentOnDeviceRuntimeTools.EXECUTE)
+        assertNull(AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome("Run on phone and publish",
+            listOf(guest, guest.copy(status = AgentActionStatus.FAILED, evidence = """{"exit_code":1}"""), action),
+            action, nativeResult(action.target, action.evidence), pr.copy(phoneLinux = true)))
+    }
+
     @Test fun publicationMessagesUseStructuredReceiptsAndGoalOnlyForLanguage() {
         val action = completed(AgentMobileProjectNativeTools.CREATE_PULL_REQUEST)
         assertEquals("GitHub PR #2241 was created and is open: https://github.com/galaxyssi/GalaxySSI/pull/2241",
