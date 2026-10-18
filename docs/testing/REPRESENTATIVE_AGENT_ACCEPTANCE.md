@@ -1,5 +1,56 @@
 # Representative Agent Acceptance
 
+## 2026-10-18: Android 1.5.65 (1348)
+
+- Final run recording now reuses the workspace's latest-action and status
+  projection, scoped to the owning conversation and turn. A historical failure
+  cannot override its repaired action, and a newer failure cannot inherit an
+  earlier success. Undispatched or still-running actions are not recast as
+  failed tools merely because the containing run has ended.
+- Preserve structured observations from earlier native steps, including
+  unverified delivery/state caveats and failure diagnostics, instead of keeping
+  only a prose summary. A matching full receipt can recover a truncated action
+  observation. Non-object or incomplete JSON remains encoded as raw evidence;
+  malformed input/output no longer prevents final run serialization.
+- Keep logical action IDs stable while recognizing native invocation events by
+  their action step and tool identity. Finalization no longer fabricates a
+  completion for pending/running calls or an execution start for an explicit
+  pre-dispatch rejection. Event deduplication distinguishes old failed attempts
+  from a repaired completion, and explicit native cancellation remains cancelled.
+- This is a final-record/timeline correction, not a new completion verifier.
+  Tool success remains distinct from business-outcome verification. Existing
+  run-record retention limits and previously saved records are unchanged. No
+  model selection, execution policy, background learning setting, scheduler or
+  Desktop code is modified.
+- The added tests use synthetic receipts and pure production projections. They
+  do not establish recipient delivery, real-model repair, Android database
+  round trips or real-device recovery. Final sources passed 392 focused JVM
+  tests in 24 suites, with zero failures, errors or skips. APK assembly,
+  repository checks and whitespace checks passed. The initial 390-test pass
+  preceded two additional review regressions and is not the final result.
+- S20U reconnected during the build. Installed the final 1.5.65 / 1348 APK in
+  place, preserving data. A normal-composer request through the App-selected
+  Auto Codex route performed two model calls and two native read-only calls:
+  audio status and battery status. It completed in 61.332 seconds and reported
+  media 3/15, voice call 4/8, battery 40% and USB charging, matching the owned
+  native observations. Battery percentage subsequently increased while charging.
+- The durable workspace and runtime were COMPLETED, with completed operation
+  projection. The session history retained structured, turn-bound observations
+  for both reads. The recorded-run database itself was not independently
+  exported by this device audit; its new mapping is covered by the JVM tests.
+- Independent before/after audio reads confirmed all six stream values, audio
+  mode, ringer mode, microphone and speakerphone settings unchanged. Screenshots
+  show a completion icon and a fixed one-minute duration, unchanged after
+  returning to the launcher and reopening GalaxySSI. No test request was resent.
+- Evidence remains outside Git in `galaxyssi-representative-acceptance`:
+  `recorded-evidence-1.5.65-tests/`, the separate initial-test directory,
+  `recorded-request-1.5.65.json`, `recorded-workspace-1.5.65.json`,
+  `audio-*-1.5.65.json`, and `recorded-*-1.5.65.png`. Temporary screenshot copies
+  on the phone were removed. No countdown, contacts, doors, camera, recording,
+  other device, other application's content, learning setting or Desktop
+  instance was operated. This single normal request does not establish latency
+  percentiles or complete fault-injection acceptance.
+
 ## 2026-10-18: Android 1.5.64 (1347)
 
 - Preserve the actual business blocker across foreground execution, background
