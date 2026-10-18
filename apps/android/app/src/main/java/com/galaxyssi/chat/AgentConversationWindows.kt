@@ -173,6 +173,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
     private var restoring = false
     private var lastTitle = ""
     private var pendingScroll: AgentWindowDraft? = null
+    private var followLatestBeforeResume = ""
     private val states = AgentWindowStateStore(activity)
     private val saveRunnable = Runnable { save() }
 
@@ -238,6 +239,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
     fun selected(id: String) {
         if (activity.initialAgentHydrationPending || id == conversationId) return
         conversationId = id
+        followLatestBeforeResume = ""
         states.select(key, id)
         val draft = states.load(key, id)
         restoring = true
@@ -267,6 +269,11 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
 
     fun restoreScroll() {
         val draft = pendingScroll ?: return
+        if (draft.autoFollow) {
+            pendingScroll = null
+            if (activity.agentTranscriptAutoFollow) activity.scrollAgentTranscriptToBottom()
+            return
+        }
         if (draft.entryId.isBlank()) { pendingScroll = null; return }
         if (!activity.isAgentTranscriptAdapterInitialized()) return
         if (activity.agentTranscriptAdapter.indexOfEntry(draft.entryId) < 0) {
@@ -277,6 +284,15 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
         activity.restoreAgentTranscriptScrollAnchor(AgentTranscriptScrollAnchor(draft.entryId, draft.topOffset))
         pendingScroll = null
     }
+
+    fun followLatestForSubmission(id: String) {
+        if (id != conversationId) return
+        pendingScroll = null
+        // Activity results may submit a document before onResume restores the saved viewport.
+        if (!visible) followLatestBeforeResume = id
+    }
+
+    fun cancelPendingScroll() { pendingScroll = null }
 
     fun opened(id: String) {
         openingWindow = false
@@ -290,7 +306,10 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
     fun resume() {
         visible = true
         AgentConversationWindows.screenAssistantForeground(this)
-        if (conversationId.isNotBlank()) pendingScroll = states.load(key, conversationId)
+        if (conversationId.isNotBlank()) {
+            pendingScroll = if (followLatestBeforeResume == conversationId) null else states.load(key, conversationId)
+        }
+        followLatestBeforeResume = ""
         onDataChanged()
         AgentConversationWindows.readyWindow(this)
     }

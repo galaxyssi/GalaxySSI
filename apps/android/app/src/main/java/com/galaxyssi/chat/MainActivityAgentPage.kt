@@ -240,6 +240,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         return
     }
     selectedContact = contact
+    peerChatViewport.select(contact.id, systemNotifications = contact.id == CONTACT_SYSTEM.id)
     loadPeerComposerAttachments(contact.id)
     setChatActionTrayRequested(false)
     AppForegroundTracker.onConversationVisible(this, contact.id)
@@ -291,7 +292,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         force = ChatHistoryLoadPolicy.shouldReload(
             inMemoryMessagesEmpty = currentMessages.isEmpty(),
             markedLoaded = loadedHistoryContacts.contains(contact.id)
-        ),
+        ) || historyHasNewer[contact.id] == true,
         scrollAfterLoad = !notificationsOnly,
         scrollToStartAfterLoad = ChatMessageViewportPolicy.anchorToStartOnOpen(notificationsOnly)
     )
@@ -309,12 +310,7 @@ internal fun MainActivity.showAgentHomeFromChat(
 }
 
 internal fun MainActivity.scrollToBottom() {
-    val lastIndex = (messageList.adapter?.itemCount ?: currentMessages.size) - 1
-    if (lastIndex >= 0) {
-        (messageList.layoutManager as? LinearLayoutManager)
-            ?.scrollToPositionWithOffset(lastIndex, 0)
-            ?: messageList.scrollToPosition(lastIndex)
-    }
+    schedulePeerChatBottomAlignment()
 }
 
 internal fun MainActivity.scrollToMessageListStart() {
@@ -411,7 +407,10 @@ private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptA
         addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 when (newState) {
-                    RecyclerView.SCROLL_STATE_DRAGGING -> agentTranscriptUserScrollActive = true
+                    RecyclerView.SCROLL_STATE_DRAGGING -> {
+                        agentTranscriptUserScrollActive = true
+                        conversationWindow.cancelPendingScroll()
+                    }
                     RecyclerView.SCROLL_STATE_IDLE -> agentTranscriptUserScrollActive = false
                 }
             }
@@ -1384,7 +1383,10 @@ internal fun MainActivity.submitAgentGoal(
     voiceCoordinatorSession(voiceTraceId).takeIf(String::isNotBlank)?.let { sessionId ->
         voiceCoordinatorIdsByTurn[turnId] = sessionId
     }
-    agentTranscriptAutoFollow = true
+    if (agentTranscriptStore.activeConversation().id == conversation.id) {
+        conversationWindow.followLatestForSubmission(conversation.id)
+        agentTranscriptAutoFollow = true
+    }
     pendingAgentReplyIndicators[turnId] = PendingAgentReplyIndicator(
         conversationId = conversation.id,
         turnId = turnId,

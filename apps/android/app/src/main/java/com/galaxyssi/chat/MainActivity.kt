@@ -436,6 +436,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val historyForwardPageCursors = mutableMapOf<String, Long?>()
     internal val historyHasNewer = mutableMapOf<String, Boolean>()
     internal val historyLoadsInFlight = mutableSetOf<String>()
+    internal val peerChatViewport = ChatMessageViewportState()
+    internal var peerChatBottomAlignmentScheduled = false
     internal val historySaveRunnable = Runnable { enqueuePendingChatHistorySave() }
     internal lateinit var mobileNativeAgent: MobileNativeAgent
     internal lateinit var agentTranscriptStore: AgentTranscriptStore

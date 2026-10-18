@@ -261,6 +261,7 @@ internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = f
             )
         )
     }
+    if (stored.isMine && !stored.isSystem) onPeerChatMessageSent(stored.contact.id)
     refreshVisibleMessages(stored.contact.id)
     refreshDirectoryContacts()
 }
@@ -336,15 +337,12 @@ internal fun MainActivity.deleteMessageById(messageId: Long) {
 }
 
 internal fun MainActivity.refreshVisibleMessages(contactId: String) {
-    if (chatPage.visibility != View.VISIBLE || selectedContact?.id != contactId) return
+    if (runtimePlaintextCleared || chatPage.visibility != View.VISIBLE || selectedContact?.id != contactId) return
     messageList.post {
-        if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
-            val followLatest = ChatMessageViewportPolicy.followLatest(
-                systemNotifications = contactId == CONTACT_SYSTEM.id,
-                nearBottom = isMessageListNearBottom()
-            )
+        if (!runtimePlaintextCleared && chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
+            val anchor = if (peerChatViewport.followLatest) null else capturePeerChatScrollAnchor()
             messageAdapter?.syncMessages(currentMessages)
-            if (followLatest) scrollToBottom()
+            if (peerChatViewport.followLatest) scrollToBottom() else restorePeerChatScrollAnchor(anchor)
         }
     }
 }
@@ -352,8 +350,10 @@ internal fun MainActivity.refreshVisibleMessages(contactId: String) {
 internal fun MainActivity.isMessageListNearBottom(): Boolean {
     val layout = messageList.layoutManager as? LinearLayoutManager ?: return true
     val itemCount = messageAdapter?.itemCount ?: return true
-    if (itemCount <= 1) return true
-    return layout.findLastVisibleItemPosition() >= itemCount - 3
+    if (itemCount == 0) return true
+    if (historyHasNewer[selectedContact?.id] == true) return false
+    val last = layout.findViewByPosition(itemCount - 1) ?: return false
+    return layout.getDecoratedBottom(last) <= messageList.height - messageList.paddingBottom + dp(48)
 }
 
 internal fun MainActivity.loadChatHistory() {
@@ -388,7 +388,7 @@ internal fun MainActivity.loadChatOverview(
                 updatedVersion to rows
             }.onSuccess { (updatedVersion, rows) ->
                 handler.post {
-                    if (isDestroyed) return@post
+                    if (isDestroyed || runtimePlaintextCleared) return@post
                     val storedContactIds = rows.mapTo(mutableSetOf()) { it.contactId }
                     rows.forEach { row ->
                         val message = storedChatMessage(row.contactId, row.lastMessage) ?: return@forEach
@@ -436,23 +436,32 @@ internal fun MainActivity.loadLatestChatHistory(
     scrollAfterLoad: Boolean,
     scrollToStartAfterLoad: Boolean = false
 ) {
+    if (runtimePlaintextCleared || selectedContact?.id != contactId) return
     if (!force && contactId in loadedHistoryContacts) {
-        when {
-            scrollToStartAfterLoad -> messageList.post(::scrollToMessageListStart)
-            scrollAfterLoad -> messageList.post(::scrollToBottom)
+        val generation = peerChatViewport.generation
+        messageList.post {
+            if (!peerChatViewport.accepts(contactId, generation)) return@post
+            when {
+                scrollToStartAfterLoad -> scrollToMessageListStart()
+                scrollAfterLoad -> scrollToBottom()
+            }
         }
         return
     }
-    val loadKey = "latest:$contactId"
+    val generation = peerChatViewport.generation
+    val anchor = if (scrollAfterLoad || scrollToStartAfterLoad || peerChatViewport.followLatest) null
+        else peerChatViewport.pendingAnchor ?: capturePeerChatScrollAnchor()
+    val loadKey = "latest:$contactId:$generation"
     if (!historyLoadsInFlight.add(loadKey)) return
     val requestStartedAt = SystemClock.elapsedRealtime()
     runCatching {
         historyExecutor.execute {
             runCatching {
                 val queryStartedAt = SystemClock.elapsedRealtime()
-                val page = ChatHistoryStore.page(
+                val page = ChatHistoryStore.viewportPage(
                     this,
                     contactId,
+                    anchorSequence = anchor?.sequence?.takeIf { it > 0L },
                     pageSize = CHAT_HISTORY_PAGE_ITEMS
                 )
                 Triple(
@@ -463,12 +472,21 @@ internal fun MainActivity.loadLatestChatHistory(
             }.onSuccess { (page, updatedVersion, queryElapsedMillis) ->
                 handler.post {
                     historyLoadsInFlight.remove(loadKey)
-                    if (isDestroyed) return@post
+                    if (isDestroyed || runtimePlaintextCleared || !peerChatViewport.accepts(contactId, generation)) return@post
+                    val restoreAnchor = peerChatViewport.pendingAnchor ?: capturePeerChatScrollAnchor() ?: anchor
                     val list = messages.getOrPut(contactId) { mutableListOf() }
                     val combined = linkedMapOf<Long, ChatMessage>()
                     page.messages.mapNotNull { storedChatMessage(contactId, it) }
                         .forEach { combined[it.id] = it }
-                    list.forEach { combined[it.id] = it }
+                    list.forEach { message ->
+                        val persisted = combined[message.id]
+                        if (persisted != null) {
+                            combined[message.id] = message.copy(historySequence = persisted.historySequence)
+                        } else if (anchor == null && message.historySequence == 0L) {
+                            // Keep an outgoing message whose asynchronous save is still queued.
+                            combined[message.id] = message
+                        }
+                    }
                     val sorted = combined.values.sortedWith(
                         compareBy<ChatMessage> { it.timestamp }.thenBy { it.id }
                     )
@@ -476,22 +494,24 @@ internal fun MainActivity.loadLatestChatHistory(
                     list.addAll(sorted.takeLast(CHAT_HISTORY_WINDOW_ITEMS))
                     loadedHistoryContacts.add(contactId)
                     historyPageCursors[contactId] = list.firstHistorySequence()
-                    historyHasMore[contactId] = page.hasMore || sorted.size > list.size
-                    historyForwardPageCursors[contactId] = null
-                    historyHasNewer[contactId] = false
+                    historyHasMore[contactId] = page.hasOlder || sorted.size > list.size
+                    historyForwardPageCursors[contactId] = page.newestSequence
+                    historyHasNewer[contactId] = page.hasNewer
                     lastHistoryLoadedAt = maxOf(lastHistoryLoadedAt, updatedVersion)
                     if (chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
                         messageAdapter?.syncMessages(currentMessages)
                         when {
-                            scrollToStartAfterLoad -> messageList.post(::scrollToMessageListStart)
-                            scrollAfterLoad -> messageList.post(::scrollToBottom)
+                            scrollToStartAfterLoad -> scrollToMessageListStart()
+                            peerChatViewport.followLatest -> scrollToBottom()
+                            else -> restorePeerChatScrollAnchor(restoreAnchor)
                         }
+                        peerChatViewport.restored()
                     }
                     Log.i(
                         "GalaxySSIHistory",
                         "latest_page query_ms=$queryElapsedMillis " +
                             "total_ms=${SystemClock.elapsedRealtime() - requestStartedAt} " +
-                            "items=${page.messages.size} loaded=${list.size} has_more=${page.hasMore}"
+                            "items=${page.messages.size} loaded=${list.size} has_more=${page.hasOlder}"
                     )
                 }
             }.onFailure { error ->
@@ -505,9 +525,10 @@ internal fun MainActivity.loadLatestChatHistory(
 }
 
 internal fun MainActivity.loadOlderChatHistory(contactId: String) {
-    if (historyHasMore[contactId] != true) return
+    if (runtimePlaintextCleared || historyHasMore[contactId] != true) return
     val beforeSequence = historyPageCursors[contactId] ?: return
-    val loadKey = "older:$contactId"
+    val generation = peerChatViewport.generation
+    val loadKey = "older:$contactId:$generation"
     if (!historyLoadsInFlight.add(loadKey)) return
     val requestStartedAt = SystemClock.elapsedRealtime()
     runCatching {
@@ -523,7 +544,7 @@ internal fun MainActivity.loadOlderChatHistory(contactId: String) {
             }.onSuccess { (page, queryElapsedMillis) ->
                 handler.post {
                     historyLoadsInFlight.remove(loadKey)
-                    if (isDestroyed) return@post
+                    if (isDestroyed || runtimePlaintextCleared || !peerChatViewport.accepts(contactId, generation)) return@post
                     val list = messages.getOrPut(contactId) { mutableListOf() }
                     val existingIds = list.mapTo(mutableSetOf(), ChatMessage::id)
                     val older = page.messages
@@ -564,9 +585,10 @@ internal fun MainActivity.loadOlderChatHistory(contactId: String) {
 }
 
 internal fun MainActivity.loadNewerChatHistory(contactId: String) {
-    if (historyHasNewer[contactId] != true) return
+    if (runtimePlaintextCleared || historyHasNewer[contactId] != true) return
     val afterSequence = historyForwardPageCursors[contactId] ?: return
-    val loadKey = "newer:$contactId"
+    val generation = peerChatViewport.generation
+    val loadKey = "newer:$contactId:$generation"
     if (!historyLoadsInFlight.add(loadKey)) return
     val requestStartedAt = SystemClock.elapsedRealtime()
     runCatching {
@@ -582,7 +604,7 @@ internal fun MainActivity.loadNewerChatHistory(contactId: String) {
             }.onSuccess { (page, queryElapsedMillis) ->
                 handler.post {
                     historyLoadsInFlight.remove(loadKey)
-                    if (isDestroyed) return@post
+                    if (isDestroyed || runtimePlaintextCleared || !peerChatViewport.accepts(contactId, generation)) return@post
                     val list = messages.getOrPut(contactId) { mutableListOf() }
                     val existingIds = list.mapTo(mutableSetOf(), ChatMessage::id)
                     val newer = page.messages
