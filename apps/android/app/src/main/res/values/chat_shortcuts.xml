@@ -5,7 +5,7 @@
     <string name="chat_shortcut_camera">Photo</string>
     <string name="chat_shortcut_file">Files</string>
     <string name="chat_shortcut_sessions_unread">Conversations, unread messages</string>
-    <color name="chat_shortcut_unread">#F04B4E</color>
+    <color name="chat_shortcut_unread">#000000</color>
     <item name="agentInsightBar" type="id" />
     <item name="agentInsightText" type="id" />
     <item name="agentActionNewSession" type="id" />

@@ -93,7 +93,7 @@ class AgentConversationWindowsInstrumentedTest {
         }
     }
 
-    @Test fun compactHeaderAndShortcutSeparateWindowAndConversationActions() {
+    @Test fun brandHeaderSeparatesWindowAndConversationActions() {
         val key = "brand-header-${UUID.randomUUID()}"
         val store = AgentTranscriptStore(context, key)
         val seed = store.createConversation("Header actions", privateMode = true)
@@ -120,12 +120,13 @@ class AgentConversationWindowsInstrumentedTest {
             )) { while (!release.get()) delay(100) }
             handle = running
             await("Background fixture started") { running.isActive }
-            val newSession = root.findViewById<android.view.ViewGroup>(R.id.agentActionNewSession)
-            val title = descendants(newSession).filterIsInstance<android.widget.ImageView>().first()
-            val subtitle = descendants(newSession).filterIsInstance<android.widget.TextView>().first()
+            val brandText = root.findViewById<android.view.ViewGroup>(R.id.agentBrandNewConversation)
+            val title = root.findViewById<View>(R.id.agentBrandTitle)
+            val subtitle = descendants(brandText).filterIsInstance<android.widget.TextView>()
+                .first { it.text.toString() == context.getString(R.string.agent_brand_subtitle) }
             instrumentation.runOnMainSync {
                 assertTrue(root.agentBrandLogo.isClickable)
-                assertTrue(newSession.isClickable)
+                assertTrue(brandText.isClickable)
                 assertEquals(context.getString(R.string.conversation_window_open), root.agentBrandLogo.contentDescription)
                 assertEquals(0, context.resources.getIdentifier("agentOpenWindowButton", "id", context.packageName))
                 root.agentGoalInput.setText("Draft before title tap")

@@ -143,7 +143,7 @@ class ScreenAssistantChatActivity : MainActivity() {
     }
 
     override fun onBackPressed() {
-        if (agentComposerTextMode || chatComposerTextMode ||
+        if (agentActionTrayExpanded || agentComposerTextMode || chatComposerTextMode ||
             featurePage.visibility == View.VISIBLE || chatPage.visibility == View.VISIBLE ||
             activeMainTab != PAGE_AGENT) super.onBackPressed()
         else collapse()

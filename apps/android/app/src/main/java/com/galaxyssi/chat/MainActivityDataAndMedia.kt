@@ -687,6 +687,10 @@ internal fun MainActivity.hideKeyboard() {
     getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(messageInput.windowToken, 0)
 }
 
+internal fun MainActivity.showAgentAttachmentMenu() {
+    setAgentActionTrayExpanded(!agentActionTrayExpanded)
+}
+
 internal fun MainActivity.openAgentCamera() {
     rememberAttachmentPickerTarget(agent = true)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
