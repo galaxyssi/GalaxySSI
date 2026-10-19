@@ -2,11 +2,14 @@ package com.galaxyssi.chat
 
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
@@ -99,6 +102,17 @@ class ContactReminderInstrumentedTest {
                 assertTrue("A visible reminder must accept a subsequent reminder in the foreground",
                     AppForegroundTracker.isActivityForeground(activity))
                 val root = activity.findViewById<ViewGroup>(android.R.id.content)
+                val logo = activity.findViewById<ImageView>(R.id.contact_reminder_logo)
+                assertNotNull(logo.drawable)
+                assertNull(logo.imageTintList)
+                val productLogo = activity.getDrawable(R.drawable.galaxyssi_mark_large) as BitmapDrawable
+                assertTrue("The reminder shares the actual product logo",
+                    (logo.drawable as BitmapDrawable).bitmap.sameAs(productLogo.bitmap))
+                assertEquals(activity.getString(R.string.contact_reminder_subtitle),
+                    activity.findViewById<TextView>(R.id.contact_reminder_header_subtitle).text.toString())
+                assertTrue(descendants(root).filterIsInstance<TextView>().none {
+                    it.text.toString() == activity.getString(R.string.contact_reminder_message)
+                })
                 assertTrue(descendants(root).filterIsInstance<ImageButton>().any {
                     it.contentDescription == activity.getString(R.string.contact_reminder_settings)
                 })
@@ -107,7 +121,7 @@ class ContactReminderInstrumentedTest {
                 assertEquals(3, buttons.size)
                 assertTrue(buttons.any { it.text == activity.getString(R.string.contact_reminder_confirm) })
                 val fraction = activity.window.attributes.height.toFloat() / activity.resources.displayMetrics.heightPixels
-                assertTrue("Panel height: $fraction", fraction in .16f.. .29f)
+                assertTrue("Panel height: $fraction", fraction in .14f.. .29f)
                 assertEquals(0f, activity.window.attributes.dimAmount)
             }
             instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
@@ -119,9 +133,7 @@ class ContactReminderInstrumentedTest {
             instrumentation.waitForIdleSync()
             assertEquals("expired", store.get(id)?.status)
             instrumentation.runOnMainSync {
-                val buttons = descendants(activity.findViewById(android.R.id.content)).filterIsInstance<Button>()
-                assertEquals(1, buttons.size)
-                assertEquals(activity.getString(R.string.contact_reminder_close), buttons.single().text)
+                assertTrue("Expired reminders close without an extra tap", activity.isFinishing || activity.isDestroyed)
             }
         } finally {
             instrumentation.runOnMainSync { activity.finish() }

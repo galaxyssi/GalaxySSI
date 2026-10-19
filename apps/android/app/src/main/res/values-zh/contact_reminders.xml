@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="contact_reminder_subtitle">GalaxySSI · 联系人提醒</string>
     <string name="contact_reminder_title">联系人提醒</string>
     <string name="contact_reminder_send">提醒对方</string>
     <string name="contact_reminder_message">请查看消息</string>
