@@ -303,16 +303,19 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var agentVoiceConversation: AgentVoiceConversation? = null
     internal var contactReminderComposer: ContactReminderComposer? = null
     internal var voicePlaybackEpoch = 0L
+    internal lateinit var agentActionTray: LinearLayout
     internal lateinit var agentRecordingCenter: View
     internal lateinit var agentRecordingInstruction: TextView
     internal lateinit var agentRecordingWaveform: VoiceWaveformView
     internal lateinit var agentRecordingTranscript: TextView
     internal lateinit var agentRecordingTimer: TextView
     internal lateinit var agentHoldToTalkController: AppleHoldToTalkController
+    internal lateinit var agentAttachButton: ImageButton
     internal lateinit var agentSubmitButton: ImageButton
     internal lateinit var agentBrandLogo: ImageView
     internal lateinit var agentAttachmentPreviewScroll: HorizontalScrollView
     internal lateinit var agentAttachmentPreviewList: LinearLayout
+    internal var agentActionTrayExpanded = false
     internal var agentComposerTextMode = false
     internal var agentComposerKeyboardObserved = false
     internal var agentComposerKeyboardClosedAt = 0L
@@ -832,6 +835,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             return messages.getOrPut(id) { mutableListOf() }
         }
 
+    internal fun isAgentActionTrayInitialized(): Boolean = ::agentActionTray.isInitialized
     internal fun isAgentGoalInputInitialized(): Boolean = ::agentGoalInput.isInitialized
     internal fun isAgentHandoffStoreInitialized(): Boolean = ::agentHandoffStore.isInitialized
     internal fun isAgentChatShortcutsInitialized(): Boolean = ::agentChatShortcuts.isInitialized
@@ -1052,11 +1056,13 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         agentChatShortcuts = findViewById(R.id.agentChatShortcuts)
         agentComposerRow = findViewById(R.id.agentComposerRow)
         agentPrimaryActionSlot = findViewById(R.id.agentPrimaryActionSlot)
+        agentActionTray = findViewById(R.id.agentAttachmentActionTray)
         agentRecordingCenter = findViewById(R.id.agentRecordingCenter)
         agentRecordingInstruction = findViewById(R.id.agentRecordingInstruction)
         agentRecordingWaveform = findViewById(R.id.agentRecordingWaveform)
         agentRecordingTranscript = findViewById(R.id.agentRecordingTranscript)
         agentRecordingTimer = findViewById(R.id.agentRecordingTimer)
+        agentAttachButton = findViewById(R.id.agentAttachButton)
         agentSubmitButton = findViewById(R.id.agentSubmitButton)
         agentBrandLogo = findViewById(R.id.agentBrandLogo)
         applyAgentBrandLogoTextScale()
@@ -1449,6 +1455,10 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         }
         if (SystemClock.elapsedRealtime() - chatComposerKeyboardClosedAt < 700L) {
             chatComposerKeyboardClosedAt = 0L
+            return
+        }
+        if (::agentActionTray.isInitialized && agentActionTrayExpanded) {
+            setAgentActionTrayExpanded(false)
             return
         }
         if (collapseChatActionTrayOnBack()) return

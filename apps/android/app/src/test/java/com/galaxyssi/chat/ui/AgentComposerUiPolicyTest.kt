@@ -6,20 +6,6 @@ import org.junit.Test
 
 class AgentComposerUiPolicyTest {
     @Test
-    fun inlineShortcutsNeverRestoreTheOldMenuAndPreserveSendAndVoice() {
-        for (input in listOf(false, true)) for (typing in listOf(false, true)) {
-            for (tray in listOf(false, true)) for (voice in listOf(false, true)) {
-                val state = AgentComposerUiPolicy.resolve(input, typing, tray, voice, inlineActionsAvailable = true)
-                assertFalse(state.showMoreButton)
-                assertFalse(state.showActionTray)
-                assertTrue(state.showSendButton == input)
-                assertTrue(state.showVoiceButton == (voice && !input))
-                assertTrue(state.showPrimaryActionSlot == (input || voice))
-            }
-        }
-    }
-
-    @Test
     fun idleToTypingToBackSwapsVoiceAndMoreInOneSlot() {
         val idle = AgentComposerUiPolicy.resolve(false, false, false, true)
         val typing = AgentComposerUiPolicy.resolve(false, true, false, true)

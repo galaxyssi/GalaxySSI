@@ -448,9 +448,6 @@ private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptA
 }
 
 private fun MainActivity.configureAgentPageControls() {
-    agentSubtitleText.setCompoundDrawablesRelative(null, null,
-        getDrawable(R.drawable.ic_chevron_down)?.apply { setBounds(0, 0, dp(12), dp(12)) }, null)
-    agentSubtitleText.compoundDrawablePadding = dp(4)
     findViewById<View>(R.id.agentSessionTitleTap).setOnClickListener { showAgentSessionsPage() }
     findViewById<View>(R.id.agentModelSelectionTap).setOnClickListener {
         if (collaborationHeaderLabel(agentTranscriptStore.activeConversation().id) != null) showCollaborationMembers()
@@ -464,17 +461,35 @@ private fun MainActivity.configureAgentPageControls() {
     }
     agentMemoryText.setOnClickListener { showAgentMemoryPage() }
     agentKnowledgeText.setOnClickListener { showAgentKnowledgePage() }
-    findViewById<View>(R.id.agentActionNewSession).setOnClickListener {
-        if (!initialAgentHydrationPending && !conversationWindow.openingWindow) createAgentConversation()
+    agentAttachButton.setOnClickListener { showAgentAttachmentMenu() }
+    listOf(R.id.agentActionNewSession, R.id.agentTrayActionNewSession).forEach { id ->
+        findViewById<View>(id).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            if (!initialAgentHydrationPending && !conversationWindow.openingWindow) createAgentConversation()
+        }
     }
-    findViewById<View>(R.id.agentActionSessions).setOnClickListener {
-        showAgentSessionsPage()
+    listOf(R.id.agentActionSessions, R.id.agentTrayActionSessions).forEach { id ->
+        findViewById<View>(id).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            showAgentSessionsPage()
+        }
     }
-    findViewById<View>(R.id.agentActionCamera).setOnClickListener {
-        openAgentCamera()
+    findViewById<View>(R.id.agentTrayActionScan).setOnClickListener {
+        setAgentActionTrayExpanded(false)
+        scanMode = "contact"
+        startSecurityScan()
     }
-    findViewById<View>(R.id.agentActionAddFile).setOnClickListener {
-        openAgentAttachmentPicker(imagesOnly = false)
+    listOf(R.id.agentActionCamera, R.id.agentTrayActionCamera).forEach { id ->
+        findViewById<View>(id).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            openAgentCamera()
+        }
+    }
+    listOf(R.id.agentActionAddFile, R.id.agentTrayActionAddFile).forEach { id ->
+        findViewById<View>(id).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            openAgentAttachmentPicker(imagesOnly = false)
+        }
     }
     agentSubmitButton.setOnClickListener {
         Log.d("GalaxySSIAgent", "Agent submit clicked")
@@ -491,6 +506,9 @@ private fun MainActivity.configureAgentPageControls() {
             maybeShowAgentMentionPicker(s)
         }
     })
+    agentGoalInput.setOnFocusChangeListener { _, hasFocus ->
+        if (hasFocus) setAgentActionTrayExpanded(false)
+    }
     updateAgentSubmitButtonAppearance(agentGoalInput.text?.isNotBlank() == true || agentInputAttachments.isNotEmpty())
     agentScreenSearchInput.addTextChangedListener(object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -519,6 +537,7 @@ private fun MainActivity.configureAgentPageControls() {
         finishRecording = { send -> stopAgentInputRecording(send) },
         onTap = { enterAgentComposerTextMode() },
         onRecordingStarted = {
+            setAgentActionTrayExpanded(false)
             agentGoalInput.clearFocus()
             getSystemService(InputMethodManager::class.java)
                 .hideSoftInputFromWindow(agentGoalInput.windowToken, 0)

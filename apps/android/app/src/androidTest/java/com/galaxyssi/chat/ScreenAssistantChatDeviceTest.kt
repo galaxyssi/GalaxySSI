@@ -27,6 +27,7 @@ class ScreenAssistantChatDeviceTest {
             assertSame(activity.agentGoalInput, activity.findViewById(R.id.agentGoalInput))
             assertSame(activity.agentSubmitButton, activity.findViewById(R.id.agentSubmitButton))
             assertSame(activity.agentChatShortcuts, activity.findViewById(R.id.agentChatShortcuts))
+            assertSame(activity.agentAttachButton, activity.findViewById(R.id.agentAttachButton))
             val list = activity.findViewById<RecyclerView>(R.id.agentOutputList)
             assertSame(activity.agentTranscriptAdapter, list.adapter)
             assertTrue(list.adapter is AgentTranscriptRecyclerAdapter)
@@ -59,7 +60,22 @@ class ScreenAssistantChatDeviceTest {
         scenario.onActivity { activity ->
             activity.agentGoalInput.setText("\u8bf7\u603b\u7ed3\u5f53\u524d\u9875\u9762")
             assertEquals(View.VISIBLE, activity.agentSubmitButton.visibility)
+            activity.setAgentActionTrayExpanded(true)
+            assertFalse(activity.agentActionTrayExpanded)
             activity.agentGoalInput.setText("")
+            activity.enterAgentComposerTextMode()
+            assertEquals(View.VISIBLE, activity.agentAttachButton.visibility)
+            assertEquals(View.GONE, activity.agentSubmitButton.visibility)
+            activity.agentAttachButton.performClick()
+            assertTrue(activity.agentActionTrayExpanded)
+            assertEquals(View.VISIBLE, activity.agentActionTray.visibility)
+            listOf(R.id.agentTrayActionNewSession, R.id.agentTrayActionSessions, R.id.agentTrayActionScan,
+                R.id.agentTrayActionCamera, R.id.agentTrayActionAddFile).forEach {
+                assertTrue(activity.findViewById<View>(it).isShown)
+            }
+            activity.onBackPressed()
+            assertFalse(activity.agentActionTrayExpanded)
+            assertEquals(View.GONE, activity.agentActionTray.visibility)
             listOf(R.id.agentInsightBar, R.id.agentActionNewSession, R.id.agentActionSessions,
                 R.id.agentActionCamera, R.id.agentActionAddFile).forEach {
                 assertTrue(activity.findViewById<View>(it).isShown)

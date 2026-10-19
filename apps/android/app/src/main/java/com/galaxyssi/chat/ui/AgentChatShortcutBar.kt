@@ -2,6 +2,7 @@ package com.galaxyssi.chat.ui
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.util.TypedValue
@@ -61,9 +62,31 @@ class AgentChatShortcutBar @JvmOverloads constructor(
 
     private fun addAction(id: Int, label: Int, description: Int, icon: Int, dotId: Int? = null) {
         val button = object : FrameLayout(context) {
+            private val inkBounds = Rect()
+
             override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
                 super.onInitializeAccessibilityNodeInfo(info)
                 info.className = android.widget.Button::class.java.name
+            }
+
+            override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+                super.onLayout(changed, left, top, right, bottom)
+                val content = getChildAt(0) as LinearLayout
+                val image = content.getChildAt(0)
+                val text = content.getChildAt(1) as TextView
+                val label = text.text.toString()
+                text.paint.getTextBounds(label, 0, label.length, inkBounds)
+                // Align the visible glyphs, not the font's extra ascent/descent space.
+                val textCenter = text.top + text.baseline + inkBounds.exactCenterY()
+                image.translationY = textCenter - (image.top + image.height / 2f)
+                if (childCount > 1) {
+                    val dot = getChildAt(1)
+                    val x = if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+                        content.left + text.left - dp(2) - dot.measuredWidth
+                    } else content.left + text.right + dp(2)
+                    val y = content.top + text.top + text.baseline + inkBounds.top - dp(2)
+                    dot.layout(x, y, x + dot.measuredWidth, y + dot.measuredHeight)
+                }
             }
         }.apply {
             this.id = id
@@ -78,8 +101,9 @@ class AgentChatShortcutBar @JvmOverloads constructor(
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            isBaselineAligned = false
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-            setPadding(dp(4), dp(10), dp(4), dp(10))
+            setPaddingRelative(dp(4), dp(10), dp(if (dotId == null) 4 else 8), dp(10))
             addView(ImageView(context).apply {
                 setImageResource(icon)
                 imageTintList = ColorStateList.valueOf(context.getColor(R.color.text_primary))
@@ -90,6 +114,7 @@ class AgentChatShortcutBar @JvmOverloads constructor(
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 setTextColor(context.getColor(R.color.text_primary))
                 includeFontPadding = false
+                gravity = Gravity.CENTER_VERTICAL
                 setSingleLine()
             }, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
                 marginStart = dp(4)
@@ -106,10 +131,7 @@ class AgentChatShortcutBar @JvmOverloads constructor(
                     setColor(context.getColor(R.color.chat_shortcut_unread))
                 }
             }
-            button.addView(dot, LayoutParams(dp(5), dp(5), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(7)
-                marginEnd = dp(3)
-            })
+            button.addView(dot, LayoutParams(dp(4), dp(4)))
             unreadDots[id] = dot
         }
         row.addView(button, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(48)))

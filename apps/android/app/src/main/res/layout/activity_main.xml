@@ -104,22 +104,65 @@
                     android:paddingTop="8dp"
                     android:paddingBottom="8dp">
 
-                    <ImageView
-                        android:id="@+id/agentBrandLogo"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:padding="5dp"
-                        android:background="?android:attr/selectableItemBackgroundBorderless"
-                        android:clickable="true"
-                        android:contentDescription="@string/conversation_window_open"
-                        android:focusable="true"
-                        android:tooltipText="@string/conversation_window_open"
-                        android:src="@drawable/galaxyssi_mark_large" />
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:id="@+id/agentBrandLogo"
+                            android:layout_width="39dp"
+                            android:layout_height="39dp"
+                            android:background="?android:attr/selectableItemBackgroundBorderless"
+                            android:clickable="true"
+                            android:contentDescription="@string/conversation_window_open"
+                            android:focusable="true"
+                            android:tooltipText="@string/conversation_window_open"
+                            android:src="@drawable/galaxyssi_mark_large" />
+
+                        <LinearLayout
+                            android:id="@+id/agentBrandNewConversation"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:layout_marginStart="6dp"
+                            android:clickable="true"
+                            android:contentDescription="@string/agent_session_new"
+                            android:focusable="true"
+                            android:foreground="?android:attr/selectableItemBackground"
+                            android:gravity="center"
+                            android:tooltipText="@string/agent_session_new"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/agentBrandTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:includeFontPadding="false"
+                                android:text="@string/app_name"
+                                android:textColor="@color/text_primary"
+                                android:textSize="14.5sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:includeFontPadding="false"
+                                android:text="@string/agent_brand_subtitle"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="10sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <Space
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
 
                     <FrameLayout
                         android:id="@+id/agentSessionSummary"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
+                        android:layout_width="128dp"
                         android:layout_height="match_parent"
                         android:paddingStart="8dp"
                         android:paddingEnd="8dp">
@@ -127,7 +170,7 @@
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
-                            android:gravity="center_vertical|start"
+                            android:gravity="center_vertical|end"
                             android:orientation="vertical">
 
                             <TextView
@@ -135,26 +178,26 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:ellipsize="end"
-                                android:gravity="start"
+                                android:gravity="end"
                                 android:includeFontPadding="false"
                                 android:maxLines="1"
                                 android:text="@string/agent_session_new"
                                 android:textColor="@color/agent_session_title"
-                                android:textSize="15sp"
+                                android:textSize="14sp"
                                 android:textStyle="bold" />
 
                             <TextView
                                 android:id="@+id/agentSubtitleText"
-                                android:layout_width="wrap_content"
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="4dp"
                                 android:ellipsize="end"
-                                android:gravity="start"
+                                android:gravity="end"
                                 android:includeFontPadding="false"
                                 android:maxLines="1"
                                 android:text="@string/agent_header_model_auto"
                                 android:textColor="@color/text_secondary"
-                                android:textSize="11sp" />
+                                android:textSize="10sp" />
                         </LinearLayout>
 
                         <View
@@ -858,6 +901,15 @@
                             android:layout_marginStart="4dp">
 
                             <ImageButton
+                                android:id="@+id/agentAttachButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:background="@android:color/transparent"
+                                android:contentDescription="@string/agent_attachment_open_menu"
+                                android:padding="4dp"
+                                android:src="@drawable/ic_input_menu_layers" />
+
+                            <ImageButton
                                 android:id="@+id/agentSubmitButton"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
@@ -869,7 +921,171 @@
                         </FrameLayout>
                     </LinearLayout>
 
+                    <LinearLayout
+                        android:id="@+id/agentAttachmentActionTray"
+                        android:layout_width="match_parent"
+                        android:layout_height="96dp"
+                        android:gravity="center"
+                        android:orientation="horizontal"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="8dp"
+                        android:visibility="gone">
 
+                        <LinearLayout
+                            android:id="@+id/agentTrayActionNewSession"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <ImageView
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_new_session"
+                                android:contentDescription="@null"
+                                android:padding="10dp"
+                                android:src="@drawable/ic_agent_new_session"
+                                android:tint="@color/composer_action_new_session" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:text="@string/agent_attachment_new_task"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/agentTrayActionSessions"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <ImageView
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_sessions"
+                                android:contentDescription="@null"
+                                android:padding="10dp"
+                                android:src="@drawable/ic_agent_sessions"
+                                android:tint="@color/composer_action_sessions" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:text="@string/agent_attachment_sessions"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/agentTrayActionScan"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <ImageView
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_scan"
+                                android:contentDescription="@null"
+                                android:padding="10dp"
+                                android:src="@drawable/ic_agent_scan"
+                                android:tint="@color/composer_action_scan" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:text="@string/agent_attachment_scan"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/agentTrayActionCamera"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <ImageView
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_camera"
+                                android:contentDescription="@null"
+                                android:padding="10dp"
+                                android:src="@drawable/ic_agent_camera"
+                                android:tint="@color/composer_action_camera" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:text="@string/agent_attachment_take_photo"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/agentTrayActionAddFile"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <ImageView
+                                android:layout_width="46dp"
+                                android:layout_height="46dp"
+                                android:background="@drawable/bg_composer_action_file"
+                                android:contentDescription="@null"
+                                android:padding="10dp"
+                                android:src="@drawable/ic_agent_attach"
+                                android:tint="@color/composer_action_file" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center"
+                                android:maxLines="1"
+                                android:text="@string/agent_attachment_add_file"
+                                android:textColor="@color/text_primary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
 
