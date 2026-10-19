@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1357
-        versionName = "1.5.74"
+        versionCode = 1358
+        versionName = "1.5.75"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")

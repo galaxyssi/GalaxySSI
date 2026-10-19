@@ -907,7 +907,6 @@ internal fun MainActivity.applyDeviceProfileInputTargets() {
     val targetPx = dp(deviceProfile.minimumTouchTargetDp)
     listOf(
         agentGoalInput,
-        agentAttachButton,
         agentSubmitButton,
         imageButton,
         sendButton

@@ -26,7 +26,7 @@ class ScreenAssistantChatDeviceTest {
             assertTrue(activity is MainActivity)
             assertSame(activity.agentGoalInput, activity.findViewById(R.id.agentGoalInput))
             assertSame(activity.agentSubmitButton, activity.findViewById(R.id.agentSubmitButton))
-            assertSame(activity.agentAttachButton, activity.findViewById(R.id.agentAttachButton))
+            assertSame(activity.agentChatShortcuts, activity.findViewById(R.id.agentChatShortcuts))
             val list = activity.findViewById<RecyclerView>(R.id.agentOutputList)
             assertSame(activity.agentTranscriptAdapter, list.adapter)
             assertTrue(list.adapter is AgentTranscriptRecyclerAdapter)
@@ -55,20 +55,15 @@ class ScreenAssistantChatDeviceTest {
         }
     }
 
-    @Test fun typingUsesTheExistingSendAndMoreActions() = withChat { scenario, _ ->
+    @Test fun typingKeepsSendAndInlineActionsAvailable() = withChat { scenario, _ ->
         scenario.onActivity { activity ->
             activity.agentGoalInput.setText("\u8bf7\u603b\u7ed3\u5f53\u524d\u9875\u9762")
             assertEquals(View.VISIBLE, activity.agentSubmitButton.visibility)
-            activity.setAgentActionTrayExpanded(true)
-            assertFalse(activity.agentActionTrayExpanded)
             activity.agentGoalInput.setText("")
-            activity.setAgentActionTrayExpanded(true)
-            listOf(R.id.agentActionNewSession, R.id.agentActionSessions, R.id.agentActionScan,
+            listOf(R.id.agentInsightBar, R.id.agentActionNewSession, R.id.agentActionSessions,
                 R.id.agentActionCamera, R.id.agentActionAddFile).forEach {
-                assertNotNull(activity.findViewById<View>(it))
+                assertTrue(activity.findViewById<View>(it).isShown)
             }
-            assertTrue(activity.agentActionTrayExpanded)
-            activity.setAgentActionTrayExpanded(false)
         }
     }
 

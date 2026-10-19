@@ -955,7 +955,7 @@ internal fun MainActivity.openAgentConversation(conversationId: String) {
 }
 
 internal fun MainActivity.refreshGlobalInsightIndicator() {
-    if (!isAgentInsightBarInitialized() || !isAgentInsightTextInitialized()) return
+    if (!isAgentChatShortcutsInitialized()) return
     if (!isGlobalSuperAgentRuntimeInitialized()) return
     if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
     navigationContentExecutor.execute {
@@ -974,9 +974,7 @@ internal fun MainActivity.renderGlobalInsightIndicator(items: List<GlobalProacti
 }
 
 internal fun MainActivity.renderGlobalInsightIndicator(counts: ProactiveInboxCounts) {
-    agentInsightBar.visibility = if (counts.total == 0) View.GONE else View.VISIBLE
-    agentInsightText.text = if (counts.unread > 0) getString(R.string.attention_unread_entry, counts.unread)
-        else getString(R.string.attention_discoveries)
+    agentChatShortcuts.showFeedUnread(counts.unread)
 }
 
 internal fun MainActivity.showGlobalLearningDialog() {

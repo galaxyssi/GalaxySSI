@@ -1,11 +1,6 @@
 package com.galaxyssi.chat
 
 import android.content.Context
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.style.ImageSpan
 import android.view.View
 
 internal object AgentReplyUnreadPolicy {
@@ -95,21 +90,9 @@ internal fun MainActivity.refreshReplyUnreadDot() {
         agentPage.isShown && mainPage.visibility == View.VISIBLE && activeMainTab == PAGE_AGENT) {
         AgentReplyUnreadStore.read(this, agentRenderedConversationId, renderedAgentTranscriptSourceEntries)
     }
-    // Keep the marker in the text run, so right alignment cannot separate it from the title.
-    val title = agentSessionTitle.text.toString().removePrefix("\uFFFC\u00A0")
     val unread = AgentReplyUnreadStore.hasAny(this) || summaries.any { (contactId, summary) ->
         summary.unreadCount > 0 && ConversationHubContactHistoryPolicy.hasUnread(
             AppStore.contactById(this, contactId), summary.unreadCount, summary.lastAt)
     }
-    val alreadyUnread = agentSessionTitle.text is Spanned &&
-        (agentSessionTitle.text as Spanned).getSpans(0, agentSessionTitle.length(), ImageSpan::class.java).isNotEmpty()
-    if (alreadyUnread == unread) return
-    agentSessionTitle.text = if (unread) SpannableStringBuilder("\uFFFC\u00A0$title").apply {
-        val dot = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.BLACK)
-            setBounds(0, 0, dp(6), dp(6))
-        }
-        setSpan(ImageSpan(dot, ImageSpan.ALIGN_CENTER), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-    } else title
+    agentChatShortcuts.showSessionsUnread(unread)
 }

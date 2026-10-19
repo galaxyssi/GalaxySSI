@@ -162,8 +162,9 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         val composerState = AgentComposerUiPolicy.resolve(
             hasInput = hasInput,
             textModeActive = activity.agentComposerTextMode,
-            actionTrayRequested = activity.agentActionTrayExpanded,
-            voiceEntryAvailable = true
+            actionTrayRequested = false,
+            voiceEntryAvailable = true,
+            inlineActionsAvailable = true
         )
         entry.visibility = if (composerState.showVoiceButton) View.VISIBLE else View.GONE
         activity.agentPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
@@ -221,7 +222,6 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
         session.begin(activity.agentTranscriptStore.activeConversation().id)
         bargeInUnavailableForCall = false
-        activity.setAgentActionTrayExpanded(false)
         activity.exitAgentComposerTextMode(hideKeyboard = true)
         render()
         if (wakeCommand.isBlank()) listen() else routeWakeCommand(wakeCommand)
