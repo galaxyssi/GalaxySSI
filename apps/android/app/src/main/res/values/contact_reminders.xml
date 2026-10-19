@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <item name="contact_reminder_logo" type="id" />
+    <item name="contact_reminder_header_title" type="id" />
+    <item name="contact_reminder_header_subtitle" type="id" />
+    <string name="contact_reminder_subtitle">GalaxySSI · Contact reminder</string>
+    <string name="contact_reminder_brand" translatable="false">GalaxySSI</string>
     <string name="contact_reminder_title">Contact reminder</string>
     <string name="contact_reminder_send">Remind contact</string>
     <string name="contact_reminder_message">Please check your messages</string>

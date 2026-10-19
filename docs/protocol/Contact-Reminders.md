@@ -5,6 +5,8 @@
 Android 1.5.71 adds an independent reminder action to the direct-contact composer;
 1.5.72 separates playback lifetime from the transient reminder window. Android
 1.5.73 adds an authorized background-panel route with an independent task.
+Android 1.5.74 matches the compact two-line reminder header and closes completed
+panels automatically.
 It reuses the Agent voice-entry waveform artwork, not the Agent voice handler.
 An empty, idle contact composer shows the reminder icon. Editing and attachment
 selection retain the existing more/send controls. Tapping the reminder does not
@@ -15,6 +17,21 @@ the display height (with an accessibility minimum). Mute stops this reminder's
 sound; Ignore dismisses it; Got it acknowledges it to the sender. Swipe up or Back
 mutes and collapses the incoming panel. The sender can cancel an active reminder.
 Status is stored in the contact conversation without creating an Agent run.
+
+The panel reuses the GalaxySSI product logo shared with the main header and
+application icon, a contact-name title, and the localized `GalaxySSI / Contact
+reminder` subtitle. There is no separately recreated mark; it does not reuse the
+composer's voice waveform or change avatars elsewhere in the app. Locked panels
+show a generic title and brand subtitle instead of the private contact name.
+An incoming active panel has no redundant `Please check your messages` body or
+empty placeholder; it wraps the header and actions with an accessibility-aware
+height. Sender delivery state and silenced/quiet state remain available.
+
+Acknowledgement, dismissal, cancellation, expiry, failure, or disabled receipts
+close either endpoint's visible panel without an extra Close button. Expiry also
+closes on the UI deadline while persistence completes asynchronously. Silencing
+does not claim acknowledgement. Unrelated receipts and stale asynchronous loads
+must not close or replace a newer reminder's panel.
 
 Long-press the contact reminder icon or use the panel's settings button for
 receiving preferences and OS authorization status. Receiving, alarm-stream sound,
