@@ -254,8 +254,23 @@ class ComposerAttachmentEditorActivity : Activity() {
                     }
                 }, rowParams(-2, 52))
             }
+            centerPreviewActions(actions)
         }
         controls.addView(actions)
+    }
+
+    private fun centerPreviewActions(row: LinearLayout) {
+        val buttons = (0 until row.childCount).map(row::getChildAt)
+        row.removeAllViews()
+        row.tag = "composer_preview_actions"
+        row.isBaselineAligned = false
+        buttons.forEach { button ->
+            val slot = FrameLayout(this)
+            val width = button.layoutParams.width.takeIf { it > 0 } ?: ViewGroup.LayoutParams.WRAP_CONTENT
+            slot.addView(button, FrameLayout.LayoutParams(
+                width, button.layoutParams.height, Gravity.CENTER))
+            row.addView(slot, LinearLayout.LayoutParams(0, dp(52), 1f))
+        }
     }
 
     private fun iconTool(row: LinearLayout, icon: Int, text: Int, action: (View) -> Unit) {

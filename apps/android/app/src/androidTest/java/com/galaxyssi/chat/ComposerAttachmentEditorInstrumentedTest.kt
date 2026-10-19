@@ -102,6 +102,7 @@ class ComposerAttachmentEditorInstrumentedTest {
         try {
             assertNull(onMain { findText(editor.window.decorView, context.getString(R.string.composer_crop)) })
             assertEquals(View.GONE, onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).visibility })
+            assertPreviewActionsCentered(editor, 1)
         } finally { close(editor) }
     }
 
@@ -137,6 +138,80 @@ class ComposerAttachmentEditorInstrumentedTest {
         } finally { instrumentation.removeMonitor(monitor) }
     }
 
+    @Test fun previewActionsRemainCenteredAfterQualityAndCropChanges() = withEditor { editor, _ ->
+        assertPreviewActionsCentered(editor, 3)
+        onMain { editor.window.decorView.findViewWithTag<android.widget.CheckBox>("composer_original_quality").performClick() }
+        assertPreviewActionsCentered(editor, 3)
+        click(editor, R.string.composer_crop)
+        await { onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).cropRect != null } }
+        onMain { editor.onBackPressed() }
+        assertPreviewActionsCentered(editor, 3)
+        instrumentation.uiAutomation.takeScreenshot()?.let { screenshot ->
+            File(context.getExternalFilesDir(null), "composer-preview-centered.png").outputStream().use {
+                screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            screenshot.recycle()
+        }
+    }
+
+    @Test fun cameraPreviewCentersAllFourActionsIncludingRetake() = withEditor(camera = true) { editor, _ ->
+        assertPreviewActionsCentered(editor, 4)
+        click(editor, R.string.composer_crop_retake)
+        await { onMain { editor.isFinishing } }
+    }
+
+    @Test fun centeredDeleteRemovesTheDraftButNotTheSourceFile() = withEditor { editor, original ->
+        val before = digest(original)
+        click(editor, R.string.agent_attachment_remove)
+        await { onMain { editor.isFinishing } }
+        assertTrue(ComposerAttachmentItem.decode(state(editor).getString(ComposerAttachmentEditorActivity.ITEMS)!!).isEmpty())
+        assertEquals(before, digest(original))
+    }
+
+    private fun assertPreviewActionsCentered(editor: Activity, count: Int) {
+        instrumentation.waitForIdleSync()
+        onMain {
+            val row = editor.window.decorView.findViewWithTag<android.widget.LinearLayout>("composer_preview_actions")
+            assertNotNull(row)
+            val width = row.width
+            val direction = row.layoutDirection
+            val density = editor.resources.displayMetrics.density
+            try {
+                for (dpWidth in listOf(320, 360, 412, 800)) {
+                    for (rtl in listOf(false, true)) {
+                        row.layoutDirection = if (rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+                        row.measure(View.MeasureSpec.makeMeasureSpec((dpWidth * density).toInt(), View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                        row.layout(row.left, row.top, row.left + row.measuredWidth, row.top + row.measuredHeight)
+                        assertEquals(count, row.childCount)
+                        val cellWidth = (row.width - row.paddingLeft - row.paddingRight).toFloat() / count
+                        val centerY = row.paddingTop + (row.height - row.paddingTop - row.paddingBottom) / 2f
+                        repeat(count) { index ->
+                            val slot = row.getChildAt(index) as android.widget.FrameLayout
+                            val button = slot.getChildAt(0)
+                            assertEquals("Every preview action has equal space", cellWidth, slot.width.toFloat(), 1f)
+                            assertEquals("Action is horizontally centered", slot.width / 2f,
+                                button.left + button.width / 2f, 1f)
+                            assertEquals("All action centers share the same row", centerY,
+                                slot.top + button.top + button.height / 2f, 1f)
+                            assertTrue("Action $index has a 48 dp wide touch target at $dpWidth dp (RTL=$rtl): ${button.width}",
+                                button.width >= (48 * density).toInt())
+                            assertTrue("Action $index has a 48 dp tall touch target",
+                                button.height >= (48 * density).toInt())
+                            assertTrue(button.left >= 0 && button.right <= slot.width)
+                        }
+                    }
+                }
+            } finally {
+                row.layoutDirection = direction
+                row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                row.layout(row.left, row.top, row.left + width, row.top + row.measuredHeight)
+                row.requestLayout()
+            }
+        }
+    }
+
     private fun clickPopup(text: String) {
         await {
             instrumentation.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(text)
@@ -150,7 +225,7 @@ class ComposerAttachmentEditorInstrumentedTest {
         instrumentation.waitForIdleSync()
     }
 
-    private fun withEditor(test: (ComposerAttachmentEditorActivity, File) -> Unit) {
+    private fun withEditor(camera: Boolean = false, test: (ComposerAttachmentEditorActivity, File) -> Unit) {
         val file = File(context.filesDir, "composer-attachments-v1/test-${UUID.randomUUID()}.jpg")
         file.parentFile!!.mkdirs()
         fixtures.add(file)
@@ -164,17 +239,18 @@ class ComposerAttachmentEditorInstrumentedTest {
         bitmap.recycle()
         val item = ComposerAttachmentItem("test-photo", LocalAttachmentUris.forFile(context, file, "test.jpg", "image/jpeg").toString(),
             "test.jpg", "image/jpeg", file.length())
-        val editor = launch(listOf(item))
+        val editor = launch(listOf(item), camera = camera)
         try {
             await { onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).cropRect != null } }
             test(editor, file)
         } finally { close(editor) }
     }
 
-    private fun launch(items: List<ComposerAttachmentItem>): ComposerAttachmentEditorActivity =
+    private fun launch(items: List<ComposerAttachmentItem>, camera: Boolean = false): ComposerAttachmentEditorActivity =
         instrumentation.startActivitySync(Intent(context, ComposerAttachmentEditorActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             .putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(items))
+            .putExtra(ComposerAttachmentEditorActivity.CAMERA, camera)
             .putExtra(ComposerAttachmentEditorActivity.ROUTE, "agent")
             .putExtra(ComposerAttachmentEditorActivity.TARGET, "test-conversation")) as ComposerAttachmentEditorActivity
 
