@@ -4,11 +4,13 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
+import android.provider.Settings
 import android.telecom.TelecomManager
 import android.content.pm.PackageManager
 
@@ -22,11 +24,12 @@ internal object ContactReminderNotifications {
     }
 
     fun show(base: Context, value: ContactReminder) {
-        if (value.terminal || System.currentTimeMillis() >= value.expiresAt) return
+        if (value.outgoing || value.terminal || value.status == "muted" || System.currentTimeMillis() >= value.expiresAt) return
         val context = AppLanguage.wrap(base)
         val foreground = AppForegroundTracker.isForeground()
         val quiet = callActive(context) || value.status == "quiet"
         val manager = context.getSystemService(NotificationManager::class.java)
+        val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
         val channelId = if (quiet) "contact_reminders_quiet_v2" else "contact_reminders_panel_v2"
         val channel = NotificationChannel(channelId, context.getString(R.string.contact_reminder_title),
             if (quiet) NotificationManager.IMPORTANCE_DEFAULT else NotificationManager.IMPORTANCE_HIGH).apply {
@@ -36,6 +39,13 @@ internal object ContactReminderNotifications {
             setSound(null, null)
         }
         manager.createNotificationChannel(channel)
+        val notificationAllowed = manager.areNotificationsEnabled() &&
+            manager.getNotificationChannel(channelId)?.importance != NotificationManager.IMPORTANCE_NONE &&
+            (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+        val prefs = ContactReminders.preferences(context)
+        val route = ContactReminderPresentationPolicy.route(foreground, locked, quiet,
+            prefs.getBoolean("background_panel", true), prefs.getBoolean("lockscreen", true),
+            Settings.canDrawOverlays(context), Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent(), notificationAllowed)
         val intent = ContactReminderActivity.intent(context, value.id)
         val open = PendingIntent.getActivity(context, value.id.hashCode(), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -51,17 +61,22 @@ internal object ContactReminderNotifications {
             .addAction(Notification.Action.Builder(null, context.getString(R.string.contact_reminder_ignore), action(context, value.id, "dismissed")).build())
             .addAction(Notification.Action.Builder(null, context.getString(R.string.contact_reminder_confirm), action(context, value.id, "acknowledged")).build())
             .setDeleteIntent(action(context, value.id, "muted"))
-        val allowFullScreen = Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent()
-        if (!quiet && !foreground && allowFullScreen && ContactReminders.preferences(context).getBoolean("lockscreen", false)) {
+        if (route == ContactReminderPresentationPolicy.Route.FULL_SCREEN_NOTIFICATION) {
             notice.setFullScreenIntent(open, true)
         }
-        if (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+        if (notificationAllowed) {
             manager.notify(value.id, 4601, notice.build())
             if (!quiet) ContactReminderSound.start(context, value)
         }
-        if (foreground && !quiet) {
+        if (BuildConfig.DEBUG) android.util.Log.d("GalaxySSIReminderPanel",
+            "Requested route=$route foreground=$foreground locked=$locked notifications=$notificationAllowed")
+        if (route == ContactReminderPresentationPolicy.Route.PANEL) {
             ContactReminderSound.start(context, value)
-            context.startActivity(intent)
+            // SYSTEM_ALERT_WINDOW is a documented background-launch exception. Never grant it ourselves.
+            // A separate translucent task keeps the current app/home screen behind this top-only panel.
+            runCatching { context.startActivity(intent) }.onFailure {
+                if (BuildConfig.DEBUG) android.util.Log.w("GalaxySSIReminderPanel", "Panel launch failed: ${it.javaClass.simpleName}")
+            }
         }
     }
 

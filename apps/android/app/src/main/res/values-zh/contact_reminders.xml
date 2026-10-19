@@ -25,4 +25,11 @@
     <string name="contact_reminder_silent_sound">静音时使用闹钟声音提醒</string>
     <string name="contact_reminder_lockscreen">锁屏时显示提醒面板</string>
     <string name="contact_reminder_system_settings">系统通知设置</string>
+    <string name="contact_reminder_background">后台显示顶部提醒面板</string>
+    <string name="contact_reminder_panel_permissions">弹窗权限</string>
+    <string name="contact_reminder_overlay_permission">显示在其他应用上层</string>
+    <string name="contact_reminder_fullscreen_permission">锁屏全屏通知</string>
+    <string name="contact_reminder_allowed">已允许</string>
+    <string name="contact_reminder_not_allowed">未允许</string>
+    <string name="contact_reminder_settings_unavailable">无法打开系统设置</string>
 </resources>
