@@ -13,11 +13,12 @@ object AgentComposerUiPolicy {
         hasInput: Boolean,
         textModeActive: Boolean,
         actionTrayRequested: Boolean,
-        voiceEntryAvailable: Boolean = false
+        voiceEntryAvailable: Boolean = false,
+        inlineActionsAvailable: Boolean = false
     ): AgentComposerUiState {
         val showSend = hasInput
-        val showTray = actionTrayRequested && !showSend
-        val showMore = !showSend && (textModeActive || showTray)
+        val showTray = !inlineActionsAvailable && actionTrayRequested && !showSend
+        val showMore = !inlineActionsAvailable && !showSend && (textModeActive || showTray)
         val showVoice = voiceEntryAvailable && !showSend && !showMore
         return AgentComposerUiState(
             showPrimaryActionSlot = showSend || showMore || showVoice,

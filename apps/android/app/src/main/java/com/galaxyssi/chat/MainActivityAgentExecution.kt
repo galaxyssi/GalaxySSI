@@ -243,32 +243,15 @@ internal fun MainActivity.updateAgentSubmitButtonAppearance(hasInput: Boolean) {
     val composerState = AgentComposerUiPolicy.resolve(
         hasInput = hasInput,
         textModeActive = agentComposerTextMode,
-        actionTrayRequested = agentActionTrayExpanded,
-        voiceEntryAvailable = agentVoiceConversation != null
+        actionTrayRequested = false,
+        voiceEntryAvailable = agentVoiceConversation != null,
+        inlineActionsAvailable = true
     )
-    agentActionTrayExpanded = composerState.showActionTray
     agentPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
-    agentAttachButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
     agentSubmitButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
-    agentActionTray.visibility = if (composerState.showActionTray) View.VISIBLE else View.GONE
-    agentAttachButton.renderComposerMoreButton(composerState.showActionTray)
-    agentAttachButton.contentDescription = getString(
-        if (composerState.showActionTray) R.string.agent_attachment_close_menu
-        else R.string.agent_attachment_open_menu
-    )
     agentSubmitButton.setBackgroundResource(android.R.color.transparent)
     agentSubmitButton.imageTintList = android.content.res.ColorStateList.valueOf(
         getColorCompat(R.color.composer_send_icon)
-    )
-}
-
-internal fun MainActivity.setAgentActionTrayExpanded(expanded: Boolean) {
-    if (expanded) {
-        exitAgentComposerTextMode(hideKeyboard = true)
-    }
-    agentActionTrayExpanded = expanded
-    updateAgentSubmitButtonAppearance(
-        agentGoalInput.text?.toString()?.isNotBlank() == true || agentInputAttachments.isNotEmpty()
     )
 }
 

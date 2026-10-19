@@ -297,26 +297,22 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal lateinit var agentAuditTrailList: LinearLayout
     internal lateinit var agentRecentTaskList: LinearLayout
     internal lateinit var agentGoalInput: EditText
-    internal lateinit var agentInsightBar: LinearLayout
-    internal lateinit var agentInsightText: TextView
+    internal lateinit var agentChatShortcuts: com.galaxyssi.chat.ui.AgentChatShortcutBar
     internal lateinit var agentComposerRow: LinearLayout
     internal lateinit var agentPrimaryActionSlot: FrameLayout
     internal var agentVoiceConversation: AgentVoiceConversation? = null
     internal var contactReminderComposer: ContactReminderComposer? = null
     internal var voicePlaybackEpoch = 0L
-    internal lateinit var agentActionTray: LinearLayout
     internal lateinit var agentRecordingCenter: View
     internal lateinit var agentRecordingInstruction: TextView
     internal lateinit var agentRecordingWaveform: VoiceWaveformView
     internal lateinit var agentRecordingTranscript: TextView
     internal lateinit var agentRecordingTimer: TextView
     internal lateinit var agentHoldToTalkController: AppleHoldToTalkController
-    internal lateinit var agentAttachButton: ImageButton
     internal lateinit var agentSubmitButton: ImageButton
     internal lateinit var agentBrandLogo: ImageView
     internal lateinit var agentAttachmentPreviewScroll: HorizontalScrollView
     internal lateinit var agentAttachmentPreviewList: LinearLayout
-    internal var agentActionTrayExpanded = false
     internal var agentComposerTextMode = false
     internal var agentComposerKeyboardObserved = false
     internal var agentComposerKeyboardClosedAt = 0L
@@ -836,11 +832,9 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             return messages.getOrPut(id) { mutableListOf() }
         }
 
-    internal fun isAgentActionTrayInitialized(): Boolean = ::agentActionTray.isInitialized
     internal fun isAgentGoalInputInitialized(): Boolean = ::agentGoalInput.isInitialized
     internal fun isAgentHandoffStoreInitialized(): Boolean = ::agentHandoffStore.isInitialized
-    internal fun isAgentInsightBarInitialized(): Boolean = ::agentInsightBar.isInitialized
-    internal fun isAgentInsightTextInitialized(): Boolean = ::agentInsightText.isInitialized
+    internal fun isAgentChatShortcutsInitialized(): Boolean = ::agentChatShortcuts.isInitialized
     internal fun isAgentMcpRegistryInitialized(): Boolean = ::agentMcpRegistry.isInitialized
     internal fun isAgentOutputLayoutInitialized(): Boolean = ::agentOutputLayout.isInitialized
     internal fun isAgentRunEventStoreInitialized(): Boolean = ::agentRunEventStore.isInitialized
@@ -1055,17 +1049,14 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         agentAuditTrailList = findViewById(R.id.agentAuditTrailList)
         agentRecentTaskList = findViewById(R.id.agentRecentTaskList)
         agentGoalInput = findViewById(R.id.agentGoalInput)
-        agentInsightBar = findViewById(R.id.agentInsightBar)
-        agentInsightText = findViewById(R.id.agentInsightText)
+        agentChatShortcuts = findViewById(R.id.agentChatShortcuts)
         agentComposerRow = findViewById(R.id.agentComposerRow)
         agentPrimaryActionSlot = findViewById(R.id.agentPrimaryActionSlot)
-        agentActionTray = findViewById(R.id.agentAttachmentActionTray)
         agentRecordingCenter = findViewById(R.id.agentRecordingCenter)
         agentRecordingInstruction = findViewById(R.id.agentRecordingInstruction)
         agentRecordingWaveform = findViewById(R.id.agentRecordingWaveform)
         agentRecordingTranscript = findViewById(R.id.agentRecordingTranscript)
         agentRecordingTimer = findViewById(R.id.agentRecordingTimer)
-        agentAttachButton = findViewById(R.id.agentAttachButton)
         agentSubmitButton = findViewById(R.id.agentSubmitButton)
         agentBrandLogo = findViewById(R.id.agentBrandLogo)
         applyAgentBrandLogoTextScale()
@@ -1458,10 +1449,6 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         }
         if (SystemClock.elapsedRealtime() - chatComposerKeyboardClosedAt < 700L) {
             chatComposerKeyboardClosedAt = 0L
-            return
-        }
-        if (::agentActionTray.isInitialized && agentActionTrayExpanded) {
-            setAgentActionTrayExpanded(false)
             return
         }
         if (collapseChatActionTrayOnBack()) return

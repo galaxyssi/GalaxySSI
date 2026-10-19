@@ -231,9 +231,6 @@ internal fun MainActivity.showMainTab(
     AppForegroundTracker.onConversationHidden(this)
     val navigationToken = if (preserveNavigationContent) null else navigationContentGate.begin()
     val previousTab = activeMainTab
-    if (tab != PAGE_AGENT && isAgentActionTrayInitialized() && agentActionTrayExpanded) {
-        setAgentActionTrayExpanded(false)
-    }
     if (tab != PAGE_AGENT && isAgentGoalInputInitialized() && agentComposerTextMode) {
         exitAgentComposerTextMode(hideKeyboard = true)
     }

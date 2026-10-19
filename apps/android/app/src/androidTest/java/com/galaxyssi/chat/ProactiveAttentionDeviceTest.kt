@@ -1293,24 +1293,29 @@ class ProactiveAttentionDeviceTest {
         } finally { manager.cancel(id) }
     }
 
-    @Test fun homepageHidesEmptyDiscoveriesAndKeepsReadFindingsAccessible() {
+    @Test fun homepageKeepsFeedAccessibleAndOnlyMarksUnreadFindings() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val bar = activity.findViewById<View>(R.id.agentInsightBar)
                 val label = activity.findViewById<TextView>(R.id.agentInsightText)
+                val dot = activity.findViewById<View>(R.id.agentInsightUnreadDot)
                 val items = GlobalProactiveInboxPolicy.project(listOf(message().copy(
                     status = GlobalProactiveMessageStatus.DELIVERED, deliveredAtMillis = 1000)), emptyList())
                 try {
                     activity.renderGlobalInsightIndicator(emptyList())
-                    assertEquals(View.GONE, bar.visibility)
+                    assertEquals(View.VISIBLE, bar.visibility)
+                    assertEquals(View.INVISIBLE, dot.visibility)
                     activity.renderGlobalInsightIndicator(items)
                     assertEquals(View.VISIBLE, bar.visibility)
-                    assertEquals(activity.getString(R.string.attention_unread_entry, 1), label.text.toString())
+                    assertEquals(activity.getString(R.string.chat_shortcut_feed), label.text.toString())
+                    assertEquals(activity.getString(R.string.attention_unread_entry, 1), bar.contentDescription)
+                    assertEquals(View.VISIBLE, dot.visibility)
                     activity.renderGlobalInsightIndicator(items.map { it.copy(viewedAtMillis = 2000) })
                     assertEquals(View.VISIBLE, bar.visibility)
-                    assertEquals(activity.getString(R.string.attention_discoveries), label.text.toString())
+                    assertEquals(activity.getString(R.string.chat_shortcut_feed), label.text.toString())
+                    assertEquals(View.INVISIBLE, dot.visibility)
                     activity.renderGlobalInsightIndicator(emptyList())
-                    assertEquals(View.GONE, bar.visibility)
+                    assertEquals(View.VISIBLE, bar.visibility)
                 } finally { activity.refreshGlobalInsightIndicator() }
             }
         }

@@ -1,0 +1,8 @@
+<resources>
+    <string name="chat_shortcut_feed">动态</string>
+    <string name="chat_shortcut_new">新会话</string>
+    <string name="chat_shortcut_sessions">会话</string>
+    <string name="chat_shortcut_camera">拍照</string>
+    <string name="chat_shortcut_file">文件</string>
+    <string name="chat_shortcut_sessions_unread">会话列表，有未读消息</string>
+</resources>
