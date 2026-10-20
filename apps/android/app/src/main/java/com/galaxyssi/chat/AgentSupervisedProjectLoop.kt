@@ -1117,15 +1117,18 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         logSupervisedPlanRejection("non_phone_site", normalizedResponse)
         return supervisedFormatRepairDecision(plan, connector, request, response, "non_phone_site")
     }
-    val parsing = AgentModelPlanParser.parseWithDiagnostics(request, normalizedResponse, settings)
+    val phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
+                connector.parameters[AgentUnverifiedOutcomeRecovery.PHONE_CONTROL] == "true" ||
+                AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
+    val parsing = AgentModelPlanParser.parseWithDiagnostics(request, normalizedResponse, settings,
+        allowInitialCompletion = iteration == 0 && !phoneControl &&
+            !AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) &&
+            !AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext))
     val rawParsed = parsing.plan ?: run {
             logSupervisedPlanRejection("action_plan", normalizedResponse)
             return supervisedFormatRepairDecision(plan, connector, request, response,
                 "action_plan:" + parsing.rejection?.toJson().orEmpty())
         }
-    val phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
-                connector.parameters[AgentUnverifiedOutcomeRecovery.PHONE_CONTROL] == "true" ||
-                AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
     if (!AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, rawParsed.actions, phoneControl = phoneControl)) {
         logSupervisedPlanRejection("execution_tool_policy", normalizedResponse)
         return supervisedFormatRepairDecision(plan, connector, request, response,

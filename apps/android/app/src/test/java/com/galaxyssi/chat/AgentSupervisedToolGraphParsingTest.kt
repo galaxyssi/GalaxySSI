@@ -114,6 +114,57 @@ class AgentSupervisedToolGraphParsingTest {
         assertTrue(repair.contains("Never mix DRAFT_PLAN/task-complete"))
     }
 
+    @Test fun `provider native research can deliver its initial complete answer without a phone search`() {
+        val answer = "Observed public facts. [Source](https://example.com/source)\n" +
+            "![Product](https://example.com/product.png)"
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", answer).put("parameters", JSONObject())
+        val requirements = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false)
+        val source = JSONObject(plan(completion)).put("completion_requirements", requirements.toJson()).toString()
+        val research = request().copy(goal = "Find public product information and pictures")
+        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(research.goal, research.conversationContext))
+        val parsed = AgentModelPlanParser.parseWithDiagnostics(research, source, settings,
+            allowInitialCompletion = true)
+        assertNull(parsed.rejection)
+        assertEquals(answer, parsed.plan!!.actions.single().description)
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(
+            AgentExecutionSiteDecision(AgentRequestedExecutionSite.PHONE), parsed.plan!!.actions))
+        assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(
+            parsed.plan!!.completionRequirements, emptyList(), finalAnswer = answer).isEmpty())
+        assertNull(AgentModelPlanParser.parse(research, source, settings))
+    }
+
+    @Test fun `initial research completion never permits a mixed execution and answer batch`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", "Already done")
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(),
+            plan(action(1, write.id), completion), settings, allowInitialCompletion = true)
+        assertEquals("completion_mixed_with_execution", result.rejection!!.code)
+        assertNull(result.plan)
+    }
+
+    @Test fun `initial completion admission does not waive publication or runtime evidence`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", "Claimed completion without receipts")
+        val requirements = AgentCompletionRequirements(AgentPublicationRequirement.PULL_REQUEST, true)
+        val source = JSONObject(plan(completion)).put("completion_requirements", requirements.toJson()).toString()
+        val parsed = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings,
+            allowInitialCompletion = true).plan!!
+        val missing = AgentSupervisedProjectCompletionPolicy.missingEvidence(parsed.completionRequirements,
+            emptyList(), finalAnswer = parsed.actions.single().description)
+        assertTrue(missing.any { it.contains("phone Linux") })
+        assertTrue(missing.any { it.contains("pull request") })
+    }
+
+    @Test fun `initial completion still requires an explicit model declared result contract`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", "Answer without a result contract")
+        val parsed = AgentModelPlanParser.parseWithDiagnostics(request(), plan(completion), settings,
+            allowInitialCompletion = true).plan!!
+        assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(parsed.completionRequirements,
+            emptyList(), finalAnswer = parsed.actions.single().description).isNotEmpty())
+    }
+
     @Test fun `unknown tool feedback identifies inventory failure not invalid JSON`() {
         val source = plan(action(1, "galaxyssi.unavailable.fixture"))
         val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
