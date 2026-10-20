@@ -39,7 +39,9 @@ class AgentControlPlaneActionExecutor private constructor(
             ?: return provider.executeDelegate(action, screen)
         val conversationId = action.parameters[CONVERSATION_ID_KEY].orEmpty()
         val turnId = action.parameters[TURN_ID_KEY].orEmpty()
-        val runId = stableRunId(conversationId, turnId, action.id, agentId)
+        val attemptKey = AgentConnectorFallbackAction.effectAttemptKey(action)
+        val runId = stableRunId(conversationId, turnId, attemptKey, agentId)
+        val explicitIdempotencyKey = action.parameters["idempotency_key"].orEmpty()
         val request = AgentRunRequest(
             conversationId = conversationId,
             messageId = turnId.ifBlank { action.id },
@@ -55,7 +57,11 @@ class AgentControlPlaneActionExecutor private constructor(
                 "action_target" to action.target,
                 "risk" to action.risk.name.lowercase(Locale.ROOT)
             ),
-            idempotencyKey = action.parameters["idempotency_key"].orEmpty().ifBlank { runId }
+            idempotencyKey = when {
+                explicitIdempotencyKey.isBlank() -> runId
+                attemptKey != action.id -> "$explicitIdempotencyKey/$runId"
+                else -> explicitIdempotencyKey
+            }
         )
         provider.prepare(agentId, request, action, screen)
         val dispatchStartedAtMillis = System.currentTimeMillis()

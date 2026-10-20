@@ -42,7 +42,8 @@ internal object AgentNativeActionObservation {
     fun evidence(result: AgentActionResult, limit: Int): String {
         val observation = result.metadata[KEY].orEmpty()
         val output = result.metadata["native_tool_output"].orEmpty()
-        return observation.ifBlank { output }.take(limit)
+        val value = observation.ifBlank { output }
+        return AgentWebObservation.compact(value, limit, preserveReceipt = true) ?: value.take(limit)
     }
 
     private fun details(value: Any?): Any? {

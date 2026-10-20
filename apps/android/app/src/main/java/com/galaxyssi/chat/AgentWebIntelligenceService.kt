@@ -800,7 +800,7 @@ class AgentWebIntelligenceService(
                     "model" to AgentWebIntelligenceRanker.MODEL_ID,
                     "url_normalization" to "raw_components_v2",
                     "image_routing" to "direct_media_subject_v2",
-                    "web_routing" to "language_scoped_result_cards_v5"
+                    "web_routing" to "query_evidence_failover_v6"
                 )
             )
         )

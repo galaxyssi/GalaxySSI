@@ -7,6 +7,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun completionContainsTheDeliveredAnswerRatherThanInstructionsToAnotherWriter() {
+        for (continuation in listOf(false, true)) {
+            for (development in listOf(false, true)) {
+                val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240,
+                    developmentContext = development)
+                assertTrue(prompt.contains("description is rendered verbatim as the user's final answer"))
+                assertTrue(prompt.contains("no downstream writer or tool will expand it"))
+                assertTrue(prompt.contains("requested Markdown images using observed URLs"))
+                assertTrue(prompt.contains("Do not describe a future answer"))
+            }
+        }
+    }
     @Test fun ordinaryResearchGetsDirectCompleteSearchSchemasWithoutDevelopmentContract() {
         val original = context()
         val search = original.nativeTools.first().copy(id = AgentWebIntelligenceNativeTools.SEARCH,

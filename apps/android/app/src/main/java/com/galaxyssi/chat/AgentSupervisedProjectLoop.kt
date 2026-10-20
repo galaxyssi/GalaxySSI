@@ -387,7 +387,8 @@ internal object AgentSupervisedProjectLoop {
                     maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
                     temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
                     detailedToolIds = progress.detailedToolIds,
-                    developmentContext = request.executionHistory.any { action ->
+                    developmentContext = AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) ||
+                        request.executionHistory.any { action ->
                         val id = action.parameters["tool_id"].orEmpty().ifBlank { action.target }
                         id.startsWith("galaxyssi.workspace.") || id.startsWith("galaxyssi.project.") ||
                             id.startsWith("galaxyssi.runtime.")

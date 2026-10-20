@@ -651,7 +651,7 @@ object AgentWebIntelligenceEngineCatalog {
         spec("yandex", "Yandex", "regional", "https://yandex.com/search/?text={query}"),
         spec("ecosia", "Ecosia", "general", "https://www.ecosia.org/search?q={query}"),
         spec("startpage", "Startpage", "general", "https://www.startpage.com/sp/search?query={query}"),
-        spec("sogou", "Sogou", "regional", "https://www.sogou.com/web?query={query}", languages = setOf("zh")),
+        spec("sogou", "Sogou", "regional", "https://www.sogou.com/web?query={query}", languages = setOf("zh", "en")),
         spec("naver", "Naver", "regional", "https://search.naver.com/search.naver?query={query}", languages = setOf("ko")),
         spec("google", "Google", "general", "https://www.google.com/search?q={query}&num={limit}", enabled = false),
         spec("bing_news", "Bing News", "news", "https://www.bing.com/news/search?q={query}&count={limit}", weight = 1.1),
@@ -1599,7 +1599,7 @@ class AgentWebIntelligenceFusion(
                 coverage,
                 urlQuality,
                 duplicatePenalty
-            ))
+            )) * coverage
             val webScore = (
                 0.28 * reciprocalRank +
                     0.21 * lexical +
@@ -1810,7 +1810,15 @@ class AgentWebIntelligenceSearchCoordinator(
             verticals,
             categoryTags
         )
-        val selected = selection.selected
+        val selected = selection.selected.toMutableList()
+        fun origin(id: String): String = runCatching {
+            URI(specs.getValue(id).endpoint.replace("{query}", "query").replace("{limit}", "1")).host
+        }.getOrNull()?.lowercase(Locale.ROOT)?.removePrefix("www.") ?: id
+        val origins = selected.map(::origin).toMutableSet()
+        val reserve = if (selection.explicit) ArrayDeque<String>() else ArrayDeque(
+            selectEnginePlan(query, 32, emptyList(),
+                if (verticals == setOf(AgentWebIntelligenceVertical.IMAGE)) verticals else emptySet(),
+                emptySet()).selected.filter { it !in selected && origins.add(origin(it)) }.take(3))
         val selectionMillis = clock() - started
         if (selected.isEmpty()) {
             return AgentWebIntelligenceSearchResponse(
@@ -1837,7 +1845,7 @@ class AgentWebIntelligenceSearchCoordinator(
                 Triple<String, List<AgentWebIntelligenceRawResult>, AgentWebIntelligenceReceipt>
                 >(executor)
             val pending = selected.toMutableSet()
-            selected.forEach { id ->
+            fun submit(id: String) {
                 completion.submit(Callable {
                     val attemptStarted = clock()
                     try {
@@ -1853,14 +1861,17 @@ class AgentWebIntelligenceSearchCoordinator(
                             localCancellation.token,
                             checkpoint
                         )
+                        val uncertain = AgentSearchResponseQuality.disjoint(query, results)
                         Triple(
                             id,
                             results,
                             AgentWebIntelligenceReceipt(
                                 id,
-                                if (results.isEmpty()) "empty" else "completed",
+                                if (uncertain) "partial" else if (results.isEmpty()) "empty" else "completed",
                                 clock() - attemptStarted,
-                                results.size
+                                results.size,
+                                if (uncertain) "search_query_mismatch" else "",
+                                if (uncertain) "Candidates have no query-term overlap. Relevance is unverified, not evidence of absence." else ""
                             )
                         )
                     } catch (error: Throwable) {
@@ -1891,7 +1902,9 @@ class AgentWebIntelligenceSearchCoordinator(
                     }
                 })
             }
+            selected.forEach(::submit)
             val groups = mutableListOf<List<AgentWebIntelligenceRawResult>>()
+            val uncertainGroups = mutableListOf<List<AgentWebIntelligenceRawResult>>()
             val receipts = mutableListOf<AgentWebIntelligenceReceipt>()
             var earlyCompleted = false
             while (pending.isNotEmpty()) {
@@ -1902,8 +1915,15 @@ class AgentWebIntelligenceSearchCoordinator(
                 val completed = completion.poll(minOf(remaining, 100L), TimeUnit.MILLISECONDS) ?: continue
                 val (engine, results, receipt) = completed.get()
                 pending.remove(engine)
-                groups += results
+                val uncertain = receipt.errorCode == "search_query_mismatch"
+                if (uncertain) uncertainGroups += results else groups += results
                 receipts += receipt
+                if ((results.isEmpty() || uncertain) && reserve.isNotEmpty() && deadline - clock() >= 1_000L) {
+                    val replacement = reserve.removeFirst()
+                    selected += replacement
+                    pending += replacement
+                    submit(replacement)
+                }
                 if (AgentWebSearchCompletionPolicy.hasSufficientEvidence(
                         profile = profile,
                         explicitSources = selection.explicit,
@@ -1933,7 +1953,10 @@ class AgentWebIntelligenceSearchCoordinator(
                 )
             }
             receiptBatchObserver(receipts)
-            val results = fusion.fuse(query, groups, limit)
+            // A lexical mismatch is a routing hint, not a semantic veto. Keep
+            // candidates when no independent source can corroborate the query.
+            val results = fusion.fuse(query, groups.takeIf { it.any(List<AgentWebIntelligenceRawResult>::isNotEmpty) }
+                ?: uncertainGroups, limit)
             val status = when {
                 results.isEmpty() -> "failed"
                 earlyCompleted -> "completed"

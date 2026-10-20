@@ -62,7 +62,8 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, supervisor.parameters[INTERNAL_TASK_EXECUTION_MODE])
         assertTrue(supervisor.parameters.getValue("prompt").contains(goal))
         assertTrue(supervisor.parameters.getValue("prompt").contains(AgentOnDeviceRuntimeTools.EXECUTE))
-        assertTrue(supervisor.parameters.getValue("prompt").contains("Reasoning provider is independent; execution_location=phone"))
+        assertTrue(supervisor.parameters.getValue("prompt").contains("\"execution_location\":\"phone\""))
+        assertTrue(supervisor.parameters.getValue("prompt").contains("Do not execute commands or write files on Desktop"))
     }
 
     @Test
@@ -342,7 +343,10 @@ class AgentSystemToolPlannerTest {
 
         val materialized = plan.materializeToolInput(reviewer, allowOutputHandoff = true)
 
-        assertTrue(materialized.parameters.getValue("prompt").contains(output))
+        val prompt = materialized.parameters.getValue("prompt")
+        assertTrue(prompt.contains("\"branch\":\"main\""))
+        assertTrue(prompt.contains("\"head_commit\":\"abc123\""))
+        assertTrue(prompt.contains("\"clean\":true"))
         assertFalse(materialized.parameters.getValue("prompt").contains("Phone project operation completed"))
     }
 

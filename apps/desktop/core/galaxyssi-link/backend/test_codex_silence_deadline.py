@@ -44,6 +44,18 @@ class SilenceDeadlineTests(unittest.TestCase):
     def test_heartbeat_is_not_meaningful_progress(self):
         self.assertFalse(self.server._is_meaningful_event("thread/status/changed", {}, {"status": "active"}))
 
+    def test_phone_planner_does_not_repeat_answer_contract(self):
+        prompt = "Phone-owned JSON plan contract and verified source evidence."
+        with patch("response_policy.apply_response_policy", side_effect=AssertionError("duplicate policy")):
+            result = self.server._user_input(prompt, [], include_task_policy=False, include_response_policy=False)
+        self.assertEqual(prompt, result[0]["text"])
+
+    def test_ordinary_desktop_requests_keep_response_policy(self):
+        with patch("response_policy.apply_response_policy", return_value="styled") as apply:
+            result = self.server._user_input("request", [], include_task_policy=False)
+        apply.assert_called_once_with("request")
+        self.assertEqual("styled", result[0]["text"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1355,6 +1355,7 @@ class CodexAppServer:
         cwd: str,
         reasoning_effort: str,
         include_task_policy: bool = True,
+        include_response_policy: bool = True,
     ) -> dict:
         return self._request("turn/start", {
             "threadId": thread_id,
@@ -1362,6 +1363,7 @@ class CodexAppServer:
                 prompt,
                 image_paths,
                 include_task_policy=include_task_policy and self._experiment_boundary is None,
+                include_response_policy=include_response_policy,
             ),
             "model": model,
             "effort": reasoning_effort,
@@ -1390,6 +1392,10 @@ class CodexAppServer:
                 cwd=cwd,
                 reasoning_effort=reasoning_effort,
                 include_task_policy=include_task_policy,
+                include_response_policy=not (
+                    run.conversation_id.startswith("phone-planner-v1:")
+                    and run.execution_policy.execution_mode.value == "plan_only"
+                ),
             )
         except CodexAppServerRequestTimeout as exc:
             if exc.method != "turn/start":
@@ -1411,9 +1417,12 @@ class CodexAppServer:
         image_paths: list[str] | None,
         *,
         include_task_policy: bool,
+        include_response_policy: bool = True,
     ) -> list[dict]:
         from response_policy import apply_response_policy
-        styled_prompt = apply_response_policy(prompt)
+        # The phone supplies the planner contract. Repeating the full answer/research
+        # policy on every tool round inflates context and can conflict with JSON output.
+        styled_prompt = apply_response_policy(prompt) if include_response_policy else prompt
         text = styled_prompt.rstrip()
         if include_task_policy:
             text = f"{text}\n\n{CODEX_TASK_POLICY}"

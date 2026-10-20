@@ -109,6 +109,17 @@ internal object AndroidAgentResultRecovery {
         }
     }
 
+    /** Failure events are sufficient to settle a request even if its separate final reply is lost. */
+    internal fun persistAuthenticatedFailure(context: Context, payload: JSONObject) {
+        require(AgentTaskIdentityStore.matchesRegistered(context, payload))
+        val response = AgentRemoteOutcomeCodec.terminalFailureEvent(payload,
+            AgentRemoteOutcomeCodec.content(context, payload)) ?: return
+        val consumed = AgentConnectorResponseBus.publish(context, response)
+        check(consumed || AgentConnectorResponseStore.wasRecorded(context, response)) {
+            "Terminal Agent event is not durable; keep the transport envelope for replay"
+        }
+    }
+
     private fun captureEvidence(context: Context, payload: JSONObject, desktop: String) {
         runCatching { AndroidCollaborationRemoteEvidence.capture(context, payload, desktop) }.onFailure {
             // The completed model response must remain deliverable even if a separate evidence store fails.
