@@ -347,7 +347,10 @@ class CodexAppServer:
         # Plain conversation does not read or modify the workspace, so a host
         # configuration snapshot would only add file-system latency. Tool and
         # artifact tasks retain the full before/after guard.
-        run.host_config_guard = None if fast_chat else self._begin_host_config_guard(run)
+        phone_planner = clean_conversation_id.startswith("phone-planner-v1:") and (
+            run.execution_policy.execution_mode.value == "plan_only"
+        )
+        run.host_config_guard = None if fast_chat or phone_planner else self._begin_host_config_guard(run)
         reused_thread = False
         try:
             with self._lock:
@@ -397,7 +400,7 @@ class CodexAppServer:
         base_turn_prompt = prompt if reused_thread else (fresh_thread_prompt or prompt)
         turn_prompt = (
             base_turn_prompt
-            if fast_chat
+            if fast_chat or phone_planner
             else self._with_execution_contract(base_turn_prompt, run.execution_policy)
         )
         turn_images = local_images if reused_thread else restored_images
@@ -452,7 +455,7 @@ class CodexAppServer:
                 response = self._start_turn_confirmed(
                     run,
                     run.thread_id,
-                    fallback_prompt if fast_chat else self._with_execution_contract(
+                    fallback_prompt if fast_chat or phone_planner else self._with_execution_contract(
                         fallback_prompt, run.execution_policy
                     ),
                     model,
@@ -874,9 +877,9 @@ class CodexAppServer:
                 except RuntimeError:
                     pass
             now = time.monotonic()
-            stall_timeout = max(
+            stall_timeout = min(
+                180.0,
                 float(CODEX_STALL_TIMEOUT_SECONDS),
-                run.execution_policy.no_progress_timeout_seconds,
             )
             stalled = (
                 now - run.last_meaningful_progress_monotonic >= stall_timeout
@@ -885,23 +888,10 @@ class CodexAppServer:
                 continue
             if not stalled:
                 continue
-            stall_failure = (
-                f"No meaningful progress was observed for {stall_timeout:g} seconds. "
-                "Inspect the current workspace checkpoint and choose a different path."
-            )
-            can_replan = True
-            if run.execution_harness is not None:
-                can_replan, _ = run.execution_harness.record_failure(
-                    "no_progress",
-                    stall_failure,
-                )
-            if can_replan and self._attempt_replan(
-                run,
-                stall_failure,
-                source="stall_watchdog",
-            ):
-                continue
+            # The caller owns bounded retries and provider failover. Steering this
+            # silent turn renews its deadline without evidence and hides failure.
             run.finished = True
+            self._retire_stalled_thread(run)
             self._finish_host_config_guard(run)
             message = (
                 "Codex \u957f\u65f6\u95f4\u6ca1\u6709\u65b0\u8fdb\u5c55\uff0c\u4efb\u52a1\u5df2\u505c\u6b62\uff0c\u907f\u514d\u7ee7\u7eed\u963b\u585e\u540e\u7eed\u8bf7\u6c42\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u4e00\u6b21\u3002"
@@ -915,12 +905,27 @@ class CodexAppServer:
                 "current_step": "",
                 "result": message,
                 "error": "Codex task stalled",
+                "failure_code": "codex_no_progress_timeout",
+                "no_progress_timeout_seconds": stall_timeout,
             })
             try:
                 self.interrupt(task_id)
             except Exception:
                 pass
             return
+
+    def _retire_stalled_thread(self, run: CodexRun) -> None:
+        with self._lock:
+            changed = False
+            for key in (self._conversation_key(run.conversation_id), run.conversation_id):
+                if self._conversation_threads.get(key) == run.thread_id:
+                    self._conversation_threads.pop(key, None)
+                    changed = True
+            if changed:
+                self._save_conversation_threads()
+            continuations = getattr(self, "_planner_continuations", None)
+            if continuations is not None:
+                continuations.forget(run.thread_id)
 
     def _attempt_replan(self, run: CodexRun, failure: str, *, source: str) -> bool:
         with self._lock:
@@ -935,7 +940,6 @@ class CodexAppServer:
             run.replan_inflight = True
             run.stall_replans += 1
             replan_number = run.stall_replans
-            run.last_meaningful_progress_monotonic = time.monotonic()
         self._checkpoint_progress(
             run,
             "replan",
@@ -982,15 +986,8 @@ class CodexAppServer:
             run.replan_inflight = False
 
     def recover_stalled_task(self, task_id: str, failure: str) -> bool:
-        """Request a guarded replan when the outer task supervisor detects a stall."""
-        run = self._runs.get(str(task_id or "").strip())
-        if run is None or run.finished:
-            return False
-        return self._attempt_replan(
-            run,
-            str(failure or "The external task supervisor detected no progress."),
-            source="task_manager_watchdog",
-        )
+        """The 180-second watchdog owns silence; do not steer or renew its lease."""
+        return False
 
     def _record_failed_item(self, run: CodexRun, item: dict) -> None:
         if run.finished:

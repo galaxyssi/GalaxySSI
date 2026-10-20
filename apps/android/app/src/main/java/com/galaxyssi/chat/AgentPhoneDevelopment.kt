@@ -88,7 +88,8 @@ internal object AgentPhoneDevelopmentPolicy {
     }
 
     fun isPhoneDevelopmentTool(toolId: String): Boolean =
-        toolId in AgentToolInspectionTools.toolIds || toolId.startsWith(PHONE_WORKSPACE_TOOL_PREFIX) ||
+        toolId in AgentWebIntelligenceNativeTools.directSearchToolIds ||
+            toolId in AgentToolInspectionTools.toolIds || toolId.startsWith(PHONE_WORKSPACE_TOOL_PREFIX) ||
             toolId.startsWith(PHONE_PROJECT_TOOL_PREFIX) ||
             toolId.startsWith(PHONE_RUNTIME_SOFTWARE_TOOL_PREFIX) ||
             toolId in PHONE_RUNTIME_TOOL_IDS

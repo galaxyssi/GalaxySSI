@@ -7,6 +7,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun ordinaryResearchGetsDirectCompleteSearchSchemasWithoutDevelopmentContract() {
+        val original = context()
+        val search = original.nativeTools.first().copy(id = AgentWebIntelligenceNativeTools.SEARCH,
+            inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
+                "query" to AgentNativeJsonSchema.string(),
+                "verticals" to AgentNativeJsonSchema.array(AgentNativeJsonSchema.string(enumValues = listOf("image", "news"))),
+                "engine_fanout" to AgentNativeJsonSchema.integer(minimum = 1, maximum = 32))))
+        val tools = original.nativeTools + search
+        val context = original.copy(nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(tools, emptyList(), emptyList()))
+        val light = AgentSupervisedProjectPromptTemplate.render(context, false, 64,
+            detailedToolIds = emptySet(), developmentContext = false)
+        val full = AgentSupervisedProjectPromptTemplate.render(context, false, 64,
+            detailedToolIds = emptySet(), developmentContext = true)
+        val line = light.lineSequence().single { it.startsWith("- ${search.id}") }
+        assertTrue(line.contains("engine_fanout"))
+        assertTrue(line.contains("\"maximum\":32"))
+        assertTrue(light.contains("invoke them directly, without discover/describe"))
+        assertFalse(light.contains("Persistent phone Linux uses Debian"))
+        assertFalse(light.contains("Git: use"))
+        assertTrue(full.contains("Git: use"))
+        assertTrue(light.length < full.length)
+        assertNotSame(light, full)
+    }
     @Test fun phoneResultsAreDeclaredBeforeExecutionAndBoundToEveryFinalAnswer() {
         for (continuation in listOf(false, true)) {
             val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240, phoneControl = true)

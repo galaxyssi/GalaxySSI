@@ -1,14 +1,29 @@
 package com.galaxyssi.chat
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.database.DatabaseErrorHandler
+import android.database.sqlite.SQLiteDatabase
+import java.io.File
+import java.util.UUID
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /** Real MobileNativeAgent lifecycle with an injected provider, never a live user request. */
 @RunWith(AndroidJUnit4::class)
 class AgentConnectorFallbackRuntimeDeviceTest {
+    private val isolated = FallbackRuntimeContext(InstrumentationRegistry.getInstrumentation().targetContext)
+    @After fun cleanup() = isolated.close()
+    @Test fun codexSilenceUsesTwoAttemptsThenAlternativeThenExactlyOneFinalAttempt() {
+        val state = exercise(true, true, allowTerminalFallback = true, boundedCodex = true)
+        assertEquals(AgentPhase.FAILED, state.phase)
+        assertEquals("true", state.lastActionResult?.metadata?.get("recovery_exhausted"))
+        assertEquals("false", state.lastActionResult?.metadata?.get("awaiting_response"))
+    }
     @Test fun immediateSuccessIsObservedAndCompleted() {
         val state = exercise(success = true, awaiting = false)
         assertEquals(AgentPhase.COMPLETED, state.phase)
@@ -91,13 +106,15 @@ class AgentConnectorFallbackRuntimeDeviceTest {
     private fun exercise(success: Boolean, awaiting: Boolean, structuredCloudFailure: Boolean = false,
         cancelCloud: Boolean = false, terminalStatus: String = "", observedGeneration: Long = 1,
         observedSequence: Long = -1, allowTerminalFallback: Boolean = false,
-        deliveryFailureCode: String = "", unconfirmedDelivery: Boolean = false, silenceFallback: Boolean = false): AgentUiState {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        deliveryFailureCode: String = "", unconfirmedDelivery: Boolean = false, silenceFallback: Boolean = false,
+        boundedCodex: Boolean = false): AgentUiState {
+        val context = isolated
         val screen = ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent")
         val session = InMemoryAgentSessionStore()
         val records = linkedMapOf<String, AgentTaskRecord>()
         val target = AgentCallableTarget("test-codex", "Codex test", AgentConnectorKind.AGENT,
-            AgentConnectorStatus.AVAILABLE, listOf(AgentCapability.CHAT), "test-desktop", adapterType = "desktop-agent")
+            AgentConnectorStatus.AVAILABLE, listOf(AgentCapability.CHAT), "test-desktop",
+            adapterType = if (boundedCodex) "codex-app-server-or-cli" else "desktop-agent")
         var dispatches = 0
         var observations = 0
         val agent = MobileNativeAgent(
@@ -120,11 +137,14 @@ class AgentConnectorFallbackRuntimeDeviceTest {
             actionExecutor = object : AgentActionExecutor {
                 override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
                     dispatches++
-                    val expectedTarget = if (dispatches > 1 && allowTerminalFallback) "test-hermes" else "test-codex"
+                    val expectedTarget = if (boundedCodex)
+                        listOf("test-codex", "test-codex", "test-hermes", "test-codex")[dispatches - 1]
+                        else if (dispatches > 1 && allowTerminalFallback) "test-hermes" else "test-codex"
                     assertEquals(expectedTarget, action.parameters["connector_id"])
-                    assertEquals("desktop-agent", action.parameters["connector_adapter_type"])
+                    assertEquals(if (boundedCodex && expectedTarget == "test-codex") "codex-app-server-or-cli"
+                        else "desktop-agent", action.parameters["connector_adapter_type"])
                     assertEquals(expectedTarget, session.load()?.currentPlan?.actions?.single()?.parameters?.get("connector_id"))
-                    if (dispatches > 1 && allowTerminalFallback && !silenceFallback) {
+                    if (dispatches > 1 && allowTerminalFallback && !silenceFallback && !boundedCodex) {
                         assertEquals("actual remote outcome", session.load()?.lastActionResult?.message)
                         assertEquals(terminalStatus, session.load()?.lastActionResult?.metadata?.get("remote_task_status"))
                     }
@@ -154,10 +174,11 @@ class AgentConnectorFallbackRuntimeDeviceTest {
             },
             connectorRegistry = object : AgentConnectorRegistry {
                 override fun availableTargets() = if (allowTerminalFallback)
-                    listOf(target, target.copy(id = "test-hermes", title = "Hermes test")) else listOf(target)
+                    listOf(target, target.copy(id = "test-hermes", title = "Hermes test", adapterType = "desktop-agent")) else listOf(target)
             },
             sessionStore = session,
             actionEffectReplayStore = InMemoryAgentNativeToolReplayStore(),
+            nativeToolRegistryProvider = { AgentNativeToolRegistry() },
             screenObservationOverride = false
         ).apply { runtimeTiming = com.galaxyssi.chat.metrics.AgentRuntimeTiming.NONE }
         val action = AgentAction("test-dispatch", AgentActionKind.CALL_CONNECTOR, "Hermes test", AgentRisk.LOW,
@@ -167,6 +188,11 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         agent.currentGoal = "Test reply"
         agent.currentPlan = plan
         agent.phase = AgentPhase.WAITING_RESPONSE
+        if (!success) {
+            assertTrue(agent.startExecutionLoop("immediate-failure-test-turn"))
+            assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.ACT, "Test dispatch", action.id))
+            assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.WAITING_RESPONSE, "Test wait", action.id))
+        }
         if (cancelCloud) {
             val id = AgentCloudDispatchIdentity(901, "test-cloud", "test-conversation", "test-turn", "test-task", action.id)
             val lease = AgentCloudDispatchRegistry.register(id)
@@ -210,10 +236,29 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         } else requireNotNull(agent.continueWithConnectorFallback(plan, AgentActionResult(
             action.id, false, "test-old-failure", mapOf("resource_id" to "test-hermes",
                 "remaining_fallback_ids" to "test-codex", "timeout_stage" to "NOT_RUNNING",
-                "failure_domain" to "test-desktop", "awaiting_response" to "false")
+                "failure_domain" to "test-desktop", "awaiting_response" to "false",
+                "non_retriable" to (!success).toString())
         )))
         assertEquals(1, dispatches)
         assertEquals(state.phase, session.load()?.phase)
+        if (boundedCodex) {
+            agent.currentGoal = "What is two plus two?"
+            assertTrue(agent.startExecutionLoop("bounded-codex-test-turn"))
+            assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.ACT, "Test dispatch", action.id))
+            assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.WAITING_RESPONSE, "Test wait", action.id))
+            var next = state
+            repeat(4) { index ->
+                val source = Long.MAX_VALUE - 800 - index
+                agent.lastActionResult = agent.lastActionResult!!.copy(metadata = agent.lastActionResult!!.metadata + mapOf(
+                    "source_message_id" to source.toString(), "resource_location" to "desktop",
+                    "resource_started_at" to "1000"))
+                next = requireNotNull(agent.handleConnectorTimeout(source, AgentConnectorTimeoutStage.NOT_ACCEPTED, true))
+                if (index < 3) assertEquals(AgentPhase.WAITING_RESPONSE, next.phase)
+            }
+            assertEquals(4, dispatches)
+            assertEquals(AgentPhase.FAILED, session.load()?.phase)
+            return next
+        }
         if (silenceFallback) {
             val isolatedSource = Long.MAX_VALUE - 72
             agent.currentGoal = "What is two plus two?"
@@ -275,5 +320,29 @@ class AgentConnectorFallbackRuntimeDeviceTest {
             return final
         }
         return state
+    }
+}
+
+private class FallbackRuntimeContext(base: Context) : ContextWrapper(base) {
+    private val prefix = "fallback-runtime-${UUID.randomUUID()}-"
+    private val preferences = mutableSetOf<String>()
+    private val databases = mutableSetOf<String>()
+    private val handles = mutableListOf<SQLiteDatabase>()
+    override fun getApplicationContext(): Context = this
+    override fun getSharedPreferences(name: String, mode: Int) =
+        baseContext.getSharedPreferences(prefix + name, mode).also { preferences.add(prefix + name) }
+    override fun getDatabasePath(name: String): File =
+        baseContext.getDatabasePath(File(name).name.let { if (it.startsWith(prefix)) it else prefix + it })
+            .also { databases.add(it.absolutePath) }
+    override fun openOrCreateDatabase(name: String, mode: Int, factory: SQLiteDatabase.CursorFactory?): SQLiteDatabase =
+        baseContext.openOrCreateDatabase(getDatabasePath(name).absolutePath, mode, factory).also(handles::add)
+    override fun openOrCreateDatabase(name: String, mode: Int, factory: SQLiteDatabase.CursorFactory?,
+        errorHandler: DatabaseErrorHandler?): SQLiteDatabase =
+        baseContext.openOrCreateDatabase(getDatabasePath(name).absolutePath, mode, factory, errorHandler).also(handles::add)
+    fun close() {
+        AgentPendingDeliveryStore.close(this)
+        handles.filter { it.isOpen }.forEach { it.close() }
+        databases.forEach { SQLiteDatabase.deleteDatabase(File(it)) }
+        preferences.forEach(baseContext::deleteSharedPreferences)
     }
 }

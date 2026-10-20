@@ -17,7 +17,7 @@ internal object AgentToolDiscoveryTools {
             location = AgentNativeToolLocation.APPLICATION,
             inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
                 "query" to AgentNativeJsonSchema.string(maxLength = 256),
-                "cursor" to AgentNativeJsonSchema.string(minLength = 1, maxLength = 1024),
+                "cursor" to AgentNativeJsonSchema.string(maxLength = 1024),
                 "limit" to AgentNativeJsonSchema.integer(minimum = 1, maximum = 50)), additionalProperties = false),
             outputSchema = AgentNativeJsonSchema.objectSchema(), risk = AgentNativeToolRisk.LOW,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
@@ -37,7 +37,7 @@ internal object AgentToolDiscoveryTools {
             descriptor.catalogValue() + mapOf("availability" to mapOf(
                 "status" to descriptor.availability.status.wireValue, "reason" to descriptor.availability.reason))
         })
-        val cursor = input["cursor"]?.toString()?.let { encoded ->
+        val cursor = input["cursor"]?.toString()?.takeIf(String::isNotBlank)?.let { encoded ->
             runCatching {
                 require(encoded.length <= 1024)
                 val value = JSONObject(String(Base64.getUrlDecoder().decode(encoded), Charsets.UTF_8))
@@ -50,10 +50,8 @@ internal object AgentToolDiscoveryTools {
         if (cursor != null && cursor.optString("revision") != revision) return failure(
             "tool_catalog_changed", "Registered capability metadata changed. Restart discovery without a cursor.")
         val after = cursor?.optString("after_id").orEmpty()
-        val words = query.split(Regex("\\s+")).filter(String::isNotEmpty)
         val matches = tools.filter { descriptor ->
-            val text = "${descriptor.id} ${descriptor.title} ${descriptor.description}".lowercase(Locale.ROOT)
-            words.all(text::contains)
+            AgentCapabilitySearch.matches(query, descriptor)
         }
         if (after.isNotEmpty() && matches.none { it.id == after }) return failure(
             "tool_discovery_cursor_invalid", "The cursor does not refer to this capability search.")
@@ -70,6 +68,10 @@ internal object AgentToolDiscoveryTools {
                 "availability" to mapOf("status" to descriptor.availability.status.wireValue,
                     "reason" to descriptor.availability.reason)) }
         )
+        if (matches.isEmpty()) {
+            output["capability_absent"] = false
+            output["search_guidance"] = "No metadata match, not proof of missing capability. Retry with short capability terms or an empty query to browse registered tools and their availability."
+        }
         if (remaining.size > selected.size) output["next_cursor"] = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(AgentNativeJsonCodec.stringify(mapOf("revision" to revision,
                 "query_sha256" to queryHash, "after_id" to selected.last().id)).toByteArray(Charsets.UTF_8))

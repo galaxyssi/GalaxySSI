@@ -1062,6 +1062,7 @@ internal fun MainActivity.agentProcessedDuration(durationMillis: Long): String {
 
 internal fun MainActivity.agentProcessIsRunning(entry: AgentTranscriptEntry): Boolean =
     AgentProcessClockPolicy.isRunning(agentTimelineRuntime(entry)?.snapshot()?.phase
+        ?: lastRenderedAgentState?.takeIf { it.sessionId == entry.turnId || it.sessionId == entry.taskId }?.phase
         ?: agentExecutionPresentations[entry.taskId]?.phase)
 
 internal fun MainActivity.agentProcessStartTimestamp(
@@ -1088,7 +1089,9 @@ internal fun MainActivity.agentProcessCompletionTimestamp(
 ): Long? {
     // A live run is authoritative over an interim reply or a previous failed attempt.
     if (agentProcessIsRunning(entry)) return null
-    agentExecutionPresentations[entry.taskId]
+    // Per-attempt Desktop projections can finish while the user turn is retrying.
+    // A turn with a durable workspace must use its aggregate terminal state.
+    agentExecutionPresentations[entry.taskId]?.takeIf { entry.turnId.isBlank() }
         ?.takeIf { presentation ->
             !presentation.cancellable &&
                 !AgentExecutionPresentationPolicy.isCancellable(presentation.phase)

@@ -455,6 +455,12 @@ class AgentResourceHealthStore(context: Context) {
         ), now)
     }
 
+    fun markTemporarilyUnavailable(id: String, cooldownMillis: Long) {
+        val current = snapshot(id)
+        val now = System.currentTimeMillis()
+        persist(id, current, current.copy(circuitOpenUntil = now + cooldownMillis, lastUpdatedAt = now), now)
+    }
+
     fun recordPermanentFailure(id: String, latencyMs: Long) {
         val current = snapshot(id)
         val failures = current.failures + 1

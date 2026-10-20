@@ -11,7 +11,8 @@ class AgentRemoteSilencePolicyTest {
             completedAt, completedAt + AgentRemoteSilencePolicy.TERMINAL_DELIVERY_LIMIT))
     }
     @Test fun shortDisconnectDoesNotExpire() {
-        assertFalse(AgentRemoteSilencePolicy.expired(1000, 0, 10, 240000))
+        assertFalse(AgentRemoteSilencePolicy.expired(1000, 0, 10, 180999))
+        assertTrue(AgentRemoteSilencePolicy.expired(1000, 0, 10, 181000))
     }
     @Test fun oldTaskRequiresFreshRecoveryAttempts() {
         val now = 94 * 3600000L

@@ -776,21 +776,17 @@ class CodexConversationThreadTests(unittest.TestCase):
         replan.assert_not_called()
         self.assertEqual({}, run.failure_counts)
 
-    def test_outer_supervisor_can_request_a_guarded_replan(self):
+    def test_outer_supervisor_cannot_renew_a_silent_turn(self):
         server, run, _events = self._event_server()
         with patch.object(server, "_attempt_replan", return_value=True) as replan:
-            self.assertTrue(
+            self.assertFalse(
                 server.recover_stalled_task(
                     run.task_id,
                     "No meaningful external progress",
                 )
             )
 
-        replan.assert_called_once_with(
-            run,
-            "No meaningful external progress",
-            source="task_manager_watchdog",
-        )
+        replan.assert_not_called()
         self.assertFalse(
             server.recover_stalled_task("missing-task", "No progress")
         )

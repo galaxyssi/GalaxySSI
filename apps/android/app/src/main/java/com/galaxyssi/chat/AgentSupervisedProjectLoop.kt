@@ -387,6 +387,11 @@ internal object AgentSupervisedProjectLoop {
                     maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
                     temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
                     detailedToolIds = progress.detailedToolIds,
+                    developmentContext = request.executionHistory.any { action ->
+                        val id = action.parameters["tool_id"].orEmpty().ifBlank { action.target }
+                        id.startsWith("galaxyssi.workspace.") || id.startsWith("galaxyssi.project.") ||
+                            id.startsWith("galaxyssi.runtime.")
+                    },
                     phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId) ||
                         AgentUnverifiedOutcomeRecovery.isPhoneControl(request) ||
                         AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
@@ -587,7 +592,9 @@ internal object AgentSupervisedProjectToolInventory {
                         }
                         append(" | input=")
                         append(
-                            AgentSupervisedProjectPromptCodec.compactInputSchema(
+                            if (tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds) {
+                                AgentNativeJsonCodec.stringify(tool.inputSchema.document)
+                            } else AgentSupervisedProjectPromptCodec.compactInputSchema(
                                 tool.inputSchema.document,
                                 if (detailedToolIds == null || tool.id in detailedToolIds) {
                                     maximumSchemaCharacters
@@ -603,6 +610,7 @@ internal object AgentSupervisedProjectToolInventory {
     }
 
     private fun priority(tool: AgentNativeToolDescriptor): Int = when {
+        tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds -> -1
         tool.id.startsWith("galaxyssi.project.repository.") -> 0
         tool.id.startsWith("galaxyssi.project.github.") -> 1
         tool.id.startsWith("galaxyssi.workspace.") -> 2

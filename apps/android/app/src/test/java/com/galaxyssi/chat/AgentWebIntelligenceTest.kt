@@ -165,14 +165,19 @@ class AgentWebIntelligenceTest {
     }
 
     @Test
-    fun nativeCatalogExposesAllTenOperationsAsLowRiskTools() {
+    fun nativeCatalogExposesAllElevenOperationsAsLowRiskTools() {
         val service = AgentWebIntelligenceService(
             fetcher = FixedFetcher(),
             store = AgentInMemoryWebIntelligenceStore()
         )
         val definitions = AgentWebIntelligenceNativeTools.definitions(service)
 
-        assertEquals(10, definitions.size)
+        assertEquals(11, definitions.size)
+        definitions.filter { it.descriptor.id in AgentWebIntelligenceNativeTools.directSearchToolIds }.forEach {
+            assertFalse(it.descriptor.requiresEffectClaim)
+            assertTrue(AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(it.descriptor.id))
+            assertTrue(PhoneAssistantToolPolicy.allowsRemotePhoneTool(it.descriptor.id))
+        }
         assertEquals(AgentWebIntelligenceNativeTools.toolIds, definitions.map { it.descriptor.id }.toSet())
         definitions.forEach {
             assertEquals(AgentNativeToolRisk.LOW, it.descriptor.risk)
