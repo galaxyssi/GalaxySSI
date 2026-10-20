@@ -6,10 +6,10 @@ import java.util.Locale
 internal object AgentCapabilitySearch {
     private val token = Regex("[a-z0-9_.-]+|[\\p{IsHan}]+")
     private val aliases = mapOf(
-        "搜索" to "search", "查询" to "search", "查找" to "search",
-        "网页" to "web", "网站" to "web", "图片" to "image", "照片" to "image",
-        "新闻" to "news", "资料" to "research", "浏览器" to "browser",
-        "文件" to "file", "下载" to "download", "读取" to "read", "安装" to "install"
+        "\u641c\u7d22" to "search", "\u67e5\u8be2" to "search", "\u67e5\u627e" to "search",
+        "\u7f51\u9875" to "web", "\u7f51\u7ad9" to "web", "\u56fe\u7247" to "image", "\u7167\u7247" to "image",
+        "\u65b0\u95fb" to "news", "\u8d44\u6599" to "research", "\u6d4f\u89c8\u5668" to "browser",
+        "\u6587\u4ef6" to "file", "\u4e0b\u8f7d" to "download", "\u8bfb\u53d6" to "read", "\u5b89\u88c5" to "install"
     )
 
     fun matches(query: String, tool: AgentNativeToolDescriptor): Boolean {

@@ -49,7 +49,7 @@ object AgentWebIntelligenceNativeTools {
         definition(
             SEARCH,
             "Search across independent web sources",
-            "Web search across parallel general, news, code, academic, community and documentation sources. Returns cited evidence for synthesis. 网页搜索、新闻、资料、知识查询。",
+            "Web search across parallel general, news, code, academic, community and documentation sources. Returns cited evidence for synthesis. \u7f51\u9875\u641c\u7d22、\u65b0\u95fb、\u8d44\u6599、\u77e5\u8bc6\u67e5\u8be2。",
             searchSchema(),
             60_000L,
             service,
@@ -58,7 +58,7 @@ object AgentWebIntelligenceNativeTools {
         definition(
             IMAGE_SEARCH,
             "Search images with source citations",
-            "Image search returning HTTPS previews, original image URLs, titles and source pages. Metadata is not visual verification. 图片搜索、查找照片、产品图片。",
+            "Image search returning HTTPS previews, original image URLs, titles and source pages. Metadata is not visual verification. \u56fe\u7247\u641c\u7d22、\u67e5\u627e\u7167\u7247、\u4ea7\u54c1\u56fe\u7247。",
             searchSchema(),
             60_000L,
             service,

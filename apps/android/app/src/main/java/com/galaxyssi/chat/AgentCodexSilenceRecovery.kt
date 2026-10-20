@@ -22,7 +22,7 @@ internal object AgentCodexSilenceRecovery {
             message.contains("Codex task stalled", ignoreCase = true) ||
             message.contains("Codex made no progress", ignoreCase = true) ||
             message.contains("timed out", ignoreCase = true) ||
-            message.contains("Codex 长时间没有新进展")
+            message.contains("Codex \u957f\u65f6\u95f4\u6ca1\u6709\u65b0\u8fdb\u5c55")
 
     fun next(
         state: Map<String, String>, current: String, codex: Boolean,
