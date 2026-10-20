@@ -28,6 +28,7 @@ from agent_execution_harness import (
 from latency_feature_flags import agent_output_delta_enabled
 from codex_generated_images import capture_run_image, finalize_run_images, is_generated_image
 from codex_notification_batch import CodexNotificationBatcher, QueuedNotification
+from codex_phone_policy import thread_policy, thread_tools
 from model_directed_search import (
     CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
@@ -593,7 +594,7 @@ class CodexAppServer:
                     "approvalPolicy": approval_policy,
                     "sandbox": sandbox,
                     "config": CODEX_THREAD_CONFIG,
-                    "developerInstructions": CODEX_TASK_POLICY.strip(),
+                    "developerInstructions": thread_policy(run.conversation_id, CODEX_TASK_POLICY),
                 }, timeout=30)
                 with self._lock:
                     self._mark_thread_loaded_locked(clean_thread_id)
@@ -1115,8 +1116,8 @@ class CodexAppServer:
                 "cwd": self._resolved_path(cwd), "model": model, "ephemeral": False,
                 "approvalPolicy": approval_policy, "sandbox": sandbox,
                 "config": CODEX_THREAD_CONFIG,
-                "developerInstructions": CODEX_TASK_POLICY.strip(),
-                "dynamicTools": self._dynamic_tools,
+                "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
+                "dynamicTools": thread_tools(conversation_id, self._dynamic_tools),
             }, timeout=30)
             thread_id = str((response.get("thread") or {}).get("id") or "")
             if thread_id:
@@ -1177,12 +1178,17 @@ class CodexAppServer:
                     self._mark_thread_loaded_locked(clean_thread_id)
                     return
             self._make_loaded_thread_room(incoming_thread_id=clean_thread_id)
+            with self._lock:
+                conversation_id = next((
+                    key.partition(":")[2] for key, value in self._conversation_threads.items()
+                    if value == clean_thread_id and key.startswith(f"{CONVERSATION_THREAD_VERSION}:")
+                ), "")
             self._request("thread/resume", {
                 "threadId": clean_thread_id,
                 "approvalPolicy": approval_policy,
                 "sandbox": sandbox,
                 "config": CODEX_THREAD_CONFIG,
-                "developerInstructions": CODEX_TASK_POLICY.strip(),
+                "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
             }, timeout=30)
             with self._lock:
                 self._mark_thread_loaded_locked(clean_thread_id)

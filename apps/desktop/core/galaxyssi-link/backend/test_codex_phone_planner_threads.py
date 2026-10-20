@@ -97,6 +97,25 @@ class PhonePlannerThreadTests(unittest.TestCase):
         contract.assert_called()
         self.server._begin_host_config_guard.assert_called_once()
 
+    def test_phone_policy_survives_prewarm_and_turn_reuse(self):
+        from codex_phone_policy import PHONE_REASONING_POLICY
+        first = self.start(1)
+        initial = next(params for method, params in self.calls if method == "thread/start")
+        self.assertEqual(PHONE_REASONING_POLICY, initial["developerInstructions"])
+        self.assertNotIn("office_preview", [tool["name"] for tool in initial["dynamicTools"]])
+        first.finished = True
+        self.server._loaded_thread_ids.clear()
+        self.server.prewarm_recent_threads()
+        resumed = next(params for method, params in self.calls if method == "thread/resume")
+        self.assertEqual(PHONE_REASONING_POLICY, resumed["developerInstructions"])
+        second = self.start(2)
+        self.assertEqual(first.thread_id, second.thread_id)
+
+    def test_desktop_thread_retains_its_original_policy(self):
+        self.start(1, scope="ordinary-chat")
+        initial = next(params for method, params in self.calls if method == "thread/start")
+        self.assertEqual(codex_app_server.CODEX_TASK_POLICY, initial["developerInstructions"])
+
 
 if __name__ == "__main__":
     unittest.main()
