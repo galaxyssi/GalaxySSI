@@ -95,10 +95,11 @@ internal class AgentDeviceOperationStore(
     }
 
     fun recordPlan(conversationId: String, goal: String, requirements: AgentCompletionRequirements?,
-        sourceTurnId: String = "", sourceSessionId: String = "") {
+        sourceTurnId: String = "", sourceSessionId: String = "", timerAction: Boolean = false) {
         if (conversationId.isBlank()) return
         val prior = checkpoint(conversationId)
-        val current = if (prior?.kind == "timer" && AgentDeviceIntent.needsOperationContext(goal)) prior else
+        val current = if (prior?.kind == "timer" &&
+            (AgentTimerIdentity.belongsToTurn(prior, sourceTurnId) || timerAction)) prior else
             prior?.takeIf { it.kind == "agent" && it.goal == goal && it.sourceTurnId == sourceTurnId &&
                 it.sourceSessionId == sourceSessionId } ?: AgentDeviceOperation(conversationId, kind = "agent", goal = goal)
         save(current.copy(completionJson = requirements?.toJson()?.toString().orEmpty(),

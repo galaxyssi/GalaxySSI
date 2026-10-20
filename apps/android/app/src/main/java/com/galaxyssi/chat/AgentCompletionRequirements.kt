@@ -57,7 +57,12 @@ data class AgentCompletionRequirements(
             if (outcomes != null) for (index in 0 until outcomes.length()) {
                 val value = outcomes.optJSONObject(index) ?: continue
                 if (AgentObservedOutcome.parse(value) != null) continue
-                val subject = value.optJSONObject("subject") ?: continue
+                val subject = value.optJSONObject("subject") ?: return "completion_requirements.outcomes[$index].subject " +
+                        "must be a JSON object mapping receipt JSON pointers to observed string identities, " +
+                        "not a string or array. Shape: {\"/actual/identity/path\":\"observed identity\"}. Use real receipt paths and values; do not rerun a successful tool to repair JSON."
+                if (value.optJSONObject("checks") == null) return "completion_requirements.outcomes[$index].checks " +
+                        "must be a JSON object mapping receipt JSON pointers to expected scalar values, " +
+                        "not an array or string. Shape: {\"/actual/state/path\":\"expected state\"}. Preserve receipt value types and fix only the plan structure."
                 for (path in subject.keys()) {
                     if (subject.opt(path) !is String) {
                         return "completion_requirements.outcomes[$index].subject[$path] requires a string identity value, " +

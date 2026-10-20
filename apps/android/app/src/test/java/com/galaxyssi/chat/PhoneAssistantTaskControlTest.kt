@@ -108,11 +108,11 @@ class PhoneAssistantTaskControlTest {
         } finally { PhoneAssistantTaskControl.finish(turn) }
     }
 
-    @Test fun phoneUiPlansAreAcceptedOnlyInExplicitPhoneControlScope() {
+    @Test fun phoneUiPlansDoNotRequireKeywordClassificationButRestrictedScopesStayRestricted() {
         val decision = AgentExecutionSiteDecision(AgentRequestedExecutionSite.PHONE)
         val action = AgentAction("inspect", AgentActionKind.CALL_NATIVE_TOOL, "Phone UI", AgentRisk.LOW,
             AgentActionStatus.PENDING_CONFIRMATION, "Inspect", parameters = mapOf("tool_id" to AgentPhoneUiNativeTools.INSPECT))
-        assertFalse(AgentExecutionSiteDecisionCodec.acceptsActions(decision, listOf(action)))
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(decision, listOf(action)))
         assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(decision, listOf(action), phoneControl = true))
         assertFalse(AgentExecutionSiteDecisionCodec.acceptsActions(decision,
             listOf(action.copy(parameters = mapOf("tool_id" to AgentOnDeviceRuntimeTools.EXECUTE))), phoneControl = true))

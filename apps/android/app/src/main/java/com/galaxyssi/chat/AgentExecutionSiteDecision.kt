@@ -55,7 +55,7 @@ internal object AgentExecutionSiteDecisionCodec {
                 (action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
                     if (phoneControl) PhoneAssistantToolPolicy.allowsRemotePhoneTool(
                         action.parameters["tool_id"].orEmpty())
-                    else AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(
+                    else PhoneAssistantToolPolicy.allowsGeneralPhoneTool(
                         action.parameters["tool_id"].orEmpty()))
         }
 

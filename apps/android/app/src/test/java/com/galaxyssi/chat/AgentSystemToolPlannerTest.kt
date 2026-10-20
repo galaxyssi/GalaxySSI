@@ -131,7 +131,7 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun selectedReasoningProviderDoesNotTurnOrdinaryConversationIntoPhoneExecution() {
+    fun selectedReasoningProviderKeepsPhoneOwnershipEvenForOrdinaryConversation() {
         val screen = ScreenContext(foregroundApp = "com.galaxyssi.chat", pageTitle = "GalaxySSI")
         val request = request("hello", screen, emptyList())
         val directConnector = AgentAction(
@@ -145,7 +145,7 @@ class AgentSystemToolPlannerTest {
             requiresConfirmation = false
         )
 
-        assertFalse(
+        assertTrue(
             AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
                 goal = request.goal,
                 conversationContext = request.conversationContext,

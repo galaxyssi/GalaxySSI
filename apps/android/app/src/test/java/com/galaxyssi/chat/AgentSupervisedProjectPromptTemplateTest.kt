@@ -7,6 +7,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun unclassifiedRequestsSeeTheFullTimerSignatureAndPhoneExecutionBoundary() {
+        val original = context()
+        val timer = original.nativeTools.first().copy(
+            id = AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM),
+            inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
+                "timer_operation" to AgentNativeJsonSchema.string(),
+                "timer_seconds" to AgentNativeJsonSchema.integer(minimum = 1))))
+        val tools = original.nativeTools + timer
+        val context = original.copy(nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(tools, emptyList(), emptyList()))
+        val prompt = AgentSupervisedProjectPromptTemplate.render(context, false, 64,
+            detailedToolIds = emptySet(), developmentContext = false)
+        val signature = prompt.lineSequence().single { it.startsWith("- ${timer.id}") }
+        assertTrue(signature.contains("timer_operation"))
+        assertTrue(signature.contains("timer_seconds"))
+        assertTrue(prompt.contains("web timer, Desktop app or scheduled cloud task is not a substitute"))
+        assertTrue(prompt.contains("Do not claim success until phone receipts verify"))
+    }
     @Test fun completionContainsTheDeliveredAnswerRatherThanInstructionsToAnotherWriter() {
         for (continuation in listOf(false, true)) {
             for (development in listOf(false, true)) {
@@ -171,7 +189,7 @@ class AgentSupervisedProjectPromptTemplateTest {
         assertFalse(prompt.contains("Persistent phone Linux uses Debian"))
         val project = AgentSupervisedProjectPromptTemplate.render(phone, false, 240, phoneControl = false)
         assertTrue(project.contains("galaxyssi.project.repository.clone |"))
-        assertFalse(project.contains("galaxyssi.phone.ui.act |"))
+        assertTrue(project.contains("galaxyssi.phone.ui.act |"))
     }
     @Test fun `completion obligations come from model interpreted intent without implicit publication`() {
         for (continuation in listOf(false, true)) {

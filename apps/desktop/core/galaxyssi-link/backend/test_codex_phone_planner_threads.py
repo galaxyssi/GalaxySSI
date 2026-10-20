@@ -102,12 +102,16 @@ class PhonePlannerThreadTests(unittest.TestCase):
         first = self.start(1)
         initial = next(params for method, params in self.calls if method == "thread/start")
         self.assertEqual(PHONE_REASONING_POLICY, initial["developerInstructions"])
+        self.assertFalse(initial["config"]["features.shell_tool"])
+        self.assertEqual("read-only", initial["sandbox"])
         self.assertNotIn("office_preview", [tool["name"] for tool in initial["dynamicTools"]])
         first.finished = True
         self.server._loaded_thread_ids.clear()
         self.server.prewarm_recent_threads()
         resumed = next(params for method, params in self.calls if method == "thread/resume")
         self.assertEqual(PHONE_REASONING_POLICY, resumed["developerInstructions"])
+        self.assertFalse(resumed["config"]["features.shell_tool"])
+        self.assertEqual("read-only", resumed["sandbox"])
         second = self.start(2)
         self.assertEqual(first.thread_id, second.thread_id)
 
