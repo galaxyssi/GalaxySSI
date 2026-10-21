@@ -16,6 +16,19 @@ class AgentPhoneNativeToolCatalogTest {
     private lateinit var storageRoot: Path
     private lateinit var fileTools: AgentWorkspaceFileTools
 
+    @Test
+    fun timerSchemaExplainsHostGeneratedIdentityWithoutRequiringAnIdForCreation() {
+        val timer = registry().lookup(AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM))!!.descriptor
+        val properties = timer.inputSchema.document["properties"] as Map<*, *>
+        val parameters = properties["parameters"] as Map<*, *>
+        val fields = parameters["properties"] as Map<*, *>
+        val identity = fields["operation_id"] as Map<*, *>
+        assertTrue(identity["description"].toString().contains("Omit when starting a new timer"))
+        assertTrue(identity["description"].toString().contains("Never invent"))
+        assertFalse((parameters["required"] as List<*>).contains("operation_id"))
+        assertTrue(timer.description.contains("metadata.timer_state"))
+    }
+
     @Before
     fun setUp() {
         storageRoot = Files.createTempDirectory("agent-phone-native-catalog-")

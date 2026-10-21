@@ -434,7 +434,7 @@ internal object AgentSupervisedProjectLoop {
         }
         if (key.directResponseAllowed) {
             append("Initial response option: if no phone action is needed, return {\"disposition\":\"respond\",\"final_response\":\"user answer\"}. ")
-            append("Use the user's language and omit runtime, workspace, permission, and tool availability.\n")
+            append("Use the user's language. This option is for conversation or evidence-backed answers, never a substitute for requested device operations. If execution is needed, choose a listed phone tool; do not claim inability before inspecting available capabilities. Never treat the provider's host as the user's phone.\n")
         }
         append("User goal: ").append(key.goal).append('\n')
         if (key.durableContext.isNotBlank()) {
@@ -580,12 +580,15 @@ internal object AgentSupervisedProjectToolInventory {
                     tool.id in executableToolIds &&
                         tool.id !in temporarilyBlockedToolIds &&
                         (if (phoneControl) PhoneAssistantToolPolicy.allowsRemotePhoneTool(tool.id)
-                            else AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(tool.id))
+                            else PhoneAssistantToolPolicy.allowsGeneralPhoneTool(tool.id))
                 }
                 .joinToString(separator = "") { tool ->
                     buildString {
                         append("- ").append(tool.id)
                         append(" | risk=").append(tool.risk.wireValue)
+                        if (tool.id in PhoneAssistantToolPolicy.directActionToolIds) {
+                            append(" | description=").append(tool.description)
+                        }
                         if (phoneControl && !tool.requiresEffectClaim) append(" | effect=read_only")
                         if (tool.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY ||
                             phoneControl && !tool.requiresEffectClaim) {
@@ -593,7 +596,8 @@ internal object AgentSupervisedProjectToolInventory {
                         }
                         append(" | input=")
                         append(
-                            if (tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds) {
+                            if (tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
+                                tool.id in PhoneAssistantToolPolicy.directActionToolIds) {
                                 AgentNativeJsonCodec.stringify(tool.inputSchema.document)
                             } else AgentSupervisedProjectPromptCodec.compactInputSchema(
                                 tool.inputSchema.document,
@@ -714,7 +718,7 @@ internal object AgentPhoneAgentLoopRoutingPolicy {
     ): Boolean =
         !independentRequest &&
             selectedAction?.parameters?.get("request_kind") != PhoneAssistantTaskControl.SCREEN_ANALYSIS_REQUEST_KIND &&
-            (selectedAction?.isSupervisedProjectConnector() == true ||
+            (selectedAction?.kind == AgentActionKind.CALL_CONNECTOR ||
             AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
                 goal,
                 conversationContext
@@ -1234,7 +1238,11 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     AgentDeviceOperationStore(appContext).recordPlan(request.conversationContext.conversationId, request.goal,
         parsed.completionRequirements,
         sourceTurnId = connector.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { request.executionTurnId },
-        sourceSessionId = sessionId)
+        sourceSessionId = sessionId,
+        timerAction = parsed.actions.any { action ->
+            action.kind == AgentActionKind.SET_ALARM ||
+                action.parameters["tool_id"] == AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM)
+        })
     val revision = plan.revision + 1
     val durableHistory = plan.historyForNextRevision(revision).map { action ->
         if (action.id == connector.id) {

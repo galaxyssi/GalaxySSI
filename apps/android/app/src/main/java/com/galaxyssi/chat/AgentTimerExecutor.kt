@@ -29,15 +29,22 @@ internal class AgentTimerExecutor(private val context: Context) {
             return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.FAILED, context.getString(R.string.device_operation_duration_invalid))
         if (command == "replace" && seconds == null)
             return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.FAILED, context.getString(R.string.device_operation_replace_duration))
-        val previous = store.get(conversation)?.takeIf { it.kind == "timer" }
+        val checkpoint = store.get(conversation)
+        val previous = checkpoint?.takeIf { it.kind == "timer" }
         val explicitId = action.parameters["operation_id"].orEmpty()
-        if (explicitId.isNotEmpty() && previous?.id != explicitId)
-            return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.BLOCKED, context.getString(R.string.device_operation_stale))
+        AgentTimerIdentity.rejection(explicitId, previous)?.let { repair ->
+            return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.BLOCKED,
+                context.getString(R.string.device_operation_stale), extra = repair)
+        }
         var operation = previous
         if (operation == null || operation.status == "cancelled") {
             if (command != "start" || seconds == null) return AgentGoalEvidence.result(action,
-                AgentGoalEvidenceStatus.BLOCKED, context.getString(R.string.device_operation_missing))
-            operation = store.save(AgentDeviceOperation(conversation, seconds = seconds))
+                AgentGoalEvidenceStatus.BLOCKED, context.getString(R.string.device_operation_missing),
+                extra = mapOf("error_code" to "timer_not_found", "dispatch_accepted" to "false",
+                    "next_action" to "No active timer exists in this conversation. A new timer requires timer_operation=start and timer_seconds; omit operation_id."))
+            operation = store.save(AgentDeviceOperation(conversation, seconds = seconds,
+                sourceTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty(),
+                sourceSessionId = checkpoint?.sourceSessionId.orEmpty()))
         } else if (seconds != null && seconds != operation.seconds && command != "replace") {
             return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.BLOCKED,
                 context.getString(R.string.device_operation_replacement_required),
@@ -100,7 +107,9 @@ internal class AgentTimerExecutor(private val context: Context) {
                     return executeLocked(action.copy(parameters = action.parameters - "operation_id" +
                         mapOf("timer_operation" to "start", "timer_seconds" to seconds.toString())))
                 }
-                return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.VERIFIED, context.getString(R.string.device_operation_cancelled), "label-bound timer removed")
+                return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.VERIFIED,
+                    context.getString(R.string.device_operation_cancelled), "label-bound timer removed",
+                    mapOf("operation_id" to operation.id, "timer_state" to "cancelled"))
             }
             frame = awaitFrame(operation.label, paused = command == "pause")
             sample = AgentTimerObservation.read(frame, operation.label)
@@ -127,7 +136,8 @@ internal class AgentTimerExecutor(private val context: Context) {
                     else -> context.getString(R.string.device_operation_started, operation.seconds)
                 }
                 return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.VERIFIED, message, evidence,
-                    mapOf("operation_id" to operation.id))
+                    mapOf("operation_id" to operation.id, "timer_state" to if (paused) "paused" else "running",
+                        "duration_seconds" to operation.seconds.toString()))
             }
         }
         return unverified(action, operation, context.getString(R.string.device_operation_unverified))

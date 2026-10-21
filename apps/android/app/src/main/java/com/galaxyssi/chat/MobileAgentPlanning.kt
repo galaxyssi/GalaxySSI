@@ -190,11 +190,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     internal fun supervisedProjectActions(request: AgentRequest): List<AgentAction>? {
         val phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId)
-        if (!phoneControl && !AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
-                request.goal,
-                request.conversationContext
-            )
-        ) return null
+        // Provider selection never transfers ownership of Android execution.
+        // The model can answer directly or choose a phone action, regardless of wording.
         val selected = manualSelectedConnectorAction(request)
         val routing = if (selected == null) context?.let { appContext ->
             AgentResourceRouter(appContext).route(
@@ -224,6 +221,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 target.kind != AgentConnectorKind.DEVICE &&
                     (AgentCapability.CODE in target.capabilities ||
                         AgentCapability.TASK_EXECUTION in target.capabilities ||
+                        AgentCapability.CHAT in target.capabilities ||
                         AgentCapability.REASONING in target.capabilities)
             }
             .minByOrNull { target ->

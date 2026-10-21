@@ -1271,7 +1271,7 @@ object AgentPhoneNativeToolCatalog {
         AgentActionKind.LOCK_SCREEN -> "Requests the Android accessibility lock-screen global action."
         AgentActionKind.OPEN_APP -> "Hands an explicit bounded app or intent request to Android."
         AgentActionKind.OPEN_URL -> "Hands a bounded URL to an Android activity."
-        AgentActionKind.SET_ALARM -> "Control this conversation's phone timer: start/pause/resume/cancel/replace/inspect. timer_seconds is required for a new timer or replacement. Reuse operation_id; never recreate an unverified timer. goal_status and business_success_verified distinguish dispatch from observed completion. Alarm handoffs are unverified."
+        AgentActionKind.SET_ALARM -> "Control this conversation's phone timer: start/pause/resume/cancel/replace/inspect. timer_seconds is required for a new timer or replacement. Omit operation_id for a new timer; Android generates it. Reuse only an observed timer ID, never invent one. Never recreate an unverified timer. Receipt metadata.operation_id identifies the timer; metadata.timer_state and metadata.business_success_verified distinguish observed completion from dispatch. Alarm handoffs are unverified."
         AgentActionKind.REPLY_NOTIFICATION -> "Replies to one reply-capable notification through the existing listener service."
         else -> error("Unsupported phone-native action kind: $kind")
     }
@@ -1341,7 +1341,8 @@ object AgentPhoneNativeToolCatalog {
                 properties = mapOf(
                     "timer_seconds" to AgentNativeJsonSchema.integer(1, Int.MAX_VALUE.toLong()),
                     "timer_operation" to AgentNativeJsonSchema.string(enumValues = listOf("start", "pause", "resume", "cancel", "replace", "inspect")),
-                    "operation_id" to AgentNativeJsonSchema.string(maxLength = 128),
+                    "operation_id" to AgentNativeJsonSchema.string(maxLength = 128,
+                        description = "Optional Android-generated timer ID from a previous receipt. Omit when starting a new timer or inspecting this conversation's timer without a known ID. Never invent an ID or use the plan, action or generic goal ID."),
                     "hour" to AgentNativeJsonSchema.integer(0, 23),
                     "minute" to AgentNativeJsonSchema.integer(0, 59)
                 )

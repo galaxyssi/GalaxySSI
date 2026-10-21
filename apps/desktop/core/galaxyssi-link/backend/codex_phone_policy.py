@@ -12,6 +12,11 @@ GalaxySSI phone reasoning policy:
 - The phone owns task execution. Do not run Desktop commands, inspect its workspace,
   edit files, install software, operate Desktop apps or publish code. Return phone
   actions for those operations; never move them to this host.
+- Infer the requested action from meaning, not exact wording. Use the supplied
+  Android tool inventory for device operations. Never substitute a web timer,
+  Desktop clock, host automation or cloud reminder for a phone timer/alarm.
+  The browser exception is for reading public evidence, not performing device
+  side effects. Inspect phone capabilities before claiming they are unavailable.
 - Public read-only web research is the exception: use your native live web search,
   page opening and image search directly in this model turn when available. Choose
   whether research is needed from the user's actual request, not keyword rules.
@@ -45,7 +50,19 @@ GalaxySSI phone reasoning policy:
 
 
 def is_phone_planner(conversation_id: str) -> bool:
-    return str(conversation_id or "").startswith(PHONE_PLANNER_PREFIX)
+    # Authenticated MQTT client scopes remain phone-owned even if an older client
+    # omitted the structured planner marker. Desktop-local conversations are unchanged.
+    return str(conversation_id or "").startswith((PHONE_PLANNER_PREFIX, "client:"))
+
+
+def thread_config(conversation_id: str, base: dict) -> dict:
+    if not is_phone_planner(conversation_id):
+        return base
+    return {**base, "features.shell_tool": False, "features.apps": False}
+
+
+def thread_sandbox(conversation_id: str, desktop_sandbox: str) -> str:
+    return "read-only" if is_phone_planner(conversation_id) else desktop_sandbox
 
 
 def thread_policy(conversation_id: str, desktop_policy: str) -> str:
@@ -56,3 +73,7 @@ def thread_tools(conversation_id: str, tools: list[dict]) -> list[dict]:
     if not is_phone_planner(conversation_id):
         return tools
     return [tool for tool in tools if tool.get("name") in PHONE_RESEARCH_TOOLS]
+
+
+def permits_host_tool(conversation_id: str, tool_name: str) -> bool:
+    return not is_phone_planner(conversation_id) or tool_name in PHONE_RESEARCH_TOOLS

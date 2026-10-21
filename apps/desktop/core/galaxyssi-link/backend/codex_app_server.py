@@ -28,7 +28,7 @@ from agent_execution_harness import (
 from latency_feature_flags import agent_output_delta_enabled
 from codex_generated_images import capture_run_image, finalize_run_images, is_generated_image
 from codex_notification_batch import CodexNotificationBatcher, QueuedNotification
-from codex_phone_policy import thread_policy, thread_tools
+from codex_phone_policy import is_phone_planner, permits_host_tool, thread_config, thread_policy, thread_sandbox, thread_tools
 from model_directed_search import (
     CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
@@ -592,8 +592,8 @@ class CodexAppServer:
                 response = self._request("thread/resume", {
                     "threadId": clean_thread_id,
                     "approvalPolicy": approval_policy,
-                    "sandbox": sandbox,
-                    "config": CODEX_THREAD_CONFIG,
+                    "sandbox": thread_sandbox(run.conversation_id, sandbox),
+                    "config": thread_config(run.conversation_id, CODEX_THREAD_CONFIG),
                     "developerInstructions": thread_policy(run.conversation_id, CODEX_TASK_POLICY),
                 }, timeout=30)
                 with self._lock:
@@ -1114,8 +1114,8 @@ class CodexAppServer:
             self._make_loaded_thread_room()
             response = self._request("thread/start", {
                 "cwd": self._resolved_path(cwd), "model": model, "ephemeral": False,
-                "approvalPolicy": approval_policy, "sandbox": sandbox,
-                "config": CODEX_THREAD_CONFIG,
+                "approvalPolicy": approval_policy, "sandbox": thread_sandbox(conversation_id, sandbox),
+                "config": thread_config(conversation_id, CODEX_THREAD_CONFIG),
                 "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
                 "dynamicTools": thread_tools(conversation_id, self._dynamic_tools),
             }, timeout=30)
@@ -1186,8 +1186,8 @@ class CodexAppServer:
             self._request("thread/resume", {
                 "threadId": clean_thread_id,
                 "approvalPolicy": approval_policy,
-                "sandbox": sandbox,
-                "config": CODEX_THREAD_CONFIG,
+                "sandbox": thread_sandbox(conversation_id, sandbox),
+                "config": thread_config(conversation_id, CODEX_THREAD_CONFIG),
                 "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
             }, timeout=30)
             with self._lock:
@@ -1864,6 +1864,7 @@ class CodexAppServer:
             if approval is not None:
                 approved = (
                     run.execution_policy.execution_mode.value != "plan_only"
+                    and not is_phone_planner(run.conversation_id)
                 )
                 self._write_server_response(
                     approval.request_id,
@@ -2204,6 +2205,10 @@ class CodexAppServer:
             else True
         )
         try:
+            with self._lock:
+                owner = self._runs.get(task_id)
+                if owner is not None and not permits_host_tool(owner.conversation_id, tool_name):
+                    raise ValueError("Phone-owned task: return an Android tool action; Desktop execution is unavailable")
             if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool", "collaboration_run_tool"}:
                 callback = (self._collaboration_test if tool_name in {"collaboration_test_tool", "collaboration_run_tool"} else
                             self._collaboration_file if tool_name == "collaboration_file_artifact" else

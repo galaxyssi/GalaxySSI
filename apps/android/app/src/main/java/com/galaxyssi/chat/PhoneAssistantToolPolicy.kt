@@ -1,6 +1,14 @@
 package com.galaxyssi.chat
 
 internal object PhoneAssistantToolPolicy {
+    val directActionToolIds = setOf(
+        AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM),
+        AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.OPEN_APP)
+    )
+
+    fun allowsGeneralPhoneTool(id: String): Boolean =
+        allowsRemotePhoneTool(id) || AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(id)
+
     fun allowsRemotePhoneTool(id: String): Boolean = id in AgentToolInspectionTools.toolIds || id in AgentPhoneUiNativeTools.toolIds ||
         id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
         id in AgentInteractiveBrowserTools.toolIds ||

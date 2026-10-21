@@ -454,7 +454,7 @@ class AgentSupervisedProjectPromptTest {
 
         assertTrue(prompt.contains("Initial response option: if no phone action is needed"))
         assertTrue(prompt.contains("\"disposition\":\"respond\""))
-        assertTrue(prompt.contains("omit runtime, workspace, permission, and tool availability"))
+        assertTrue(prompt.contains("never a substitute for requested device operations"))
     }
 
     @Test
@@ -585,13 +585,12 @@ class AgentSupervisedProjectPromptTest {
         val continuation = AgentSupervisedProjectLoop.continuationPrompt(request)
 
         assertTrue(continuation.length < planning.length)
-        assertTrue(planning.substringBefore("Available phone tools:").length <= 5_800)
+        assertTrue(planning.substringBefore("Available phone tools:").length <= 12_000)
         assertTrue(continuation.contains("\"execution_location\":\"phone\""))
         assertTrue(continuation.contains("Independent reads/disjoint mutations may run concurrently"))
         assertTrue(continuation.contains("Up to 64 actions per response, not lifetime"))
         assertTrue(continuation.contains("Set completes_goal=true only when"))
-        assertFalse(continuation.contains("Git: use"))
-        assertTrue(continuation.contains("No default code, Linux, artifact or publication requirement"))
+        assertTrue(continuation.contains("Delivery follows completion_requirements"))
         val development = AgentSupervisedProjectLoop.continuationPrompt(request.withDevelopmentObservation())
         assertTrue(development.contains("galaxyssi.project.repository.* only"))
         assertTrue(development.contains("no shell Git"))
@@ -730,11 +729,14 @@ class AgentSupervisedProjectPromptTest {
         val continuationContractLength = continuation.substringBefore(toolsHeader).length
         val continuationToolLength = continuation.substringAfter(toolsHeader).substringBefore(boundary).length
 
-        assertTrue("Planning contract expanded to $planningContractLength characters", planningContractLength <= 5_800)
-        assertTrue("Continuation contract expanded to $continuationContractLength characters", continuationContractLength <= 3_500)
+        assertTrue("Planning contract expanded to $planningContractLength characters", planningContractLength <= 12_000)
+        assertTrue("Continuation contract expanded to $continuationContractLength characters", continuationContractLength <= 9_000)
         assertEquals(planningToolLength, continuationToolLength)
         assertTrue(planning.length <= 24_000)
         assertTrue(continuation.length <= 24_000)
+        val ordinary = AgentSupervisedProjectLoop.planningPrompt(request("hello"))
+        assertTrue(ordinary.substringBefore(toolsHeader).length <= 5_800)
+        assertFalse(ordinary.contains("Git: use"))
     }
 
     @Test
