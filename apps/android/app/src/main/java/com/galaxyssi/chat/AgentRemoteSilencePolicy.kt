@@ -6,6 +6,14 @@ internal object AgentRemoteSilencePolicy {
     const val MIN_PROBES = 3
     const val TERMINAL_DELIVERY_LIMIT = 15 * 60_000L
 
+    /** A pending reply is shared bookkeeping, not proof that the request used MQTT. */
+    fun ownsDelivery(metadata: Map<String, String>, usesDesktopTransport: Boolean): Boolean {
+        val location = metadata["resource_location"].orEmpty()
+        if (location.isNotBlank()) return location == "desktop"
+        if (metadata["connector_adapter_type"] in setOf("cloud-model-api", "local-model-api")) return false
+        return usesDesktopTransport
+    }
+
     fun terminalDeliveryExpired(completedAt: Long, now: Long): Boolean =
         completedAt > 0 && now >= completedAt && now - completedAt >= TERMINAL_DELIVERY_LIMIT
 

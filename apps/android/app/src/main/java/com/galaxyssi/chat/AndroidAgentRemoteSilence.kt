@@ -78,45 +78,53 @@ internal object AndroidAgentRemoteSilence {
     private suspend fun sweep(context: Context) {
         var cursor: Long? = null
         var needsObservation = false
-        val workspaces = EncryptedAgentWorkspaceStore(context)
         do {
             val page = AgentPendingDeliveryStore.page(context, cursor)
             for (delivery in page.deliveries) {
-                // Team parents are local orchestration receipts, not remote Desktop requests.
-                // A missing local team must be recovered from its journal, never probed as a contact.
-                if (AgentTeamParentDeliveryPolicy.isLocalTeam(delivery.contactId)) continue
-                val workspace = workspaces.find(delivery.turnId) ?: continue
-                if (workspace.status.isTerminal || workspace.cancellationRequested ||
-                    workspace.conversationId != delivery.conversationId ||
-                    AgentPendingDeliveryStore.isSuperseded(context, delivery.sourceMessageId,
-                        delivery.conversationId, delivery.turnId)) continue
-                if (AgentConnectorResponseStore.hasReceivedDelivery(context, delivery.sourceMessageId,
-                        delivery.contactId)) continue
-                val session = SharedPreferencesAgentSessionStore(context, "task:${delivery.turnId}").load()
-                val metadata = session?.takeIf { it.phase == AgentPhase.WAITING_RESPONSE &&
-                    it.lastActionResult?.metadata?.get("source_message_id")?.toLongOrNull() == delivery.sourceMessageId &&
-                    it.lastActionResult?.metadata?.get("resource_location") == "desktop" }
-                    ?.lastActionResult?.metadata.orEmpty()
-                if (expired(context, delivery.sourceMessageId, metadata)) {
-                    if (terminalDeliveryExpired(context, delivery.sourceMessageId) || metadata.isEmpty()) {
-                        val message = context.getString(if (terminalDeliveryExpired(context, delivery.sourceMessageId))
-                            R.string.agent_desktop_result_unavailable else R.string.agent_desktop_status_unavailable)
-                        AgentDeliveryFailureRecorder.record(context, delivery.sourceMessageId, delivery.contactId, message)
-                    } else {
-                        AgentLongTaskRecoveryScheduler.enqueue(context, delivery.turnId,
-                            "Desktop task heartbeat recovery exhausted")
-                    }
-                } else if (GalaxySSIMqttClient.isRequestReplyReady()) {
-                    // Invalid/stale bindings cannot be queried, but must not leave the UI spinning forever.
-                    if (AndroidAgentRemoteRecovery.hasCurrentBinding(context, delivery)) needsObservation = true
-                    else shouldProbe(context, delivery.sourceMessageId)
-                } else {
-                    // Offline probes consume no network and create no durable MQTT records.
-                    shouldProbe(context, delivery.sourceMessageId)
-                }
+                if (inspectDelivery(context, delivery)) needsObservation = true
             }
             cursor = page.nextBeforeSource
         } while (cursor != null)
         if (needsObservation) AndroidAgentRecoveryWake.request(context)
+    }
+
+    internal fun inspectDelivery(context: Context, delivery: AgentPendingDelivery,
+        now: Long = System.currentTimeMillis()): Boolean {
+        if (AgentTeamParentDeliveryPolicy.isLocalTeam(delivery.contactId)) return false
+        val workspace = EncryptedAgentWorkspaceStore(context).find(delivery.turnId) ?: return false
+        if (workspace.status.isTerminal || workspace.cancellationRequested ||
+            workspace.conversationId != delivery.conversationId ||
+            AgentPendingDeliveryStore.isSuperseded(context, delivery.sourceMessageId,
+                delivery.conversationId, delivery.turnId)) return false
+        if (AgentConnectorResponseStore.hasReceivedDelivery(context, delivery.sourceMessageId,
+                delivery.contactId)) return false
+        val session = SharedPreferencesAgentSessionStore(context, "task:${delivery.turnId}").load()
+        val metadata = session?.takeIf { it.phase == AgentPhase.WAITING_RESPONSE &&
+            it.lastActionResult?.metadata?.get("source_message_id")?.toLongOrNull() == delivery.sourceMessageId }
+            ?.lastActionResult?.metadata.orEmpty()
+        // Cloud/local dispatches have their own cancellation, timeout and recovery owners.
+        // Missing Desktop metadata must not turn their pending receipts into remote failures.
+        if (!AgentRemoteSilencePolicy.ownsDelivery(metadata,
+                AppStore.usesPcConnectorTunnel(context, delivery.contactId))) {
+            retire(context, delivery.sourceMessageId)
+            return false
+        }
+        if (expired(context, delivery.sourceMessageId, metadata, now)) {
+            if (terminalDeliveryExpired(context, delivery.sourceMessageId, now) || metadata.isEmpty()) {
+                val message = context.getString(if (terminalDeliveryExpired(context, delivery.sourceMessageId, now))
+                    R.string.agent_desktop_result_unavailable else R.string.agent_desktop_status_unavailable)
+                AgentDeliveryFailureRecorder.record(context, delivery.sourceMessageId, delivery.contactId, message)
+            } else {
+                AgentLongTaskRecoveryScheduler.enqueue(context, delivery.turnId,
+                    "Desktop task heartbeat recovery exhausted")
+            }
+        } else if (GalaxySSIMqttClient.isRequestReplyReady()) {
+            if (AndroidAgentRemoteRecovery.hasCurrentBinding(context, delivery)) return true
+            shouldProbe(context, delivery.sourceMessageId, now)
+        } else {
+            // Offline probes consume no network and create no durable MQTT records.
+            shouldProbe(context, delivery.sourceMessageId, now)
+        }
+        return false
     }
 }
