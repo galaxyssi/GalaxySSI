@@ -108,6 +108,40 @@ class AgentPendingDeliveryJournalDeviceTest {
         assertNotNull(journal.find(2)); assertNull(journal.find(1))
     }
 
+    @Test fun fastContinuationSurvivesPreviousResponseCommitAndReopen() {
+        val previous = value(1)
+        val continuation = previous.copy(sourceMessageId = 2)
+        journal.put(previous)
+        journal.put(continuation)
+        assertEquals(AgentPendingSourceState.CURRENT, journal.sourceState(2, "conversation", "turn-1"))
+        journal.completeResponse(previous)
+        reopen()
+        assertEquals(continuation, journal.find(2))
+        assertEquals(AgentPendingSourceState.CURRENT, journal.sourceState(2, "conversation", "turn-1"))
+        assertEquals(AgentPendingSourceState.UNREGISTERED, journal.sourceState(3, "conversation", "turn-1"))
+        // A replayed predecessor commit must not erase the new head either.
+        journal.completeResponse(previous)
+        assertEquals(continuation, journal.find(2))
+        journal.completeResponse(continuation)
+        assertTrue(journal.page().deliveries.isEmpty())
+    }
+
+    @Test fun staleCompletionUsesRecordedRecoveryLinkButPreservesLaterContinuation() {
+        val previous = value(1)
+        val recovery = previous.copy(sourceMessageId = 2)
+        val continuation = previous.copy(sourceMessageId = 3)
+        journal.put(previous)
+        journal.put(recovery)
+        journal.markRecoveryPredecessor(1, 2)
+        journal.put(continuation)
+        journal.completeResponse(previous)
+        reopen()
+        assertNull(journal.find(1))
+        assertNull(journal.find(2))
+        assertEquals(continuation, journal.find(3))
+        assertEquals(AgentPendingSourceState.CURRENT, journal.sourceState(3, "conversation", "turn-1"))
+    }
+
     @Test fun removePredecessorKeepsCurrentTurnHead() {
         journal.put(value(1)); journal.put(value(2).copy(turnId = "turn-1"))
         journal.remove(1)
@@ -156,6 +190,7 @@ class AgentPendingDeliveryJournalDeviceTest {
 
     @Test fun completionBeforeMigrationCannotBeResurrected() {
         legacy(value(1)); legacy(value(2).copy(turnId = "turn-1"))
+        journal.markRecoveryPredecessor(1, 2)
         journal.completeResponse(value(1))
         reopen()
         assertTrue(journal.page().deliveries.isEmpty())

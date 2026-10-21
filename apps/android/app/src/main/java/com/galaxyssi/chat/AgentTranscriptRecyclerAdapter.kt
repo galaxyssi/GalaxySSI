@@ -207,10 +207,7 @@ internal open class AgentTranscriptRecyclerAdapter(
 
     private fun isControlPayload(entry: AgentTranscriptEntry): Boolean =
         ConversationScheduledTasks.isQuietLegacyStatus(activity, entry) ||
-            AgentSupervisedProjectControlPayload.isTranscriptControlPayload(
-            entry.text,
-            entry.richOutputJson
-        )
+            AgentSupervisedProjectControlPayload.isTranscriptControlPayload(entry)
 
     private fun stableItemId(identity: String): Long {
         var hash = FNV_OFFSET_BASIS

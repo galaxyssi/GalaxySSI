@@ -1510,14 +1510,14 @@ class AgentWebIntelligenceService(
                 checkpoint
             )
         }
-        store.getDocument(canonical)?.let { return cachedDocument(it) }
+        store.getDocument(canonical)?.takeIf(AgentWebTextDecoder::reusable)?.let { return cachedDocument(it) }
         val flight = AgentWebFetchSingleFlight.execute(
             canonicalUrl = canonical,
             timeoutMillis = timeoutMillis,
             cancellationToken = cancellationToken,
             checkpoint = checkpoint
         ) {
-            store.getDocument(canonical)?.let(::cachedDocument)
+            store.getDocument(canonical)?.takeIf(AgentWebTextDecoder::reusable)?.let(::cachedDocument)
                 ?: fetchDocumentFromNetwork(
                     canonical,
                     maxBytes,
@@ -1587,7 +1587,7 @@ class AgentWebIntelligenceService(
         fetched: AgentWebIntelligenceFetched,
         ttlMillis: Long
     ): AgentWebIntelligenceDocument {
-        val source = fetched.body.toString(Charsets.UTF_8)
+        val source = AgentWebTextDecoder.decode(fetched.body, fetched.contentType, fetched.url)
         val html = fetched.contentType.contains("html", true) || Regex("<html\\b", RegexOption.IGNORE_CASE).containsMatchIn(source)
         val article = if (html) AgentPublicArticleParser.parse(fetched.url, source) else null
         val title = article?.title ?: if (html) {
@@ -1621,6 +1621,7 @@ class AgentWebIntelligenceService(
                     }
                 },
                 "duration_millis" to fetched.durationMillis,
+                "text_decoder_version" to 1,
                 "challenge_detected" to challengeDetected(content),
                 "dynamic_fallback_reason" to fetched.dynamicFallbackReason,
                 "dynamic_fallback_error" to fetched.dynamicFallbackError

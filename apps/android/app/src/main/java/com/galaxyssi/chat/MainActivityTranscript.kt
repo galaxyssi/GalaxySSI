@@ -774,7 +774,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
     val cleanupEntryIds = mutableListOf<String>()
     val filteredEntries = hydratedEntries.filterNot { entry ->
         val leakedControlPayload = AgentSupervisedProjectControlPayload
-            .isTranscriptControlPayload(entry.text, entry.richOutputJson)
+            .isTranscriptControlPayload(entry)
         val staleApproval = isLocalAgentApprovalEntry(entry) &&
             (isDirectActionApprovalEntry(entry) || !isAgentApprovalStillWaiting(entry.taskId))
         if (leakedControlPayload || staleApproval) cleanupEntryIds += entry.id

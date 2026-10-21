@@ -1418,6 +1418,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val dispatchIdentity = AgentCloudDispatchIdentity(messageId, contactId, conversationId,
             connectorTurnId, connectorTaskId, action.id)
         AgentManagedDispatchIntent.persist(context, action, messageId, contactId, conversationId, connectorTurnId, connectorTaskId)
+        if (!managedTeamAction) {
+            // Admission must exist before a fast provider can publish its response.
+            AgentPendingDeliveryStore.put(context, AgentPendingDelivery(messageId, conversationId,
+                connectorTurnId, connectorTaskId, contactId))
+        }
         val dispatchLease = AgentCloudDispatchRegistry.register(dispatchIdentity)
         val cancellationRegistration = AgentTaskRuntime.cancellationToken(connectorTurnId)
             .invokeOnCancellation { dispatchLease.cancel() }
@@ -1539,14 +1544,14 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             images = cloudImages.getOrThrow(),
                             connectTimeoutMillis = attemptProfile.connectTimeoutMillis,
                             readTimeoutMillis = attemptProfile.readTimeoutMillis,
-                            allowExternalTools = action.parameters["connector_task_mode"] !=
-                                PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+                            allowExternalTools = !supervisedProject || !managedTeamAction,
                             systemPromptOverride = supervisedEnvelope?.systemPrompt
                                 ?: if (PhoneAssistantTaskControl.isReadOnlyRequest(connectorTurnId, action))
                                     CodexStyleResponsePolicy.prompt(appContext) + "\n" + CodexStyleResponsePolicy.SCREEN_ANALYSIS_PROMPT
                                 else "",
                             citationPreviewEnabled = !managedTeamAction,
                             collaborationEvidence = collaborationEvidence,
+                            supervisedControl = supervisedProject && !managedTeamAction,
                             recoveryScope = if (conversationId.isNotBlank() && connectorTurnId.isNotBlank())
                                 AgentModelLoopScope(candidateId, conversationId, connectorTurnId, connectorTaskId,
                                     connectorTurnId, "cloud-research:${model.optString("cloud_model")}", action.id)
@@ -1676,6 +1681,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     lastError = streamError ?: IllegalStateException(
                         if (!streamCompleted) {
                             "Model stream ended before completion"
+                        } else if (response.isBlank()) {
+                            "Model response contained no usable text"
                         } else {
                             "Model response did not satisfy the live-data route"
                         }
@@ -1995,6 +2002,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
 
     internal fun replySatisfiesRoute(action: AgentAction, reply: String): Boolean {
         if (reply.isBlank()) return false
+        if (action.isSupervisedProjectConnector()) return true
         if (action.parameters["routing_requires_live_data"] != "true") return true
         val normalized = reply.lowercase(Locale.US)
         return LIVE_DATA_REFUSAL_TERMS.none(normalized::contains)

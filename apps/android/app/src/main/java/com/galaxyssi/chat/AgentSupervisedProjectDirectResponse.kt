@@ -6,7 +6,7 @@ import org.json.JSONObject
 internal object AgentSupervisedProjectDirectResponseCodec {
     fun parse(rawResponse: String): String? {
         val normalized = rawResponse.trim()
-        if (normalized.isBlank()) return null
+        if (normalized.isBlank() || AgentSupervisedControlContent.isProtocol(normalized)) return null
 
         val unwrapped = normalized
             .removePrefix("```json")
@@ -18,6 +18,7 @@ internal object AgentSupervisedProjectDirectResponseCodec {
 
         val json = runCatching { JSONObject(unwrapped) }.getOrNull() ?: return null
         if (!json.optString("disposition").equals("respond", ignoreCase = true)) return null
-        return json.optString("final_response").trim().takeIf(String::isNotBlank)
+        return (json.opt("final_response") as? String)?.trim()
+            ?.takeIf { it.isNotBlank() && !AgentSupervisedControlContent.isProtocol(it) }
     }
 }
