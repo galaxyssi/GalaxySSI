@@ -39,13 +39,16 @@ data class PreparedCloudConversationStream(
 )
 
 /** Managed member output is one final protocol response, never a concatenation of tool-round drafts. */
-internal class CloudConversationTextPolicy(val managedCollaboration: Boolean) {
-    fun bufferRound(hasEvidence: Boolean): Boolean = managedCollaboration || hasEvidence
+internal class CloudConversationTextPolicy(
+    val managedCollaboration: Boolean,
+    val supervisedControl: Boolean = false
+) {
+    fun bufferRound(hasEvidence: Boolean): Boolean = managedCollaboration || supervisedControl || hasEvidence
     fun citationPreview(requested: Boolean, hasEvidence: Boolean): Boolean =
-        requested && hasEvidence && !managedCollaboration
+        requested && hasEvidence && !managedCollaboration && !supervisedControl
     // Originals and receipts remain in tool evidence. Required artifact references belong inside valid
     // member JSON; suppressing a presentation suffix neither delivers an artifact nor proves delivery.
-    fun artifactSuffix(suffix: String): String = if (managedCollaboration) "" else suffix
+    fun artifactSuffix(suffix: String): String = if (managedCollaboration || supervisedControl) "" else suffix
 }
 
 object CloudConversationStreamEngine : CloudModelStreamClient {
@@ -66,11 +69,13 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         systemPromptOverride: String = "",
         citationPreviewEnabled: Boolean = false,
         recoveryScope: AgentModelLoopScope? = null,
-        collaborationEvidence: CollaborationCloudEvidence? = null
+        collaborationEvidence: CollaborationCloudEvidence? = null,
+        supervisedControl: Boolean = false
     ): Flow<ModelStreamEvent> = flow {
         lifetimes.run(requestId) {
             val imageSession = CloudImageAnnotationSession(context, images, requestId, collaborationEvidence)
-            val textPolicy = CloudConversationTextPolicy(collaborationEvidence != null)
+            require(!supervisedControl || collaborationEvidence == null)
+            val textPolicy = CloudConversationTextPolicy(collaborationEvidence != null, supervisedControl)
             val publication = collaborationEvidence?.let { CollaborationPublicationRecovery.create(context, it.access) }
             val auditLedger = collaborationEvidence?.let { CollaborationModelCallLedger(context) }
             val auditSink = collaborationEvidence?.let { auditLedger!!.sink(it.access) }
@@ -156,7 +161,10 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             return@flow
         }
         if (!allowExternalTools) disableExternalTools(prepared)
-        else {
+        else if (textPolicy.supervisedControl) {
+            CloudSupervisedResearch.install(prepared)
+            appendPlainConversationTurn(prepared, "user", CloudSupervisedResearch.INSTRUCTION)
+        } else {
             imageSession.installCollaborationTools(prepared)
             appendPlainConversationTurn(prepared, "user", CloudEvidenceCitations.instruction)
         }
@@ -410,7 +418,15 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 }
                 val rawRoundText = inlineProtocolGuard.rawText()
                 if (!allowExternalTools && publication == null) {
-                    if (textPolicy.managedCollaboration) {
+                    if (textPolicy.supervisedControl) {
+                        // The phone plan parser, not the chat presentation filter, owns this payload.
+                        // Preserve malformed protocol too so its existing repair loop sees the evidence.
+                        if (rawRoundText.isNotEmpty()) {
+                            emittedText = true
+                            emit(ModelStreamEvent.TextDelta(requestId, globalSequence.incrementAndGet(), rawRoundText,
+                                System.nanoTime() / 1_000_000L))
+                        }
+                    } else if (textPolicy.managedCollaboration) {
                         if (assembler.completedCalls().isNotEmpty() || CloudWebGrounding.containsInternalToolProtocol(rawRoundText)) {
                             AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED, "Unexpected tool response")
                             emit(ModelStreamEvent.Failed(requestId, ModelStreamError("UNEXPECTED_TOOL_CALL",
@@ -452,6 +468,15 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     emit(ModelStreamEvent.CitationPreview(requestId, "", System.nanoTime() / 1_000_000L))
                 }
                 if (calls.isEmpty()) {
+                    if (textPolicy.supervisedControl) {
+                        // The kernel owns plan validation and side-effect completion. Keep the final
+                        // payload intact, including malformed markup for its structured repair path.
+                        if (rawRoundText.isNotBlank()) emit(ModelStreamEvent.TextDelta(requestId,
+                            globalSequence.incrementAndGet(), rawRoundText, System.nanoTime() / 1_000_000L))
+                        AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+                        emit(ModelStreamEvent.Completed(requestId, lastFinishReason, System.nanoTime() / 1_000_000L))
+                        return@flow
+                    }
                     // A member's assistance request is control flow, not a scientific conclusion to citation-check.
                     if (publication?.repairing == true && runCatching { JSONObject(rawRoundText).optString("format") }
                             .getOrNull() == CollaborationPublicationAssistance.FORMAT) {
@@ -586,6 +611,11 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                             System.nanoTime() / 1_000_000L
                         )
                     )
+                    return@flow
+                }
+                if (textPolicy.supervisedControl && calls.any { !CloudSupervisedResearch.permits(it.name) }) {
+                    emit(ModelStreamEvent.Failed(requestId, ModelStreamError("UNEXPECTED_TOOL_CALL",
+                        "This model turn exposes public read-only research only; return phone actions as an ActionPlan")))
                     return@flow
                 }
                 if (publication != null && calls.any { !allowExternalTools || !publication.permitsTool(it.name) }) {

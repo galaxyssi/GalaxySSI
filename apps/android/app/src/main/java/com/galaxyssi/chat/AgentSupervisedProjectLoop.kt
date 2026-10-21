@@ -821,6 +821,8 @@ internal object AgentSupervisedProjectControlPayload {
                         ?.optString("description")
                         ?.trim()
                         ?.takeIf(String::isNotBlank)
+                        ?.let(::sanitizeVisibleOutput)
+                        ?.takeIf(String::isNotBlank)
                         ?.let(::add)
                 }
             }.distinct().take(MAX_VISIBLE_MODEL_ACTIONS)
@@ -837,11 +839,14 @@ internal object AgentSupervisedProjectControlPayload {
     fun isTranscriptControlPayload(text: String, richOutputJson: String): Boolean =
         isControlPayloadFragment(text) || isControlPayloadFragment(richOutputJson)
 
+    fun isTranscriptControlPayload(entry: AgentTranscriptEntry): Boolean =
+        entry.role != AgentTranscriptRole.USER && isTranscriptControlPayload(entry.text, entry.richOutputJson)
+
     fun isControlPayloadFragment(raw: String): Boolean {
         val normalized = raw.trimStart()
             .removePrefix("```json")
             .trimStart()
-        return normalized.contains("execution_location")
+        return normalized.contains("execution_location") || AgentSupervisedControlContent.isProtocol(normalized)
     }
 
     fun isControlPayload(raw: String): Boolean {
@@ -975,7 +980,7 @@ internal object AgentSupervisedProjectControlPayload {
     }
 
     private fun sanitizeVisibleOutput(raw: String): String = CodexStyleResponsePolicy
-        .sanitizeAssistantText(raw)
+        .sanitizeAssistantText(if (AgentSupervisedControlContent.isProtocol(raw)) "" else raw)
         .replace(PRIVATE_REASONING_BLOCK, "")
         .replace(MARKDOWN_JSON_FENCE, "")
         .replace(Regex("\n{3,}"), "\n\n")
@@ -1099,7 +1104,11 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         response,
         plannerHistory
     )
-    if (iteration == 0) {
+    if (AgentSupervisedControlContent.hasToolMarkup(normalizedResponse)) {
+        return supervisedFormatRepairDecision(plan, connector, request, response,
+            AgentSupervisedControlContent.REPAIR_REASON)
+    }
+    if (iteration == 0 && connector.parameters[SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER] != "format") {
         AgentSupervisedProjectDirectResponseCodec.parse(normalizedResponse)?.let { finalResponse ->
             if (AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext)) {
                 return supervisedFormatRepairDecision(plan, connector, request, response,
@@ -1196,6 +1205,10 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
 
     if (parsed.actions.singleOrNull()?.isTaskCompleteMarker() == true) {
+        if (AgentSupervisedControlContent.isProtocol(parsed.actions.single().description)) {
+            return supervisedFormatRepairDecision(plan, connector, request, response,
+                AgentSupervisedControlContent.REPAIR_REASON)
+        }
         val pendingOutcomes = AgentPendingOutcomeEvidence.unresolved(parsed.completionRequirements, executionHistory) {
             nativeToolRegistry.lookup(it)?.descriptor
         }
@@ -1365,28 +1378,36 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
         activeConversationTurnId, sessionId) ?: return null
     val failedAction = AgentCompletionEvidenceHistory.latestFailure(plan, scope) ?: return null
     val request = supervisedProjectRequest(plan, continuation = true)
-    val routing = AgentResourceRouter(appContext).route(
-        goal = currentGoal,
-        targets = request.targets,
-        registrations = request.registrations,
-        requirements = PhoneAssistantTaskControl.reasoningRequirements(activeConversationTurnId, currentGoal)
-    )
-    val routeSelection = AgentConnectorRouteSelector.select(
-        targets = request.targets,
-        decision = routing
-    )
-    val selectedTarget = routeSelection?.target
-    val fallbackIds = routeSelection?.decision?.fallbacks.orEmpty()
-        .map { candidate -> candidate.resource.targetId }
-        .filter(String::isNotBlank)
-        .distinct()
+    val recoveryConnector = AgentSupervisedRecoveryBinding.resolve(connector) {
+        val routing = AgentResourceRouter(appContext).route(
+            goal = currentGoal,
+            targets = request.targets,
+            registrations = request.registrations,
+            requirements = PhoneAssistantTaskControl.reasoningRequirements(activeConversationTurnId, currentGoal)
+        )
+        val routeSelection = AgentConnectorRouteSelector.select(targets = request.targets, decision = routing)
+        val selectedTarget = routeSelection?.target
+        val fallbackIds = routeSelection?.decision?.fallbacks.orEmpty()
+            .map { candidate -> candidate.resource.targetId }.filter(String::isNotBlank).distinct()
+        connector.copy(target = selectedTarget?.title ?: connector.target,
+            parameters = connector.parameters + mapOf(
+                "connector_id" to (selectedTarget?.id ?: connector.parameters["connector_id"].orEmpty()),
+                "connector_kind" to (selectedTarget?.kind?.name?.lowercase(Locale.ROOT)
+                    ?: connector.parameters["connector_kind"].orEmpty()),
+                "connector_adapter_type" to (selectedTarget?.adapterType
+                    ?: connector.parameters["connector_adapter_type"].orEmpty()),
+                "connector_failure_domain" to (selectedTarget?.failureDomain
+                    ?: connector.parameters["connector_failure_domain"].orEmpty()),
+                "routing_fallback_ids" to fallbackIds.joinToString(","),
+                "manual_target_locked" to "false"
+            ))
+    }
     val nextIteration = connector.parameters["supervised_iteration"]
         ?.toIntOrNull()?.plus(1)?.coerceAtLeast(1) ?: (plan.replanCount + 1)
     val interrupted = failedAction.evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE
     val unknownOutcome = AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(failedAction)
-    val reviewer = connector.copy(
+    val reviewer = recoveryConnector.copy(
         id = "supervise-phone-project-recovery-$revision-$nextIteration",
-        target = selectedTarget?.title ?: connector.target,
         risk = AgentRisk.LOW,
         status = AgentActionStatus.PENDING_CONFIRMATION,
         description = when {
@@ -1394,7 +1415,7 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
             unknownOutcome -> "Inspect the phone action with an unknown outcome and choose the next step"
             else -> "Review failed phone project evidence and choose a different step"
         },
-        parameters = connector.parameters + mapOf(
+        parameters = recoveryConnector.parameters + mapOf(
             "prompt" to if (interrupted) {
                 AgentSupervisedProjectLoop.interruptedRecoveryPrompt(request, failedAction)
             } else {
@@ -1404,17 +1425,7 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
             "supervised_iteration" to nextIteration.toString(),
             "supervised_parse_attempt" to "0",
             "depends_on" to "",
-            "use_outputs_from" to "",
-            "connector_id" to (selectedTarget?.id
-                ?: connector.parameters["connector_id"].orEmpty()),
-            "connector_kind" to (selectedTarget?.kind?.name?.lowercase(Locale.ROOT)
-                ?: connector.parameters["connector_kind"].orEmpty()),
-            "connector_adapter_type" to (selectedTarget?.adapterType
-                ?: connector.parameters["connector_adapter_type"].orEmpty()),
-            "connector_failure_domain" to (selectedTarget?.failureDomain
-                ?: connector.parameters["connector_failure_domain"].orEmpty()),
-            "routing_fallback_ids" to fallbackIds.joinToString(","),
-            "manual_target_locked" to "false"
+            "use_outputs_from" to ""
         ),
         requiresConfirmation = false,
         result = "",

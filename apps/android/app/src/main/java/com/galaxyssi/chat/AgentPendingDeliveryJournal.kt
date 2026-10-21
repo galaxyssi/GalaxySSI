@@ -60,14 +60,22 @@ internal class AgentPendingDeliveryJournal(
         if (delivery == null) return
         transaction { db ->
             val current = readHead(db, delivery.conversationId, delivery.turnId)
-            setOf(delivery.sourceMessageId, delivery.recoverySuccessorSourceMessageId, current ?: 0L)
+            val recorded = readSource(db, delivery.sourceMessageId)?.takeIf {
+                AgentPendingDeliveryCodec.sameTurn(it, delivery.conversationId, delivery.turnId)
+            }
+            // A continuation may already be in flight before its predecessor commits.
+            // Only an explicitly linked recovery attempt belongs to this completion.
+            val retired = mutableSetOf<Long>()
+            setOf(delivery.sourceMessageId, delivery.recoverySuccessorSourceMessageId,
+                recorded?.recoverySuccessorSourceMessageId ?: 0L)
                 .filter { it > 0 }.forEach { source ->
                     val candidate = readSource(db, source)
                     if (candidate != null && AgentPendingDeliveryCodec.sameTurn(candidate, delivery.conversationId, delivery.turnId)) {
                         retire(db, source)
+                        retired += source
                     }
                 }
-            writeHead(db, delivery.conversationId, delivery.turnId, null)
+            if (current in retired) writeHead(db, delivery.conversationId, delivery.turnId, null)
         }
     }
 

@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CloudConversationTextPolicyTest {
+    @Test fun supervisedControlIsBufferedForItsParserWithoutPresentationSuffixes() {
+        val policy = CloudConversationTextPolicy(managedCollaboration = false, supervisedControl = true)
+        assertTrue(policy.bufferRound(hasEvidence = false))
+        assertTrue(policy.bufferRound(hasEvidence = true))
+        assertFalse(policy.citationPreview(requested = true, hasEvidence = true))
+        assertEquals("", policy.artifactSuffix("artifact"))
+    }
+
     @Test fun managedResponsesBufferEvenBeforeAnyToolEvidenceExists() {
         val policy = CloudConversationTextPolicy(managedCollaboration = true)
         assertTrue(policy.bufferRound(hasEvidence = false))

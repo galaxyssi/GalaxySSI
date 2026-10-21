@@ -76,7 +76,7 @@ class AgentBoundedWebIntelligenceFetcher(
         )
         return AgentWebIntelligenceFetched(
             url = resource.finalUrl,
-            contentType = resource.contentType,
+            contentType = resource.selectedHeaders["content-type"] ?: resource.contentType,
             body = resource.body,
             durationMillis = System.currentTimeMillis() - started
         )
