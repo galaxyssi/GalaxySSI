@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 internal object PhoneAssistantToolPolicy {
     fun allowsRemotePhoneTool(id: String): Boolean = id in AgentToolInspectionTools.toolIds || id in AgentPhoneUiNativeTools.toolIds ||
+        id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
         id in AgentInteractiveBrowserTools.toolIds ||
         id in AgentRuntimeControlTools.toolIds ||
         id in setOf(AgentAndroidSystemNativeTools.AUDIO_STATUS, AgentAndroidSystemNativeTools.AUDIO_VOLUME_SET,

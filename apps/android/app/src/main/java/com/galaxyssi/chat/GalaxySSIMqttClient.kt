@@ -2419,6 +2419,9 @@ object GalaxySSIMqttClient {
             }
             AgentResearchTraceStore.receiveAuthenticated(context, payload)
             if (finalReply) AndroidAgentResultRecovery.persistAuthenticatedFinal(context, payload, sourceDesktopId)
+            else if (payload.optString("task_status") in AgentRemoteOutcomeCodec.FAILURES) {
+                AndroidAgentResultRecovery.persistAuthenticatedFailure(context, payload)
+            }
         }
         if (AndroidAgentResultRecovery.dispatchAuthenticatedRead(context, payload, sourceDesktopId)) {
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload)

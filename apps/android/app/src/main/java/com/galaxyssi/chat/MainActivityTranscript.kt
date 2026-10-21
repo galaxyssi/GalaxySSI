@@ -1324,7 +1324,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         completedAtMillis = completedAt
     )
     val displayCompletedAt = if (agentProcessIsRunning(entry)) null else completedAt
-        ?: execution.completedAtMillis.takeIf { it > 0L }
+        ?: execution.completedAtMillis.takeIf { entry.turnId.isBlank() && it > 0L }
     val completed = displayCompletedAt != null
     val deliveryUnconfirmed = turnEntries.any { it.dedupeKey.startsWith("delivery-failed:") }
     val expanded = hasProcessDetails &&

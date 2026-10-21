@@ -1,10 +1,12 @@
 import os
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
 import codex_app_server
+from agent_execution_harness import AgentExecutionMode, execution_policy_for
 
 
 class PhonePlannerThreadTests(unittest.TestCase):
@@ -77,6 +79,42 @@ class PhonePlannerThreadTests(unittest.TestCase):
         self.start(2, scope="ordinary-chat")
         self.assertIn(self.prefix, self.turns()[1]["input"][0]["text"])
         self.assertTrue(any(item["type"] == "localImage" for item in self.turns()[1]["input"]))
+
+    def test_phone_plan_only_keeps_phone_contract_without_host_snapshot(self):
+        policy = replace(execution_policy_for("Research public images"), execution_mode=AgentExecutionMode.PLAN_ONLY)
+        with patch.object(self.server, "_with_execution_contract", wraps=self.server._with_execution_contract) as contract:
+            run = self.server.start_task("phone-only", self.prefix, self.directory,
+                conversation_id="phone-planner-v1:research", execution_policy=policy)
+        contract.assert_not_called()
+        self.server._begin_host_config_guard.assert_not_called()
+        self.assertIsNone(run.host_config_guard)
+        self.assertIn(self.prefix.strip(), self.turns()[0]["input"][0]["text"])
+
+    def test_phone_scope_does_not_skip_contract_for_desktop_execution(self):
+        with patch.object(self.server, "_with_execution_contract", wraps=self.server._with_execution_contract) as contract:
+            self.server.start_task("host-work", self.prefix, self.directory,
+                conversation_id="phone-planner-v1:host-work", execution_policy=execution_policy_for("Build a project"))
+        contract.assert_called()
+        self.server._begin_host_config_guard.assert_called_once()
+
+    def test_phone_policy_survives_prewarm_and_turn_reuse(self):
+        from codex_phone_policy import PHONE_REASONING_POLICY
+        first = self.start(1)
+        initial = next(params for method, params in self.calls if method == "thread/start")
+        self.assertEqual(PHONE_REASONING_POLICY, initial["developerInstructions"])
+        self.assertNotIn("office_preview", [tool["name"] for tool in initial["dynamicTools"]])
+        first.finished = True
+        self.server._loaded_thread_ids.clear()
+        self.server.prewarm_recent_threads()
+        resumed = next(params for method, params in self.calls if method == "thread/resume")
+        self.assertEqual(PHONE_REASONING_POLICY, resumed["developerInstructions"])
+        second = self.start(2)
+        self.assertEqual(first.thread_id, second.thread_id)
+
+    def test_desktop_thread_retains_its_original_policy(self):
+        self.start(1, scope="ordinary-chat")
+        initial = next(params for method, params in self.calls if method == "thread/start")
+        self.assertEqual(codex_app_server.CODEX_TASK_POLICY, initial["developerInstructions"])
 
 
 if __name__ == "__main__":

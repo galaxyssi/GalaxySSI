@@ -2922,4 +2922,5 @@
     <string name="nearby_nfc_failed">Could not complete the request. Reopen the watch pairing page and try again.</string>
     <string name="nearby_nfc_send">Codes match · Send friend request</string>
     <string name="nearby_nfc_sent">Request sent. Approve it on the watch.</string>
+    <string name="agent_codex_recovery_exhausted">Stopped after Codex timed out and the available alternatives failed to return a usable result. The final Codex retry also failed. Last error: %1$s</string>
 </resources>

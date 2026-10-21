@@ -387,6 +387,12 @@ internal object AgentSupervisedProjectLoop {
                     maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
                     temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
                     detailedToolIds = progress.detailedToolIds,
+                    developmentContext = AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) ||
+                        request.executionHistory.any { action ->
+                        val id = action.parameters["tool_id"].orEmpty().ifBlank { action.target }
+                        id.startsWith("galaxyssi.workspace.") || id.startsWith("galaxyssi.project.") ||
+                            id.startsWith("galaxyssi.runtime.")
+                    },
                     phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId) ||
                         AgentUnverifiedOutcomeRecovery.isPhoneControl(request) ||
                         AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
@@ -587,7 +593,9 @@ internal object AgentSupervisedProjectToolInventory {
                         }
                         append(" | input=")
                         append(
-                            AgentSupervisedProjectPromptCodec.compactInputSchema(
+                            if (tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds) {
+                                AgentNativeJsonCodec.stringify(tool.inputSchema.document)
+                            } else AgentSupervisedProjectPromptCodec.compactInputSchema(
                                 tool.inputSchema.document,
                                 if (detailedToolIds == null || tool.id in detailedToolIds) {
                                     maximumSchemaCharacters
@@ -603,6 +611,7 @@ internal object AgentSupervisedProjectToolInventory {
     }
 
     private fun priority(tool: AgentNativeToolDescriptor): Int = when {
+        tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds -> -1
         tool.id.startsWith("galaxyssi.project.repository.") -> 0
         tool.id.startsWith("galaxyssi.project.github.") -> 1
         tool.id.startsWith("galaxyssi.workspace.") -> 2
@@ -1108,15 +1117,18 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         logSupervisedPlanRejection("non_phone_site", normalizedResponse)
         return supervisedFormatRepairDecision(plan, connector, request, response, "non_phone_site")
     }
-    val parsing = AgentModelPlanParser.parseWithDiagnostics(request, normalizedResponse, settings)
+    val phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
+                connector.parameters[AgentUnverifiedOutcomeRecovery.PHONE_CONTROL] == "true" ||
+                AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
+    val parsing = AgentModelPlanParser.parseWithDiagnostics(request, normalizedResponse, settings,
+        allowInitialCompletion = iteration == 0 && !phoneControl &&
+            !AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) &&
+            !AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext))
     val rawParsed = parsing.plan ?: run {
             logSupervisedPlanRejection("action_plan", normalizedResponse)
             return supervisedFormatRepairDecision(plan, connector, request, response,
                 "action_plan:" + parsing.rejection?.toJson().orEmpty())
         }
-    val phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
-                connector.parameters[AgentUnverifiedOutcomeRecovery.PHONE_CONTROL] == "true" ||
-                AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
     if (!AgentExecutionSiteDecisionCodec.acceptsActions(executionSite, rawParsed.actions, phoneControl = phoneControl)) {
         logSupervisedPlanRejection("execution_tool_policy", normalizedResponse)
         return supervisedFormatRepairDecision(plan, connector, request, response,

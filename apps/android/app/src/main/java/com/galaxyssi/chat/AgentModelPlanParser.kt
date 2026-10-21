@@ -43,11 +43,21 @@ object AgentModelPlanParser {
     fun parse(request: AgentRequest, raw: String, settings: AgentModelPlannerSettings): AgentPlan? =
         parseWithDiagnostics(request, raw, settings).plan
 
-    fun parseWithDiagnostics(request: AgentRequest, raw: String, settings: AgentModelPlannerSettings): AgentModelPlanParseResult =
-        try { AgentModelPlanParseResult(parseChecked(request, raw, settings), null) }
+    fun parseWithDiagnostics(
+        request: AgentRequest,
+        raw: String,
+        settings: AgentModelPlannerSettings,
+        allowInitialCompletion: Boolean = false
+    ): AgentModelPlanParseResult =
+        try { AgentModelPlanParseResult(parseChecked(request, raw, settings, allowInitialCompletion), null) }
         catch (error: Rejected) { AgentModelPlanParseResult(null, error.reason) }
 
-    private fun parseChecked(request: AgentRequest, raw: String, settings: AgentModelPlannerSettings): AgentPlan {
+    private fun parseChecked(
+        request: AgentRequest,
+        raw: String,
+        settings: AgentModelPlannerSettings,
+        allowInitialCompletion: Boolean
+    ): AgentPlan {
         val json = extractJson(raw) ?: reject("$", "invalid_json", "Return one JSON object containing actions.")
         val completionRequirements = AgentCompletionRequirements.parse(json.optJSONObject("completion_requirements"))
         if (json.has("completion_requirements") && completionRequirements == null)
@@ -82,7 +92,7 @@ object AgentModelPlanParser {
             ) ?: reject("actions[$index].parameters", "unresolved_action", "Use an available target and parameters from the advertised tool schema.")
             actions += action
         }
-        if (!hasValidDraftPlanSemantics(request, actions))
+        if (!hasValidDraftPlanSemantics(request, actions, allowInitialCompletion))
             reject("actions", "completion_mixed_with_execution", "DRAFT_PLAN target=task-complete must be the only action in a continuation after observed results. First return executable actions only, then review their receipts in the next response.")
         val plan = AgentPlanFactory.actions(request, actions).copy(
             completionRequirements = completionRequirements ?: request.completionRequirements,
@@ -102,11 +112,14 @@ object AgentModelPlanParser {
 
     private fun hasValidDraftPlanSemantics(
         request: AgentRequest,
-        actions: List<AgentAction>
+        actions: List<AgentAction>,
+        allowInitialCompletion: Boolean
     ): Boolean {
         val drafts = actions.filter { it.kind == AgentActionKind.DRAFT_PLAN }
         if (drafts.isEmpty()) return true
-        return request.replanReason.isNotBlank() &&
+        // Native provider research can finish without a phone tool round trip.
+        // Receipt requirements are still checked by the supervised completion policy.
+        return (request.replanReason.isNotBlank() || allowInitialCompletion) &&
             actions.size == 1 &&
             drafts.single().target.equals(TASK_COMPLETE_TARGET, ignoreCase = true)
     }

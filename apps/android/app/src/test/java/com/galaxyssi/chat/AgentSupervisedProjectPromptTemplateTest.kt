@@ -7,6 +7,45 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun completionContainsTheDeliveredAnswerRatherThanInstructionsToAnotherWriter() {
+        for (continuation in listOf(false, true)) {
+            for (development in listOf(false, true)) {
+                val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240,
+                    developmentContext = development)
+                assertTrue(prompt.contains("description is rendered verbatim as the user's final answer"))
+                assertTrue(prompt.contains("no downstream writer or tool will expand it"))
+                assertTrue(prompt.contains("requested Markdown images using observed URLs"))
+                assertTrue(prompt.contains("Do not describe a future answer"))
+            }
+        }
+    }
+    @Test fun ordinaryResearchGetsDirectCompleteSearchSchemasWithoutDevelopmentContract() {
+        val original = context()
+        val search = original.nativeTools.first().copy(id = AgentWebIntelligenceNativeTools.SEARCH,
+            inputSchema = AgentNativeJsonSchema.objectSchema(properties = mapOf(
+                "query" to AgentNativeJsonSchema.string(),
+                "verticals" to AgentNativeJsonSchema.array(AgentNativeJsonSchema.string(enumValues = listOf("image", "news"))),
+                "engine_fanout" to AgentNativeJsonSchema.integer(minimum = 1, maximum = 32))))
+        val tools = original.nativeTools + search
+        val context = original.copy(nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(tools, emptyList(), emptyList()))
+        val light = AgentSupervisedProjectPromptTemplate.render(context, false, 64,
+            detailedToolIds = emptySet(), developmentContext = false)
+        val full = AgentSupervisedProjectPromptTemplate.render(context, false, 64,
+            detailedToolIds = emptySet(), developmentContext = true)
+        val line = light.lineSequence().single { it.startsWith("- ${search.id}") }
+        assertTrue(line.contains("engine_fanout"))
+        assertTrue(line.contains("\"maximum\":32"))
+        assertTrue(light.contains("invoke them directly, without discover/describe"))
+        assertTrue(light.contains("Provider-native research:"))
+        assertTrue(light.contains("no phone tool receipt is required for a public read-only answer"))
+        assertFalse(full.contains("Provider-native research:"))
+        assertFalse(light.contains("Persistent phone Linux uses Debian"))
+        assertFalse(light.contains("Git: use"))
+        assertTrue(full.contains("Git: use"))
+        assertTrue(light.length < full.length)
+        assertNotSame(light, full)
+    }
     @Test fun phoneResultsAreDeclaredBeforeExecutionAndBoundToEveryFinalAnswer() {
         for (continuation in listOf(false, true)) {
             val prompt = AgentSupervisedProjectPromptTemplate.render(context(), continuation, 240, phoneControl = true)

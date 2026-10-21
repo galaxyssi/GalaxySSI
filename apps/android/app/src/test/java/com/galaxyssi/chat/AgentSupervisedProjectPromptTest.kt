@@ -586,17 +586,17 @@ class AgentSupervisedProjectPromptTest {
 
         assertTrue(continuation.length < planning.length)
         assertTrue(planning.substringBefore("Available phone tools:").length <= 5_800)
-        assertTrue(continuation.contains("execution_location is always phone"))
+        assertTrue(continuation.contains("\"execution_location\":\"phone\""))
         assertTrue(continuation.contains("Independent reads/disjoint mutations may run concurrently"))
         assertTrue(continuation.contains("Up to 64 actions per response, not lifetime"))
         assertTrue(continuation.contains("Set completes_goal=true only when"))
-        assertTrue(continuation.contains("galaxyssi.project.repository.* only"))
-        assertTrue(continuation.contains("no shell Git"))
-        assertTrue(continuation.contains("verification_kind and no source"))
-        assertTrue(continuation.contains("project_profiles"))
-        assertTrue(continuation.contains("required executables"))
-        assertTrue(continuation.contains("Delivery follows completion_requirements"))
-        assertTrue(continuation.contains("No default publication"))
+        assertFalse(continuation.contains("Git: use"))
+        assertTrue(continuation.contains("No default code, Linux, artifact or publication requirement"))
+        val development = AgentSupervisedProjectLoop.continuationPrompt(request.withDevelopmentObservation())
+        assertTrue(development.contains("galaxyssi.project.repository.* only"))
+        assertTrue(development.contains("no shell Git"))
+        assertTrue(development.contains("verification_kind and no source"))
+        assertTrue(development.contains("Delivery follows completion_requirements"))
         assertTrue(continuation.contains("Available phone tools"))
         val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
             request.executionHistory
@@ -827,7 +827,7 @@ class AgentSupervisedProjectPromptTest {
     @Test
     fun `project loop installs evidence backed dependencies and retries the blocked step`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(
-            request("Clone the project on this phone, build it, and fix any failures")
+            request("Clone the project on this phone, build it, and fix any failures").withDevelopmentObservation()
         )
 
         assertTrue(prompt.contains("Debian apt/dpkg as root"))
@@ -908,8 +908,13 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("Durable project context"))
         assertTrue(prompt.contains("https://github.com/galaxyssi/GalaxySSI"))
         assertTrue(prompt.contains("Use the current conversation workspace only"))
-        assertTrue(prompt.contains("New conversation=empty isolated workspace"))
+        assertFalse(prompt.contains("Git: use"))
     }
+
+    private fun AgentRequest.withDevelopmentObservation(): AgentRequest = copy(executionHistory = listOf(
+        AgentAction("observed-project", AgentActionKind.CALL_NATIVE_TOOL, AgentMobileProjectNativeTools.OBSERVE,
+            AgentRisk.LOW, AgentActionStatus.COMPLETED, "Inspect repository", result = "repository_state=ready")
+    ))
 
     @Test
     fun `project tools are ordered ahead of generic runtime tools`() {

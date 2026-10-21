@@ -8,6 +8,16 @@ import org.json.JSONObject
 import org.junit.Test
 
 class AgentSessionPersistencePolicyTest {
+    @Test fun boundedRecoveryAndRemoteIdentitySurviveNoisyMetadata() {
+        val recovery = mapOf("remote_task_id" to "remote", "remote_task_status" to "timed_out",
+            "remote_execution_generation" to "2", "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+            AgentCodexSilenceRecovery.ORIGIN to "codex", AgentCodexSilenceRecovery.TIMEOUTS to "2",
+            AgentCodexSilenceRecovery.FINAL to "true")
+        val compact = AgentSessionPersistencePolicy.compactMetadata(
+            (0..100).associate { "noise_$it" to "$it" } + recovery)
+        recovery.forEach { (key, value) -> assertEquals(value, compact[key]) }
+    }
+
     @Test fun unverifiedOutcomeRestoresWithoutResettingTheAcceptedAction() {
         val scope = AgentPlanContinuationScope("conversation", "turn")
         val accepted = scope.bind(AgentAction("accepted", AgentActionKind.CALL_NATIVE_TOOL, "write", AgentRisk.LOW,

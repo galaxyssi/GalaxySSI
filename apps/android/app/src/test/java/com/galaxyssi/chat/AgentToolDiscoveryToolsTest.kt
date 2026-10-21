@@ -5,6 +5,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentToolDiscoveryToolsTest {
+    @Test fun chineseSentenceFindsImageSearchWithoutAnEmptyCursorFailure() {
+        val tool = descriptor("galaxyssi.web.image.search").copy(title = "Image search", description = "Find image sources")
+        val result = AgentToolDiscoveryTools.page(listOf(tool), mapOf("query" to "搜索世界上最小的耳机图片", "cursor" to ""))
+        assertTrue(result.isSuccess)
+        assertEquals(1, result.output["total_matches"])
+        assertTrue(AgentCapabilitySearch.matches("图片搜索", tool))
+        assertFalse(AgentCapabilitySearch.matches("文件下载", tool))
+        val missing = AgentToolDiscoveryTools.page(listOf(tool), mapOf("query" to "unknown-capability"))
+        assertEquals(false, missing.output["capability_absent"])
+        assertNotNull(missing.output["search_guidance"])
+    }
     private fun descriptor(id: String) = AgentNativeToolDescriptor(id, "1.0.0", "Public browser tool",
         "Inspect a public browser page", AgentNativeToolLocation.APPLICATION,
         AgentNativeJsonSchema.objectSchema(), AgentNativeJsonSchema.objectSchema(), AgentNativeToolRisk.LOW,

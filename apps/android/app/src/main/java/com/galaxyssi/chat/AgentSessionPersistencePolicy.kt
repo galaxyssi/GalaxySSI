@@ -31,17 +31,22 @@ internal object AgentSessionPersistencePolicy {
 
     fun compactText(value: String): String = value.take(MAX_GENERAL_TEXT_CHARACTERS)
 
-    fun compactActionText(value: String): String = value.take(MAX_ACTION_TEXT_CHARACTERS)
+    fun compactActionText(value: String): String =
+        AgentWebObservation.compact(value, MAX_ACTION_TEXT_CHARACTERS, preserveReceipt = true)
+            ?: value.take(MAX_ACTION_TEXT_CHARACTERS)
 
     fun compactAuditText(value: String): String = value.take(MAX_AUDIT_TEXT_CHARACTERS)
 
     fun compactMetadata(metadata: Map<String, String>): Map<String, String> {
-        val (recovery, ordinary) = metadata.entries.partition { it.key in RECOVERY_METADATA_KEYS }
+        val (recovery, ordinary) = metadata.entries.partition { isRecoveryKey(it.key) }
         return (recovery + ordinary.take((MAX_METADATA_ENTRIES - recovery.size).coerceAtLeast(0)))
         .associate { (key, value) ->
             key.take(128) to value.take(MAX_METADATA_VALUE_CHARACTERS)
         }
     }
+
+    private fun isRecoveryKey(key: String): Boolean =
+        key in RECOVERY_METADATA_KEYS || key.startsWith(AgentCodexSilenceRecovery.PREFIX)
 
     private val RECOVERY_METADATA_KEYS = setOf(
         "delivery_failed",
@@ -74,7 +79,11 @@ internal object AgentSessionPersistencePolicy {
         AgentRuntimeOutcomeContinuation.KEY,
         "failure_kind",
         "goal_status",
-        "business_success_verified"
+        "business_success_verified",
+        "remote_task_id", "remote_task_status", "remote_execution_generation", "remote_task_status_seq",
+        "timeout_stage", "non_retriable", "recovery_exhausted", "connector_id", "connector_adapter_type",
+        "connector_task_mode", INTERNAL_TASK_EXECUTION_MODE, "manual_target_locked", "auto_reroute_on_failure",
+        "agent_model_id", "manual_model_id", "agent_reasoning_effort", "supervised_iteration"
     )
 
     private const val MAX_NON_PROJECT_ACTION_HISTORY = 24
@@ -231,7 +240,10 @@ internal object AgentSessionPersistencePolicy {
                 it.key == AgentUnverifiedOutcomeRecovery.PHONE_CONTROL ||
                 it.key == INTERNAL_CONVERSATION_ID || it.key == INTERNAL_TURN_ID) 0 else 1
         }
-            .take(if (minimal) 8 else MAX_RECOVERY_METADATA_ENTRIES)
+            .let { entries ->
+                val (recovery, ordinary) = entries.partition { isRecoveryKey(it.key) }
+                recovery + ordinary.take(((if (minimal) 8 else MAX_RECOVERY_METADATA_ENTRIES) - recovery.size).coerceAtLeast(0))
+            }
             .associate { (key, value) -> key to value.take(if (minimal) 256 else 1_024) },
         result = action.result.take(if (minimal) 256 else MAX_RECOVERY_RESULT_CHARACTERS),
         evidence = AgentRecoveryObservationEvidence.compactOriginEvidence(action.evidence,

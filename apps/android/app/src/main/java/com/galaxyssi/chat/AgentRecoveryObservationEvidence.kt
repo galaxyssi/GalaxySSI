@@ -17,7 +17,9 @@ internal object AgentRecoveryObservationEvidence {
     fun compactOriginEvidence(value: String, limit: Int): String {
         val json = runCatching { JSONObject(value) }.getOrNull()
         val proof = json?.optJSONObject(KEY)
-        if (proof?.optJSONObject("recovery_query") == null) return value.take(limit)
+        if (proof?.optJSONObject("recovery_query") == null) {
+            return AgentWebObservation.compact(value, limit, preserveReceipt = true) ?: value.take(limit)
+        }
         if (value.length <= AgentSessionPersistencePolicy.MAX_ACTION_TEXT_CHARACTERS) return value
         val compact = JSONObject().put(KEY, proof).put("state_verified", false).toString()
         return compact.takeIf { it.length <= AgentSessionPersistencePolicy.MAX_ACTION_TEXT_CHARACTERS }

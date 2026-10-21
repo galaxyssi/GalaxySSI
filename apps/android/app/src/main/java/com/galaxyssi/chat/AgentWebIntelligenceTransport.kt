@@ -69,7 +69,7 @@ class AgentBoundedWebIntelligenceFetcher(
         val resource = web.fetch(
             url = url,
             maxBytes = maxBytes,
-            timeoutMillis = timeoutMillis,
+            timeoutMillis = minOf(timeoutMillis, web.policy.maxTimeoutMillis),
             cancellationToken = cancellationToken,
             checkpoint = checkpoint,
             headers = headers
