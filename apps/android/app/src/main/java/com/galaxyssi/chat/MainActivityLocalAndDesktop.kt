@@ -1006,7 +1006,7 @@ internal fun MainActivity.showDesktopControlPicker() {
     val devices = desktopControlDevices()
     if (devices.size == 1) {
         DesktopRemoteControl.requestAuthorizations(devices.single().id)
-        showDesktopRemoteControlPage(devices.single())
+        openDesktopRemoteControlPage(devices.single())
         return
     }
     showFeaturePage(getString(R.string.desktop_control_title))
@@ -1048,7 +1048,7 @@ internal fun MainActivity.showDesktopControlPicker() {
             ).apply {
                 setOnClickListener {
                     DesktopRemoteControl.requestAuthorizations(device.id)
-                    showDesktopRemoteControlPage(device)
+                    openDesktopRemoteControlPage(device)
                 }
             })
         }

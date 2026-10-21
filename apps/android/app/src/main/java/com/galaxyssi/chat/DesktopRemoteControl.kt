@@ -393,7 +393,9 @@ data class DesktopRemoteControlSnapshot(
     val perception: DesktopPerceptionSnapshot?,
     val surfaceCatalog: DesktopSurfaceCatalog?,
     val streamFps: Int,
-    val streamActive: Boolean
+    val streamActive: Boolean,
+    val lastActionErrorCode: String = "",
+    val lastActionDesktopSessionId: String = ""
 ) {
     val authorized: Boolean
         get() = fullDesktopExecutor && enabled && currentAuthorization?.status == "active"
@@ -698,6 +700,8 @@ object DesktopRemoteControl {
         var status: String = "",
         var summary: String = "",
         var at: Long = 0L,
+        var errorCode: String = "",
+        var desktopSessionId: String = "",
         var screenshot: DesktopControlScreenshot? = null,
         var perception: DesktopPerceptionSnapshot? = null,
         var surfaceCatalog: DesktopSurfaceCatalog? = null,
@@ -710,6 +714,7 @@ object DesktopRemoteControl {
     )
 
     private val runtime = ConcurrentHashMap<String, RuntimeState>()
+    private val inputMailbox = DesktopInputMailbox()
     private val pendingActions = ConcurrentHashMap<String, DesktopControlPendingRequest>()
     private val screenshotRequestGate = DesktopScreenshotRequestGate()
     private val perceptionRequestGate = DesktopScreenshotRequestGate()
@@ -798,6 +803,9 @@ object DesktopRemoteControl {
                 pending?.takeIf { it.toolId == PERCEIVE }?.let {
                     perceptionRequestGate.release(it.desktopId, actionId)
                 }
+                val currentSession = snapshot(context, desktopId).currentAuthorization?.desktopSessionId
+                if (pending?.streamFrame == true && !currentSession.isNullOrBlank() &&
+                    pending.desktopSessionId != currentSession) return true
                 val verified = link != null && DesktopControlReceiptProtocol.verify(
                     payload = payload,
                     expectedSignerId = link.signalName,
@@ -815,14 +823,22 @@ object DesktopRemoteControl {
                     }
                 )
                 if (!verified) {
+                    if (pending == null) return true
+                    inputMailbox.record(desktopId, DesktopInputResult(actionId, false, null, "unverified"))
                     if (pending?.streamFrame == true) stopScreenshotStream(desktopId)
                     state.status = "unverified"
                     state.summary = "desktop_action_receipt_unverified"
                     state.at = System.currentTimeMillis()
+                    state.errorCode = "desktop_action_receipt_unverified"
+                    state.desktopSessionId = pending?.desktopSessionId.orEmpty()
                     return true
                 }
+                inputMailbox.record(desktopId, DesktopInputResult.fromReceipt(payload))
                 val streamFrame = pending?.streamFrame == true ||
                     payload.optJSONObject("output")?.optBoolean("stream_frame", false) == true
+                val receiptSession = payload.optString("desktop_session_id")
+                // A late failure from the previous backend must not stop a renewed stream.
+                if (streamFrame && !currentSession.isNullOrBlank() && receiptSession != currentSession) return true
                 if (streamFrame && payload.optString("status") != "succeeded") {
                     stopScreenshotStream(desktopId)
                     state.status = payload.optString("status")
@@ -832,6 +848,10 @@ object DesktopRemoteControl {
                     state.status = payload.optString("status")
                     state.summary = payload.optString("summary")
                     state.at = payload.optLong("completed_at", System.currentTimeMillis())
+                }
+                if (payload.optString("tool_id") == SCREENSHOT) {
+                    state.errorCode = payload.optJSONObject("error")?.optString("code").orEmpty()
+                    state.desktopSessionId = receiptSession
                 }
                 (
                     screenshotFrom(payload.optJSONObject("post_screenshot"))
@@ -928,7 +948,9 @@ object DesktopRemoteControl {
             streamFps = stream?.fps ?: 0,
             streamActive = stream?.future?.let {
                 !it.isCancelled && !it.isDone
-            } == true
+            } == true,
+            lastActionErrorCode = live?.errorCode.orEmpty(),
+            lastActionDesktopSessionId = live?.desktopSessionId.orEmpty()
         )
     }
 
@@ -1009,6 +1031,7 @@ object DesktopRemoteControl {
         if (!snapshot(context, desktopId).authorized) return false
         synchronized(screenshotStreamLock) {
             screenshotStreams.remove(desktopId)?.future?.cancel(false)
+            clearPendingStreamFrames(desktopId)
             val state = ScreenshotStreamState(normalized)
             screenshotStreams[desktopId] = state
             scheduleScreenshotStreamLocked(desktopId, state)
@@ -1155,11 +1178,24 @@ object DesktopRemoteControl {
         pendingActions.entries.removeIf { it.value.desktopId == desktopId }
     }
 
+    internal fun consumeInputResult(actionId: String): DesktopInputResult? = inputMailbox.consume(actionId)
+
+    internal fun clearInputResults(desktopId: String) = inputMailbox.clear(desktopId)
+
+    internal fun sendInteractiveInput(desktopId: String, actionId: String, toolId: String, input: JSONObject): Boolean {
+        inputMailbox.register(desktopId, actionId)
+        val sent = requestAction(desktopId, toolId, JSONObject(input.toString()).put("interactive_input", true),
+            durable = false, actionId = actionId)
+        if (!sent) inputMailbox.clear(desktopId)
+        return sent
+    }
+
     private fun requestAction(
         desktopId: String,
         toolId: String,
         input: JSONObject,
-        durable: Boolean = true
+        durable: Boolean = true,
+        actionId: String = UUID.randomUUID().toString()
     ): Boolean {
         val context = GalaxySSIMqttClient.applicationContext() ?: return false
         val link = GalaxySSILinkProtocol.serverLink(context, desktopId) ?: return false
@@ -1173,7 +1209,6 @@ object DesktopRemoteControl {
         }
         val now = System.currentTimeMillis()
         pendingActions.entries.removeIf { it.value.expiresAt < now }
-        val actionId = UUID.randomUUID().toString()
         val expiresAt = now + ACTION_TTL_MS
         if (toolId == SCREENSHOT &&
             !screenshotRequestGate.claim(desktopId, actionId, expiresAt, now)
