@@ -1620,6 +1620,14 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         logDeliveryFailure(sourceMessageId, contactId, reason)
     }
 
+    override fun onDesktopControlChanged(desktopId: String, streamFrame: Boolean) {
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                refreshActiveDesktopControlPage(desktopId, streamFrame)
+            }
+        }
+    }
+
     override fun onMessage(payload: String) {
         val taskEnvelope = runCatching { JSONObject(payload) }.getOrNull()
             ?.takeIf { envelope -> envelope.optString("type") == "agent_task_event" }
