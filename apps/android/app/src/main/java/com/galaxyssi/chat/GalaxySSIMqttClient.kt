@@ -175,6 +175,7 @@ object GalaxySSIMqttClient {
         fun onConnectionChanged(isConnected: Boolean) = Unit
         fun onSecureChannelChanged(isReady: Boolean) = Unit
         fun onMessage(payload: String) = Unit
+        fun onDesktopControlChanged(desktopId: String, streamFrame: Boolean) = Unit
         fun onDeliveryFailed(sourceMessageId: Long, contactId: String, reason: String) = Unit
         fun onPcInfo(ip: String, port: Int) = Unit
     }
@@ -2523,10 +2524,7 @@ object GalaxySSIMqttClient {
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
         }
-        if (DesktopRemoteControl.handleInbound(context, payload)) {
-            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
-            return
-        }
+        if (dispatchDesktopControlInbound(context, payload)) return
         if (AgentDesktopRemoteNativeTools.handleInbound(payload)) {
             GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
             return
@@ -2568,6 +2566,9 @@ object GalaxySSIMqttClient {
         retryHandler.removeCallbacks(inboundReplayRetryRunnable)
         retryHandler.postDelayed(inboundReplayRetryRunnable, delayMillis)
     }
+
+    internal fun dispatchDesktopControlInbound(context: Context, payload: JSONObject): Boolean =
+        DesktopControlInbound.dispatch(context, payload, listeners)
 
     private fun notifyMessageListeners(payload: JSONObject) {
         if (listeners.isEmpty()) {

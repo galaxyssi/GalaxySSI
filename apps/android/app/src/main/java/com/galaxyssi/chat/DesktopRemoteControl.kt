@@ -649,13 +649,13 @@ internal object DesktopControlReceiptProtocol {
         return verifier.verify(
             signerId,
             signatureKeyId,
-            agentReputationCanonicalJson(signedFields).toByteArray(Charsets.UTF_8),
+            desktopControlCanonicalJson(signedFields).toByteArray(Charsets.UTF_8),
             payload.optString("signature")
         )
     }
 
     fun digest(value: JSONObject): String =
-        digest(agentReputationCanonicalJson(value).toByteArray(Charsets.UTF_8))
+        digest(desktopControlCanonicalJson(value).toByteArray(Charsets.UTF_8))
 
     fun digest(value: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(value)

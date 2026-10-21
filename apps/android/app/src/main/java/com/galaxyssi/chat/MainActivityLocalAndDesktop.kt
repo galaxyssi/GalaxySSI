@@ -1230,6 +1230,8 @@ internal fun MainActivity.showDesktopRemoteControlPage(device: DesktopSecuritySu
         setOnClickListener {
             if (DesktopRemoteControl.requestScreenshot(device.id)) {
                 Toast.makeText(this@showDesktopRemoteControlPage, getString(R.string.desktop_control_request_sent), Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@showDesktopRemoteControlPage, getString(R.string.desktop_control_request_failed), Toast.LENGTH_SHORT).show()
             }
         }
     })
