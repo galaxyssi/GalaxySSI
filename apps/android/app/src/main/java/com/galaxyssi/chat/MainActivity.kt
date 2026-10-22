@@ -1934,6 +1934,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (handleDesktopRemoteControlResult(requestCode, resultCode, data)) return
         if (handleComposerAttachmentResult(requestCode, resultCode, data)) return
         if (requestCode == REQUEST_VOICE_SCREEN_CAPTURE) {
             // A recreated activity must not adopt an ended call's projection permission.

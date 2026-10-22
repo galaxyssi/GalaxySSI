@@ -1265,7 +1265,7 @@ internal fun MainActivity.showDesktopSecurityDetail(device: DesktopSecuritySumma
     ).apply {
         setOnClickListener {
             DesktopRemoteControl.requestAuthorizations(device.id)
-            showDesktopRemoteControlPage(device)
+            openDesktopRemoteControlPage(device)
         }
     })
     addSectionTitle("Agent")
