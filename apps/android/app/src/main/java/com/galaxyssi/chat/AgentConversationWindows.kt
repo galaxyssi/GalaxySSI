@@ -26,6 +26,16 @@ internal object AgentConversationWindows {
     private var statusChangePosted = false
     private var lastForegroundWindowKey = "main"
 
+    fun processStateChanged(conversationId: String, turnId: String, lookup: AgentProcessCompletionLookup) {
+        main.post {
+            windows.values.mapNotNull { it.get() }.forEach { controller ->
+                if (!controller.activity.isDestroyed && !controller.activity.isFinishing) {
+                    controller.activity.applyAgentProcessCompletionLookup(conversationId, turnId, lookup)
+                }
+            }
+        }
+    }
+
     fun statusChanged() {
         main.post {
             if (!statusChangePosted) {

@@ -15,7 +15,7 @@ class AgentProcessClockDeviceTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val process = AgentTranscriptEntry("clock-projection", AgentTranscriptRole.PROCESS, "Working",
-                    1000L, conversationId = "clock-test", turnId = "clock-turn", taskId = "clock-task")
+                    1000L, conversationId = "clock-test", taskId = "clock-task")
                 activity.rememberAgentExecutionPresentation(process.taskId, AgentExecutionPresentation(
                     executorId = "test", executorLabel = "Test", locationKind = AgentExecutionLocationKind.CLOUD,
                     locationLabelHint = "Test", currentStep = "Done", phase = AgentPhase.COMPLETED,
@@ -40,7 +40,7 @@ class AgentProcessClockDeviceTest {
             var completedText = ""
             scenario.onActivity { activity ->
                 process = AgentTranscriptEntry("clock-test", AgentTranscriptRole.PROCESS, "Working",
-                    System.currentTimeMillis() - 5000, conversationId = "clock-test", turnId = "clock-turn", taskId = "clock-task")
+                    System.currentTimeMillis() - 5000, conversationId = "clock-test", taskId = "clock-task")
                 activity.renderedAgentTranscriptSourceEntries = listOf(process)
                 val executing = AgentExecutionPresentation(
                     executorId = "test", executorLabel = "Test", locationKind = AgentExecutionLocationKind.CLOUD,
