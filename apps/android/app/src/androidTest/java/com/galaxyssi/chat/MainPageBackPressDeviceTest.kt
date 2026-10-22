@@ -26,11 +26,11 @@ class MainPageBackPressDeviceTest {
         }
     }
 
-    @Test fun aPressAfterOneSecondDoesNotBackground() {
+    @Test fun aPressAfterHalfASecondDoesNotBackground() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             prepare(scenario)
             scenario.onActivity { it.onBackPressed() }
-            Thread.sleep(1100)
+            Thread.sleep(600)
             scenario.onActivity { it.onBackPressed() }
             assertEquals(Lifecycle.State.RESUMED, scenario.state)
             scenario.onActivity { it.onBackPressed() }

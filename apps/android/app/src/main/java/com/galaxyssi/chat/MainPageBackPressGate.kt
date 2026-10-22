@@ -5,7 +5,7 @@ internal class MainPageBackPressGate {
 
     fun shouldBackground(nowElapsedMillis: Long): Boolean {
         val first = firstPressAt
-        if (first != null && nowElapsedMillis - first in 0L..1000L) {
+        if (first != null && nowElapsedMillis - first in 0L..500L) {
             reset()
             return true
         }
