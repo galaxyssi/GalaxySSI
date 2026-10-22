@@ -319,6 +319,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var agentComposerTextMode = false
     internal var agentComposerKeyboardObserved = false
     internal var agentComposerKeyboardClosedAt = 0L
+    internal val mainPageBackPressGate = MainPageBackPressGate()
     internal lateinit var discoverPage: LinearLayout
     internal lateinit var mePage: View
     internal lateinit var featurePage: LinearLayout
@@ -1285,6 +1286,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) mainPageBackPressGate.reset()
         if (hasFocus && ::conversationWindow.isInitialized && ::agentSessionTitle.isInitialized) {
             selectedContact?.id?.takeIf { isContactChatVisible(it) }?.let(::markContactRead)
             refreshReplyUnreadDot()
@@ -1368,6 +1370,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onPause() {
+        mainPageBackPressGate.reset()
         foregroundAgentReload.invalidate()
         if (::conversationWindow.isInitialized) conversationWindow.pause()
         agentVoiceConversation?.onForeground(false)
@@ -1448,41 +1451,62 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         goal: String, attachments: List<AgentInputAttachment>,
         ready: (String, List<AgentInputAttachment>, () -> Boolean) -> Unit) = ready(goal, attachments) { false }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        // Completed interactions reset the pair; a system back gesture cancels its touch stream.
+        if (event.actionMasked == MotionEvent.ACTION_UP) mainPageBackPressGate.reset()
+        return super.dispatchTouchEvent(event)
+    }
+
     override fun onBackPressed() {
+        if (navigateBackWithinApp()) {
+            mainPageBackPressGate.reset()
+            return
+        }
+        if (mainPage.visibility == View.VISIBLE && activeMainTab == PAGE_AGENT) {
+            if (mainPageBackPressGate.shouldBackground(SystemClock.elapsedRealtime())) {
+                moveTaskToBack(true)
+            }
+            return
+        }
+        mainPageBackPressGate.reset()
+        super.onBackPressed()
+    }
+
+    private fun navigateBackWithinApp(): Boolean {
         if (SystemClock.elapsedRealtime() - agentComposerKeyboardClosedAt < 700L) {
             agentComposerKeyboardClosedAt = 0L
-            return
+            return true
         }
         if (SystemClock.elapsedRealtime() - chatComposerKeyboardClosedAt < 700L) {
             chatComposerKeyboardClosedAt = 0L
-            return
+            return true
         }
         if (::agentActionTray.isInitialized && agentActionTrayExpanded) {
             setAgentActionTrayExpanded(false)
-            return
+            return true
         }
-        if (collapseChatActionTrayOnBack()) return
+        if (collapseChatActionTrayOnBack()) return true
         if (::agentGoalInput.isInitialized && agentComposerTextMode) {
             exitAgentComposerTextMode(hideKeyboard = true)
-            return
+            return true
         }
         if (::messageInput.isInitialized && chatComposerTextMode) {
             exitChatComposerTextMode(hideKeyboard = true)
-            return
+            return true
         }
         if (featurePage.visibility == View.VISIBLE) {
             performFeatureBack()
-            return
+            return true
         }
         if (chatPage.visibility == View.VISIBLE) {
             returnFromContactChatToConversationHub()
-            return
+            return true
         }
         if (mainPage.visibility == View.VISIBLE && activeMainTab != PAGE_AGENT) {
             showMainTab(if (activeMainTab == PAGE_SETTINGS) PAGE_AGENT else PAGE_SETTINGS)
-            return
+            return true
         }
-        super.onBackPressed()
+        return false
     }
 
     override fun onConnectionChanged(connected: Boolean) {
