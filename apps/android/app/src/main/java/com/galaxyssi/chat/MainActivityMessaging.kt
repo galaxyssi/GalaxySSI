@@ -228,6 +228,7 @@ internal fun MainActivity.showMainTab(
     tab: String,
     preserveNavigationContent: Boolean = false
 ) {
+    if (tab != activeMainTab) mainPageBackPressGate.reset()
     AppForegroundTracker.onConversationHidden(this)
     val navigationToken = if (preserveNavigationContent) null else navigationContentGate.begin()
     val previousTab = activeMainTab
