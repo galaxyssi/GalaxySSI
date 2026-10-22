@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.view.MotionEvent
+import android.view.GestureDetector
 import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
@@ -27,6 +28,28 @@ class DesktopRemoteScreenView(context: Context) : FrameLayout(context) {
     private var scaledDuringGesture = false
 
     var onImageTap: ((xRatio: Float, yRatio: Float) -> Unit)? = null
+    var onImageDoubleTap: ((Float, Float) -> Unit)? = null
+    var onImageLongPress: ((Float, Float) -> Unit)? = null
+    var onRemoteScroll: ((Int) -> Unit)? = null
+    private var scrollDistance = 0f
+    private var multiY = 0f
+    private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent) = true
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            imagePoint(e.x, e.y)?.let { (x, y) -> performClick(); onImageTap?.invoke(x, y) }
+            return true
+        }
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            imagePoint(e.x, e.y)?.let { (x, y) -> (onImageDoubleTap ?: onImageTap)?.invoke(x, y) }
+            return true
+        }
+        override fun onLongPress(e: MotionEvent) {
+            imagePoint(e.x, e.y)?.let { (x, y) ->
+                performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                onImageLongPress?.invoke(x, y)
+            }
+        }
+    })
 
     private val scaleDetector = ScaleGestureDetector(
         context,
@@ -84,6 +107,20 @@ class DesktopRemoteScreenView(context: Context) : FrameLayout(context) {
         imageView.contentDescription = description
     }
 
+    fun clearScreenshot() { imageView.setImageDrawable(null); resetTransform() }
+
+    fun revealImagePoint(xRatio: Float, yRatio: Float) {
+        val bounds = fittedImageBounds() ?: return
+        contentTranslationX = -(bounds.left + bounds.width() * xRatio - width / 2f) * zoomScale
+        contentTranslationY = -(bounds.top + bounds.height() * yRatio - height / 2f) * zoomScale
+        applyTransform()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        applyTransform()
+    }
+
     fun resetTransform() {
         zoomScale = MIN_ZOOM
         contentTranslationX = 0f
@@ -93,6 +130,7 @@ class DesktopRemoteScreenView(context: Context) : FrameLayout(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
+        gestures.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
@@ -101,15 +139,27 @@ class DesktopRemoteScreenView(context: Context) : FrameLayout(context) {
                 lastY = event.y
                 moved = false
                 scaledDuringGesture = false
+                scrollDistance = 0f
                 if (zoomScale > MIN_ZOOM) parent?.requestDisallowInterceptTouchEvent(true)
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
                 scaledDuringGesture = true
+                multiY = (event.getY(0) + event.getY(1)) / 2
                 parent?.requestDisallowInterceptTouchEvent(true)
             }
 
             MotionEvent.ACTION_MOVE -> {
+                if (event.pointerCount == 2 && !scaleDetector.isInProgress && zoomScale == MIN_ZOOM) {
+                    val y = (event.getY(0) + event.getY(1)) / 2
+                    scrollDistance += y - multiY
+                    multiY = y
+                    if (abs(scrollDistance) > touchSlop * 3) {
+                        onRemoteScroll?.invoke(if (scrollDistance > 0) 120 else -120)
+                        scrollDistance = 0f
+                    }
+                }
+                if (event.pointerCount >= 2) multiY = (event.getY(0) + event.getY(1)) / 2
                 if (!scaleDetector.isInProgress && event.pointerCount == 1 && zoomScale > MIN_ZOOM) {
                     val dx = event.x - lastX
                     val dy = event.y - lastY
@@ -134,12 +184,6 @@ class DesktopRemoteScreenView(context: Context) : FrameLayout(context) {
             }
 
             MotionEvent.ACTION_UP -> {
-                if (!moved && !scaledDuringGesture) {
-                    imagePoint(event.x, event.y)?.let { (xRatio, yRatio) ->
-                        performClick()
-                        onImageTap?.invoke(xRatio, yRatio)
-                    }
-                }
                 parent?.requestDisallowInterceptTouchEvent(false)
             }
 

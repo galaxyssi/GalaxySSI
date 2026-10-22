@@ -85,6 +85,12 @@
             android:required="false" />
 
         <activity
+            android:name=".DesktopRemoteControlActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.GalaxySSI.Main" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"

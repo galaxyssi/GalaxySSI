@@ -188,7 +188,7 @@ internal fun MainActivity.handleMyAgentDesignAction(action: String): Boolean {
         action.startsWith("my_agent.desktop:") -> {
             desktopControlDevices().firstOrNull { it.id == action.substringAfter("my_agent.desktop:") }?.let {
                 DesktopRemoteControl.requestAuthorizations(it.id)
-                openExistingControlCenterPage { showDesktopRemoteControlPage(it) }
+                openExistingControlCenterPage { openDesktopRemoteControlPage(it) }
             }
         }
         action == "my_agent.skills" || action == "my_agent.tools" || action == "my_agent.mcp" -> {
