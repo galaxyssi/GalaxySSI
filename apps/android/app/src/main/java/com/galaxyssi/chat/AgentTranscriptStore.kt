@@ -882,6 +882,13 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         }
     }
 
+    internal fun readRepliesThrough(conversationId: String, sequence: Long, tokens: Set<String>): Int =
+        synchronized(entryMutationLock) {
+            AgentReplyUnreadStore.discard(appContext, conversationId, tokens.filterTo(mutableSetOf()) {
+                entryDatabase.unreadTokenThrough(conversationId, it, sequence)
+            })
+        }
+
     private fun prepareWindowDraftStorage() {
         ensureConversationMigration()
         conversationDatabase.prepareWindowDrafts(entryDatabase::conversationIdsWithEntries)

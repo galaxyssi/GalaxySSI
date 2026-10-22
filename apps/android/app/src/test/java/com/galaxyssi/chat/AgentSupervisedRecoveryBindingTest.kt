@@ -39,4 +39,16 @@ class AgentSupervisedRecoveryBindingTest {
         assertEquals(1, calls)
         assertSame(fallback, recovered)
     }
+
+    @Test fun legacyRecoveryRecoversTheOriginalManualBindingWithinTheTurn() {
+        val original = connector()
+        val damaged = connector("false").copy(target = "Codex", parameters = original.parameters + mapOf(
+            "manual_target_locked" to "false", "connector_id" to "codex", "manual_model_id" to "wrong-model"))
+        val recovered = AgentSupervisedRecoveryBinding.resolve(damaged, listOf(original, damaged)) {
+            error("Old manual request must not reroute")
+        }
+        assertEquals("cloud:deepseek", recovered.parameters["connector_id"])
+        assertEquals("user-selected-model", recovered.parameters["manual_model_id"])
+        assertEquals("true", recovered.parameters["manual_target_locked"])
+    }
 }

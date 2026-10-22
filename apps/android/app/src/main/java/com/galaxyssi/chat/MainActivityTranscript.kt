@@ -861,6 +861,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
             restoreAgentTranscriptScrollAnchor(scrollAnchor)
         }
         conversationWindow.restoreScroll()
+        agentOutputList.post { refreshReplyUnreadDot() }
     }
 }
 
