@@ -11,8 +11,36 @@ test("release resources derive from the package version, not Electron", () => {
   assert.equal(metadata.ProductVersion, "1.2.0");
   assert.equal(metadata.OriginalFilename, "GalaxySSI Desktop.exe");
   assert.equal(metadata.ProductName, "GalaxySSI Desktop");
-  for (const value of [undefined, "", "1.2", "1.2.0.4", "65536.2.0", "01.2.0", "1.2.0\n"]) {
+  for (const value of [undefined, null, 123, "", "1.2", "1.2.0.4.5", "65536.2.0", "01.2.0", "1.2.0\n"]) {
     assert.throws(() => resourceMetadata(value));
+  }
+});
+
+test("four-part versions preserve the revision in file and product resources", () => {
+  for (const version of ["0.1.6.0", "1.2.0.4", "65535.65535.65535.65535"]) {
+    const metadata = resourceMetadata(version);
+    assert.equal(metadata.FileVersion, version);
+    assert.equal(metadata.ProductVersion, version);
+    assert.deepEqual(resourceArguments("owned.exe", metadata).slice(1, 5),
+      ["--set-file-version", version, "--set-product-version", version]);
+  }
+});
+
+test("version suffixes remain in the product version only", () => {
+  for (const [version, fileVersion] of [
+    ["1.2.3-beta.1+build.2", "1.2.3.0"],
+    ["0.1.6.4-beta.1+build.2", "0.1.6.4"]
+  ]) {
+    const metadata = resourceMetadata(version);
+    assert.equal(metadata.FileVersion, fileVersion);
+    assert.equal(metadata.ProductVersion, version);
+  }
+});
+
+test("invalid four-part versions cannot reach the resource editor", () => {
+  for (const version of ["0.1.6.65536", "0.1.6.00", "0.1.6.-1", "0.1.6.",
+    "0.1.6.0\n", " 0.1.6.0", "0.1.6.0 ", "0.1.6.0.0"]) {
+    assert.throws(() => resourceMetadata(version));
   }
 });
 
