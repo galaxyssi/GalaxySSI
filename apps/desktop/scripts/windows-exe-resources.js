@@ -3,12 +3,13 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 function resourceMetadata(version) {
-  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version);
-  if (!match || match.slice(1, 4).some((part) => Number(part) > 65535)) {
-    throw new Error("Desktop version must fit a three-part Windows file version");
+  const match = typeof version === "string"
+    && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version);
+  if (!match || match[0] !== version || match.slice(1, 5).some((part) => Number(part) > 65535)) {
+    throw new Error("Desktop version must fit a three- or four-part Windows file version");
   }
   return {
-    FileVersion: `${match.slice(1, 4).join(".")}.0`,
+    FileVersion: [...match.slice(1, 4), match[4] ?? "0"].join("."),
     ProductVersion: version,
     ProductName: "GalaxySSI Desktop",
     FileDescription: "GalaxySSI Desktop super agent and mobile gateway",
