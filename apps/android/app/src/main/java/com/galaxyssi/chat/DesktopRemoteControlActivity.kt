@@ -16,7 +16,6 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
-import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -28,7 +27,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
@@ -45,7 +43,7 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
     private lateinit var toolbar: LinearLayout
     private lateinit var canvas: FrameLayout
     private lateinit var screen: DesktopRemoteScreenView
-    private lateinit var ime: DesktopImeView
+    private lateinit var composer: DesktopRemoteComposer
     private lateinit var placeholder: TextView
     private lateinit var status: TextView
     private lateinit var overlayName: TextView
@@ -59,8 +57,8 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
     @Volatile private var resumed = false
     @Volatile private var generation = 0
     private var imeVisible = false
+    private var resumeKeyboard = false
     private var manualInput = false
-    private var keyboardRequested = false
     private var autoInputAction = ""
     private var focus: DesktopInputFocus? = null
     private var snapshot: DesktopRemoteControlSnapshot? = null
@@ -101,14 +99,18 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
             val visible = insets.isVisible(WindowInsetsCompat.Type.ime())
-            if (imeVisible && !visible && autoInputAction.isBlank()) {
-                keyboardRequested = false; manualInput = false; ime.discardComposition()
-            }
+            if (imeVisible != visible) composer.onKeyboardVisibilityChanged(visible)
             imeVisible = visible
+            toolbar.visibility = if (fullscreen || visible) View.GONE else View.VISIBLE
             root.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
             handle.visibility = if (fullscreen && !visible && floatingTools.visibility != View.VISIBLE) View.VISIBLE else View.GONE
             if (visible) screen.post { revealFocus() }
             insets
+        }
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val chrome = (if (header.isShown) header.height else 0) + (if (deviceBar.isShown) deviceBar.height else 0) +
+                (if (toolbar.isShown) toolbar.height else 0)
+            composer.constrainHeight(root.height - root.paddingTop - root.paddingBottom - chrome)
         }
         applyFullscreen()
     }
@@ -117,6 +119,8 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
         super.onResume()
         if (desktopId.isBlank()) return
         resumed = true
+        if (resumeKeyboard && composer.view.isShown) composer.showKeyboard()
+        resumeKeyboard = false
         waitingSince = System.currentTimeMillis()
         streamRecovery.reset()
         handler.postDelayed(connectionWatchdog, 5_000)
@@ -133,6 +137,7 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onPause() {
+        resumeKeyboard = imeVisible && composer.view.isShown
         resumed = false
         generation++
         AppForegroundTracker.onActivityBackground(this)
@@ -145,10 +150,14 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
         inputQueue.clear()
         worker.execute { DesktopRemoteControl.clearInputResults(desktopId) }
         hideKeyboard()
+        composer.pause()
         super.onPause()
     }
 
     override fun onStop() {
+        resumeKeyboard = false
+        focus = null; manualInput = false
+        composer.background()
         screen.clearScreenshot()
         bitmap?.recycle(); bitmap = null; capturedAt = 0
         super.onStop()
@@ -156,6 +165,7 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        if (::composer.isInitialized) composer.close()
         worker.shutdown()
         super.onDestroy()
     }
@@ -175,6 +185,7 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
     override fun onBackPressed() {
         when {
             imeVisible -> hideKeyboard()
+            composer.view.isShown -> { composer.hide(); toolbar.visibility = if (fullscreen) View.GONE else View.VISIBLE }
             fullscreen -> { fullscreen = false; applyFullscreen() }
             else -> super.onBackPressed()
         }
@@ -255,16 +266,13 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
             handle.visibility = View.GONE; floatingTools.visibility = View.VISIBLE
         }.apply { rotation = 180f; setBackgroundColor(0xDDFFFFFF.toInt()) }
         canvas.addView(handle, FrameLayout.LayoutParams(dp(48), dp(36), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
-        ime = DesktopImeView(this).apply {
-            onCommit = { text -> enqueue(DesktopRemoteControl.TYPE_TEXT, JSONObject().put("text", text)) }
-            onKey = { key -> enqueue(DesktopRemoteControl.HOTKEY, JSONObject().put("keys", JSONArray().put(key))) }
-        }
-        canvas.addView(ime, FrameLayout.LayoutParams(1, 1, Gravity.BOTTOM))
         root.addView(canvas, LinearLayout.LayoutParams(-1, 0, 1f))
         toolbar = row().apply {
             addView(command(R.drawable.ic_composer_rotate, R.string.desktop_control_surface_refresh_action) { refresh() }, LinearLayout.LayoutParams(0, dp(60), 1f))
             addView(command(R.drawable.ic_screen_assistant_expand, R.string.desktop_remote_fullscreen) { fullscreen = true; applyFullscreen() }, LinearLayout.LayoutParams(0, dp(60), 1f))
         }
+        composer = DesktopRemoteComposer(this, ::sendDraft)
+        root.addView(composer.view, LinearLayout.LayoutParams(-1, -2))
         root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(60)))
     }
 
@@ -272,7 +280,7 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
         requestedOrientation = if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         header.visibility = if (fullscreen) View.GONE else View.VISIBLE
         deviceBar.visibility = header.visibility
-        toolbar.visibility = header.visibility
+        toolbar.visibility = if (fullscreen || imeVisible) View.GONE else View.VISIBLE
         overlayName.visibility = if (fullscreen) View.VISIBLE else View.GONE
         overlayMore.visibility = overlayName.visibility
         collapseTools()
@@ -374,7 +382,9 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
         if (!resumed || snapshot?.authorized != true) return
         val image = snapshot?.screenshot ?: return
         hideKeyboard()
-        focus = null
+        composer.hide()
+        toolbar.visibility = if (fullscreen) View.GONE else View.VISIBLE
+        focus = null; manualInput = false
         val command = DesktopInputCommand(DesktopRemoteControl.CLICK_XY, JSONObject()
             .put("x", (x * (image.originalWidth - 1)).roundToInt())
             .put("y", (y * (image.originalHeight - 1)).roundToInt())
@@ -396,6 +406,22 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
         if (!inputQueue.add(DesktopInputCommand(tool, input))) failInput(getString(R.string.desktop_remote_input_busy)) else sendNext()
     }
 
+    private fun sendDraft(text: String) {
+        if (!resumed || snapshot?.authorized != true || !GalaxySSIMqttClient.isConnected()) {
+            composer.failed(getString(R.string.desktop_control_request_failed)); return
+        }
+        if (!manualInput && focus?.editable != true) {
+            composer.failed(getString(R.string.desktop_remote_draft_no_target)); return
+        }
+        if (text.length > 4096) { composer.failed(getString(R.string.desktop_remote_text_too_long)); return }
+        val input = JSONObject().put("text", text)
+        if (!manualInput) focus?.targetId?.takeIf(String::isNotBlank)?.let { input.put("input_target_id", it) }
+        val command = DesktopInputCommand(DesktopRemoteControl.TYPE_TEXT, input)
+        if (!inputQueue.add(command)) { composer.failed(getString(R.string.desktop_remote_input_busy)); return }
+        composer.beginSend(command.id)
+        sendNext()
+    }
+
     private fun sendNext() {
         val next = inputQueue.next() ?: return
         val epoch = generation
@@ -413,11 +439,11 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
         if (!inputQueue.complete(result)) return
         handler.removeCallbacks(inputTimeout)
         if (!result.succeeded) { failInput(result.error.ifBlank { getString(R.string.desktop_control_request_failed) }); return }
+        composer.received(result.actionId, true)
         val value = result.focus
-        if (value != null && (result.actionId == autoInputAction || keyboardRequested)) {
+        if (value != null && result.actionId == autoInputAction) {
             focus = value
-            if (value.editable && (result.actionId == autoInputAction || keyboardRequested)) showKeyboard(false)
-            else if (!manualInput) hideKeyboard()
+            if (value.editable) showKeyboard(false)
         }
         if (result.actionId == autoInputAction) autoInputAction = ""
         sendNext()
@@ -427,22 +453,15 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
     private fun showKeyboard(manual: Boolean) {
         manualInput = manualInput || manual
         if (!manualInput && focus?.editable != true) return
-        keyboardRequested = true
-        val changed = ime.password != (focus?.password == true)
-        ime.password = focus?.password == true
-        ime.requestFocus()
-        val manager = getSystemService(InputMethodManager::class.java)
-        if (changed) manager.restartInput(ime)
-        manager.showSoftInput(ime, InputMethodManager.SHOW_IMPLICIT)
+        toolbar.visibility = View.GONE
+        composer.open(password = focus?.password == true)
         collapseTools()
     }
 
     private fun hideKeyboard() {
-        if (!::ime.isInitialized) return
-        autoInputAction = ""; manualInput = false; keyboardRequested = false
-        ime.discardComposition()
-        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(ime.windowToken, 0)
-        ime.clearFocus()
+        if (!::composer.isInitialized) return
+        autoInputAction = ""
+        composer.hideKeyboard()
     }
 
     private fun revealFocus() {
@@ -455,7 +474,8 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     private fun failInput(message: String) {
         inputQueue.clear(); handler.removeCallbacks(inputTimeout); hideKeyboard()
-        DesktopRemoteControl.clearInputResults(desktopId)
+        composer.failed(message)
+        worker.execute { DesktopRemoteControl.clearInputResults(desktopId) }
         failureToast(message)
     }
 

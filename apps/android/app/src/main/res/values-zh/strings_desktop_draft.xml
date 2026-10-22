@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_remote_draft_send">发送到电脑</string>
+    <string name="desktop_remote_draft_voice">语音输入</string>
+    <string name="desktop_remote_draft_recording">松开识别，上滑取消</string>
+    <string name="desktop_remote_draft_transcribing">正在识别…</string>
+    <string name="desktop_remote_draft_sending">正在发送…</string>
+    <string name="desktop_remote_draft_failed">%1$s。草稿已保留，请确认电脑内容后再发送。</string>
+    <string name="desktop_remote_draft_voice_failed">语音识别失败，请重试。</string>
+    <string name="desktop_remote_draft_no_target">请先选择电脑上的输入位置。</string>
+</resources>

@@ -20,13 +20,8 @@ class DesktopScreenshotBudgetTest(unittest.TestCase):
 
     def test_capture_keeps_valid_jpeg_and_original_coordinates_within_budget(self):
         plain = Image.new("RGB", (1280, 720), "white")
-        text = Image.new("RGB", (3840, 2160), "white")
-        draw = ImageDraw.Draw(text)
-        for y in range(0, text.height, 24):
-            draw.text((20, y), "Remote display text and controls 0123456789 " * 15,
-                      fill="black")
         gradient = Image.linear_gradient("L").resize((1920, 1080)).convert("RGB")
-        for name, source in (("plain", plain), ("text", text), ("gradient", gradient)):
+        for name, source in (("plain", plain), ("gradient", gradient)):
             try:
                 with self.subTest(name=name), patch("desktop_control.os.name", "nt"), \
                         patch("PIL.ImageGrab.grab", return_value=source):
@@ -50,7 +45,7 @@ class DesktopScreenshotBudgetTest(unittest.TestCase):
             with patch.object(Image.Image, "save", autospec=True, side_effect=Image.Image.save) as save:
                 result = encode_desktop_screenshot(source)
             save.assert_called_once()
-            self.assertEqual(60, save.call_args.kwargs["quality"])
+            self.assertEqual(70, save.call_args.kwargs["quality"])
             self.assertFalse(save.call_args.kwargs["optimize"])
             self.assertFalse(save.call_args.kwargs["progressive"])
             self.assertGreater(len(result.data), 0)
@@ -59,16 +54,21 @@ class DesktopScreenshotBudgetTest(unittest.TestCase):
         finally:
             source.close()
 
+    def test_landscape_frame_preserves_720p_detail(self):
+        with Image.new("RGB", (3840, 2160), "white") as source:
+            result = encode_desktop_screenshot(source)
+            self.assertEqual((1280, 720), (result.width, result.height))
+
     def test_portrait_frame_keeps_aspect_ratio(self):
         with Image.new("RGB", (1080, 1920), "white") as source:
             result = encode_desktop_screenshot(source)
-            self.assertEqual((540, 960), (result.width, result.height))
+            self.assertEqual((720, 1280), (result.width, result.height))
 
     def test_over_budget_frame_is_not_reencoded_or_transmitted(self):
         def oversized_save(image, output, **options):
             output.write(b"x" * 100_001)
 
-        with Image.new("RGB", (960, 540), "white") as source, \
+        with Image.new("RGB", (1280, 720), "white") as source, \
                 patch("desktop_control.os.name", "nt"), \
                 patch("PIL.ImageGrab.grab", return_value=source), \
                 patch.object(Image.Image, "save", autospec=True, side_effect=oversized_save) as save:
@@ -78,10 +78,24 @@ class DesktopScreenshotBudgetTest(unittest.TestCase):
             save.assert_called_once()
 
     def test_high_entropy_frame_also_respects_budget_and_single_encode(self):
-        with Image.frombytes("L", (960, 540), Random(0).randbytes(960 * 540)) as source, \
+        with Image.frombytes("L", (1280, 720), Random(0).randbytes(1280 * 720)) as source, \
                 patch.object(Image.Image, "save", autospec=True, side_effect=Image.Image.save) as save:
             self.assertIsNone(encode_desktop_screenshot(source))
             save.assert_called_once()
+
+    def test_dense_4k_text_is_explicitly_rejected_when_720p_exceeds_budget(self):
+        with Image.new("RGB", (3840, 2160), "white") as source:
+            draw = ImageDraw.Draw(source)
+            for y in range(0, source.height, 24):
+                draw.text((20, y), "Remote display text and controls 0123456789 " * 15,
+                          fill="black")
+            with patch("desktop_control.os.name", "nt"), \
+                    patch("PIL.ImageGrab.grab", return_value=source), \
+                    patch.object(Image.Image, "save", autospec=True, side_effect=Image.Image.save) as save:
+                with self.assertRaises(DesktopControlError) as raised:
+                    capture_desktop_screenshot()
+                self.assertEqual("screenshot_too_large", raised.exception.code)
+                save.assert_called_once()
 
 
 if __name__ == "__main__":

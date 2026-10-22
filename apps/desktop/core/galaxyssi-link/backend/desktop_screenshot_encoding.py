@@ -7,8 +7,8 @@ from image_transport import TransportImage
 
 
 MAX_SCREENSHOT_BYTES = 100_000
-SCREENSHOT_MAX_DIMENSION = 960
-SCREENSHOT_JPEG_QUALITY = 60
+SCREENSHOT_MAX_DIMENSION = 1280
+SCREENSHOT_JPEG_QUALITY = 70
 
 
 def encode_desktop_screenshot(source: Any) -> TransportImage | None:
