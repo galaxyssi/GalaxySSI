@@ -52,6 +52,10 @@ internal object AgentReplyUnreadStore {
         preferences(context).getStringSet(conversationId, emptySet()).orEmpty().size
 
     @Synchronized
+    fun tokens(context: Context, conversationId: String): Set<String> =
+        preferences(context).getStringSet(conversationId, emptySet()).orEmpty().toSet()
+
+    @Synchronized
     fun snapshot(context: Context): Map<String, Set<String>> = preferences(context).all.mapNotNull { (id, value) ->
         val tokens = (value as? Set<*>)?.filterIsInstance<String>()?.toSet().orEmpty()
         if (tokens.isEmpty()) null else id to tokens
@@ -89,6 +93,7 @@ internal fun MainActivity.refreshReplyUnreadDot() {
     if (conversationWindow.visible && window.decorView.hasWindowFocus() &&
         agentPage.isShown && mainPage.visibility == View.VISIBLE && activeMainTab == PAGE_AGENT) {
         AgentReplyUnreadStore.read(this, agentRenderedConversationId, renderedAgentTranscriptSourceEntries)
+        AgentReplyReadWatermark.schedule(this)
     }
     val unread = AgentReplyUnreadStore.hasAny(this) || summaries.any { (contactId, summary) ->
         summary.unreadCount > 0 && ConversationHubContactHistoryPolicy.hasUnread(

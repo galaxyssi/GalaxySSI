@@ -1435,7 +1435,7 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
                 )
             )
             val failedPlan = responsePlan.markAction(actionId, AgentActionStatus.FAILED, failure)
-            val recoveredPlan = supervisedProjectRecoveryPlan(failedPlan, failureMessage)
+            val recoveredPlan = supervisedProjectRecoveryPlan(failedPlan, failureMessage, failure)
             currentPlan = recoveredPlan ?: failedPlan
             lastActionResult = failure
             recordAudit(

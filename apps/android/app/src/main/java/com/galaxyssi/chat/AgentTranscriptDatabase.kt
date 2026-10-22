@@ -453,6 +453,19 @@ internal class AgentTranscriptEntryDatabase(
             exists("turn_id = ? AND conversation_id = ? AND dedupe_hash = ''", arrayOf(token, conversationId))
     }
 
+    /** Indexed read watermark; no historical message bodies are loaded or decrypted. */
+    internal fun unreadTokenThrough(conversationId: String, token: String, sequence: Long): Boolean {
+        if (sequence <= 0) return false
+        fun exists(identity: String, arguments: Array<String>) = readableDatabase.query(
+            TABLE_ENTRIES, arrayOf("entry_id"),
+            "conversation_id = ? AND sequence <= ? AND ($identity)",
+            arrayOf(conversationId, sequence.toString()) + arguments, null, null, null, "1"
+        ).use { it.moveToFirst() }
+        return exists("dedupe_hash = ?", arrayOf(digest(token))) ||
+            exists("entry_id = ? AND dedupe_hash = '' AND turn_id = ''", arrayOf(token)) ||
+            exists("turn_id = ? AND dedupe_hash = ''", arrayOf(token))
+    }
+
     fun textChunkPage(
         entryId: String,
         offset: Int = 0,

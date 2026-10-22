@@ -64,7 +64,10 @@ internal object AgentColdBootRecoveryPolicy {
                 else snapshot.currentPlan?.recoverInterruptedExecution(),
             lastActionResult = snapshot.lastActionResult?.takeIf {
                 it.metadata["plan_node_recovery_error"] == "true" ||
-                    it.metadata["active_plan_recovery_error"] == "true"
+                    it.metadata["active_plan_recovery_error"] == "true" ||
+                    (it.metadata["awaiting_response"] == "true" &&
+                        snapshot.currentPlan?.actions?.any { action -> action.id == it.actionId &&
+                            action.status in setOf(AgentActionStatus.RUNNING, AgentActionStatus.WAITING_RESPONSE) } == true)
             } ?: AgentActionResult(
                 actionId = "agent-interrupted",
                 success = false,

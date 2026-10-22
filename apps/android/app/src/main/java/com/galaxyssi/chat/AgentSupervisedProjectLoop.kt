@@ -1367,7 +1367,8 @@ private fun logSupervisedPlanRejection(stage: String, response: String) {
 
 internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     plan: AgentPlan,
-    reason: String
+    reason: String,
+    failure: AgentActionResult? = lastActionResult
 ): AgentPlan? {
     val revision = plan.revision + 1
     val connector = (plan.actionHistory + plan.actions)
@@ -1377,8 +1378,13 @@ internal fun MobileNativeAgent.supervisedProjectRecoveryPlan(
     val scope = AgentPlanContinuationScope.resolve(plan, activeConversationContext.conversationId,
         activeConversationTurnId, sessionId) ?: return null
     val failedAction = AgentCompletionEvidenceHistory.latestFailure(plan, scope) ?: return null
+    val history = (plan.actionHistory + plan.actions).filter(scope::owns)
+    AgentSupervisorFailurePolicy.stopReason(history, failedAction, failure)?.let { stopped ->
+        recordAudit(AgentAuditEvent.ACTION_BLOCKED, "$stopped; action=${failedAction.id}")
+        return null
+    }
     val request = supervisedProjectRequest(plan, continuation = true)
-    val recoveryConnector = AgentSupervisedRecoveryBinding.resolve(connector) {
+    val recoveryConnector = AgentSupervisedRecoveryBinding.resolve(connector, history) {
         val routing = AgentResourceRouter(appContext).route(
             goal = currentGoal,
             targets = request.targets,
@@ -1471,6 +1477,7 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
 ): AgentPlan? {
     val revision = plan.revision + 1
     val attempt = connector.parameters["supervised_parse_attempt"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    if (attempt >= AgentSupervisorFailurePolicy.MAX_FORMAT_REPAIRS) return null
     val route = AgentSupervisedProjectRepairRoutingPolicy.select(
         connector = connector,
         targets = request.targets,
@@ -1485,7 +1492,7 @@ private fun MobileNativeAgent.supervisedFormatRepairPlan(
         parameters = route.connector.parameters + mapOf(
             "prompt" to AgentSupervisedProjectLoop.formatRepairPrompt(request, response, rejectionStage),
             SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "format",
-            "supervised_parse_attempt" to (route.attempt + 1).toString(),
+            "supervised_parse_attempt" to (attempt + 1).toString(),
             "depends_on" to "",
             "use_outputs_from" to ""
         ),

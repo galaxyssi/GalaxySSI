@@ -1,0 +1,3 @@
+<resources>
+    <string name="agent_cloud_request_interrupted">The app process ended and interrupted the %1$s request. The old request is no longer running. Please retry.</string>
+</resources>

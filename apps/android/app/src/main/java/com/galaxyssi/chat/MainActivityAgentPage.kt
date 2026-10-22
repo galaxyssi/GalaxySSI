@@ -411,11 +411,15 @@ private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptA
                         agentTranscriptUserScrollActive = true
                         conversationWindow.cancelPendingScroll()
                     }
-                    RecyclerView.SCROLL_STATE_IDLE -> agentTranscriptUserScrollActive = false
+                    RecyclerView.SCROLL_STATE_IDLE -> {
+                        agentTranscriptUserScrollActive = false
+                        refreshReplyUnreadDot()
+                    }
                 }
             }
 
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (!recyclerView.canScrollVertically(1)) refreshReplyUnreadDot()
                 val itemCount = agentTranscriptAdapter.itemCount
                 val lastPosition = agentOutputLayout.findLastVisibleItemPosition()
                 val lastView = agentOutputLayout.findViewByPosition(lastPosition)
