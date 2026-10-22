@@ -945,7 +945,7 @@ internal fun MainActivity.rememberAgentExecutionPresentation(
         if (!isFinishing && !isDestroyed && isAgentTranscriptAdapterInitialized()) {
             renderedAgentTranscriptSourceEntries.filter { it.role == AgentTranscriptRole.PROCESS &&
                 (it.taskId == taskId || it.turnId == taskId) }.forEach { entry ->
-                agentProcessCompletionLookups.remove(entry.turnId)
+                scheduleAgentProcessCompletionLookup(entry, entry.turnId)
                 agentTranscriptAdapter.indexOfEntry(entry.id).takeIf { it >= 0 }
                     ?.let(agentTranscriptAdapter::notifyItemChanged)
             }

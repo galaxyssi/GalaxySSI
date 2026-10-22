@@ -1371,7 +1371,7 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
     val progressPresentation = AgentInteractiveProgressPolicy.project(
         goal = progressGoal,
         plan = progressState?.plan,
-        phase = progressState?.phase,
+        phase = agentProcessPhase(entry),
         processTexts = narrationEntries.map(AgentTranscriptEntry::text),
         completed = completed,
         fallbackPhase = execution.phase

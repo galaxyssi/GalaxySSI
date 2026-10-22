@@ -35,10 +35,12 @@ class AgentConversationRecoveryInspectionTest {
                         .put("timestamp", entry.timestampMillis).put("characters", entry.text.length)
                         .put("unread", AgentReplyUnreadPolicy.token(entry) in tokens)
                 })).put("turns", JSONArray(turns.map { turn ->
+                    val workspace = EncryptedAgentWorkspaceStore(context).find(turn)
                     val snapshot = SharedPreferencesAgentSessionStore(context, "task:$turn").load()
                     val loop = snapshot?.executionLoopSnapshot
                     val plan = snapshot?.currentPlan
                     JSONObject().put("turn", turn).put("phase", snapshot?.phase?.name)
+                        .put("workspace_status", workspace?.status?.name).put("workspace_revision", workspace?.revision)
                         .put("loop", loop?.let { JSONObject(AgentExecutionLoopJsonCodec.encode(it)) })
                         .put("result", snapshot?.lastActionResult?.message?.take(1000))
                         .put("result_metadata", JSONObject(snapshot?.lastActionResult?.metadata.orEmpty()))
