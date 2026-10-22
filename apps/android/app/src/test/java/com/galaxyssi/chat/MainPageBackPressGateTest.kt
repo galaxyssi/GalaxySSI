@@ -10,8 +10,8 @@ class MainPageBackPressGateTest {
         assertFalse(MainPageBackPressGate().shouldBackground(100_000))
     }
 
-    @Test fun secondPressWithinOneSecondBackgrounds() {
-        for (gap in listOf(1L, 300L, 999L, 1000L)) {
+    @Test fun secondPressWithinHalfASecondBackgrounds() {
+        for (gap in listOf(1L, 300L, 499L, 500L)) {
             val gate = MainPageBackPressGate()
             assertFalse(gate.shouldBackground(1000))
             assertTrue(gate.shouldBackground(1000 + gap))
@@ -21,13 +21,13 @@ class MainPageBackPressGateTest {
     @Test fun expiredPressStartsANewPair() {
         val gate = MainPageBackPressGate()
         assertFalse(gate.shouldBackground(1000))
-        assertFalse(gate.shouldBackground(2001))
-        assertTrue(gate.shouldBackground(2300))
+        assertFalse(gate.shouldBackground(1501))
+        assertTrue(gate.shouldBackground(1800))
     }
 
     @Test fun repeatedSlowPressesDoNotBackground() {
         val gate = MainPageBackPressGate()
-        repeat(20) { assertFalse(gate.shouldBackground(it * 1001L)) }
+        repeat(20) { assertFalse(gate.shouldBackground(it * 501L)) }
     }
 
     @Test fun navigationOrInteractionResetsThePair() {
