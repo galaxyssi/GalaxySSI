@@ -6,13 +6,14 @@ import org.jsoup.nodes.Element
 /** Select the article before flattening text; page chrome is not article content. */
 internal object AttentionArticleExtractor {
     private const val BODY = "[itemprop=articleBody],#js_content,.rich_media_content,.article-body,.article-content," +
-        ".article__body,.post-body,.post-content,.post_content,.entry-content,.story-body,.story-content," +
+        ".article__body,.post-body,.post-content,.post_content,.post__content,.entry-content,.story-body,.story-content," +
         "#article-body,#article-content,#paragraph"
     private const val NOISE = "script:not([type=application/ld+json]),style,noscript,template,nav,footer,form,button," +
         "input,select,textarea,[hidden],[aria-hidden=true],[role=navigation],.back-link,.byline,.post-byline," +
         ".post-meta,.article-meta,.post-header,.article-header,.post-title,.article-title,.read-time"
     private val noiseIdentity = Regex("(^|[-_\\s])(related|recommended|recommendation|recommendations|sidebar|" +
         "breadcrumb|breadcrumbs|comments|newsletter|advertisement|social-share|cookie|site-nav|site-header)([-_\\s]|$)")
+    private val absentRegion = Regex("(^|[-_])(no|without)[-_](sidebar|comments|newsletter)([-_]|$)")
 
     fun parse(url: String, source: Document): AgentPublicArticle? {
         val document = source.clone()
@@ -22,7 +23,10 @@ internal object AttentionArticleExtractor {
             ?: document.title()
         document.select(NOISE).remove()
         document.body().getAllElements().filter {
-            noiseIdentity.containsMatchIn("${it.id()} ${it.className()}".lowercase())
+            it.normalName() !in setOf("body", "html") && (it.classNames() + it.id()).any { identity ->
+                val name = identity.lowercase()
+                noiseIdentity.containsMatchIn(name) && !absentRegion.containsMatchIn(name)
+            }
         }.forEach(Element::remove)
         val explicit = document.select(BODY).filter { it.text().length >= 200 }
         val articles = document.select("article").filter { it.text().length >= 200 }

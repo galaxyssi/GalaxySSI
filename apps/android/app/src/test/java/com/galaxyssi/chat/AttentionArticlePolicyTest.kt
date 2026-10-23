@@ -132,6 +132,21 @@ class AttentionArticlePolicyTest {
         rejected { AttentionArticlePolicy.extract(page("<html><body><main><article><p>$english</p></article>" +
             "<article><p>$english</p></article></main></body></html>")) }
     }
+    @Test fun bemArticleBodyIsNotConfusedWithSiblingRecommendationCards() {
+        val result = AttentionArticlePolicy.extract(page("<html><head><title>Research</title></head><body><main>" +
+            "<section class='post__content'><p>$english</p><p>$english</p></section>" +
+            (1..5).joinToString("") { "<article class='post-card'><h2>Related $it</h2><p>$english</p></article>" } +
+            "</main></body></html>"))
+        assertFalse(result.content.contains("Related"))
+        assertEquals(2, Regex("Researchers").findAll(result.content).count() / 5)
+    }
+    @Test fun noSidebarLayoutDoesNotDeleteTheEntireDocumentOrItsArticle() {
+        val result = AttentionArticlePolicy.extract(page("<html><head><title>Research</title></head>" +
+            "<body class='single-post no-sidebar'><div class='layout-without-sidebar'>" +
+            "<section class='post__content'><p>$english</p></section></div>" +
+            "<div class='sidebar'><p>Unrelated promotion $english</p></div></body></html>"))
+        assertEquals(english.trim(), result.content)
+    }
     @Test fun spelledOutNumbersCanBecomeDigits() { AttentionArticlePolicy.validateTranslation("Eight states", "8 个州") }
     @Test fun japaneseAndKoreanAreNotMistakenForChinese() {
         assertFalse(AttentionArticlePolicy.chinese("研究結果について説明する"))

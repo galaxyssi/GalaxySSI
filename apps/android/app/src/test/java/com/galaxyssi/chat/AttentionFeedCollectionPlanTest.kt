@@ -5,9 +5,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AttentionFeedCollectionPlanTest {
-    @Test fun discoveryRunsAlongsideSuccessfulOriginalsNotAfterTheEntireBacklog() {
-        assertEquals(listOf("a", "search1", "b", "search2", "c"),
-            AttentionFeedCollectionPlan.interleave(listOf("a", "b", "c"), listOf("search1", "search2")))
+    @Test fun originalPublishersDoNotWaitBehindSlowSearchEndpoints() {
+        assertEquals(listOf("a", "b", "c", "search1", "search2"),
+            AttentionFeedCollectionPlan.ordered(listOf("a", "b", "c"), listOf("search1", "search2")))
     }
 
     @Test fun batchesVisitEveryEndpointOnceWithoutDiscardingTheTail() {
@@ -18,8 +18,8 @@ class AttentionFeedCollectionPlanTest {
     }
 
     @Test fun explicitAndCatalogDuplicatesAreOnlyFetchedOnce() {
-        assertEquals(listOf("one", "search", "two"),
-            AttentionFeedCollectionPlan.interleave(listOf("one", "two", "one"), listOf("search", "two")))
+        assertEquals(listOf("one", "two", "search"),
+            AttentionFeedCollectionPlan.ordered(listOf("one", "two", "one"), listOf("search", "two")))
     }
 
     @Test fun everyBuiltInTopicHasMultipleOriginalPublishersAndSearch() {

@@ -6,16 +6,12 @@ internal object AttentionFeedCollectionPlan {
     const val CACHE_MILLIS = 30 * 60_000L
     const val MAX_FEED_BYTES = 2 * 1024 * 1024L
 
-    fun endpoints(topic: AttentionTopic): List<String> = interleave(
+    fun endpoints(topic: AttentionTopic): List<String> = ordered(
         ProactiveAttentionWebSources.explicit(topic) + ProactiveAttentionFeedSources.originals(topic),
         ProactiveAttentionFeedPolicy.endpoints(topic))
 
-    fun interleave(publishers: List<String>, discovery: List<String>): List<String> = buildList {
-        for (index in 0 until maxOf(publishers.size, discovery.size)) {
-            publishers.getOrNull(index)?.let(::add)
-            discovery.getOrNull(index)?.let(::add)
-        }
-    }.distinct()
+    // Slow search endpoints must not delay the first batch of independent original publishers.
+    fun ordered(publishers: List<String>, discovery: List<String>): List<String> = (publishers + discovery).distinct()
 
     fun batch(endpoints: List<String>, cursor: Int): List<String> = endpoints.drop(cursor.coerceIn(0, endpoints.size)).take(BATCH_SIZE)
 

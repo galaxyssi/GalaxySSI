@@ -137,7 +137,12 @@ class ProactiveAttentionFeedStore(context: Context) {
     }
 
     fun sourceRetryAt(url: String): Long = synchronized(LOCK) {
-        JSONObject(database.readString("source:" + ProactiveAttentionFeedPolicy.urlKey(url), "{}")).optLong("next")
+        maxOf(JSONObject(database.readString("source:" + ProactiveAttentionFeedPolicy.urlKey(url), "{}")).optLong("next"),
+            database.readString(AttentionFeedFailurePolicy.hostKey(url), "0").toLongOrNull() ?: 0L)
+    }
+
+    fun hostFailed(url: String, now: Long) = synchronized(LOCK) {
+        database.writeString(AttentionFeedFailurePolicy.hostKey(url), (now + AttentionFeedFailurePolicy.HOST_BACKOFF).toString())
     }
 
     fun sourceFailed(url: String, code: String, now: Long) = synchronized(LOCK) {
@@ -174,7 +179,7 @@ class ProactiveAttentionFeedStore(context: Context) {
     companion object {
         private val LOCK = Any()
         // A new source adapter must not inherit a failed adapter's deferred wake-up.
-        private const val SOURCE_REVISION = 3
+        private const val SOURCE_REVISION = 4
         fun isFeed(task: GlobalResearchTask) = task.researchPlan.units.any { it.id.startsWith(ProactiveAttentionFeedPolicy.UNIT_PREFIX) }
     }
 }
