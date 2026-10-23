@@ -23,12 +23,12 @@ internal class ProactiveAttentionArticleView(
     private val ask: (GlobalProactiveInboxItem) -> Unit,
     private val sources: (GlobalProactiveInboxItem) -> Unit,
     private val evidence: (GlobalProactiveInboxItem, (JSONObject?) -> Unit) -> Unit,
-    private val menu: (GlobalProactiveInboxItem) -> Unit
+    private val menu: (GlobalProactiveInboxItem) -> Unit,
+    private val loadBody: (String, (String?) -> Unit) -> Unit = { _, callback -> callback(null) }
 ) : LinearLayout(context) {
     private var row: AttentionReaderRow? = null
     private var generation = 0
     private var headline: TextView? = null
-    private var originalHeadline: TextView? = null
     private var displayedTranslation = ""
     private var displayedTranslationProvider = ""
     private var translationAttribution: ImageView? = null
@@ -82,21 +82,12 @@ internal class ProactiveAttentionArticleView(
             tag = "attention-headline:${item.key}"
             setTypeface(typeface, Typeface.NORMAL)
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
-            minLines = if (!next.expanded && expectsTranslation(item)) 2 else 1
+            minLines = if (!next.expanded) 2 else 1
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, dp(6), 0, dp(5))
-            if (!next.expanded && expectsTranslation(item)) reserveBilingualHeight()
+            if (!next.expanded) reserveHeadlineHeight()
         }
         titles.addView(headline)
-        originalHeadline = label("", 13f, secondary = true).apply {
-            tag = "attention-original-headline:${item.key}"
-            maxLines = if (next.expanded) Int.MAX_VALUE else 2
-            minLines = if (!next.expanded && expectsTranslation(item)) 2 else 1
-            ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, 0, 0, dp(6))
-            if (!next.expanded && expectsTranslation(item)) reserveBilingualHeight()
-        }
-        titles.addView(originalHeadline)
         translationAttribution = ImageView(context).apply {
             tag = "attention-translation-attribution:${item.key}"
             setImageResource(R.drawable.google_translate_attribution)
@@ -131,16 +122,21 @@ internal class ProactiveAttentionArticleView(
         intro.setOnLongClickListener { menu(item); true }
         content.addView(intro)
         if (next.expanded) {
-            content.addView(label(context.getString(R.string.attention_content_summary), 14.4f, true).apply {
+            content.addView(label(context.getString(if (item.newsArticleKey.isBlank()) R.string.attention_content_summary
+                else R.string.attention_article_body), 14.4f, true).apply {
                 setPadding(0, dp(12), 0, dp(8))
             })
-            content.addView(label("", 18f).apply {
+            val bodyView = label("", 18f).apply {
                 setLineSpacing(dp(4).toFloat(), 1f)
                 text = AgentRichInlineMarkdownRenderer.render(bodyText)
                 movementMethod = LinkMovementMethod.getInstance()
                 setTextIsSelectable(true)
                 tag = "attention-expanded:${item.key}"
-            })
+            }
+            content.addView(bodyView)
+            if (item.newsArticleKey.isNotBlank()) loadBody(item.newsArticleKey) { full ->
+                if (generation == token && row?.expanded == true && full != null) bodyView.text = full
+            }
             val actions = horizontal()
             actions.addView(command(R.drawable.ic_conversation_external, R.string.attention_original) { sources(item) }, LayoutParams(0, dp(48), 1f))
             actions.addView(command(R.drawable.ic_tab_chat, R.string.attention_ask) { ask(item) }, LayoutParams(0, dp(48), 1f))
@@ -155,7 +151,8 @@ internal class ProactiveAttentionArticleView(
         updateStatus(next)
         evidence(item) { record ->
             if (token == generation) {
-                sourceName = record?.optJSONArray("sources")?.optJSONObject(0)?.optString("title").orEmpty()
+                val source = record?.optJSONArray("sources")?.optJSONObject(0)
+                sourceName = AttentionFeedCollectionPlan.publisher(source?.optString("url").orEmpty(), source?.optString("title").orEmpty())
                 evidenceChecked = record?.optBoolean("verified", false) == true
                 row?.let(::updateStatus)
             }
@@ -164,7 +161,7 @@ internal class ProactiveAttentionArticleView(
 
     fun updateStatus(next: AttentionReaderRow) {
         row = next
-        // Freeze read color. Collapsed bilingual slots have stable heights, so translations can
+        // Freeze read color. Collapsed headline slots have stable heights, so translations can
         // arrive in place. Expanded text waits for the next explicit bind to avoid moving the body.
         if (!isAttachedToWindow) {
             displayedUnread = next.item.isNew
@@ -193,21 +190,16 @@ internal class ProactiveAttentionArticleView(
         }
         headline?.text = displayedTranslation.ifBlank { original }
         translationAttribution?.visibility = when {
-            displayedTranslation.isNotBlank() && displayedTranslationProvider == AttentionMlKitTranslator.PROVIDER -> View.VISIBLE
+            displayedTranslationProvider == AttentionMlKitTranslator.PROVIDER -> View.VISIBLE
             expectsTranslation(next.item) -> View.INVISIBLE
             else -> View.GONE
-        }
-        originalHeadline?.apply {
-            text = if (displayedTranslation.isNotBlank()) original else
-                context.getString(ProactiveAttentionTranslationPolicy.statusLabel(next.item.titleTranslationStatus))
-            visibility = if (displayedTranslation.isNotBlank() || expectsTranslation(next.item)) View.VISIBLE else View.GONE
         }
     }
 
     private fun expectsTranslation(item: GlobalProactiveInboxItem) =
         context.resources.configuration.locales[0].language == "zh" && ProactiveAttentionTitlePolicy.needsTranslation(item.title)
 
-    private fun TextView.reserveBilingualHeight() {
+    private fun TextView.reserveHeadlineHeight() {
         // CJK fallback fonts can be taller than Latin fonts even with identical minLines.
         layoutParams = LayoutParams(-1,
             kotlin.math.ceil(maxOf(textSize * 1.5f, lineHeight.toFloat())).toInt() * 2 + paddingTop + paddingBottom)

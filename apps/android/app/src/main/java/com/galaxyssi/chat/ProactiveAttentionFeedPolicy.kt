@@ -21,7 +21,8 @@ data class AttentionFeedArticle(
     val publisher: String,
     val publishedAt: Long,
     val collectedAt: Long,
-    val discoveryDate: Boolean = false
+    val discoveryDate: Boolean = false,
+    val discoveredVia: String = ""
 )
 
 /** Discovery is a source-attributed lead, not a model verdict or a full-text reading receipt. */
@@ -43,7 +44,7 @@ object ProactiveAttentionFeedPolicy {
     fun parse(xml: String, topicId: String, now: Long): List<AttentionFeedArticle> {
         // Jsoup's XML parser does not resolve external entities or execute feed markup.
         val document = Jsoup.parse(xml, "", Parser.xmlParser())
-        require(document.selectFirst("rss, RDF, feed") != null) { "news_feed_invalid_document" }
+        require(document.selectFirst("rss, RDF, rdf|RDF, feed") != null) { "news_feed_invalid_document" }
         return document.select("item, entry").mapNotNull { item ->
             val title = clean(item.selectFirst("title")?.text().orEmpty(), 240)
             val summary = clean(item.selectFirst("description, summary")?.text().orEmpty(), 800)
@@ -51,7 +52,7 @@ object ProactiveAttentionFeedPolicy {
                 ?: item.selectFirst("link:not([rel])")?.let { it.attr("href").ifBlank { it.text() } }.orEmpty()
             val url = publicUrl(unwrap(link)) ?: return@mapNotNull null
             val publication = item.selectFirst("pubDate")?.text()
-                ?: item.selectFirst("published")?.text().orEmpty()
+                ?: item.selectFirst("published, dc|date")?.text().orEmpty()
             val published = date(publication.ifBlank { item.selectFirst("updated")?.text().orEmpty() })
             if (title.isBlank() || published < now - 7 * ProactiveAttentionNewsPolicy.DAY ||
                 published > now + 5 * 60_000L) return@mapNotNull null

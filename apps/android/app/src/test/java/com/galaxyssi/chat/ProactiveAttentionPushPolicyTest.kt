@@ -44,6 +44,8 @@ class ProactiveAttentionPushPolicyTest {
             .put("url", "https://example.org/news").put("title", "New OpenAI model").toString()
         val article = ProactiveAttentionPushPolicy.article(json, 21, now)!!
         assertTrue(article.discoveryDate)
+        assertEquals("example.org", article.publisher)
+        assertEquals("Hacker News", article.discoveredVia)
         assertTrue(ProactiveAttentionFeedSources.matches(article, AttentionTopic("ai_models", "", "")))
         assertEquals(ProactiveAttentionFeedPolicy.urlKey(article.url), article.key)
         assertTrue(runCatching { ProactiveAttentionPushPolicy.article(json, 22, now) }.isFailure)

@@ -194,12 +194,12 @@ internal class ProactiveAttentionTitleStore(context: Context) {
         if (AppLanguage.resolved(context) != AppLanguage.ZH_CN) return items
         val enabled = ProactiveAttentionTranslationPolicy.enabled(ProactiveAttentionStore(context).preferences(), "zh")
         return synchronized(LOCK) {
-            val rows = database.readStrings(items.asSequence().filter { ProactiveAttentionTitlePolicy.needsTranslation(it.title) }
+            val rows = database.readStrings(items.asSequence().filter { it.newsArticleKey.isBlank() && ProactiveAttentionTitlePolicy.needsTranslation(it.title) }
                 .map { ProactiveAttentionTitlePolicy.key(it.title) }.distinct().toList() + "worker_state")
             val worker = runCatching { JSONObject(rows["worker_state"] ?: "{}") }.getOrDefault(JSONObject())
             val now = System.currentTimeMillis()
             items.map { item ->
-                if (!ProactiveAttentionTitlePolicy.needsTranslation(item.title)) item else {
+                if (item.newsArticleKey.isNotBlank() || !ProactiveAttentionTitlePolicy.needsTranslation(item.title)) item else {
                     val record = runCatching { JSONObject(rows[ProactiveAttentionTitlePolicy.key(item.title)] ?: "{}") }.getOrDefault(JSONObject())
                     item.copy(translatedTitle = translated(record, item.title),
                         titleTranslationProvider = record.optString("provider"),

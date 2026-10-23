@@ -50,7 +50,15 @@ internal class ProactiveAttentionReader(
     private val filters = listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED)
     private val manager = LinearLayoutManager(activity)
     private val adapter = ProactiveAttentionFeedAdapter { ProactiveAttentionArticleView(activity,
-        ::toggle, ::toggleSaved, ask, sources, evidence, ::menu) }
+        ::toggle, ::toggleSaved, ask, sources, evidence, ::menu, ::loadBody) }
+
+    private fun loadBody(key: String, loaded: (String?) -> Unit) {
+        if (destroyed || worker.isShutdown) return
+        worker.execute {
+            val body = runCatching { AttentionArticleStore(activity.applicationContext).body(key) }.getOrNull()
+            main.post { if (!destroyed && !activity.isDestroyed) loaded(body) }
+        }
+    }
     val list = RecyclerView(activity).apply {
         layoutManager = manager; adapter = this@ProactiveAttentionReader.adapter; itemAnimator = null
         tag = "attention-reader-list"

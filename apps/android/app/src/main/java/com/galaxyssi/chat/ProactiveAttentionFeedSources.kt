@@ -6,11 +6,24 @@ object ProactiveAttentionFeedSources {
     private const val FINANCE = "https://www.chinanews.com.cn/rss/finance.xml"
     private const val RESEARCH = "https://rss.arxiv.org/rss/cs.AI"
 
-    fun originals(topic: AttentionTopic): List<String> = when (ProactiveAttentionPolicy.group(topic.id)) {
-        AttentionTopicGroup.FINANCE -> listOf(FINANCE)
-        AttentionTopicGroup.RESEARCH -> listOf(RESEARCH, TECHNOLOGY)
-        AttentionTopicGroup.CUSTOM -> listOf(TECHNOLOGY, FINANCE)
-        else -> listOf(TECHNOLOGY)
+    private val technology = listOf(TECHNOLOGY, "https://github.blog/feed/",
+        "https://research.google/blog/rss/", "https://deepmind.google/blog/rss.xml",
+        "https://developer.nvidia.com/blog/feed/", "https://android-developers.googleblog.com/feeds/posts/default",
+        "https://www.microsoft.com/en-us/research/feed/", "https://huggingface.co/blog/feed.xml",
+        "https://blog.cloudflare.com/rss/")
+    private val finance = listOf(FINANCE, "https://www.federalreserve.gov/feeds/press_all.xml",
+        "https://www.ecb.europa.eu/rss/press.html", "https://news.mit.edu/rss/topic/economics")
+    private val research = listOf(RESEARCH, "https://news.mit.edu/rss/research", "https://www.nasa.gov/feed/",
+        "https://research.google/blog/rss/", "https://www.microsoft.com/en-us/research/feed/")
+    private val biology = listOf("https://news.mit.edu/rss/topic/biology-and-genetics",
+        "https://rss.arxiv.org/rss/q-bio.BM", "https://www.nasa.gov/feed/")
+
+    fun originals(topic: AttentionTopic): List<String> = if (topic.id == "protein_life_sciences") biology else when (ProactiveAttentionPolicy.group(topic.id)) {
+        AttentionTopicGroup.FINANCE -> finance
+        AttentionTopicGroup.RESEARCH -> research
+        // Arbitrary custom interests use their explicit URLs plus search, not unrelated technology feeds.
+        AttentionTopicGroup.CUSTOM -> emptyList()
+        else -> technology
     }
 
     fun matches(article: AttentionFeedArticle, topic: AttentionTopic): Boolean {

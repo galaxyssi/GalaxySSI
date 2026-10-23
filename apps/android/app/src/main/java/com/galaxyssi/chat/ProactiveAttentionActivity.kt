@@ -157,6 +157,7 @@ class ProactiveAttentionActivity : Activity() {
                     if (p.configured && p.enabled && !collectionRequested) {
                         collectionRequested = true
                         ProactiveAttentionFeedScheduler.request(applicationContext)
+                        AttentionArticleScheduler.request(applicationContext)
                         ProactiveAttentionTitleScheduler.request(applicationContext)
                     }
                 }.onFailure {
@@ -278,15 +279,7 @@ class ProactiveAttentionActivity : Activity() {
             body.addView(line); divider()
         }
         body.addView(row("+ ${getString(R.string.attention_add)}") { editTopic(null) })
-        body.addView(row(getString(R.string.attention_translate_titles), getString(R.string.attention_translation_models)).apply {
-            addView(Switch(this@ProactiveAttentionActivity).apply {
-                tag = "attention-translate-titles"; contentDescription = getString(R.string.attention_translate_titles)
-                isChecked = preferences.translateTitles
-                setOnCheckedChangeListener { _, checked ->
-                    mutate(reschedule = false) { it.copy(translateTitles = checked) }
-                }
-            })
-        })
+        body.addView(row(getString(R.string.attention_article_body), getString(R.string.attention_article_policy)))
         body.addView(row(getString(R.string.attention_models), status()) { models() })
         body.addView(row(getString(R.string.attention_notifications)) {
             startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
@@ -301,7 +294,10 @@ class ProactiveAttentionActivity : Activity() {
             if (destination.isBlank() && message?.id?.startsWith("attention-feed:") == true) {
                 val transcript = AgentTranscriptStore(applicationContext)
                 val conversation = transcript.createAgentConversation(message.title)
-                transcript.append(AgentTranscriptRole.ASSISTANT, message.content, "global-agent:" + message.id,
+                val articleBody = message.newsArticleKey.takeIf(String::isNotBlank)?.let {
+                    AttentionArticleStore(applicationContext).body(it)
+                }
+                transcript.append(AgentTranscriptRole.ASSISTANT, articleBody ?: message.content, "global-agent:" + message.id,
                     timestampMillis = message.createdAtMillis, conversationId = conversation.id)
                 repository.bindProactiveConversation(message.id, conversation.id)
                 destination = conversation.id

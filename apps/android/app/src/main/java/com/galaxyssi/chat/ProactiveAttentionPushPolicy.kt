@@ -66,8 +66,9 @@ object ProactiveAttentionPushPolicy {
         val title = Jsoup.parse(item.optString("title")).text().take(240)
         if (title.isBlank()) return null
         return AttentionFeedArticle(ProactiveAttentionFeedPolicy.urlKey(url), "", title,
-            Jsoup.parse(item.optString("text")).text().take(800), url, "Hacker News", time * 1000, now,
-            discoveryDate = true)
+            Jsoup.parse(item.optString("text")).text().take(800), url,
+            AttentionFeedCollectionPlan.publisher(url, ""), time * 1000, now,
+            discoveryDate = true, discoveredVia = "Hacker News")
     }
 
     fun retryDelay(previous: Long): Long = (previous.coerceIn(2_500L, 150_000L) * 2).coerceAtMost(300_000L)

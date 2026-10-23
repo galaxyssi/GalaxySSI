@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 internal data class ProactiveInboxCounts(val total: Int, val unread: Int)
 
-/** Ordering metadata only; headlines and bodies remain in the encrypted message rows. */
+/** Ordering metadata only; private messages stay encrypted, public news uses its explicit plaintext policy. */
 internal class ProactiveMessageReadIndex(private val database: AgentEncryptedDatabase) {
     fun ready() = database.contains(READY)
 
@@ -31,7 +31,10 @@ internal class ProactiveMessageReadIndex(private val database: AgentEncryptedDat
         val id = key.removePrefix(ROW_PREFIX)
         if (value == null) { db.delete(TABLE, "id = ?", arrayOf(id)); return }
         val record = JSONObject(value)
-        if (record.optString("status") != "DELIVERED") {
+        val news = id.startsWith("attention-feed:") ||
+            record.optString("source_event_id").startsWith("research:${ProactiveAttentionPolicy.TASK_PREFIX}")
+        if (record.optString("status") != "DELIVERED" || news && (record.optString("news_article_key").isBlank() ||
+            record.optInt("news_article_revision", 0) < AttentionArticlePolicy.REVISION)) {
             db.delete(TABLE, "id = ?", arrayOf(id)); return
         }
         val digest = if (record.optString("target") == "GLOBAL_DIGEST") record.optString("delivery_group_id") else ""
@@ -109,6 +112,6 @@ internal class ProactiveMessageReadIndex(private val database: AgentEncryptedDat
     companion object {
         const val ROW_PREFIX = "proactive_message_row:"
         private const val TABLE = "proactive_message_read_index"
-        private const val READY = "proactive_message_read_index_v1"
+        private const val READY = "proactive_message_read_index_v3_article_bodies"
     }
 }

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="attention_article_body">中文正文</string>
+    <string name="attention_article_policy">仅显示已获取正文并完成中文翻译的新闻，公开新闻明文保存。</string>
     <string name="attention_reader_unread">未读 %1$d</string>
     <string name="attention_reader_new">%1$d 条新内容</string>
     <string name="attention_content_summary">内容摘要</string>
