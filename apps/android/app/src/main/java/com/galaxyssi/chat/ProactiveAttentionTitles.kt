@@ -75,10 +75,11 @@ internal class ProactiveAttentionTitleStore(context: Context) {
         record.optString("translated").takeIf { record.optString("original") == title &&
             ProactiveAttentionTitlePolicy.valid(title, it) }.orEmpty()
 
-    fun save(title: String, translated: String): Boolean = synchronized(LOCK) {
+    fun save(title: String, translated: String, provider: String = ""): Boolean = synchronized(LOCK) {
         if (!ProactiveAttentionTitlePolicy.valid(title, translated)) return false
+        if (translation(title).isNotBlank()) return true
         database.writeString(ProactiveAttentionTitlePolicy.key(title), JSONObject().put("original", title)
-            .put("translated", translated).put("updated_at", System.currentTimeMillis()).toString())
+            .put("translated", translated).put("provider", provider).put("updated_at", System.currentTimeMillis()).toString())
         true
     }
 
@@ -200,7 +201,9 @@ internal class ProactiveAttentionTitleStore(context: Context) {
             items.map { item ->
                 if (!ProactiveAttentionTitlePolicy.needsTranslation(item.title)) item else {
                     val record = runCatching { JSONObject(rows[ProactiveAttentionTitlePolicy.key(item.title)] ?: "{}") }.getOrDefault(JSONObject())
-                    item.copy(translatedTitle = translated(record, item.title), titleTranslationStatus = status(record, worker, enabled, now))
+                    item.copy(translatedTitle = translated(record, item.title),
+                        titleTranslationProvider = record.optString("provider"),
+                        titleTranslationStatus = status(record, worker, enabled, now))
                 }
             }
         }

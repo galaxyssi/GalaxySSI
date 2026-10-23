@@ -1,10 +1,10 @@
 package com.galaxyssi.chat
 
 import android.content.Context
-import androidx.work.Constraints
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -21,7 +21,6 @@ import kotlinx.coroutines.withContext
 internal object ProactiveAttentionTitleScheduler {
     internal const val TIMER = "attention_title_timer"
     internal fun buildRequest(delay: Long) = OneTimeWorkRequestBuilder<ProactiveAttentionTitleWorker>()
-        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
         .setInputData(workDataOf(TIMER to (delay > 0)))
         .setInitialDelay(delay.coerceAtLeast(0L), TimeUnit.MILLISECONDS).build()
 
@@ -45,7 +44,6 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
         val context = applicationContext
         val preferences = ProactiveAttentionStore(context).preferences()
         val repository = GlobalAgentRepository(context)
-        val settings = repository.settings()
         val store = ProactiveAttentionTitleStore(context)
         if (!ProactiveAttentionTranslationPolicy.enabled(preferences,
                 if (AppLanguage.resolved(context) == AppLanguage.ZH_CN) "zh" else "en")) {
@@ -60,11 +58,6 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
         }
         val paired = ProactiveAttentionPairedTitles(context)
         val pairedDelay = paired.pendingDelay(System.currentTimeMillis())
-        if (pairedDelay > 0L) {
-            store.workerState(AttentionTitleStatus.PENDING)
-            ProactiveAttentionTitleScheduler.request(context, pairedDelay)
-            return@withContext Result.success()
-        }
         // Only public feed headlines enter this lightweight path, never personal inbox contents.
         val pending = repository.proactiveMessages().asSequence().filter {
             it.id.startsWith("attention-feed:") && it.status == GlobalProactiveMessageStatus.DELIVERED
@@ -80,9 +73,23 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
             ProactiveAttentionTitleScheduler.request(context, (pending.minOf(store::nextAt) - now).coerceAtLeast(30_000L))
             return@withContext Result.success()
         }
+        val local = AttentionLocalTitleTranslation(::AttentionMlKitTranslator, store::translation,
+            { title, translated -> store.save(title, translated, AttentionMlKitTranslator.PROVIDER) },
+            { AttentionMlKitTranslator.requestDownload(context) }).translate(batch.associateBy(ProactiveAttentionTitlePolicy::key))
+        android.util.Log.i("GalaxySSIAttention", "title_translation_local requested=${batch.size} saved=${local.translated} reason=${local.reason}")
+        if (local.translated > 0) GlobalProactiveDeliveryBus.signalReady()
+        if (local.remaining.isEmpty()) {
+            if (pending.any { store.translation(it).isBlank() }) ProactiveAttentionTitleScheduler.request(context, load.spacingMillis)
+            return@withContext Result.success()
+        }
+        val titles = local.remaining
+        val fallbackBatch = titles.values.toList()
         val resources = GlobalAgentResourceResolver(context)
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val online = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         val resource = ProactiveAttentionTranslationPolicy.orderRoutes(
-            resources.route("Translate public news headlines into Chinese", allowPaired = true, allowCloud = true),
+            resources.route("Translate public news headlines into Chinese", allowPaired = online, allowCloud = online),
             { resources.cloudContact(it) != null }, store.lastFailedResource(now)).firstOrNull()
         if (resource == null) {
             store.workerState(AttentionTitleStatus.WAITING_MODEL)
@@ -97,13 +104,17 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
             ProactiveAttentionTitleScheduler.request(context, 5 * 60_000L)
             return@withContext Result.success()
         }
-        val titles = batch.associateBy(ProactiveAttentionTitlePolicy::key)
+        if (pairedContact != null && pairedDelay > 0L) {
+            store.workerState(AttentionTitleStatus.PENDING)
+            ProactiveAttentionTitleScheduler.request(context, pairedDelay)
+            return@withContext Result.success()
+        }
         val prompt = ProactiveAttentionTitlePolicy.prompt(titles, store.feedback(titles))
         val owner = "attention-titles:" + UUID.randomUUID()
         val budget = GlobalModelCallBudgetStore(context)
         val lease = if (pairedContact != null) AttentionTitleRequest.LEASE else 5 * 60_000L
         val permit = budget.acquire(GlobalModelCallKind.COGNITION, owner, lease,
-            settings.copy(dailyBackgroundModelCallBudget = 0), resource,
+            repository.settings().copy(dailyBackgroundModelCallBudget = 0), resource,
             GlobalModelUsageEstimator.estimateTokens(ProactiveAttentionTitlePolicy.SYSTEM, prompt))
         if (!permit.granted) {
             store.workerState(AttentionTitleStatus.WAITING_CAPACITY)
@@ -111,9 +122,9 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
             return@withContext Result.success()
         }
         // Persist the retry lease before network/inference work, including process-death recovery.
-        store.beginAttempt(batch, now, lease)
+        store.beginAttempt(fallbackBatch, now, lease)
         val started = android.os.SystemClock.elapsedRealtime()
-        android.util.Log.i("GalaxySSIAttention", "title_translation_start requested=${batch.size} route=" +
+        android.util.Log.i("GalaxySSIAttention", "title_translation_start requested=${titles.size} route=" +
             when { cloud != null -> "cloud"; pairedContact != null -> "paired"; else -> "local" })
         try {
             currentCoroutineContext().ensureActive()
@@ -122,7 +133,7 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
                     ProactiveAttentionTitleScheduler.request(context, lease)
                 } else {
                     budget.release(GlobalModelCallKind.COGNITION, owner)
-                    store.failed(batch, "dispatch_unavailable")
+                    store.failed(fallbackBatch, "dispatch_unavailable")
                     store.workerState(AttentionTitleStatus.RETRYING, resource)
                     ProactiveAttentionTitleScheduler.request(context, 30_000L)
                 }
@@ -142,19 +153,19 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
                 response.outputTokens, response.costMicros, response.text)
             currentCoroutineContext().ensureActive()
             val saved = store.accept(response.text, titles)
-            store.workerState(if (saved == batch.size) AttentionTitleStatus.PENDING else AttentionTitleStatus.RETRYING,
-                if (saved == batch.size) "" else resource)
+            store.workerState(if (saved == titles.size) AttentionTitleStatus.PENDING else AttentionTitleStatus.RETRYING,
+                if (saved == titles.size) "" else resource)
             GlobalProactiveDeliveryBus.signalReady()
-            android.util.Log.i("GalaxySSIAttention", "title_translation requested=${batch.size} saved=$saved elapsed_ms=" +
+            android.util.Log.i("GalaxySSIAttention", "title_translation requested=${titles.size} saved=$saved elapsed_ms=" +
                 (android.os.SystemClock.elapsedRealtime() - started))
         } catch (failure: Exception) {
             budget.release(GlobalModelCallKind.COGNITION, owner)
             if (failure is java.util.concurrent.CancellationException) {
-                store.failed(batch, "request_interrupted")
+                store.failed(fallbackBatch, "request_interrupted")
                 store.workerState(AttentionTitleStatus.PENDING)
                 throw failure
             }
-            store.failed(batch, "request_${failure.javaClass.simpleName}")
+            store.failed(fallbackBatch, "request_${failure.javaClass.simpleName}")
             store.workerState(AttentionTitleStatus.RETRYING, resource)
             android.util.Log.w("GalaxySSIAttention", "title_translation_retry type=${failure.javaClass.simpleName}")
         }

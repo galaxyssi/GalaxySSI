@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1380
-        versionName = "0.1.6.4"
+        versionCode = 1381
+        versionName = "0.1.6.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -325,6 +325,7 @@ dependencies {
     implementation("com.qualcomm.qti:qnn-litert-delegate:2.47.0")
     implementation("com.qualcomm.qti:geniex-android:0.3.18")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.sqlite:sqlite-bundled:2.6.2")
@@ -332,6 +333,7 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.vanniktech:android-image-cropper:4.7.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
