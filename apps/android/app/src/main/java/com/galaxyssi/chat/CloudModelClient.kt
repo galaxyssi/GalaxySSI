@@ -99,7 +99,8 @@ object CloudModelClient {
             secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS) + "\n" + ResearchQualityStandard.get(context).prompt
         } else {
             defaultSystemPrompt(context) + "\n" + CloudWebGrounding.currentEvidencePrompt(context)
-        }) + "\n" + CloudImageAnnotationPlan.instruction(images.size)
+        }) + "\n" + AgentDirectVisionPolicy.instructionForImageCount(images.size) +
+            "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt)
         logCompaction(contact, compiled)
         return when (style) {
@@ -558,6 +559,7 @@ object CloudModelClient {
         val imageSession = CloudImageAnnotationSession(context, images)
         val effectiveSystemPrompt =
             secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
+                "\n" + AgentDirectVisionPolicy.instructionForImageCount(images.size) +
                 "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(
             context,
@@ -797,6 +799,7 @@ object CloudModelClient {
         val imageSession = CloudImageAnnotationSession(context, images)
         val effectiveSystemPrompt =
             secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
+                "\n" + AgentDirectVisionPolicy.instructionForImageCount(images.size) +
                 "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
@@ -1031,6 +1034,7 @@ object CloudModelClient {
         val url = endpoint + separator + "key=" + URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
         val effectiveSystemPrompt =
             secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
+                "\n" + AgentDirectVisionPolicy.instructionForImageCount(images.size) +
                 "\n" + CloudImageAnnotationPlan.instruction(images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
