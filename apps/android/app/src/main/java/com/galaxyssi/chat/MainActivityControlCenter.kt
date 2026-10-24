@@ -604,11 +604,12 @@ internal fun MainActivity.handleControlCenterAction(actionId: String) {
         "screen_assistant.toggle" -> {
             val enabled = !ScreenAssistantSettings.enabled(this)
             ScreenAssistantSettings.setEnabled(this, enabled)
-            showScreenAssistantSettingsPage()
-            if (enabled && !ScreenAssistantSettings.systemAccessEnabled(this)) {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            renderCurrentControlCenterDestination()
+            if (enabled && !GalaxySSIAccessibilityService.isActive()) {
+                ScreenAssistantConnection.openSystemSettings(this)
             }
         }
+        "screen_assistant.reconnect" -> ScreenAssistantConnection.openSystemSettings(this)
         "general.about" -> openExistingControlCenterPage { showAboutGalaxySSIPage() }
         "general.advanced" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.ADVANCED))
         "apps.chat_history" -> showAgentSessionsPage()

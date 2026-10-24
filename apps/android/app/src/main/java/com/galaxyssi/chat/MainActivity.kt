@@ -408,6 +408,12 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val globalProactiveDeliveryListener = GlobalProactiveDeliveryListener {
         handler.post(::refreshGlobalAgentCognition)
     }
+    private val screenAssistantConnectionListener: () -> Unit = {
+        if (!isFinishing && !isDestroyed && featurePage.isShown &&
+            controlCenterDestination?.route == ControlCenterRoute.SCREEN_ASSISTANT) {
+            renderCurrentControlCenterDestination()
+        }
+    }
     internal val historyExecutor = Executors.newSingleThreadExecutor()
     internal val agentTranscriptContentExecutor = Executors.newSingleThreadExecutor()
     internal val agentRegistryHeartbeatExecutor = Executors.newSingleThreadExecutor()
@@ -1325,7 +1331,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             chatPage.visibility == View.VISIBLE
         }
         AppForegroundTracker.onActivityForeground(this, resumedConversationId)
-        ScreenAssistantSettings.reconcileSystemAccess(this)
+        ScreenAssistantConnection.addListener(screenAssistantConnectionListener)
         GalaxySSIAccessibilityService.refreshScreenAssistant()
         GalaxySSIAccessibilityService.retryPendingScreenAssistant()
         resumePendingDeviceOperation()
@@ -1370,6 +1376,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onPause() {
+        ScreenAssistantConnection.removeListener(screenAssistantConnectionListener)
         mainPageBackPressGate.reset()
         foregroundAgentReload.invalidate()
         if (::conversationWindow.isInitialized) conversationWindow.pause()

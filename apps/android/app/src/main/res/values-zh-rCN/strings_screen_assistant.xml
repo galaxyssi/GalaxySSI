@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="screen_assistant_permission_required">已开启，等待屏幕访问授权</string>
+    <string name="screen_assistant_disconnected">已授权，但屏幕访问服务未连接</string>
+    <string name="screen_assistant_reconnect">重新连接屏幕助手</string>
+    <string name="screen_assistant_reconnect_summary">在系统无障碍设置中，将 GalaxySSI 服务关闭后重新开启。</string>
     <string name="screen_assistant_title">屏幕助手</string>
     <string name="screen_assistant_settings_summary">不离开当前应用即可分析屏幕</string>
     <string name="screen_assistant_disclosure">屏幕访问服务可在本机读取界面；仅在你请求分析或执行手机任务后，才向首页所选 Agent 发送目标 App 的界面内容，必要时截图。Agent 通过已配置的云模型或配对电脑处理。只有明确的执行任务才允许操作手机；录屏、相机、麦克风和定位仍需 Android 授权。打开其他 App 不会自动开始分析或操作。</string>
