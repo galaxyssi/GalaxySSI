@@ -64,9 +64,9 @@ internal object ScreenAssistantSettings {
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
         return services.split(':').any { ComponentName.unflattenFromString(it) == component }
     }
-    fun reconcileSystemAccess(context: Context) {
-        if (enabled(context) && !systemAccessEnabled(context)) setEnabled(context, false)
-    }
+    fun accessState(context: Context): ScreenAssistantAccessState = ScreenAssistantAccessState.resolve(
+        enabled(context), systemAccessEnabled(context), GalaxySSIAccessibilityService.isActive()
+    )
     fun conversation(context: Context): String = prefs(context).getString(CONVERSATION, "").orEmpty()
     fun saveConversation(context: Context, id: String) = prefs(context).edit().putString(CONVERSATION, id).apply()
     fun lastTurn(context: Context): String = prefs(context).getString(LAST_TURN, "").orEmpty()

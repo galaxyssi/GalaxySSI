@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Intent
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.Build
@@ -32,11 +33,6 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     }
     internal fun restoreAssistantAfterCapture() { screenAssistant?.restoreAfterCapture() }
 
-    override fun onCreate() {
-        super.onCreate()
-        activeService = this
-    }
-
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         articleLink.onEvent(event)
         if (event?.eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
@@ -64,6 +60,8 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        super.onServiceConnected()
+        activeService = this
         screenAssistant?.close()
         screenAssistant = ScreenAssistantOverlay(this).also {
             it.onForegroundPackage(rootInActiveWindow?.packageName?.toString().orEmpty())
@@ -78,13 +76,26 @@ class GalaxySSIAccessibilityService : AccessibilityService() {
                 )
             )
         }
+        ScreenAssistantConnection.changed()
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        disconnectAssistant()
+        return super.onUnbind(intent)
+    }
+
+    private fun disconnectAssistant() {
+        if (activeService === this) {
+            activeService = null
+            ScreenAssistantConnection.changed()
+        }
+        screenAssistant?.close()
+        screenAssistant = null
     }
 
     override fun onDestroy() {
         articleLink.close()
-        screenAssistant?.close()
-        screenAssistant = null
-        if (activeService === this) activeService = null
+        disconnectAssistant()
         super.onDestroy()
     }
 
