@@ -59,6 +59,7 @@ class ProactiveAttentionFeedCollector(
         val originals = ProactiveAttentionFeedSources.originals(topic)
         val explicit = ProactiveAttentionWebSources.explicit(topic)
         val endpoints = AttentionFeedCollectionPlan.endpoints(topic)
+        val searches = ProactiveAttentionFeedPolicy.endpoints(topic).toSet()
         val cursor = store.topicState(topic.id).optInt("cursor").coerceIn(0, endpoints.lastIndex.coerceAtLeast(0))
         val batch = AttentionFeedCollectionPlan.batch(endpoints, cursor)
         fun load(url: String, allowPage: Boolean = false): String {
@@ -73,6 +74,7 @@ class ProactiveAttentionFeedCollector(
             } catch (failure: Exception) {
                 if (failure is java.util.concurrent.CancellationException) throw failure
                 store.sourceFailed(url, failure.javaClass.simpleName, now)
+                if (AttentionFeedFailurePolicy.affectsHost(failure, url in searches)) store.hostFailed(url, now)
                 throw failure
             }
         }

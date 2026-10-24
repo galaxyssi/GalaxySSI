@@ -55,7 +55,7 @@ class AttentionArticleDeviceTest {
             val job = store.claim(setOf("topic"), 1000)!!
             store.failed(job, "article_body_missing", 1000)
             assertNull(store.body("a")); assertNull(store.claim(setOf("topic"), 1001))
-            assertNotNull(store.claim(setOf("topic"), 31_000))
+            assertNotNull(store.claim(setOf("topic"), 1_801_000))
         } finally { AttentionArticleStore.closeTest(context, name); context.deleteDatabase(name) }
     }
 
@@ -73,6 +73,64 @@ class AttentionArticleDeviceTest {
         } finally { AttentionArticleStore.closeTest(context, name); context.deleteDatabase(name) }
     }
 
+    @Test fun thousandsOfHistoricalArticlesProgressDespiteNewArrivalsAndRepeatedFailures() {
+        val name = "article-test-${UUID.randomUUID()}.db"
+        try {
+            val store = AttentionArticleStore(context, name)
+            store.enqueue(AttentionFeedArticle("retry", "topic", "Title", "", "https://example.com/retry", "Example", 1, 999999), "Topic")
+            SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                db.beginTransaction()
+                try {
+                    db.execSQL("UPDATE articles SET attempts = 8,error = 'article_body_missing' WHERE id = 'retry'")
+                    db.compileStatement("INSERT INTO articles(id,url,topic,topic_title,title,publisher,published,collected) " +
+                        "VALUES(?,?,'topic','Topic','Title','Example',1,?)").use { statement ->
+                        repeat(4326) { index ->
+                            statement.bindString(1, "old-$index"); statement.bindString(2, "https://example.com/$index")
+                            statement.bindLong(3, index.toLong()); statement.executeInsert()
+                        }
+                    }
+                    db.setTransactionSuccessful()
+                } finally { db.endTransaction() }
+            }
+            val claimed = mutableListOf<String>()
+            repeat(60) { index ->
+                store.enqueue(AttentionFeedArticle("fresh-$index", "topic", "Title", "", "https://example.com/new/$index",
+                    "Example", 1, 100_000L + index), "Topic")
+                // Reopening on every claim exercises the persisted lane, not an in-memory counter.
+                val reopened = AttentionArticleStore(context, name)
+                val job = reopened.claim(setOf("topic"), 1_000_000L + index)!!
+                claimed += job.key
+                if (job.key == "retry") reopened.failed(job, "article_body_missing", 1_000_000L + index)
+                else { reopened.ready(job.key, AttentionChineseArticle("新闻", chinese, "")); reopened.published(job.key) }
+            }
+            assertTrue(claimed.count { it.startsWith("old-") } >= 20)
+            assertTrue(claimed.count { it.startsWith("fresh-") } >= 29)
+            assertEquals(1, claimed.count { it == "retry" })
+            assertEquals(60, claimed.distinct().size)
+            assertTrue(claimed.contains("old-0"))
+            assertEquals(59, store.counts(setOf("topic")).published)
+            assertEquals(4326 + 60 + 1, store.counts(setOf("topic")).let { it.published + it.waiting + it.retrying })
+            assertEquals(AttentionArticleQueueCounts(0, 0, 0), store.counts(setOf("disabled")))
+            report("article_backlog_fixture records=4387 historical=${claimed.count { it.startsWith("old-") }} " +
+                "fresh=${claimed.count { it.startsWith("fresh-") }} retry=${claimed.count { it == "retry" }}")
+        } finally { AttentionArticleStore.closeTest(context, name); context.deleteDatabase(name) }
+    }
+
+    @Test fun retryLaneSurvivesContinuousFirstAttemptsAndLeasesRecoverAfterProcessDeath() {
+        val name = "article-test-${UUID.randomUUID()}.db"
+        try {
+            val store = AttentionArticleStore(context, name)
+            fun enqueue(id: String, at: Long) = store.enqueue(AttentionFeedArticle(id, "topic", "Title", "",
+                "https://example.com/$id", "Example", at, at), "Topic")
+            enqueue("interrupted", 0)
+            assertEquals("interrupted", store.claim(setOf("topic"), 1000)!!.key)
+            repeat(60) { enqueue("first-$it", it.toLong()) }
+            val claims = (0..5).map { AttentionArticleStore(context, name).claim(setOf("topic"), 301_001L + it)!!.key }
+            assertTrue(claims.contains("interrupted"))
+            assertEquals(6, claims.distinct().size)
+        } finally { AttentionArticleStore.closeTest(context, name); context.deleteDatabase(name) }
+    }
+
     @Test fun oldExtractedBodiesAreRequeuedWithoutLosingDiscoveries() {
         val name = "article-test-${UUID.randomUUID()}.db"
         try {
@@ -85,6 +143,25 @@ class AttentionArticleDeviceTest {
             assertEquals("repair", store.metadata("old")!!.state)
             assertNull(store.body("old"))
             assertEquals("old", store.claim(setOf("topic"), 1000)!!.key)
+        } finally { AttentionArticleStore.closeTest(context, name); context.deleteDatabase(name) }
+    }
+
+    @Test fun extractorUpgradeRetriesMissingBodiesWithoutResettingPublishedRecordsOrAttempts() {
+        val name = "article-test-${UUID.randomUUID()}.db"
+        try {
+            val store = AttentionArticleStore(context, name)
+            for (id in listOf("broken", "complete")) store.enqueue(AttentionFeedArticle(id, "topic", "Title", "",
+                "https://example.com/$id", "Example", 1, 2), "Topic")
+            store.ready("complete", AttentionChineseArticle("新闻", chinese, "")); store.published("complete")
+            val job = store.claim(setOf("topic"), 1000)!!
+            store.failed(job, "article_body_missing", 1000)
+            AttentionArticleStore.closeTest(context, name)
+            SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { it.version = 4 }
+            val reopened = AttentionArticleStore(context, name)
+            assertEquals("broken", reopened.claim(setOf("topic"), 1001)!!.key)
+            assertEquals(2, reopened.metadata("broken")!!.attempts)
+            assertEquals("published", reopened.metadata("complete")!!.state)
+            assertEquals(chinese, reopened.body("complete"))
         } finally { AttentionArticleStore.closeTest(context, name); context.deleteDatabase(name) }
     }
 

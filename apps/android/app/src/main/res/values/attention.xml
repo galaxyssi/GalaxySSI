@@ -64,6 +64,7 @@
     <string name="attention_cloud">Allow cloud model for public research</string>
     <string name="attention_notifications">Notification settings</string>
     <string name="attention_error">Could not load. Tap to retry.</string>
+    <string name="attention_article_queue_status">Ready %1$d · Processing %2$d · Awaiting retry %3$d</string>
     <string name="attention_invalid">Enter a topic name and research scope.</string>
     <string name="attention_failed">Some research is unavailable · check models</string>
     <string name="attention_notification_channel">Following updates</string>

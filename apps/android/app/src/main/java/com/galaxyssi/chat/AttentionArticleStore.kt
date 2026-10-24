@@ -11,6 +11,8 @@ internal data class AttentionArticleJob(val key: String, val url: String, val to
     val title: String, val publisher: String, val published: Long, val collected: Long, val attempts: Int,
     val state: String, val chineseTitle: String = "", val preview: String = "", val provider: String = "")
 
+internal data class AttentionArticleQueueCounts(val published: Int, val waiting: Int, val retrying: Int)
+
 /** Public news only. Queue metadata is indexed; full Chinese bodies are read individually on demand. */
 internal class AttentionArticleStore(context: Context, name: String = NAME) {
     private val helper = helpers.computeIfAbsent(context.getDatabasePath(name).absolutePath) { Helper(context.applicationContext, name) }
@@ -48,13 +50,21 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         try {
             val filter = topics.joinToString(",") { "?" }
             val args = arrayOf(now.toString()) + topics.toTypedArray()
-            val job = db.rawQuery("SELECT $COLUMNS FROM articles WHERE state <> 'published' AND next_at <= ? " +
-                "AND topic IN ($filter) ORDER BY CASE state WHEN 'ready' THEN 0 WHEN 'repair' THEN 1 ELSE 2 END," +
-                "CAST(COALESCE((SELECT value FROM metadata WHERE id = 'claimed:' || articles.publisher),'0') AS INTEGER)," +
-                "collected DESC,id LIMIT 1", args)
-                .use { if (it.moveToFirst()) readJob(it) else null } ?: return null
+            fun select(condition: String, order: String) = db.rawQuery("SELECT $COLUMNS FROM articles " +
+                "WHERE next_at <= ? AND topic IN ($filter) AND $condition ORDER BY $order,id LIMIT 1", args)
+                .use { if (it.moveToFirst()) readJob(it) else null }
+            // Persist the lane cursor so frequent process restarts cannot starve history or retries.
+            val cursor = meta("claim_lane").toIntOrNull()?.rem(6) ?: 0
+            val publisherOrder = "CAST(COALESCE((SELECT value FROM metadata " +
+                "WHERE id = 'claimed:' || articles.publisher),'0') AS INTEGER),"
+            val freshOrder = publisherOrder + if (cursor == 1 || cursor == 3) "collected ASC" else "collected DESC"
+            fun firstAttempt() = select("state IN ('pending','repair') AND attempts = 0", freshOrder)
+            fun retry() = select("state IN ('pending','repair') AND attempts > 0", "next_at ASC,attempts ASC,collected ASC")
+            val job = select("state = 'ready'", "collected ASC") ?: (
+                if (cursor == 5) retry() ?: firstAttempt() else firstAttempt() ?: retry()) ?: return null
             db.execSQL("UPDATE articles SET next_at = ?, attempts = attempts + 1 WHERE id = ?", arrayOf(now + 5 * 60_000, job.key))
             putMeta("claimed:" + job.publisher, now.toString())
+            if (job.state != "ready") putMeta("claim_lane", ((cursor + 1) % 6).toString())
             db.setTransactionSuccessful()
             return job
         } finally { db.endTransaction() }
@@ -70,7 +80,9 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
 
     fun published(key: String) { db.execSQL("UPDATE articles SET state = 'published', error = '' WHERE id = ?", arrayOf(key)) }
     fun failed(job: AttentionArticleJob, error: String, now: Long) {
-        val delay = (30_000L * (1L shl job.attempts.coerceIn(0, 9))).coerceAtMost(4 * 60 * 60_000L)
+        val base = if (error.startsWith("article_") && error !in setOf("article_translation_timeout",
+                "article_translation_model_pending")) 30 * 60_000L else 60_000L
+        val delay = (base * (1L shl job.attempts.coerceIn(0, 9))).coerceAtMost(4 * 60 * 60_000L)
         db.execSQL("UPDATE articles SET next_at = ?, error = ? WHERE id = ?", arrayOf(now + delay, error.take(120), job.key))
     }
 
@@ -88,6 +100,16 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         }
     }
 
+    fun counts(topics: Set<String>): AttentionArticleQueueCounts {
+        if (topics.isEmpty()) return AttentionArticleQueueCounts(0, 0, 0)
+        return db.rawQuery("SELECT COALESCE(SUM(state = 'published'),0)," +
+            "COALESCE(SUM(state <> 'published' AND error = ''),0)," +
+            "COALESCE(SUM(state <> 'published' AND error <> ''),0) FROM articles WHERE topic IN (" +
+            topics.joinToString(",") { "?" } + ")", topics.toTypedArray()).use {
+            it.moveToFirst(); AttentionArticleQueueCounts(it.getInt(0), it.getInt(1), it.getInt(2))
+        }
+    }
+
     private fun meta(key: String) = db.rawQuery("SELECT value FROM metadata WHERE id = ?", arrayOf(key))
         .use { if (it.moveToFirst()) it.getString(0) else "" }
     private fun putMeta(key: String, value: String) = db.execSQL("INSERT OR REPLACE INTO metadata VALUES(?,?)", arrayOf(key, value))
@@ -95,7 +117,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         c.getString(4), c.getString(5), c.getLong(6), c.getLong(7),
         c.getInt(8), c.getString(9), c.getString(10), c.getString(11), c.getString(12))
 
-    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 3) {
+    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 5) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE articles(id TEXT PRIMARY KEY NOT NULL,url TEXT NOT NULL,topic TEXT NOT NULL," +
                 "topic_title TEXT NOT NULL,title TEXT NOT NULL,publisher TEXT NOT NULL,published INTEGER NOT NULL," +
@@ -104,6 +126,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
                 "preview TEXT NOT NULL DEFAULT '',body TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT '')")
             db.execSQL("CREATE INDEX article_queue ON articles(state,next_at,topic,collected DESC)")
             db.execSQL("CREATE TABLE metadata(id TEXT PRIMARY KEY NOT NULL,value TEXT NOT NULL)")
+            queueIndex(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             if (oldVersion < 3) {
@@ -111,7 +134,14 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
                 db.execSQL("UPDATE articles SET state = CASE WHEN state IN ('ready','published') THEN 'repair' ELSE 'pending' END," +
                     "next_at = 0,attempts = 0,error = '',body = '',preview = ''")
             }
+            if (oldVersion < 4) queueIndex(db)
+            if (oldVersion < 5) {
+                // Retry pages rejected by the former no-sidebar/body-container extraction bug.
+                db.execSQL("UPDATE articles SET next_at = 0 WHERE state IN ('pending','repair') AND error = 'article_body_missing'")
+            }
         }
+        private fun queueIndex(db: SQLiteDatabase) = db.execSQL(
+            "CREATE INDEX IF NOT EXISTS article_attempt_queue ON articles(state,attempts,topic,next_at,collected)")
     }
 
     companion object {

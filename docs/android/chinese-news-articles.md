@@ -38,23 +38,41 @@ Legacy feed metadata is imported in pages of 256 records with a durable cursor.
 New discoveries enqueue directly. A five-minute claim lease permits process-death
 recovery; completed bodies are committed before inbox publication, so interrupted
 publication retries without downloading or translating again. Publication is
-idempotent and preserves dismissals. Each worker processes up to three articles,
-then yields to a scheduled continuation. Existing thermal/power backoff remains.
-Sources rotate by their last claim time, so a stream of recent items from one source
-cannot indefinitely starve older sources. Schema version 3 prioritizes early development
+idempotent and preserves dismissals. A worker claims up to 24 articles, stopping new
+claims after a two-minute slice, then yields to a scheduled continuation. At most two
+downloads overlap, DOM extraction is serialized, and one translator is reused.
+Existing thermal/power backoff remains, including checks between waves; warm devices
+use one download at a time.
+
+Schema version 4 adds an indexed first-attempt queue and a persistent six-slot lane
+cursor: three recent-first slots, two oldest-first slots, and one due-retry slot.
+Empty lanes lend capacity to other work. Sources rotate within first attempts;
+failed recent articles cannot repeatedly jump ahead of unattempted history. Ready
+bodies take priority so interrupted publication does not repeat translation.
+Deterministic extraction/validation failures back off from 30 minutes, transient
+failures from one minute, both capped at four hours. The reader shows ready,
+processing and retry counts instead of silently hiding the unfinished backlog.
+Schema version 3 requeued early development
 extractions that included page chrome; corrected publication updates existing previews
 without resetting their read or notification state.
 Article revision markers keep obsolete previews out of the list and unread index until
 their corrected body has been published, including after a cold start.
+Schema version 5 makes old missing-body failures due again after fixing BEM body
+containers and `no-sidebar` layouts. It preserves attempt counts and uses the retry
+lane, without resetting successful articles, read state or the whole queue.
 
 ## Source coverage
 
 The old collector stopped after the first nonempty feed. The new collector visits
-every configured endpoint, interleaving original publishers and search discovery.
+every configured endpoint, visiting original publishers before search discovery.
 It checkpoints after four endpoints and resumes the remaining endpoints after
 process death. Topic backoff starts only after a complete pass. All topics share
 30-minute public feed caches; failed sources have their own persistent backoff and
-do not block healthy publishers or custom source URLs. RSS responses are bounded
+do not block healthy publishers or custom source URLs. Transport failures share a
+five-minute per-host circuit across topic queries; malformed search responses also
+open that circuit. Individual publisher parsing/HTTP errors remain endpoint-scoped.
+This prevents dozens of categories each waiting on the same unreachable search host.
+RSS responses are bounded
 at 2 MiB (GitHub's current feed exceeds the former 512 KiB limit).
 
 The original-feed catalog includes IT Home, China News, the Federal Reserve, ECB,

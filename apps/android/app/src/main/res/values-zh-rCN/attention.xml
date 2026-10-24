@@ -64,6 +64,7 @@
     <string name="attention_cloud">允许云模型研究公开资料</string>
     <string name="attention_notifications">系统通知设置</string>
     <string name="attention_error">加载失败，点击重试</string>
+    <string name="attention_article_queue_status">已就绪 %1$d · 正文处理中 %2$d · 待重试 %3$d</string>
     <string name="attention_invalid">请填写关注名称和范围</string>
     <string name="attention_failed">部分研究暂不可用 · 请检查模型</string>
     <string name="attention_notification_channel">关注动态</string>

@@ -36,6 +36,8 @@ class ProactiveAttentionActivity : Activity() {
     private lateinit var readerStateStore: ProactiveAttentionReaderStateStore
     private var readerState = AttentionReaderState()
     private lateinit var header: ProactiveAttentionHeader
+    private lateinit var articleStatus: TextView
+    private var articleCounts: AttentionArticleQueueCounts? = null
     private var feedMenu: ProactiveAttentionFeedMenu? = null
     private var unreadCount: Int? = null
     private var preferences = AttentionPreferences()
@@ -100,6 +102,13 @@ class ProactiveAttentionActivity : Activity() {
         }
         header.render(settingsPage, unreadCount)
         addView(header, LinearLayout.LayoutParams(-1, dp(56)))
+        articleStatus = TextView(this@ProactiveAttentionActivity).apply {
+            textSize = 12f
+            setTextColor(0xff737373.toInt())
+            setPadding(dp(16), dp(2), dp(16), dp(8))
+            visibility = View.GONE
+        }
+        addView(articleStatus, LinearLayout.LayoutParams(-1, -2))
         body = LinearLayout(this@ProactiveAttentionActivity).apply { orientation = LinearLayout.VERTICAL }
         scroll = ScrollView(this@ProactiveAttentionActivity).apply { isFillViewport = true; addView(body) }
         scroll.visibility = if (settingsPage) View.VISIBLE else View.GONE
@@ -142,15 +151,18 @@ class ProactiveAttentionActivity : Activity() {
                 }
                 val messageMap = repository.proactiveMessages().associateBy(GlobalProactiveMessage::id)
                 val inbox = GlobalProactiveInboxPolicy.project(messageMap.values.toList(), repository.feedback())
-                Triple(p, titles.decorate(inbox), messageMap) to savedReaderState
+                val counts = runCatching { AttentionArticleStore(applicationContext)
+                    .counts(p.topics.filter { it.enabled }.map { it.id }.toSet()) }.getOrNull()
+                Triple(Triple(p, titles.decorate(inbox), messageMap), savedReaderState, counts)
             }
             runOnUiThread {
                 reloadRunning = false
                 if (isDestroyed || request != revision) return@runOnUiThread
-                loaded.onSuccess { (data, savedReaderState) ->
+                loaded.onSuccess { (data, savedReaderState, counts) ->
                     val (p, inbox, metadata) = data
                     preferences = p; items = inbox; messages = metadata
                     readerState = savedReaderState
+                    articleCounts = counts
                     evidence.evictAll()
                     completeInbox = true
                     render()
@@ -220,6 +232,11 @@ class ProactiveAttentionActivity : Activity() {
     private fun render(resetScroll: Boolean = false) {
         val previousScroll = if (resetScroll) 0 else scroll.scrollY
         renderHeader()
+        val counts = articleCounts
+        articleStatus.visibility = if (!settingsPage && counts != null && counts.waiting + counts.retrying > 0)
+            View.VISIBLE else View.GONE
+        if (counts != null) articleStatus.text = getString(R.string.attention_article_queue_status,
+            counts.published, counts.waiting, counts.retrying)
         scroll.visibility = if (settingsPage) View.VISIBLE else View.GONE
         reader.view.visibility = if (settingsPage) View.GONE else View.VISIBLE
         body.removeAllViews()

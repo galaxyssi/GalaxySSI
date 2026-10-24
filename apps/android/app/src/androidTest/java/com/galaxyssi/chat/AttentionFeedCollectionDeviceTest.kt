@@ -91,6 +91,31 @@ class AttentionFeedCollectionDeviceTest {
         assertEquals("kept", store.articleRecordsAfter("", 10).single().getString("key"))
     }
 
+    @Test fun transportCircuitSurvivesReopenButKeepsOtherHostsAvailableAndExpires() = isolated { context ->
+        val store = ProactiveAttentionFeedStore(context)
+        val a = "https://search.example/rss?q=AI"
+        val b = "https://search.example/rss?q=Biology"
+        val other = "https://publisher.example/feed"
+        store.hostFailed(a, now)
+        val reopened = ProactiveAttentionFeedStore(context)
+        assertEquals(now + AttentionFeedFailurePolicy.HOST_BACKOFF, reopened.sourceRetryAt(b))
+        assertEquals(0L, reopened.sourceRetryAt(other))
+        assertTrue(reopened.sourceRetryAt(b) <= now + AttentionFeedFailurePolicy.HOST_BACKOFF)
+    }
+
+    @Test fun brokenSearchIsAttemptedOnceAcrossMultipleTopics() = isolated { context ->
+        val topics = (1..8).map { AttentionTopic("custom-$it", "Custom $it", "Custom $it") }
+        configure(context, topics)
+        val requests = mutableListOf<String>()
+        repeat(topics.size) { index ->
+            ProactiveAttentionFeedCollector(context) { url ->
+                requests += url
+                if (url.contains("bing.com")) "<html>Search unavailable</html>" else throw AgentNativeToolTimeoutException()
+            }.collect(now + index)
+        }
+        assertEquals(2, requests.size)
+    }
+
     @Test fun pushAttributionKeepsOriginalPublisherAndDiscoveryChannelSeparately() = isolated { context ->
         configure(context, listOf(topic))
         val article = ProactiveAttentionPushPolicy.article("""{"id":1,"type":"story","time":${now / 1000},
