@@ -60,8 +60,11 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             val freshOrder = publisherOrder + if (cursor == 1 || cursor == 3) "collected ASC" else "collected DESC"
             fun firstAttempt() = select("state IN ('pending','repair') AND attempts = 0", freshOrder)
             fun retry() = select("state IN ('pending','repair') AND attempts > 0", "next_at ASC,attempts ASC,collected ASC")
+            fun visual() = select("state = 'published' AND visual_requested = 1 AND visual_revision = 0", "next_at ASC")
             val job = select("state = 'ready'", "collected ASC") ?: (
-                if (cursor == 5) retry() ?: firstAttempt() else firstAttempt() ?: retry()) ?: return null
+                if (cursor == 4) visual() ?: firstAttempt() ?: retry()
+                else if (cursor == 5) retry() ?: firstAttempt() ?: visual()
+                else firstAttempt() ?: retry() ?: visual()) ?: return null
             db.execSQL("UPDATE articles SET next_at = ?, attempts = attempts + 1 WHERE id = ?", arrayOf(now + 5 * 60_000, job.key))
             putMeta("claimed:" + job.publisher, now.toString())
             if (job.state != "ready") putMeta("claim_lane", ((cursor + 1) % 6).toString())
@@ -72,11 +75,37 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
 
     fun ready(key: String, article: AttentionChineseArticle) {
         require(article.title.isNotBlank() && article.body.length >= 80)
+        val document = article.document
+        val cover = document?.cover
+        val preview = AttentionArticleReadingPolicy.preview(document ?: AttentionArticleDocument.plain(article.body))
+        db.beginTransaction()
+        try {
         db.update("articles", ContentValues().apply {
-            put("state", "ready"); put("zh_title", article.title); put("body", article.body)
-            put("preview", article.body.take(500)); put("provider", article.provider); put("error", ""); put("next_at", 0)
+            put("zh_title", article.title); put("body", article.body)
+            put("preview", preview.ifBlank { article.body.take(500) }); put("provider", article.provider)
+            put("document", document?.encode().orEmpty()); put("cover", cover?.url.orEmpty())
+            put("cover_width", cover?.width ?: 0); put("cover_height", cover?.height ?: 0)
+            put("visual_revision", if (document == null) 0 else 1); put("visual_requested", 0)
+            put("error", ""); put("next_at", 0)
         }, "id = ?", arrayOf(key))
+        db.execSQL("UPDATE articles SET state = 'ready' WHERE id = ? AND state <> 'published'", arrayOf(key))
+        db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
     }
+
+    fun presentation(key: String, expanded: Boolean): AttentionArticlePresentation? {
+        val columns = "preview,cover,cover_width,cover_height,publisher,published" + if (expanded) ",document,body" else ""
+        return db.rawQuery("SELECT $columns FROM articles WHERE id = ? AND state IN ('ready','published')", arrayOf(key)).use {
+            if (!it.moveToFirst()) null else AttentionArticlePresentation(
+                AttentionArticleReadingPolicy.preview(AttentionArticleDocument.plain(it.getString(0))),
+                it.getString(1).takeIf(String::isNotBlank)?.let { url -> AttentionArticleBlock("image", url = url,
+                    width = it.getInt(2), height = it.getInt(3)) }, it.getString(4), it.getLong(5),
+                if (expanded) AttentionArticleDocument.decode(it.getString(6)) ?: AttentionArticleDocument.plain(it.getString(7)) else null)
+        }
+    }
+
+    fun requestVisual(key: String): Boolean = db.update("articles", ContentValues().apply { put("visual_requested", 1) },
+        "id = ? AND state = 'published' AND visual_revision = 0 AND visual_requested = 0", arrayOf(key)) > 0
 
     fun published(key: String) { db.execSQL("UPDATE articles SET state = 'published', error = '' WHERE id = ?", arrayOf(key)) }
     fun failed(job: AttentionArticleJob, error: String, now: Long) {
@@ -94,7 +123,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
 
     fun nextAt(topics: Set<String>): Long? {
         if (topics.isEmpty()) return null
-        return db.rawQuery("SELECT MIN(next_at) FROM articles WHERE state <> 'published' AND topic IN (" +
+        return db.rawQuery("SELECT MIN(next_at) FROM articles WHERE (state <> 'published' OR visual_requested = 1) AND topic IN (" +
             topics.joinToString(",") { "?" } + ")", topics.toTypedArray()).use {
             if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
         }
@@ -117,13 +146,16 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         c.getString(4), c.getString(5), c.getLong(6), c.getLong(7),
         c.getInt(8), c.getString(9), c.getString(10), c.getString(11), c.getString(12))
 
-    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 5) {
+    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 6) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE articles(id TEXT PRIMARY KEY NOT NULL,url TEXT NOT NULL,topic TEXT NOT NULL," +
                 "topic_title TEXT NOT NULL,title TEXT NOT NULL,publisher TEXT NOT NULL,published INTEGER NOT NULL," +
                 "collected INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'pending'," +
                 "next_at INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',zh_title TEXT NOT NULL DEFAULT ''," +
-                "preview TEXT NOT NULL DEFAULT '',body TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT '')")
+                "preview TEXT NOT NULL DEFAULT '',body TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT ''," +
+                "document TEXT NOT NULL DEFAULT '',cover TEXT NOT NULL DEFAULT '',cover_width INTEGER NOT NULL DEFAULT 0," +
+                "cover_height INTEGER NOT NULL DEFAULT 0,visual_revision INTEGER NOT NULL DEFAULT 0," +
+                "visual_requested INTEGER NOT NULL DEFAULT 0)")
             db.execSQL("CREATE INDEX article_queue ON articles(state,next_at,topic,collected DESC)")
             db.execSQL("CREATE TABLE metadata(id TEXT PRIMARY KEY NOT NULL,value TEXT NOT NULL)")
             queueIndex(db)
@@ -138,6 +170,15 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             if (oldVersion < 5) {
                 // Retry pages rejected by the former no-sidebar/body-container extraction bug.
                 db.execSQL("UPDATE articles SET next_at = 0 WHERE state IN ('pending','repair') AND error = 'article_body_missing'")
+            }
+            if (oldVersion < 6) {
+                val existing = db.rawQuery("PRAGMA table_info(articles)", null).use { c ->
+                    buildSet { while (c.moveToNext()) add(c.getString(c.getColumnIndexOrThrow("name"))) }
+                }
+                for (column in listOf("document", "cover", "cover_width", "cover_height", "visual_revision", "visual_requested")) {
+                    if (column !in existing) db.execSQL("ALTER TABLE articles ADD COLUMN $column " +
+                        if (column in setOf("document", "cover")) "TEXT NOT NULL DEFAULT ''" else "INTEGER NOT NULL DEFAULT 0")
+                }
             }
         }
         private fun queueIndex(db: SQLiteDatabase) = db.execSQL(

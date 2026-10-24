@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="attention_news_excerpts">Key excerpts</string>
+    <string name="attention_news_image">Article image</string>
+    <string name="attention_news_read_more">Continue reading</string>
+    <string name="attention_news_collected">Collected %1$s</string>
+    <color name="attention_reader_accent">#087F69</color>
+    <color name="attention_reader_excerpt_bg">#EAF3F1</color>
+    <color name="attention_reader_secondary">#68736F</color>
+</resources>

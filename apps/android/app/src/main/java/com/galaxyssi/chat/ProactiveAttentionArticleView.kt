@@ -24,7 +24,8 @@ internal class ProactiveAttentionArticleView(
     private val sources: (GlobalProactiveInboxItem) -> Unit,
     private val evidence: (GlobalProactiveInboxItem, (JSONObject?) -> Unit) -> Unit,
     private val menu: (GlobalProactiveInboxItem) -> Unit,
-    private val loadBody: (String, (String?) -> Unit) -> Unit = { _, callback -> callback(null) }
+    private val loadBody: (String, (String?) -> Unit) -> Unit = { _, callback -> callback(null) },
+    private val loadArticle: (String, Boolean, (AttentionArticlePresentation?) -> Unit) -> Unit = { _, _, callback -> callback(null) }
 ) : LinearLayout(context) {
     private var row: AttentionReaderRow? = null
     private var generation = 0
@@ -33,15 +34,18 @@ internal class ProactiveAttentionArticleView(
     private var displayedTranslationProvider = ""
     private var translationAttribution: ImageView? = null
     private var sourceLine: TextView? = null
+    private var statusLine: TextView? = null
     private var bookmark: ImageButton? = null
     private var sourceName = ""
     private var evidenceChecked = false
     private var displayedUnread = false
+    private var reloadPresentation: (() -> Unit)? = null
     private val notices by lazy { listOf(R.string.attention_source_summary, R.string.attention_not_verified,
         R.string.attention_reviewed).flatMap(::statusTexts).toSet() }
     lateinit var readable: View
         private set
     val currentItem get() = row?.item
+    fun refreshPublicPresentation() { if (row?.expanded == false) reloadPresentation?.invoke() }
 
     init { orientation = VERTICAL }
 
@@ -63,24 +67,27 @@ internal class ProactiveAttentionArticleView(
         }
         displayedTranslation = next.item.translatedTitle
         displayedTranslationProvider = next.item.titleTranslationProvider
-        row = next; sourceName = ""; evidenceChecked = false
+        row = next; sourceName = ""; evidenceChecked = false; reloadPresentation = null
         removeAllViews()
         val item = next.item
+        val news = item.newsArticleKey.isNotBlank()
         tag = "attention-item:${item.key}"
-        val content = column().apply { setPadding(dp(18), dp(12), dp(12), dp(12)) }
+        val content = column().apply { setPadding(dp(18), dp(16), dp(18), dp(12)) }
         val intro = column()
         readable = intro
         val top = horizontal()
-        top.addView(label(item.topic, 11f, secondary = true).apply {
+        sourceLine = label(if (news) "" else item.topic, 11f, secondary = true).apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-        }, LayoutParams(0, -2, 1f))
-        top.addView(label(SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.deliveredAtMillis)), 11f, secondary = true))
+        }
+        top.addView(sourceLine, LayoutParams(0, -2, 1f))
+        val date = label(SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.deliveredAtMillis)), 11f, secondary = true)
+        top.addView(date)
         intro.addView(top)
         val titleRow = horizontal()
         val titles = column()
-        headline = label("", 19.36f).apply {
+        headline = label("", if (news) (if (next.expanded) 21f else 18f) else 19.36f).apply {
             tag = "attention-headline:${item.key}"
-            setTypeface(typeface, Typeface.NORMAL)
+            setTypeface(typeface, if (news) Typeface.BOLD else Typeface.NORMAL)
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
             minLines = if (!next.expanded) 2 else 1
             ellipsize = TextUtils.TruncateAt.END
@@ -104,38 +111,45 @@ internal class ProactiveAttentionArticleView(
         }
         titles.addView(translationAttribution)
         updateHeadline(next)
-        titleRow.addView(titles, LayoutParams(0, -2, 1f))
-        bookmark = icon(R.drawable.ic_attention_bookmark, R.string.attention_save) { save(item.key) }
-        titleRow.addView(bookmark)
-        intro.addView(titleRow)
         val bodyText = articleText(item)
-        val preview = plain(bodyText.split(Regex("\n\\s*\n")).firstOrNull(String::isNotBlank).orEmpty())
+        val preview = plain(AttentionArticleReadingPolicy.preview(AttentionArticleDocument.plain(bodyText)))
             .replace(Regex("\\s+"), " ")
-        if (!next.expanded) intro.addView(label(preview, 13f).apply {
-            maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setLineSpacing(dp(2).toFloat(), 1f)
-        })
-        sourceLine = label("", 11f, secondary = true).apply {
-            maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(7), 0, 0)
+        val previewView = label(preview, 13f).apply {
+            maxLines = 2; minLines = 2; ellipsize = TextUtils.TruncateAt.END; setLineSpacing(dp(2).toFloat(), 1f)
+            tag = "attention-preview:${item.key}"
         }
-        intro.addView(sourceLine)
+        if (!next.expanded) titles.addView(previewView)
+        titleRow.addView(titles, LayoutParams(0, -2, 1f))
+        val thumbnail = column().apply { visibility = View.GONE }
+        if (!next.expanded) titleRow.addView(thumbnail, LayoutParams(dp(92), dp(76)).apply { leftMargin = dp(12) })
+        intro.addView(titleRow)
+        val status = horizontal()
+        statusLine = label("", 11f, secondary = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        status.addView(statusLine, LayoutParams(0, -2, 1f))
+        bookmark = icon(R.drawable.ic_attention_bookmark, R.string.attention_save) { save(item.key) }
+        status.addView(bookmark)
+        intro.addView(status)
         intro.setOnClickListener { toggle(item.key) }
         intro.setOnLongClickListener { menu(item); true }
         content.addView(intro)
+        val articleBody = column()
         if (next.expanded) {
-            content.addView(label(context.getString(if (item.newsArticleKey.isBlank()) R.string.attention_content_summary
+            content.addView(articleBody)
+            articleBody.addView(label(context.getString(if (item.newsArticleKey.isBlank()) R.string.attention_content_summary
                 else R.string.attention_article_body), 14.4f, true).apply {
                 setPadding(0, dp(12), 0, dp(8))
             })
-            val bodyView = label("", 18f).apply {
+            val bodyView = label("", if (news) 16f else 18f).apply {
                 setLineSpacing(dp(4).toFloat(), 1f)
                 text = AgentRichInlineMarkdownRenderer.render(bodyText)
                 movementMethod = LinkMovementMethod.getInstance()
                 setTextIsSelectable(true)
                 tag = "attention-expanded:${item.key}"
             }
-            content.addView(bodyView)
+            articleBody.addView(bodyView)
             if (item.newsArticleKey.isNotBlank()) loadBody(item.newsArticleKey) { full ->
-                if (generation == token && row?.expanded == true && full != null) bodyView.text = full
+                if (generation == token && row?.expanded == true && full != null)
+                    bodyView.text = AgentRichInlineMarkdownRenderer.render(full)
             }
             val actions = horizontal()
             actions.addView(command(R.drawable.ic_conversation_external, R.string.attention_original) { sources(item) }, LayoutParams(0, dp(48), 1f))
@@ -149,6 +163,34 @@ internal class ProactiveAttentionArticleView(
         addView(content)
         addView(View(context).apply { setBackgroundColor(context.getColor(R.color.separator)) }, LayoutParams(-1, dp(1)))
         updateStatus(next)
+        var previousPresentation: AttentionArticlePresentation? = null
+        var loadingPresentation = false
+        if (news) reloadPresentation = request@{
+          if (loadingPresentation) return@request
+          loadingPresentation = true
+          loadArticle(item.newsArticleKey, next.expanded) { presentation ->
+            loadingPresentation = false
+            if (generation == token && presentation != null && presentation != previousPresentation) {
+                previousPresentation = presentation
+                sourceName = presentation.publisher
+                if (presentation.published > 0) date.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(presentation.published))
+                else date.text = context.getString(R.string.attention_news_collected,
+                    SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.deliveredAtMillis)))
+                previewView.text = presentation.preview.ifBlank { preview }
+                if (!next.expanded && presentation.cover != null) {
+                    thumbnail.removeAllViews()
+                    thumbnail.addView(AttentionArticleImageView(context, presentation.cover, true), LayoutParams(-1, -1))
+                    thumbnail.visibility = View.VISIBLE
+                }
+                if (next.expanded && presentation.document != null) {
+                    articleBody.removeAllViews()
+                    articleBody.addView(AttentionArticleBodyView(context, presentation.document).apply { tag = "attention-expanded:${item.key}" })
+                }
+                row?.let(::updateStatus)
+            }
+          }
+        }
+        reloadPresentation?.invoke()
         evidence(item) { record ->
             if (token == generation) {
                 val source = record?.optJSONArray("sources")?.optJSONObject(0)
@@ -171,10 +213,11 @@ internal class ProactiveAttentionArticleView(
             displayedTranslationProvider = next.item.titleTranslationProvider
             updateHeadline(next)
         }
-        headline?.setTextColor(context.getColor(if (displayedUnread) R.color.attention_unread_title else R.color.text_primary))
+        headline?.setTextColor(context.getColor(if (displayedUnread && next.item.newsArticleKey.isBlank()) R.color.attention_unread_title else R.color.text_primary))
         headline?.alpha = 1f
         val status = context.getString(if (evidenceChecked) R.string.attention_reader_checked else R.string.attention_reader_unverified)
-        sourceLine?.text = listOf(sourceName, status, if (displayedUnread) "" else context.getString(R.string.attention_is_read))
+        sourceLine?.text = sourceName.ifBlank { next.item.topic }
+        statusLine?.text = listOf(status, if (displayedUnread) "\u2022" else context.getString(R.string.attention_is_read))
             .filter(String::isNotBlank).joinToString(" · ")
         bookmark?.apply {
             setImageResource(if (next.saved) R.drawable.ic_attention_bookmark_filled else R.drawable.ic_attention_bookmark)
@@ -219,7 +262,7 @@ internal class ProactiveAttentionArticleView(
     private fun horizontal() = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
     private fun label(value: String, size: Float, secondary: Boolean = false) = TextView(context).apply {
         text = value; textSize = size
-        setTextColor(context.getColor(if (secondary) R.color.text_secondary else R.color.text_primary))
+        setTextColor(context.getColor(if (secondary) R.color.attention_reader_secondary else R.color.text_primary))
     }
     private fun command(drawable: Int, title: Int, action: () -> Unit) = horizontal().apply {
         gravity = Gravity.CENTER; minimumHeight = dp(48)

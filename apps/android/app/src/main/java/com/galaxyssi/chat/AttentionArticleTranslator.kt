@@ -16,8 +16,16 @@ internal class AttentionArticleTranslator(private val context: Context) : AutoCl
     private val clients = mutableMapOf<String, Translator>()
 
     suspend fun translate(title: String, body: String): AttentionChineseArticle = withTimeout(90_000L) {
+        translation(body).run(title, body)
+    }
+
+    suspend fun translate(title: String, source: AttentionArticleSource): AttentionChineseArticle = withTimeout(90_000L) {
+        translation(source.article.content).run(title, source.document)
+    }
+
+    private suspend fun translation(body: String): AttentionArticleTranslation {
         val bodyLanguage = TranslateLanguage.fromLanguageTag(identifier.identifyLanguage(body.take(4000)).await())
-        AttentionArticleTranslation { text ->
+        return AttentionArticleTranslation { text ->
             withTimeout(15_000L) piece@{
                 val language = TranslateLanguage.fromLanguageTag(identifier.identifyLanguage(text).await())
                     ?: bodyLanguage ?: error("article_language_unknown")
@@ -34,7 +42,7 @@ internal class AttentionArticleTranslator(private val context: Context) : AutoCl
                 }
                 client.translate(text).await()
             }
-        }.run(title, body)
+        }
     }
 
     override fun close() {

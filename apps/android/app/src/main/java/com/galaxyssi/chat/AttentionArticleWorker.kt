@@ -76,22 +76,22 @@ class AttentionArticleWorker(context: Context, params: WorkerParameters) : Corou
                             val page = fetcher.fetch(job.url, 10 * 1024 * 1024L, 20_000L,
                                 AgentDynamicArticleRequestPolicy.headers(job.url), AgentNativeToolCancellationToken.NONE,
                                 { coroutine.ensureActive() })
-                            try { extraction.withLock { AttentionArticlePolicy.extract(page) } } finally { page.body.fill(0) }
+                            try { extraction.withLock { AttentionArticlePolicy.extractStructured(page) } } finally { page.body.fill(0) }
                         }
                         kotlin.Result.success(article)
                     } catch (cancelled: CancellationException) { throw cancelled
-                    } catch (failure: Exception) { kotlin.Result.failure<AgentPublicArticle?>(failure) }
+                    } catch (failure: Exception) { kotlin.Result.failure<AttentionArticleSource?>(failure) }
                 } }.awaitAll() }
                 for ((index, job) in jobs.withIndex()) {
                     try {
                         val article = prepared[index].getOrThrow()
                         if (article != null) {
-                            val translated = translator.translate(job.title.ifBlank { article.title }, article.content)
+                            val translated = translator.translate(job.title.ifBlank { article.article.title }, article)
                             coroutine.ensureActive()
                             store.ready(job.key, translated)
                         }
                         val current = ProactiveAttentionStore(context).preferences()
-                        if (ProactiveAttentionPolicy.shouldCollect(current, job.topic)) {
+                        if (job.state != "published" && ProactiveAttentionPolicy.shouldCollect(current, job.topic)) {
                             if (feed.publishArticle(checkNotNull(store.metadata(job.key)))) published++
                             store.published(job.key)
                         }

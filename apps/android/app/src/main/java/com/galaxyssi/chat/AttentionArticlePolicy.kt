@@ -2,7 +2,8 @@ package com.galaxyssi.chat
 
 import org.jsoup.Jsoup
 
-internal data class AttentionChineseArticle(val title: String, val body: String, val provider: String)
+internal data class AttentionChineseArticle(val title: String, val body: String, val provider: String,
+    val document: AttentionArticleDocument? = null)
 
 /** Publication requires an extracted body, not a feed description or an HTTP success alone. */
 internal object AttentionArticlePolicy {
@@ -11,7 +12,9 @@ internal object AttentionArticlePolicy {
         !ProactiveAttentionPolicy.isAttention(message) && !message.id.startsWith("attention-feed:") ||
             message.newsArticleKey.isNotBlank() && message.newsArticleRevision >= REVISION
 
-    fun extract(page: AgentWebIntelligenceFetched): AgentPublicArticle {
+    fun extract(page: AgentWebIntelligenceFetched): AgentPublicArticle = extractStructured(page).article
+
+    fun extractStructured(page: AgentWebIntelligenceFetched): AttentionArticleSource {
         require(page.contentType.contains("html", true)) { "article_not_html" }
         require(AgentDynamicWebFallbackPolicy.reason(page) == null) { "article_challenge_or_script_shell" }
         val html = AgentWebTextDecoder.decode(page.body, page.contentType, page.url)
@@ -20,12 +23,13 @@ internal object AttentionArticlePolicy {
             !Regex("\"isAccessibleForFree\"\\s*:\\s*(false|\"false\")", RegexOption.IGNORE_CASE).containsMatchIn(html)) {
             "article_paywall"
         }
-        val article = requireNotNull(AttentionArticleExtractor.parse(page.url, document)) { "article_body_missing" }
+        val source = requireNotNull(AttentionArticleExtractor.structured(page.url, document)) { "article_body_missing" }
+        val article = source.article
         require(article.content.length in 200 until AgentWebIntelligenceService.MAX_CONTENT_CHARS) { "article_body_missing_or_truncated" }
         val lower = article.content.take(1500).lowercase()
         require(listOf("verify you are human", "enable javascript and cookies", "access denied", "sign in to continue",
             "subscribe to continue reading").none(lower::contains)) { "article_access_gate" }
-        return article
+        return source
     }
 
     fun chinese(text: String): Boolean {
@@ -86,6 +90,27 @@ internal object AttentionArticlePolicy {
 }
 
 internal class AttentionArticleTranslation(private val translate: suspend (String) -> String) {
+    suspend fun run(title: String, document: AttentionArticleDocument): AttentionChineseArticle {
+        require(document.body.length >= 200) { "article_body_missing" }
+        var translatedAny = false
+        suspend fun convert(text: String): String {
+            if (text.isBlank() || !text.any(Char::isLetter) || AttentionArticlePolicy.chinese(text)) return text
+            val result = AttentionArticlePolicy.translationChunks(text).map { part ->
+                translate(part).trim().also { AttentionArticlePolicy.validateTranslation(part, it) }
+            }.joinToString("\n\n")
+            translatedAny = translatedAny || result != text
+            return result
+        }
+        val chineseTitle = convert(title)
+        val blocks = document.blocks.map { block ->
+            val text = if (block.kind == "code") block.text else convert(block.text)
+            block.copy(text = text, emphasis = block.emphasis.filter(text::contains))
+        }
+        val translated = AttentionArticleDocument(blocks)
+        return AttentionChineseArticle(chineseTitle, translated.body,
+            if (translatedAny) AttentionMlKitTranslator.PROVIDER else "", translated)
+    }
+
     suspend fun run(title: String, body: String): AttentionChineseArticle {
         require(body.length >= 200) { "article_body_missing" }
         var translatedAny = false
