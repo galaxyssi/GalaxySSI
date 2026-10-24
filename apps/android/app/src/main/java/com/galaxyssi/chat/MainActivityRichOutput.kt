@@ -303,7 +303,7 @@ internal fun MainActivity.agentUserAttachmentBlock(block: AgentRichBlock): View 
                 setColor(Color.parseColor("#F4F6F8"))
             }
             clipToOutline = true
-            setOnClickListener { showAgentImagePreview(uri, block.title) }
+            setOnClickListener { showAgentImagePreview(uri, block.title, block.mimeType) }
             loadAgentImageThumbnail(
                 this,
                 uri,
@@ -377,102 +377,6 @@ internal fun MainActivity.loadAgentImageThumbnail(
                         this.height = dp(size.heightDp)
                     }
                 }
-            } else {
-                bitmap?.recycle()
-            }
-        }
-    }
-}
-
-internal fun MainActivity.showAgentImagePreview(
-    uri: Uri,
-    title: String,
-    onSave: (() -> Unit)? = null
-) {
-    val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-    val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-    val viewport = GalaxySSIPinchZoomViewport(this)
-    val image = ImageView(this).apply {
-        scaleType = ImageView.ScaleType.FIT_CENTER
-        contentDescription = title
-    }
-    viewport.attach(image)
-    root.addView(viewport, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-    if (title.isNotBlank()) {
-        root.addView(TextView(this).apply {
-            text = title
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(8).toFloat()
-                setColor(Color.argb(150, 0, 0, 0))
-            }
-        }, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        ).apply {
-            leftMargin = dp(24)
-            rightMargin = dp(24)
-            bottomMargin = dp(24)
-        })
-    }
-    root.addView(ImageButton(this).apply {
-        setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-        imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-        contentDescription = getString(R.string.agent_image_preview_close)
-        setPadding(dp(10), dp(10), dp(10), dp(10))
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.argb(165, 30, 30, 30))
-        }
-        setOnClickListener { dialog.dismiss() }
-    }, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.END).apply {
-        topMargin = dp(20)
-        rightMargin = dp(16)
-    })
-    if (onSave != null) {
-        root.addView(ImageButton(this).apply {
-            setImageResource(R.drawable.ic_rich_download)
-            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-            contentDescription = getString(R.string.peer_attachment_save)
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.argb(165, 30, 30, 30))
-            }
-            setOnClickListener { onSave() }
-        }, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(76)
-            rightMargin = dp(16)
-        })
-    }
-    dialog.setContentView(root)
-    var previewBitmap: Bitmap? = null
-    dialog.setOnDismissListener {
-        image.setImageDrawable(null)
-        previewBitmap?.recycle()
-        previewBitmap = null
-    }
-    dialog.show()
-    val metrics = resources.displayMetrics
-    thread(name = "galaxyssi-image-preview") {
-        val bitmap = AgentImagePipeline.loadPreview(
-            applicationContext,
-            uri,
-            metrics.widthPixels * 2,
-            metrics.heightPixels * 2
-        )
-        runOnUiThread {
-            if (dialog.isShowing && bitmap != null) {
-                previewBitmap = bitmap
-                image.setImageBitmap(bitmap)
             } else {
                 bitmap?.recycle()
             }

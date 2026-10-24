@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.app.Instrumentation
+import android.app.Dialog
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -25,6 +26,7 @@ class AgentRichContentPinchZoomTest {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         ) as MainActivity
         lateinit var viewport: GalaxySSIPinchZoomViewport
+        lateinit var dialog: Dialog
         lateinit var image: ImageView
         val location = IntArray(2)
         var centerX = 0f
@@ -36,7 +38,11 @@ class AgentRichContentPinchZoomTest {
             viewport = GalaxySSIPinchZoomViewport(activity).apply {
                 attach(image)
             }
-            activity.setContentView(viewport)
+            // Keep the activity's real hierarchy intact while startup hydration is in flight.
+            dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
+                setContentView(viewport)
+                show()
+            }
         }
         instrumentation.waitForIdleSync()
         instrumentation.runOnMainSync {
@@ -59,7 +65,7 @@ class AgentRichContentPinchZoomTest {
             "Expected a single-finger drag to pan the zoomed image",
             image.translationX > translationBefore + 40f
         )
-        instrumentation.runOnMainSync { activity.finish() }
+        instrumentation.runOnMainSync { dialog.dismiss(); activity.finish() }
     }
 
     @Test
@@ -70,6 +76,7 @@ class AgentRichContentPinchZoomTest {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         ) as MainActivity
         lateinit var viewport: GalaxySSIPinchZoomViewport
+        lateinit var dialog: Dialog
         lateinit var richOutput: View
         val webLocation = IntArray(2)
         var pinchCenterX = 0f
@@ -89,7 +96,10 @@ class AgentRichContentPinchZoomTest {
                     )))
                 )
             )
-            activity.setContentView(ScrollView(activity).apply { addView(richOutput) })
+            dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
+                setContentView(ScrollView(activity).apply { addView(richOutput) })
+                show()
+            }
             viewport = requireNotNull(findZoomViewport(richOutput))
         }
         instrumentation.waitForIdleSync()
@@ -119,7 +129,7 @@ class AgentRichContentPinchZoomTest {
             "Expected WebView page scale to grow from $initialPageScale, got $finalPageScale",
             finalPageScale > initialPageScale * 1.2f
         )
-        instrumentation.runOnMainSync { activity.finish() }
+        instrumentation.runOnMainSync { dialog.dismiss(); activity.finish() }
     }
 
     private fun dispatchPinch(instrumentation: Instrumentation, centerX: Float, centerY: Float) {

@@ -63,7 +63,7 @@ class CloudImageAnnotationUiTest {
             var save: AccessibilityNodeInfo? = null
             await {
                 save = findNode(instrumentation.uiAutomation.rootInActiveWindow, activity.getString(R.string.peer_attachment_save))
-                save != null
+                save?.isEnabled == true
             }
             assertTrue(save!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             val name = "\u6279\u6ce8\u56fe\u7247-${block.metadata["annotation_id"]!!.take(8)}.png"
