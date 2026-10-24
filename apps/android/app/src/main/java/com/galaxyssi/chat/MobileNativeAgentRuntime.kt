@@ -170,9 +170,9 @@ internal fun MobileNativeAgent.advanceExecutionLoop(
     actionId: String = "",
     toolCall: Boolean = false,
     retry: Boolean = false
-): Boolean {
-    val current = executionLoop.snapshot ?: return true
-    if (current.phase == nextPhase && !retry) return current.budgetFailure.isBlank()
+): Boolean = synchronized(this) {
+    val current = executionLoop.snapshot ?: return@synchronized true
+    if (current.phase == nextPhase && !retry) return@synchronized current.budgetFailure.isBlank()
     val event = executionLoop.transition(
         phase = nextPhase,
         reason = reason,
@@ -189,9 +189,9 @@ internal fun MobileNativeAgent.advanceExecutionLoop(
             message = event.snapshot.budgetFailure
         )
         saveTaskRecord(result = event.snapshot.budgetFailure)
-        return false
+        return@synchronized false
     }
-    return true
+    true
 }
 
 internal fun MobileNativeAgent.persistExecutionLoopEvent(event: AgentExecutionLoopEvent) {
@@ -351,7 +351,9 @@ internal fun MobileNativeAgent.snapshot(): AgentUiState {
 internal fun MobileNativeAgent.reloadSession(stillCurrent: () -> Boolean = { true }): AgentUiState = synchronized(this) {
     if (stillCurrent()) {
         val saved = sessionStore.load()
-        if (stillCurrent()) restoreSession(saved)
+        if (stillCurrent() && AgentSessionReloadPolicy.shouldRestore(executionLoop.snapshot, saved?.executionLoopSnapshot)) {
+            restoreSession(saved)
+        }
     }
     snapshot()
 }

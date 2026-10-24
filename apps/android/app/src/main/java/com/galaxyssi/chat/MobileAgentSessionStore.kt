@@ -55,6 +55,7 @@ internal object AgentProcessIdentity {
 
 internal object AgentSessionInterruptionPolicy {
     fun wasInterrupted(snapshot: AgentSessionSnapshot): Boolean {
+        if (AgentCompletedReplyRecovery.hasCompletedResult(snapshot)) return false
         val active = snapshot.phase == AgentPhase.EXECUTING ||
             snapshot.phase == AgentPhase.VERIFYING ||
             (snapshot.phase == AgentPhase.PLANNING && snapshot.pendingPlanning != null) ||
