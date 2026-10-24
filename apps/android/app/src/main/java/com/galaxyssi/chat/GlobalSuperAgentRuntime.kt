@@ -508,6 +508,21 @@ class GlobalAgentRepository(context: Context) {
         proactiveMessageStore.append(message)
     }
 
+    internal fun publishNewsArticle(message: GlobalProactiveMessage): Boolean = synchronized(STORE_LOCK) {
+        require(message.newsArticleKey.isNotBlank() && message.id == "attention-feed:" + message.newsArticleKey)
+        val previous = proactiveMessageStore.get(message.id)
+        if (previous?.status == GlobalProactiveMessageStatus.DISMISSED || previous?.let {
+            it.newsArticleKey == message.newsArticleKey && it.title == message.title && it.content == message.content &&
+                it.newsTranslationProvider == message.newsTranslationProvider && it.newsArticleRevision == message.newsArticleRevision
+        } == true)
+            return@synchronized false
+        proactiveMessageStore.put(previous?.copy(title = message.title, content = message.content,
+            newsArticleKey = message.newsArticleKey, newsTranslationProvider = message.newsTranslationProvider,
+            newsArticleRevision = message.newsArticleRevision,
+            status = GlobalProactiveMessageStatus.DELIVERED) ?: message)
+        true
+    }
+
     fun reviseProactiveMessage(id: String, content: String, important: Boolean): Boolean = synchronized(STORE_LOCK) {
         val previous = proactiveMessageStore.get(id) ?: return false
         if (previous.status == GlobalProactiveMessageStatus.DISMISSED) return false
@@ -1473,73 +1488,8 @@ class GlobalAgentRepository(context: Context) {
         )
     }
 
-    private fun encodeProactiveMessage(message: GlobalProactiveMessage): JSONObject = JSONObject()
-        .put("id", message.id)
-        .put("source_event_id", message.sourceEventId)
-        .put("causal_event_ids", JSONArray(message.causalEventIds.toList()))
-        .put("source_conversation_id", message.sourceConversationId)
-        .put("target", message.target.name)
-        .put("title", message.title)
-        .put("content", message.content)
-        .put("topic", message.topic)
-        .put("urgent", message.urgent)
-        .put("status", message.status.name)
-        .put("created_at_millis", message.createdAtMillis)
-        .put("notified_at_millis", message.notifiedAtMillis)
-        .put("delivery_conversation_id", message.deliveryConversationId)
-        .put("delivery_lease_expires_at_millis", message.deliveryLeaseExpiresAtMillis)
-        .put("delivery_attempt_count", message.deliveryAttemptCount)
-        .put("delivery_budget_counted", message.deliveryBudgetCounted)
-        .put("last_delivery_error", message.lastDeliveryError)
-        .put("delivered_at_millis", message.deliveredAtMillis)
-        .put("delivered_conversation_id", message.deliveredConversationId)
-        .put("delivery_group_id", message.deliveryGroupId)
-        .put("viewed_at_millis", message.viewedAtMillis)
-
-    private fun decodeProactiveMessage(json: JSONObject?): GlobalProactiveMessage? {
-        if (json == null) return null
-        val id = json.optString("id")
-        if (id.isBlank()) return null
-        val status = enumValue(json.optString("status"), GlobalProactiveMessageStatus.PENDING)
-        val createdAtMillis = json.optLong("created_at_millis")
-        val notifiedAtMillis = if (json.has("notified_at_millis")) {
-            json.optLong("notified_at_millis")
-        } else if (status in setOf(
-                GlobalProactiveMessageStatus.NOTIFIED,
-                GlobalProactiveMessageStatus.DELIVERED
-            )
-        ) {
-            json.optLong("delivered_at_millis").takeIf { it > 0L } ?: createdAtMillis
-        } else 0L
-        return GlobalProactiveMessage(
-            id = id,
-            sourceEventId = json.optString("source_event_id"),
-            causalEventIds = json.optJSONArray("causal_event_ids").strings().toSet()
-                .ifEmpty { setOf(json.optString("source_event_id")) },
-            sourceConversationId = json.optString("source_conversation_id"),
-            target = enumValue(json.optString("target"), GlobalProactiveTarget.CURRENT_CONVERSATION),
-            title = GlobalAgentText.productTitle(json.optString("title")),
-            content = json.optString("content"),
-            topic = json.optString("topic"),
-            urgent = json.optBoolean("urgent"),
-            status = status,
-            createdAtMillis = createdAtMillis,
-            notifiedAtMillis = notifiedAtMillis,
-            deliveryConversationId = json.optString("delivery_conversation_id"),
-            deliveryLeaseExpiresAtMillis = json.optLong("delivery_lease_expires_at_millis"),
-            deliveryAttemptCount = json.optInt("delivery_attempt_count").coerceAtLeast(0),
-            deliveryBudgetCounted = if (json.has("delivery_budget_counted")) {
-                json.optBoolean("delivery_budget_counted")
-            } else {
-                status == GlobalProactiveMessageStatus.NOTIFIED
-            },
-            lastDeliveryError = json.optString("last_delivery_error").take(600),
-            deliveredAtMillis = json.optLong("delivered_at_millis"),
-            deliveredConversationId = json.optString("delivered_conversation_id"),
-            deliveryGroupId = json.optString("delivery_group_id"),
-            viewedAtMillis = json.optLong("viewed_at_millis")
-        )
-    }
+    private fun encodeProactiveMessage(message: GlobalProactiveMessage) = GlobalProactiveMessageCodec.encode(message)
+    private fun decodeProactiveMessage(json: JSONObject?) = GlobalProactiveMessageCodec.decode(json)
 
     private fun encodeFeedback(feedback: GlobalAgentFeedback): JSONObject = JSONObject()
         .put("id", feedback.id)
@@ -2810,6 +2760,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun pendingProactiveMessages(nowMillis: Long = System.currentTimeMillis()): List<GlobalProactiveMessage> =
         repository.proactiveMessages()
+            .filter(AttentionArticlePolicy::visible)
             .filter { GlobalProactiveDeliveryPolicy.isRecoverable(it, nowMillis) }
             .sortedWith(
                 compareByDescending<GlobalProactiveMessage> { it.urgent }

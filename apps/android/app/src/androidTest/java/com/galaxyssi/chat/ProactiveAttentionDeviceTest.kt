@@ -46,6 +46,8 @@ class ProactiveAttentionDeviceTest {
         }.collect(now)
         assertEquals(1, cycle.newItems)
         assertTrue(fetches > 0)
+        assertTrue(repository.proactiveMessages().isEmpty())
+        publishFixtureArticle(context, ProactiveAttentionFeedPolicy.urlKey("https://example.org/ai-release"))
         val message = repository.proactiveMessages().single()
         assertEquals(topic.title, message.topic)
         assertEquals(GlobalProactiveMessageStatus.DELIVERED, message.status)
@@ -65,6 +67,7 @@ class ProactiveAttentionDeviceTest {
         val topic = AttentionTopic("ai_models", "AI", "AI")
         assertTrue(ProactiveAttentionFeedStore(context).ingest(AttentionFeedArticle("notification-fixture",
             topic.id, "Synthetic headline", "Summary", "https://example.org/fixture", "Source", now, now), topic))
+        publishFixtureArticle(context, "notification-fixture")
         val message = GlobalAgentRepository(context).proactiveMessages().single()
         store.update { it.copy(alertMode = AttentionAlertMode.SILENT) }
         repeat(24) { assertTrue(AgentCognitiveEvalBridge.shouldNotify(context, message, snapshot)) }
@@ -219,7 +222,10 @@ class ProactiveAttentionDeviceTest {
         assertNotNull(attention.evidence("legacy-evidence"))
         val store = ProactiveAttentionFeedStore(context)
         val first = AttentionFeedArticle("news-0", topic.id, "Fixture", "Summary", "https://example.org/0", "Fixture", now, now)
-        repeat(605) { index -> assertTrue(store.ingest(first.copy(key = "news-$index", url = "https://example.org/$index"), topic)) }
+        repeat(605) { index ->
+            assertTrue(store.ingest(first.copy(key = "news-$index", url = "https://example.org/$index"), topic))
+            publishFixtureArticle(context, "news-$index")
+        }
         val repository = GlobalAgentRepository(context)
         attention.update { it.copy(savedKeys = setOf("global-agent:attention-feed:news-0")) }
         assertEquals(605, repository.proactiveMessages().size)
@@ -759,6 +765,7 @@ class ProactiveAttentionDeviceTest {
                                 val json = """{"id":$storyId,"type":"story","time":${now / 1000},"title":"New AI model","url":"https://example.org/streamed"}"""
                                 val article = ProactiveAttentionPushPolicy.article(json, storyId, now)!!
                                 ProactiveAttentionFeedStore(context).ingest(article.copy(topicId = topic.id), topic)
+                                publishFixtureArticle(context, article.key)
                                 store.complete(storyId)
                             }
                         }.onFailure(error::set)
@@ -803,11 +810,11 @@ class ProactiveAttentionDeviceTest {
         val store = ProactiveAttentionFeedStore(context)
         assertTrue(store.ingest(article, topic))
         assertFalse(store.ingest(article.copy(discoveryDate = false), topic))
+        publishFixtureArticle(context, article.key)
         val message = GlobalAgentRepository(context).proactiveMessages().single()
         val evidence = ProactiveAttentionStore(context).evidence(message.sourceEventId)!!
         assertEquals(0L, evidence.getJSONArray("sources").getJSONObject(0).getLong("published"))
-        assertTrue(message.content.contains(context.getString(R.string.attention_source_discovered,
-            java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString())))
+        assertEquals(article.key, message.newsArticleKey)
     }
 
     @Test fun livePhoneStreamReceivesEventsWithoutRelayOrModel() {
@@ -845,7 +852,7 @@ class ProactiveAttentionDeviceTest {
     }
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
-    @Test fun feedPublishesWithoutAModelAndReviewUpdatesTheSameReadItem() = isolated { context ->
+    @Test fun fullArticlePublishesWithoutAModelAndLegacyReviewPreservesTheSameReadItem() = isolated { context ->
         val now = System.currentTimeMillis()
         val topic = AttentionTopic("ai_models", "AI models", "AI models")
         ProactiveAttentionStore(context).update { it.copy(configured = true, allowPairedModel = false,
@@ -856,10 +863,12 @@ class ProactiveAttentionDeviceTest {
             "https://github.com/example/project/releases", "Publisher", now, now)
         val feed = ProactiveAttentionFeedStore(context)
         assertTrue(feed.ingest(article, topic))
+        assertTrue(repository.proactiveMessages().isEmpty())
+        publishFixtureArticle(context, article.key)
         val original = repository.proactiveMessages().single()
         assertEquals(GlobalProactiveMessageStatus.DELIVERED, original.status)
         assertTrue(original.deliveredConversationId.isBlank())
-        assertTrue(original.content.contains(context.getString(R.string.attention_source_summary)))
+        assertEquals(article.key, original.newsArticleKey)
         assertFalse(original.urgent)
         repository.markProactiveViewed(setOf(original.id), now + 1)
         assertFalse(ProactiveAttentionFeedStore(context).ingest(article, topic))
@@ -874,12 +883,12 @@ class ProactiveAttentionDeviceTest {
         assertEquals(original.id, updated.id)
         assertEquals(original.deliveredAtMillis, updated.deliveredAtMillis)
         assertTrue(updated.viewedAtMillis > 0)
-        assertTrue(updated.content.startsWith("Verified fixture"))
+        assertEquals(original.content, updated.content)
         assertNull(ProactiveAttentionFeedStore(context).nextPlan(task("attention-research:ai_models"), now))
         assertEquals(before, GlobalModelCallBudgetStore(context).snapshot(repository.settings()).dispatchesInWindow)
     }
 
-    @Test fun unavailableOriginalDoesNotRetractTheFeedOrLoopOnTheSameEvidence() = isolated { context ->
+    @Test fun unavailableOriginalStaysQueuedWithoutPublishingAHeadlineOnlyMessage() = isolated { context ->
         val now = System.currentTimeMillis()
         val topic = AttentionTopic("ai_models", "AI models", "AI models")
         ProactiveAttentionStore(context).update { it.copy(configured = true) }
@@ -888,11 +897,9 @@ class ProactiveAttentionDeviceTest {
             "https://example.org/news", "Source", now, now), topic)
         val task = task("attention-research:ai_models")
         feed.finish(task.copy(researchPlan = feed.nextPlan(task, now)!!), null, "source_unavailable")
-        val message = GlobalAgentRepository(context).proactiveMessages().single()
-        assertEquals(GlobalProactiveMessageStatus.DELIVERED, message.status)
-        assertTrue(message.content.contains(context.getString(R.string.attention_not_verified)))
+        assertTrue(GlobalAgentRepository(context).proactiveMessages().isEmpty())
+        assertEquals("pending", AttentionArticleStore(context).metadata("unavailable")!!.state)
         assertNull(ProactiveAttentionFeedStore(context).nextPlan(task, now))
-        assertFalse(message.urgent)
     }
 
     @Test fun disabledTopicDoesNotReceiveANetworkResultThatArrivesLate() = isolated { context ->
@@ -947,13 +954,13 @@ class ProactiveAttentionDeviceTest {
         }
         val cycle = collector.collect(now)
         assertEquals(1, cycle.newItems)
-        assertEquals(2, requests)
-        assertEquals(1, repository.proactiveMessages().size)
+        assertEquals(AttentionFeedCollectionPlan.BATCH_SIZE, requests)
+        assertTrue(repository.proactiveMessages().isEmpty())
         assertEquals(before.totalTokensInWindow, budget.snapshot(settings).totalTokensInWindow)
         assertEquals(before.dispatchesInWindow, budget.snapshot(settings).dispatchesInWindow)
         assertEquals(cycle.nextAt, ProactiveAttentionFeedStore(context).topicState("ai_models").optLong("next"))
         collector.collect(now + 1)
-        assertEquals(2, requests)
+        assertEquals(AttentionFeedCollectionPlan.BATCH_SIZE, requests)
     }
 
     @Test fun livePublicFeedUsesNoModelAndDoesNotTouchUserTopics() {
@@ -985,7 +992,7 @@ class ProactiveAttentionDeviceTest {
         store.cacheFeed("https://two.example/rss", second, now)
         assertEquals(first, ProactiveAttentionFeedStore(context).cachedFeed("https://one.example/rss", now + 1))
         assertEquals(second, ProactiveAttentionFeedStore(context).cachedFeed("https://two.example/rss", now + 1))
-        assertNull(store.cachedFeed("https://one.example/rss", now + 6 * 60_000L))
+        assertNull(store.cachedFeed("https://one.example/rss", now + AttentionFeedCollectionPlan.CACHE_MILLIS))
     }
 
     @Test fun subscribedAlertsHonorSelectedModeWithoutUnsolicitedHeuristics() = isolated { context ->
@@ -1345,9 +1352,17 @@ class ProactiveAttentionDeviceTest {
     private fun isolated(block: (Context) -> Unit) {
         val context = IsolatedContext(instrumentation.targetContext)
         try { block(context) } finally {
+            AttentionArticleStore.closeTest(context, context.getDatabasePath(AttentionArticleStore.NAME).absolutePath)
             AgentEncryptedDatabase(context, GlobalAgentRepository.DATABASE_NAME).clear()
             context.cleanup()
         }
+    }
+
+    private fun publishFixtureArticle(context: Context, key: String) {
+        val articles = AttentionArticleStore(context)
+        articles.ready(key, AttentionChineseArticle("Synthetic completed article", "Completed article body. ".repeat(12), ""))
+        ProactiveAttentionFeedStore(context).publishArticle(articles.metadata(key)!!)
+        articles.published(key)
     }
 
     private class IsolatedContext(base: Context) : ContextWrapper(base) {

@@ -60,8 +60,8 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
         val pairedDelay = paired.pendingDelay(System.currentTimeMillis())
         // Only public feed headlines enter this lightweight path, never personal inbox contents.
         val pending = repository.proactiveMessages().asSequence().filter {
-            it.id.startsWith("attention-feed:") && it.status == GlobalProactiveMessageStatus.DELIVERED
-        }.sortedByDescending { it.deliveredAtMillis }.map { it.title }.distinct().filter {
+            it.id.startsWith("attention-feed:") && it.status == GlobalProactiveMessageStatus.DELIVERED && it.newsArticleKey.isBlank()
+        }.filter(AttentionArticlePolicy::visible).sortedByDescending { it.deliveredAtMillis }.map { it.title }.distinct().filter {
             ProactiveAttentionTitlePolicy.needsTranslation(it) && store.translation(it).isBlank()
         }.toList()
         if (pending.isEmpty()) return@withContext Result.success()

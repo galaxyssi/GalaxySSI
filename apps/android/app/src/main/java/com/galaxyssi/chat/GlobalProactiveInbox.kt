@@ -17,7 +17,8 @@ data class GlobalProactiveInboxItem(
     val feedbackKind: GlobalAgentFeedbackKind?,
     val translatedTitle: String = "",
     val titleTranslationStatus: AttentionTitleStatus = AttentionTitleStatus.PENDING,
-    val titleTranslationProvider: String = ""
+    val titleTranslationProvider: String = "",
+    val newsArticleKey: String = ""
 ) {
     val isNew: Boolean
         get() = viewedAtMillis <= 0L && feedbackKind == null
@@ -35,6 +36,7 @@ object GlobalProactiveInboxPolicy {
             .mapValues { (_, values) -> values.maxByOrNull(GlobalAgentFeedback::createdAtMillis)?.kind }
         return messages.asSequence()
             .filter { it.status == GlobalProactiveMessageStatus.DELIVERED }
+            .filter(AttentionArticlePolicy::visible)
             .groupBy(::inboxKey)
             .values
             .mapNotNull { group -> projectGroup(group, feedbackByMessage) }
@@ -104,7 +106,9 @@ object GlobalProactiveInboxPolicy {
             viewedAtMillis = ordered.map(GlobalProactiveMessage::viewedAtMillis).takeIf { values ->
                 values.all { it > 0L }
             }?.maxOrNull() ?: 0L,
-            feedbackKind = kinds.singleOrNull()
+            feedbackKind = kinds.singleOrNull(),
+            newsArticleKey = primary.newsArticleKey,
+            titleTranslationProvider = primary.newsTranslationProvider
         )
     }
 

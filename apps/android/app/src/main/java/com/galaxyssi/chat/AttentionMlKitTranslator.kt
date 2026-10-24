@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
 import com.google.mlkit.nl.translate.TranslateLanguage
@@ -38,12 +39,13 @@ internal class AttentionMlKitTranslator : AttentionTitleTranslator {
         const val PROVIDER = "google-mlkit-on-device"
         fun model(): TranslateRemoteModel = TranslateRemoteModel.Builder(TranslateLanguage.CHINESE).build()
 
-        fun requestDownload(context: Context) {
+        fun requestDownload(context: Context, source: String = TranslateLanguage.ENGLISH) {
             val request = OneTimeWorkRequestBuilder<AttentionTranslationModelWorker>()
+                .setInputData(workDataOf("source_language" to source))
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES).build()
             WorkManager.getInstance(context.applicationContext)
-                .enqueueUniqueWork("attention-translation-model-zh-v1", ExistingWorkPolicy.KEEP, request)
+                .enqueueUniqueWork("attention-translation-model-$source-zh-v1", ExistingWorkPolicy.KEEP, request)
         }
     }
 }
@@ -52,14 +54,17 @@ internal class AttentionMlKitTranslator : AttentionTitleTranslator {
 class AttentionTranslationModelWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val preferences = ProactiveAttentionStore(applicationContext).preferences()
-        if (!ProactiveAttentionTranslationPolicy.enabled(preferences,
-                if (AppLanguage.resolved(applicationContext) == AppLanguage.ZH_CN) "zh" else "en")) return Result.success()
+        if (!preferences.configured || !preferences.enabled) return Result.success()
         return try {
-            RemoteModelManager.getInstance().download(AttentionMlKitTranslator.model(),
-                DownloadConditions.Builder().requireWifi().build()).await()
+            val source = inputData.getString("source_language") ?: TranslateLanguage.ENGLISH
+            for (code in setOf(source, TranslateLanguage.CHINESE) - TranslateLanguage.ENGLISH) {
+                RemoteModelManager.getInstance().download(TranslateRemoteModel.Builder(code).build(),
+                    DownloadConditions.Builder().requireWifi().build()).await()
+            }
             android.util.Log.i("GalaxySSIAttention", "title_translation_model_ready provider=mlkit")
             // The timer survives an inference worker that is still finishing its current batch.
             ProactiveAttentionTitleScheduler.request(applicationContext, 1_000L)
+            AttentionArticleScheduler.request(applicationContext, 1_000L)
             Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled

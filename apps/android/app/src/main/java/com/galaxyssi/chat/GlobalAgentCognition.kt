@@ -1673,7 +1673,10 @@ data class GlobalProactiveMessage(
     val deliveredAtMillis: Long = 0L,
     val deliveredConversationId: String = "",
     val deliveryGroupId: String = "",
-    val viewedAtMillis: Long = 0L
+    val viewedAtMillis: Long = 0L,
+    val newsArticleKey: String = "",
+    val newsTranslationProvider: String = "",
+    val newsArticleRevision: Int = AttentionArticlePolicy.REVISION
 )
 
 object GlobalProactiveMessageFactory {

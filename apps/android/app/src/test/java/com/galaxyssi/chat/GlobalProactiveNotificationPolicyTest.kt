@@ -19,7 +19,7 @@ class GlobalProactiveNotificationPolicyTest {
 
     @Test fun singleFindingKeepsDestinationAndAttentionChannel() {
         val finding = message("one").copy(sourceEventId = "research:attention-research:ai_models:version",
-            content = "x".repeat(300), urgent = true)
+            content = "x".repeat(300), urgent = true, newsArticleKey = "ready-article")
         val candidate = GlobalProactiveNotificationPolicy.candidate(listOf(finding))!!
         assertTrue(candidate.attention)
         assertTrue(candidate.important)
@@ -42,6 +42,7 @@ class GlobalProactiveNotificationPolicyTest {
     private fun message(id: String) = GlobalProactiveMessage(
         id = id, sourceEventId = "event-$id", sourceConversationId = "source",
         target = GlobalProactiveTarget.NEW_CONVERSATION, title = "Finding", content = "Evidence", topic = "Topic", urgent = false,
-        deliveredConversationId = "conversation-$id", status = GlobalProactiveMessageStatus.DELIVERED
+        deliveredConversationId = "conversation-$id", status = GlobalProactiveMessageStatus.DELIVERED,
+        newsArticleKey = if (id.startsWith("attention-feed:")) id.removePrefix("attention-feed:") else ""
     )
 }

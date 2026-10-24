@@ -2,8 +2,6 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import org.json.JSONObject
-import java.time.Instant
-import java.time.ZoneOffset
 import java.util.UUID
 
 class ProactiveAttentionFeedStore(context: Context) {
@@ -18,12 +16,11 @@ class ProactiveAttentionFeedStore(context: Context) {
         val record = previous ?: JSONObject().put("key", article.key).put("topic", article.topicId)
             .put("title", article.title).put("summary", article.summary).put("url", article.url)
             .put("publisher", article.publisher).put("published", article.publishedAt)
+            .put("discovered_via", article.discoveredVia)
             .put("discovery_date", article.discoveryDate)
             .put("collected", article.collectedAt).put("review", "pending")
         if (previous == null) rows.put(article.key, record)
-        // Replays repair a crash between durable collection and inbox publication.
-        if (previous == null || repository.proactiveMessage(messageId(record)) == null)
-            publish(record, topic.title)
+        AttentionArticleStore(context).enqueue(article, topic.title)
         previous == null
     }
 
@@ -31,28 +28,29 @@ class ProactiveAttentionFeedStore(context: Context) {
         record.optString("topic") + ":feed:" + record.optString("key")
     private fun messageId(record: JSONObject) = "attention-feed:" + record.optString("key")
 
-    private fun publish(record: JSONObject, topic: String) {
-        val at = record.optLong("collected")
-        val date = Instant.ofEpochMilli(record.optLong("published")).atZone(ZoneOffset.UTC).toLocalDate().toString()
-        val content = "**" + ProactiveAttentionFeedPolicy.markdownText(record.optString("title")) + "**\n\n" +
-            ProactiveAttentionFeedPolicy.markdownText(record.optString("summary")
-                .ifBlank { context.getString(R.string.attention_headline_only) }) +
-            "\n\n" + context.getString(R.string.attention_source_summary) + "\n" +
-            (if (record.optBoolean("discovery_date")) context.getString(R.string.attention_source_discovered, date) else date) + "\n[" +
-            ProactiveAttentionFeedPolicy.markdownText(record.optString("publisher")) + "](" + record.optString("url") + ")"
-        val task = GlobalResearchTask(id = ProactiveAttentionPolicy.TASK_PREFIX + record.optString("topic"),
-            sourceEventId = eventId(record), sourceConversationId = "", topic = topic, question = "",
+    internal fun articleRecordsAfter(cursor: String, limit: Int): List<JSONObject> = synchronized(LOCK) {
+        rows.migrate()
+        database.readStrings(database.keysAfter("article:", cursor, limit)).values.map(::JSONObject)
+            .sortedBy { it.getString("key") }
+    }
+
+    internal fun publishArticle(article: AttentionArticleJob): Boolean {
+        require(article.state == "ready" && article.chineseTitle.isNotBlank() && article.preview.isNotBlank())
+        val at = article.collected
+        val event = "research:${ProactiveAttentionPolicy.TASK_PREFIX}${article.topic}:feed:${article.key}"
+        val task = GlobalResearchTask(id = ProactiveAttentionPolicy.TASK_PREFIX + article.topic,
+            sourceEventId = event, sourceConversationId = "", topic = article.topicTitle, question = "",
             depth = GlobalResearchDepth.CONTINUOUS_MONITOR, preferredSources = emptyList(),
-            updatedAtMillis = at, lastResultFingerprint = "feed:" + record.optString("key"),
+            updatedAtMillis = at, lastResultFingerprint = "feed:" + article.key,
             evidenceLedger = GlobalEvidenceLedger(sources = listOf(GlobalEvidenceSource(
-                record.optString("url"), GlobalEvidenceSourceKind.UNKNOWN, 0.0, record.optString("publisher"),
-                publishedAtMillis = if (record.optBoolean("discovery_date")) 0L else record.optLong("published"), retrievedAtMillis = at))))
+                article.url, GlobalEvidenceSourceKind.UNKNOWN, 0.0, AttentionFeedCollectionPlan.publisher(article.url, article.publisher),
+                publishedAtMillis = article.published, retrievedAtMillis = System.currentTimeMillis()))))
         ProactiveAttentionStore(context).saveEvidence(task, false)
-        repository.appendProactiveMessage(GlobalProactiveMessage(
-            id = messageId(record), sourceEventId = eventId(record), sourceConversationId = "",
-            target = GlobalProactiveTarget.NEW_CONVERSATION, title = record.optString("title"),
-            content = content, topic = topic, urgent = false, status = GlobalProactiveMessageStatus.DELIVERED,
-            createdAtMillis = at, deliveredAtMillis = at))
+        return repository.publishNewsArticle(GlobalProactiveMessage(
+            id = "attention-feed:" + article.key, sourceEventId = event, sourceConversationId = "",
+            target = GlobalProactiveTarget.NEW_CONVERSATION, title = article.chineseTitle,
+            content = article.preview, topic = article.topicTitle, urgent = false, status = GlobalProactiveMessageStatus.DELIVERED,
+            createdAtMillis = at, deliveredAtMillis = at, newsArticleKey = article.key, newsTranslationProvider = article.provider))
     }
 
     fun nextPlan(task: GlobalResearchTask, now: Long): GlobalResearchPlan? = synchronized(LOCK) {
@@ -90,7 +88,7 @@ class ProactiveAttentionFeedStore(context: Context) {
                 "attention_review_invalid")
             val state = if (item != null) "reviewed" else if (retryable) "deferred" else "unverified"
             val current = repository.proactiveMessage(messageId(record))
-            if (current != null && current.status != GlobalProactiveMessageStatus.DISMISSED) {
+            if (current != null && current.status != GlobalProactiveMessageStatus.DISMISSED && current.newsArticleKey.isBlank()) {
                 val text = if (item == null) current.content.replace(
                     context.getString(R.string.attention_source_summary),
                     context.getString(R.string.attention_not_verified)) else
@@ -134,7 +132,35 @@ class ProactiveAttentionFeedStore(context: Context) {
     fun cacheFeed(url: String, xml: String, now: Long) = synchronized(LOCK) {
         ProactiveAttentionFeedPolicy.parse(xml, "validation", now)
         database.writeString("feed:" + ProactiveAttentionFeedPolicy.urlKey(url),
-            JSONObject().put("xml", xml).put("expires", now + 5 * 60_000L).toString())
+            JSONObject().put("xml", xml).put("expires", now + AttentionFeedCollectionPlan.CACHE_MILLIS).toString())
+        database.writeString("source:" + ProactiveAttentionFeedPolicy.urlKey(url), "{}")
+    }
+
+    fun sourceRetryAt(url: String): Long = synchronized(LOCK) {
+        JSONObject(database.readString("source:" + ProactiveAttentionFeedPolicy.urlKey(url), "{}")).optLong("next")
+    }
+
+    fun sourceFailed(url: String, code: String, now: Long) = synchronized(LOCK) {
+        val key = "source:" + ProactiveAttentionFeedPolicy.urlKey(url)
+        val previous = JSONObject(database.readString(key, "{}"))
+        if (previous.optLong("next") <= now) {
+            val delay = ProactiveAttentionFeedPolicy.interval(previous.optLong("delay"), 0, true)
+            database.writeString(key, JSONObject().put("next", now + delay).put("delay", delay)
+                .put("error", code.take(120)).toString())
+        }
+    }
+
+    fun recordBatch(topicId: String, cursor: Int, count: Int, error: String, now: Long) = synchronized(LOCK) {
+        val previous = topicState(topicId)
+        val total = previous.optInt("cycle_new") + count
+        val errors = listOf(previous.optString("cycle_errors"), error).filter(String::isNotBlank).joinToString("; ").take(1000)
+        if (cursor == 0) {
+            recordPoll(topicId, total, errors, now)
+        } else {
+            database.writeString("topic:$topicId", previous.put("source_revision", SOURCE_REVISION)
+                .put("cursor", cursor).put("cycle_new", total).put("cycle_errors", errors)
+                .put("next", now + 1_000L).toString())
+        }
     }
 
     fun recordPoll(topicId: String, count: Int, error: String, now: Long) = synchronized(LOCK) {
@@ -148,7 +174,7 @@ class ProactiveAttentionFeedStore(context: Context) {
     companion object {
         private val LOCK = Any()
         // A new source adapter must not inherit a failed adapter's deferred wake-up.
-        private const val SOURCE_REVISION = 2
+        private const val SOURCE_REVISION = 3
         fun isFeed(task: GlobalResearchTask) = task.researchPlan.units.any { it.id.startsWith(ProactiveAttentionFeedPolicy.UNIT_PREFIX) }
     }
 }

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="attention_article_body">Chinese article</string>
+    <string name="attention_article_policy">Only articles with a retrieved body and completed Chinese translation are shown. Public news is stored unencrypted.</string>
     <string name="attention_reader_unread">Unread %1$d</string>
     <string name="attention_reader_new">%1$d new items</string>
     <string name="attention_content_summary">Content summary</string>
