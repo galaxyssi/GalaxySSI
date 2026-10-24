@@ -233,7 +233,7 @@ class ProactiveAttentionActivity : Activity() {
         val previousScroll = if (resetScroll) 0 else scroll.scrollY
         renderHeader()
         val counts = articleCounts
-        articleStatus.visibility = if (!settingsPage && counts != null && counts.waiting + counts.retrying > 0)
+        articleStatus.visibility = if (settingsPage && counts != null)
             View.VISIBLE else View.GONE
         if (counts != null) articleStatus.text = getString(R.string.attention_article_queue_status,
             counts.published, counts.waiting, counts.retrying)

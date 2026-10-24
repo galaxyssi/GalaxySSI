@@ -50,13 +50,15 @@ internal class ProactiveAttentionReader(
     private val filters = listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED)
     private val manager = LinearLayoutManager(activity)
     private val adapter = ProactiveAttentionFeedAdapter { ProactiveAttentionArticleView(activity,
-        ::toggle, ::toggleSaved, ask, sources, evidence, ::menu, ::loadBody) }
+        ::toggle, ::toggleSaved, ask, sources, evidence, ::menu, loadArticle = ::loadArticle) }
 
-    private fun loadBody(key: String, loaded: (String?) -> Unit) {
+    private fun loadArticle(key: String, expanded: Boolean, loaded: (AttentionArticlePresentation?) -> Unit) {
         if (destroyed || worker.isShutdown) return
         worker.execute {
-            val body = runCatching { AttentionArticleStore(activity.applicationContext).body(key) }.getOrNull()
-            main.post { if (!destroyed && !activity.isDestroyed) loaded(body) }
+            val store = AttentionArticleStore(activity.applicationContext)
+            val presentation = runCatching { store.presentation(key, expanded) }.getOrNull()
+            if (runCatching { store.requestVisual(key) }.getOrDefault(false)) AttentionArticleScheduler.request(activity.applicationContext)
+            main.post { if (!destroyed && !activity.isDestroyed) loaded(presentation) }
         }
     }
     val list = RecyclerView(activity).apply {
@@ -193,6 +195,8 @@ internal class ProactiveAttentionReader(
         } else {
             if (finishingInitialLoad && timeline.visible.isEmpty()) timeline.begin(timeline.filter)
             publish()
+            // Metadata/image enrichment must not reconstruct an article the user is currently reading.
+            for (index in 0 until list.childCount) (list.getChildAt(index) as? ProactiveAttentionArticleView)?.refreshPublicPresentation()
         }
     }
 

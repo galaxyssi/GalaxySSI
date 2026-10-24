@@ -15,7 +15,9 @@ internal object AttentionArticleExtractor {
         "breadcrumb|breadcrumbs|comments|newsletter|advertisement|social-share|cookie|site-nav|site-header)([-_\\s]|$)")
     private val absentRegion = Regex("(^|[-_])(no|without)[-_](sidebar|comments|newsletter)([-_]|$)")
 
-    fun parse(url: String, source: Document): AgentPublicArticle? {
+    fun parse(url: String, source: Document): AgentPublicArticle? = structured(url, source)?.article
+
+    fun structured(url: String, source: Document): AttentionArticleSource? {
         val document = source.clone()
         // Capture metadata before removing article headers and bylines.
         val title = document.selectFirst("meta[property=og:title]")?.attr("content")
@@ -48,7 +50,13 @@ internal object AttentionArticleExtractor {
         isolated.head().appendChildren(document.head().childNodesCopy())
         isolated.head().appendElement("meta").attr("property", "og:title").attr("content", title)
         isolated.body().appendChild(cleaned)
-        return AgentPublicArticleParser.parse(url, isolated.outerHtml())?.copy(title = title)
+        val article = AgentPublicArticleParser.parse(url, isolated.outerHtml())?.copy(title = title) ?: return null
+        val parsed = AttentionArticleDocumentParser.parse(url, cleaned, article.images)
+        // Some sites expose the complete article only in JSON-LD. Never replace it with a shorter DOM teaser.
+        val documentBody = if (parsed.body.length < article.content.length * .65)
+            AttentionArticleDocument(listOfNotNull(parsed.cover) + AttentionArticleDocument.plain(article.content).blocks) else parsed
+        require(documentBody.blocks.size <= 2000) { "article_structure_too_large" }
+        return AttentionArticleSource(article, documentBody)
     }
 
     private fun linkDensity(element: Element) = element.select("a[href]").sumOf { it.text().length }.toDouble() /
