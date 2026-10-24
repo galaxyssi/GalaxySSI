@@ -1691,8 +1691,8 @@ class AgentRichContentView(
                 val file = runCatching { AgentMarkdownImageStore.load(activity, block.uri) }.getOrNull()
                 activity.runOnUiThread {
                     if (!activity.isDestroyed && !activity.isFinishing) {
-                        if (file != null) activity.showAgentImagePreview(Uri.fromFile(file), displayTitle) {
-                            saveDesktopArtifact(block)
+                        if (file != null) activity.showAgentImagePreview(Uri.fromFile(file), displayTitle, block.mimeType) {
+                            saveArtifactResult(block)
                         } else Toast.makeText(activity, R.string.rich_output_load_failed, Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -1703,8 +1703,8 @@ class AgentRichContentView(
         if (activity is MainActivity && block.dataB64.isBlank() &&
             (block.metadata["artifact_source_uri"].orEmpty().isNotBlank() || CloudImageAnnotationSession.isLocalImage(block) ||
                 AgentPrivateAttachmentExport.canSave(activity, block))) {
-            activity.showAgentImagePreview(Uri.parse(block.uri), displayTitle) {
-                saveDesktopArtifact(block)
+            activity.showAgentImagePreview(Uri.parse(block.uri), displayTitle, block.mimeType) {
+                saveArtifactResult(block)
             }
             return
         }
@@ -1936,14 +1936,7 @@ class AgentRichContentView(
         button?.isEnabled = false
         button?.alpha = 0.35f
         ARTIFACT_EXECUTOR.execute {
-            val result = if (CloudImageAnnotationSession.isLocalImage(block)) {
-                CloudImageAnnotationSession.save(activity, block)
-            } else if (block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank()) {
-                AgentMarkdownImageStore.save(activity, block)
-            } else if (block.metadata["artifact_source_uri"].orEmpty().isNotBlank() ||
-                block.metadata["transport"] == "encrypted-fragmented") {
-                AgentDesktopArtifactStore.saveToDownloads(activity, block)
-            } else AgentPrivateAttachmentExport.save(activity, block)
+            val result = saveArtifactResult(block)
             Handler(Looper.getMainLooper()).post {
                 if (activity.isDestroyed) return@post
                 result.onSuccess { path ->
@@ -1962,6 +1955,14 @@ class AgentRichContentView(
                 }
             }
         }
+    }
+
+    private fun saveArtifactResult(block: AgentRichBlock): Result<String> = when {
+        CloudImageAnnotationSession.isLocalImage(block) -> CloudImageAnnotationSession.save(activity, block)
+        block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank() -> AgentMarkdownImageStore.save(activity, block)
+        block.metadata["artifact_source_uri"].orEmpty().isNotBlank() ||
+            block.metadata["transport"] == "encrypted-fragmented" -> AgentDesktopArtifactStore.saveToDownloads(activity, block)
+        else -> AgentPrivateAttachmentExport.save(activity, block)
     }
 
     private fun openDesktopArtifact(

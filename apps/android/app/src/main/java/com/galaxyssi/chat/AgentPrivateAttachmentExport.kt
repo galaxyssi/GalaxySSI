@@ -26,12 +26,16 @@ internal object AgentPrivateAttachmentExport {
 
     fun save(context: Context, block: AgentRichBlock): Result<String> = runCatching {
         require(canSave(context, block)) { "Private attachment is unavailable" }
-        val source = Uri.parse(block.uri)
-        val name = block.title.substringAfterLast('/').substringAfterLast('\\')
+        export(context, Uri.parse(block.uri), block.title, block.mimeType).getOrThrow()
+    }
+
+    internal fun export(context: Context, source: Uri, displayName: String, mimeType: String): Result<String> = runCatching {
+        require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { "Downloads requires Android 10 or newer" }
+        val name = displayName.substringAfterLast('/').substringAfterLast('\\')
             .replace(Regex("[\\p{Cntrl}]+"), "").trim().take(160).ifBlank { "attachment" }
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
-            put(MediaStore.Downloads.MIME_TYPE, block.mimeType.ifBlank { "application/octet-stream" })
+            put(MediaStore.Downloads.MIME_TYPE, mimeType.ifBlank { "application/octet-stream" })
             put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/GalaxySSI")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }

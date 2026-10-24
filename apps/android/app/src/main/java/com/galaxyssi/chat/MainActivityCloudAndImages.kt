@@ -876,7 +876,7 @@ internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
         return
     }
     if (attachment.mimeType.startsWith("image/")) {
-        showAgentImagePreview(source, attachment.name) { savePeerAttachment(attachment) }
+        showAgentImagePreview(source, attachment.name, attachment.mimeType, attachment.sizeBytes)
         return
     }
     if (attachment.mimeType.startsWith("audio/")) {
