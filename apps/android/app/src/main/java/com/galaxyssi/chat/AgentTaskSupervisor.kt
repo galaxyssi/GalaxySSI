@@ -1086,6 +1086,7 @@ class AgentTaskSupervisor(
         }
         return appendEventCandidate(current, eventKind, message, payloadJson).copy(
             status = status,
+            errorMessage = if (status == AgentWorkspaceStatus.FAILED && message.isNotBlank()) message else current.errorMessage,
             cancellationRequested = cancellationRequested
         )
     }
