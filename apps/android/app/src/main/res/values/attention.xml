@@ -122,7 +122,9 @@
     <string name="attention_feed_active">News collection active; deeper analysis runs separately</string>
     <string name="attention_translation_pending">Chinese title pending translation</string>
     <string name="attention_translate_titles">Auto-translate English titles</string>
-    <string name="attention_translation_models">Configured models · public headlines only</string>
+    <string name="attention_translation_models">On-device first · configured models as fallback</string>
+    <string name="attention_translation_attribution">Powered by Google Translate</string>
+    <string name="attention_translation_disclaimer">These titles are automatically translated on this device using Google Translate. Google makes no warranties about translation accuracy, reliability, merchantability, suitability for a particular purpose, or non-infringement. Refer to the original headline when in doubt.</string>
     <string name="attention_translation_running">Translating title</string>
     <string name="attention_translation_no_model">Translation waiting for an available model</string>
     <string name="attention_translation_capacity">Translation waiting for model capacity or budget</string>

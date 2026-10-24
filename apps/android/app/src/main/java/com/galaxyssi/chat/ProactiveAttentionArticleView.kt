@@ -8,6 +8,7 @@ import android.text.method.LinkMovementMethod
 import android.view.Gravity
 import android.view.View
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.text.SimpleDateFormat
@@ -29,6 +30,8 @@ internal class ProactiveAttentionArticleView(
     private var headline: TextView? = null
     private var originalHeadline: TextView? = null
     private var displayedTranslation = ""
+    private var displayedTranslationProvider = ""
+    private var translationAttribution: ImageView? = null
     private var sourceLine: TextView? = null
     private var bookmark: ImageButton? = null
     private var sourceName = ""
@@ -47,6 +50,7 @@ internal class ProactiveAttentionArticleView(
         row?.let {
             displayedUnread = it.item.isNew
             displayedTranslation = it.item.translatedTitle
+            displayedTranslationProvider = it.item.titleTranslationProvider
             updateHeadline(it)
             updateStatus(it)
         }
@@ -58,6 +62,7 @@ internal class ProactiveAttentionArticleView(
             displayedUnread = next.item.isNew
         }
         displayedTranslation = next.item.translatedTitle
+        displayedTranslationProvider = next.item.titleTranslationProvider
         row = next; sourceName = ""; evidenceChecked = false
         removeAllViews()
         val item = next.item
@@ -92,6 +97,21 @@ internal class ProactiveAttentionArticleView(
             if (!next.expanded && expectsTranslation(item)) reserveBilingualHeight()
         }
         titles.addView(originalHeadline)
+        translationAttribution = ImageView(context).apply {
+            tag = "attention-translation-attribution:${item.key}"
+            setImageResource(R.drawable.google_translate_attribution)
+            contentDescription = context.getString(R.string.attention_translation_attribution)
+            scaleType = ImageView.ScaleType.FIT_START
+            layoutParams = LayoutParams(dp(144), dp(20))
+            setPadding(0, 0, 0, dp(3))
+            setOnClickListener {
+                android.app.AlertDialog.Builder(context)
+                    .setTitle(R.string.attention_translation_attribution)
+                    .setMessage(R.string.attention_translation_disclaimer)
+                    .setPositiveButton(android.R.string.ok, null).show()
+            }
+        }
+        titles.addView(translationAttribution)
         updateHeadline(next)
         titleRow.addView(titles, LayoutParams(0, -2, 1f))
         bookmark = icon(R.drawable.ic_attention_bookmark, R.string.attention_save) { save(item.key) }
@@ -151,6 +171,7 @@ internal class ProactiveAttentionArticleView(
         }
         if (!isAttachedToWindow || !next.expanded) {
             displayedTranslation = next.item.translatedTitle
+            displayedTranslationProvider = next.item.titleTranslationProvider
             updateHeadline(next)
         }
         headline?.setTextColor(context.getColor(if (displayedUnread) R.color.attention_unread_title else R.color.text_primary))
@@ -171,6 +192,11 @@ internal class ProactiveAttentionArticleView(
             next.item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ')
         }
         headline?.text = displayedTranslation.ifBlank { original }
+        translationAttribution?.visibility = when {
+            displayedTranslation.isNotBlank() && displayedTranslationProvider == AttentionMlKitTranslator.PROVIDER -> View.VISIBLE
+            expectsTranslation(next.item) -> View.INVISIBLE
+            else -> View.GONE
+        }
         originalHeadline?.apply {
             text = if (displayedTranslation.isNotBlank()) original else
                 context.getString(ProactiveAttentionTranslationPolicy.statusLabel(next.item.titleTranslationStatus))

@@ -32,6 +32,7 @@ internal class ProactiveAttentionTimeline(private val batchSize: Int = 20) {
         visible = visible.map { old -> byKey[old.key]?.let { current ->
             old.copy(viewedAtMillis = current.viewedAtMillis, feedbackKind = current.feedbackKind,
                 translatedTitle = if (old.title == current.title) current.translatedTitle else old.translatedTitle,
+                titleTranslationProvider = if (old.title == current.title) current.titleTranslationProvider else old.titleTranslationProvider,
                 titleTranslationStatus = if (old.title == current.title) current.titleTranslationStatus else old.titleTranslationStatus)
         } ?: old }
         if (begun) {

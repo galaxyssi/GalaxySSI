@@ -122,7 +122,9 @@
     <string name="attention_feed_active">新闻持续采集，深入分析在后台独立进行</string>
     <string name="attention_translation_pending">中文标题待翻译</string>
     <string name="attention_translate_titles">自动翻译英文标题</string>
-    <string name="attention_translation_models">已配置模型 · 仅发送公开新闻标题</string>
+    <string name="attention_translation_models">本地翻译优先 · 不可用时使用已配置模型</string>
+    <string name="attention_translation_attribution">由 Google Translate 提供翻译</string>
+    <string name="attention_translation_disclaimer">这些标题由 Google Translate 在本机自动翻译。Google 不对译文的准确性、可靠性、适销性、特定用途适用性或不侵权作任何保证。如有疑问，请以原文为准。</string>
     <string name="attention_translation_running">正在翻译标题</string>
     <string name="attention_translation_no_model">翻译等待可用模型</string>
     <string name="attention_translation_capacity">翻译等待模型容量或额度</string>

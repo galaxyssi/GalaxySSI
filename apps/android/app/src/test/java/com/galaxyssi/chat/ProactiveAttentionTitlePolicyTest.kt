@@ -109,13 +109,15 @@ class ProactiveAttentionTitlePolicyTest {
         val timeline = ProactiveAttentionTimeline()
         timeline.update(listOf(item), emptySet())
         timeline.begin(AttentionFeedFilter.ALL)
-        timeline.update(listOf(item.copy(translatedTitle = translated, content = "Revised body",
+        timeline.update(listOf(item.copy(translatedTitle = translated, titleTranslationProvider = "on-device", content = "Revised body",
             titleTranslationStatus = AttentionTitleStatus.TRANSLATING)), emptySet())
         assertEquals(translated, timeline.visible.single().translatedTitle)
+        assertEquals("on-device", timeline.visible.single().titleTranslationProvider)
         assertEquals(AttentionTitleStatus.TRANSLATING, timeline.visible.single().titleTranslationStatus)
         assertEquals("Original body", timeline.visible.single().content)
         timeline.update(listOf(item.copy(title = "New headline", translatedTitle = "\u65b0\u6807\u9898")), emptySet())
         assertEquals(original, timeline.visible.single().title)
         assertEquals(translated, timeline.visible.single().translatedTitle)
+        assertEquals("on-device", timeline.visible.single().titleTranslationProvider)
     }
 }
