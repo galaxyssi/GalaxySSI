@@ -10,11 +10,17 @@ internal object CloudVisionPromptPolicy {
         base: String,
         imageCount: Int,
         textOnlyEvidence: () -> String,
-        annotationInstruction: String = ""
+        annotationInstruction: String = "",
+        currentImageCount: Int = imageCount
     ): String {
         if (imageCount <= 0) return base + "\n" + textOnlyEvidence()
         // Preserve custom Agent Loop contracts, but do not turn image reading into web research.
-        return listOf(base, AgentDirectVisionPolicy.instructionForImageCount(imageCount), annotationInstruction)
+        val visualPolicy = if (currentImageCount > 0) {
+            AgentDirectVisionPolicy.instructionForImageCount(currentImageCount)
+        } else {
+            AgentVisualTurnPolicy.HISTORICAL_CONTEXT + "\n" + AgentVisualTurnPolicy.ANSWER_STYLE
+        }
+        return listOf(base, visualPolicy, annotationInstruction)
             .filter(String::isNotBlank).joinToString("\n")
     }
 }

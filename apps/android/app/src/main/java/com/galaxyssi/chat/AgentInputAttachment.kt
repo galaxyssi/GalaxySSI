@@ -12,9 +12,11 @@ data class AgentInputAttachment(
     val mimeType: String,
     val sizeBytes: Long,
     val originalUri: String = "",
-    val sendOriginal: Boolean = false
+    val sendOriginal: Boolean = false,
+    val historicalSourceTurnId: String = ""
 ) {
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)
+    val isHistoricalReference: Boolean get() = historicalSourceTurnId.isNotBlank()
 
     fun richBlock(): AgentRichBlock = AgentRichBlock(
         id = id,
@@ -38,6 +40,7 @@ data class AgentInputAttachment(
         .put("size", sizeBytes)
         .put("uri", uri.toString())
         .put("send_original", sendOriginal)
+        .put("historical_source_turn_id", historicalSourceTurnId)
 
     fun draftDescriptor(): JSONObject = descriptor().put("original_uri", originalUri)
 
@@ -63,6 +66,10 @@ object AgentTurnAttachmentRegistry {
     }
 
     fun get(turnId: String): List<AgentInputAttachment> = turns[turnId].orEmpty()
+
+    fun current(turnId: String): List<AgentInputAttachment> = get(turnId).filterNot {
+        it.isHistoricalReference
+    }
 
     fun remove(turnId: String) {
         turns.remove(turnId)

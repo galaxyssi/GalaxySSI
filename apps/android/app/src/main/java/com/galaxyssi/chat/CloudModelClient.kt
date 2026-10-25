@@ -116,7 +116,8 @@ object CloudModelClient {
                 if (customSystemPrompt.isNotBlank()) ResearchQualityStandard.get(context).prompt
                 else CloudWebGrounding.currentEvidencePrompt(context)
             },
-            annotationInstruction = CloudImageAnnotationPlan.instruction(images.size)
+            annotationInstruction = CloudImageAnnotationPlan.instruction(images.size),
+            currentImageCount = images.count { it.historicalSourceTurnId.isBlank() }
         )
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt)
         logCompaction(contact, compiled)
@@ -227,7 +228,8 @@ object CloudModelClient {
         return send(context, contact, turns, systemPrompt, onToolEvent, images)
     }
 
-    private fun legacySystemPrompt(context: Context, systemPrompt: String, imageCount: Int): String {
+    private fun legacySystemPrompt(context: Context, systemPrompt: String, images: List<CloudImagePayload>): String {
+        val imageCount = images.size
         val base = if (imageCount > 0 && isDefaultSystemPrompt(systemPrompt)) {
             defaultVisionSystemPrompt(context)
         } else {
@@ -236,7 +238,8 @@ object CloudModelClient {
         }
         return CloudVisionPromptPolicy.compose(
             base, imageCount, { CloudWebGrounding.currentEvidencePrompt(context) },
-            CloudImageAnnotationPlan.instruction(imageCount)
+            CloudImageAnnotationPlan.instruction(imageCount),
+            currentImageCount = images.count { it.historicalSourceTurnId.isBlank() }
         )
     }
 
@@ -587,7 +590,7 @@ object CloudModelClient {
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val imageSession = CloudImageAnnotationSession(context, images)
-        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images)
         val compiled = compileCloudContext(
             context,
             contact,
@@ -824,7 +827,7 @@ object CloudModelClient {
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val imageSession = CloudImageAnnotationSession(context, images)
-        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val messages = anthropicMessages(compiled.messages)
@@ -1056,7 +1059,7 @@ object CloudModelClient {
         val endpoint = contact.getString("cloud_endpoint")
         val separator = if (endpoint.contains("?")) "&" else "?"
         val url = endpoint + separator + "key=" + URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
-        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val contents = geminiContents(compiled.messages)

@@ -14,7 +14,8 @@ data class AgentStagedAttachment(
     val mimeType: String,
     val sizeBytes: Long,
     val sha256: String,
-    val sendOriginal: Boolean = false
+    val sendOriginal: Boolean = false,
+    val historicalSourceTurnId: String = ""
 )
 
 /** Copies user-authorized content into the active conversation's app-private project. */
@@ -70,7 +71,8 @@ object AgentAttachmentWorkspaceStager {
                     mimeType = attachment.mimeType,
                     sizeBytes = size,
                     sha256 = digest.digest().joinToString("") { "%02x".format(it) },
-                    sendOriginal = attachment.sendOriginal
+                    sendOriginal = attachment.sendOriginal,
+                    historicalSourceTurnId = attachment.historicalSourceTurnId
                 )
             }
             writeManifest(inputDirectory, staged)
@@ -127,7 +129,8 @@ object AgentAttachmentWorkspaceStager {
                             block.mimeType.ifBlank { "application/octet-stream" }
                         },
                         sizeBytes = record.sizeBytes,
-                        sendOriginal = record.sendOriginal
+                        sendOriginal = record.sendOriginal,
+                        historicalSourceTurnId = record.historicalSourceTurnId
                     )
                 }
                 .toList()
@@ -192,7 +195,8 @@ object AgentAttachmentWorkspaceStager {
             displayName = record.name,
             mimeType = record.mimeType.ifBlank { "application/octet-stream" },
             sizeBytes = record.sizeBytes,
-            sendOriginal = record.sendOriginal
+            sendOriginal = record.sendOriginal,
+            historicalSourceTurnId = record.historicalSourceTurnId
         )
     }
 
@@ -212,6 +216,7 @@ object AgentAttachmentWorkspaceStager {
                             .put("size_bytes", attachment.sizeBytes)
                             .put("sha256", attachment.sha256)
                             .put("send_original", attachment.sendOriginal)
+                            .put("historical_source_turn_id", attachment.historicalSourceTurnId)
                     )
                 }
             })
@@ -239,7 +244,8 @@ object AgentAttachmentWorkspaceStager {
                         mimeType = item.optString("mime_type").take(160),
                         sizeBytes = size,
                         sha256 = digest,
-                        sendOriginal = item.optBoolean("send_original", false)
+                        sendOriginal = item.optBoolean("send_original", false),
+                        historicalSourceTurnId = item.optString("historical_source_turn_id")
                     )
                 )
             }

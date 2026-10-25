@@ -17,7 +17,8 @@ internal object AgentVisionOrientationSheet {
         "Interpret handwriting by the complete expression, spacing and conventional notation; " +
         "a curved numeral is not necessarily a parenthesis. Do not claim cropping or missing " +
         "content when the strokes and surrounding page margins are fully visible. " +
-        "If alternatives remain plausible, state the ambiguity rather than inventing a transcription."
+        "If alternatives remain plausible, state the ambiguity rather than inventing a transcription. " +
+        AgentVisualTurnPolicy.ANSWER_STYLE
     private const val TILE = 640
     private const val HEADER = 32
 

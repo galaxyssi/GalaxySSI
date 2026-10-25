@@ -43,6 +43,25 @@ class AgentVisionInitialPromptTest {
         assertNotNull(AgentSupervisedProjectPromptEnvelope.split(prompt))
     }
 
+    @Test fun textFollowupWithHistoricalPixelsDoesNotRestartImageTask() {
+        for (goal in listOf("Narrative translate", "What is the second line?", "What is today's weather?")) {
+            val prompt = requireNotNull(AgentVisionInitialPrompt.render(request().copy(goal = goal),
+                listOf("image/jpeg"), historicalSourceTurnIds = listOf("earlier-user-turn")))
+            assertTrue(prompt.contains(AgentVisualTurnPolicy.HISTORICAL_CONTEXT))
+            assertTrue(prompt.contains(AgentVisualTurnPolicy.ANSWER_STYLE))
+            assertTrue(prompt.contains("User goal: $goal"))
+            assertFalse(prompt.contains("State the supported reading"))
+            assertTrue(prompt.contains("galaxyssi.tools.discover"))
+        }
+    }
+
+    @Test fun newImageKeepsInternalOrientationCheckWithoutMandatoryReport() {
+        val prompt = requireNotNull(AgentVisionInitialPrompt.render(request(), listOf("image/jpeg")))
+        assertTrue(prompt.contains(AgentVisualTurnPolicy.ANSWER_STYLE))
+        assertFalse(prompt.contains(AgentVisualTurnPolicy.HISTORICAL_CONTEXT))
+        assertFalse(prompt.contains("State the supported reading"))
+    }
+
     private fun request(): AgentRequest {
         val screen = ScreenContext("test", pageTitle = "test")
         val discover = AgentNativeToolDescriptor(id = "galaxyssi.tools.discover", version = "1.0.0",

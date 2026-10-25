@@ -38,9 +38,11 @@ class NativeVisionRequestDeviceTest {
         sheet.recycle()
         for (style in listOf("openai", "anthropic", "gemini")) {
             val request = prepare(style, listOf(payload), "")
-            assertTrue(request.conversation.toString().contains(AgentVisionOrientationSheet.CAPTION))
             val user = request.conversation.getJSONObject(request.conversation.length() - 1)
             val blocks = user.getJSONArray(if (style == "gemini") "parts" else "content")
+            assertTrue((0 until blocks.length()).any {
+                blocks.getJSONObject(it).optString("text") == AgentVisionOrientationSheet.CAPTION
+            })
             val imageBlock = (0 until blocks.length()).map { blocks.getJSONObject(it) }.first {
                 it.has("image_url") || it.has("source") || it.has("inline_data")
             }
