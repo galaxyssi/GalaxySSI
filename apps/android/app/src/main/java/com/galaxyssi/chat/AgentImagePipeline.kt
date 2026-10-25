@@ -199,7 +199,7 @@ internal object AgentImagePipeline {
         } ?: ExifInterface.ORIENTATION_NORMAL
     }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
 
-    private fun applyOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+    internal fun applyOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
         val matrix = Matrix()
         when (orientation) {
             ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)

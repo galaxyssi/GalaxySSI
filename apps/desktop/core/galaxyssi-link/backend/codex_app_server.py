@@ -1439,6 +1439,12 @@ class CodexAppServer:
             {"type": "localImage", "path": path, "detail": "original"}
             for path in (image_paths or [])
         )
+        if len(image_paths or []) == 1:
+            try:
+                from vision_orientation import supplementary_input
+                user_input.extend(supplementary_input(image_paths))
+            except ImportError:
+                log.warning("Orientation evidence unavailable; retaining the original image")
         return user_input
 
     @staticmethod

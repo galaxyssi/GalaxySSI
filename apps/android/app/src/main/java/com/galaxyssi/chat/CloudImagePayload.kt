@@ -71,6 +71,11 @@ internal object CloudVisionPayloadEncoder {
                     )
             )
         }
+        withOrientationSheet(images) { base64 ->
+            content.put(JSONObject().put("type", "text").put("text", AgentVisionOrientationSheet.CAPTION))
+            content.put(JSONObject().put("type", "image_url").put("image_url", JSONObject()
+                .put("url", "data:image/jpeg;base64,$base64").put("detail", "auto")))
+        }
         message.put("content", content)
     }
 
@@ -92,6 +97,11 @@ internal object CloudVisionPayloadEncoder {
                             .put("data", image.base64())
                     )
             )
+        }
+        withOrientationSheet(images) { base64 ->
+            content.put(JSONObject().put("type", "text").put("text", AgentVisionOrientationSheet.CAPTION))
+            content.put(JSONObject().put("type", "image").put("source", JSONObject()
+                .put("type", "base64").put("media_type", "image/jpeg").put("data", base64)))
         }
         message.put("content", content)
     }
@@ -117,6 +127,20 @@ internal object CloudVisionPayloadEncoder {
                         .put("data", image.base64())
                 )
             )
+        }
+        withOrientationSheet(images) { base64 ->
+            parts.put(JSONObject().put("text", AgentVisionOrientationSheet.CAPTION))
+            parts.put(JSONObject().put("inline_data", JSONObject()
+                .put("mime_type", "image/jpeg").put("data", base64)))
+        }
+    }
+
+    private inline fun withOrientationSheet(images: List<CloudImagePayload>, append: (String) -> Unit) {
+        val bytes = runCatching { AgentVisionOrientationSheet.create(images) }.getOrNull() ?: return
+        try {
+            append(Base64.getEncoder().encodeToString(bytes))
+        } finally {
+            bytes.wipeSensitive()
         }
     }
 
