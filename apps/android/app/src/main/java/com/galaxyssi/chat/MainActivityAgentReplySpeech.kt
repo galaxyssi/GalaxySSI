@@ -25,6 +25,7 @@ private object AgentReplySpeechRuntime {
 internal fun MainActivity.observeAgentReplySpeech(
     entries: List<AgentTranscriptEntry>
 ): Set<String> {
+    VoiceReplyPlayback.watch(this)
     agentVoiceConversation?.onEntries(entries.filterNot { it.id.startsWith("agent-stream-preview-") })
     return applyAgentReplySpeechCommand(
         AgentReplySpeechRuntime.controller(this).observe(
@@ -55,14 +56,25 @@ internal fun MainActivity.agentReplySpeechFooter(
     val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return null
     val controller = AgentReplySpeechRuntime.controller(this)
     val latest = AgentReplySpeechPresentationPolicy.latestTarget(renderedAgentTranscriptSourceEntries)
-    if (latest?.responseId != target.responseId && !controller.isActive(target)) return null
+    if (latest?.responseId != target.responseId && !controller.isActive(target) &&
+        VoiceReplyPlayback.state.selection?.entryId != entry.id) return null
 
     val existingContainer = existing as? LinearLayout
     val existingButton = existingContainer?.getChildAt(0) as? AgentReplySpeechButton
     val button = (existingButton ?: AgentReplySpeechButton(this)).apply {
         tag = "agent-reply-speech:${target.responseId}"
-        setPlaying(controller.isEnabled(target))
+        setPlaying(controller.isEnabled(target) || isBackgroundReplyPlaying(entry))
         setOnClickListener {
+            if (target.complete) {
+                if (isBackgroundReplyPlaying(entry)) VoiceReplyPlayback.stop()
+                else if (controller.isEnabled(target)) {
+                    notifyAgentReplySpeechRows(applyAgentReplySpeechCommand(controller.stop()))
+                }
+                else startBackgroundReply(VoiceReplySelection(entry.conversationId, entry.id))
+                setPlaying(controller.isEnabled(target) || isBackgroundReplyPlaying(entry))
+                return@setOnClickListener
+            }
+            VoiceReplyPlayback.stop()
             val visibleText = ConversationScheduleCardPresentation.visibleSpeechText(content)
             val command = controller.toggle(if (visibleText == null) target else target.copy(text = visibleText))
             setPlaying(controller.isEnabled(target))
@@ -93,6 +105,12 @@ internal fun MainActivity.attachAgentReplyParagraphSpeech(
     val paragraphView = textView as? ParagraphSelectingTextView ?: return
     paragraphView.setOnParagraphDoubleTapListener { selection ->
         val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return@setOnParagraphDoubleTapListener
+        if (target.complete) {
+            VoiceReplySelection.fromParagraph(entry, selection.sourceText, selection.startOffset)?.let(::startBackgroundReply)
+                ?: Toast.makeText(this, R.string.agent_reply_speech_failed, Toast.LENGTH_SHORT).show()
+            return@setOnParagraphDoubleTapListener
+        }
+        VoiceReplyPlayback.stop()
         val command = AgentReplySpeechRuntime.controller(this).readFromParagraph(
             target = target,
             paragraph = selection.paragraph,
@@ -105,6 +123,7 @@ internal fun MainActivity.attachAgentReplyParagraphSpeech(
 }
 
 internal fun MainActivity.attachAgentReplySpeechStopGesture() {
+    VoiceReplyPlayback.watch(this)
     var stopTriggered = false
     val detector = GestureDetector(
         this,
@@ -132,12 +151,26 @@ internal fun MainActivity.attachAgentReplySpeechStopGesture() {
 }
 
 private fun MainActivity.stopAgentReplySpeechFromOutput(): Boolean {
+    if (VoiceReplyPlayback.state.playing) return VoiceReplyPlayback.stop()
     val controller = AgentReplySpeechRuntime.controller(this)
     if (!controller.isPlaying()) return false
     val command = controller.stop()
     notifyAgentReplySpeechRows(command.changedEntryIds)
     notifyAgentReplySpeechRows(applyAgentReplySpeechCommand(command))
     return true
+}
+
+private fun isBackgroundReplyPlaying(entry: AgentTranscriptEntry): Boolean = VoiceReplyPlayback.state.let {
+    it.playing && it.selection?.entryId == entry.id && it.selection.conversationId == entry.conversationId
+}
+
+private fun MainActivity.startBackgroundReply(selection: VoiceReplySelection) {
+    agentVoiceConversation?.end(preserveNews = true)
+    notifyAgentReplySpeechRows(applyAgentReplySpeechCommand(AgentReplySpeechRuntime.controller(this).stop()))
+    AgentRichPlaybackCoordinator.pauseAudioVideo()
+    if (!VoiceReplyPlayback.start(this, selection)) {
+        Toast.makeText(this, R.string.agent_reply_speech_failed, Toast.LENGTH_SHORT).show()
+    }
 }
 
 internal fun MainActivity.notifyAgentReplySpeechRows(entryIds: Collection<String>) {

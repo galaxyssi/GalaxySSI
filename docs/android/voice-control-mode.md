@@ -85,8 +85,25 @@ hidden or detached. Other articles cannot inherit the highlight.
 
 ## Remaining acceptance and follow-up work
 
-The conversation microphone and Agent-reply TTS still belong to MainActivity. Background
-news playback is separate, but continuous background voice control still needs a
+Completed Agent replies now use the same independent media service as news when the
+user taps Read or double-taps a paragraph. The service receives a conversation ID,
+entry ID and normalized character offset, then reads that one encrypted transcript
+entry off the UI thread. Both identifiers must match, the entry must be a completed
+assistant reply, and process/approval/preview text is rejected. Reading continues to
+the end of the selected reply; resuming a paused segment repeats that segment, not
+the whole answer. Starting news replaces reply playback and vice versa.
+
+Reply selection is in-memory only and never overwrites the persistent news bookmark.
+Notifications show generic playback state, not private text, and system pause/stop,
+audio-focus loss and recording handoff release the speech queue. Natural completion
+and stop terminate reply playback and clear its state. Process death does not resume
+private speech automatically. The service does not retain an Activity. Edge TTS uses
+an in-memory MediaDataSource and zeroes each segment when released; it no longer needs
+a plaintext MP3 that could race with background cache cleanup. Playback errors and
+timeouts are reported as failures rather than successful completion.
+
+The conversation microphone, automatic voice replies and replies that are still
+streaming remain on their existing MainActivity path. Continuous background voice control still needs a
 microphone foreground service and session-owner migration. Backgrounding the last voice
 surface pauses recording; no microphone is silently started in background.
 
@@ -101,6 +118,21 @@ Only existing real reminders are shown. New weather/calendar producers and model
 integration/acceptance; text sending must not be described as recorded audio delivery.
 
 ## Local build notes
+
+Completed-reply increment, Android `0.1.6.22` (1398), Samsung SM-S9480 / Android 17:
+
+- 112 JVM tests passed across 12 voice, App-tool, queue, protocol and audio-source suites.
+- Fourteen device tests passed, including the original ten voice/news/phone checks and
+  four reply-playback checks. The live reply test starts through the existing Read
+  button, destroys its Activity, pauses/resumes through system media controls, verifies
+  recording handoff and stops playback without changing the news bookmark.
+- Natural completion clears playback state; a cancelled pending start cannot speak
+  later, and a mismatched conversation cannot read another conversation's reply.
+- Real synthesis used `zh-CN-XiaoxiaoNeural` through Edge protocol v2. No plaintext TTS
+  MP3 was left in the app cache. Notifications contained generic status, not reply text.
+- Device tests used isolated Chinese reply fixtures and downloaded public news. They
+  did not send contact messages or place calls. Physical headset/lock-screen transitions
+  and continuous background microphone capture are not covered by this increment.
 
 Validation on 2026-10-26, Android `0.1.6.21` (1397), Samsung SM-S9480 / Android 17:
 

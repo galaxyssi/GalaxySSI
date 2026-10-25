@@ -13,7 +13,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import java.io.ByteArrayOutputStream
-import java.io.File
+import java.io.IOException
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -358,52 +358,43 @@ class MicrosoftEdgeTts(private val context: Context) {
         mediaPlayback: Boolean
     ) {
         ensureCurrent(generation)
-        val file = File.createTempFile("galaxyssi_tts_", ".mp3", context.cacheDir)
-        file.writeBytes(audio)
+        val source = SpeechAudioDataSource(audio)
         val latch = CountDownLatch(1)
+        val failure = AtomicReference<IOException?>(null)
         val mp = MediaPlayer()
-        mp.setAudioAttributes(if (mediaPlayback) android.media.AudioAttributes.Builder()
-            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()
-            else com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(communicationPlayback))
-        synchronized(playbackLock) {
+        try {
+            mp.setAudioAttributes(if (mediaPlayback) android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()
+                else com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(communicationPlayback))
+            synchronized(playbackLock) {
+                ensureCurrent(generation)
+                player = mp
+                activePlaybackLatch = latch
+            }
+            mp.setDataSource(source)
+            mp.setOnCompletionListener { latch.countDown() }
+            mp.setOnErrorListener { _, what, extra ->
+                failure.set(IOException("speech_playback_failed:$what:$extra"))
+                latch.countDown()
+                true
+            }
+            mp.prepare()
             ensureCurrent(generation)
-            player = mp
-            activePlaybackLatch = latch
-        }
-        mp.setDataSource(file.absolutePath)
-        mp.setOnCompletionListener {
-            it.release()
+            mp.start()
+            runCatching(onPlaybackStarted)
+            trace(traceId, VoiceTraceEvents.TTS_PLAYBACK_STARTED, mapOf("tts_provider" to "microsoft_edge"), once = true)
+            check(latch.await(90, TimeUnit.SECONDS)) { "speech_playback_timeout" }
+            ensureCurrent(generation)
+            failure.get()?.let { throw it }
+        } finally {
             synchronized(playbackLock) {
-                if (player === it) player = null
+                if (player === mp) player = null
                 if (activePlaybackLatch === latch) activePlaybackLatch = null
             }
-            file.delete()
-            latch.countDown()
+            runCatching { mp.release() }
+            source.close()
         }
-        mp.setOnErrorListener { mediaPlayer, _, _ ->
-            mediaPlayer.release()
-            synchronized(playbackLock) {
-                if (player === mediaPlayer) player = null
-                if (activePlaybackLatch === latch) activePlaybackLatch = null
-            }
-            file.delete()
-            latch.countDown()
-            true
-        }
-        mp.prepare()
-        ensureCurrent(generation)
-        mp.start()
-        runCatching(onPlaybackStarted)
-        trace(
-            traceId,
-            VoiceTraceEvents.TTS_PLAYBACK_STARTED,
-            mapOf("tts_provider" to "microsoft_edge"),
-            once = true
-        )
-        latch.await(90, TimeUnit.SECONDS)
-        file.delete()
-        ensureCurrent(generation)
     }
 
     private fun beginRequest(): Long {
