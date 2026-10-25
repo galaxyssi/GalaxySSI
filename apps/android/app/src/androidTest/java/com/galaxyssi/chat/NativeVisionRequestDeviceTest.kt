@@ -6,6 +6,9 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class NativeVisionRequestDeviceTest {
@@ -67,6 +70,9 @@ class NativeVisionRequestDeviceTest {
                 }
                 assertTrue("$style lost orientation policy", system.contains("0, 90, 180 and 270"))
                 assertTrue(system.contains("equations, tables and diagrams as connected content"))
+                if (override.isNotEmpty()) assertTrue(system.contains(override))
+                else assertTrue(system.contains(CloudVisionPromptPolicy.DEFAULT_PROMPT))
+                assertFalse(system.contains(ResearchQualityStandard.get(context).prompt))
                 assertTrue(request.conversation.toString().contains("AQID"))
                 assertEquals("fixture-model", request.body.optString("model", "fixture-model"))
             }
@@ -78,6 +84,36 @@ class NativeVisionRequestDeviceTest {
             val request = prepare(style, emptyList(), "Keep this custom instruction.")
             assertFalse(request.body.toString().contains("0, 90, 180 and 270"))
             assertTrue(request.body.toString().contains("Keep this custom instruction."))
+        }
+    }
+
+    @Test fun legacyFallbackPreservesNativeImagesAndLongAgentContractForEveryStyle() {
+        for (style in listOf("openai", "anthropic", "gemini")) {
+            for (override in listOf("", "Keep the phone contract. " + "context ".repeat(700) + "END_PHONE_CONTRACT")) {
+                MockWebServer().use { server ->
+                    server.start()
+                    val response = when (style) {
+                        "anthropic" -> """{"content":[{"type":"text","text":"Answer."}],"stop_reason":"end_turn"}"""
+                        "gemini" -> """{"candidates":[{"content":{"parts":[{"text":"Answer."}]},"finishReason":"STOP"}]}"""
+                        else -> """{"choices":[{"message":{"role":"assistant","content":"Answer."},"finish_reason":"stop"}]}"""
+                    }
+                    server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(response))
+                    val contact = JSONObject().put("id", "vision-legacy-fixture-$style")
+                        .put("cloud_provider", "custom").put("cloud_api_style", style)
+                        .put("cloud_model", "fixture-model").put("cloud_api_key", "fixture-only")
+                        .put("cloud_endpoint", server.url("/v1/chat/completions").toString())
+                    val answer = CloudModelClient.legacyConversationResponse(context, contact,
+                        listOf(ChatMessage(0L, "Inspect this image.", true, Contact("fixture", "Fixture", ""))),
+                        listOf(CloudImagePayload("source.jpg", "image/jpeg", byteArrayOf(1, 2, 3))), null, override)
+                    assertEquals("Answer.", answer)
+                    val body = JSONObject(requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).body.readUtf8())
+                    assertTrue(body.toString().contains("AQID"))
+                    assertTrue(body.toString().contains("0, 90, 180 and 270"))
+                    if (override.isEmpty()) assertTrue(body.toString().contains(CloudVisionPromptPolicy.DEFAULT_PROMPT))
+                    else assertTrue(body.toString().contains("END_PHONE_CONTRACT"))
+                    assertEquals(1, server.requestCount)
+                }
+            }
         }
     }
 

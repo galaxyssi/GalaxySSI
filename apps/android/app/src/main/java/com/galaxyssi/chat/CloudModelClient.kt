@@ -36,6 +36,13 @@ object CloudModelClient {
     private fun defaultSystemPrompt(context: Context): String =
         secureSystemPrompt(CodexStyleResponsePolicy.prompt(context) + "\n" + RICH_OUTPUT_PROMPT)
 
+    private fun defaultVisionSystemPrompt(context: Context): String {
+        val language = LanguagePolicySettings.resolvedResponseLanguage(context)
+        return secureSystemPrompt(CloudVisionPromptPolicy.DEFAULT_PROMPT +
+            "\nPreferred response language: ${LanguagePolicySettings.modelLanguageName(language)} ($language). " +
+            "Use it unless the user explicitly requests another language.")
+    }
+
     private fun secureSystemPrompt(
         systemPrompt: String,
         maximumCharacters: Int = MAX_DEFAULT_SYSTEM_PROMPT_CHARACTERS
@@ -95,12 +102,22 @@ object CloudModelClient {
         validateContact(context, contact)
         val style = contact.optString("cloud_api_style", "openai")
         val customSystemPrompt = systemPromptOverride.trim()
-        val effectiveSystemPrompt = (if (customSystemPrompt.isNotBlank()) {
-            secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS) + "\n" + ResearchQualityStandard.get(context).prompt
+        val baseSystemPrompt = if (customSystemPrompt.isNotBlank()) {
+            secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS)
+        } else if (images.isNotEmpty()) {
+            defaultVisionSystemPrompt(context)
         } else {
-            defaultSystemPrompt(context) + "\n" + CloudWebGrounding.currentEvidencePrompt(context)
-        }) + "\n" + AgentDirectVisionPolicy.instructionForImageCount(images.size) +
-            "\n" + CloudImageAnnotationPlan.instruction(images.size)
+            defaultSystemPrompt(context)
+        }
+        val effectiveSystemPrompt = CloudVisionPromptPolicy.compose(
+            base = baseSystemPrompt,
+            imageCount = images.size,
+            textOnlyEvidence = {
+                if (customSystemPrompt.isNotBlank()) ResearchQualityStandard.get(context).prompt
+                else CloudWebGrounding.currentEvidencePrompt(context)
+            },
+            annotationInstruction = CloudImageAnnotationPlan.instruction(images.size)
+        )
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt)
         logCompaction(contact, compiled)
         return when (style) {
@@ -206,8 +223,21 @@ object CloudModelClient {
     ): String {
         val systemPrompt = systemPromptOverride.trim().takeIf(String::isNotBlank)
             ?.let { prompt -> secureSystemPrompt(prompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS) }
-            ?: defaultSystemPrompt(context)
+            ?: if (images.isNotEmpty()) defaultVisionSystemPrompt(context) else defaultSystemPrompt(context)
         return send(context, contact, turns, systemPrompt, onToolEvent, images)
+    }
+
+    private fun legacySystemPrompt(context: Context, systemPrompt: String, imageCount: Int): String {
+        val base = if (imageCount > 0 && isDefaultSystemPrompt(systemPrompt)) {
+            defaultVisionSystemPrompt(context)
+        } else {
+            secureSystemPrompt(systemPrompt, if (imageCount > 0) MAX_AGENT_SYSTEM_PROMPT_CHARACTERS
+                else MAX_DEFAULT_SYSTEM_PROMPT_CHARACTERS)
+        }
+        return CloudVisionPromptPolicy.compose(
+            base, imageCount, { CloudWebGrounding.currentEvidencePrompt(context) },
+            CloudImageAnnotationPlan.instruction(imageCount)
+        )
     }
 
     fun sendStructured(context: Context, contact: JSONObject, systemPrompt: String, prompt: String): String {
@@ -557,10 +587,7 @@ object CloudModelClient {
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val imageSession = CloudImageAnnotationSession(context, images)
-        val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
-                "\n" + AgentDirectVisionPolicy.instructionForImageCount(images.size) +
-                "\n" + CloudImageAnnotationPlan.instruction(images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images.size)
         val compiled = compileCloudContext(
             context,
             contact,
@@ -797,10 +824,7 @@ object CloudModelClient {
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val imageSession = CloudImageAnnotationSession(context, images)
-        val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
-                "\n" + AgentDirectVisionPolicy.instructionForImageCount(images.size) +
-                "\n" + CloudImageAnnotationPlan.instruction(images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val messages = anthropicMessages(compiled.messages)
@@ -1032,10 +1056,7 @@ object CloudModelClient {
         val endpoint = contact.getString("cloud_endpoint")
         val separator = if (endpoint.contains("?")) "&" else "?"
         val url = endpoint + separator + "key=" + URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
-        val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
-                "\n" + AgentDirectVisionPolicy.instructionForImageCount(images.size) +
-                "\n" + CloudImageAnnotationPlan.instruction(images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images.size)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val contents = geminiContents(compiled.messages)
