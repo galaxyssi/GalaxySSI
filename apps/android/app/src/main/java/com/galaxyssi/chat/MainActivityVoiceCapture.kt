@@ -242,6 +242,7 @@ internal fun MainActivity.preemptBackgroundWhisperForInteractiveVoice() {
 }
 
 internal fun MainActivity.startAgentVoiceInput() {
+    VoiceNewsPlaybackService.pauseForInput()
     if (!ensureRecordPermission()) return
     if (!SpeechRecognizer.isRecognitionAvailable(this)) {
         Toast.makeText(this, getString(R.string.voice_status_asr_unavailable), Toast.LENGTH_SHORT).show()
@@ -383,6 +384,7 @@ internal fun MainActivity.addWakeVoiceStatusViews() {
 }
 
 internal fun MainActivity.startVoiceAssistant() {
+    VoiceNewsPlaybackService.pauseForInput()
     val config = VoiceAssistantSettings.get(this)
     if (!config.enabled) {
         VoiceRuntimeHealthRegistry.idle(wakeRuntimeChannel(config))
@@ -627,6 +629,7 @@ internal fun MainActivity.startCommandListening() {
 }
 
 internal fun MainActivity.startVoiceCommandRecording() {
+    VoiceNewsPlaybackService.pauseForInput()
     if (!isVoiceAssistantSurfaceVisible()) return
     if (!ensureRecordPermission() || isVoiceCaptureActive()) return
     preemptBackgroundWhisperForInteractiveVoice()
@@ -890,6 +893,7 @@ internal fun MainActivity.stopVoiceCommandRecording(send: Boolean, reason: Strin
 }
 
 internal fun MainActivity.startVoiceRecognition() {
+    VoiceNewsPlaybackService.pauseForInput()
     if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE || voiceAssistantSpeaking) return
     if (!ensureRecordPermission()) return
     if (voiceAssistantListening) {
@@ -989,6 +993,9 @@ internal fun MainActivity.speakWakeWelcomeThenListen(text: String) {
 }
 
 internal fun MainActivity.onVoiceCommand(text: String) {
+    // Inline voice commands belong to the original Agent session, regardless of the legacy voice-page routing preference.
+    val inlineVoice = agentVoiceConversation
+    if (inlineVoice?.routeTranscript(text, activeVoiceTraceId) == true || inlineVoice?.session?.active == true) return
     val config = VoiceAssistantSettings.get(this)
     if (config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT) {
         submitVoiceAgentGoal(text)

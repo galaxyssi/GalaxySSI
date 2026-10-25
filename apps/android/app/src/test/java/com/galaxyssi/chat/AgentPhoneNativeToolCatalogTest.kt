@@ -101,6 +101,7 @@ class AgentPhoneNativeToolCatalogTest {
     fun exposesCompleteDefaultIdsWithoutBuildingAndroidExecutors() {
         val expected = linkedSetOf<String>().apply {
             addAll(AgentPhoneNativeToolCatalog.toolIds)
+            addAll(AgentAppControlTools.toolIds)
             addAll(AgentWebMediaNativeTools.toolIds)
             addAll(AgentWebIntelligenceNativeTools.toolIds)
             addAll(AgentHardwareNativeTools.toolIds)

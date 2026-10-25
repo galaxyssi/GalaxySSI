@@ -184,7 +184,7 @@ internal class ProactiveAttentionArticleView(
                 }
                 if (next.expanded && presentation.document != null) {
                     articleBody.removeAllViews()
-                    articleBody.addView(AttentionArticleBodyView(context, presentation.document).apply { tag = "attention-expanded:${item.key}" })
+                    articleBody.addView(AttentionArticleBodyView(context, presentation.document, item.newsArticleKey).apply { tag = "attention-expanded:${item.key}" })
                 }
                 row?.let(::updateStatus)
             }

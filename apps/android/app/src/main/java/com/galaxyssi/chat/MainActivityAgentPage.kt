@@ -286,6 +286,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     mainPage.visibility = View.GONE
     featurePage.visibility = View.GONE
     chatPage.visibility = View.VISIBLE
+    agentVoiceConversation?.onNavigationChanged()
     markContactRead(contact.id)
     loadLatestChatHistory(
         contactId = contact.id,
@@ -1366,6 +1367,7 @@ internal fun MainActivity.submitAgentGoal(
     AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)
     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
     agentVoiceConversation?.session?.registerTurn(voiceTraceId, turnId)
+    AppVoiceControlBridge.bindTurn(voiceTraceId, conversation.id, turnId)
     AgentTurnMentionRegistry.put(turnId, requestedMembers)
     val preparedContext = if (initialAgentHydrationPending) {
         null

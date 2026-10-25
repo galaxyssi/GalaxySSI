@@ -31,6 +31,7 @@ class ProactiveAttentionActivity : Activity() {
     private lateinit var store: ProactiveAttentionStore
     private lateinit var runtime: GlobalSuperAgentRuntime
     private lateinit var body: LinearLayout
+    private lateinit var voiceHost: LinearLayout
     private lateinit var scroll: ScrollView
     private lateinit var reader: ProactiveAttentionReader
     private lateinit var readerStateStore: ProactiveAttentionReaderStateStore
@@ -73,8 +74,9 @@ class ProactiveAttentionActivity : Activity() {
 
     override fun onStart() { super.onStart(); started = true; GlobalProactiveDeliveryBus.addListener(listener); reload() }
     override fun onStop() { started = false; feedMenu?.dismiss(); GlobalProactiveDeliveryBus.removeListener(listener); super.onStop() }
-    override fun onResume() { super.onResume(); reader.resume() }
-    override fun onPause() { reader.pause(); super.onPause() }
+    override fun onResume() { super.onResume(); reader.resume(); AppVoiceControlBridge.attachNews(this, voiceHost) }
+    internal fun visibleVoiceArticleId(): String = if (settingsPage) "" else reader.visibleArticleId()
+    override fun onPause() { AppVoiceControlBridge.detachNews(this); reader.pause(); super.onPause() }
     override fun onDestroy() { reader.destroy(); worker.shutdown(); loader.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("settings", settingsPage)
@@ -95,6 +97,7 @@ class ProactiveAttentionActivity : Activity() {
     }
 
     private fun layout() = LinearLayout(this).apply {
+        voiceHost = this
         orientation = LinearLayout.VERTICAL
         setBackgroundColor(getColor(R.color.page_bg))
         header = ProactiveAttentionHeader(this@ProactiveAttentionActivity, { onBackPressed() }) {

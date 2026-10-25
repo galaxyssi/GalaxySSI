@@ -229,6 +229,7 @@ import kotlin.math.sin
 
 internal fun MainActivity.startPeerVoiceMessageRecording(): Boolean {
     if (isVoiceCaptureActive()) return false
+    VoiceNewsPlaybackService.pauseForInput()
     val traceId = VoiceLatencyTelemetry.startSession(
         this,
         mapOf(

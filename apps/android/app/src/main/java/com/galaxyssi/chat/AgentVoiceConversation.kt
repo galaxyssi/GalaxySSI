@@ -136,6 +136,17 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             }
         }
         panel.hangup.setOnClickListener { end() }
+        AppVoiceControlBridge.bind(activity)
+        communicationAudio.onRouteChanged = { panel.route.text = communicationAudio.label() }
+        panel.route.setOnClickListener {
+            val devices = communicationAudio.choices()
+            if (devices.isNotEmpty()) AlertDialog.Builder(externalSurface.get() ?: activity)
+                .setTitle(R.string.voice_control_audio_route)
+                .setItems(devices.map { communicationAudio.label(it) }.toTypedArray()) { _, index ->
+                    if (!communicationAudio.select(devices[index])) Toast.makeText(activity,
+                        R.string.voice_control_route_failed, Toast.LENGTH_SHORT).show()
+                }.show()
+        }
         panel.camera.setOnClickListener { toggleCamera() }
         panel.screen.setOnClickListener {
             if (!session.active || !visible() || screenPermissionGeneration != null ||
@@ -150,7 +161,105 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
     }
 
-    fun visible(): Boolean = foreground && hasAgentSurface()
+    private var externalSurface = java.lang.ref.WeakReference<android.app.Activity>(null)
+    private val reminders by lazy { AgentVoiceReminders(activity) }
+    private var resumeAfterPageChange = false
+    private var pendingStart: String? = null
+    private val newsPlayback = AgentVoiceNewsPlayback(activity, onChunk = { text ->
+        activity.voiceAssistantSpeaking = true
+        showStatus(R.string.voice_call_speaking)
+        panel.transcript.text = text
+        startBargeInMonitor(session.generation, speechRevision)
+    }, onDone = {
+        activity.voiceAssistantSpeaking = false
+        if (VoiceNewsPlaybackBus.current.state == "failed") Toast.makeText(activity, R.string.agent_reply_speech_failed, Toast.LENGTH_SHORT).show()
+        AppVoiceControlBridge.update(activity); listen(afterPlayback = true)
+    }, onPaused = {
+        if (activity.activeProgressiveSpeechSessionId.isBlank()) activity.voiceAssistantSpeaking = false
+        stopAcousticCapture()
+        if (session.active && !activity.voiceAssistantAwake) {
+            session.mute(true)
+            panel.setMuted(true)
+            showStatus(R.string.voice_news_paused)
+        }
+    })
+    val newsArticleId get() = newsPlayback.articleId
+    val contextArticleId get() = (externalSurface.get() as? ProactiveAttentionActivity)?.visibleVoiceArticleId()
+        ?.takeIf(String::isNotBlank) ?: newsArticleId
+    val newsPlaybackState get() = newsPlayback.state
+
+    fun hasForegroundHost(): Boolean = foreground || externalSurface.get() != null
+    fun hasExternalForegroundHost(): Boolean = externalSurface.get() != null
+    fun visible(): Boolean = hasForegroundHost() && (hasAgentSurface() ||
+        session.active && (externalSurface.get() != null || activity.chatPage.visibility == View.VISIBLE))
+
+    fun attachExternalSurface(host: android.app.Activity, container: LinearLayout) {
+        if (!session.active) return
+        externalSurface = java.lang.ref.WeakReference(host)
+        activity.restoreRuntimePlaintextAfterForeground()
+        activity.conversationWindow.resume()
+        AgentConnectorStreamBus.addListener(activity.agentConnectorStreamListener)
+        activity.requestForegroundAgentReload()
+        (panel.parent as? ViewGroup)?.removeView(panel)
+        container.addView(panel, LinearLayout.LayoutParams(-1, -2))
+        panel.visibility = View.VISIBLE
+        if (resumeAfterPageChange) { resumeAfterPageChange = false; resumeForegroundVoice() }
+    }
+
+    fun detachExternalSurface(host: android.app.Activity) {
+        if (externalSurface.get() !== host) return
+        resumeAfterPageChange = session.active && !session.muted
+        pauseMicrophone(preserveNews = newsPlayback.playing)
+        panel.transcript.text = ""
+        communicationAudio.release()
+        externalSurface.clear()
+        activity.conversationWindow.pause()
+        AgentConnectorStreamBus.removeListener(activity.agentConnectorStreamListener)
+        activity.clearRuntimePlaintextForBackground()
+        (panel.parent as? ViewGroup)?.removeView(panel)
+    }
+
+    fun returnToMainSurface() {
+        externalSurface.get()?.let { host ->
+            detachExternalSurface(host)
+            host.finish()
+        }
+    }
+
+    fun startWhenForeground(command: String = "") {
+        if (foreground && hasAgentSurface()) start(command) else pendingStart = command
+    }
+
+    fun controlPlayback(input: AgentNativeJsonObject): AgentNativeJsonObject {
+        when (input["operation"]) {
+            "play_news" -> {
+                val ids = (input["article_ids"] as? List<*>)?.mapNotNull { it as? String }.orEmpty()
+                if (ids.isEmpty()) throw AppControlFailure("news_queue_empty", "Choose observed article IDs first.")
+                pauseMicrophone(); session.mute(false)
+                requirePlaybackRoute()
+                newsPlayback.replace(ids)
+            }
+            "pause" -> { newsPlayback.pause(); listen(afterPlayback = true) }
+            "stop" -> { newsPlayback.stop(clear = true); listen(afterPlayback = true) }
+            "resume", "next" -> {
+                pauseMicrophone(); session.mute(false)
+                requirePlaybackRoute()
+                if (input["operation"] == "next") newsPlayback.next() else newsPlayback.resume()
+            }
+            else -> throw AppControlFailure("invalid_playback_action", "Unknown playback operation.")
+        }
+        AppVoiceControlBridge.update(activity)
+        return mapOf("article_id" to newsArticleId, "state" to "queued", "previous_state" to newsPlaybackState,
+            "requested_action" to input["operation"], "command_queued" to true)
+    }
+
+    private fun requirePlaybackRoute() {
+        if (!communicationAudio.acquire()) {
+            session.mute(true)
+            showStatus(R.string.voice_call_audio_route_unavailable)
+            throw AppControlFailure("audio_route_unavailable", "Another call owns audio, or the selected audio route is unavailable.")
+        }
+    }
 
     private fun hasAgentSurface(): Boolean = activity.activeMainTab == PAGE_AGENT &&
         activity.agentPage.visibility == View.VISIBLE && activity.mainPage.visibility == View.VISIBLE &&
@@ -169,13 +278,16 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         activity.agentPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
         entry.isSelected = session.active
         entry.imageTintList = ColorStateList.valueOf(activity.getColor(
-            if (session.active) R.color.agent_voice_transcript_dot else R.color.text_primary
+            R.color.agent_voice_transcript_dot
         ))
     }
 
     fun onForeground(value: Boolean) {
         foreground = value
         if (!value) {
+            reminders.setActive(false)
+            resumeAfterPageChange = session.active && !session.muted
+            panel.transcript.text = ""
             cameraPreview.stop()
             cancelVisualSubmission()
             if (screenCaptureJob != null) {
@@ -184,13 +296,21 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             }
             chineseWake.stop()
             wakeArmed = false
-            if (session.active) pauseMicrophone() else activity.releaseWakeWordEngine()
+            if (session.active) pauseMicrophone(preserveNews = newsPlayback.playing) else activity.releaseWakeWordEngine()
             communicationAudio.release()
+        } else if (pendingStart != null) {
+            val command = pendingStart.orEmpty()
+            pendingStart = null
+            start(command)
         } else if (pendingPermission && activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             pendingPermission = false
             start()
         } else if (resumeAfterVisualInput && session.active) {
             onVisualInputReturned()
+        } else if (resumeAfterPageChange && session.active) {
+            resumeAfterPageChange = false
+            onNavigationChanged()
+            resumeForegroundVoice()
         } else if (!session.active) {
             refreshWake()
         }
@@ -198,10 +318,22 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             activity.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             onCameraPermission(true)
         }
+        if (value) onNavigationChanged()
     }
 
     fun onNavigationChanged() {
-        if (session.active && (!hasAgentSurface() || activity.agentTranscriptStore.activeConversation().id != session.conversationId)) end()
+        if (session.active && activity.agentTranscriptStore.activeConversation().id != session.conversationId) end()
+        if (externalSurface.get() == null) {
+            val row = if (session.active && activity.chatPage.visibility == View.VISIBLE)
+                activity.findViewById<View>(R.id.chatComposerRow) else activity.agentComposerRow
+            val container = row.parent as LinearLayout
+            if (panel.parent !== container) {
+                (panel.parent as? ViewGroup)?.removeView(panel)
+                container.addView(panel, container.indexOfChild(row), LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+        render()
+        AppVoiceControlBridge.update(activity)
         refreshWake()
     }
 
@@ -375,7 +507,12 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         pendingVisualTraceId = ""
     }
 
-    fun end() {
+    fun end(preserveNews: Boolean = false) {
+        pendingStart = null
+        resumeAfterPageChange = false
+        panel.transcript.text = ""
+        reminders.setActive(false)
+        if (!preserveNews) newsPlayback.stop(clear = true)
         resumeAfterVisualInput = false
         screenConsentDialog?.dismiss()
         screenCaptureJob?.cancel()
@@ -389,7 +526,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             activity.dispatchVoiceCoordinator(VoiceInteractionEvent.Cancelled(trace, "inline_call_ended"))
         }
         speechRevision++
-        stopReplySpeech()
+        stopReplySpeech(preserveNews = true)
         wakeArmed = false
         resumeAfterVisualInput = false
         stopLevelTick()
@@ -398,7 +535,20 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         communicationAudio.release()
         ownsScreenCapture = false
         render()
+        AppVoiceControlBridge.update(activity)
         // Hanging up ends media, not an already dispatched agent task.
+    }
+
+    fun release() { end(preserveNews = true); newsPlayback.release() }
+
+    private fun resumeForegroundVoice() {
+        if (!newsPlayback.playing) { listen(); return }
+        session.mute(false)
+        panel.setMuted(false)
+        showStatus(R.string.voice_call_speaking)
+        panel.transcript.text = VoiceNewsPlaybackBus.current.paragraph
+        activity.voiceAssistantSpeaking = true
+        if (communicationAudio.acquire()) startBargeInMonitor(session.generation, speechRevision)
     }
 
     private fun expand() {
@@ -447,7 +597,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
     }
 
-    private fun stopReplySpeech() {
+    private fun stopReplySpeech(preserveNews: Boolean = false) {
+        if (!preserveNews && newsPlayback.playing) newsPlayback.pause()
         activity.applyAgentReplySpeechCommand(replySpeech.controller.stop(), replySpeech.controller)
     }
 
@@ -615,12 +766,12 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         if (accepted) routeTranscript(text, traceId)
     }
 
-    private fun pauseMicrophone(preserveMediaPlayback: Boolean = false) {
+    private fun pauseMicrophone(preserveMediaPlayback: Boolean = false, preserveNews: Boolean = false) {
         cancelVisualSubmission()
         if (!preserveMediaPlayback) session.mute(true)
         session.cancelPendingInput()
         speechRevision++
-        stopReplySpeech()
+        stopReplySpeech(preserveNews)
         stopLevelTick()
         activity.stopVoiceAssistant()
         showStatus(R.string.voice_call_muted)
@@ -654,6 +805,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         if (!session.ownsTrace(traceId)) return false
         if (!session.acceptsTrace(traceId) || !visible()) return true
         if (activity.agentTranscriptStore.activeConversation().id != session.conversationId) { end(); return true }
+        if (!session.claimInput(traceId)) return true
+        AppVoiceControlBridge.capture(activity, traceId)
         panel.transcript.text = text
         showStatus(R.string.voice_call_processing)
         stopLevelTick()
@@ -729,6 +882,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     fun onEntries(entries: List<AgentTranscriptEntry>) {
+        if (entries.isNotEmpty()) reminders.setActive(false)
+        if (newsPlayback.playing) return
         if (!session.active || session.muted || !visible() || bargeIn.collectingUtterance ||
             (activity.isVoiceCaptureActive() && !bargeIn.active)) return
         val command = replySpeech.observe(entries)
@@ -893,6 +1048,13 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         content.addView(label(R.string.voice_call_wake_settings).apply {
             setOnClickListener { dialog.dismiss(); activity.showVoiceAssistantSettingsPage() }
         })
+        content.addView(label(R.string.voice_control_phone_title).apply {
+            setOnClickListener {
+                dialog.dismiss()
+                end()
+                activity.startActivity(android.content.Intent(activity, PhoneAssistantActivity::class.java))
+            }
+        })
         dialog.setContentView(content)
         dialog.setOnDismissListener {
             wakeStatusView = null
@@ -934,8 +1096,18 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     private fun render() {
+        reminders.setActive(session.active && foreground && hasAgentSurface() &&
+            activity.renderedAgentTranscriptSourceEntries.isEmpty())
         panel.visibility = if (session.active && session.expanded) View.VISIBLE else View.GONE
+        activity.agentChatShortcuts.visibility = if (session.active && session.expanded) View.GONE else View.VISIBLE
         activity.agentComposerRow.visibility = if (session.active && session.expanded) View.GONE else View.VISIBLE
+        activity.findViewById<View>(R.id.chatComposerRow).visibility =
+            if (session.active && session.expanded && activity.chatPage.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        panel.route.text = communicationAudio.label()
+        if (session.active && hasAgentSurface() && activity.renderedAgentTranscriptSourceEntries.isEmpty())
+            activity.agentSessionTitle.setText(R.string.voice_control_reminders)
+        else activity.refreshAgentConversationHeader()
+        AppVoiceControlBridge.update(activity)
         updateEntry(activity.agentGoalInput.text?.isNotBlank() == true || activity.agentInputAttachments.isNotEmpty())
     }
 
@@ -946,15 +1118,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
 
     private fun startLevelTick() {
         stopLevelTick()
-        val token = session.generation
-        levelTick = object : Runnable {
-            override fun run() {
-                if (!session.isCurrent(token) || session.muted || !visible()) return
-                val amplitude = runCatching { activity.currentVoiceAmplitude() }.getOrDefault(0)
-                panel.waveform.pushAmplitude(amplitude)
-                activity.handler.postDelayed(this, 100)
-            }
-        }.also { activity.handler.post(it) }
+        // The compact voice mode has no waveform, so there is no UI amplitude polling.
     }
 
     private fun stopLevelTick() { levelTick?.let(activity.handler::removeCallbacks); levelTick = null; panel.waveform.reset() }
