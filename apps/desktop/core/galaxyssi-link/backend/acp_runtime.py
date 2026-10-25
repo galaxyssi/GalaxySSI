@@ -325,6 +325,7 @@ class AcpRuntime:
         timeout_seconds: float,
         event_sink: EventSink | None = None,
         image_paths: list[str] | None = None,
+        image_source_turns: dict[str, str] | None = None,
     ) -> str | None:
         from agent_vision import VisionCapabilityError
         if not self.supports(agent_id):
@@ -342,6 +343,7 @@ class AcpRuntime:
                 timeout_seconds=timeout_seconds,
                 event_sink=event_sink,
                 image_paths=image_paths,
+                image_source_turns=image_source_turns,
             ),
             self._loop,
         )
@@ -514,6 +516,7 @@ class AcpRuntime:
         timeout_seconds: float,
         event_sink: EventSink | None,
         image_paths: list[str] | None = None,
+        image_source_turns: dict[str, str] | None = None,
     ) -> str:
         await self._evict_idle_processes()
         config = self._agent_config(agent_id)
@@ -542,6 +545,7 @@ class AcpRuntime:
             from agent_vision import acp_blocks
             prompt_blocks = await asyncio.to_thread(
                 acp_blocks, str(prompt or ""), image_paths or [], entry.capabilities, acp,
+                image_source_turns,
             )
             from host_execution_config_guard import (
                 HostExecutionConfigGuard,

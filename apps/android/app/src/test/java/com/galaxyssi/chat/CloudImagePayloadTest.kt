@@ -128,6 +128,26 @@ class CloudImagePayloadTest {
             else put("content", text)
         }
 
+    @Test fun sourceIndicesStayStableWhenHistoryIsReorderedBeforeTheCurrentTurn() {
+        for (style in listOf("openai", "anthropic", "gemini")) {
+            val fresh = CloudImagePayload("new.jpg", "image/jpeg", byteArrayOf(9))
+            val old = CloudImagePayload("old.jpg", "image/jpeg", byteArrayOf(8), historicalSourceTurnId = "earlier")
+            val conversation = JSONArray().put(message(style, "user", "Compare and mark the earlier image"))
+            attach(style, conversation, listOf(fresh, old))
+            assertTrue(conversation.getJSONObject(0).toString().contains("image_index=1"))
+            assertFalse(conversation.getJSONObject(0).toString().contains("image_index=0"))
+            assertTrue(conversation.getJSONObject(1).toString().contains("image_index=0"))
+        }
+    }
+
+    @Test fun annotationContractNeverMisrepresentsAvailableHistoryAsANewUpload() {
+        val contract = CloudImageAnnotationPlan.instruction(2)
+        assertTrue(contract.contains("Historical references are not"))
+        assertTrue(contract.contains("Only annotate when the current user request"))
+        assertFalse(contract.contains("This turn contains"))
+        assertEquals("", CloudImageAnnotationPlan.instruction(0))
+    }
+
     private fun attach(style: String, conversation: JSONArray, images: List<CloudImagePayload>) {
         when (style) {
             "anthropic" -> CloudVisionPayloadEncoder.attachAnthropic(conversation, images)

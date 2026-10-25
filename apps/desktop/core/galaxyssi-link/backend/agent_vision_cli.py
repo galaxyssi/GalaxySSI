@@ -28,13 +28,13 @@ def _options(command, replacements, *, drop_prompt=False):
 
 
 @contextmanager
-def cli_input(agent_id, command, text, paths, cwd, apply_prompt):
+def cli_input(agent_id, command, text, paths, cwd, apply_prompt, image_source_turns=None):
     if not paths:
         yield apply_prompt(command, text)
         return
     if agent_id not in {"codex", "claude", "hermes", "gemini"}:
         raise VisionInputError("vision_transport_unsupported: configure an image-capable ACP adapter for this agent")
-    images = load_images(paths)
+    images = load_images(paths, image_source_turns)
     prompt = text + "\n\n" + VISION_POLICY
     if agent_id == "claude":
         blocks = [{"type": "text", "text": prompt}]

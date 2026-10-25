@@ -6,6 +6,7 @@ import copy
 import io
 from dataclasses import dataclass
 from pathlib import Path
+from vision_provenance import history_label, source_turn
 
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".heif"})
 MAX_SOURCE_BYTES = 20 * 1024 * 1024
@@ -40,6 +41,7 @@ class NativeImage:
     mime_type: str
     label: str
     path: str = ""
+    historical_source_turn_id: str = ""
 
     def encoded(self) -> str:
         return base64.b64encode(self.data).decode("ascii")
@@ -67,7 +69,7 @@ def task_image_paths(task_id: str) -> list[str]:
     return result
 
 
-def load_images(paths: list[str]) -> list[NativeImage]:
+def load_images(paths: list[str], image_source_turns: dict[str, str] | None = None) -> list[NativeImage]:
     if not paths:
         return []
     from PIL import Image
@@ -86,10 +88,14 @@ def load_images(paths: list[str]) -> list[NativeImage]:
                 image.verify()
             if mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
                 raise VisionInputError("vision_format_unsupported: convert this attachment to JPEG or PNG")
-            images.append(NativeImage(data, mime, f"Source image {index + 1}", str(path)))
+            turn = source_turn((image_source_turns or {}).get(name))
+            label = f"Source image {index + 1}"
+            if turn:
+                label += ". " + history_label(turn)
+            images.append(NativeImage(data, mime, label, str(path), turn))
         except (OSError, Image.DecompressionBombError) as exc:
             raise VisionInputError("vision_input_invalid: source image could not be decoded") from exc
-    if len(paths) == 1:
+    if len(paths) == 1 and not images[0].historical_source_turn_id:
         from vision_orientation import CAPTION, reference_sheet
         try:
             sheet = reference_sheet(paths[0])
@@ -108,16 +114,26 @@ def openai_messages(messages: list[dict], images: list[NativeImage]) -> list[dic
     if user is None:
         user = {"role": "user", "content": ""}
         result.append(user)
-    content = user.get("content", "")
-    blocks = content if isinstance(content, list) else [{"type": "text", "text": str(content)}]
-    blocks.append({"type": "text", "text": VISION_POLICY})
+    groups: dict[str, list[NativeImage]] = {}
     for image in images:
-        blocks.extend([
-            {"type": "text", "text": image.label},
-            {"type": "image_url", "image_url": {
-                "url": f"data:{image.mime_type};base64,{image.encoded()}", "detail": "high"}},
-        ])
-    user["content"] = blocks
+        groups.setdefault(image.historical_source_turn_id, []).append(image)
+    insertion = next(index for index, message in enumerate(result) if message is user)
+    for turn, references in groups.items():
+        target = user
+        if turn:
+            target = {"role": "user", "content": history_label(turn)}
+            result.insert(insertion, target)
+            insertion += 1
+        content = target.get("content", "")
+        blocks = content if isinstance(content, list) else [{"type": "text", "text": str(content)}]
+        blocks.append({"type": "text", "text": VISION_POLICY})
+        for image in references:
+            blocks.extend([
+                {"type": "text", "text": image.label},
+                {"type": "image_url", "image_url": {
+                    "url": f"data:{image.mime_type};base64,{image.encoded()}", "detail": "high"}},
+            ])
+        target["content"] = blocks
     return result
 
 
@@ -133,13 +149,13 @@ def ollama_messages(messages: list[dict]) -> list[dict]:
     return result
 
 
-def acp_blocks(prompt: str, paths: list[str], capabilities, acp):
+def acp_blocks(prompt: str, paths: list[str], capabilities, acp, image_source_turns=None):
     if not paths:
         return [acp.text_block(prompt)]
     prompt_caps = getattr(capabilities, "prompt_capabilities", None)
     if not getattr(prompt_caps, "image", False):
         raise VisionCapabilityError("vision_transport_unsupported: ACP agent does not advertise image input")
     blocks = [acp.text_block(prompt), acp.text_block(VISION_POLICY)]
-    for image in load_images(paths):
+    for image in load_images(paths, image_source_turns):
         blocks.extend([acp.text_block(image.label), acp.image_block(image.encoded(), image.mime_type)])
     return blocks

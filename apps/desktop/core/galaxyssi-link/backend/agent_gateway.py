@@ -624,8 +624,13 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
         request.checkpoint.get("agent_reasoning_effort") or ""
     ).strip().casefold()
     from agent_vision import task_image_paths
-    image_paths = task_image_paths(str(request.checkpoint.get("task_id") or request.run_id))
+    from vision_provenance import task_image_source_turns
+    image_task_id = str(request.checkpoint.get("task_id") or request.run_id)
+    image_paths = task_image_paths(image_task_id)
     vision_kwargs = {"image_paths": image_paths} if image_paths else {}
+    image_source_turns = task_image_source_turns(image_task_id, image_paths)
+    if image_source_turns:
+        vision_kwargs["image_source_turns"] = image_source_turns
     attachment_names = tuple(
         str(item.get("name") or item.get("relative_path") or "")
         for item in request.artifacts
@@ -1095,6 +1100,7 @@ def _stateless_model_messages(
 
 def _ask_cloud_model_for_request(
     request: AgentAdapterRequest, spec: AgentSpec, *, image_paths: list[str] | None = None,
+    image_source_turns: dict[str, str] | None = None,
 ) -> str:
     from conversation_context import is_context_overflow, retry_context_windows
 
@@ -1123,6 +1129,7 @@ def _ask_cloud_model_for_request(
                     "agent_id": spec.id,
                 },
                 **({"image_paths": image_paths} if image_paths else {}),
+                **({"image_source_turns": image_source_turns} if image_source_turns else {}),
             )
         except ModelHttpError as exc:
             if not is_context_overflow(exc.status_code, exc.detail) or attempt == len(windows) - 1:
@@ -2096,13 +2103,16 @@ def _ask_agent_sync_inner(
     agent_reasoning_effort: str = "",
     codex_video_permissions: str = "",
     image_paths: list[str] | None = None,
+    image_source_turns: dict[str, str] | None = None,
 ) -> str:
     if spec is None:
         return f"[GalaxySSI] \u672a\u77e5 Agent: {contact_id}"
     if spec.id == "local-llm":
-        return ask_local_model(text, timeout=spec.timeout, **({"image_paths": image_paths} if image_paths else {}))
+        return ask_local_model(text, timeout=spec.timeout, **({"image_paths": image_paths} if image_paths else {}),
+            **({"image_source_turns": image_source_turns} if image_source_turns else {}))
     if spec.id == "cloud-model":
-        return ask_cloud_model(text, timeout=spec.timeout, **({"image_paths": image_paths} if image_paths else {}))
+        return ask_cloud_model(text, timeout=spec.timeout, **({"image_paths": image_paths} if image_paths else {}),
+            **({"image_source_turns": image_source_turns} if image_source_turns else {}))
     return ask_cli_agent(
         spec,
         text,
@@ -2117,6 +2127,7 @@ def _ask_agent_sync_inner(
         agent_reasoning_effort=agent_reasoning_effort,
         codex_video_permissions=codex_video_permissions,
         **({"image_paths": image_paths} if image_paths else {}),
+        **({"image_source_turns": image_source_turns} if image_source_turns else {}),
     )
 
 
@@ -2286,6 +2297,7 @@ def ask_cli_agent(
     agent_reasoning_effort: str = "",
     codex_video_permissions: str = "",
     image_paths: list[str] | None = None,
+    image_source_turns: dict[str, str] | None = None,
 ) -> str:
     command = _command_for(spec)
     if not command:
@@ -2309,6 +2321,7 @@ def ask_cli_agent(
             agent_reasoning_effort=agent_reasoning_effort,
             codex_video_permissions=codex_video_permissions,
             **({"image_paths": image_paths} if image_paths else {}),
+            **({"image_source_turns": image_source_turns} if image_source_turns else {}),
         )
 
 
@@ -2437,6 +2450,7 @@ def _ask_cli_agent_locked(
     agent_reasoning_effort: str = "",
     codex_video_permissions: str = "",
     image_paths: list[str] | None = None,
+    image_source_turns: dict[str, str] | None = None,
 ) -> str:
     from agent_conversation_sessions import agent_conversation_sessions
 
@@ -2506,6 +2520,7 @@ def _ask_cli_agent_locked(
         agent_reasoning_effort=agent_reasoning_effort,
         codex_video_permissions=codex_video_permissions,
         **({"image_paths": image_paths} if image_paths else {}),
+        **({"image_source_turns": image_source_turns} if image_source_turns else {}),
     )
 
 
@@ -2527,6 +2542,7 @@ def _run_cli_agent_process(
     agent_reasoning_effort: str = "",
     codex_video_permissions: str = "",
     image_paths: list[str] | None = None,
+    image_source_turns: dict[str, str] | None = None,
 ) -> str:
     from contextlib import ExitStack
     from agent_vision_cli import cli_input, final_cli_output
@@ -2603,7 +2619,7 @@ def _run_cli_agent_process(
             raise RuntimeError("Agent working directory is unavailable")
         if image_paths:
             args, stdin_text = vision_resources.enter_context(
-                cli_input(spec.id, args, text, image_paths, execution_directory, _apply_prompt)
+                cli_input(spec.id, args, text, image_paths, execution_directory, _apply_prompt, image_source_turns)
             )
         from host_execution_config_guard import HostExecutionConfigGuard
 
@@ -2749,6 +2765,7 @@ def _run_cli_agent_process(
                     agent_reasoning_effort=agent_reasoning_effort,
                     codex_video_permissions=codex_video_permissions,
                     **({"image_paths": image_paths} if image_paths else {}),
+                    **({"image_source_turns": image_source_turns} if image_source_turns else {}),
                 )
             return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{failure[:200]}"
         raw = (stdout_text or stderr_text).strip()
@@ -3198,10 +3215,11 @@ def ask_local_model(
     messages: list[dict[str, str]] | None = None,
     audit_context: Mapping[str, object] | None = None,
     image_paths: list[str] | None = None,
+    image_source_turns: dict[str, str] | None = None,
 ) -> str:
     if image_paths:
         from agent_vision import load_images, openai_messages
-        messages = openai_messages(messages or [{"role": "user", "content": text}], load_images(image_paths))
+        messages = openai_messages(messages or [{"role": "user", "content": text}], load_images(image_paths, image_source_turns))
     cfg = local_model_config()
     provider = cfg["provider"].lower()
     configured_url = cfg["url"] or os.environ.get("GALAXYSSI_OLLAMA_URL", "").strip()
@@ -3375,6 +3393,7 @@ def ask_cloud_model(
     raise_errors: bool = False,
     audit_context: Mapping[str, object] | None = None,
     image_paths: list[str] | None = None,
+    image_source_turns: dict[str, str] | None = None,
 ) -> str:
     cfg = cloud_model_config()
     url = cfg["url"] or os.environ.get("GALAXYSSI_CLOUD_MODEL_URL", "").strip()
@@ -3385,7 +3404,7 @@ def ask_cloud_model(
     conversation = [dict(item) for item in (messages or [{"role": "user", "content": text}])]
     if image_paths:
         from agent_vision import load_images, openai_messages
-        conversation = openai_messages(conversation, load_images(image_paths))
+        conversation = openai_messages(conversation, load_images(image_paths, image_source_turns))
     if not any(
         str(item.get("role") or "") == "system"
         and EVIDENCE_SYSTEM_POLICY in str(item.get("content") or "")

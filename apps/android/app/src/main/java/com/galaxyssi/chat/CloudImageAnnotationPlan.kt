@@ -47,7 +47,9 @@ internal data class CloudImageAnnotationPlan(val imageIndex: Int, val marks: Lis
         }
 
         fun instruction(imageCount: Int): String = if (imageCount == 0) "" else """
-            This turn contains $imageCount attached images, indexed from 0. You can call image_annotate to
+            There are $imageCount available source images, indexed from 0. Historical references are not
+            new uploads. Use the source image index in its label, not its position in the conversation.
+            Only annotate when the current user request calls for it. You can call image_annotate to
             put small grading ticks, crosses and short corrections directly on the original image.
             When the user requests homework grading ON the image or an annotated result, inspect the
             supplied image, solve each readable question, and call image_annotate before claiming that

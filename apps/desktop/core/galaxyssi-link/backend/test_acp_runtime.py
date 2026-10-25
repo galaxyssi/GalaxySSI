@@ -223,6 +223,7 @@ class AcpRuntimeTest(unittest.TestCase):
         events: list | None = None,
         run_id: str | None = None,
         image_paths: list[str] | None = None,
+        image_source_turns: dict[str, str] | None = None,
     ) -> str | None:
         sink = None
         if events is not None:
@@ -240,6 +241,7 @@ class AcpRuntimeTest(unittest.TestCase):
             timeout_seconds=10,
             event_sink=sink,
             image_paths=image_paths,
+            image_source_turns=image_source_turns,
         )
 
     def logs(self) -> list[dict]:
@@ -276,6 +278,22 @@ class AcpRuntimeTest(unittest.TestCase):
         self.assertIsNone(self.execute("inspect", image_paths=["not-read-before-capability-check.png"]))
         self.assertFalse(any(event["kind"] == "prompt" for event in self.logs()))
         self.assertEqual("reply:hello", self.execute("hello"))
+
+    def test_historical_images_reach_acp_subprocess_with_source_turn(self) -> None:
+        from PIL import Image
+        from unittest.mock import patch
+        path = self.root / "prior.png"
+        with Image.new("RGB", (60, 40), "red") as image:
+            image.save(path)
+        with patch.dict(os.environ, {"FAKE_ACP_IMAGES": "1"}):
+            result = self.execute("Translate narrative", image_paths=[str(path)],
+                                  image_source_turns={str(path): "previous-turn"})
+        self.assertTrue(result.startswith("reply:Translate narrative"))
+        prompt = next(event for event in self.logs() if event["kind"] == "prompt")
+        self.assertEqual(1, prompt["image_count"])
+        self.assertIn("previous-turn", prompt["text"])
+        self.assertIn("not a new upload", prompt["text"])
+        self.assertNotIn("SAME image", prompt["text"])
 
     def test_reuses_session_for_same_phone_conversation(self) -> None:
         self.execute("first")
