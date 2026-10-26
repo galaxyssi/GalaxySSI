@@ -25,10 +25,10 @@ internal class AgentExecutionRunRecorder(
     fun recordAgentRunFromState(turnId: String, state: AgentUiState) {
         if (state.phase !in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) return
         if (AgentRuntimePermissionContinuation.waiting(state) != null) return
-        val persistedRunId = runCatching {
-            EncryptedAgentWorkspaceStore(context).find(turnId)?.parentRunId.orEmpty()
-        }.getOrDefault("")
-        val runId = recordedRunId.ifBlank { persistedRunId }
+        val runId = recordedRunId.ifBlank {
+            runCatching { EncryptedAgentWorkspaceStore(context).find(turnId)?.parentRunId.orEmpty() }
+                .getOrDefault("")
+        }
         val run = agentRunRecorder.run(runId)
             ?.takeIf { it.status == AgentRecordedRunStatus.RUNNING }
             ?: return
@@ -46,8 +46,7 @@ internal class AgentExecutionRunRecorder(
         val calls = AgentRecordedExecutionEvidence.calls(actions, result)
         val routeTarget = state.plan?.route?.targetId.orEmpty()
             .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() }
-        val handoffAlreadyRecorded = agentRunEventStore.events(run.runId)
-            .any { it.type == AgentRunControlEventType.HANDOFF }
+        val handoffAlreadyRecorded = agentRunEventStore.containsEventType(run.runId, AgentRunControlEventType.HANDOFF)
         if (routeTarget.isNotBlank() && routeTarget != "galaxyssi-mobile" && !handoffAlreadyRecorded) {
             appendRunControlEvent(
                 run = run,
@@ -87,7 +86,7 @@ internal class AgentExecutionRunRecorder(
     }
 
     fun observeCompletedAgentRun(run: AgentRecordedRun) {
-        val existing = agentRunEventStore.events(run.runId).lastOrNull()
+        val existing = agentRunEventStore.latestEvent(run.runId)
         ensureRecordedRunTimeline(
             run = run,
             messageId = existing?.messageId.orEmpty().ifBlank { run.runId },
@@ -133,7 +132,7 @@ internal class AgentExecutionRunRecorder(
         taskId: String,
         agentId: String
     ) {
-        var events = agentRunEventStore.events(run.runId)
+        val events = agentRunEventStore.events(run.runId).toMutableList()
         if (!AgentRunTimelineContract.coverage(events).hasPlan) {
             val planStepCount = runCatching { JSONArray(run.agentPlanJson).length() }.getOrDefault(0)
             appendRunControlEvent(
@@ -150,8 +149,7 @@ internal class AgentExecutionRunRecorder(
                 ),
                 stepId = "plan",
                 timestampMillis = run.createdAtMillis
-            )
-            events = agentRunEventStore.events(run.runId)
+            )?.let(events::add)
         }
         run.toolCalls.forEach { call ->
             val lifecycle = AgentRecordedExecutionEvidence.lifecycle(call)
@@ -175,8 +173,7 @@ internal class AgentExecutionRunRecorder(
                     stepId = call.id,
                     toolCallId = call.id,
                     timestampMillis = call.startedAtMillis.takeIf { it > 0L } ?: run.createdAtMillis
-                )
-                events = agentRunEventStore.events(run.runId)
+                )?.let(events::add)
             }
             val hasCompletion = events.any {
                 AgentRecordedExecutionEvidence.matches(call, it, AgentRunControlEventType.TOOL_COMPLETED)
@@ -200,8 +197,7 @@ internal class AgentExecutionRunRecorder(
                     timestampMillis = call.completedAtMillis.takeIf { it > 0L }
                         ?: run.completedAtMillis.takeIf { it > 0L }
                         ?: System.currentTimeMillis()
-                )
-                events = agentRunEventStore.events(run.runId)
+                )?.let(events::add)
             }
         }
     }
@@ -216,9 +212,9 @@ internal class AgentExecutionRunRecorder(
         stepId: String = "",
         toolCallId: String = "",
         timestampMillis: Long = System.currentTimeMillis()
-    ) {
+    ): AgentRunControlEvent? {
         val profile = AppStore.profile(context)
-        agentRunEventStore.appendNext(
+        return agentRunEventStore.appendNext(
             AgentRunControlEvent(
                 conversationId = run.conversationId,
                 messageId = messageId,

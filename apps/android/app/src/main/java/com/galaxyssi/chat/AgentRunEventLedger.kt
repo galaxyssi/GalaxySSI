@@ -48,6 +48,9 @@ class AgentRunEventStore internal constructor(context: Context, private val data
 
     fun latestEvent(runId: String): AgentRunControlEvent? = ledger.latestEvent(runId)
 
+    internal fun containsEventType(runId: String, type: AgentRunControlEventType): Boolean =
+        ledger.containsEventType(runId, type)
+
     internal fun containsIdempotencyKey(runId: String, key: String): Boolean =
         ledger.containsIdempotencyKey(runId, key)
 
@@ -280,6 +283,11 @@ private class AgentRunEventLedger(context: Context, databaseName: String) : SQLi
         readableDatabase.query(TABLE_EVENTS, arrayOf(COLUMN_SEQUENCE),
             "$COLUMN_RUN_KEY = ? AND $COLUMN_IDEMPOTENCY_HASH = ?",
             arrayOf(digest(runId.trim()), digest(key.trim())), null, null, null, "1").use { it.moveToFirst() }
+
+    fun containsEventType(runId: String, type: AgentRunControlEventType): Boolean =
+        readableDatabase.query(TABLE_EVENTS, arrayOf(COLUMN_SEQUENCE),
+            "$COLUMN_RUN_KEY = ? AND $COLUMN_EVENT_TYPE = ?",
+            arrayOf(digest(runId.trim()), type.name), null, null, null, "1").use { it.moveToFirst() }
 
     fun containsLoopRevision(runId: String, turnId: String, revision: Long, timestampMillis: Long): Boolean {
         if (containsIdempotencyKey(runId, AgentExecutionLoopTimelinePolicy.eventKey(runId, turnId, revision))) return true

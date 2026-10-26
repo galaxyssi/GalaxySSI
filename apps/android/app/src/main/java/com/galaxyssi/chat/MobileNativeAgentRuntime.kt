@@ -195,7 +195,8 @@ internal fun MobileNativeAgent.advanceExecutionLoop(
 }
 
 internal fun MobileNativeAgent.persistExecutionLoopEvent(event: AgentExecutionLoopEvent) {
-    persistSession()
+    com.galaxyssi.chat.metrics.AgentLatencyTelemetry.runtime(appContext)
+        .measure(sessionId, "reply_session", { "completed" }) { persistSession() }
     executionLoopEventSink.onEvent(event)
 }
 

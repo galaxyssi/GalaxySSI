@@ -4250,22 +4250,32 @@ def _publish_or_queue_task_result(mqttc, wire_payload: dict, payload: dict, *, r
         f"{PROTOCOL_NAME}:task-result:" + json.dumps([fields, generation], sort_keys=True)))
     from agent_task_result_archive import archive
 
-    receipt = archive.put(persisted_payload)
+    from agent_reply_timing import measure as measure_reply
+    receipt = measure_reply(task_id, "archive", lambda: archive.put(persisted_payload))
     if receipt is not None:
         persisted_payload["result_recovery"] = receipt
-    pending = queue_task_result(
+    pending = measure_reply(task_id, "outbox", lambda: queue_task_result(
         task_id,
         client_route_id,
         dict(wire_payload),
         persisted_payload,
         replay=replay,
-    )
+    ))
     if pending is None:
         return False
     _ensure_outbound_retry_thread()
     if mqttc is None or not mqttc.is_connected():
         return False
-    return _publish_pending_task_result(mqttc, pending)
+    accepted = _publish_pending_task_result(mqttc, pending)
+    if accepted and isinstance(mqttc, MqttPoolClient):
+        # The ciphertext is durable and the Signal publish lock is released.
+        # Deliver a final reply without waiting behind inbox compaction/recovery.
+        try:
+            flush_outbound_messages(mqttc, preferred_client_route_id=client_route_id)
+        except Exception as exc:
+            log.debug("Immediate final delivery deferred (%s)", type(exc).__name__)
+            outbound_retry_wake_event.set()
+    return accepted
 
 
 def _publish_pending_task_result(mqttc, pending: dict) -> bool:
@@ -5555,7 +5565,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 block["metadata"] = metadata
             reply_payload["rich_output"] = rich_output
         reply_payload["artifact_verification"] = finalization.verification
-        receipt, reputation_snapshot = _task_reputation_evidence(task)
+        from agent_reply_timing import measure as measure_reply
+        receipt, reputation_snapshot = measure_reply(task_id, "evidence", lambda: _task_reputation_evidence(task))
         if receipt:
             reply_payload["execution_receipt"] = receipt
             reply_payload["reputation_snapshot"] = reputation_snapshot
@@ -8574,10 +8585,11 @@ def _publish_to_registered_client(
                 preferred_client_route_id=client_route_id,
             )
             return published.get((client_route_id, message_id), _DeferredPublishInfo())
-        encrypted = encrypt_signal_payload(
+        from agent_reply_timing import measure as measure_reply
+        encrypted = measure_reply(transport_task_id(payload), "encrypt", lambda: encrypt_signal_payload(
             application_envelope,
             remote_name=paired_client["signal_name"],
-        )
+        ))
         wire_payload = json.dumps(encrypted, ensure_ascii=False)
         if not durable:
             from mqtt_query_delivery import transient_traffic
@@ -8879,6 +8891,11 @@ def _outbound_retry_loop() -> None:
             mqttc = client
             if mqttc is None:
                 continue
+            if mqttc.is_connected():
+                try:
+                    flush_outbound_messages(mqttc)
+                except Exception as exc:
+                    log.debug("Priority outbound delivery deferred (%s)", type(exc).__name__)
             try:
                 flush_pending_inbound_messages(mqttc)
             except Exception as exc:

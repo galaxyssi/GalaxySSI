@@ -56,6 +56,8 @@ STAGE_PAIRS = {
     "desktop_model_submit_ms": ("desktop_model_submit_started", "desktop_model_submitted"),
     "desktop_model_first_output_ms": ("desktop_model_submit_started", "desktop_first_output"),
 }
+for _phase in ("evidence", "archive", "outbox", "encrypt", "wire_prepare"):
+    STAGE_PAIRS[f"desktop_reply_{_phase}_ms"] = (f"desktop_reply_{_phase}_started", f"desktop_reply_{_phase}_finished")
 STAGES = frozenset(stage for pair in STAGE_PAIRS.values() for stage in pair) | {"phone_final_received"}
 OUTCOMES = frozenset({"", "completed", "failed", "cancelled", "timed_out"})
 

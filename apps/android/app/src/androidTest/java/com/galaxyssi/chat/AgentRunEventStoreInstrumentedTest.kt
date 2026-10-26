@@ -43,6 +43,19 @@ class AgentRunEventStoreInstrumentedTest {
     }
 
     @Test
+    fun eventTypeLookupIsScopedToRunAndRetainsTerminalHistory() {
+        val first = UUID.randomUUID().toString()
+        val second = UUID.randomUUID().toString()
+        store.appendNext(event(first, AgentRunControlEventType.HANDOFF))
+        store.appendNext(event(first, AgentRunControlEventType.RUN_COMPLETED))
+        store.appendNext(event(second, AgentRunControlEventType.RUN_STARTED))
+        assertTrue(store.containsEventType(first, AgentRunControlEventType.HANDOFF))
+        assertEquals(false, store.containsEventType(second, AgentRunControlEventType.HANDOFF))
+        assertEquals(false, store.containsEventType("absent", AgentRunControlEventType.HANDOFF))
+        assertEquals(AgentRunControlEventType.RUN_COMPLETED, store.latestEvent(first)?.type)
+    }
+
+    @Test
     fun idempotentReplayIsStoredOnce() {
         val runId = UUID.randomUUID().toString()
         val first = event(runId, AgentRunControlEventType.RUN_STARTED).copy(

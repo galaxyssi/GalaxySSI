@@ -323,6 +323,12 @@ class AgentEncryptedDatabase(
         ).use { it.moveToFirst() }
     }
 
+    fun encodedValueLength(key: String): Int = database.operations.withLock {
+        database.readableDatabase.rawQuery(
+            "SELECT length(encrypted_value) FROM $TABLE_VALUES WHERE storage_key = ? LIMIT 1", arrayOf(key)
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
     fun countKeys(prefix: String): Int = database.operations.withLock {
         require(prefix.isNotEmpty())
         database.readableDatabase.rawQuery(
