@@ -6,7 +6,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from agent_latency import AgentLatencyTracer, AgentTimingPoint, opaque_id, summarize, record_task
 from agent_latency_hooks import execution_event, lifecycle, trace_stage
@@ -100,6 +100,37 @@ class AgentLatencyTest(unittest.TestCase):
         sink = MemorySink()
         AgentLatencyTracer(sink, monotonic_ns=lambda: 999).record("task", "desktop_request_received", at_ns=100)
         self.assertEqual(100, sink.points[0].monotonic_ns)
+
+    def test_historical_wall_time_uses_same_call_clock_pair(self):
+        sink = MemorySink()
+        tracer = AgentLatencyTracer(sink, monotonic_ns=lambda: 9_000_000_000,
+                                    wall_clock_ms=lambda: 50_000)
+        tracer.record("task", "desktop_request_received", at_ns=6_000_000_000)
+        tracer.record("task", "desktop_agent_started")
+        self.assertEqual([47_000, 50_000], [p.wall_clock_ms for p in sink.points])
+        self.assertEqual([6_000_000_000, 9_000_000_000], [p.monotonic_ns for p in sink.points])
+        self.assertEqual(3_000, tracer.summary()["metrics"]["desktop_pre_execution_ms"]["p50_ms"])
+
+    def test_projection_preserves_future_boundary_and_clamps_negative_wall(self):
+        sink = MemorySink()
+        tracer = AgentLatencyTracer(sink, monotonic_ns=lambda: 9_000_000_000,
+                                    wall_clock_ms=lambda: 1_000)
+        tracer.record("task", "desktop_request_received", at_ns=1_000_000_000)
+        tracer.record("task", "desktop_decrypt_started", at_ns=10_000_000_000)
+        self.assertEqual([0, 2_000], [p.wall_clock_ms for p in sink.points])
+        self.assertEqual(10_000_000_000, sink.points[1].monotonic_ns)
+
+    def test_wall_projection_refreshes_after_wall_clock_adjustment(self):
+        sink = MemorySink()
+        mono = Mock(side_effect=[5_000_000_000, 9_000_000_000])
+        wall = Mock(side_effect=[50_000, 30_000])
+        tracer = AgentLatencyTracer(sink, monotonic_ns=mono, wall_clock_ms=wall)
+        tracer.record("task", "desktop_request_received", at_ns=4_000_000_000)
+        tracer.record("task", "desktop_agent_started", at_ns=8_000_000_000)
+        self.assertEqual([49_000, 29_000], [p.wall_clock_ms for p in sink.points])
+        self.assertEqual(4_000, tracer.summary()["metrics"]["desktop_pre_execution_ms"]["p50_ms"])
+        self.assertEqual(2, mono.call_count)
+        self.assertEqual(2, wall.call_count)
 
     def test_corrupt_point_validation(self):
         valid = asdict(self.point("desktop_first_output", 1))

@@ -58,7 +58,7 @@ from link_delivery import (
     mark_outbound_deferred,
     mark_outbound_published,
     mark_outbound_retryable,
-    mark_outbound_sending,
+    mark_outbound_batch_sending,
     message_for_ciphertext,
     outbound_inflight_count,
     outbound_status,
@@ -2955,6 +2955,7 @@ def _record_publish_completion(mqttc, mid: int, failed: bool, reason_code=None):
                 early_outbound_acks.pop(next(iter(early_outbound_acks)))
     if outbound:
         (mark_outbound_retryable if failed else mark_outbound_published)(*outbound)
+        outbound_retry_wake_event.set()
 
 
 def track_outbound_publish(info, client_route_id: str, message_id: str, *, mqttc=None, generation=None) -> None:
@@ -2983,6 +2984,8 @@ def track_outbound_publish(info, client_route_id: str, message_id: str, *, mqttc
         mark_outbound_retryable(client_route_id, message_id)
     elif completed_before_tracking:
         mark_outbound_published(client_route_id, message_id)
+    if retryable or completed_before_tracking:
+        outbound_retry_wake_event.set()
 
 
 def track_delivery_ack(mqttc, info, payload: dict, stage: str, detail: object = ""):
@@ -6301,7 +6304,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 if direct_references or relative_references:
                     source_task_ids = [
                         str(candidate.get("task_id") or "")
-                        for candidate in agent_task_manager.list(limit=500)
+                        for candidate in agent_task_manager.list(limit=500, conversation_id=backend_conversation_id)
                         if str(candidate.get("task_id") or "") != task_id
                         and str(candidate.get("agent_id") or "") == agent_id
                         and str(candidate.get("conversation_id") or "") == backend_conversation_id
@@ -6564,7 +6567,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 prior_tasks = (
                     [
                         candidate
-                        for candidate in agent_task_manager.list(limit=500)
+                        for candidate in agent_task_manager.list(limit=500, conversation_id=codex_conversation_id)
                         if str(candidate.get("task_id") or "") != task.task_id
                         and str(candidate.get("agent_id") or "") == "codex"
                         and str(candidate.get("conversation_id") or "") == codex_conversation_id
@@ -8801,14 +8804,22 @@ def flush_outbound_messages(
                     break
             route_candidates = next_round
         try:
+            eligible = []
             for pending in selected:
                 client_route_id = str(pending["client_route_id"])
                 message_id = str(pending["message_id"])
                 if not get_client(client_route_id):
                     acknowledge_outbound(client_route_id, message_id)
                     continue
-                mark_outbound_sending(client_route_id, message_id)
-                with pending_outbound_acks_lock:
+                eligible.append(pending)
+            selected = eligible
+            mark_outbound_batch_sending([
+                (str(item["client_route_id"]), str(item["message_id"])) for item in selected
+            ])
+            with pending_outbound_acks_lock:
+                for pending in selected:
+                    client_route_id = str(pending["client_route_id"])
+                    message_id = str(pending["message_id"])
                     outbound_publish_reservations[(client_route_id, message_id)] = int(pending.get("priority") or OUTBOUND_PRIORITY_NORMAL)
         except BaseException:
             _release_outbound_reservations(selected)
@@ -8882,25 +8893,32 @@ def _publish_reserved_outbound(mqttc, selected: list[dict]) -> dict[tuple[str, s
 
 def _outbound_retry_loop() -> None:
     global outbound_retry_thread
+    next_recovery = time.monotonic() + OUTBOUND_RETRY_POLL_SECONDS
     try:
         while not outbound_retry_stop_event.is_set():
-            outbound_retry_wake_event.wait(OUTBOUND_RETRY_POLL_SECONDS)
+            woken = outbound_retry_wake_event.wait(max(0.0, next_recovery - time.monotonic()))
             outbound_retry_wake_event.clear()
             if outbound_retry_stop_event.is_set():
                 break
             mqttc = client
             if mqttc is None:
+                next_recovery = time.monotonic() + OUTBOUND_RETRY_POLL_SECONDS
                 continue
             if mqttc.is_connected():
                 try:
                     flush_outbound_messages(mqttc)
                 except Exception as exc:
                     log.debug("Priority outbound delivery deferred (%s)", type(exc).__name__)
+            # Enqueue/PUBACK wakeups only drain transport. Re-running recovery
+            # scans for every packet would contend with live inbox/task commits.
+            if woken and time.monotonic() < next_recovery:
+                continue
             try:
                 flush_pending_inbound_messages(mqttc)
             except Exception as exc:
                 log.debug("MQTT inbox recovery deferred (%s)", type(exc).__name__)
             if not mqttc.is_connected():
+                next_recovery = time.monotonic() + OUTBOUND_RETRY_POLL_SECONDS
                 continue
             try:
                 # Task results are persisted before their encrypted MQTT
@@ -8914,6 +8932,8 @@ def _outbound_retry_loop() -> None:
                 flush_worker_notifications(sys.modules[__name__], mqttc)
             except Exception as exc:
                 log.debug("MQTT durable replay deferred: %s", exc)
+            finally:
+                next_recovery = time.monotonic() + OUTBOUND_RETRY_POLL_SECONDS
     finally:
         if threading.current_thread() is outbound_retry_thread:
             outbound_retry_thread = None

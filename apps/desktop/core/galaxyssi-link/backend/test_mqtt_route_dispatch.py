@@ -334,7 +334,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
             patch.object(mqtt_bridge, "pending_outbound", return_value=pending),
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "get_client", return_value=paired_client()),
-            patch.object(mqtt_bridge, "mark_outbound_sending"),
+            patch.object(mqtt_bridge, "mark_outbound_batch_sending"),
             patch.object(mqtt_bridge, "mark_outbound_published") as mark_published,
         ):
             published = mqtt_bridge.flush_outbound_messages(mqttc)
@@ -375,7 +375,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
             patch.object(mqtt_bridge, "pending_outbound", return_value=pending[:1]) as select,
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "get_client", return_value=paired_client()),
-            patch.object(mqtt_bridge, "mark_outbound_sending") as mark_sending,
+            patch.object(mqtt_bridge, "mark_outbound_batch_sending") as mark_sending,
             patch.object(mqtt_bridge, "track_outbound_publish") as track,
         ):
             published = mqtt_bridge.flush_outbound_messages(mqttc)
@@ -384,7 +384,7 @@ class MqttRouteDispatchTests(unittest.TestCase):
             limit=mqtt_bridge.MAX_DURABLE_OUTBOUND_BATCH,
             client_route_id="client",
         )
-        mark_sending.assert_called_once_with("client", "message-0")
+        mark_sending.assert_called_once_with([("client", "message-0")])
         track.assert_called_once()
         self.assertEqual({("client", "message-0")}, set(published))
         self.assertEqual(1, len(mqttc.published))

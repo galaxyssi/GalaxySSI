@@ -219,10 +219,12 @@ class AgentEncryptedDatabase(
     }
 
     fun writeString(key: String, value: String) = withStorage {
+        val revision = AgentEncryptedRowCache.shared.invalidate(storageIdentity, listOf(key))
         val values = encodeValue(key, value)
         check(database.writableDatabase.insertWithOnConflict(
             TABLE_VALUES, null, values, SQLiteDatabase.CONFLICT_REPLACE
         ) != -1L) { "Agent encrypted database write failed" }
+        cacheCommittedValue(key, values, value, revision)
     }
 
     fun mutateStrings(
@@ -232,7 +234,8 @@ class AgentEncryptedDatabase(
         segmentPersonalRows: Boolean = false
     ): Unit = withStorage {
         if (upserts.isEmpty() && removeKeys.isEmpty()) return@withStorage
-        val source = if (onMutation == null) upserts else upserts.toMap()
+        val source = upserts.toMap()
+        val revision = AgentEncryptedRowCache.shared.invalidate(storageIdentity, source.keys + removeKeys)
         val encryptedValues = source.mapValues { (key, value) ->
             encodeValue(key, value, segmentPersonalRows)
         }
@@ -256,9 +259,13 @@ class AgentEncryptedDatabase(
         } finally {
             writable.endTransaction()
         }
+        encryptedValues.forEach { (key, values) ->
+            cacheCommittedValue(key, values, source.getValue(key), revision)
+        }
     }
 
     fun remove(key: String): Unit = withStorage {
+        AgentEncryptedRowCache.shared.invalidate(storageIdentity, listOf(key))
         database.writableDatabase.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
         Unit
     }
@@ -276,6 +283,7 @@ class AgentEncryptedDatabase(
             upserts.forEach { (key, value) ->
                 val previous = readEncryptedValue(writable, key)
                 if (previous == null || decodeValue(key, previous) != value) {
+                    AgentEncryptedRowCache.shared.invalidate(storageIdentity, listOf(key))
                     val values = encodeValue(key, value, segmentPersonalRows)
                     check(writable.insertWithOnConflict(TABLE_VALUES, null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
                         "Agent encrypted streaming transaction failed"
@@ -284,6 +292,7 @@ class AgentEncryptedDatabase(
                 }
             }
             removals().forEach { key ->
+                AgentEncryptedRowCache.shared.invalidate(storageIdentity, listOf(key))
                 writable.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
                 onMutation?.invoke(writable, key, null)
             }
@@ -292,6 +301,8 @@ class AgentEncryptedDatabase(
     }
 
     internal fun <T> indexedTransaction(block: (SQLiteDatabase) -> T): T = withStorage {
+        // The callback can mutate rows directly, including removing a previously cached row.
+        AgentEncryptedRowCache.shared.clearStorage(storageIdentity)
         val writable = database.writableDatabase
         writable.beginTransactionNonExclusive()
         try { block(writable).also { writable.setTransactionSuccessful() } }
@@ -300,6 +311,7 @@ class AgentEncryptedDatabase(
 
     fun removeAll(keys: Collection<String>): Unit = withStorage {
         if (keys.isEmpty()) return@withStorage
+        AgentEncryptedRowCache.shared.invalidate(storageIdentity, keys)
         val writable = database.writableDatabase
         writable.beginTransaction()
         try {
@@ -313,6 +325,7 @@ class AgentEncryptedDatabase(
     }
 
     fun clear(): Unit = withStorage {
+        AgentEncryptedRowCache.shared.clearStorage(storageIdentity)
         database.writableDatabase.delete(TABLE_VALUES, null, null)
         Unit
     }
@@ -488,8 +501,12 @@ class AgentEncryptedDatabase(
         }
         val value = if (encrypted.startsWith(AgentMemoryPayloadSegments.PREFIX)) {
             database.segments.decode(key, encrypted, associatedData(key))
-        } else AgentStorageCipher.decrypt(encrypted, associatedData(key)).also {
-            check(it != null || !key.startsWith(AgentPersonalMemoryRows.PREFIX)) { "Personal memory ciphertext is corrupt" }
+        } else {
+            val decrypt = { AgentStorageCipher.decrypt(encrypted, associatedData(key)) }
+            val plaintext = if (database.readableDatabase.inTransaction()) decrypt()
+                else AgentEncryptedRowCache.shared.read(storageIdentity, key, encrypted, decrypt)
+            check(plaintext != null || !key.startsWith(AgentPersonalMemoryRows.PREFIX)) { "Personal memory ciphertext is corrupt" }
+            plaintext
         }
         // Convert existing discovery rows on access, without a startup-wide scan or deleting user data.
         if (value != null && AttentionLocalStoragePolicy.allows(databaseName, key, value)) {
@@ -498,6 +515,13 @@ class AgentEncryptedDatabase(
                 arrayOf(AttentionLocalStoragePolicy.PREFIX + value, key, encrypted))
         }
         return value
+    }
+
+    private fun cacheCommittedValue(key: String, values: ContentValues, plaintext: String, revision: Long) {
+        val encrypted = values.getAsString("encrypted_value")
+        if (!database.writableDatabase.inTransaction() && AgentStorageCipher.isEncrypted(encrypted)) {
+            AgentEncryptedRowCache.shared.publish(storageIdentity, key, encrypted, plaintext, revision)
+        }
     }
 
     private fun readEncryptedValue(database: SQLiteDatabase, key: String): String? {
@@ -647,6 +671,7 @@ object AgentStorageCipher {
 
     @Synchronized
     fun deleteMasterKey() {
+        AgentEncryptedRowCache.shared.clearSensitive()
         cachedKey = null
         val keyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
         if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS)

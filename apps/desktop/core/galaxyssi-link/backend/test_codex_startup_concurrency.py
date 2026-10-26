@@ -159,6 +159,91 @@ class CodexStartupConcurrencyTests(unittest.TestCase):
                 patch.object(server, "_watch_run"), patch.object(server, "_begin_host_config_guard", return_value=None):
             self.assertEqual("existing", server.start_task("task", "hello", self.directory.name, conversation_id="same").thread_id)
 
+    def test_loaded_turn_does_not_wait_for_unrelated_lifecycle_rpc(self):
+        server = codex.CodexAppServer("codex", {}, lambda *_: None)
+        server._conversation_threads[server._conversation_key("same")] = "existing"
+        server._mark_thread_loaded_locked("existing")
+        entered, release = threading.Event(), threading.Event()
+
+        def unrelated_lifecycle():
+            with server._thread_lifecycle_lock:
+                entered.set()
+                release.wait(5)
+
+        worker = threading.Thread(target=unrelated_lifecycle)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            with patch.object(server, "_ensure_started"), \
+                    patch.object(server, "_request", return_value={"turn": {"id": "turn"}}) as rpc, \
+                    patch.object(server, "_watch_run"), \
+                    patch.object(server, "_begin_host_config_guard", return_value=None):
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(server.start_task, "task", "unchanged prompt", self.directory.name,
+                                         model="selected-model", conversation_id="same")
+                    try:
+                        run = future.result(timeout=2)
+                        self.assertFalse(release.is_set())
+                        self.assertEqual("existing", run.thread_id)
+                        self.assertEqual(["turn/start"], [call.args[0] for call in rpc.call_args_list])
+                        self.assertEqual("selected-model", rpc.call_args.args[1]["model"])
+                        self.assertEqual(run.execution_policy.reasoning_effort.value, rpc.call_args.args[1]["effort"])
+                        self.assertIn("unchanged prompt", rpc.call_args.args[1]["input"][0]["text"])
+                    finally:
+                        release.set()
+        finally:
+            release.set()
+            worker.join(2)
+        self.assertFalse(worker.is_alive())
+
+    def test_eviction_fences_loaded_marker_before_unsubscribe_rpc(self):
+        server = codex.CodexAppServer("codex", {}, lambda *_: None)
+        server._mark_thread_loaded_locked("old")
+
+        def unsubscribe(method, params, timeout):
+            self.assertEqual("thread/unsubscribe", method)
+            self.assertEqual("old", params["threadId"])
+            self.assertNotIn("old", server._loaded_thread_ids)
+            self.assertNotIn("old", server._loaded_thread_recency)
+
+        with patch.object(codex, "MAX_LOADED_CODEX_THREADS", 1), \
+                patch.object(server, "_request", side_effect=unsubscribe):
+            with server._thread_lifecycle_lock:
+                server._make_loaded_thread_room()
+
+    def test_active_warm_reservation_is_not_evicted(self):
+        server = codex.CodexAppServer("codex", {}, lambda *_: None)
+        server._conversation_threads[server._conversation_key("same")] = "existing"
+        server._mark_thread_loaded_locked("existing")
+
+        def submit(*args, **kwargs):
+            with patch.object(codex, "MAX_LOADED_CODEX_THREADS", 1), \
+                    patch.object(server, "_request") as rpc:
+                with server._thread_lifecycle_lock:
+                    server._make_loaded_thread_room()
+                rpc.assert_not_called()
+                self.assertIn("existing", server._loaded_thread_ids)
+            return {"turn": {"id": "turn"}}
+
+        with patch.object(server, "_ensure_started"), \
+                patch.object(server, "_start_turn_confirmed", side_effect=submit), \
+                patch.object(server, "_watch_run"), \
+                patch.object(server, "_begin_host_config_guard", return_value=None):
+            server.start_task("task", "hello", self.directory.name, conversation_id="same")
+
+    def test_rpc_timing_separates_write_from_ack_wait_without_content(self):
+        server = codex.CodexAppServer("codex", {}, lambda *_: None)
+
+        def write(message):
+            server._pending[message["id"]].put({"result": {"private-output": "not logged"}})
+
+        with patch.object(server, "_write", side_effect=write), \
+                patch.object(codex.time, "perf_counter", side_effect=[1.0, 1.25, 3.0]), \
+                patch.object(codex.log, "info") as log:
+            server._request("turn/start", {"private-prompt": "not logged"}, 1)
+        self.assertEqual(("turn/start", "completed", 250.0, 1750.0), log.call_args.args[1:])
+        self.assertNotIn("private", str(log.call_args))
+
     def test_dispatcher_continues_after_handler_error(self):
         server = codex.CodexAppServer("codex", {}, lambda *_: None)
         done = threading.Event()

@@ -123,6 +123,31 @@ class AgentLatencyTraceTest {
         assertEquals(10, sink.points.single().monotonicNs)
     }
 
+    @Test fun deferredSendKeepsItsOriginalWallBoundaryForCrossDeviceMeasurement() {
+        val sink = Sink()
+        val tracer = AgentLatencyTracer(sink, monotonicNs = { 5_000_000_000L }, wallClockMs = { 100_000L })
+        tracer.record("t", "phone_send_started", atNs = 3_200_000_000L)
+        tracer.record("t", "phone_publish_started")
+        assertEquals(98_200L, sink.points[0].wallClockMs)
+        assertEquals(100_000L, sink.points[1].wallClockMs)
+        assertEquals(1_800.0, AgentLatencyContract.summarize(sink.points)
+            .getValue("phone_context_route_ms").p50Ms!!, .001)
+    }
+
+    @Test fun completeTurnMetricIncludesPreparationAndRequiresFinalDraw() {
+        val start = point("phone_send_started", 0)
+        val published = point("phone_publish_started", 1_800)
+        val partial = point("phone_first_output_visible", 3_000)
+        val incomplete = AgentLatencyContract.summarize(listOf(start, published, partial))
+            .getValue("phone_send_complete_visible_ms")
+        assertEquals(1, incomplete.incomplete)
+        assertEquals(0, incomplete.count)
+        val complete = AgentLatencyContract.summarize(listOf(start, published, partial,
+            point("phone_final_output_visible", 25_000, outcome = "completed")))
+            .getValue("phone_send_complete_visible_ms")
+        assertEquals(25_000.0, complete.p50Ms!!, .001)
+    }
+
     @Test fun renderedErrorIsNotACompletedResponseSample() {
         val sink = Sink()
         val tracer = AgentLatencyTracer(sink)
