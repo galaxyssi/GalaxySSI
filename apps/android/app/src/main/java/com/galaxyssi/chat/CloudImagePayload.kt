@@ -10,7 +10,8 @@ internal data class CloudImagePayload(
     val mimeType: String,
     val bytes: ByteArray,
     val sourceUri: String = "",
-    val original: Boolean = false
+    val original: Boolean = false,
+    val historicalSourceTurnId: String = ""
 ) {
     init {
         require(bytes.isNotEmpty()) { "Cloud image payload must not be empty" }
@@ -46,20 +47,23 @@ internal object CloudImagePayloadFactory {
                 mimeType = encoded.mimeType,
                 bytes = encoded.bytes,
                 sourceUri = attachment.uri.toString(),
-                original = attachment.sendOriginal
+                original = attachment.sendOriginal,
+                historicalSourceTurnId = attachment.historicalSourceTurnId
             )
         }
 }
 
-/** Adds compressed image content only to the latest user turn. */
+/** New uploads belong to the current turn; replayed images are explicitly historical context. */
 internal object CloudVisionPayloadEncoder {
     fun attachOpenAi(conversation: JSONArray, images: List<CloudImagePayload>) {
-        if (images.isEmpty()) return
-        val message = latestRole(conversation, "user") ?: JSONObject()
-            .put("role", "user")
-            .also(conversation::put)
+        imageTurns(conversation, images, gemini = false).forEach { (message, turnImages) ->
+            attachOpenAiTurn(message, turnImages)
+        }
+    }
+
+    private fun attachOpenAiTurn(message: JSONObject, turnImages: List<CloudImagePayload>) {
         val content = contentArray(message, "text")
-        images.forEach { image ->
+        turnImages.forEach { image ->
             content.put(
                 JSONObject()
                     .put("type", "image_url")
@@ -71,7 +75,7 @@ internal object CloudVisionPayloadEncoder {
                     )
             )
         }
-        withOrientationSheet(images) { base64 ->
+        withOrientationSheet(turnImages) { base64 ->
             content.put(JSONObject().put("type", "text").put("text", AgentVisionOrientationSheet.CAPTION))
             content.put(JSONObject().put("type", "image_url").put("image_url", JSONObject()
                 .put("url", "data:image/jpeg;base64,$base64").put("detail", "auto")))
@@ -80,12 +84,14 @@ internal object CloudVisionPayloadEncoder {
     }
 
     fun attachAnthropic(conversation: JSONArray, images: List<CloudImagePayload>) {
-        if (images.isEmpty()) return
-        val message = latestRole(conversation, "user") ?: JSONObject()
-            .put("role", "user")
-            .also(conversation::put)
+        imageTurns(conversation, images, gemini = false).forEach { (message, turnImages) ->
+            attachAnthropicTurn(message, turnImages)
+        }
+    }
+
+    private fun attachAnthropicTurn(message: JSONObject, turnImages: List<CloudImagePayload>) {
         val content = contentArray(message, "text")
-        images.forEach { image ->
+        turnImages.forEach { image ->
             content.put(
                 JSONObject()
                     .put("type", "image")
@@ -98,7 +104,7 @@ internal object CloudVisionPayloadEncoder {
                     )
             )
         }
-        withOrientationSheet(images) { base64 ->
+        withOrientationSheet(turnImages) { base64 ->
             content.put(JSONObject().put("type", "text").put("text", AgentVisionOrientationSheet.CAPTION))
             content.put(JSONObject().put("type", "image").put("source", JSONObject()
                 .put("type", "base64").put("media_type", "image/jpeg").put("data", base64)))
@@ -107,18 +113,19 @@ internal object CloudVisionPayloadEncoder {
     }
 
     fun attachGemini(conversation: JSONArray, images: List<CloudImagePayload>) {
-        if (images.isEmpty()) return
-        val message = latestRole(conversation, "user") ?: JSONObject()
-            .put("role", "user")
-            .put("parts", JSONArray())
-            .also(conversation::put)
+        imageTurns(conversation, images, gemini = true).forEach { (message, turnImages) ->
+            attachGeminiTurn(message, turnImages)
+        }
+    }
+
+    private fun attachGeminiTurn(message: JSONObject, turnImages: List<CloudImagePayload>) {
         val parts = message.optJSONArray("parts") ?: JSONArray().also { replacement ->
             message.optString("parts").takeIf(String::isNotBlank)?.let { text ->
                 replacement.put(JSONObject().put("text", text))
             }
             message.put("parts", replacement)
         }
-        images.forEach { image ->
+        turnImages.forEach { image ->
             parts.put(
                 JSONObject().put(
                     "inline_data",
@@ -128,7 +135,7 @@ internal object CloudVisionPayloadEncoder {
                 )
             )
         }
-        withOrientationSheet(images) { base64 ->
+        withOrientationSheet(turnImages) { base64 ->
             parts.put(JSONObject().put("text", AgentVisionOrientationSheet.CAPTION))
             parts.put(JSONObject().put("inline_data", JSONObject()
                 .put("mime_type", "image/jpeg").put("data", base64)))
@@ -136,12 +143,40 @@ internal object CloudVisionPayloadEncoder {
     }
 
     private inline fun withOrientationSheet(images: List<CloudImagePayload>, append: (String) -> Unit) {
+        if (images.any { it.historicalSourceTurnId.isNotBlank() }) return
         val bytes = runCatching { AgentVisionOrientationSheet.create(images) }.getOrNull() ?: return
         try {
             append(Base64.getEncoder().encodeToString(bytes))
         } finally {
             bytes.wipeSensitive()
         }
+    }
+
+    private fun imageTurns(
+        conversation: JSONArray,
+        images: List<CloudImagePayload>,
+        gemini: Boolean
+    ): List<Pair<JSONObject, List<CloudImagePayload>>> {
+        if (images.isEmpty()) return emptyList()
+        val current = latestRole(conversation, "user") ?: JSONObject().put("role", "user")
+            .also(conversation::put)
+        val groups = images.groupBy { it.historicalSourceTurnId }
+        val historical = groups.filterKeys(String::isNotBlank).map { (sourceTurn, references) ->
+            val label = AgentVisualTurnPolicy.historyLabel(sourceTurn)
+            val message = JSONObject().put("role", "user")
+            if (gemini) message.put("parts", JSONArray().put(JSONObject().put("text", label)))
+            else message.put("content", label)
+            message to references
+        }
+        if (historical.isNotEmpty()) {
+            // Compacted cloud history may lack the source turn. Restore a labeled reference,
+            // never move its pixels into the user's new text-only message or invent a reply.
+            val items = (0 until conversation.length()).map(conversation::get)
+            val insertion = items.indexOfFirst { it === current }
+            val restored = items.toMutableList().apply { addAll(insertion, historical.map { it.first }) }
+            restored.forEachIndexed { index, item -> conversation.put(index, item) }
+        }
+        return historical + listOfNotNull(groups[""]?.let { current to it })
     }
 
     private fun latestRole(conversation: JSONArray, role: String): JSONObject? {

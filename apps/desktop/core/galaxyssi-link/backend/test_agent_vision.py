@@ -14,6 +14,15 @@ from agent_gateway import _apply_prompt
 
 
 class NativeEvidenceTest(unittest.TestCase):
+    def test_followup_policy_keeps_orientation_internal_and_respects_current_request(self):
+        from vision_orientation import CAPTION
+        for policy in (vision.VISION_POLICY, CAPTION):
+            self.assertIn("historical", policy.lower())
+            self.assertIn("internally", policy)
+            self.assertIn("not prefix replies", policy)
+            self.assertIn("ambiguity", policy)
+        self.assertIn("not as new uploads", vision.VISION_POLICY)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

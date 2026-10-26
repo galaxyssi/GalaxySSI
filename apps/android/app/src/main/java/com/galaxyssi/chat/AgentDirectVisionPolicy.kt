@@ -2,7 +2,7 @@ package com.galaxyssi.chat
 
 internal object AgentDirectVisionPolicy {
     fun instruction(attachments: List<AgentInputAttachment>): String {
-        return instructionForMimeTypes(attachments.map(AgentInputAttachment::mimeType))
+        return AgentVisualTurnPolicy.instruction(attachments)
     }
 
     internal fun instructionForMimeTypes(mimeTypes: List<String>): String {
@@ -28,6 +28,6 @@ internal object AgentDirectVisionPolicy {
             after checking orientation and context, state the specific uncertainty without inventing
             missing text or asserting that no meaningful content exists. Do not search the web when
             the supplied image alone suffices. Keep visual checking internal and answer concisely.
-        """.trimIndent()
+        """.trimIndent() + "\n" + AgentVisualTurnPolicy.ANSWER_STYLE
     }
 }

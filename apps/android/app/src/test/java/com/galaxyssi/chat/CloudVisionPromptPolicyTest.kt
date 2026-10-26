@@ -24,4 +24,16 @@ class CloudVisionPromptPolicyTest {
         assertTrue(result.contains("specific uncertainty"))
         assertFalse(result.contains("1+1"))
     }
+
+    @Test fun historyOnlyPreservesCurrentQuestionAndToolContractWithoutNewImageInstructions() {
+        val contract = "Use phone tools when required; otherwise answer the current question."
+        val result = CloudVisionPromptPolicy.compose(contract, 1, { error("unused") },
+            "Image editing tools remain available.", currentImageCount = 0)
+        assertTrue(result.startsWith(contract))
+        assertTrue(result.contains(AgentVisualTurnPolicy.HISTORICAL_CONTEXT))
+        assertTrue(result.contains(AgentVisualTurnPolicy.ANSWER_STYLE))
+        assertTrue(result.contains("Image editing tools remain available."))
+        assertFalse(result.contains("inspect the image twice"))
+        assertFalse(result.contains("If only an image is supplied"))
+    }
 }

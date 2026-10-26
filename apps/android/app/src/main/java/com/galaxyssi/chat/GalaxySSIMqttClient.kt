@@ -777,6 +777,15 @@ object GalaxySSIMqttClient {
                     .put("defer_media_upload", mediaProfile.deferMediaUpload)
             }
         }
+        payload.optJSONArray("attachments")?.let { encoded ->
+            val references = sourceAttachments.filter { it.isHistoricalReference }.associateBy { it.id }
+            for (index in 0 until encoded.length()) {
+                val item = encoded.optJSONObject(index) ?: continue
+                references[item.optString("id")]?.let { reference ->
+                    item.put("historical_source_turn_id", reference.historicalSourceTurnId)
+                }
+            }
+        }
         recordPublishStage("metadata_ready")
         deliveryTrace?.let { payload.put("delivery_trace", it) }
         if (context != null) {

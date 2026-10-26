@@ -94,6 +94,13 @@ class RequestSnapshotTest(unittest.TestCase):
         self.assertNotIn("task_id", options)
         self.assertNotIn("_recovered_task", options)
 
+    def test_historical_image_provenance_survives_recovery_without_changing_task_identity(self):
+        value = self.snapshot([{"id": "image", "name": "prior.jpg",
+                                "historical_source_turn_id": "source-turn", "task_id": "not-authority"}])
+        attachment = restore_request_options(snapshot_copy(value))["attachments"][0]
+        self.assertEqual("source-turn", attachment["historical_source_turn_id"])
+        self.assertNotIn("task_id", attachment)
+
     def test_snapshot_is_detached_and_bounded(self):
         value = self.snapshot([{"name": "first.png"}])
         copied = snapshot_copy(value)

@@ -1544,7 +1544,7 @@ internal fun MainActivity.stageAgentGoalAttachments(
                     conversation.id,
                     reference.turnId,
                     reference.blocks
-                )
+                ).map { it.copy(historicalSourceTurnId = reference.turnId) }
             }.orEmpty()
         }
         if (executionAttachments.isEmpty()) {
@@ -1571,6 +1571,9 @@ internal fun MainActivity.stageAgentGoalAttachments(
         }.getOrDefault(emptyList())
         val attachmentManifest = buildString {
             executionAttachments.forEach { attachment ->
+                if (attachment.isHistoricalReference) {
+                    append(AgentVisualTurnPolicy.historyLabel(attachment.historicalSourceTurnId)).append('\n')
+                }
                 append("- ").append(attachment.displayName)
                 append(" (").append(attachment.mimeType).append(", ")
                 append(AgentInputAttachment.humanSize(attachment.sizeBytes)).append(")\n")
@@ -1591,7 +1594,8 @@ internal fun MainActivity.stageAgentGoalAttachments(
                     append("\n\n")
                     append(directVisionInstruction)
                 }
-            append("\n\nAttached input:\n")
+            append(if (executionAttachments.all { it.isHistoricalReference })
+                "\n\nHistorical visual context (no new attachment in this turn):\n" else "\n\nAttached input:\n")
             append(
                 AgentUntrustedEvidenceBoundary.wrapText(
                     "attachment_manifest",
@@ -1600,10 +1604,10 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 )
             )
             append('\n')
-            append(
-                "Inspect the attached content, infer the user's most likely intent from the " +
-                    "content and conversation, and complete the most helpful relevant action."
-            )
+            if (executionAttachments.any { !it.isHistoricalReference }) {
+                append("Inspect the newly attached content in light of the user's current request. " +
+                    "If only a new image was sent, infer and complete the most helpful relevant task.")
+            }
         }
         runOnUiThread {
             if (isSubmissionCancelled()) return@runOnUiThread
@@ -1611,7 +1615,8 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 executionGoal,
                 conversation.id,
                 turnId,
-                forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal, conversation.id)
+                forcedAction = if (staged.isEmpty() && executionAttachments.any { !it.isHistoricalReference })
+                    attachmentConnectorAction(executionGoal, conversation.id)
                     ?.let { PhoneAssistantTaskControl.bindReadOnlyScope(it, turnId) } else null,
                 originalGoal = goal,
                 isSubmissionCancelled = isSubmissionCancelled
@@ -1669,7 +1674,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
     scheduleChecked: Boolean = false
 ) {
     if (isSubmissionCancelled()) return
-    if (!scheduleChecked && forcedAction == null && AgentTurnAttachmentRegistry.get(turnId).isEmpty() &&
+    if (!scheduleChecked && forcedAction == null && AgentTurnAttachmentRegistry.current(turnId).isEmpty() &&
         (ConversationScheduleParser.parse(originalGoal) != null ||
             AgentDeviceIntent.exactTimerSeconds(originalGoal) != null || AgentDeviceIntent.followup(originalGoal) != null)) {
         agentRoutingExecutor.execute {
@@ -1687,7 +1692,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
     }
     if (!collaborationChecked && forcedAction == null &&
         CollaborationGroupStore.cached(conversationId)?.members?.isNotEmpty() == true &&
-        AgentTurnAttachmentRegistry.get(turnId).isEmpty() && !AgentLocalControlCommandPolicy.matches(goal)) {
+        AgentTurnAttachmentRegistry.current(turnId).isEmpty() && !AgentLocalControlCommandPolicy.matches(goal)) {
         routeCollaborationFollowup(conversationId, turnId, goal, isSubmissionCancelled) {
             continueAgentGoalSubmission(goal, conversationId, turnId, forcedAction, originalGoal,
                 executionModeOverride, isSubmissionCancelled, collaborationChecked = true, scheduleChecked = true)

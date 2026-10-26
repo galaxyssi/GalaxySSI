@@ -10,6 +10,7 @@ OPTION_FIELDS = frozenset({
 ATTACHMENT_FIELDS = frozenset({
     "id", "transfer_id", "name", "mime_type", "type", "size", "transport_size",
     "sha256", "transport_status", "attachment_request_id", "data_b64",
+    "historical_source_turn_id",
 })
 
 

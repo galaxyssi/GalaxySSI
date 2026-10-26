@@ -14,7 +14,10 @@ CAPTION = (
     "Interpret handwriting by the complete expression, spacing and conventional notation; "
     "a curved numeral is not necessarily a parenthesis. Do not claim cropping or missing "
     "content when the strokes and surrounding page margins are fully visible. "
-    "If alternatives remain plausible, state the ambiguity rather than inventing a transcription."
+    "If alternatives remain plausible, state the ambiguity rather than inventing a transcription. "
+    "Use historical images only when relevant to the latest request. Check orientation internally; "
+    "do not prefix replies with orientation, rotation angles, or a reading report unless the user "
+    "asks or a specific ambiguity matters to the answer."
 )
 MAX_BYTES = 100_000
 MAX_SOURCE_BYTES = 20 * 1024 * 1024
