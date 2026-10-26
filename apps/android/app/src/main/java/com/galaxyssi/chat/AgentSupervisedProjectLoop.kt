@@ -177,7 +177,7 @@ internal object AgentSupervisedProjectLoop {
     fun visibleSummary(request: AgentRequest, english: String, chinese: String): String =
         if (request.goal.any(::isCjkCharacter)) chinese else english
 
-    fun planningPrompt(request: AgentRequest): String = buildPrompt(
+    fun planningPrompt(request: AgentRequest): String = AgentVisionInitialPrompt.render(request) ?: buildPrompt(
         request = request,
         evidenceExpected = false
     )
