@@ -8,7 +8,6 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -24,50 +23,65 @@ internal class AgentVoicePanel(context: Context) : LinearLayout(context) {
     val microphone = icon(R.drawable.ic_voice_call_mic, R.string.voice_call_mute)
     val screen = icon(R.drawable.ic_agent_screen, R.string.voice_call_screen)
     val hangup = icon(R.drawable.ic_voice_call_end, R.string.voice_call_end)
+    val route = TextView(context)
 
     init {
         orientation = VERTICAL
         setBackgroundColor(context.getColor(R.color.surface_bg))
-        addView(View(context).apply { setBackgroundColor(context.getColor(R.color.separator)) }, LayoutParams(-1, dp(1)))
-        val heading = FrameLayout(context)
+        setPadding(dp(16), dp(8), dp(16), dp(12))
+        val heading = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
         status.apply {
-            textSize = 14f
-            setTextColor(context.getColor(R.color.text_secondary))
-            gravity = Gravity.CENTER
+            textSize = 16f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(context.getColor(R.color.text_primary))
+            gravity = Gravity.CENTER_VERTICAL
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
-        heading.addView(status, FrameLayout.LayoutParams(-1, dp(56)).apply { marginStart = dp(48); marginEnd = dp(48) })
-        heading.addView(collapse, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
-        addView(heading, LayoutParams(-1, dp(56)))
+        heading.addView(status, LayoutParams(0, dp(48), 1f))
+        route.apply {
+            textSize = 14f
+            maxWidth = dp(140)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            setTextColor(context.getColor(R.color.text_secondary))
+            setPadding(dp(8), 0, dp(8), 0)
+            val headphones = context.getDrawable(R.drawable.ic_voice_headphones)?.apply { setBounds(0, 0, dp(18), dp(18)) }
+            val chevron = context.getDrawable(R.drawable.ic_chevron_down)?.apply { setBounds(0, 0, dp(12), dp(12)) }
+            setCompoundDrawablesRelative(headphones, null, chevron, null)
+            compoundDrawablePadding = dp(4)
+            contentDescription = context.getString(R.string.voice_control_audio_route)
+            isFocusable = true
+        }
+        heading.addView(route, LayoutParams(LayoutParams.WRAP_CONTENT, dp(48)))
+        hangup.setImageResource(R.drawable.ic_screen_prompt_voice_stop)
+        hangup.background = actionBackground(0x0F808080)
+        heading.addView(hangup, LayoutParams(dp(48), dp(48)))
+        addView(heading, LayoutParams(-1, dp(48)))
         waveform.setColors(context.getColor(R.color.agent_voice_transcript_dot), context.getColor(R.color.unread_red))
         waveform.useDenseRecordingStyle()
-        addView(waveform, LayoutParams(dp(152), dp(26)).apply { gravity = Gravity.CENTER_HORIZONTAL })
         transcript.apply {
             textSize = 16f
-            setTextColor(context.getColor(R.color.text_primary))
-            gravity = Gravity.CENTER
+            setTextColor(context.getColor(R.color.text_secondary))
+            gravity = Gravity.TOP or Gravity.START
             maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setPadding(0, dp(8), 0, 0)
         }
-        addView(transcript, LayoutParams(-1, dp(88)))
-        val controls = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, dp(8))
-        }
-        listOf(keyboard, camera, microphone, screen, hangup).forEach { button ->
-            val slot = FrameLayout(context)
-            slot.addView(button, FrameLayout.LayoutParams(dp(if (button === microphone) 60 else 48), dp(if (button === microphone) 60 else 48), Gravity.CENTER))
-            controls.addView(slot, LayoutParams(0, dp(64), 1f))
-        }
+        addView(transcript, LayoutParams(-1, dp(72)))
         microphone.background = actionBackground(0x1F18AFA0)
         microphone.imageTintList = ColorStateList.valueOf(context.getColor(R.color.agent_voice_transcript_dot))
-        hangup.background = actionBackground(0x1FFF3B30)
-        hangup.imageTintList = ColorStateList.valueOf(context.getColor(R.color.unread_red))
-        addView(controls, LayoutParams(-1, dp(76)))
+        // Keep optional camera/keyboard controls available without a permanent button row.
+        status.setOnClickListener { microphone.performClick() }
+        status.setOnLongClickListener {
+            val buttons = listOf(keyboard, camera, screen, collapse)
+            android.app.AlertDialog.Builder(context).setItems(buttons.map { it.contentDescription }.toTypedArray()) { _, i ->
+                buttons[i].performClick()
+            }.show()
+            true
+        }
         visibility = GONE
     }
 

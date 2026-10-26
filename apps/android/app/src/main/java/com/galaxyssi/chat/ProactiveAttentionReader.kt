@@ -65,6 +65,13 @@ internal class ProactiveAttentionReader(
         layoutManager = manager; adapter = this@ProactiveAttentionReader.adapter; itemAnimator = null
         tag = "attention-reader-list"
     }
+
+    fun visibleArticleId(): String {
+        val first = manager.findFirstVisibleItemPosition()
+        if (first == RecyclerView.NO_POSITION) return ""
+        val visible = (first..manager.findLastVisibleItemPosition()).mapNotNull(adapter.rows::getOrNull)
+        return (visible.firstOrNull { it.expanded } ?: visible.firstOrNull())?.item?.newsArticleKey.orEmpty()
+    }
     private val notice = text(11f).apply {
         gravity = Gravity.CENTER; setPadding(dp(14), 0, dp(14), 0)
         minimumHeight = dp(44); visibility = View.GONE

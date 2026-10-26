@@ -143,6 +143,7 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentSelfEvolutionNativeTools.toolIds)
             addAll(AgentDesktopRemoteNativeTools.toolIds)
             addAll(AgentToolInspectionTools.toolIds)
+            addAll(AgentAppControlTools.toolIds)
         }
     }
 
@@ -170,6 +171,8 @@ object AgentPhoneNativeToolCatalog {
             observationRecorder = CollaborationNativeEvidence(context.applicationContext)
         )
         return registry.registerAll(
+            AgentAppControlTools.definitions(AndroidAppControlPlatform(context.applicationContext))
+        ).registerAll(
             AgentWebMediaNativeTools.definitions(webMediaServices)
         ).registerAll(
             AgentWebIntelligenceNativeTools.androidDefinitions(

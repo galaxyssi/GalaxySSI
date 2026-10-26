@@ -9,7 +9,34 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 
-internal class AttentionArticleBodyView(context: Context, document: AttentionArticleDocument) : LinearLayout(context) {
+internal class AttentionArticleBodyView(context: Context, document: AttentionArticleDocument,
+    private val articleId: String = "") : LinearLayout(context) {
+    private val spokenBlocks = mutableListOf<Pair<TextView, Int>>()
+    private val playbackListener: (VoiceNewsPlaybackState) -> Unit = { updateSpokenParagraph(it) }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (articleId.isNotBlank()) VoiceNewsPlaybackBus.add(playbackListener)
+    }
+    override fun onDetachedFromWindow() {
+        VoiceNewsPlaybackBus.remove(playbackListener)
+        updateSpokenParagraph(VoiceNewsPlaybackState())
+        super.onDetachedFromWindow()
+    }
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        updateSpokenParagraph(if (visibility == View.VISIBLE) VoiceNewsPlaybackBus.current else VoiceNewsPlaybackState())
+    }
+    private fun updateSpokenParagraph(state: VoiceNewsPlaybackState) {
+        val spoken = state.paragraph.takeIf { state.articleId == articleId && state.state == "playing" && windowVisibility == View.VISIBLE }.orEmpty()
+        spokenBlocks.forEach { (view, color) ->
+            val selected = VoiceNewsHighlightPolicy.matches(view.text.toString(), spoken)
+            if (view.isSelected != selected) {
+                view.isSelected = selected
+                view.setBackgroundColor(if (selected) context.getColor(R.color.agent_user_bubble_bg) else color)
+            }
+        }
+    }
     private val blocks = document.blocks.flatMap { block ->
         if (block.kind == "image") listOf(block) else AttentionArticlePolicy.parts(block.text, 1600).map { block.copy(text = it) }
     }
@@ -53,6 +80,7 @@ internal class AttentionArticleBodyView(context: Context, document: AttentionArt
             if (caption) label.setTextColor(context.getColor(R.color.text_secondary))
             if (block.kind in setOf("code", "table")) label.typeface = Typeface.MONOSPACE
             if (block.kind == "quote") label.setBackgroundColor(context.getColor(R.color.attention_reader_excerpt_bg))
+            spokenBlocks.add(label to if (block.kind == "quote") context.getColor(R.color.attention_reader_excerpt_bg) else android.graphics.Color.TRANSPARENT)
             if (!heading) {
                 val styled = SpannableString(label.text)
                 for (term in block.emphasis) {
@@ -72,6 +100,7 @@ internal class AttentionArticleBodyView(context: Context, document: AttentionArt
             tag = "attention-body-more"
             this@AttentionArticleBodyView.addView(this)
         } else null
+        updateSpokenParagraph(VoiceNewsPlaybackBus.current)
     }
 
     private fun text(value: String, size: Float, bold: Boolean = false) = TextView(context).apply {

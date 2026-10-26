@@ -121,6 +121,19 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     fun body(key: String): String? = db.rawQuery("SELECT body FROM articles WHERE id = ? AND state IN ('ready','published')", arrayOf(key))
         .use { if (it.moveToFirst()) it.getString(0) else null }
 
+    fun voiceArticles(query: String, since: Long, limit: Int): List<Map<String, Any>> {
+        val pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        return db.rawQuery("SELECT id,zh_title,url,publisher,published,topic_title FROM articles " +
+            "WHERE state IN ('ready','published') AND length(body)>0 AND published>=? " +
+            "AND (zh_title LIKE ? ESCAPE '\\' OR topic_title LIKE ? ESCAPE '\\') " +
+            "ORDER BY published DESC,id DESC LIMIT ?", arrayOf(since.coerceAtLeast(0).toString(), pattern, pattern,
+                limit.coerceIn(1, 20).toString())).use { cursor -> buildList {
+            while (cursor.moveToNext()) add(mapOf("article_id" to cursor.getString(0), "title" to cursor.getString(1),
+                "url" to cursor.getString(2), "publisher" to cursor.getString(3),
+                "published_at" to cursor.getLong(4), "topic" to cursor.getString(5)))
+        } }
+    }
+
     fun nextAt(topics: Set<String>): Long? {
         if (topics.isEmpty()) return null
         return db.rawQuery("SELECT MIN(next_at) FROM articles WHERE (state <> 'published' OR visual_requested = 1) AND topic IN (" +

@@ -16,6 +16,8 @@ class VoiceConversationSession {
     private val turns = linkedMapOf<String, Long>()
     private val turnTraces = linkedMapOf<String, String>()
     private val spokenTurns = mutableSetOf<String>()
+    private val submittedTraces = mutableSetOf<String>()
+    private var appControlTurnId = ""
     private var mediaSequence = 0L
     private var mediaPlaybackId: Long? = null
     private var resumeAfterMedia = false
@@ -33,8 +35,10 @@ class VoiceConversationSession {
         muted = false
         clearMediaPlayback()
         spokenTurns.clear()
+        submittedTraces.clear()
         latestTurnId = ""
         latestTraceId = ""
+        appControlTurnId = ""
         return generation
     }
 
@@ -43,6 +47,7 @@ class VoiceConversationSession {
         active = false
         expanded = false
         muted = false
+        appControlTurnId = ""
         clearMediaPlayback()
     }
 
@@ -90,6 +95,7 @@ class VoiceConversationSession {
         traces[traceId] = generation
         latestTraceId = traceId
         trim(traces)
+        submittedTraces.retainAll(traces.keys)
     }
 
     fun ownsTrace(traceId: String): Boolean = traceId.isNotBlank() && traces.containsKey(traceId)
@@ -97,11 +103,19 @@ class VoiceConversationSession {
     fun acceptsTrace(traceId: String): Boolean =
         active && !muted && traceId == latestTraceId && traces[traceId] == generation
 
+    /** ASR providers can finalize the same utterance twice. Claim before any side effect. */
+    fun claimInput(traceId: String): Boolean {
+        if (!acceptsTrace(traceId) || !submittedTraces.add(traceId)) return false
+        appControlTurnId = ""
+        return true
+    }
+
     fun registerTurn(traceId: String, turnId: String) {
         if (!acceptsTrace(traceId) || turnId.isBlank()) return
         turns[turnId] = generation
         turnTraces[turnId] = traceId
         latestTurnId = turnId
+        appControlTurnId = turnId
         trim(turns)
         turnTraces.keys.retainAll(turns.keys)
         spokenTurns.retainAll(turns.keys)
@@ -109,6 +123,10 @@ class VoiceConversationSession {
 
     fun acceptsTurn(conversationId: String, turnId: String): Boolean =
         active && this.conversationId == conversationId && turns[turnId] == generation
+
+    // Reopening passive capture after navigation does not supersede an in-flight App command.
+    fun acceptsAppControlTurn(turnId: String): Boolean = active && turnId.isNotBlank() &&
+        turnId == appControlTurnId && turns[turnId] == generation
 
     fun claimSpeech(conversationId: String, turnId: String): Boolean =
         !muted && turnId == latestTurnId && acceptsTurn(conversationId, turnId) && spokenTurns.add(turnId)

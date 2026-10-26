@@ -73,6 +73,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         onPlaybackStarted: () -> Unit = {},
         recordCompletion: Boolean = true,
         communicationPlayback: Boolean = false,
+        mediaPlayback: Boolean = false,
         onDone: (Boolean, String?) -> Unit
     ) {
         if (text.isBlank()) {
@@ -88,7 +89,7 @@ class MicrosoftEdgeTts(private val context: Context) {
                 if (BuildConfig.DEBUG) Log.i("GalaxySSIVoice", "Edge TTS audio ready voice=$voice bytes=${audio.size} protocol=2")
                 try {
                     ensureCurrent(generation)
-                    playAudio(audio, traceId, generation, onPlaybackStarted, communicationPlayback)
+                    playAudio(audio, traceId, generation, onPlaybackStarted, communicationPlayback, mediaPlayback)
                     ensureCurrent(generation)
                 } finally {
                     audio.fill(0)
@@ -353,14 +354,18 @@ class MicrosoftEdgeTts(private val context: Context) {
         traceId: String,
         generation: Long,
         onPlaybackStarted: () -> Unit,
-        communicationPlayback: Boolean
+        communicationPlayback: Boolean,
+        mediaPlayback: Boolean
     ) {
         ensureCurrent(generation)
-        val file = File(context.cacheDir, "galaxyssi_tts_${System.currentTimeMillis()}.mp3")
+        val file = File.createTempFile("galaxyssi_tts_", ".mp3", context.cacheDir)
         file.writeBytes(audio)
         val latch = CountDownLatch(1)
         val mp = MediaPlayer()
-        mp.setAudioAttributes(com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(communicationPlayback))
+        mp.setAudioAttributes(if (mediaPlayback) android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()
+            else com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(communicationPlayback))
         synchronized(playbackLock) {
             ensureCurrent(generation)
             player = mp

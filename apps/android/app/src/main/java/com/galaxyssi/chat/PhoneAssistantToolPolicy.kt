@@ -9,7 +9,8 @@ internal object PhoneAssistantToolPolicy {
     fun allowsGeneralPhoneTool(id: String): Boolean =
         allowsRemotePhoneTool(id) || AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(id)
 
-    fun allowsRemotePhoneTool(id: String): Boolean = id in AgentToolInspectionTools.toolIds || id in AgentPhoneUiNativeTools.toolIds ||
+    fun allowsRemotePhoneTool(id: String): Boolean = id in AgentAppControlTools.toolIds ||
+        id in AgentToolInspectionTools.toolIds || id in AgentPhoneUiNativeTools.toolIds ||
         id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
         id in AgentInteractiveBrowserTools.toolIds ||
         id in AgentRuntimeControlTools.toolIds ||

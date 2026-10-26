@@ -1203,7 +1203,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         foregroundAgentReload.invalidate()
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         if (::conversationWindow.isInitialized) conversationWindow.destroy()
-        agentVoiceConversation?.end()
+        agentVoiceConversation?.release()
         contactReminderComposer?.destroy()
         initialAgentHydrationReady.countDown()
         if (::voiceInteractionCoordinator.isInitialized && voiceCoordinatorObserverId.isNotBlank()) {
@@ -1287,6 +1287,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         agentTranscriptContentExecutor.shutdown()
         historyExecutor.shutdown()
         cloudExecutor.shutdown()
+        AppVoiceControlBridge.release(this)
         super.onDestroy()
     }
 
@@ -1412,7 +1413,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onStop() {
-        clearRuntimePlaintextForBackground()
+        if (agentVoiceConversation?.hasExternalForegroundHost() != true) clearRuntimePlaintextForBackground()
         super.onStop()
     }
 
