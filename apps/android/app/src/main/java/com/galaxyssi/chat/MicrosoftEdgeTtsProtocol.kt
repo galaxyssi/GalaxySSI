@@ -1,6 +1,5 @@
 package com.galaxyssi.chat
 
-import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -10,12 +9,9 @@ internal object MicrosoftEdgeTtsProtocol {
     private const val BASE_URL =
         "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
     private const val TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-    private const val WINDOWS_EPOCH_SECONDS = 11_644_473_600L
-    private const val GEC_WINDOW_SECONDS = 300L
-    private const val FILETIME_TICKS_PER_SECOND = 10_000_000L
     private const val CHROMIUM_FULL_VERSION = "143.0.3650.75"
     private const val CHROMIUM_MAJOR_VERSION = "143"
-    private const val SEC_MS_GEC_VERSION = "1-$CHROMIUM_FULL_VERSION"
+    private const val SEC_MS_GEC_VERSION = "2-$CHROMIUM_FULL_VERSION"
 
     fun websocketUrl(connectionId: String, epochSeconds: Long): String =
         "$BASE_URL?TrustedClientToken=$TRUSTED_CLIENT_TOKEN" +
@@ -35,16 +31,7 @@ internal object MicrosoftEdgeTtsProtocol {
         "Cookie" to "muid=$muid;"
     )
 
-    fun secMsGec(epochSeconds: Long): String {
-        val roundedSeconds = Math.floorDiv(epochSeconds, GEC_WINDOW_SECONDS) * GEC_WINDOW_SECONDS
-        val ticks = Math.multiplyExact(
-            Math.addExact(roundedSeconds, WINDOWS_EPOCH_SECONDS),
-            FILETIME_TICKS_PER_SECOND
-        )
-        return MessageDigest.getInstance("SHA-256")
-            .digest("$ticks$TRUSTED_CLIENT_TOKEN".toByteArray(Charsets.US_ASCII))
-            .joinToString("") { "%02X".format(Locale.US, it.toInt() and 0xff) }
-    }
+    fun secMsGec(epochSeconds: Long): String = MicrosoftEdgeTtsGec.generate(epochSeconds, TRUSTED_CLIENT_TOKEN)
 
     fun speechConfigMessage(epochMillis: Long = System.currentTimeMillis()): String =
         "X-Timestamp:${timestamp(epochMillis)}\r\n" +

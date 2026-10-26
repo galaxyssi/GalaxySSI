@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import android.media.MediaPlayer
+import android.util.Log
 import com.galaxyssi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.galaxyssi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.galaxyssi.chat.voice.metrics.VoiceTraceEvents
@@ -84,6 +85,7 @@ class MicrosoftEdgeTts(private val context: Context) {
             val result = runCatching {
                 val audio = awaitPrefetchedAudio(prefetchKey, text, voice, generation)
                     ?: synthesizeCurrent(text, voice, traceId, generation)
+                if (BuildConfig.DEBUG) Log.i("GalaxySSIVoice", "Edge TTS audio ready voice=$voice bytes=${audio.size} protocol=2")
                 try {
                     ensureCurrent(generation)
                     playAudio(audio, traceId, generation, onPlaybackStarted, communicationPlayback)
@@ -104,6 +106,11 @@ class MicrosoftEdgeTts(private val context: Context) {
                 }
                 onDone(true, null)
             } else {
+                if (!cancelled && BuildConfig.DEBUG) {
+                    val failure = result.exceptionOrNull()
+                    val status = (failure as? MicrosoftEdgeTtsHandshakeException)?.statusCode
+                    Log.w("GalaxySSIVoice", "Edge TTS failed voice=$voice type=${failure?.javaClass?.simpleName} http=$status")
+                }
                 if (recordCompletion && !cancelled) {
                     trace(
                         traceId,
