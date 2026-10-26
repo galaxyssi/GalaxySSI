@@ -43,14 +43,14 @@ class RecoveryDeliveryPriorityTest(unittest.TestCase):
                     patch.object(bridge, "fail_exhausted_outbound", return_value=[]),
                     patch.object(bridge, "pending_outbound", return_value=records),
                     patch.object(bridge, "get_client", return_value=client),
-                    patch.object(bridge, "mark_outbound_sending") as mark,
+                    patch.object(bridge, "mark_outbound_batch_sending") as mark,
                     patch.object(bridge, "track_outbound_publish") as track,
                     patch.object(bridge, "acknowledge_outbound") as acknowledge,
                     patch.object(bridge, "_publish_mqtt_wire_payload",
                                  return_value=SimpleNamespace(rc=0, mid=2)) as publish,
                 ):
                     bridge.flush_outbound_messages(SimpleNamespace(is_connected=lambda: True))
-                    mark.assert_called_once_with("fixture-route", "control-0")
+                    mark.assert_called_once_with([("fixture-route", "control-0")])
                     publish.assert_called_once()
                     track.assert_called_once()
                     acknowledge.assert_not_called()

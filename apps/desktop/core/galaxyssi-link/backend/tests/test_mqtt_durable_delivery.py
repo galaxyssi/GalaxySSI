@@ -219,12 +219,12 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", return_value=receipts),
             patch.object(mqtt_bridge, "get_client", return_value=client),
-            patch.object(mqtt_bridge, "mark_outbound_sending") as mark,
+            patch.object(mqtt_bridge, "mark_outbound_batch_sending") as mark,
             patch.object(mqtt_bridge, "track_outbound_publish"),
             patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", return_value=SimpleNamespace(rc=0, mid=1)) as publish,
         ):
             mqtt_bridge.flush_outbound_messages(DurableMqttClient())
-        mark.assert_called_once_with("current", "receipt-0")
+        mark.assert_called_once_with([("current", "receipt-0")])
         publish.assert_called_once()
 
     def test_pending_broker_ack_does_not_republish_or_block_another_route(self) -> None:
@@ -239,13 +239,13 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", side_effect=pending),
             patch.object(mqtt_bridge, "get_client", side_effect=lambda r: next(c for c in clients if c["client_route_id"] == r)),
-            patch.object(mqtt_bridge, "mark_outbound_sending") as mark,
+            patch.object(mqtt_bridge, "mark_outbound_batch_sending") as mark,
             patch.object(mqtt_bridge, "track_outbound_publish"),
             patch.object(mqtt_bridge, "_publish_mqtt_wire_payload",
                          return_value=SimpleNamespace(rc=0, mid=8)) as publish,
         ):
             mqtt_bridge.flush_outbound_messages(DurableMqttClient())
-            mark.assert_called_once_with("healthy", "same-id")
+            mark.assert_called_once_with([("healthy", "same-id")])
             publish.assert_called_once()
 
     def tearDown(self) -> None:
@@ -401,7 +401,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", side_effect=pending),
             patch.object(mqtt_bridge, "get_client", side_effect=clients_by_route.get),
-            patch.object(mqtt_bridge, "mark_outbound_sending"),
+            patch.object(mqtt_bridge, "mark_outbound_batch_sending"),
             patch.object(mqtt_bridge, "track_outbound_publish"),
             patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=publish),
         ):
@@ -423,6 +423,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
     def test_retry_loop_prepares_persisted_task_results_before_transport_flush(self) -> None:
         mqtt_client = DurableMqttClient()
         mqtt_bridge.outbound_retry_stop_event.clear()
+        mqtt_bridge.outbound_retry_wake_event.clear()
         order = []
 
         def finish_after_flush(_mqttc) -> None:
@@ -481,7 +482,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", return_value=[terminal]),
             patch.object(mqtt_bridge, "get_client", return_value=client_record),
-            patch.object(mqtt_bridge, "mark_outbound_sending"),
+            patch.object(mqtt_bridge, "mark_outbound_batch_sending"),
             patch.object(mqtt_bridge, "track_outbound_publish"),
             patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=publish),
         ):
@@ -525,7 +526,7 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             patch.object(mqtt_bridge, "fail_exhausted_outbound", return_value=[]),
             patch.object(mqtt_bridge, "pending_outbound", return_value=[candidate]),
             patch.object(mqtt_bridge, "get_client", return_value=client_record),
-            patch.object(mqtt_bridge, "mark_outbound_sending"),
+            patch.object(mqtt_bridge, "mark_outbound_batch_sending"),
             patch.object(mqtt_bridge, "track_outbound_publish"),
             patch.object(mqtt_bridge, "_publish_mqtt_wire_payload", side_effect=publish),
         ):

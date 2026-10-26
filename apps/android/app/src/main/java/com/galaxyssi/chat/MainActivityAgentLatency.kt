@@ -63,6 +63,7 @@ internal fun MainActivity.addAgentLatencySection() {
                     "phone_context_route_ms" to R.string.agent_latency_context,
                     "phone_send_prepare_ms" to R.string.agent_latency_total_prepare,
                     "phone_send_first_visible_ms" to R.string.agent_latency_user_first,
+                    "phone_send_complete_visible_ms" to R.string.agent_latency_user_complete,
                     "phone_publish_prepare_ms" to R.string.agent_latency_prepare,
                     "phone_response_roundtrip_ms" to R.string.agent_latency_roundtrip,
                     "phone_connector_first_visible_ms" to R.string.agent_latency_first,

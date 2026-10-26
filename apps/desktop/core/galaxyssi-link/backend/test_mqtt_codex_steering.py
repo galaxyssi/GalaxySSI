@@ -1,6 +1,7 @@
 import tempfile
 import time
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -138,11 +139,12 @@ class _SteeringTaskManager:
     def active_for_conversation(self, conversation_id, **_options):
         return self.prior if conversation_id == self.prior.conversation_id else None
 
-    def list(self, limit=500):
+    def list(self, limit=500, *, conversation_id=None):
         tasks = [self.prior]
         if self.current is not None:
             tasks.append(self.current)
-        return [task.public() for task in tasks[:limit]]
+        return [task.public() for task in tasks[:limit]
+                if conversation_id is None or task.conversation_id == conversation_id]
 
     def add_event(self, task_id, _kind, _title, on_event=None, **_values):
         task = self.current if self.current and self.current.task_id == task_id else self.prior
@@ -207,6 +209,53 @@ class MqttCodexSteeringTests(unittest.TestCase):
     def setUp(self):
         # The synchronous thread fake must not run the telemetry worker's loop.
         self.enterContext(patch("agent_latency_hooks.trace_stage"))
+
+    def test_artifact_history_uses_backend_scope_for_planner_and_nonplanner_turns(self):
+        for mode in ("phone_supervised_project_plan_v1", ""):
+            with self.subTest(mode=mode), ExitStack() as stack:
+                root = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+                manager = _SteeringTaskManager()
+                manager.prior.status = "completed"
+                backend_scope = manager.prior.conversation_id
+                server = _SteeringCodexServer()
+                stack.enter_context(patch.object(mqtt_bridge, "agent_task_manager", manager))
+                stack.enter_context(patch.object(manager, "active_for_conversation", return_value=None))
+                history = stack.enter_context(patch.object(manager, "list", wraps=manager.list))
+                stack.enter_context(patch.object(mqtt_bridge, "_codex_server", return_value=server))
+                stack.enter_context(patch.object(mqtt_bridge, "has_full_executor", return_value=False))
+                stack.enter_context(patch.object(mqtt_bridge, "_enqueue_task_event"))
+                stack.enter_context(patch.object(mqtt_bridge, "_publish_or_queue_task_result"))
+                stack.enter_context(patch.object(mqtt_bridge, "codex_task_callbacks", {}))
+                stack.enter_context(patch("agent_gateway._find_codex_desktop_cli", return_value="codex"))
+                stack.enter_context(patch("task_workspace.task_workspace", return_value=root))
+                stack.enter_context(patch("agent_conversation_sessions.agent_conversation_sessions"))
+                outputs = stack.enter_context(patch("conversation_artifacts.conversation_output_artifact_paths",
+                                                     return_value=[root / "report.txt"]))
+                staged = stack.enter_context(patch("conversation_artifacts.stage_conversation_artifacts", return_value=[]))
+                payload = dict(type="text", contact_id="codex", agent_id="codex", client_route_id="client-1",
+                               client_message_id="message-follow-up", task_id="task-follow-up",
+                               conversation_id="conversation-1", turn_id="phone-turn-follow-up", attachments=[],
+                               connector_task_mode=mode, execution_mode="plan_only")
+                mqtt_bridge._start_remote_agent_task(SimpleNamespace(), {"_client_route_id": "client-1"},
+                    payload, [], "Continue editing report.txt.", "text")
+                self.assertEqual(1, len(server.start_calls), manager.current.error)
+                history.assert_called_once_with(limit=500, conversation_id=backend_scope)
+                self.assertEqual(["task-original"], [row["task_id"] for row in outputs.call_args.args[1]])
+                staged.assert_called_once_with("task-follow-up", [root / "report.txt"])
+                run_scope = server.start_calls[0][1]["conversation_id"]
+                self.assertNotEqual(backend_scope, run_scope)
+                self.assertEqual(bool(mode), run_scope.startswith("phone-planner-v1:"))
+
+                # Stop immediately after the completion lookup, before publication.
+                with patch("task_workspace.referenced_task_artifact_paths", return_value=[]), \
+                        patch("task_workspace.referenced_relative_artifact_paths", return_value=["outputs/report.txt"]), \
+                        patch("task_workspace.import_referenced_task_artifacts", side_effect=RuntimeError("lookup observed")) as imported:
+                    with self.assertRaisesRegex(RuntimeError, "lookup observed"):
+                        mqtt_bridge.codex_task_callbacks["task-follow-up"]("task-follow-up", {
+                            "status": "completed", "result": "outputs/report.txt"})
+                self.assertEqual(2, history.call_count)
+                history.assert_called_with(limit=500, conversation_id=backend_scope)
+                self.assertEqual(["task-original"], imported.call_args.kwargs["source_task_ids"])
 
     def test_same_conversation_follow_up_steers_without_publishing_assistant_result(self):
         manager = _SteeringTaskManager()

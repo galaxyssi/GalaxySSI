@@ -1978,9 +1978,11 @@ class AgentTaskManager:
             ]
             return max(candidates, key=lambda item: (item.created_at, item.task_id), default=None)
 
-    def list(self, limit: int = 100, include_prompt: bool = False) -> list[dict]:
+    def list(self, limit: int = 100, include_prompt: bool = False, *,
+             conversation_id: str | None = None) -> list[dict]:
         with self._lock:
-            records = self._store.list_recent(max(1, min(int(limit or 100), 500)))
+            records = self._store.list_recent(max(1, min(int(limit or 100), 500)),
+                                              conversation_id=conversation_id)
             owned = self._store.worker_owned_ids(record.get("task_id") for record in records)
             return [
                 self._public_with_output_preview(

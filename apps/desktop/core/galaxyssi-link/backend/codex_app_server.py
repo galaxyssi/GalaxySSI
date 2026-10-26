@@ -361,9 +361,12 @@ class CodexAppServer:
                 self._runs[task_id] = run
                 conversation_key = self._conversation_key(clean_conversation_id)
                 run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key else ""
+                # This active reservation prevents eviction of a loaded thread.
+                # Warm turns need not wait for unrelated lifecycle RPCs.
+                thread_loaded = run.thread_id in self._loaded_thread_ids
             # Reserve this conversation under the state lock, then release it
             # before RPC waits. Reader callbacks also need this lock.
-            if run.thread_id:
+            if run.thread_id and not thread_loaded:
                 try:
                     self._resume_thread(
                         run.thread_id,
@@ -1231,6 +1234,11 @@ class CodexAppServer:
                     candidates,
                     key=lambda candidate: self._loaded_thread_recency.get(candidate, 0),
                 )
+                # Fence warm reuse before releasing the state lock for the RPC.
+                # A new reservation must resume behind the lifecycle lock once
+                # this thread has been selected for unloading.
+                self._loaded_thread_ids.discard(thread_id)
+                self._loaded_thread_recency.pop(thread_id, None)
             try:
                 self._request(
                     "thread/unsubscribe",
@@ -1702,6 +1710,9 @@ class CodexAppServer:
         return response
 
     def _rpc_request(self, method: str, params: dict, timeout: int) -> dict:
+        started = time.perf_counter()
+        written = None
+        outcome = "failed"
         with self._lock:
             request_id = self._next_id
             self._next_id += 1
@@ -1709,11 +1720,19 @@ class CodexAppServer:
             self._pending[request_id] = response_queue
         try:
             self._write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+            written = time.perf_counter()
             response = response_queue.get(timeout=timeout)
+            outcome = "failed" if "error" in response else "completed"
         except queue.Empty as exc:
             raise CodexAppServerRequestTimeout(method, timeout) from exc
         finally:
             self._pending.pop(request_id, None)
+            if method in {"initialize", "thread/start", "thread/resume", "turn/start"}:
+                finished = time.perf_counter()
+                # No params, prompt, output, paths or provider credentials.
+                log.info("Codex RPC timing method=%s outcome=%s write_ms=%.1f reply_wait_ms=%.1f",
+                         method, outcome, ((written or finished) - started) * 1000,
+                         (finished - written) * 1000 if written is not None else 0.0)
         if "error" in response:
             raise RuntimeError(str(response["error"]))
         return response.get("result") or {}

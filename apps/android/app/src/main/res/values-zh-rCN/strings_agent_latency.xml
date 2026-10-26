@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="agent_latency_user_complete">用户发送到完整回复显示</string>
     <string name="agent_latency_model_request">本地模型请求</string>
     <string name="agent_latency_model_client_lock">本地模型调用锁等待</string>
     <string name="agent_latency_model_worker_lock">本地模型工作进程锁等待</string>

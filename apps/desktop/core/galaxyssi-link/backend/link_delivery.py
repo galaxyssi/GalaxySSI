@@ -481,14 +481,23 @@ def outbound_retry_delay_seconds(attempts: int) -> float:
 
 
 def mark_outbound_sending(client_route_id: str, message_id: str) -> None:
+    mark_outbound_batch_sending([(client_route_id, message_id)])
+
+
+def mark_outbound_batch_sending(keys: list[tuple[str, str]]) -> None:
+    """Commit a selected batch before any packet is handed to MQTT."""
+    if not keys:
+        return
+    observed_at = time.time()
+    rows = [(observed_at, _route(route), message) for route, message in dict.fromkeys(keys)]
     with _lock:
         db = _connect()
         try:
-            db.execute(
+            db.executemany(
                 """UPDATE outbound_messages
                    SET status='sending', attempts=attempts+1, updated_at=?
                    WHERE client_route_id=? AND message_id=?""",
-                (time.time(), _route(client_route_id), message_id),
+                rows,
             )
             db.commit()
         finally:
