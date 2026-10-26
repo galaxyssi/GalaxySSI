@@ -498,6 +498,11 @@ class GlobalAgentRepository(context: Context) {
         return proactiveMessageStore.counts(loadFeedback())
     }
 
+    internal fun voiceReminderPreview(): Pair<List<GlobalProactiveInboxItem>, Int> {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        return proactiveMessageStore.reminderPreview(loadFeedback())
+    }
+
     fun proactiveMessage(id: String): GlobalProactiveMessage? = synchronized(STORE_LOCK) { proactiveMessageStore.get(id) }
 
     fun saveProactiveMessages(messages: List<GlobalProactiveMessage>) = synchronized(STORE_LOCK) {

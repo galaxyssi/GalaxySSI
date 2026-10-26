@@ -15,6 +15,16 @@
     <string name="voice_control_replied_english">Replied in English</string>
     <string name="voice_control_dial_failed">Unable to start the call. Check your SIM and phone permissions.</string>
     <string name="voice_control_reminders">Reminders</string>
+    <string name="voice_reminder_personal">Personal reminder</string>
+    <string name="voice_reminder_task">Task follow-up</string>
+    <string name="voice_reminder_task_paused">This task is paused.</string>
+    <string name="voice_reminder_task_blocked">This task needs attention.</string>
+    <string name="voice_reminder_task_confirmation">This task is waiting for confirmation.</string>
+    <string name="voice_reminder_calendar">Upcoming event</string>
+    <string name="voice_reminder_news">News updates</string>
+    <string name="voice_reminder_news_summary">Your followed topics have %1$d unread updates. Would you like to hear them?</string>
+    <string name="voice_reminder_empty">No pending reminders</string>
+    <string name="voice_reminder_unavailable">Some reminders could not be loaded</string>
     <string name="voice_control_audio_route">Audio device</string>
     <string name="voice_control_speaker">Phone speaker</string>
     <string name="voice_control_earpiece">Phone earpiece</string>

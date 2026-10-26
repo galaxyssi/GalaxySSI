@@ -163,6 +163,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
 
     private var externalSurface = java.lang.ref.WeakReference<android.app.Activity>(null)
     private val reminders by lazy { AgentVoiceReminders(activity) }
+    private var reminderHeaderVisible = false
     private var resumeAfterPageChange = false
     private var pendingStart: String? = null
     private val newsPlayback = AgentVoiceNewsPlayback(activity, onChunk = { text ->
@@ -882,7 +883,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     fun onEntries(entries: List<AgentTranscriptEntry>) {
-        if (entries.isNotEmpty()) reminders.setActive(false)
+        updateReminders(entries.isEmpty())
         if (newsPlayback.playing) return
         if (!session.active || session.muted || !visible() || bargeIn.collectingUtterance ||
             (activity.isVoiceCaptureActive() && !bargeIn.active)) return
@@ -1096,19 +1097,23 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     private fun render() {
-        reminders.setActive(session.active && foreground && hasAgentSurface() &&
-            activity.renderedAgentTranscriptSourceEntries.isEmpty())
+        updateReminders(activity.renderedAgentTranscriptSourceEntries.isEmpty())
         panel.visibility = if (session.active && session.expanded) View.VISIBLE else View.GONE
         activity.agentChatShortcuts.visibility = if (session.active && session.expanded) View.GONE else View.VISIBLE
         activity.agentComposerRow.visibility = if (session.active && session.expanded) View.GONE else View.VISIBLE
         activity.findViewById<View>(R.id.chatComposerRow).visibility =
             if (session.active && session.expanded && activity.chatPage.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         panel.route.text = communicationAudio.label()
-        if (session.active && hasAgentSurface() && activity.renderedAgentTranscriptSourceEntries.isEmpty())
-            activity.agentSessionTitle.setText(R.string.voice_control_reminders)
-        else activity.refreshAgentConversationHeader()
         AppVoiceControlBridge.update(activity)
         updateEntry(activity.agentGoalInput.text?.isNotBlank() == true || activity.agentInputAttachments.isNotEmpty())
+    }
+
+    private fun updateReminders(empty: Boolean) {
+        val show = session.active && session.expanded && foreground && hasAgentSurface() && empty
+        reminders.setActive(show)
+        if (show) activity.agentSessionTitle.setText(R.string.voice_control_reminders)
+        else if (reminderHeaderVisible) activity.refreshAgentConversationHeader()
+        reminderHeaderVisible = show
     }
 
     private fun showStatus(resource: Int) {

@@ -8,11 +8,7 @@ internal class AndroidAppControlPlatform(context: Context) : AgentAppControlPlat
         fun arg(name: String) = input[name]?.toString().orEmpty().trim()
         fun limit() = (input["limit"] as? Number)?.toInt()?.coerceIn(1, 20) ?: 8
         return when (operation) {
-            "reminders" -> mapOf("reminders" to GlobalAgentRepository(app)
-                .proactiveInboxPreview(AttentionReaderState(), emptySet()).filter { it.isNew }.take(8).map {
-                    mapOf("id" to it.key, "title" to it.title, "content" to it.content,
-                        "topic" to it.topic, "created_at" to it.createdAtMillis)
-                })
+            "reminders" -> VoiceReminderRepository(app).load().toJson()
             "context" -> AppVoiceControlBridge.context(invocation.context.conversationId, invocation.context.turnId) +
                 mapOf("sim_audio_capture" to false, "sim_audio_injection" to false)
             "contacts" -> {

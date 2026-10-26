@@ -15,6 +15,16 @@
     <string name="voice_control_replied_english">已用英语回复</string>
     <string name="voice_control_dial_failed">无法发起通话，请检查 SIM 卡和电话权限。</string>
     <string name="voice_control_reminders">提醒</string>
+    <string name="voice_reminder_personal">个人提醒</string>
+    <string name="voice_reminder_task">任务跟进</string>
+    <string name="voice_reminder_task_paused">这个任务已暂停。</string>
+    <string name="voice_reminder_task_blocked">这个任务遇到问题，需要处理。</string>
+    <string name="voice_reminder_task_confirmation">这个任务正在等待确认。</string>
+    <string name="voice_reminder_calendar">日程提醒</string>
+    <string name="voice_reminder_news">关注动态</string>
+    <string name="voice_reminder_news_summary">你关注的内容有 %1$d 条未读更新，要听一下吗？</string>
+    <string name="voice_reminder_empty">暂无待办提醒</string>
+    <string name="voice_reminder_unavailable">部分提醒暂时无法加载</string>
     <string name="voice_control_audio_route">音频设备</string>
     <string name="voice_control_speaker">手机扬声器</string>
     <string name="voice_control_earpiece">手机听筒</string>

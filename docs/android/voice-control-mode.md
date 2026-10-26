@@ -21,7 +21,10 @@ phone execution path for all providers. Intent understanding belongs to the mode
   Agent turn. Later navigation cannot redirect a pronoun or news follow-up. The bounded
   10-minute anchor cache contains no message text or contact names; expired/missing
   context must be resolved explicitly, never substituted with another turn's context.
-- `reminders`: real delivered unread proactive items, not sample forecasts/events.
+- `reminders`: typed personal reminders, tasks needing attention, authorized upcoming
+  calendar instances, and at most one news-update summary. This uses the same read-only
+  projection as the voice landing view, not the news reader's article-body preview.
+  Source availability and stable resource/conversation IDs accompany the result.
 - `contacts`: bounded person/device lookup; ambiguous names require clarification.
 - `send_message`: durable peer message and actual queue/publication receipt. Publication
   is not verified recipient delivery. The native effect journal guards replays.
@@ -113,11 +116,45 @@ multi-SIM, call waiting, video/conference behavior, emergency fallback and notif
 restrictions before making this an everyday default dialer. Do not replace the user's
 default phone app as part of installation/testing.
 
-The design's proactive weather/calendar/task examples are not seeded into the database.
-Only existing real reminders are shown. New weather/calendar producers and model-driven voice-message recording need their own
+The design's proactive examples are not seeded into the database. The reminder projection
+reads delivered personal messages, up to 24 recoverable workspaces (showing only paused,
+blocked or confirmation-waiting tasks whose conversations still exist and are active),
+and at most two non-cancelled/non-declined visible calendar instances in the next 24 hours.
+Calendar access is read-only and uses an existing permission; voice activation does not
+request it. Missing permission is reported to the model, not interpreted as an empty calendar.
+Weather has no verified producer in this increment and is explicitly `not_connected`.
+New weather producers and model-driven voice-message recording still need their own
 integration/acceptance; text sending must not be described as recorded audio delivery.
 
+The proactive read index classifies article rows structurally before applying the reminder
+limit, so a busy feed cannot bury personal reminders. News bodies are never loaded by the
+reminder query; news contributes only one unread-update summary. The existing public-news
+reader and stored articles are unchanged. Index v4 is rebuilt transactionally from stored
+records and retains existing messages and read state. Each source gets a bounded share of
+the reminder area; paused/blocked tasks are not advertised as successfully recovered.
+
+The reminder view occupies the existing empty transcript viewport rather than inserting
+a fixed-height pane above it. A real transcript hides it and restores the conversation
+title. Reads are asynchronous and coalesced; late results cannot repopulate a hidden view.
+While visible, delivery/schedule events and a one-minute local refresh update reminders
+without invoking a model. Leaving voice mode or backgrounding clears its view text and
+unsubscribes/removes callbacks. Existing background playback is unaffected.
+
 ## Local build notes
+
+Reminder-source fix, Android `0.1.6.23` (1399), Samsung SM-S9480 / Android 17:
+
+- Reproduced through the actual voice entry: four news bodies appeared under Reminders.
+  After cover installation the same entry showed one unread-news summary, no article
+  bodies or fabricated forecasts/appointments. Existing data was preserved.
+- 64 JVM tests passed across six reminder, App-tool, inbox, session and playback suites.
+- 19 device tests passed. Five new checks cover an older reminder behind 200 articles,
+  read-state preservation, v3 index migration, empty/error rendering, late-load cleanup,
+  and the live provider-facing reminder tool. The existing fourteen voice/phone/news/
+  completed-reply checks also passed, including real Edge TTS background playback.
+- Calendar-event display with granted calendar access, real provider voice decisions,
+  physical headset changes and SIM audio remain outside this validation. No calendar
+  permission, default dialer, user conversation or pairing was reset by these tests.
 
 Completed-reply increment, Android `0.1.6.22` (1398), Samsung SM-S9480 / Android 17:
 

@@ -32,7 +32,9 @@ internal object AgentAppControlTools {
             }, executorId = "galaxyssi.android_app_control")
         }
         return listOf(
-            define("reminders", "Read real delivered, unread proactive reminders. An empty list means no available reminder. " +
+            define("reminders", "Read personal reminders, tasks needing attention, authorized upcoming calendar events, and one news update summary. " +
+                "Includes source availability, kinds and exact IDs, never news article bodies. Use news/read_article for news. " +
+                "A paused or blocked task is not confirmed recovered. Missing permission or unavailable sources do not mean no events. " +
                 "Never invent weather forecasts, appointments or task recovery status to fill the screen."),
             define("context", "Read active voice context: original Agent conversation, visible contact/article and playback. " +
                 "Top-level IDs are frozen at the utterance; playback.state/article_id is current playback. " +

@@ -67,6 +67,13 @@ internal class GlobalProactiveMessageStore(
     fun previewReady() = readIndex.ready()
     fun preparePreview() { prepare() }
     fun counts(feedback: List<GlobalAgentFeedback>) = readIndex.counts(feedback)
+    fun reminderPreview(feedback: List<GlobalAgentFeedback>): Pair<List<GlobalProactiveInboxItem>, Int> {
+        val messages = database.readStrings(readIndex.reminderKeys(32)).values.mapNotNull { decode(JSONObject(it)) }
+        // Individual reminders retain their own IDs; news digest expansion belongs only to the news reader.
+        val reminders = GlobalProactiveInboxPolicy.project(messages.map { it.copy(deliveryGroupId = "") }, feedback)
+            .filter { it.isNew }.take(8)
+        return reminders to readIndex.counts(feedback, newsOnly = true).unread
+    }
     fun preview(state: AttentionReaderState, saved: Set<String>): List<GlobalProactiveMessage> =
         database.readStrings(readIndex.firstKeys(state, saved)).values.mapNotNull { decode(JSONObject(it)) }
 
