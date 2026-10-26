@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1401
-        versionName = "0.1.6.25"
+        versionCode = 1402
+        versionName = "0.1.6.26"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -304,7 +304,7 @@ dependencies {
     implementation(project(":collaboration-core"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("androidx.recyclerview:recyclerview:1.1.0")
-    implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
+    implementation(project(path = ":paho-runtime", configuration = "packagedRuntime"))
     implementation("org.signal:libsignal-android:0.86.5")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

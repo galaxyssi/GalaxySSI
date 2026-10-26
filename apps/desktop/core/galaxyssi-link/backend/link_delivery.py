@@ -25,6 +25,8 @@ OUTBOUND_RETRY_MAX_SECONDS = 300.0
 OUTBOUND_MAX_ATTEMPTS = 6
 OUTBOUND_PRIORITY_NORMAL = 50
 SECURE_STORAGE_VERSION = "1"
+# Bump when this module or either delegated schema initializer gains a migration.
+INITIALIZATION_VERSION = "1"
 ROUTE_PURPOSE = "link-delivery-route"
 
 
@@ -54,6 +56,18 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
     if str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
         db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA synchronous=FULL")
+    # Reopen is frequent on the live delivery path. A schema-cookie-bound marker
+    # avoids repeating migrations; external DDL and contract upgrades invalidate it.
+    schema_version = db.execute("PRAGMA schema_version").fetchone()[0]
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='delivery_metadata'").fetchone():
+        metadata = dict(db.execute("SELECT key,value FROM delivery_metadata WHERE key IN "
+                                   "('secure_storage_version','initialized_schema',"
+                                   "'task_result_queue_schema','receive_active_usage_v1')"))
+        if (metadata.get("secure_storage_version") == SECURE_STORAGE_VERSION
+                and metadata.get("task_result_queue_schema") == "1"
+                and metadata.get("receive_active_usage_v1") == "1"
+                and metadata.get("initialized_schema") == _schema_marker(schema_version)):
+            return db
     db.execute(
         """CREATE TABLE IF NOT EXISTS inbound_messages (
             client_route_id TEXT NOT NULL,
@@ -195,7 +209,15 @@ def _initialize_connection(db: sqlite3.Connection) -> sqlite3.Connection:
     ensure_schema(db)
     from signal_receive_handoff import ensure_schema as ensure_receive_schema
     ensure_receive_schema(db)
+    db.execute("INSERT INTO delivery_metadata(key,value) VALUES('initialized_schema',?) "
+               "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+               (_schema_marker(db.execute("PRAGMA schema_version").fetchone()[0]),))
+    db.commit()
     return db
+
+
+def _schema_marker(schema_version: int) -> str:
+    return f"{INITIALIZATION_VERSION}:{SECURE_STORAGE_VERSION}:{schema_version}"
 
 
 def _route(value: str) -> str:
