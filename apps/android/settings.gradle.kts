@@ -18,4 +18,5 @@ rootProject.name = "GalaxySSI"
 include(":app")
 include(":llama-runtime")
 include(":collaboration-core")
+include(":paho-runtime")
 project(":collaboration-core").projectDir = file("../shared/collaboration-core")
