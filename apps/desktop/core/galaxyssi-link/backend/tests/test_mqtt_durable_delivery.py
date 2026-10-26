@@ -423,14 +423,17 @@ class MqttDurableDeliveryTest(unittest.TestCase):
     def test_retry_loop_prepares_persisted_task_results_before_transport_flush(self) -> None:
         mqtt_client = DurableMqttClient()
         mqtt_bridge.outbound_retry_stop_event.clear()
+        order = []
 
         def finish_after_flush(_mqttc) -> None:
+            order.append("transport")
             mqtt_bridge.outbound_retry_stop_event.set()
 
         with (
             patch.object(mqtt_bridge, "client", mqtt_client),
             patch.object(mqtt_bridge, "OUTBOUND_RETRY_POLL_SECONDS", 0.001),
-            patch.object(mqtt_bridge, "flush_pending_task_results") as task_results,
+            patch.object(mqtt_bridge, "flush_pending_inbound_messages", side_effect=lambda _: order.append("inbox")),
+            patch.object(mqtt_bridge, "flush_pending_task_results", side_effect=lambda _: order.append("results")) as task_results,
             patch.object(
                 mqtt_bridge,
                 "flush_outbound_messages",
@@ -440,7 +443,8 @@ class MqttDurableDeliveryTest(unittest.TestCase):
             mqtt_bridge._outbound_retry_loop()
 
         task_results.assert_called_once_with(mqtt_client)
-        transport.assert_called_once_with(mqtt_client)
+        self.assertEqual(2, transport.call_count)
+        self.assertEqual(["transport", "inbox", "results", "transport"], order)
 
     def test_terminal_result_uses_reserved_slot_when_progress_fills_route(self) -> None:
         terminal = {

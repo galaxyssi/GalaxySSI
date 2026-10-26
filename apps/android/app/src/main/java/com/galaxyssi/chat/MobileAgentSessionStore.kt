@@ -102,7 +102,7 @@ internal data class AgentEncodedSessionPayload(
 )
 
 private class EncryptedAgentSessionCheckpointStorage(context: Context) : AgentSessionCheckpointStorage {
-    private val delegate = AgentEncryptedPreferences(context, SharedPreferencesAgentSessionStore.PREFS)
+    private val delegate = AgentSessionRootStorage(context)
     private val plans = AgentEncryptedDatabase(context, "agent_active_plans.db")
 
     override fun readPlanPage(key: String): String = plans.readString(key, "")

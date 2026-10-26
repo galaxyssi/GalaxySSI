@@ -167,11 +167,15 @@ class AgentRunRecorder private constructor(context: Context) {
         .toList()
         .asReversed()
 
-    @Synchronized
-    fun recentRuns(limit: Int = 200): List<AgentRecordedRun> = allRuns()
-        .sortedByDescending { it.createdAtMillis }
-        .take(limit.coerceIn(1, MAX_RUNS))
-        .asReversed()
+    fun recentRuns(limit: Int = 200): List<AgentRecordedRun> {
+        // Learning may decrypt many cold records. Let foreground completion acquire
+        // the recorder between rows instead of holding its monitor for the whole scan.
+        val ids = synchronized(this) { runIds().toList() }
+        return ids.mapNotNull(::run)
+            .sortedByDescending { it.createdAtMillis }
+            .take(limit.coerceIn(1, MAX_RUNS))
+            .asReversed()
+    }
 
     @Synchronized
     fun runningRuns(): List<AgentRecordedRun> = allRuns()

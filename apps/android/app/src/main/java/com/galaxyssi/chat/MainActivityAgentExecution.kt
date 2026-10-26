@@ -332,7 +332,8 @@ internal fun MainActivity.bindAgentExecutionLoop(
     runtime.bindExecutionLoopEventSink(AgentExecutionLoopEventSink { event ->
         if (cleanTurnId.isBlank()) return@AgentExecutionLoopEventSink
         if (taskContext != null) {
-            taskContext.persistExecutionLoop(event)
+            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.runtime(this)
+                .measure(cleanTurnId, "reply_workspace", { "completed" }) { taskContext.persistExecutionLoop(event) }
         } else {
             if (!event.phase.isTerminal) {
                 supervisor?.cancellationSource(cleanTurnId)?.throwIfCancellationRequested()
@@ -347,7 +348,10 @@ internal fun MainActivity.bindAgentExecutionLoop(
                 )
             }
         }
-        recordAgentExecutionLoopEvent(runtime, cleanTurnId, event)
+        com.galaxyssi.chat.metrics.AgentLatencyTelemetry.runtime(this)
+            .measure(cleanTurnId, "reply_timeline", { "completed" }) {
+                recordAgentExecutionLoopEvent(runtime, cleanTurnId, event)
+            }
     })
 }
 
@@ -356,10 +360,9 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
     turnId: String,
     event: AgentExecutionLoopEvent
 ) {
-    val persistedRunId = runCatching {
-        EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty()
-    }.getOrDefault("")
-    val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank { persistedRunId }
+    val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank {
+        runCatching { EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty() }.getOrDefault("")
+    }
     val run = agentRunRecorder.run(runId) ?: return
     val state = runtime.snapshot()
     val projection = AgentExecutionLoopTimelinePolicy.project(event,

@@ -1389,6 +1389,7 @@ object AppStore {
         AgentEncryptedPreferences(context, TRUST_PREFS).clear()
         AndroidPersistentSignalStore.clear(context)
         context.getSharedPreferences("galaxyssi_agent_runtime", Context.MODE_PRIVATE).edit().clear().commit()
+        AgentEncryptedDatabase(context, AgentSessionRootStorage.DATABASE_NAME).clear()
         context.getSharedPreferences("galaxyssi_agent_memory", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("galaxyssi_agent_knowledge", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("galaxyssi_agent_knowledge_audit", Context.MODE_PRIVATE).edit().clear().commit()

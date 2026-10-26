@@ -421,6 +421,9 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val outboundMessageExecutor = Executors.newSingleThreadExecutor()
     internal val agentRoutingExecutor = Executors.newSingleThreadExecutor()
     internal val agentRuntimeRecoveryExecutor = Executors.newSingleThreadExecutor()
+    internal val agentLiveReplyExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "galaxyssi-live-replies")
+    }
     internal val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskPersistenceExecutor = AgentWindowTaskPersistence.executor
     internal val agentEvalExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -527,18 +530,14 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             val recoveryKey = "runtime-restore:${AgentConnectorResponseCodec.identity(response)}"
             if (!agentConnectorResponsesInFlight.add(recoveryKey)) return true
             return runCatching {
-                agentRuntimeRecoveryExecutor.execute {
+                val ownsLiveReply = activeAgentTasks.containsKey(response.sourceMessageId) ||
+                    pendingDirectConnectorRuns.containsKey(response.sourceMessageId)
+                val executor = if (ownsLiveReply) agentLiveReplyExecutor else agentRuntimeRecoveryExecutor
+                executor.execute {
                     try {
                         if (!AgentConnectorResponseStore.isCurrentExecution(this@MainActivity, response)) return@execute
-                        runtimeForConnectorResponse(
-                            sourceMessageId = response.sourceMessageId,
-                            contactId = response.contactId,
-                            conversationId = response.conversationId,
-                            turnId = response.turnId,
-                            taskId = response.taskId,
-                            restorePersisted = true
-                        )
                         if (isFinishing || isDestroyed) return@execute
+                        // The consumer checks ownership and restores only if necessary.
                         consumeAgentConnectorResponse(response)
                     } finally { agentConnectorResponsesInFlight.remove(recoveryKey) }
                 }
@@ -1279,6 +1278,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         outboundMessageExecutor.shutdown()
         agentRoutingExecutor.shutdown()
         agentRuntimeRecoveryExecutor.shutdown()
+        agentLiveReplyExecutor.shutdown()
         agentRouteSelectionExecutor.shutdown()
         agentEvalExecutor.shutdown()
         agentTaskLivenessExecutor.shutdown()
