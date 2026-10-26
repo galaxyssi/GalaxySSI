@@ -45,6 +45,8 @@ class _Peer:
     local_generations: dict = field(default_factory=dict)
     remote_epoch: int = 0
     local_confirmed_epoch: int = 0
+    ready_lease_until: int = 0
+    ready_generations: dict = field(default_factory=dict)
     next_send: float = 0.0
     failure_until: float = 0.0
     active: bool = True
@@ -102,6 +104,8 @@ class PeerRoutes:
                         if previous.binding.receive_topics != binding.receive_topics:
                             previous.local = None
                             previous.local_confirmed_epoch = 0
+                            previous.ready_lease_until = 0
+                            previous.ready_generations = {}
                         previous.binding = binding
                 retained[binding.scope] = previous
                 outbound[binding.send_topic] = previous
@@ -255,8 +259,10 @@ class PeerRoutes:
                     peer.next_send = 0
                     request_resume = True
             if payload["type"] == "link_resume_ack":
-                notify = peer.local_confirmed_epoch != peer.local.epoch
+                notify = peer.local_confirmed_epoch != peer.local.epoch and not self._authorized_paths(peer)
                 peer.local_confirmed_epoch = peer.local.epoch
+                peer.ready_generations = dict(peer.local_generations)
+                peer.ready_lease_until = min(peer.local.expires_at_ms, advertisement.expires_at_ms)
             else:
                 local = self._local_advertisement(peer, now_ms)
                 previous = peer.last_response.get(broker_id)
@@ -275,6 +281,14 @@ class PeerRoutes:
             self._on_ready(scope)
         return True
 
+    def _authorized_paths(self, peer):
+        # Retain only live generations from an unexpired authenticated lease.
+        if not peer.active or peer.ready_lease_until <= self._wall() * 1000:
+            return {}
+        current = self.client.ready_path_generations(peer.binding.receive_topics)
+        return {broker: generation for broker, generation in peer.ready_generations.items()
+                if current.get(broker) == generation}
+
     def ready(self, scope):
         return self.admission_state(scope) == "ready"
 
@@ -292,16 +306,17 @@ class PeerRoutes:
                 return "missing_local_advertisement"
             if local.expires_at_ms <= self._wall() * 1000:
                 return "expired_local_advertisement"
-            if peer.local_confirmed_epoch != local.epoch:
+            authorized = self._authorized_paths(peer)
+            if not authorized and peer.local_confirmed_epoch != local.epoch:
                 return "unconfirmed_local_epoch"
             binding = peer.binding
             current = self.client.ready_path_generations(binding.receive_topics)
             if not current:
                 return "no_local_receive_path"
-            if any(peer.local_generations.get(broker) != generation for broker, generation in current.items()):
+            if not authorized:
                 return "changed_broker_generation"
-        if not self.client.policy.plan(scope, "route-readiness", Traffic.MESSAGE, 1,
-                                       set(binding.receive_topics), now=self._clock()):
+        if not any(authorized.get(item.broker_id) == item.generation for item in self.client.policy.plan(
+                scope, "route-readiness", Traffic.MESSAGE, 1, set(binding.receive_topics), now=self._clock())):
             return "no_verified_common_route"
         return "ready"
 
@@ -318,7 +333,7 @@ class PeerRoutes:
             if not peer.active:
                 return None
             return Publication(peer.binding.scope, digest, digest, Traffic.MESSAGE, peer.binding.receive_topics,
-                               authorized_paths=tuple(peer.local_generations.items()))
+                               authorized_paths=tuple(self._authorized_paths(peer).items()))
 
     def transient_publication(self, topic, encoded, traffic, *, authenticated_identity):
         """Small caller-retried queries/receipts may use existing control capacity."""
@@ -334,7 +349,7 @@ class PeerRoutes:
             binding = peer.binding
             if not peer.active or binding.identity != authenticated_identity:
                 return None
-            paths = tuple(peer.local_generations.items())
+            paths = tuple(self._authorized_paths(peer).items())
         # Large evidence pages must not consume the small control reserve.
         if publish_packet_bytes(topic, len(encoded)) > self.client.policy.limits.small_packet_bytes:
             traffic = Traffic.MESSAGE
@@ -342,12 +357,7 @@ class PeerRoutes:
 
         def authorize(broker, generation):
             with peer.lock:
-                local = peer.local
-                if (not peer.active or peer.binding != binding or local is None
-                        or local.expires_at_ms <= self._wall() * 1000
-                        or peer.local_confirmed_epoch != local.epoch
-                        or peer.local_generations.get(broker) != generation
-                        or self.client.ready_path_generations(binding.receive_topics).get(broker) != generation):
+                if peer.binding != binding or self._authorized_paths(peer).get(broker) != generation:
                     raise ValueError("Transient publication route changed")
 
         return Publication(binding.scope, digest, digest, traffic, binding.receive_topics,
@@ -373,11 +383,7 @@ class PeerRoutes:
 
         def authorized(broker, generation):
             with peer.lock:
-                local = peer.local
-                return (peer.active and peer.binding == binding and local is not None
-                        and local.expires_at_ms > self._wall() * 1000 and peer.local_confirmed_epoch == local.epoch
-                        and peer.local_generations.get(broker) == generation
-                        and self.client.ready_path_generations(binding.receive_topics).get(broker) == generation)
+                return peer.binding == binding and self._authorized_paths(peer).get(broker) == generation
 
         # Bound final AEAD/base64/MQTT bytes with the longest catalog ID and
         # maximum representable generation. Signal encryption is never repeated.
@@ -425,8 +431,7 @@ class PeerRoutes:
         with peer.lock:
             binding = peer.binding
             if (not peer.active or binding.identity != authenticated_identity
-                    or peer.local is None or peer.local.expires_at_ms <= self._wall() * 1000
-                    or peer.local_confirmed_epoch != peer.local.epoch
+                    or not self._authorized_paths(peer)
                     or (frame.message.sender, frame.message.receiver) != (binding.receiver, binding.sender)):
                 return None
             receipt = frame.receipt_after_store(stored_message_id=message_id, stored_content_hash=wire_hash)
@@ -435,16 +440,12 @@ class PeerRoutes:
 
             def authorize(broker, generation):
                 with peer.lock:
-                    local = peer.local
-                    if (not peer.active or peer.binding != binding or local is None
-                            or local.expires_at_ms <= self._wall() * 1000 or peer.local_confirmed_epoch != local.epoch
-                            or peer.local_generations.get(broker) != generation
-                            or self.client.ready_path_generations(binding.receive_topics).get(broker) != generation):
+                    if peer.binding != binding or self._authorized_paths(peer).get(broker) != generation:
                         raise ValueError("Stored receipt route changed before publication")
 
             descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
                                      preferred_broker=frame.attempt.broker_id,
-                                     authorized_paths=tuple(peer.local_generations.items()), on_path=authorize)
+                                     authorized_paths=tuple(self._authorized_paths(peer).items()), on_path=authorize)
         return self.client.publish(binding.send_topic, encoded, publication=descriptor).rc == 0
 
     def status(self):
@@ -479,7 +480,7 @@ class PeerRoutes:
                 if query is not None:
                     observation = ChunkAttempt(chunk.transfer, query.request, chunk.index, not attempted)
             return Publication(binding.scope, identity, digest, traffic, binding.receive_topics,
-                               authorized_paths=tuple(peer.local_generations.items()),
+                               authorized_paths=tuple(self._authorized_paths(peer).items()),
                                attempted_brokers=attempted, on_path=on_path, chunk=observation)
 
     def committed_chunk_state(self, scope, payload):
@@ -527,5 +528,5 @@ class PeerRoutes:
             digest = hashlib.sha256(encoded.encode()).hexdigest()
             descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
                                      preferred_broker=broker_id,
-                                     authorized_paths=tuple(peer.local_generations.items()))
+                                     authorized_paths=tuple(self._authorized_paths(peer).items()))
         return self.client.publish(binding.send_topic, encoded, publication=descriptor)

@@ -135,6 +135,65 @@ class BrokerPoolTests(unittest.TestCase):
         self.assertFalse(self.pool.snapshot()["paths"]["emqx"]["connected"])
         self.assertEqual("connecting", self.pool.snapshot()["paths"]["emqx"]["state"])
 
+    def test_connect_watchdog_retires_only_stalled_generation(self):
+        self.blocked.add("emqx")
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 2)
+        old = self.client("emqx")
+        with self.pool._paths["emqx"].lock:
+            self.pool._paths["emqx"].connect_started -= 21
+        self.pool.repair()
+        self.assertTrue(old.closed.is_set())
+        old.on_connect(old, None, {}, 0, None)
+        self.assertFalse(self.pool.snapshot()["paths"]["emqx"]["connected"])
+        for broker in ("hivemq", "mosquitto"):
+            self.assertFalse(self.client(broker).closed.is_set())
+            self.assertEqual(1, self.pool.snapshot()["paths"][broker]["generation"])
+
+    def test_missing_suback_rebuilds_socket_after_bounded_retry(self):
+        self.auto_suback = False
+        self.start()
+        self.wait_for(lambda: self.pool._paths["hivemq"].subscription_wait is not None)
+        with self.pool._paths["hivemq"].lock:
+            self.pool._paths["hivemq"].subscription_wait -= 21
+        self.pool.repair()
+        self.assertTrue(self.client("hivemq").closed.is_set())
+        self.assertFalse(self.client("emqx").closed.is_set())
+        self.assertFalse(self.client("mosquitto").closed.is_set())
+
+    def test_expired_watchdog_cannot_disconnect_new_generation(self):
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 3)
+        self.assertFalse(self.pool.repair_path("hivemq", 0, "stale_probe"))
+        self.assertFalse(self.client("hivemq").closed.is_set())
+        for _ in range(5):
+            self.pool.repair()
+        self.assertEqual(3, len(self.connections))
+        self.assertEqual(3, len(self.subacks))
+
+    def test_subscribe_releases_path_lock_for_paho_callbacks(self):
+        self.start()
+        self.wait_for(lambda: len(self.subacks) == 3)
+        client = self.client("hivemq")
+        actual = client.subscribe
+        completed = threading.Event()
+
+        def subscribe(topics):
+            def callback():
+                with self.pool._paths["hivemq"].lock:
+                    completed.set()
+            worker = threading.Thread(target=callback)
+            worker.start()
+            if not completed.wait(.5):
+                raise TimeoutError("Subscribe holds the callback state lock")
+            worker.join()
+            return actual(topics)
+
+        client.subscribe = subscribe
+        self.pool.subscribe({"second": 1})
+        self.assertTrue(completed.is_set())
+        self.assertIn("second", self.pool._paths["hivemq"].active_topics)
+
     def test_diagnostics_do_not_confuse_connection_and_subscription_readiness(self):
         self.assertTrue(all(path["state"] == "disconnected" for path in self.pool.snapshot()["paths"].values()))
         self.auto_suback = False

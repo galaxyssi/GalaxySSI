@@ -77,6 +77,8 @@ internal class MqttPeerRoutes(
                     if (peer.binding.receiveTopics != binding.receiveTopics) {
                         peer.local = null
                         peer.confirmedEpoch = 0
+                        peer.readyLeaseUntil = 0
+                        peer.readyGenerations = emptyMap()
                     }
                     peer.binding = binding
                 }
@@ -241,16 +243,22 @@ internal class MqttPeerRoutes(
         return true
     }
 
+    // Renewals must not revoke a still-live, authenticated physical generation.
+    // New generations are admitted only after their own resume acknowledgement.
+    private fun authorizedPaths(peer: Peer): Map<String, Long> {
+        if (!peer.active || !peer.binding.enabled || peer.readyLeaseUntil <= wall()) return emptyMap()
+        val current = transport.readyPathGenerations(peer.binding.receiveTopics)
+        return peer.readyGenerations.filter { (broker, generation) -> current[broker] == generation }
+    }
+
     fun ready(scope: String): Boolean {
         val peer = synchronized(lock) { peers[scope] } ?: return false
         return peer.lock.withLock {
-            val advertisement = peer.local ?: return false
             val binding = peer.binding
-            if (!peer.active || !binding.enabled || advertisement.expiresAtMs <= wall() || peer.confirmedEpoch != advertisement.epoch) return false
-            val current = transport.readyPathGenerations(binding.receiveTopics)
-            if (current.isEmpty() || current.any { peer.generations[it.key] != it.value }) return false
+            val authorized = authorizedPaths(peer)
+            if (authorized.isEmpty()) return false
             transport.policy.plan(scope, "route-readiness", MqttMultipathPolicy.Traffic.MESSAGE, 1, binding.receiveTopics, now())
-                .isNotEmpty().also { if (it) peer.blockedSince = Long.MIN_VALUE }
+                .any { authorized[it.brokerId] == it.generation }.also { if (it) peer.blockedSince = Long.MIN_VALUE }
         }
     }
 
@@ -259,10 +267,10 @@ internal class MqttPeerRoutes(
         if (!ready(peer.binding.scope)) { request(peer.binding.scope); return null }
         return peer.lock.withLock {
             if (!peer.active || !peer.binding.enabled || topic !in peer.binding.sendTopics ||
-                peer.confirmedEpoch != peer.local?.epoch || peer.local!!.expiresAtMs <= wall()) return null
+                authorizedPaths(peer).isEmpty()) return null
             val digest = MqttRouteAdvertisement.sha256(payload.toString(Charsets.UTF_8))
             MqttPoolTransport.Publication(peer.binding.scope, digest, digest, MqttMultipathPolicy.Traffic.MESSAGE,
-                peer.binding.receiveTopics, authorizedPaths = peer.generations.toMap())
+                peer.binding.receiveTopics, authorizedPaths = authorizedPaths(peer))
         }
     }
 
@@ -278,13 +286,9 @@ internal class MqttPeerRoutes(
             val traffic = if (mqttPublishPacketBytes(topic, payload.size) <= MqttBrokerCatalog.SMALL_PACKET_BYTES)
                 MqttMultipathPolicy.Traffic.CONTROL else MqttMultipathPolicy.Traffic.MESSAGE
             MqttPoolTransport.Publication(binding.scope, digest, digest, traffic, binding.receiveTopics,
-                authorizedPaths = peer.generations.toMap(), onPath = { broker, generation ->
+                authorizedPaths = authorizedPaths(peer), onPath = { broker, generation ->
                     peer.lock.withLock {
-                        val local = peer.local
-                        require(peer.active && peer.binding == binding && binding.enabled && local != null &&
-                            local.expiresAtMs > wall() && peer.confirmedEpoch == local.epoch &&
-                            peer.generations[broker] == generation &&
-                            transport.readyPathGenerations(binding.receiveTopics)[broker] == generation) {
+                        require(peer.binding == binding && authorizedPaths(peer)[broker] == generation) {
                             "Transient publication route changed"
                         }
                     }
@@ -363,10 +367,7 @@ internal class MqttPeerRoutes(
         }
         val authorized: (String, Long) -> Boolean = { broker, generation ->
             peer.lock.withLock {
-                val local = peer.local
-                peer.active && peer.binding == binding && binding.enabled && local != null &&
-                    local.expiresAtMs > wall() && peer.confirmedEpoch == local.epoch &&
-                    peer.generations[broker] == generation && transport.readyPathGenerations(binding.receiveTopics)[broker] == generation
+                peer.binding == binding && authorizedPaths(peer)[broker] == generation
             }
         }
         val longest = MqttBrokerCatalog.brokers.keys.maxBy { it.length }
@@ -413,22 +414,16 @@ internal class MqttPeerRoutes(
         val publication: MqttPoolTransport.Publication
         peer.lock.withLock {
             binding = peer.binding
-            val local = peer.local
-            if (!peer.active || !binding.enabled || binding.identity != identity || local == null ||
-                local.expiresAtMs <= wall() || peer.confirmedEpoch != local.epoch ||
+            if (!peer.active || !binding.enabled || binding.identity != identity || authorizedPaths(peer).isEmpty() ||
                 frame.message.sender != binding.receiver || frame.message.receiver != binding.sender) return false
             val receipt = frame.receiptAfterStore(messageId, wireHash)
             payload = seal(receipt.toString(), binding.secret).toByteArray(Charsets.UTF_8)
             val digest = MqttRouteAdvertisement.sha256(payload.toString(Charsets.UTF_8))
             publication = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
-                binding.receiveTopics, preferredBroker = frame.attempt.brokerId, authorizedPaths = peer.generations.toMap(),
+                binding.receiveTopics, preferredBroker = frame.attempt.brokerId, authorizedPaths = authorizedPaths(peer),
                 onPath = { broker, generation ->
                     peer.lock.withLock {
-                        val current = peer.local
-                        check(peer.active && peer.binding == binding && binding.enabled && current != null &&
-                            current.expiresAtMs > wall() && peer.confirmedEpoch == current.epoch &&
-                            peer.generations[broker] == generation &&
-                            transport.readyPathGenerations(binding.receiveTopics)[broker] == generation) {
+                        check(peer.binding == binding && authorizedPaths(peer)[broker] == generation) {
                             "Stored receipt route changed before publication"
                         }
                     }
@@ -461,7 +456,7 @@ internal class MqttPeerRoutes(
                 Triple("${chunk.transfer}:${chunk.index}", chunk.digest, MqttMultipathPolicy.Traffic.CHUNK)
             }
             MqttPoolTransport.Publication(binding.scope, id, digest, traffic, binding.receiveTopics,
-                authorizedPaths = peer.generations.toMap(), attemptedBrokers = attempted, onPath = onPath, chunk = observation)
+                authorizedPaths = authorizedPaths(peer), attemptedBrokers = attempted, onPath = onPath, chunk = observation)
         }
     }
 
@@ -502,7 +497,7 @@ internal class MqttPeerRoutes(
             encoded = seal(frozen, binding.secret).toByteArray(Charsets.UTF_8)
             val digest = MqttRouteAdvertisement.sha256(encoded.toString(Charsets.UTF_8))
             descriptor = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
-                binding.receiveTopics, preferredBroker = broker, authorizedPaths = peer.generations.toMap())
+                binding.receiveTopics, preferredBroker = broker, authorizedPaths = authorizedPaths(peer))
         }
         transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(encoded).apply { qos = 1 }, publication = descriptor)
     }

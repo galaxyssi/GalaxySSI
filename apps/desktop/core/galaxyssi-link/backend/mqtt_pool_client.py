@@ -31,6 +31,8 @@ class PublishInfo:
     rc: int = mqtt.MQTT_ERR_SUCCESS
     _done: threading.Event = field(default_factory=threading.Event)
     reason_code: str = "accepted"
+    broker_id: str = ""
+    generation: int = 0
 
     def is_published(self):
         return self._done.is_set() and self.rc == mqtt.MQTT_ERR_SUCCESS
@@ -97,7 +99,7 @@ class MqttPoolClient:
         self.start()
         try:
             while not self._closed.wait(0.25):
-                self._pool.refresh_subscriptions()
+                self._pool.repair()
                 self._tick()
         finally:
             self.disconnect()
@@ -251,7 +253,7 @@ class MqttPoolClient:
             plans = [(item.broker_id, item.generation) for item in self.policy.plan(
                 publication.peer, publication.message_id, publication.traffic, size,
                 set(publication.receive_topics), now=now, ingress=publication.preferred_broker,
-                attempted=publication.attempted_brokers)
+                attempted=publication.attempted_brokers, authorized_paths=publication.authorized_paths)
                 if item.delay == 0]
             if publication.authorized_paths is not None:
                 plans = [item for item in plans if item in publication.authorized_paths]
@@ -278,6 +280,7 @@ class MqttPoolClient:
                 self.policy.track_chunk(publication.peer, publication.chunk, broker, generation, size, now)
             receipt = self._pool.publish(broker, generation, topic, encoded, attempt_id=attempt_id)
             if receipt is not None:
+                info.broker_id, info.generation = broker, generation
                 # A synchronous acknowledgement may already have failed this token.
                 if info.rc == mqtt.MQTT_ERR_SUCCESS:
                     info.reason_code = "accepted"
@@ -302,7 +305,7 @@ class MqttPoolClient:
             return self.publish(topic, encoded, publication=publication)
         paths = tuple(dict.fromkeys((item.broker_id, item.generation) for item in self.policy.plan(
             publication.peer, publication.message_id, publication.traffic, size, set(publication.receive_topics),
-            now=time.monotonic(), attempted=publication.attempted_brokers)
+            now=time.monotonic(), attempted=publication.attempted_brokers, authorized_paths=publication.authorized_paths)
             if item.delay == 0 and (item.broker_id, item.generation) in publication.authorized_paths))
         if not paths:
             return self.publish(topic, encoded, publication=publication)
@@ -350,7 +353,10 @@ class MqttPoolClient:
         self._call(self.on_publish, self, None, info.mid, 0 if receipt.broker_acked else 128, None)
 
     def repair_subscriptions(self):
-        self._pool.refresh_subscriptions()
+        self._pool.repair()
+
+    def repair_path(self, broker, generation, reason):
+        return self._pool.repair_path(broker, generation, reason)
 
     def disconnect(self):
         self._closed.set()

@@ -60,11 +60,19 @@ class DeliveryDispatch:
         self._lock = threading.RLock()
         self._closed = False
 
+    def _plans(self, delivery, now):
+        # Invoke relationship authorization outside the policy lock.
+        authorized = tuple((item.broker_id, item.generation) for item in self.policy.plan(
+            delivery.peer, delivery.message.message_id, Traffic.CONTROL, 1,
+            set(delivery.receive_topics), now=now) if delivery.authorized(item.broker_id, item.generation))
+        return self.policy.plan(delivery.peer, delivery.message.message_id, Traffic(delivery.message.traffic),
+                                delivery.size_bound, set(delivery.receive_topics), now=now,
+                                authorized_paths=authorized)
+
     def submit(self, topic, delivery, info):
         now = self._clock()
         traffic = Traffic(delivery.message.traffic)
-        plans = self.policy.plan(delivery.peer, delivery.message.message_id, traffic,
-                                 delivery.size_bound, set(delivery.receive_topics), now=now)
+        plans = self._plans(delivery, now)
         with self._lock:
             key = delivery.peer, delivery.message
             previous = self._jobs.get(key)
@@ -123,8 +131,7 @@ class DeliveryDispatch:
                 delivery, message = job.delivery, job.delivery.message
                 # Revalidate expiry, subscriptions, generation AND pair identity
                 # at each actual send, not just when the outbox selected a row.
-                allowed = self.policy.plan(delivery.peer, message.message_id, Traffic(message.traffic),
-                                           delivery.size_bound, set(delivery.receive_topics), now=now)
+                allowed = self._plans(delivery, now)
                 if (not any((p.broker_id, p.generation) == (plan.broker_id, plan.generation) for p in allowed)
                         or not delivery.authorized(plan.broker_id, plan.generation)):
                     continue

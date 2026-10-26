@@ -227,6 +227,7 @@ class MqttPeerRoutesTest {
             rig.clock.addAndGet(step)
             rig.wall.addAndGet(step)
             routes.maintenance()
+            assertTrue(routes.ready("pair"))
             receive(ack(advertisement = remote(epoch = index + 2L)))
             assertTrue(routes.ready("pair"))
         }
@@ -519,7 +520,8 @@ class MqttPeerRoutesTest {
         val before = sentCount()
         assertTrue(receive(response))
         assertEquals(previous, store.recorded[binding.scope])
-        assertFalse(routes.ready(binding.scope))
+        assertTrue(routes.ready(binding.scope))
+        assertFalse(routes.classify("outbox", byteArrayOf(1))!!.authorizedPaths!!.containsKey("emqx"))
         assertEquals(listOf(binding.scope), notifications)
         assertEquals(before, sentCount())
         receive(ack(advertisement = remote(epoch = 2)))
@@ -540,6 +542,20 @@ class MqttPeerRoutesTest {
             assertThrows(IllegalArgumentException::class.java) { receive(JSONObject(response.toString()).put(field, value)) }
             assertEquals(previous, store.recorded[binding.scope])
         }
+        assertTrue(routes.ready(binding.scope))
+        assertFalse(routes.classify("outbox", byteArrayOf(1))!!.authorizedPaths!!.containsKey("emqx"))
+    }
+
+    @Test fun survivingLeaseExpiresAndTopicReplacementRevokesIt() {
+        delayedAck()
+        assertTrue(routes.ready(binding.scope))
+        rig.wall.addAndGet(MqttBrokerCatalog.RESUME_TTL_MS + 1)
+        rig.clock.addAndGet(MqttBrokerCatalog.RESUME_TTL_MS + 1)
+        routes.maintenance()
+        assertFalse(routes.ready(binding.scope))
+        receive(ack(advertisement = remote(epoch = 2)))
+        assertTrue(routes.ready(binding.scope))
+        routes.replace(listOf(binding.copy(receiveTopics = setOf("changed-inbox"))))
         assertFalse(routes.ready(binding.scope))
     }
 

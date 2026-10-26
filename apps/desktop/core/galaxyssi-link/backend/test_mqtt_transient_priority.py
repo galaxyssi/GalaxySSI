@@ -57,6 +57,7 @@ class TransientPriorityTest(unittest.TestCase):
     def test_wrong_pair_and_unconfirmed_epoch_cannot_use_reserve(self):
         self.assertIsNone(self.publication(identity=replace(self.endpoint.binding, secret=new_link_secret()).identity))
         self.endpoint.routes._peers["left"].local_confirmed_epoch = 0
+        self.endpoint.routes._peers["left"].ready_lease_until = 0
         self.assertIsNone(self.publication())
 
     def test_revocation_after_classification_is_checked_at_publication(self):

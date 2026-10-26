@@ -44,6 +44,12 @@ class MqttDeliveryDispatchTest {
         assertTrue(rig.transport.policy.pending("peer", "message"))
     }
 
+    @Test fun largeMessageSelectsAuthorizedPathBeforeRanking() = ready().use { rig ->
+        val token = send(rig, descriptor(size = 100_000, authorized = { broker, _ -> broker == "hivemq" }))
+        assertTrue(token.isComplete)
+        assertEquals("hivemq", frame(packets(rig).single()).attempt.brokerId)
+    }
+
     @Test fun verifiedStorageCancelsOnlyUnsentCopies() = ready().use { rig ->
         send(rig)
         val commits = AtomicInteger()

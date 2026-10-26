@@ -1196,11 +1196,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val pendingDelivery = if (!managedTeamAction && conversationId.isNotBlank() && turnId.isNotBlank()) {
             AgentPendingDelivery(messageId, clientConversationId, clientTurnId, remoteTaskId, contactId)
         } else null
+        var dispatch = MqttPublishResult.FAILED
         val published = AgentConnectorDispatchBinding.publish(
             delivery = pendingDelivery,
             register = { AgentPendingDeliveryStore.put(context, it) },
             retire = { AgentPendingDeliveryStore.remove(context, it) }
-        ) { GalaxySSIMqttClient.publishUserMessage(
+        ) { dispatch = GalaxySSIMqttClient.publishUserMessageResult(
             content = outboundPrompt,
             contactId = contactId,
             topicOverride = topic,
@@ -1224,7 +1225,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             agentInstanceId = action.parameters["agent_instance_id"].orEmpty(),
             teamId = action.parameters["team_id"].orEmpty(),
             agentTeamMessage = action.parameters["agent_team_message"].toBoolean()
-        ) }
+        )
+            dispatch.accepted
+        }
         if (!published) {
             voiceAgentRun?.snapshot?.runId?.let { runId ->
                 VoiceAgentRunBridge.get(context).markDispatchFailed(
@@ -1237,7 +1240,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         if (persistDedicatedHistory) {
             trace.put(
                 JSONObject()
-                    .put("stage", if (published) "mqtt_published" else "publish_failed")
+                    .put("stage", when (dispatch) {
+                        MqttPublishResult.PUBLISHED -> "mqtt_published"
+                        MqttPublishResult.QUEUED -> "mqtt_queued"
+                        MqttPublishResult.FAILED -> "publish_failed"
+                    })
                     .put("at", System.currentTimeMillis())
                     .put("detail", topic)
             )
@@ -1250,7 +1257,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         contactId = contactId,
                         content = historyPrompt,
                         deliveryStatus = appContext.getString(
-                            if (published) R.string.delivery_status_sent else R.string.delivery_status_failed
+                            when (dispatch) {
+                                MqttPublishResult.PUBLISHED -> R.string.delivery_status_sent
+                                MqttPublishResult.QUEUED -> R.string.delivery_status_queued
+                                MqttPublishResult.FAILED -> R.string.delivery_status_failed
+                            }
                         ),
                         deliveryTrace = trace
                     )
@@ -1262,7 +1273,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         return AgentActionResult(
             actionId = action.id,
             success = published,
-            message = if (published) "Waiting for ${action.target} response" else "Could not send task to ${action.target}",
+            message = when (dispatch) {
+                MqttPublishResult.QUEUED -> "Task queued locally; waiting for a verified connection to ${action.target}"
+                MqttPublishResult.PUBLISHED -> "Waiting for ${action.target} response"
+                MqttPublishResult.FAILED -> "Could not send task to ${action.target}"
+            },
             metadata = if (published) {
                 mapOf(
                     "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(Locale.ROOT),

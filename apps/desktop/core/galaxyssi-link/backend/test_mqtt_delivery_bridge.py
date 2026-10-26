@@ -133,12 +133,15 @@ class DeliveryBridgeTest(TestCase):
         self.send_phone()
         peer = self.desktop.peer_routes._peers["pair"]
         epoch = peer.local_confirmed_epoch
+        lease = peer.ready_lease_until
         peer.local_confirmed_epoch = 0
+        peer.ready_lease_until = 0
         self.deliver_desktop(self.phone._pool.sent[0])
         self.base.handle.assert_called_once()
         self.assertEqual(content_hash(self.base.wire), link_delivery.stored_wire_receipt("pair", self.base.mid))
         self.assertEqual([], self.desktop._pool.sent)
         peer.local_confirmed_epoch = epoch
+        peer.ready_lease_until = lease
         self.offset += 1
         self.desktop.peer_routes.maintenance()
         self.assertEqual(1, len(self.desktop._pool.sent))
@@ -149,6 +152,7 @@ class DeliveryBridgeTest(TestCase):
     def test_deferred_stored_receipt_cannot_outlive_revoked_pair(self):
         self.send_phone()
         self.desktop.peer_routes._peers["pair"].local_confirmed_epoch = 0
+        self.desktop.peer_routes._peers["pair"].ready_lease_until = 0
         self.deliver_desktop(self.phone._pool.sent[0])
         self.assertEqual(1, len(self.desktop.peer_routes._receipt_retry.pending))
         self.desktop.peer_routes.replace([])

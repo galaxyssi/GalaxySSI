@@ -168,6 +168,29 @@ class PeerRouteExchangeTest(unittest.TestCase):
         self.assertEqual({"hivemq", "mosquitto"}, self.left.routes._peers["left"].local.receive_brokers)
         self.assertTrue(self.left.routes.ready("left"))
 
+    def test_flapping_path_does_not_block_surviving_authenticated_paths(self):
+        self.connect()
+        self.exchange()
+        self.left.pool.lose("emqx")
+        self.left.pool.connect("emqx", 2)
+        self.left.routes.maintenance()
+        # Intentionally withhold the new ACK: the old live lease still works.
+        self.assertTrue(self.left.routes.ready("left"))
+        descriptor = self.left.routes.classify("to-right", b"ciphertext")
+        self.assertEqual({("hivemq", 1), ("mosquitto", 1)}, set(descriptor.authorized_paths))
+        self.offset = 301
+        self.left.routes.maintenance()
+        self.assertFalse(self.left.routes.ready("left"))
+
+    def test_half_life_renewal_remains_usable_until_existing_lease_expires(self):
+        self.connect()
+        self.exchange()
+        self.offset = 151
+        self.left.routes.maintenance()
+        self.assertTrue(self.left.routes.ready("left"))
+        self.left.routes.replace([])
+        self.assertIsNone(self.left.routes.classify("to-right", b"ciphertext"))
+
     def test_all_failed_then_one_restored_requires_fresh_authenticated_ack(self):
         self.connect()
         self.exchange()
@@ -255,7 +278,8 @@ class PeerRouteExchangeTest(unittest.TestCase):
         record.assert_not_called()
         self.assertEqual(old_remote, peer.remote_epoch)
         self.assertEqual(0, peer.local_confirmed_epoch)
-        self.assertFalse(self.left.routes.ready("left"))
+        self.assertTrue(self.left.routes.ready("left"))
+        self.assertNotIn("emqx", dict(self.left.routes.classify("to-right", b"encrypted").authorized_paths))
         self.assertEqual(before_sent, len(self.left.pool.sent))
         self.left.ready.assert_called_once_with("left")
         self.exchange()
@@ -274,7 +298,8 @@ class PeerRouteExchangeTest(unittest.TestCase):
                     self.left.routes.handle_verified("left", changed, broker_id="hivemq", generation=1,
                                                      authenticated_identity=self.left_binding.identity)
                 record.assert_not_called()
-        self.assertFalse(self.left.routes.ready("left"))
+        self.assertTrue(self.left.routes.ready("left"))
+        self.assertEqual(0, peer.local_confirmed_epoch)
 
     def test_missing_local_suback_cannot_accept_resume(self):
         self.left.pool.auto_suback = False

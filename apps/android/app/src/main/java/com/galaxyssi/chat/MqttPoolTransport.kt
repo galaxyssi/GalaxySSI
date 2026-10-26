@@ -29,6 +29,7 @@ internal class MqttPoolTransport(
         fun onPacket(ingress: MqttBrokerPool.Ingress, topic: String, payload: ByteArray) = Unit
         fun onPublished(token: IMqttDeliveryToken, accepted: Boolean) = Unit
         fun onMaintenanceFailure(error: Throwable) = Unit
+        fun onPathState(ingress: MqttBrokerPool.Ingress, state: String, reason: String) = Unit
     }
     private data class Path(var generation: Long = 0, var connected: Boolean = false,
                             val topics: MutableSet<String> = mutableSetOf())
@@ -70,6 +71,7 @@ internal class MqttPoolTransport(
                 }
                 after = paths.values.any { it.connected }
             }
+            listener.onPathState(ingress, state, reason)
             if (before != after) listener.onConnectionChanged(after)
             listener.onSubscriptionsChanged()
         }
@@ -110,8 +112,9 @@ internal class MqttPoolTransport(
     val isConnected: Boolean get() = synchronized(lock) { !closed && paths.values.any { it.connected } }
 
     fun start() {
-        synchronized(lock) { check(!closed); if (started) return; started = true }
+        val first = synchronized(lock) { check(!closed); (!started).also { started = true } }
         pool.start()
+        if (!first) return
         maintenance.scheduleWithFixedDelay({
             try { expireSubscriptions(); delivery.tick(); onTick?.invoke() } catch (error: Exception) {
                 val at = now()
@@ -185,6 +188,19 @@ internal class MqttPoolTransport(
         LogicalToken(nextId(), MqttMessage(), topics, context, callback).finish(true)
     }
 
+    fun publishBootstrap(topic: String, wire: String, receiveTopics: Set<String>): Boolean {
+        val hash = MqttRouteAdvertisement.sha256(wire)
+        var submitted = false
+        readyPathGenerations(receiveTopics).keys.forEach { broker ->
+            runCatching {
+                publish(topic, MqttMessage(wire.toByteArray(Charsets.UTF_8)).apply { qos = 1; isRetained = false },
+                    publication = Publication("pairing", hash, hash, MqttMultipathPolicy.Traffic.CONTROL,
+                        receiveTopics, bootstrap = true, preferredBroker = broker))
+            }.onSuccess { if (it.exception == null) submitted = true }
+        }
+        return submitted
+    }
+
     fun publish(topic: String, message: MqttMessage, context: Any? = null, callback: IMqttActionListener? = null,
                 publication: Publication? = null): IMqttDeliveryToken =
         publishPacket(topic, message, context, callback, publication, notify = true)
@@ -198,7 +214,7 @@ internal class MqttPoolTransport(
             return publish(topic, message, context, callback, publication)
         val paths = policy.plan(publication.peer, publication.messageId, publication.traffic,
             mqttPublishPacketBytes(topic, message.payload.size).toInt(), publication.receiveTopics, now(),
-            attempted = publication.attemptedBrokers)
+            attempted = publication.attemptedBrokers, authorizedPaths = publication.authorizedPaths)
             .filter { it.delayMs == 0L && publication.authorizedPaths[it.brokerId] == it.generation }
             .map { it.brokerId to it.generation }.distinct()
         if (paths.isEmpty()) return publish(topic, message, context, callback, publication)
@@ -235,7 +251,8 @@ internal class MqttPoolTransport(
                 .thenBy { MqttRouteAdvertisement.sha256("$tieSeed:${descriptor.messageId}:${it.key}") })
             .map { it.key to it.value }
         else policy.plan(descriptor.peer, descriptor.messageId, descriptor.traffic, size.toInt(),
-            descriptor.receiveTopics, at, descriptor.preferredBroker, attempted = descriptor.attemptedBrokers).filter { it.delayMs == 0L }
+            descriptor.receiveTopics, at, descriptor.preferredBroker, attempted = descriptor.attemptedBrokers,
+            authorizedPaths = descriptor.authorizedPaths).filter { it.delayMs == 0L }
             .filter { descriptor.authorizedPaths == null || descriptor.authorizedPaths[it.brokerId] == it.generation }
             .map { it.brokerId to it.generation }
         var attemptedPhysicalPublish = false
@@ -259,7 +276,7 @@ internal class MqttPoolTransport(
         throw MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED.toInt())
     }
 
-    fun repair() { pool.refreshSubscriptions(); pool.repairStalledPublishes() }
+    fun repair() { pool.repair(); pool.ensureConnected() }
     fun publishDelivery(topic: String, descriptor: MqttDeliveryDispatch.Delivery, context: Any? = null,
                         callback: IMqttActionListener? = null): IMqttDeliveryToken {
         val token = LogicalToken(nextId(), MqttMessage().apply { qos = 1 }, arrayOf(topic), context, callback)

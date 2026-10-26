@@ -399,6 +399,7 @@ class MqttTransportProbeState:
         self._next_probe_at = 0.0
         self._generation = 0
         self._connected = False
+        self._pending_path: tuple[str, int] | None = None
 
     def connected(self, now: float, initial_delay_seconds: float = 0.0) -> int:
         with self._lock:
@@ -433,7 +434,17 @@ class MqttTransportProbeState:
                 return False
             self._pending_nonce = str(nonce)
             self._sent_at = float(now)
+            self._pending_path = None
             return True
+
+    def bind_path(self, nonce: str, broker: str, generation: int) -> None:
+        with self._lock:
+            if self._pending_nonce == nonce and broker and generation > 0:
+                self._pending_path = (broker, generation)
+
+    def pending_path(self) -> tuple[str, int] | None:
+        with self._lock:
+            return self._pending_path if self._pending_nonce else None
 
     def acknowledge(self, nonce: str, now: float) -> float | None:
         with self._lock:
@@ -1839,6 +1850,8 @@ def _publish_transport_probe(mqttc, now: float | None = None) -> bool:
         log.warning("MQTT transport probe publish rejected rc=%s", info.rc)
         _request_transport_reconnect(mqttc, f"probe_publish_rc_{info.rc}")
         return False
+    if isinstance(mqttc, MqttPoolClient):
+        transport_probe_state.bind_path(nonce, info.broker_id, info.generation)
     return True
 
 
@@ -1886,7 +1899,15 @@ def _transport_reconnect_age(now: float | None = None) -> float | None:
 
 def _request_transport_reconnect(mqttc, reason: str, generation: int | None = None) -> None:
     if isinstance(mqttc, MqttPoolClient):
+        if generation is not None and transport_probe_state.stalled(time.monotonic())[2] != generation:
+            return
+        path = transport_probe_state.pending_path() if reason == "probe_timeout" else None
+        if path:
+            mqttc.repair_path(*path, reason)
         mqttc.repair_subscriptions()
+        transport_probe_state.disconnected()
+        if mqttc.is_connected():
+            transport_probe_state.connected(time.monotonic(), initial_delay_seconds=2.0)
         return
     if not _begin_transport_reconnect():
         return
