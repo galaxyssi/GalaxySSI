@@ -13,10 +13,11 @@ internal class VoiceNewsQueue(checkpoint: VoiceNewsCheckpoint = VoiceNewsCheckpo
     val articleId get() = checkpoint.ids.getOrNull(checkpoint.index).orEmpty()
     val playing get() = state == "loading" || state == "playing"
 
-    fun replace(ids: List<String>) {
+    fun replace(ids: List<String>, offset: Int = 0) {
         require(ids.isNotEmpty() && ids.size <= 20 && ids.all { it.isNotBlank() && it.length <= 256 })
+        require(offset >= 0)
         revision++
-        checkpoint = VoiceNewsCheckpoint(ids.distinct())
+        checkpoint = VoiceNewsCheckpoint(ids.distinct(), offset = offset)
         state = "paused"
     }
     fun resume(): Long {

@@ -29,7 +29,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import org.json.JSONArray
 
-/** Owns public-news speech independently of any Activity. Never records microphone audio. */
+/** Owns news and completed-reply speech independently of any Activity. Never records audio. */
 class VoiceNewsPlaybackService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
@@ -42,6 +42,8 @@ class VoiceNewsPlaybackService : Service() {
     private var androidReady = false
     private var pendingAndroid: (() -> Unit)? = null
     private var androidCallbacks: Pair<String, TtsChunkPlaybackCallbacks>? = null
+    private var androidInitTimeout: Runnable? = null
+    private var androidSpeechTimeout: Runnable? = null
     private var focus: AudioFocusRequest? = null
     private var wake: PowerManager.WakeLock? = null
     private var foreground = false
@@ -49,6 +51,8 @@ class VoiceNewsPlaybackService : Service() {
     private var paragraph = ""
     private var error = ""
     private var publishedMediaState = ""
+    private var reply: VoiceReplySelection? = null
+    private var replyRequest = ""
     private val expiry = Runnable { if (!queue.playing) stopSelf() }
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { pause() }
@@ -80,7 +84,7 @@ class VoiceNewsPlaybackService : Service() {
                         recordCompletion = false, communicationPlayback = AppVoiceControlBridge.usesCommunicationAudio(),
                         mediaPlayback = !AppVoiceControlBridge.usesCommunicationAudio(), onDone = guarded.onCompleted)
                 } else playAndroid(chunk, guarded)
-                return TtsChunkPlayback { edge.stop(); pendingAndroid = null; androidCallbacks = null; androidTts?.stop() }
+                return TtsChunkPlayback { edge.stop(); clearAndroidPending(); androidTts?.stop() }
             }
             override fun releaseSession(sessionId: String) { edge.clearPrefetches(sessionId) }
         })
@@ -113,19 +117,46 @@ class VoiceNewsPlaybackService : Service() {
         if (intent == null) { stopSelf(); return START_NOT_STICKY }
         try {
             promote()
-            dispatch(intent.action.orEmpty(), intent.getStringArrayListExtra("ids"))
+            if (intent.action == "reply") startReply(intent)
+            else dispatch(intent.action.orEmpty(), intent.getStringArrayListExtra("ids"))
         } catch (_: Exception) { fail("playback_start_failed") }
         return START_NOT_STICKY
+    }
+
+    private fun startReply(intent: Intent) {
+        val request = intent.getStringExtra("reply_request").orEmpty()
+        if (request.isBlank() || request != VoiceReplyPlayback.state.requestId) {
+            if (!queue.playing) { settle(); stopSelf() }
+            return
+        }
+        pause(false); saveCheckpoint()
+        reply = VoiceReplySelection(intent.getStringExtra("reply_conversation").orEmpty(),
+            intent.getStringExtra("reply_entry").orEmpty(), intent.getIntExtra("reply_offset", 0))
+        replyRequest = request
+        VoiceNewsPlaybackBus.publish(VoiceNewsPlaybackState())
+        queue.replace(listOf(requireNotNull(reply).entryId), requireNotNull(reply).offset)
+        updateTitle(); resume()
+    }
+
+    private fun updateTitle() {
+        media.setSessionActivity(openPendingIntent())
+        media.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE,
+            getString(if (reply == null) R.string.voice_news_title else R.string.agent_reply_speech_enable))
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, "GalaxySSI").build())
     }
 
     private fun dispatch(action: String, ids: List<String>? = null) {
         if (closed) return
         try {
             when (action) {
-                "replace" -> { pause(false); queue.replace(ids.orEmpty()); resume() }
+                "replace" -> {
+                    pause(false); reply = null; replyRequest = ""
+                    VoiceReplyPlayback.publish(VoiceReplyPlaybackState())
+                    queue.replace(ids.orEmpty()); updateTitle(); resume()
+                }
                 "resume" -> resume()
                 "pause" -> pause()
-                "next" -> { pause(false); if (queue.next()) resume() else settle() }
+                "next" -> if (reply == null) { pause(false); if (queue.next()) resume() else settle() }
                 "stop" -> { queue.stop(true); cancelSpeech(); settle(); stopSelf() }
                 else -> { pause(); stopSelf() }
             }
@@ -143,13 +174,17 @@ class VoiceNewsPlaybackService : Service() {
         main.removeCallbacks(expiry)
         val token = queue.resume()
         val id = queue.articleId
+        val selectedReply = reply
         val savedOffset = queue.checkpoint.offset
         paragraph = ""; error = ""
         publish(); saveCheckpoint()
         worker.execute {
-            val body = runCatching { AttentionArticleStore(applicationContext).body(id)?.let {
-                com.galaxyssi.chat.voice.modelstream.SpeechTextNormalizer.normalize(it)
-            } }.getOrNull()
+            val body = runCatching {
+                if (selectedReply != null) selectedReply.text(AgentTranscriptStore(applicationContext).fullEntry(selectedReply.entryId))
+                else AttentionArticleStore(applicationContext).body(id)?.let {
+                    com.galaxyssi.chat.voice.modelstream.SpeechTextNormalizer.normalize(it)
+                }
+            }.getOrNull()
             val start = savedOffset.coerceIn(0, body?.length ?: 0)
             val command = if (!body.isNullOrBlank() && start < body.length) runCatching {
                 AgentReplySpeechController("background-news").toggle(
@@ -157,9 +192,9 @@ class VoiceNewsPlaybackService : Service() {
             }.getOrNull() else null
             main.post {
                 if (closed || queue.revision != token) return@post
-                if (body.isNullOrBlank()) { fail("article_unavailable"); return@post }
+                if (body.isNullOrBlank()) { fail(if (selectedReply == null) "article_unavailable" else "reply_unavailable"); return@post }
                 if (start == body.length) {
-                    queue.pause(); if (queue.next()) resume() else settle()
+                    completeItem()
                     return@post
                 }
                 var searchFrom = start
@@ -181,7 +216,7 @@ class VoiceNewsPlaybackService : Service() {
                         if (queue.revision == token) {
                             feeder.clear(sessionId)
                             if (!success) fail("speech_failed")
-                            else { queue.pause(); if (queue.next()) resume() else settle() }
+                            else completeItem()
                         }
                     }))
                 feeder.begin(sessionId)
@@ -191,13 +226,20 @@ class VoiceNewsPlaybackService : Service() {
         }
     }
 
+    private fun completeItem() {
+        queue.pause()
+        if (reply != null) {
+            queue.stop(true); cancelSpeech(); settle(); stopSelf()
+        } else if (queue.next()) resume() else settle()
+    }
+
     private fun pause(notify: Boolean = true) {
         queue.pause(); cancelSpeech(); if (notify) settle()
     }
     private fun cancelSpeech() {
         val id = scheduler.snapshot().sessionId
         scheduler.cancelActive(TtsCancelReason.USER_STOP); feeder.clear(id)
-        pendingAndroid = null; androidCallbacks = null; androidTts?.stop(); edge.stop()
+        clearAndroidPending(); androidTts?.stop(); edge.stop()
         releaseFocus(); wake?.let { if (it.isHeld) it.release() }; wake = null
         paragraph = ""
     }
@@ -226,32 +268,32 @@ class VoiceNewsPlaybackService : Service() {
     private fun playAndroid(chunk: CommittedSpeechChunk, callbacks: TtsChunkPlaybackCallbacks) {
         val id = progressiveTtsPrefetchKey(chunk)
         androidCallbacks = id to callbacks
-        val speak: () -> Unit = {
+        val speak: () -> Unit = speak@{
             val config = VoiceAssistantSettings.get(this)
             androidTts?.language = Locale.forLanguageTag(config.ttsLanguage)
             androidTts?.setAudioAttributes(attributes)
-            if (androidTts?.speak(chunk.speechText, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.ERROR)
-                callbacks.onCompleted(false, "tts_rejected")
-            main.postDelayed({
-                if (androidCallbacks?.first == id) {
-                    androidCallbacks = null; androidTts?.stop(); callbacks.onCompleted(false, "tts_timeout")
-                }
-            }, ProgressiveTtsTimeoutPolicy.forText(chunk.speechText))
+            if (androidTts?.speak(chunk.speechText, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.ERROR) {
+                finishAndroid(id, false, "tts_rejected"); return@speak
+            }
+            androidSpeechTimeout = Runnable {
+                if (androidCallbacks?.first == id) { androidTts?.stop(); finishAndroid(id, false, "tts_timeout") }
+            }.also { main.postDelayed(it, ProgressiveTtsTimeoutPolicy.forText(chunk.speechText)) }
         }
         if (androidReady) { speak(); return }
         pendingAndroid = speak
-        main.postDelayed({
+        androidInitTimeout = Runnable {
             if (!androidReady && androidCallbacks?.first == id) {
-                pendingAndroid = null; androidCallbacks = null; callbacks.onCompleted(false, "tts_init_timeout")
+                finishAndroid(id, false, "tts_init_timeout")
             }
-        }, 15_000L)
+        }.also { main.postDelayed(it, 15_000L) }
         if (androidTts != null) return
         androidTts = TextToSpeech(applicationContext) { status -> main.post {
             if (closed) return@post
             androidReady = status == TextToSpeech.SUCCESS
+            androidInitTimeout?.let(main::removeCallbacks); androidInitTimeout = null
             val pending = pendingAndroid; pendingAndroid = null
             if (androidReady) pending?.invoke() else {
-                androidCallbacks?.second?.onCompleted(false, "tts_not_ready"); androidCallbacks = null
+                androidCallbacks?.first?.let { finishAndroid(it, false, "tts_not_ready") }
             }
         } }.apply {
             setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -259,15 +301,28 @@ class VoiceNewsPlaybackService : Service() {
                 override fun onDone(id: String?) = finish(id, true)
                 @Deprecated("Android callback") override fun onError(id: String?) = finish(id, false)
                 private fun finish(id: String?, success: Boolean) { main.post {
-                    val cb = androidCallbacks?.takeIf { it.first == id }?.second ?: return@post
-                    androidCallbacks = null; cb.onCompleted(success, if (success) null else "tts_failed")
+                    finishAndroid(id, success, if (success) null else "tts_failed")
                 } }
             })
         }
     }
 
+    private fun finishAndroid(id: String?, success: Boolean, code: String?) {
+        val callback = androidCallbacks?.takeIf { it.first == id }?.second ?: return
+        clearAndroidPending()
+        callback.onCompleted(success, code)
+    }
+    private fun clearAndroidPending() {
+        androidInitTimeout?.let(main::removeCallbacks); androidInitTimeout = null
+        androidSpeechTimeout?.let(main::removeCallbacks); androidSpeechTimeout = null
+        pendingAndroid = null; androidCallbacks = null
+    }
+
     private fun publish() {
-        VoiceNewsPlaybackBus.publish(VoiceNewsPlaybackState(queue.articleId, queue.state, paragraph, error))
+        if (reply == null) VoiceNewsPlaybackBus.publish(VoiceNewsPlaybackState(queue.articleId, queue.state, paragraph, error))
+        else if (VoiceReplyPlayback.state.requestId == replyRequest) {
+            VoiceReplyPlayback.publish(VoiceReplyPlaybackState(replyRequest, reply, queue.state))
+        }
         val mediaState = "${queue.articleId}:${queue.state}"
         if (publishedMediaState == mediaState) return
         publishedMediaState = mediaState
@@ -279,7 +334,8 @@ class VoiceNewsPlaybackService : Service() {
             else -> PlaybackState.STATE_STOPPED
         }
         media.setPlaybackState(PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
-            PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_STOP)
+            PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_STOP or
+            (if (reply == null) PlaybackState.ACTION_SKIP_TO_NEXT else 0L))
             .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, if (queue.playing) 1f else 0f).build())
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification())
     }
@@ -291,7 +347,8 @@ class VoiceNewsPlaybackService : Service() {
         publishedMediaState = ""
     }
     private fun notification(): Notification = Notification.Builder(this, CHANNEL)
-        .setSmallIcon(R.drawable.ic_voice_headphones).setContentTitle(getString(R.string.voice_news_title))
+        .setSmallIcon(R.drawable.ic_voice_headphones).setContentTitle(getString(
+            if (reply == null) R.string.voice_news_title else R.string.agent_reply_speech_enable))
         .setContentText(getString(when (queue.state) {
             "playing", "loading" -> R.string.voice_call_speaking
             "failed" -> R.string.agent_reply_speech_failed
@@ -301,16 +358,21 @@ class VoiceNewsPlaybackService : Service() {
         .addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this,
             if (queue.playing) R.drawable.ic_rich_pause else R.drawable.ic_rich_play), getString(if (queue.playing) R.string.voice_news_pause else R.string.voice_news_play),
             actionPendingIntent(if (queue.playing) "pause" else "resume")).build())
-        .addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_next),
-            getString(R.string.voice_news_next), actionPendingIntent("next")).build())
+        .apply { if (reply == null) addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this@VoiceNewsPlaybackService, android.R.drawable.ic_media_next),
+            getString(R.string.voice_news_next), actionPendingIntent("next")).build()) }
         .addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_screen_prompt_voice_stop),
             getString(R.string.voice_news_stop), actionPendingIntent("stop")).build())
-        .setStyle(Notification.MediaStyle().setMediaSession(media.sessionToken).setShowActionsInCompactView(0, 1, 2)).build()
+        .setStyle(Notification.MediaStyle().setMediaSession(media.sessionToken).setShowActionsInCompactView(
+            *if (reply == null) intArrayOf(0, 1, 2) else intArrayOf(0, 1))).build()
     private fun openPendingIntent() = PendingIntent.getActivity(this, 0,
-        Intent(this, ProactiveAttentionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        Intent(this, if (reply == null) ProactiveAttentionActivity::class.java else MainActivity::class.java)
+            .apply { reply?.let { putExtra("galaxyssi_open_agent", true)
+                putExtra("galaxyssi_agent_conversation_id", it.conversationId) } }
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     private fun actionPendingIntent(action: String) = PendingIntent.getForegroundService(this, action.hashCode(),
         Intent(this, VoiceNewsPlaybackService::class.java).setAction(action), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     private fun saveCheckpoint() {
+        if (reply != null) return
         val value = queue.checkpoint
         getSharedPreferences(PREFS, 0).edit().putString("ids", JSONArray(value.ids).toString())
             .putInt("index", value.index).putInt("offset", value.offset).apply()
@@ -320,11 +382,16 @@ class VoiceNewsPlaybackService : Service() {
         closed = true; queue.pause(); cancelSpeech(); saveCheckpoint(); main.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(noisy) }; media.release(); edge.shutdown(); androidTts?.shutdown(); worker.shutdownNow()
         stopForeground(STOP_FOREGROUND_REMOVE); getSystemService(NotificationManager::class.java).cancel(NOTIFICATION)
-        VoiceNewsPlaybackBus.publish(VoiceNewsPlaybackState(queue.articleId, if (queue.articleId.isBlank()) "stopped" else "paused"))
+        if (reply == null) VoiceNewsPlaybackBus.publish(VoiceNewsPlaybackState(queue.articleId, if (queue.articleId.isBlank()) "stopped" else "paused"))
+        else if (VoiceReplyPlayback.state.requestId == replyRequest) VoiceReplyPlayback.publish(VoiceReplyPlaybackState())
         super.onDestroy()
     }
     companion object {
         private var running = java.lang.ref.WeakReference<VoiceNewsPlaybackService>(null)
+        internal fun stopReply() {
+            check(Looper.myLooper() == Looper.getMainLooper())
+            running.get()?.takeIf { it.reply != null }?.dispatch("stop")
+        }
         internal fun pauseForInput() {
             check(Looper.myLooper() == Looper.getMainLooper())
             running.get()?.let { if (it.queue.playing) it.pause() }
