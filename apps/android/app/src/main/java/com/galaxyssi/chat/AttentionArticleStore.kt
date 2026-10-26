@@ -19,12 +19,19 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     private val db get() = helper.writableDatabase
 
     fun enqueue(article: AttentionFeedArticle, topicTitle: String) {
+        db.beginTransaction()
+        try {
         db.insertWithOnConflict("articles", null, ContentValues().apply {
             put("id", article.key); put("url", article.url); put("topic", article.topicId); put("topic_title", topicTitle)
             put("title", article.title); put("publisher", AttentionFeedCollectionPlan.publisher(article.url, article.publisher))
             put("published", if (article.discoveryDate) 0L else article.publishedAt)
             put("collected", article.collectedAt)
         }, SQLiteDatabase.CONFLICT_IGNORE)
+        AttentionArticleTopics.add(db, article.key, article.topicId, topicTitle)
+        db.execSQL("UPDATE articles SET publisher=? WHERE id=? AND publisher='Hacker News'",
+            arrayOf(AttentionFeedCollectionPlan.publisher(article.url, article.publisher), article.key))
+        db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
     }
 
     fun importLegacy(feed: ProactiveAttentionFeedStore, topics: List<AttentionTopic>): Boolean {
@@ -33,10 +40,16 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         val topicNames = topics.associate { it.id to it.title }
         db.beginTransaction()
         try {
-            for (r in records) enqueue(AttentionFeedArticle(r.getString("key"), r.optString("topic"), r.optString("title"),
-                "", r.optString("url"), r.optString("publisher"), r.optLong("published"), r.optLong("collected"),
-                discoveryDate = r.optBoolean("discovery_date")),
-                topicNames[r.optString("topic")].orEmpty())
+            for (r in records) {
+                val article = AttentionFeedArticle(r.getString("key"), r.optString("topic"), r.optString("title"),
+                    r.optString("summary"), r.optString("url"), r.optString("publisher"), r.optLong("published"), r.optLong("collected"),
+                    discoveryDate = r.optBoolean("discovery_date"))
+                enqueue(article, topicNames[article.topicId].orEmpty())
+                val savedTopics = r.optJSONArray("topics")
+                topics.filter { topic -> ProactiveAttentionFeedSources.matches(article, topic) ||
+                    savedTopics?.let { a -> (0 until a.length()).any { a.optString(it) == topic.id } } == true }
+                    .forEach { AttentionArticleTopics.add(db, article.key, it.id, it.title) }
+            }
             if (records.isEmpty()) putMeta("legacy_done", "1")
             else putMeta("legacy_cursor", "article:" + records.last().getString("key"))
             db.setTransactionSuccessful()
@@ -48,10 +61,10 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         if (topics.isEmpty()) return null
         db.beginTransaction()
         try {
-            val filter = topics.joinToString(",") { "?" }
+            val filter = AttentionArticleTopics.filter(topics)
             val args = arrayOf(now.toString()) + topics.toTypedArray()
             fun select(condition: String, order: String) = db.rawQuery("SELECT $COLUMNS FROM articles " +
-                "WHERE next_at <= ? AND topic IN ($filter) AND $condition ORDER BY $order,id LIMIT 1", args)
+                "WHERE next_at <= ? AND $filter AND $condition ORDER BY $order,id LIMIT 1", args)
                 .use { if (it.moveToFirst()) readJob(it) else null }
             // Persist the lane cursor so frequent process restarts cannot starve history or retries.
             val cursor = meta("claim_lane").toIntOrNull()?.rem(6) ?: 0
@@ -69,7 +82,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             putMeta("claimed:" + job.publisher, now.toString())
             if (job.state != "ready") putMeta("claim_lane", ((cursor + 1) % 6).toString())
             db.setTransactionSuccessful()
-            return job
+            return AttentionArticleTopics.scope(db, job, topics)
         } finally { db.endTransaction() }
     }
 
@@ -118,6 +131,11 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     fun metadata(key: String): AttentionArticleJob? = db.rawQuery("SELECT $COLUMNS FROM articles WHERE id = ?", arrayOf(key))
         .use { if (it.moveToFirst()) readJob(it) else null }
 
+    fun scopedMetadata(key: String, enabled: Set<String>): AttentionArticleJob? =
+        metadata(key)?.let { AttentionArticleTopics.scope(db, it, enabled) }
+
+    fun topics(key: String): Map<String, String> = AttentionArticleTopics.all(db, key)
+
     fun body(key: String): String? = db.rawQuery("SELECT body FROM articles WHERE id = ? AND state IN ('ready','published')", arrayOf(key))
         .use { if (it.moveToFirst()) it.getString(0) else null }
 
@@ -136,8 +154,8 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
 
     fun nextAt(topics: Set<String>): Long? {
         if (topics.isEmpty()) return null
-        return db.rawQuery("SELECT MIN(next_at) FROM articles WHERE (state <> 'published' OR visual_requested = 1) AND topic IN (" +
-            topics.joinToString(",") { "?" } + ")", topics.toTypedArray()).use {
+        return db.rawQuery("SELECT MIN(next_at) FROM articles WHERE (state <> 'published' OR visual_requested = 1) AND " +
+            AttentionArticleTopics.filter(topics), topics.toTypedArray()).use {
             if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
         }
     }
@@ -146,8 +164,8 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         if (topics.isEmpty()) return AttentionArticleQueueCounts(0, 0, 0)
         return db.rawQuery("SELECT COALESCE(SUM(state = 'published'),0)," +
             "COALESCE(SUM(state <> 'published' AND error = ''),0)," +
-            "COALESCE(SUM(state <> 'published' AND error <> ''),0) FROM articles WHERE topic IN (" +
-            topics.joinToString(",") { "?" } + ")", topics.toTypedArray()).use {
+            "COALESCE(SUM(state <> 'published' AND error <> ''),0) FROM articles WHERE " +
+            AttentionArticleTopics.filter(topics), topics.toTypedArray()).use {
             it.moveToFirst(); AttentionArticleQueueCounts(it.getInt(0), it.getInt(1), it.getInt(2))
         }
     }
@@ -159,7 +177,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         c.getString(4), c.getString(5), c.getLong(6), c.getLong(7),
         c.getInt(8), c.getString(9), c.getString(10), c.getString(11), c.getString(12))
 
-    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 6) {
+    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 7) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE articles(id TEXT PRIMARY KEY NOT NULL,url TEXT NOT NULL,topic TEXT NOT NULL," +
                 "topic_title TEXT NOT NULL,title TEXT NOT NULL,publisher TEXT NOT NULL,published INTEGER NOT NULL," +
@@ -172,6 +190,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             db.execSQL("CREATE INDEX article_queue ON articles(state,next_at,topic,collected DESC)")
             db.execSQL("CREATE TABLE metadata(id TEXT PRIMARY KEY NOT NULL,value TEXT NOT NULL)")
             queueIndex(db)
+            AttentionArticleTopics.create(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             if (oldVersion < 3) {
@@ -192,6 +211,13 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
                     if (column !in existing) db.execSQL("ALTER TABLE articles ADD COLUMN $column " +
                         if (column in setOf("document", "cover")) "TEXT NOT NULL DEFAULT ''" else "INTEGER NOT NULL DEFAULT 0")
                 }
+            }
+            if (oldVersion < 7) {
+                AttentionArticleTopics.create(db)
+                // Replay metadata in bounded pages; do not clear bodies, identity, attempts or read state.
+                db.execSQL("DELETE FROM metadata WHERE id IN ('legacy_done','legacy_cursor')")
+                db.execSQL("UPDATE articles SET next_at=0 WHERE state IN ('pending','repair') AND error IN " +
+                    "('article_translation_not_chinese','article_translation_numbers_changed','article_language_unknown')")
             }
         }
         private fun queueIndex(db: SQLiteDatabase) = db.execSQL(

@@ -27,8 +27,10 @@ internal class AttentionArticleTranslator(private val context: Context) : AutoCl
         val bodyLanguage = TranslateLanguage.fromLanguageTag(identifier.identifyLanguage(body.take(4000)).await())
         return AttentionArticleTranslation { text ->
             withTimeout(15_000L) piece@{
-                val language = TranslateLanguage.fromLanguageTag(identifier.identifyLanguage(text).await())
-                    ?: bodyLanguage ?: error("article_language_unknown")
+                // A short author/model name cannot reliably identify its language. Keep the article context.
+                val language = (if (text.length < 160) bodyLanguage else
+                    TranslateLanguage.fromLanguageTag(identifier.identifyLanguage(text).await()) ?: bodyLanguage)
+                    ?: error("article_language_unknown")
                 if (language == TranslateLanguage.CHINESE) return@piece text
                 val client = clients[language] ?: run {
                     for (code in setOf(language, TranslateLanguage.CHINESE) - TranslateLanguage.ENGLISH) {

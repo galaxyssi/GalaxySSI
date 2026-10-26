@@ -23,6 +23,36 @@ class AttentionLocalStorageDeviceTest {
 
     @After fun cleanup() { context.cleanup() }
 
+    @Test fun largePublicCacheReadsUnicodeCodePointsAcrossEveryChunkBoundary() {
+        val db = AgentEncryptedDatabase(context, "attention_feed_v1")
+        for (prefix in listOf(1, 262_110, 262_116, 262_117, 524_250)) {
+            val value = JSONObject().put("xml", "x".repeat(prefix) + "\ud83e\uddec" + "y".repeat(600_000)).toString()
+            db.writeString("feed:unicode", value)
+            assertEquals("prefix=$prefix", value, db.readString("feed:unicode", ""))
+            assertEquals(value, db.readStrings(listOf("feed:unicode")).getValue("feed:unicode"))
+        }
+    }
+
+    @Test fun malformedFeedCacheDoesNotBlockRefetchOrDeleteArticleRecords() {
+        val db = AgentEncryptedDatabase(context, "attention_feed_v1")
+        val url = "https://example.org/feed"
+        val key = "feed:" + ProactiveAttentionFeedPolicy.urlKey(url)
+        db.writeString(key, "{broken")
+        db.writeString("article:kept", "{\"key\":\"kept\"}")
+        val store = ProactiveAttentionFeedStore(context)
+        assertNull(store.cachedFeed(url, 1))
+        assertFalse(db.contains(key)); assertTrue(db.contains("article:kept"))
+    }
+
+    @Test fun oneFailingSearchDoesNotDeferHealthyTopicSourcesForFourHours() {
+        val store = ProactiveAttentionFeedStore(context)
+        val url = "https://bad.example/feed"
+        repeat(4) { store.sourceFailed(url, "timeout", (it + 1) * 86_400_000L) }
+        store.recordPoll("topic", 0, "timeout", 9_000L)
+        assertEquals(9_000L + ProactiveAttentionFeedPolicy.MIN_INTERVAL, store.topicState("topic").getLong("next"))
+        assertEquals(0L, store.sourceRetryAt("https://healthy.example/feed"))
+    }
+
     @Test fun legacyDiscoveryRowsMigrateWithoutLosingContent() {
         val name = "attention_titles_v1"
         val db = AgentEncryptedDatabase(context, name)

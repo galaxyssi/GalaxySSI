@@ -547,7 +547,8 @@ class AgentEncryptedDatabase(
             ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
                 ?: return null
             value.append(chunk)
-            offset += chunk.length
+            // SQLite substr counts Unicode code points, not UTF-16 code units.
+            offset += chunk.codePointCount(0, chunk.length)
             if (chunk.isEmpty()) return null
         }
         return value.toString()

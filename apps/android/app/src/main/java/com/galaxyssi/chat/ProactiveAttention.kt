@@ -200,8 +200,15 @@ class ProactiveAttentionStore(context: Context) {
 
     fun allows(message: GlobalProactiveMessage, preferences: AttentionPreferences? = null): Boolean {
         if (!ProactiveAttentionPolicy.isAttention(message)) return true
+        val snapshot = preferences ?: preferences()
+        if (!snapshot.configured || !snapshot.enabled) return false
         val topicId = message.sourceEventId.removePrefix("research:${ProactiveAttentionPolicy.TASK_PREFIX}").substringBefore(':')
-        return ProactiveAttentionPolicy.shouldCollect(preferences ?: preferences(), topicId)
+        if (ProactiveAttentionPolicy.shouldCollect(snapshot, topicId)) return true
+        if (message.newsArticleKey.isNotBlank()) {
+            val memberships = AttentionArticleStore(appContext).topics(message.newsArticleKey)
+            return snapshot.topics.any { it.enabled && it.id in memberships }
+        }
+        return false
     }
 
     fun allowsNotification(message: GlobalProactiveMessage, preferences: AttentionPreferences? = null): Boolean {

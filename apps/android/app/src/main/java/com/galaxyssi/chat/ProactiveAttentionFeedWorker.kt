@@ -79,6 +79,7 @@ class ProactiveAttentionFeedCollector(
             }
         }
         for (endpoint in batch) {
+            if (store.sourceRetryAt(endpoint) > now) continue
             val items = try {
                 val xml = load(endpoint, allowPage = endpoint in explicit)
                 if (endpoint in explicit) {
@@ -90,8 +91,10 @@ class ProactiveAttentionFeedCollector(
                             ProactiveAttentionFeedPolicy.parse(load(feedUrl), topic.id, now)
                         }
                     }
-                } else ProactiveAttentionFeedPolicy.parse(xml, topic.id, now).filter {
-                    endpoint !in originals || ProactiveAttentionFeedSources.matches(it, topic)
+                } else ProactiveAttentionFeedPolicy.parse(xml, topic.id, now,
+                    maxAgeDays = ProactiveAttentionSourceCatalog.maxAgeDays(topic.id)).filter {
+                    endpoint !in originals || ProactiveAttentionSourceCatalog.dedicated(endpoint, topic.id) ||
+                        ProactiveAttentionFeedSources.matches(it, topic)
                 }
             } catch (failure: Exception) {
                 if (failure is java.util.concurrent.CancellationException) throw failure
