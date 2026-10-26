@@ -1029,6 +1029,16 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     "_galaxyssi_desktop_executor_full",
                     (target?.desktopAccessProfile == GalaxySSILinkProtocol.ACCESS_DESKTOP_EXECUTOR).toString()
                 )
+                context?.takeIf { request.conversationContext.conversationId.isNotBlank() }?.let { appContext ->
+                    val invocationTarget = AgentInvocationBinding.canonicalTargetId(connectorId, request.targets.map { it.id })
+                    AgentModelSelectionSettings.configurationForTarget(
+                        appContext, request.conversationContext.conversationId, invocationTarget
+                    )?.let { configuration ->
+                        put("agent_model_id", configuration.modelId)
+                        put("agent_reasoning_effort", configuration.reasoningEffort.wireValue)
+                    }
+                    put(AgentInvocationBinding.TARGET, invocationTarget)
+                }
                 routing?.let { decision ->
                     put("routing_mode", decision.requirements.mode.name)
                     put("routing_requires_live_data", decision.requirements.liveDataRequired.toString())

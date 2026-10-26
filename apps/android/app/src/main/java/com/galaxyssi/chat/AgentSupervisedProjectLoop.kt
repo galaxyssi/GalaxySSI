@@ -111,7 +111,8 @@ internal object AgentSupervisedProjectRepairRoutingPolicy {
         }.distinct()
         val routedConnector = connector.copy(
             target = nextTarget.title,
-            parameters = connector.parameters + mapOf(
+            parameters = (connector.parameters - setOf("manual_model_id", "agent_model_id",
+                "agent_reasoning_effort", "agent_instance_id", AgentInvocationBinding.TARGET)) + mapOf(
                 "connector_id" to nextTarget.id,
                 "connector_kind" to nextTarget.kind.name.lowercase(Locale.ROOT),
                 "connector_adapter_type" to nextTarget.adapterType,
@@ -434,7 +435,7 @@ internal object AgentSupervisedProjectLoop {
         }
         if (key.directResponseAllowed) {
             append("Initial response option: if no phone action is needed, return {\"disposition\":\"respond\",\"final_response\":\"user answer\"}. ")
-            append("Use the user's language. This option is for conversation or evidence-backed answers, never a substitute for requested device operations. If execution is needed, choose a listed phone tool; do not claim inability before inspecting available capabilities. Never treat the provider's host as the user's phone.\n")
+            append("Use the user's language. Deliver the actual answer, not an acknowledgement or a promise to search later. Resolve short follow-ups from the conversation handoff; retain earlier requirements unless the latest user changes them. If research is still needed, perform provider-native search or return a phone tool action, not a final response. This option is for conversation or evidence-backed answers, never a substitute for requested device operations. If execution is needed, choose a listed phone tool; do not claim inability before inspecting available capabilities. Never treat the provider's host as the user's phone.\n")
         }
         append("User goal: ").append(key.goal).append('\n')
         if (key.durableContext.isNotBlank()) {
@@ -449,7 +450,8 @@ internal object AgentSupervisedProjectLoop {
     }.let { prompt ->
         AgentSupervisedProjectPromptCodec.preserveLatestObservation(
             prompt,
-            key.maximumCharacters.coerceAtLeast(key.minimumBaseCharacters),
+            minOf(key.maximumCharacters, 24_000 + key.conversationTransport.length)
+                .coerceAtLeast(key.minimumBaseCharacters),
             key.latestObservation
         )
     }
@@ -458,9 +460,10 @@ internal object AgentSupervisedProjectLoop {
         AgentPlannerObservation.sanitize(goal, MAX_GOAL_CHARACTERS).orEmpty()
 
     private const val MAX_GOAL_CHARACTERS = 8_000
-    private const val MAX_CONVERSATION_TOKENS = 2_048
+    // This is a transport working set, not the provider's total context window.
+    private const val MAX_CONVERSATION_TOKENS = 32_768
     private const val MAX_TOOL_SCHEMA_CHARACTERS = 240
-    private const val MAX_PROMPT_CHARACTERS = 24_000
+    private const val MAX_PROMPT_CHARACTERS = 196_608
     private const val MAX_INVALID_RESPONSE_CHARACTERS = 3_000
     private const val MINIMUM_BASE_PROMPT_CHARACTERS = 12_000
     private const val MAX_FAILURE_CHARACTERS = 1_000
@@ -586,7 +589,7 @@ internal object AgentSupervisedProjectToolInventory {
                     buildString {
                         append("- ").append(tool.id)
                         append(" | risk=").append(tool.risk.wireValue)
-                        if (tool.id in PhoneAssistantToolPolicy.directActionToolIds) {
+                        if (tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID) {
                             append(" | description=").append(tool.description)
                         }
                         if (phoneControl && !tool.requiresEffectClaim) append(" | effect=read_only")
@@ -597,7 +600,7 @@ internal object AgentSupervisedProjectToolInventory {
                         append(" | input=")
                         append(
                             if (tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
-                                tool.id in PhoneAssistantToolPolicy.directActionToolIds) {
+                                tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID) {
                                 AgentNativeJsonCodec.stringify(tool.inputSchema.document)
                             } else AgentSupervisedProjectPromptCodec.compactInputSchema(
                                 tool.inputSchema.document,
@@ -1114,6 +1117,11 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
                 return supervisedFormatRepairDecision(plan, connector, request, response,
                     "Phone execution requires an action receipt, not a prose assertion. Return an executable native-tool plan; inspect before retrying a pending operation.")
             }
+            val selfCheck = AgentResponseSelfCheck.evaluate(request.goal, finalResponse)
+            if (!selfCheck.accepted) {
+                return supervisedFormatRepairDecision(plan, connector, request, response,
+                    "${selfCheck.diagnostic} Deliver the actual requested answer or plan the next missing observation; a promise to continue is not completion.")
+            }
             return AgentSupervisedProjectPlanDecision.finalResponse(finalResponse)
         }
     }
@@ -1208,6 +1216,12 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         if (AgentSupervisedControlContent.isProtocol(parsed.actions.single().description)) {
             return supervisedFormatRepairDecision(plan, connector, request, response,
                 AgentSupervisedControlContent.REPAIR_REASON)
+        }
+        val finalCheck = AgentResponseSelfCheck.evaluate(request.goal, parsed.actions.single().description,
+            hasOutputArtifacts = !plan.artifactRichOutputJson.isNullOrBlank())
+        if (!finalCheck.accepted) {
+            return supervisedFormatRepairDecision(plan, connector, request, response,
+                "${finalCheck.diagnostic} Deliver the requested result or plan the next missing observation; do not mark a promise as complete.")
         }
         val pendingOutcomes = AgentPendingOutcomeEvidence.unresolved(parsed.completionRequirements, executionHistory) {
             nativeToolRegistry.lookup(it)?.descriptor

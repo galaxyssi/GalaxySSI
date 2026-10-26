@@ -1,6 +1,7 @@
 import copy
 import json
 import unittest
+import tempfile
 from unittest.mock import patch
 
 from research_audit import ResearchEvidenceAudit, tool_spec, TOOL
@@ -26,6 +27,7 @@ def proposal():
 
 class ResearchAuditTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.dict("os.environ", {"GALAXYSSI_STATE_DIR": self.enterContext(tempfile.TemporaryDirectory())}))
         self.audit = ResearchEvidenceAudit()
         self.audit.observe(observation())
 

@@ -68,6 +68,7 @@ internal object AgentResearchTraceStore {
     }
 
     fun remote(context: Context, conversation: String, turn: String, event: JSONObject) {
+        checkpoint(context, conversation, turn, event)
         val trace = event.optJSONObject("research_trace")
             ?: event.optJSONObject("metadata")?.optJSONObject("research_trace") ?: return
         merge(context, conversation, turn, AgentResearchTrace.decode(trace).copy(remote = true))
@@ -83,16 +84,69 @@ internal object AgentResearchTraceStore {
                 identity.conversationId, identity.turnId)) return
         if (CollaborationProgressStore.remote(context, identity.sourceMessageId, identity.conversationId,
                 identity.turnId, payload)) return
+        checkpoint(context, identity.conversationId, identity.turnId, payload)
         var trace = AgentResearchTrace.decode(payload.optJSONObject("research_trace"))
         payload.optJSONObject("progress_event")?.let {
+            checkpoint(context, identity.conversationId, identity.turnId, it)
             trace = trace.merge(AgentResearchTrace.decode(it.optJSONObject("metadata")?.optJSONObject("research_trace")))
         }
         val events = payload.optJSONArray("events")
         for (index in 0 until minOf(events?.length() ?: 0, 100)) {
+            events?.optJSONObject(index)?.let { checkpoint(context, identity.conversationId, identity.turnId, it) }
             trace = trace.merge(AgentResearchTrace.decode(events?.optJSONObject(index)
                 ?.optJSONObject("metadata")?.optJSONObject("research_trace")))
         }
         merge(context, identity.conversationId, identity.turnId, trace.copy(remote = true))
+    }
+
+    @Synchronized
+    private fun checkpoint(context: Context, conversation: String, turn: String, event: JSONObject) {
+        if (conversation.isBlank() || turn.isBlank()) return
+        val rows = AgentResearchCheckpoint.eventEntries(event)
+        if (rows.isEmpty()) return
+        val database = db(context)
+        if (database.contains(prefix(conversation) + "deleted")) return
+        val writes = linkedMapOf<String, String>()
+        rows.forEach { row ->
+            val rowKey = key(conversation, turn) + ":checkpoint:" + row.getString("kind") + ":" +
+                AgentNativeJsonCodec.sha256(row.getString("id"))
+            val previous = JSONObject(writes[rowKey] ?: database.readString(rowKey, "{}"))
+            if (row.getLong("revision") > previous.optLong("revision")) writes[rowKey] = row.toString()
+        }
+        if (writes.isNotEmpty()) database.mutateStrings(writes, emptyList())
+    }
+
+    @Synchronized
+    fun recoveryHandoff(context: Context, conversation: String, turn: String): String {
+        if (conversation.isBlank() || turn.isBlank()) return ""
+        val database = db(context)
+        if (database.contains(prefix(conversation) + "deleted")) return ""
+        val rows = mutableListOf<JSONObject>()
+        var size = 0
+        var truncated = false
+        for (kind in listOf("goal", "finding", "gap", "query", "source")) {
+            val rowPrefix = key(conversation, turn) + ":checkpoint:$kind:"
+            var after = ""
+            do {
+                val keys = database.keysAfter(rowPrefix, after, 24)
+                for (rowKey in keys) {
+                    val text = database.readString(rowKey, "{}")
+                    if (size + text.length > 48000) { truncated = true; break }
+                    rows += JSONObject(text)
+                    size += text.length
+                }
+                after = keys.lastOrNull().orEmpty()
+            } while (keys.size == 24 && !truncated)
+            if (truncated) break
+        }
+        if (rows.isEmpty()) {
+            val trace = read(context, conversation, turn, sourceLimit = 30)
+            trace.queries.takeLast(20).forEach { rows += JSONObject().put("kind", "query").put("text", it) }
+            trace.sources.forEach { rows += JSONObject().put("kind", "source").put("url", it.url)
+                .put("text", it.title).put("provenance", "source_observed_claim_unverified") }
+            truncated = trace.truncated || trace.displayedSourceCount > trace.sources.size
+        }
+        return AgentResearchCheckpoint.handoff(rows, truncated)
     }
 
     @Synchronized

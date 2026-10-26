@@ -9,6 +9,7 @@ import uuid
 from agent_task_recovery_query import IDENTITY_FIELDS, TASK_FIELDS
 from agent_task_result_archive import execution_generation, identity
 from research_trace import replay_receipts
+from research_checkpoint import task_packets
 
 ERROR_STATUSES = frozenset({"failed", "timed_out", "cancelled"})
 log = logging.getLogger(__name__)
@@ -36,6 +37,9 @@ def terminal_outcome(task: dict) -> dict | None:
     trace = replay_receipts(task.get("events") or [])
     if trace:
         payload["research_trace"] = trace
+    checkpoints = task_packets(task)
+    if checkpoints:
+        payload["research_checkpoints"] = checkpoints
     return payload
 
 

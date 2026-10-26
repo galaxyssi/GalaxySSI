@@ -98,7 +98,11 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
                 }
                 .take(5)
                 .joinToString("\n") { "- ${it.title}: ${it.summary.ifBlank { it.content }.take(1_200)}" }
-            action.copy(parameters = action.parameters + mapOf(
+            val bound = if (action.kind == AgentActionKind.CALL_CONNECTOR) {
+                AgentInvocationBinding.bind(appContext, action, activeConversationContext.conversationId,
+                    action.parameters["connector_id"].orEmpty(), targets.map { it.id })
+            } else action
+            bound.copy(parameters = bound.parameters + mapOf(
                 INTERNAL_CONVERSATION_ID to activeConversationContext.conversationId,
                 INTERNAL_CONVERSATION_CONTEXT to conversationPrompt,
                 INTERNAL_CONVERSATION_HAS_ATTACHMENTS to activeConversationContext.hasAttachments.toString(),

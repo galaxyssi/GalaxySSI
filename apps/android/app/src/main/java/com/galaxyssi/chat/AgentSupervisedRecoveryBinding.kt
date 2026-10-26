@@ -9,7 +9,7 @@ internal object AgentSupervisedRecoveryBinding {
             it.parameters["manual_target_locked"].equals("true", ignoreCase = true) }
         if (!connector.parameters["manual_target_locked"].equals("true", ignoreCase = true) && original != null) {
             val keys = setOf("connector_id", "connector_kind", "connector_adapter_type", "connector_failure_domain",
-                "manual_target_locked", "manual_model_id", "agent_model_id", "agent_reasoning_effort", "model_id")
+                "manual_target_locked", "manual_model_id", "agent_model_id", "agent_reasoning_effort", "model_id", AgentInvocationBinding.TARGET)
             return resolve(connector.copy(target = original.target,
                 parameters = (connector.parameters - keys) + original.parameters.filterKeys { it in keys }), reroute = reroute)
         }

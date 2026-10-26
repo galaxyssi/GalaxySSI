@@ -31,7 +31,8 @@ internal object AgentConnectorFallbackAction {
         val owner = action.parameters[ACTION_ID_PARAMETER] ?: return action
         if (owner == action.id) return action
         return action.copy(parameters = action.parameters.filterKeys { !it.startsWith(AgentCodexSilenceRecovery.PREFIX) } - setOf(
-            ACTION_ID_PARAMETER, ATTEMPTED_PARAMETER, "routing_deferred_retry_ids", "routing_retried_resource_ids"
+            ACTION_ID_PARAMETER, ATTEMPTED_PARAMETER, "routing_deferred_retry_ids", "routing_retried_resource_ids",
+            AgentResearchCheckpoint.RECOVERY
         ))
     }
 
@@ -42,7 +43,7 @@ internal object AgentConnectorFallbackAction {
     ): AgentAction {
         // Model IDs and instance IDs belong to the previous resource, not the fallback.
         val parameters = action.parameters - setOf(
-            "manual_model_id", "agent_model_id", "agent_reasoning_effort", "agent_instance_id"
+            "manual_model_id", "agent_model_id", "agent_reasoning_effort", "agent_instance_id", AgentInvocationBinding.TARGET
         ) + mapOf(
             "connector_id" to selection.resourceId,
             "connector_kind" to target?.kind?.name.orEmpty().lowercase(Locale.ROOT),

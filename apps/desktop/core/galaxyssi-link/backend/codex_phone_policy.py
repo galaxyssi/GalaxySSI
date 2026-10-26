@@ -1,10 +1,12 @@
 """Read-only provider research within a phone-owned Agent loop."""
+from research_checkpoint import POLICY as RESEARCH_CHECKPOINT_POLICY
 
 PHONE_PLANNER_PREFIX = "phone-planner-v1:"
 PHONE_RESEARCH_TOOLS = frozenset({
     "galaxyssi_parallel_web_search",
     "galaxyssi_fetch_public_pages",
     "research_audit",
+    "research_checkpoint",
 })
 
 PHONE_REASONING_POLICY = """
@@ -46,7 +48,7 @@ GalaxySSI phone reasoning policy:
 - Preserve the current goal and context. Report concise public progress, not private
   chain-of-thought. Never claim phone execution, file delivery or receiver acceptance
   without the corresponding phone evidence.
-""".strip()
+""".strip() + "\n\n" + RESEARCH_CHECKPOINT_POLICY
 
 
 def is_phone_planner(conversation_id: str) -> bool:

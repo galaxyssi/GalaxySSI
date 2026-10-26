@@ -170,6 +170,7 @@ internal class AgentTranscriptEntryDatabase(
             """.trimIndent()
         )
         createChunkStorage(db)
+        createHistoryIndex(db)
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -179,6 +180,11 @@ internal class AgentTranscriptEntryDatabase(
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createChunkStorage(db)
+        if (oldVersion < 3) createHistoryIndex(db)
+    }
+
+    private fun createHistoryIndex(db: SQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS transcript_entries_conversation_sequence ON transcript_entries(conversation_id, sequence)")
     }
 
     @Synchronized
@@ -411,6 +417,18 @@ internal class AgentTranscriptEntryDatabase(
             null,
             "sequence ASC"
         ).use(::decodeEntries).map(::hydrateEntry)
+
+    internal fun historyBoundary(conversationId: String, turnId: String): Long? {
+        if (conversationId.isBlank() || turnId.isBlank()) return null
+        return readableDatabase.rawQuery(
+            "SELECT MIN(sequence) FROM $TABLE_ENTRIES INDEXED BY transcript_entries_turn WHERE conversation_id = ? AND turn_id = ?",
+            arrayOf(conversationId, turnId)).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+    }
+
+    internal fun historyContains(conversationId: String, entryId: String, boundary: Long): Boolean =
+        readableDatabase.query(TABLE_ENTRIES, arrayOf("entry_id"),
+            "entry_id = ? AND conversation_id = ? AND sequence < ?",
+            arrayOf(entryId, conversationId, boundary.toString()), null, null, null, "1").use { it.moveToFirst() }
 
     fun listTask(taskId: String): List<AgentTranscriptEntry> =
         readableDatabase.query(
@@ -952,7 +970,7 @@ internal class AgentTranscriptEntryDatabase(
 
         private const val SQL_DELETE_BATCH_SIZE = 400
         private const val DATABASE_NAME = "galaxyssi_agent_transcript_entries.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
         private const val TABLE_ENTRIES = "transcript_entries"
         private const val TABLE_CHUNKS = "transcript_entry_chunks"
         private const val FIELD_TEXT = "text"

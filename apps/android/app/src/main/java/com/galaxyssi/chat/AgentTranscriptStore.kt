@@ -296,10 +296,21 @@ object AgentTranscriptPresentationPolicy {
     fun visibleProcessSegments(entries: List<AgentTranscriptEntry>): List<ProcessSegment> =
         processSegments(entries).mapNotNull { segment ->
             val visible = segment.entries.filter {
-                segment.kind == ProcessContentKind.NARRATION || it.dedupeKey.startsWith("connector-event:")
+                segment.kind == ProcessContentKind.NARRATION ||
+                    (it.dedupeKey.startsWith("connector-event:") && !isHiddenToolReceiptDisplay(it.text))
             }
             visible.takeIf { it.isNotEmpty() }?.let { segment.copy(entries = it) }
         }
+
+    // Keep execution receipts in storage without repeating routine search/tool statuses in chat.
+    private fun isHiddenToolReceiptDisplay(text: String): Boolean {
+        val value = text.trim()
+        return listOf("Completed: web search", "已完成：搜索网页", "Running: web search", "正在执行：搜索网页",
+            "Completed: tool call", "已完成：调用工具").any { prefix ->
+            value.startsWith(prefix, ignoreCase = true) &&
+                value.substring(prefix.length).let { it.isEmpty() || it.startsWith(" · ") }
+        }
+    }
 
     fun controlMessageKind(value: String): ControlMessageKind? = when (
         value.trim().lowercase()
@@ -337,6 +348,7 @@ object AgentTranscriptPresentationPolicy {
             "started",
             "working",
             "working complete",
+            "planning",
             "completed"
         )
     }
@@ -435,7 +447,7 @@ internal object AgentConversationAutoTitlePolicy {
             !AgentVoiceTranscriptPolicy.isPending(entry)
 }
 
-private data class AgentContextArtifact(
+internal data class AgentContextArtifact(
     val id: String,
     val kind: String,
     val name: String,
@@ -455,7 +467,7 @@ private data class AgentContextArtifact(
             }
 }
 
-private fun AgentTranscriptEntry.contextArtifacts(): List<AgentContextArtifact> =
+internal fun AgentTranscriptEntry.contextArtifacts(): List<AgentContextArtifact> =
     AgentRichContentCodec.decode(richOutputJson).mapNotNull { block ->
         if (block.type !in CONTEXT_ARTIFACT_TYPES) return@mapNotNull null
         val name = block.title.ifBlank {
@@ -622,35 +634,40 @@ data class AgentConversationContext(
             }
             inputBudget = (inputBudget * 0.72).toInt().coerceAtLeast(2_048)
         }
-        val latest = turns.lastOrNull()
-        val fallbackSummary = ConversationContextCompactor.fitTextToTokenBudget(
-            summary,
-            maximumTokens = (safeMaximum / 3).coerceAtLeast(512),
-            preserveTail = false
-        )
-        val fallbackItems = latest?.let { entry ->
-            listOf(
-                ConversationContextItem(
-                    id = entry.id,
-                    role = if (entry.role == AgentTranscriptRole.USER) {
-                        ConversationContextRole.USER
-                    } else {
-                        ConversationContextRole.ASSISTANT
-                    },
-                    content = ConversationContextCompactor.fitTextToTokenBudget(
-                        entry.contextText(),
-                        maximumTokens = (safeMaximum / 2).coerceAtLeast(768)
-                    ),
-                    groupId = entry.turnId.ifBlank { "entry:${entry.id}" }
-                )
-            )
-        }.orEmpty()
-        return encodeTransportBlock(
-            fallbackSummary,
-            fallbackItems,
-            entriesById,
-            globalContext = transportGlobalContext
-        )
+        return encodeBoundedHandoff(sourceItems, entriesById, safeMaximum, transportGlobalContext)
+    }
+
+    private fun encodeBoundedHandoff(
+        source: List<ConversationContextItem>,
+        entriesById: Map<String, AgentTranscriptEntry>,
+        maximumTokens: Int,
+        globalContext: String
+    ): String {
+        val groups = source.groupBy { it.groupId }.values.toList()
+        var recentGroups = groups.takeLast(3)
+        var summaryTokens = maximumTokens / 3
+        var itemTokens = ((maximumTokens - summaryTokens) / recentGroups.sumOf { it.size }.coerceAtLeast(1))
+            .coerceAtLeast(32)
+        var artifactLimit = MAX_COMPACT_ARTIFACTS_PER_ENTRY
+        repeat(24) {
+            val recent = recentGroups.flatten()
+            val recentIds = recent.mapTo(hashSetOf(), ConversationContextItem::id)
+            val older = source.filterNot { it.id in recentIds }
+            // Summarize discarded dialogue, never fall back to the pre-compaction (possibly empty) summary.
+            val handoff = ConversationContextCompactor.handoffSummary(older, summary, summaryTokens)
+            val boundedSummary = ConversationContextCompactor.fitTextToTokenBudget(handoff, summaryTokens)
+            val boundedItems = recent.map { item -> item.copy(content =
+                ConversationContextCompactor.fitTextToTokenBudget(item.content, itemTokens)) }
+            val encoded = encodeTransportBlock(boundedSummary, boundedItems, entriesById,
+                includeAttachmentIndex = false, maximumArtifactsPerEntry = artifactLimit,
+                globalContext = ConversationContextCompactor.fitTextToTokenBudget(globalContext, maximumTokens / 16))
+            if (ConversationContextCompactor.estimateTokens(encoded) <= maximumTokens) return encoded
+            if (itemTokens > 48) itemTokens = (itemTokens * 0.7).toInt().coerceAtLeast(48)
+            else if (artifactLimit > 0) artifactLimit--
+            else if (recentGroups.size > 1) recentGroups = recentGroups.drop(1)
+            else summaryTokens = (summaryTokens * 0.8).toInt().coerceAtLeast(128)
+        }
+        error("Conversation handoff metadata exceeds transport capacity; history was not discarded")
     }
 
     private fun encodeCompactTransportBlock(
@@ -1166,7 +1183,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     fun list(conversationId: String = activeConversation().id): List<AgentTranscriptEntry> =
         ownedEntries(entryDatabase.listConversation(conversationId))
 
-    private fun ownedEntries(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
+    internal fun ownedEntries(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
         val projected = entries.map { entry ->
             ConversationScheduledReplyPolicy.projectLegacy(entry, ::conversationIdForTurn,
                 { taskId -> AgentProactiveTaskStore(appContext).task(taskId)?.action?.conversationId },
