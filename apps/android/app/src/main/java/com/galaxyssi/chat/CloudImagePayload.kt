@@ -61,9 +61,9 @@ internal object CloudVisionPayloadEncoder {
         }
     }
 
-    private fun attachOpenAiTurn(message: JSONObject, turnImages: List<CloudImagePayload>) {
+    private fun attachOpenAiTurn(message: JSONObject, turnImages: List<IndexedValue<CloudImagePayload>>) {
         val content = contentArray(message, "text")
-        turnImages.forEach { image ->
+        turnImages.forEach { (index, image) ->
             content.put(
                 JSONObject()
                     .put("type", "image_url")
@@ -74,8 +74,9 @@ internal object CloudVisionPayloadEncoder {
                             .put("detail", "auto")
                     )
             )
+            content.put(JSONObject().put("type", "text").put("text", sourceLabel(index)))
         }
-        withOrientationSheet(turnImages) { base64 ->
+        withOrientationSheet(turnImages.map { it.value }) { base64 ->
             content.put(JSONObject().put("type", "text").put("text", AgentVisionOrientationSheet.CAPTION))
             content.put(JSONObject().put("type", "image_url").put("image_url", JSONObject()
                 .put("url", "data:image/jpeg;base64,$base64").put("detail", "auto")))
@@ -89,9 +90,9 @@ internal object CloudVisionPayloadEncoder {
         }
     }
 
-    private fun attachAnthropicTurn(message: JSONObject, turnImages: List<CloudImagePayload>) {
+    private fun attachAnthropicTurn(message: JSONObject, turnImages: List<IndexedValue<CloudImagePayload>>) {
         val content = contentArray(message, "text")
-        turnImages.forEach { image ->
+        turnImages.forEach { (index, image) ->
             content.put(
                 JSONObject()
                     .put("type", "image")
@@ -103,8 +104,9 @@ internal object CloudVisionPayloadEncoder {
                             .put("data", image.base64())
                     )
             )
+            content.put(JSONObject().put("type", "text").put("text", sourceLabel(index)))
         }
-        withOrientationSheet(turnImages) { base64 ->
+        withOrientationSheet(turnImages.map { it.value }) { base64 ->
             content.put(JSONObject().put("type", "text").put("text", AgentVisionOrientationSheet.CAPTION))
             content.put(JSONObject().put("type", "image").put("source", JSONObject()
                 .put("type", "base64").put("media_type", "image/jpeg").put("data", base64)))
@@ -118,14 +120,14 @@ internal object CloudVisionPayloadEncoder {
         }
     }
 
-    private fun attachGeminiTurn(message: JSONObject, turnImages: List<CloudImagePayload>) {
+    private fun attachGeminiTurn(message: JSONObject, turnImages: List<IndexedValue<CloudImagePayload>>) {
         val parts = message.optJSONArray("parts") ?: JSONArray().also { replacement ->
             message.optString("parts").takeIf(String::isNotBlank)?.let { text ->
                 replacement.put(JSONObject().put("text", text))
             }
             message.put("parts", replacement)
         }
-        turnImages.forEach { image ->
+        turnImages.forEach { (index, image) ->
             parts.put(
                 JSONObject().put(
                     "inline_data",
@@ -134,13 +136,16 @@ internal object CloudVisionPayloadEncoder {
                         .put("data", image.base64())
                 )
             )
+            parts.put(JSONObject().put("text", sourceLabel(index)))
         }
-        withOrientationSheet(turnImages) { base64 ->
+        withOrientationSheet(turnImages.map { it.value }) { base64 ->
             parts.put(JSONObject().put("text", AgentVisionOrientationSheet.CAPTION))
             parts.put(JSONObject().put("inline_data", JSONObject()
                 .put("mime_type", "image/jpeg").put("data", base64)))
         }
     }
+
+    private fun sourceLabel(index: Int) = "The preceding source image has image_index=$index for image tools."
 
     private inline fun withOrientationSheet(images: List<CloudImagePayload>, append: (String) -> Unit) {
         if (images.any { it.historicalSourceTurnId.isNotBlank() }) return
@@ -156,11 +161,11 @@ internal object CloudVisionPayloadEncoder {
         conversation: JSONArray,
         images: List<CloudImagePayload>,
         gemini: Boolean
-    ): List<Pair<JSONObject, List<CloudImagePayload>>> {
+    ): List<Pair<JSONObject, List<IndexedValue<CloudImagePayload>>>> {
         if (images.isEmpty()) return emptyList()
         val current = latestRole(conversation, "user") ?: JSONObject().put("role", "user")
             .also(conversation::put)
-        val groups = images.groupBy { it.historicalSourceTurnId }
+        val groups = images.withIndex().groupBy { it.value.historicalSourceTurnId }
         val historical = groups.filterKeys(String::isNotBlank).map { (sourceTurn, references) ->
             val label = AgentVisualTurnPolicy.historyLabel(sourceTurn)
             val message = JSONObject().put("role", "user")

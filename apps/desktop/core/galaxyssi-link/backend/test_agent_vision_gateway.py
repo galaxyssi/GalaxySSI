@@ -95,13 +95,16 @@ class VisionGatewayTest(unittest.TestCase):
                 checkpoint={"task_id": "original-turn", "connector_task_mode": "phone_supervised_project_plan_v1"})
             with self.subTest(agent=agent_id), \
                  patch("agent_vision.task_image_paths", return_value=self.paths) as lookup, \
+                 patch("vision_provenance.task_image_source_turns", return_value={self.paths[0]: "prior-turn"}) as sources, \
                  patch("agent_execution_harness.AgentExecutionHarness", return_value=harness), \
                  patch("agent_execution_harness.execution_contract", return_value="contract"), \
                  patch("agent_task_manager.agent_task_manager", MagicMock()), \
                  patch.object(gateway, target, return_value='{"type":"ANSWER","text":"answer"}') as ask:
                 gateway._execute_agent_adapter_request(agent_id, request)
                 lookup.assert_called_once_with("original-turn")
+                sources.assert_called_once_with("original-turn", self.paths)
                 self.assertEqual(self.paths, ask.call_args.kwargs["image_paths"])
+                self.assertEqual({self.paths[0]: "prior-turn"}, ask.call_args.kwargs["image_source_turns"])
                 if agent_id == "claude":
                     self.assertTrue(ask.call_args.kwargs["plan_only"])
 
