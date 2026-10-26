@@ -56,6 +56,16 @@ def _task_directory(task_id: str) -> tuple[Path, Path]:
     return tasks_root, (tasks_root / _safe_component(task_id)).resolve()
 
 
+def existing_task_workspace(task_id: str) -> Path | None:
+    """Resolve an existing task without creating a workspace for text-only requests."""
+    if not _safe_component(task_id):
+        return None
+    tasks_root, directory = _task_directory(task_id)
+    if not _is_within(directory, tasks_root):
+        raise ValueError("Task workspace escaped the configured workspace root")
+    return directory if directory.is_dir() else None
+
+
 def task_workspace(task_id: str = "", agent_id: str = "") -> Path:
     safe_id = _safe_component(task_id) or f"adhoc-{uuid.uuid4()}"
     tasks_root, directory = _task_directory(task_id if _safe_component(task_id) else safe_id)

@@ -324,7 +324,9 @@ class AcpRuntime:
         access_profile: str,
         timeout_seconds: float,
         event_sink: EventSink | None = None,
+        image_paths: list[str] | None = None,
     ) -> str | None:
+        from agent_vision import VisionCapabilityError
         if not self.supports(agent_id):
             return None
         self._ensure_loop()
@@ -339,6 +341,7 @@ class AcpRuntime:
                 access_profile=access_profile,
                 timeout_seconds=timeout_seconds,
                 event_sink=event_sink,
+                image_paths=image_paths,
             ),
             self._loop,
         )
@@ -354,6 +357,10 @@ class AcpRuntime:
         except AcpStartupError as exc:
             self._record_failure(agent_id, str(exc))
             log.warning("ACP startup unavailable agent=%s: %s", agent_id, exc)
+            return None
+        except VisionCapabilityError:
+            # No prompt was submitted; a known native-image CLI can safely be tried.
+            log.info("ACP image capability unavailable agent=%s; trying native CLI", agent_id)
             return None
 
     def cancel(self, run_id: str) -> bool:
@@ -506,6 +513,7 @@ class AcpRuntime:
         access_profile: str,
         timeout_seconds: float,
         event_sink: EventSink | None,
+        image_paths: list[str] | None = None,
     ) -> str:
         await self._evict_idle_processes()
         config = self._agent_config(agent_id)
@@ -531,6 +539,10 @@ class AcpRuntime:
         )
         async with session_lock:
             entry = await self._ensure_process(agent_id, reason="execute")
+            from agent_vision import acp_blocks
+            prompt_blocks = await asyncio.to_thread(
+                acp_blocks, str(prompt or ""), image_paths or [], entry.capabilities, acp,
+            )
             from host_execution_config_guard import (
                 HostExecutionConfigGuard,
                 HostExecutionConfigViolation,
@@ -562,7 +574,7 @@ class AcpRuntime:
                 )
                 prompt_call = entry.connection.prompt(
                     session_id=session_id,
-                    prompt=[acp.text_block(str(prompt or ""))],
+                    prompt=prompt_blocks,
                     message_id=self._message_id(run_id),
                 )
                 try:
