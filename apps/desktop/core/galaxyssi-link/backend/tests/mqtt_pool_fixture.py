@@ -55,6 +55,15 @@ class ManualPool:
     def refresh_subscriptions(self):
         self.subscribe(self.desired)
 
+    def repair(self):
+        self.refresh_subscriptions()
+
+    def repair_path(self, broker, generation, reason):
+        if self.paths[broker]["generation"] != generation:
+            return False
+        self.lose(broker)
+        return True
+
     def publish(self, broker, generation, topic, payload, *, attempt_id):
         path = self.paths[broker]
         if not path["connected"] or path["generation"] != generation:

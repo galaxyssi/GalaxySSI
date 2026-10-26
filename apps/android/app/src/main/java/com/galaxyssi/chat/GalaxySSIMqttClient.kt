@@ -369,6 +369,9 @@ object GalaxySSIMqttClient {
         prepareReliableQueue(context)
         val current = client
         if (current != null) {
+            context.getSystemService(android.net.ConnectivityManager::class.java).activeNetwork?.let {
+                current.networkAvailable(it.toString())
+            }
             current.start()
             return
         }
@@ -405,6 +408,10 @@ object GalaxySSIMqttClient {
             }
             override fun onMaintenanceFailure(error: Throwable) {
                 Log.w(TAG, "MQTT maintenance deferred type=${error.javaClass.simpleName}")
+            }
+            override fun onPathState(ingress: MqttBrokerPool.Ingress, state: String, reason: String) {
+                if (BuildConfig.DEBUG) Log.d(TAG,
+                    "MQTT path broker=${ingress.brokerId} generation=${ingress.generation} state=$state reason=$reason")
             }
         }, classify = { topic, payload -> peerRoutes?.classify(topic, payload) })
         val routes = MqttPeerRoutes(mqtt, MqttRouteState(context.applicationContext), GalaxySSILinkProtocol::sealWirePacket,
@@ -472,19 +479,6 @@ object GalaxySSIMqttClient {
             retryHandler.post { scheduleOutboxRetries() }
             if (!phone) notifyMessageListeners(receipt.put("desktop_id", endpoint))
         }
-    }
-
-    private fun publishBootstrap(mqtt: MqttPoolTransport, topic: String, wire: String, receiveTopics: Set<String>): Boolean {
-        val hash = MqttRouteAdvertisement.sha256(wire)
-        var submitted = false
-        mqtt.readyPathGenerations(receiveTopics).keys.forEach { broker ->
-            runCatching {
-                mqtt.publish(topic, mqttMessage(wire), publication = MqttPoolTransport.Publication(
-                    "pairing", hash, hash, MqttMultipathPolicy.Traffic.CONTROL, receiveTopics,
-                    bootstrap = true, preferredBroker = broker))
-            }.onSuccess { if (it.exception == null) submitted = true }
-        }
-        return submitted
     }
 
     internal fun prepareReliableQueue(context: Context) {
@@ -1091,7 +1085,7 @@ object GalaxySSIMqttClient {
             GalaxySSILinkProtocol.sealWirePacket(payload.toString(), secret)
         }.onFailure { Log.w(TAG, "Opaque packet encryption failed purpose=$purpose", it) }
             .getOrNull() ?: return false
-        if (mqtt?.isConnected == true && publishBootstrap(mqtt, topic, sealed, routes.receiveWindow)) return true
+        if (mqtt?.isConnected == true && mqtt.publishBootstrap(topic, sealed, routes.receiveWindow)) return true
         // Receipts do not request receipts. The original control retries if this reply is lost.
         return false
     }
@@ -1116,7 +1110,7 @@ object GalaxySSIMqttClient {
                         val topic = if (claim) item.getString("topic") else routes.up
                         val secret = if (claim) item.getString("secret") else routes.linkSecret
                         val sealed = GalaxySSILinkProtocol.sealWirePacket(payload.toString(), secret)
-                        publishBootstrap(mqtt, topic, sealed, routes.receiveWindow)
+                        mqtt.publishBootstrap(topic, sealed, routes.receiveWindow)
                     }
                     retryHandler.removeCallbacks(phonePairingRetryRunnable)
                     ledger.nextDelay()?.let { delay ->
@@ -1161,7 +1155,7 @@ object GalaxySSIMqttClient {
         }
         val mqtt = client
         val required = appContext?.let { GalaxySSILinkProtocol.serverLink(it, pending.desktopId)?.routes?.receiveWindow }.orEmpty()
-        if (mqtt == null || !mqtt.isConnected || !publishBootstrap(mqtt, pending.topic, pending.wirePayload, required)
+        if (mqtt == null || !mqtt.isConnected || !mqtt.publishBootstrap(pending.topic, pending.wirePayload, required)
         ) {
             retryHandler.removeCallbacks(pairingClaimRetryRunnable)
             retryHandler.postDelayed(pairingClaimRetryRunnable, 3_000L)

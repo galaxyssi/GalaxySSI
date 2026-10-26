@@ -34,10 +34,18 @@ internal class MqttDeliveryDispatch(
     private fun priority(job: Job) = job.delivery.message.traffic in setOf("control", "receipt", "final")
     private fun disconnected(): Nothing = throw MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED.toInt())
 
+    private fun plans(delivery: Delivery, at: Long): List<MqttMultipathPolicy.Dispatch> {
+        // Evaluate relationship callbacks outside the policy lock.
+        val authorized = policy.plan(delivery.peer, delivery.message.messageId, MqttMultipathPolicy.Traffic.CONTROL,
+            1, delivery.receiveTopics, at).filter { delivery.authorized(it.brokerId, it.generation) }
+            .associate { it.brokerId to it.generation }
+        return policy.plan(delivery.peer, delivery.message.messageId, traffic(delivery.message),
+            delivery.sizeBound, delivery.receiveTopics, at, authorizedPaths = authorized)
+    }
+
     fun submit(topic: String, delivery: Delivery, token: IMqttDeliveryToken): IMqttDeliveryToken {
         val at = now()
-        val plans = policy.plan(delivery.peer, delivery.message.messageId, traffic(delivery.message),
-            delivery.sizeBound, delivery.receiveTopics, at)
+        val plans = plans(delivery, at)
         val job: Job
         synchronized(lock) {
             val key = delivery.peer to delivery.message
@@ -88,8 +96,7 @@ internal class MqttDeliveryDispatch(
                 }
                 val delivery = job.delivery
                 val message = delivery.message
-                val allowed = policy.plan(delivery.peer, message.messageId, traffic(message), delivery.sizeBound,
-                    delivery.receiveTopics, now())
+                val allowed = plans(delivery, now())
                 if (allowed.none { it.brokerId == plan.brokerId && it.generation == plan.generation } ||
                     !delivery.authorized(plan.brokerId, plan.generation)) continue
                 val attemptId = UUID.randomUUID().toString().replace("-", "")

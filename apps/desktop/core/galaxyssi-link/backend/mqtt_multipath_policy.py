@@ -233,7 +233,7 @@ class MultipathPolicy:
 
     def plan(self, peer: str, message_id: str, traffic: Traffic, wire_bytes: int,
              receive_topics: set[str], *, now: float, ingress: str | None = None,
-             attempted: frozenset[str] = frozenset()) -> tuple[Dispatch, ...]:
+             attempted: frozenset[str] = frozenset(), authorized_paths=None) -> tuple[Dispatch, ...]:
         if not message_id or wire_bytes <= 0 or wire_bytes > self.limits.packet_bytes:
             return ()
         with self._lock:
@@ -244,7 +244,8 @@ class MultipathPolicy:
             if traffic == Traffic.CHUNK and not route.chunk_acks:
                 return ()
             common = self.ready_brokers(receive_topics) & route.receive_brokers
-            candidates = [key for key in common if wire_bytes <= self.paths[key].packet_bytes]
+            candidates = [key for key in common if wire_bytes <= self.paths[key].packet_bytes
+                          and (authorized_paths is None or (key, self.paths[key].generation) in authorized_paths)]
             unused = [key for key in candidates if key not in attempted]
             if unused:
                 candidates = unused
