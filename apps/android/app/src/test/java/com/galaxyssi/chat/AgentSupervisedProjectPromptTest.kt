@@ -1343,7 +1343,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("Durable cross-provider project summary"))
         assertTrue(prompt.contains(latestMarker))
         assertTrue(prompt.contains(AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_HEADER))
-        assertTrue(prompt.length <= 24_000)
+        assertTrue(prompt.length <= 196_608)
     }
 
     @Test
@@ -1434,7 +1434,7 @@ class AgentSupervisedProjectPromptTest {
         )
 
         val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
-        assertTrue(prompt.length <= 24_000)
+        assertTrue(prompt.length <= 196_608)
         assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
         assertTrue(prompt.contains("LATEST_USER_PROJECT_CONSTRAINT"))
         assertTrue(prompt.contains("LATEST_VERIFIED_PHONE_EVIDENCE"))
@@ -1480,7 +1480,7 @@ class AgentSupervisedProjectPromptTest {
         )
 
         val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
-        assertTrue(prompt.length <= 24_000)
+        assertTrue(prompt.length <= 196_608)
         assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
         assertTrue(prompt.contains("LATEST_FAILURE_REASON_FROM_WATCHDOG"))
         assertTrue(prompt.contains("LATEST_FAILED_PHONE_TOOL_EVIDENCE"))
@@ -1510,7 +1510,7 @@ class AgentSupervisedProjectPromptTest {
         )
 
         val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
-        assertTrue(prompt.length <= 24_000)
+        assertTrue(prompt.length <= 196_608)
         assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
         assertTrue(prompt.contains("LATEST_PROGRESS_VIOLATION_REASON"))
         assertTrue(prompt.contains("LATEST_REJECTED_MODEL_ACTION_RESPONSE"))

@@ -16,6 +16,17 @@ from mqtt_bridge import (
 
 
 class TaskLatencyTests(unittest.TestCase):
+    def test_terminal_and_recovery_carry_checkpoint_without_progress_history(self):
+        packet = {"contract": "galaxyssi.research-checkpoint/1", "entries": [
+            {"id": "fact", "kind": "finding", "text": "Saved finding", "revision": 1}]}
+        for status, replay, expected in (("running", False, False), ("running", True, True),
+                                         ("timed_out", False, True), ("completed", False, True)):
+            with self.subTest(status=status, replay=replay), patch("mqtt_bridge.research_task_packets", return_value=[packet]) as read:
+                payload = _agent_task_payload({"task_id": "task", "status": status, "events": []}, [],
+                    resolved_desktop_id="desktop", resolved_desktop_name="Desktop", include_progress_replay=replay)
+                self.assertEqual(expected, "research_checkpoints" in payload)
+                self.assertEqual(1 if expected else 0, read.call_count)
+
     def test_output_delta_feature_flag_can_be_disabled(self):
         with patch.dict(
             os.environ,

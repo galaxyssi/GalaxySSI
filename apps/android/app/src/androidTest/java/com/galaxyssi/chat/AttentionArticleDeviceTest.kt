@@ -89,6 +89,7 @@ class AttentionArticleDeviceTest {
                             statement.bindLong(3, index.toLong()); statement.executeInsert()
                         }
                     }
+                    AttentionArticleTopics.create(db)
                     db.setTransactionSuccessful()
                 } finally { db.endTransaction() }
             }

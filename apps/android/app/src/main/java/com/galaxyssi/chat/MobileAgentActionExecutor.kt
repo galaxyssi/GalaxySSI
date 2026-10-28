@@ -526,7 +526,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 ?: return AgentActionResult(action.id, false, "Agent team plan is invalid")
             return dispatchAgentTeam(action, spec)
         }
-        val prompt = action.managedTeamAssignmentPrompt() ?: if (action.parameters["connector_task_mode"] in setOf(
+        val basePrompt = action.managedTeamAssignmentPrompt() ?: if (action.parameters["connector_task_mode"] in setOf(
                 PHONE_DEVELOPMENT_CONNECTOR_MODE,
                 PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
             )
@@ -543,6 +543,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             }
         }
         val effectiveTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
+        val researchConversation = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        val recoveryScope = AgentResearchCheckpoint.scope(researchConversation, effectiveTurnId)
+        val handoff = if (recoveryScope.isNotBlank() &&
+            AgentConnectorFallbackAction.forDispatch(action).parameters[AgentResearchCheckpoint.RECOVERY] == recoveryScope)
+            AgentResearchTraceStore.recoveryHandoff(context, researchConversation, effectiveTurnId) else ""
+        val prompt = AgentResearchCheckpoint.append(basePrompt, handoff)
         val preparedAction = (if (action.parameters[INTERNAL_TURN_ID].isNullOrBlank()) {
             action.copy(parameters = action.parameters + (INTERNAL_TURN_ID to effectiveTurnId))
         } else {
@@ -601,7 +607,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val attemptedIds = AgentConnectorFallbackTrail.parse(
             preparedAction.parameters[AgentConnectorFallbackAction.ATTEMPTED_PARAMETER].orEmpty()
         ).toMutableSet()
-        val registrations = AppStoreAgentConnectorRegistry(context).registrations()
+        val connectorRegistry = AppStoreAgentConnectorRegistry(context)
+        val targets = connectorRegistry.availableTargets()
+        val registrations = connectorRegistry.registrations(targets)
             .associateBy(AgentRegistration::agentId)
         val globalRunSlots = AgentGlobalRunSlotStore(context)
         var lastFailure = AgentActionResult(action.id, false, "No callable resource is available")
@@ -615,8 +623,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             }
             val startedAt = System.currentTimeMillis()
-            val routedAction = preparedAction.copy(
-                parameters = preparedAction.parameters + mapOf(
+            val invocation = AgentInvocationBinding.bind(context, preparedAction,
+                preparedAction.parameters[INTERNAL_CONVERSATION_ID].orEmpty(), connectorId, targets.map { it.id })
+            val routedAction = invocation.copy(
+                parameters = invocation.parameters + mapOf(
                     "connector_id" to connectorId,
                     AgentConnectorFallbackAction.ATTEMPTED_PARAMETER to AgentConnectorFallbackTrail.encode(attemptedIds),
                     "routing_fallback_ids" to connectorIds.drop(index + 1).joinToString(",")
@@ -646,15 +656,17 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 return@forEachIndexed
             }
             val result = try {
+                fun withHistory(input: String) = AgentConversationProjection.replace(
+                    context, routedAction, input, targets.firstOrNull { it.id == connectorId })
                 when {
                     connectorId == "local-llm" ->
-                        dispatchLocalModelTask(routedAction, inlineEvidencePrompt)
+                        dispatchLocalModelTask(routedAction, withHistory(inlineEvidencePrompt))
                     connectorAliases("cloud-models").any { it == connectorId } ->
-                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt)
+                        dispatchCloudModelTask(routedAction, withHistory(inlineEvidencePrompt))
                     selectedAdapterType == "cloud-model-api" ->
-                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
+                        dispatchCloudModelTask(routedAction, withHistory(inlineEvidencePrompt), connectorId)
                     AppStore.isCloudApiContact(context, connectorId) ->
-                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
+                        dispatchCloudModelTask(routedAction, withHistory(inlineEvidencePrompt), connectorId)
                     else -> {
                         val contactSnapshot = AgentConnectorContactSnapshot.from(AppStore.contacts(context))
                         val hasKnownContact = contactSnapshot.matchingContactIds(connectorId).isNotEmpty()
@@ -677,13 +689,15 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                 )
                             )
                         } else {
+                            val contactAction = AgentInvocationBinding.bind(context, routedAction,
+                                routedAction.parameters[INTERNAL_CONVERSATION_ID].orEmpty(), contactId)
                             dispatchContactTask(
-                                routedAction,
+                                contactAction,
                                 contactId,
                                 if (AppStore.usesPcConnectorTunnel(context, contactId)) {
-                                    attachmentPrompt
+                                    withHistory(attachmentPrompt)
                                 } else {
-                                    inlineEvidencePrompt
+                                    withHistory(inlineEvidencePrompt)
                                 }
                             )
                         }

@@ -339,6 +339,24 @@ class AgentTranscriptRenderPolicyTest {
     }
 
     @Test
+    fun routineSearchAndCompletedToolReceiptsDoNotRefreshVisibleProcessRows() {
+        val narration = entry("narration", "Checking sources", role = AgentTranscriptRole.PROCESS,
+            conversationId = "conversation", turnId = "turn")
+            .copy(dedupeKey = "connector-event:task:REASONING_SUMMARY:commentary")
+        val running = narration.copy(id = "search", text = "正在执行：搜索网页 · online doctorate",
+            dedupeKey = "connector-event:task:TOOL_EVENT:search")
+        val completed = running.copy(text = "已完成：搜索网页 · online doctorate")
+        val after = AgentTranscriptRenderPolicy.processGroupSignatures(listOf(narration, completed))
+        assertEquals(after, AgentTranscriptRenderPolicy.processGroupSignatures(listOf(narration, running)))
+        assertEquals(after, AgentTranscriptRenderPolicy.processGroupSignatures(listOf(narration,
+            completed.copy(text = "已完成：搜索网页 · another query"))))
+        assertEquals(after, AgentTranscriptRenderPolicy.processGroupSignatures(listOf(narration,
+            completed.copy(text = "已完成：调用工具 · research_checkpoint"))))
+        assertEquals(after, AgentTranscriptRenderPolicy.processGroupSignatures(listOf(narration,
+            completed.copy(text = "已完成：调用工具 · galaxyssi_parallel_web_search"))))
+    }
+
+    @Test
     fun concreteToolProgressRefreshesOnlyItsOwnConversation() {
         val tool = entry("stockfish", "Running Stockfish", role = AgentTranscriptRole.PROCESS,
             conversationId = "conversation", turnId = "turn")

@@ -405,6 +405,56 @@ class AgentTranscriptPresentationPolicyTest {
     }
 
     @Test
+    fun hidesRoutineSearchAndCompletedToolReceiptsWithoutDeletingStoredEvents() {
+        val hidden = listOf("已完成：搜索网页", "已完成：搜索网页 · 在线博士", "Completed: web search · online doctorate",
+            "已完成：调用工具 · research_checkpoint", "已完成：调用工具 · galaxyssi_parallel_web_search",
+            "Completed: tool call · research_checkpoint", "Completed: tool call",
+            "正在执行：搜索网页 · 在线博士", "Running: web search · online doctorate", "正在执行：搜索网页")
+        val retained = listOf("执行失败：搜索网页 · 网络断开",
+            "已完成：搜索图片 · 在线博士", "Completed: command · tests", "Completed: web search results explained",
+            "正在执行：调用工具 · galaxyssi_parallel_web_search", "执行失败：调用工具 · timeout",
+            "Completed: tool call behavior explained")
+        val entries = (hidden + retained).mapIndexed { index, text ->
+            entry(text, AgentTranscriptRole.PROCESS, "conversation", "turn", index.toLong(),
+                "connector-event:task:TOOL_EVENT:$index")
+        }
+
+        assertEquals(retained, AgentTranscriptPresentationPolicy.visibleProcessSegments(entries)
+            .flatMap { it.entries }.map { it.text })
+        assertEquals(entries, AgentTranscriptPresentationPolicy.processSegments(entries).flatMap { it.entries })
+        assertEquals(hidden + retained, entries.map { it.text })
+    }
+
+    @Test
+    fun completedSearchDisplayFilterDoesNotHideModelNarrationOrAnswers() {
+        val narration = entry("已完成：搜索网页 · 这里是我的说明", AgentTranscriptRole.PROCESS,
+            "conversation", "turn", 1L, "connector-event:task:REASONING_SUMMARY:commentary")
+        val user = entry("已完成：搜索网页", AgentTranscriptRole.USER, "conversation", "turn", 0L)
+        val answer = entry("已完成：搜索网页 · 答案", AgentTranscriptRole.ASSISTANT, "conversation", "turn", 2L)
+        val entries = listOf(user, narration, answer)
+        assertEquals(listOf(narration), AgentTranscriptPresentationPolicy.visibleProcessSegments(entries).flatMap { it.entries })
+        assertTrue(AgentTranscriptPresentationPolicy.collapseProcessGroups(entries).containsAll(listOf(user, answer)))
+        val toolNarration = narration.copy(text = "已完成：调用工具 · 这里是模型的原话")
+        assertEquals(listOf(toolNarration), AgentTranscriptPresentationPolicy.visibleProcessSegments(listOf(toolNarration))
+            .flatMap { it.entries })
+    }
+
+    @Test
+    fun hidesBarePlanningLabelButKeepsSubstantivePlansAndAnswers() {
+        val label = entry("Planning", AgentTranscriptRole.PROCESS, "conversation", "turn", 1L,
+            "connector-event:task:TOOL_EVENT:planning")
+        val plan = label.copy(text = "Planning the next search using the confirmed sources.",
+            dedupeKey = "connector-event:task:REASONING_SUMMARY:commentary")
+        assertFalse(AgentTranscriptPresentationPolicy.isUserRelevantProcessEntry(label))
+        assertFalse(AgentTranscriptPresentationPolicy.isUserRelevantProcessEntry(
+            label.copy(dedupeKey = "connector-event:task:REASONING_SUMMARY:planning")))
+        assertEquals(listOf(plan), AgentTranscriptPresentationPolicy.visibleProcessSegments(listOf(label, plan))
+            .flatMap { it.entries })
+        val answer = label.copy(role = AgentTranscriptRole.ASSISTANT, dedupeKey = "result:turn")
+        assertTrue(AgentTranscriptPresentationPolicy.collapseProcessGroups(listOf(answer)).contains(answer))
+    }
+
+    @Test
     fun hidesLegacyAggregatedToolStepSummariesFromStoredConversations() {
         val entries = listOf(
             entry("user", AgentTranscriptRole.USER, "conversation", "turn", 1L),

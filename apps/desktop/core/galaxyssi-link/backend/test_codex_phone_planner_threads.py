@@ -42,6 +42,28 @@ class PhonePlannerThreadTests(unittest.TestCase):
     def turns(self):
         return [params for method, params in self.calls if method == "turn/start"]
 
+    def test_fresh_retry_receives_saved_findings_sources_and_remaining_gaps(self):
+        first = self.start(1, images=False)
+        self.server._save_research(first, [
+            {"id": "school", "kind": "finding", "text": "Online computing doctorate", "url": "https://school.edu/program"},
+            {"id": "fee", "kind": "gap", "text": "Fee unconfirmed", "status": "open"}])
+        self.server._retire_stalled_thread(first)
+        first.finished = True
+        self.start(2, images=False)
+        prompt = self.turns()[-1]["input"][0]["text"]
+        self.assertIn("Online computing doctorate", prompt)
+        self.assertIn("https://school.edu/program", prompt)
+        self.assertIn("Fee unconfirmed", prompt)
+        self.assertIn("Current observation: 2", prompt)
+        self.assertIn("Stable phone goal", prompt)
+
+    def test_unrelated_request_does_not_inherit_prior_research(self):
+        first = self.start(1, images=False)
+        self.server._save_research(first, [{"id": "secret", "kind": "finding", "text": "Private previous finding"}])
+        first.finished = True
+        self.start(2, scope="phone-planner-v1:other", images=False)
+        self.assertNotIn("Private previous finding", self.turns()[-1]["input"][0]["text"])
+
     def test_same_goal_reuses_thread_and_submits_only_new_evidence(self):
         first = self.start(1)
         first.finished = True

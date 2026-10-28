@@ -1522,6 +1522,17 @@ object CloudModelClient {
             ).coerceIn(MIN_RETRY_CONTEXT_WINDOW_TOKENS, MAX_CONTEXT_WINDOW_TOKENS)
         val outputReserve = contact.optInt("cloud_max_output_tokens", DEFAULT_OUTPUT_RESERVE_TOKENS)
             .coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
+        // Supervised envelopes already contain a bounded, source-backed handoff. Cutting an
+        // envelope as one 16K-character chat message corrupts both the history and tool contract.
+        val supervised = messages.any { it.content.contains(AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_HEADER) }
+        if (supervised) {
+            val estimated = ConversationContextCompactor.estimateTokens(systemPrompt) +
+                messages.sumOf { ConversationContextCompactor.estimateTokens(it.content) + 4 }
+            require(estimated <= contextWindow - outputReserve) {
+                "Prepared agent context exceeds the selected cloud model input budget; history must be reprojected, not truncated"
+            }
+            return CompactedConversationContext("", messages, estimated, estimated, false, 0)
+        }
         val locallyCompiled = ConversationContextCompactor.compile(
             messages = messages,
             previousSummary = usableStored.summary,

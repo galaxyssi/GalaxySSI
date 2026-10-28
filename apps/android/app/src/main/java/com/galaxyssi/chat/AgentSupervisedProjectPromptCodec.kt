@@ -47,10 +47,17 @@ internal object AgentSupervisedProjectPromptCodec {
         dynamic: String,
         limit: Int
     ): String {
-        val dynamicReserve = minOf(
-            dynamic.length,
-            MINIMUM_DYNAMIC_CONTEXT_CHARACTERS.coerceAtMost(limit / 3)
-        )
+        val contextAt = dynamic.indexOf(AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_HEADER)
+        val contextEnd = dynamic.indexOf(AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_FOOTER,
+            startIndex = contextAt.coerceAtLeast(0))
+        val conversationSize = if (contextAt >= 0 && contextEnd >= contextAt) {
+            contextEnd + AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_FOOTER.length - contextAt
+        } else 0
+        val dynamicReserve = minOf(dynamic.length,
+            maxOf(MINIMUM_DYNAMIC_CONTEXT_CHARACTERS, conversationSize + MINIMUM_REQUIRED_DYNAMIC_CHARACTERS + MINIMUM_EVIDENCE_CHARACTERS + 16))
+        require(dynamicReserve + tools.length <= limit) {
+            "Conversation handoff and tool inventory exceed prompt capacity; refusing to truncate dialogue JSON"
+        }
         val stableBudget = (limit - dynamicReserve).coerceAtLeast(tools.length)
         val stable = if (contract.length + tools.length <= stableBudget) {
             contract + tools

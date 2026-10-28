@@ -152,8 +152,9 @@ internal class ProactiveAttentionPushRuntime(private val context: Context) {
                 var created = 0
                 if (article != null) {
                     val preferences = ProactiveAttentionStore(context).preferences()
-                    val topic = preferences.topics.firstOrNull { it.enabled && ProactiveAttentionFeedSources.matches(article, it) }
-                    if (topic != null && ProactiveAttentionFeedStore(context).ingest(article.copy(topicId = topic.id), topic)) created++
+                    val topics = preferences.topics.filter { it.enabled && ProactiveAttentionFeedSources.matches(article, it) }
+                    val feed = ProactiveAttentionFeedStore(context)
+                    topics.forEach { topic -> if (feed.ingest(article.copy(topicId = topic.id), topic)) created++ }
                 }
                 store.complete(id)
                 ProactiveAttentionFeedDelivery.published(context, created)

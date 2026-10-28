@@ -91,8 +91,9 @@ class AttentionArticleWorker(context: Context, params: WorkerParameters) : Corou
                             store.ready(job.key, translated)
                         }
                         val current = ProactiveAttentionStore(context).preferences()
-                        if (job.state != "published" && ProactiveAttentionPolicy.shouldCollect(current, job.topic)) {
-                            if (feed.publishArticle(checkNotNull(store.metadata(job.key)))) published++
+                        val scoped = store.scopedMetadata(job.key, current.topics.filter { it.enabled }.map { it.id }.toSet())
+                        if (job.state != "published" && current.configured && current.enabled && scoped != null) {
+                            if (feed.publishArticle(scoped)) published++
                             store.published(job.key)
                         }
                     } catch (timeout: TimeoutCancellationException) {

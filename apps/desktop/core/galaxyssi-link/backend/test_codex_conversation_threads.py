@@ -1655,7 +1655,7 @@ class CodexConversationThreadTests(unittest.TestCase):
                 [method for method, _, _ in calls],
             )
             recovery_input = calls[-1][1]["input"][0]["text"]
-            self.assertIn("inspect the current durable workspace", recovery_input)
+            self.assertIn("read the saved task checkpoint", recovery_input)
             self.assertIn("finish the original goal", recovery_input)
             self.assertEqual("starting", events[-1][1]["status"])
 

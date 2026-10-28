@@ -83,7 +83,7 @@ internal object AgentSessionPersistencePolicy {
         "remote_task_id", "remote_task_status", "remote_execution_generation", "remote_task_status_seq",
         "timeout_stage", "non_retriable", "recovery_exhausted", "connector_id", "connector_adapter_type",
         "connector_task_mode", INTERNAL_TASK_EXECUTION_MODE, "manual_target_locked", "auto_reroute_on_failure",
-        "agent_model_id", "manual_model_id", "agent_reasoning_effort", "supervised_iteration"
+        "agent_model_id", "manual_model_id", "agent_reasoning_effort", "supervised_iteration", AgentInvocationBinding.TARGET
     )
 
     private const val MAX_NON_PROJECT_ACTION_HISTORY = 24

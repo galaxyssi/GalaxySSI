@@ -58,7 +58,10 @@ internal fun MobileNativeAgent.recoverCodexSilence(
     } else state.filterKeys { it in setOf("bounded_codex_manual_model_id", "bounded_codex_agent_model_id", "bounded_codex_agent_reasoning_effort") }
     val restored = if (decision.resourceId == decision.state[AgentCodexSilenceRecovery.ORIGIN])
         originalSettings.mapKeys { it.key.removePrefix(AgentCodexSilenceRecovery.PREFIX) } else emptyMap()
-    retry = retry.copy(parameters = retry.parameters + decision.state + originalSettings + restored)
+    val handoff = AgentResearchCheckpoint.scope(
+        action.parameters[INTERNAL_CONVERSATION_ID].orEmpty(), action.parameters[INTERNAL_TURN_ID].orEmpty())
+    retry = retry.copy(parameters = retry.parameters + decision.state + originalSettings + restored +
+        (AgentResearchCheckpoint.RECOVERY to handoff))
     val retryPlan = plan.copy(actions = plan.actions.map { if (it.id == action.id) retry else it },
         selectedAgentOrModel = retry.target, route = AgentRouteResolver.resolve(retry, targets))
     currentPlan = retryPlan

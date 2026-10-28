@@ -16,24 +16,37 @@ object ProactiveAttentionFeedSources {
     private val research = listOf(RESEARCH, "https://news.mit.edu/rss/research", "https://www.nasa.gov/feed/",
         "https://research.google/blog/rss/", "https://www.microsoft.com/en-us/research/feed/")
     private val biology = listOf("https://news.mit.edu/rss/topic/biology-and-genetics",
-        "https://rss.arxiv.org/rss/q-bio.BM", "https://www.nasa.gov/feed/")
+        "https://rss.arxiv.org/rss/q-bio.BM", "https://rss.arxiv.org/rss/q-bio")
 
-    fun originals(topic: AttentionTopic): List<String> = if (topic.id == "protein_life_sciences") biology else when (ProactiveAttentionPolicy.group(topic.id)) {
+    fun originals(topic: AttentionTopic): List<String> = (ProactiveAttentionSourceCatalog.specialized(topic.id) +
+        if (topic.id == "protein_life_sciences") biology else when (ProactiveAttentionPolicy.group(topic.id)) {
         AttentionTopicGroup.FINANCE -> finance
         AttentionTopicGroup.RESEARCH -> research
         // Arbitrary custom interests use their explicit URLs plus search, not unrelated technology feeds.
         AttentionTopicGroup.CUSTOM -> emptyList()
         else -> technology
-    }
+    }).distinct()
 
     fun matches(article: AttentionFeedArticle, topic: AttentionTopic): Boolean {
+        val text = article.title + "\n" + article.summary
+        matchers[topic.id]?.let { return it.any { matches -> matches(text) } }
         val words = (terms[topic.id]?.plus(english[topic.id].orEmpty())) ?: (topic.title + " " + topic.query)
             .split(Regex("[\\s,;]+")) .map(String::trim).filter { it.length >= 2 }
-        val text = article.title + "\n" + article.summary
         return words.any { word ->
             if (word.any { it.code > 127 }) text.contains(word, ignoreCase = true)
             else Regex("\\b" + Regex.escape(word) + "\\b", RegexOption.IGNORE_CASE).containsMatchIn(text)
         }
+    }
+
+    private val matchers by lazy {
+        terms.mapValues { (id, words) -> (words + english[id].orEmpty()).map { word ->
+            if (word.any { it.code > 127 }) { text: String -> text.contains(word, ignoreCase = true) }
+            else {
+                val pattern = Regex("\\b" + Regex.escape(word) + "\\b", RegexOption.IGNORE_CASE)
+                val predicate: (String) -> Boolean = { text -> pattern.containsMatchIn(text) }
+                predicate
+            }
+        } }
     }
 
     private val english = mapOf(

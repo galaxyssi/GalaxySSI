@@ -43,6 +43,7 @@ from codex_app_server import CodexAppServer, CodexConversationBusyError
 import codex_experiment_registry as codex_experiments
 from research_quality import standard as research_quality_standard
 from research_trace import replay_receipts
+from research_checkpoint import task_packets as research_task_packets
 import phone_tool_broker as phone_tool
 from unified_commands import default_command_engine
 import link_delivery as link_delivery_storage
@@ -4060,6 +4061,10 @@ def _agent_task_payload(
     research_receipts = replay_receipts(events)
     if research_receipts:
         payload["research_trace"] = research_receipts
+    if include_progress_replay or status in TERMINAL_STATES:
+        checkpoints = research_task_packets(task)
+        if checkpoints:
+            payload["research_checkpoints"] = checkpoints
     receipt, snapshot = _task_reputation_evidence(task)
     if receipt:
         payload["execution_receipt"] = receipt
@@ -5547,6 +5552,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         research_receipts = replay_receipts(task.get("events") or [])
         if research_receipts:
             reply_payload["research_trace"] = research_receipts
+        checkpoints = research_task_packets(task)
+        if checkpoints:
+            reply_payload["research_checkpoints"] = checkpoints
         if rich_output:
             artifact_by_uri = {artifact.artifact_uri: artifact for artifact in artifacts}
             for block in rich_output.get("blocks", []):
@@ -9581,6 +9589,9 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
     research_receipts = replay_receipts(task.get("events") or [])
     if research_receipts:
         payload["research_trace"] = research_receipts
+    checkpoints = research_task_packets(task)
+    if checkpoints:
+        payload["research_checkpoints"] = checkpoints
     return payload
 
 

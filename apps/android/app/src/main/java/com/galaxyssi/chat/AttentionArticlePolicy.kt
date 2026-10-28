@@ -34,8 +34,11 @@ internal object AttentionArticlePolicy {
 
     fun chinese(text: String): Boolean {
         if (text.any { it in '\u3040'..'\u30ff' || it in '\uac00'..'\ud7af' }) return false
-        val letters = text.count(Char::isLetter)
-        return letters > 0 && text.count { it in '\u3400'..'\u9fff' }.toDouble() / letters >= .35
+        val han = text.count { it in '\u3400'..'\u9fff' }
+        val latin = Regex("[A-Za-z][A-Za-z0-9_./+#-]*").findAll(text).count()
+        val other = text.count { it.isLetter() && it !in '\u3400'..'\u9fff' && it !in 'a'..'z' && it !in 'A'..'Z' }
+        // Model names, gene names and API identifiers count as words, not dozens of foreign letters.
+        return han >= 2 && han.toDouble() / (han + latin + other) >= .5
     }
 
     fun parts(text: String, limit: Int = 1200): List<String> {
@@ -58,9 +61,8 @@ internal object AttentionArticlePolicy {
     fun validateTranslation(source: String, translated: String) {
         require(translated.isNotBlank() && !Regex("<[A-Za-z/!][^>]*>").containsMatchIn(translated) &&
             !translated.contains("```")) { "article_translation_invalid" }
-        val identifier = Regex("[A-Za-z0-9_./:+#@%\\-]+")
         require(chinese(translated) || translated == source.trim() &&
-            (!source.any(Char::isLetter) || source.length <= 120 && identifier.matches(source.trim()))) {
+            (!source.any(Char::isLetter) || AttentionTranslationRecovery.technicalLabel(source))) {
             "article_translation_not_chinese"
         }
         val translatedNumbers = AttentionArticleNumbers.values(translated)
@@ -95,9 +97,7 @@ internal class AttentionArticleTranslation(private val translate: suspend (Strin
         var translatedAny = false
         suspend fun convert(text: String): String {
             if (text.isBlank() || !text.any(Char::isLetter) || AttentionArticlePolicy.chinese(text)) return text
-            val result = AttentionArticlePolicy.translationChunks(text).map { part ->
-                translate(part).trim().also { AttentionArticlePolicy.validateTranslation(part, it) }
-            }.joinToString("\n\n")
+            val result = AttentionTranslationRecovery.convert(text, translate)
             translatedAny = translatedAny || result != text
             return result
         }
@@ -107,6 +107,7 @@ internal class AttentionArticleTranslation(private val translate: suspend (Strin
             block.copy(text = text, emphasis = block.emphasis.filter(text::contains))
         }
         val translated = AttentionArticleDocument(blocks)
+        require(AttentionArticlePolicy.chinese(translated.body)) { "article_translation_not_chinese" }
         return AttentionChineseArticle(chineseTitle, translated.body,
             if (translatedAny) AttentionMlKitTranslator.PROVIDER else "", translated)
     }
@@ -116,14 +117,15 @@ internal class AttentionArticleTranslation(private val translate: suspend (Strin
         var translatedAny = false
         suspend fun convert(text: String): String {
             if (!text.any(Char::isLetter) || AttentionArticlePolicy.chinese(text)) return text
-            val result = translate(text).trim()
-            AttentionArticlePolicy.validateTranslation(text, result)
+            val result = AttentionTranslationRecovery.convert(text, translate)
             translatedAny = translatedAny || result != text
             return result
         }
         val chineseTitle = convert(title)
         val paragraphs = AttentionArticlePolicy.translationChunks(body).map { convert(it) }
-        return AttentionChineseArticle(chineseTitle, paragraphs.joinToString("\n\n"),
+        val translated = paragraphs.joinToString("\n\n")
+        require(AttentionArticlePolicy.chinese(translated)) { "article_translation_not_chinese" }
+        return AttentionChineseArticle(chineseTitle, translated,
             if (translatedAny) AttentionMlKitTranslator.PROVIDER else "")
     }
 }

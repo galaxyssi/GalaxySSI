@@ -32,8 +32,7 @@ object ProactiveAttentionFeedPolicy {
     const val MAX_INTERVAL = 4 * 60 * 60_000L
 
     fun endpoints(topic: AttentionTopic): List<String> {
-        val query = if (ProactiveAttentionPolicy.group(topic.id) == AttentionTopicGroup.CUSTOM)
-            topic.query.take(512) else topic.title
+        val query = ProactiveAttentionSourceCatalog.searchQuery(topic)
         val encoded = URLEncoder.encode(query, "UTF-8")
         return listOf(
             "https://www.bing.com/news/search?q=$encoded&format=rss&sortbydate=1",
@@ -41,7 +40,8 @@ object ProactiveAttentionFeedPolicy {
         )
     }
 
-    fun parse(xml: String, topicId: String, now: Long): List<AttentionFeedArticle> {
+    fun parse(xml: String, topicId: String, now: Long, maxAgeDays: Int = 7): List<AttentionFeedArticle> {
+        require(maxAgeDays in 1..90)
         // Jsoup's XML parser does not resolve external entities or execute feed markup.
         val document = Jsoup.parse(xml, "", Parser.xmlParser())
         require(document.selectFirst("rss, RDF, rdf|RDF, feed") != null) { "news_feed_invalid_document" }
@@ -54,7 +54,7 @@ object ProactiveAttentionFeedPolicy {
             val publication = item.selectFirst("pubDate")?.text()
                 ?: item.selectFirst("published, dc|date")?.text().orEmpty()
             val published = date(publication.ifBlank { item.selectFirst("updated")?.text().orEmpty() })
-            if (title.isBlank() || published < now - 7 * ProactiveAttentionNewsPolicy.DAY ||
+            if (title.isBlank() || published < now - maxAgeDays * ProactiveAttentionNewsPolicy.DAY ||
                 published > now + 5 * 60_000L) return@mapNotNull null
             val publisher = clean(item.selectFirst("source")?.text().orEmpty(), 120)
                 .ifBlank { URI(url).host }
@@ -65,6 +65,8 @@ object ProactiveAttentionFeedPolicy {
 
     fun date(value: String): Long = runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
         ?: runCatching { ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }.getOrNull()
+        ?: runCatching { ZonedDateTime.parse(value,
+            DateTimeFormatter.ofPattern("EEE, d MMM yyyy HH:mm:ss z", Locale.US)).toInstant().toEpochMilli() }.getOrNull()
         ?: runCatching { LocalDate.parse(value).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli() }.getOrDefault(0L)
 
     // Text-normalization keys erase URLs; article and feed identity must retain every URL byte.

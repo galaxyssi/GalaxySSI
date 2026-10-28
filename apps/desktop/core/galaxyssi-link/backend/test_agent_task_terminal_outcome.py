@@ -75,6 +75,16 @@ class TerminalOutcomeTest(unittest.TestCase):
         self.assertIsNotNone(persist_terminal_outcome(task, self.archive))
         self.assertEqual(receipt, self.stored()["research_trace"])
 
+    def test_failure_archive_keeps_checkpoint_packets_even_without_progress(self):
+        from research_checkpoint import ResearchCheckpoints
+        store = ResearchCheckpoints(self.root / "research.db")
+        store.bind_task("task", "research-scope")
+        store.merge("research-scope", [{"id": "program", "kind": "finding", "text": "Online program",
+                                       "url": "https://example.org/program"}])
+        with patch("research_checkpoint.checkpoint_store", return_value=store):
+            persist_terminal_outcome({**self.task, "events": []}, self.archive)
+        self.assertEqual("Online program", self.stored()["research_checkpoints"][0]["entries"][0]["text"])
+
     def test_nonterminal_and_completed_tasks_are_not_reconstructed(self):
         for status in ("accepted", "running", "paused", "completed", "waiting_input", "unknown"):
             with self.subTest(status=status):

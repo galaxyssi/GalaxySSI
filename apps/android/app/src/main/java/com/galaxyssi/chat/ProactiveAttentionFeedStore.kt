@@ -19,7 +19,11 @@ class ProactiveAttentionFeedStore(context: Context) {
             .put("discovered_via", article.discoveredVia)
             .put("discovery_date", article.discoveryDate)
             .put("collected", article.collectedAt).put("review", "pending")
-        if (previous == null) rows.put(article.key, record)
+        val topics = record.optJSONArray("topics") ?: org.json.JSONArray().put(record.optString("topic"))
+        val addedTopic = (0 until topics.length()).none { topics.optString(it) == topic.id }
+        if (addedTopic) topics.put(topic.id)
+        record.put("topics", topics)
+        if (previous == null || addedTopic) rows.put(article.key, record)
         AttentionArticleStore(context).enqueue(article, topic.title)
         previous == null
     }
@@ -55,7 +59,8 @@ class ProactiveAttentionFeedStore(context: Context) {
 
     fun nextPlan(task: GlobalResearchTask, now: Long): GlobalResearchPlan? = synchronized(LOCK) {
         val topic = task.id.removePrefix(ProactiveAttentionPolicy.TASK_PREFIX)
-        val pending = rows.all().filter { it.optString("topic") == topic &&
+        val pending = rows.all().filter { (it.optString("topic") == topic ||
+            it.optJSONArray("topics")?.let { values -> (0 until values.length()).any { values.optString(it) == topic } } == true) &&
             (it.optString("review") == "pending" || it.optString("review") == "deferred" && it.optLong("retry_at") <= now) &&
             it.optLong("published") >= now - 7 * ProactiveAttentionNewsPolicy.DAY }
             .sortedByDescending { it.optLong("published") }.take(2).toList()
@@ -125,7 +130,12 @@ class ProactiveAttentionFeedStore(context: Context) {
     }
 
     fun cachedFeed(url: String, now: Long): String? = synchronized(LOCK) {
-        val cached = JSONObject(database.readString("feed:" + ProactiveAttentionFeedPolicy.urlKey(url), "{}"))
+        val key = "feed:" + ProactiveAttentionFeedPolicy.urlKey(url)
+        val cached = runCatching { JSONObject(database.readString(key, "{}")) }.getOrElse {
+            // A disposable cache must never permanently block its source or erase discoveries.
+            database.remove(key)
+            return@synchronized null
+        }
         cached.optString("xml").takeIf { it.isNotBlank() && cached.optLong("expires") > now }
     }
 
@@ -169,8 +179,8 @@ class ProactiveAttentionFeedStore(context: Context) {
     }
 
     fun recordPoll(topicId: String, count: Int, error: String, now: Long) = synchronized(LOCK) {
-        val previous = topicState(topicId)
-        val interval = ProactiveAttentionFeedPolicy.interval(previous.optLong("interval"), count, error.isNotBlank())
+        // Retry/backoff belongs to individual sources. One failing search must not defer healthy feeds.
+        val interval = ProactiveAttentionFeedPolicy.MIN_INTERVAL
         database.writeString("topic:$topicId", JSONObject().put("at", now).put("next", now + interval)
             .put("source_revision", SOURCE_REVISION).put("interval", interval)
             .put("new_items", count).put("error", error.take(200)).toString())
@@ -179,7 +189,7 @@ class ProactiveAttentionFeedStore(context: Context) {
     companion object {
         private val LOCK = Any()
         // A new source adapter must not inherit a failed adapter's deferred wake-up.
-        private const val SOURCE_REVISION = 4
+        private const val SOURCE_REVISION = 5
         fun isFeed(task: GlobalResearchTask) = task.researchPlan.units.any { it.id.startsWith(ProactiveAttentionFeedPolicy.UNIT_PREFIX) }
     }
 }

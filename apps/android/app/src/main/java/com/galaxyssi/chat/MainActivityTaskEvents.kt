@@ -1317,10 +1317,12 @@ internal fun MainActivity.syncRemoteTaskEvents(
         AgentResearchTraceStore.remote(this, conversationId, turnId, event)
         val eventId = event.optString("event_id").trim()
         val kind = event.optString("kind").trim().lowercase(Locale.ROOT)
+        if (AgentResearchCheckpoint.isInternalProgress(event)) continue
         val title = event.optString("title").trim()
         val detail = event.optString("detail").trim()
         if (eventId.isBlank() || (title.isBlank() && detail.isBlank())) continue
-        val rendered = if (kind == "mcp") {
+        val code = event.optString("code").ifBlank { event.optJSONObject("metadata")?.optString("code").orEmpty() }
+        val rendered = if (kind == "mcp" || (kind == "tool" && code in setOf("web_search", "dynamic_tool"))) {
             connectorProgressText(event)
         } else {
             remoteTaskEventText(kind, title, detail, targetName)
@@ -1378,6 +1380,7 @@ internal fun MainActivity.remoteTaskEventText(
 
 internal fun android.content.Context.connectorProgressText(progress: JSONObject): String {
     val kind = progress.optString("kind")
+    if (AgentResearchCheckpoint.isInternalProgress(progress)) return ""
     val code = progress.optString("code").ifBlank {
         progress.optJSONObject("metadata")?.optString("code").orEmpty()
     }
