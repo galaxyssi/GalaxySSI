@@ -9,6 +9,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.galaxyssi.chat.voice.VoiceInteractionPhase
 import com.galaxyssi.chat.voice.VoiceInteractionState
 import com.galaxyssi.chat.voice.audio.PcmRecorderPhase
+import com.galaxyssi.chat.voice.audio.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.flow
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.UUID
@@ -17,6 +24,68 @@ import java.util.UUID
 class AgentContinuousListeningDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private fun main(block: () -> Unit) = instrumentation.runOnMainSync(block)
+
+    @Test fun noiseOnlyManualSendDoesNotTranscribeOrModifyTheDraft() = withVoice { activity ->
+        main { activity.agentVoiceConversation!!.end() }
+        await("Release voice session") { !activity.isVoiceCaptureActive() }
+        val originalHub = activity.pcmVoiceAudioHub
+        val originalDraft = activity.agentGoalInput.text.toString()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val delivered = CompletableDeferred<Unit>()
+        val stopped = CompletableDeferred<Unit>()
+        val recorder = object : PcmRecorder {
+            override suspend fun start(config: PcmCaptureConfig) = flow {
+                repeat(150) { sequence ->
+                    val noise = ShortArray(320) { if (it % 2 == 0) 1_000 else -1_000 }
+                    emit(AudioFrame(sequence.toLong(), 0, noise, noise.size, { it.fill(0) }))
+                }
+                delivered.complete(Unit)
+                stopped.await()
+            }
+            override fun requestStop(reason: PcmStopReason) { stopped.complete(Unit) }
+            override suspend fun stop(reason: PcmStopReason) { stopped.complete(Unit) }
+            override fun currentState() = PcmRecorderState(phase = PcmRecorderPhase.RECORDING)
+        }
+        val hub = VoiceAudioHub(recorder, scope,
+            vadFactory = { NeuralSpeechVad(SileroSpeechProbabilityModel(activity.assets)) })
+        val trace = "noise-only-${UUID.randomUUID()}"
+        try {
+            main {
+                activity.agentGoalInput.setText("保留这段草稿")
+                activity.captureAgentVoiceDraftSnapshot()
+                activity.pcmVoiceAudioHub = hub
+                activity.pcmVoiceSession = hub.start(VoiceAudioSessionConfig())
+                activity.recordingVoiceTraceId = trace
+                activity.recordingPurpose = "agent_input"
+            }
+            await("Noise fixture consumed") { delivered.isCompleted }
+            hub.snapshotWindow(checkNotNull(hub.activeSession()), 3_000)?.let { snapshot ->
+                try { assertFalse(snapshot.speechDetected) } finally { snapshot.samples.fill(0) }
+            } ?: fail("Noise snapshot missing")
+            main { activity.stopPcmRecording(send = true, reason = "user_send") }
+            await("Silent send finalized") { !activity.pcmCaptureStopping && activity.pcmVoiceSession == null }
+            main {
+                assertEquals("保留这段草稿", activity.agentGoalInput.text.toString())
+                assertFalse(activity.highAccuracyAsrFinals.containsKey(trace))
+                assertFalse(activity.onlineRealtimeAsrFinals.containsKey(trace))
+                assertFalse(activity.agentTranscriptStore.page().entries.any {
+                    it.dedupeKey == AgentVoiceTranscriptPolicy.dedupeKey(trace)
+                })
+            }
+        } finally {
+            stopped.complete(Unit)
+            scope.cancel()
+            main {
+                activity.pcmVoiceAudioHub = originalHub
+                activity.pcmVoiceSession = null
+                activity.pcmCaptureStopping = false
+                activity.recordingVoiceTraceId = ""
+                activity.recordingPurpose = ""
+                activity.clearAgentVoiceDraftSnapshot()
+                activity.agentGoalInput.setText(originalDraft)
+            }
+        }
+    }
 
     @Test fun waitingAndSpeakingKeepTheSameProtectedMicrophoneAndTurn() = withVoice { activity ->
         val voice = activity.agentVoiceConversation!!
