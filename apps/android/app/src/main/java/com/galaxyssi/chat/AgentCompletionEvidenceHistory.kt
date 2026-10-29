@@ -4,6 +4,15 @@ import org.json.JSONObject
 
 /** Completion reads durable execution facts, never the token-budgeted planner projection. */
 internal object AgentCompletionEvidenceHistory {
+    fun isAnswerOnly(history: List<AgentAction>, descriptorFor: (String) -> AgentNativeToolDescriptor?): Boolean =
+        history.all { action ->
+            action.isTaskCompleteMarker() || (action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
+                action.status == AgentActionStatus.COMPLETED &&
+                !AgentSupervisedProjectRecoveryPolicy.hasUnknownOutcome(action) &&
+                descriptorFor(action.parameters["tool_id"].orEmpty().ifBlank { action.target })?.effect ==
+                    AgentNativeToolEffect.READ_ONLY)
+        }
+
     fun resolve(plan: AgentPlan, scope: AgentPlanContinuationScope): List<AgentAction> =
         scopedSnapshots(plan, scope).filterNot(AgentAction::isSupervisedProjectConnector)
 

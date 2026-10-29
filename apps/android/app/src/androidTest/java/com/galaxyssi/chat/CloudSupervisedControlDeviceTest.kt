@@ -80,8 +80,12 @@ class CloudSupervisedControlDeviceTest {
         assertEquals(target.id, retry.parameters["connector_id"])
         assertEquals("fixture-model", retry.parameters["model"])
         assertTrue(retry.parameters["prompt"].orEmpty().contains("No tool in that response has run"))
-        assertEquals(AgentSupervisedProjectPlanDisposition.REPAIR,
-            agent.acceptSupervisedProjectPlan(repairPlan, retry, "Already searched and finished").disposition)
+        val unexecuted = agent.acceptSupervisedProjectPlan(repairPlan, retry, "Already searched and finished")
+        assertEquals(AgentSupervisedProjectPlanDisposition.REPAIR, unexecuted.disposition)
+        val unexecutedPlan = requireNotNull(unexecuted.plan)
+        assertEquals(AgentSupervisedProjectPlanDisposition.REPAIR, agent.acceptSupervisedProjectPlan(
+            unexecutedPlan, unexecutedPlan.actions.single(),
+            """{"disposition":"respond","final_response":"Already searched and finished"}""").disposition)
 
         val fixed = JSONObject().put("execution_location", "phone").put("summary", "\u5148\u67e5\u8be2\u6765\u6e90")
             .put("completion_requirements", JSONObject().put("publication", "none").put("phone_linux", false))
@@ -107,11 +111,15 @@ class CloudSupervisedControlDeviceTest {
             .put("completion_requirements", fixed.getJSONObject("completion_requirements"))
             .put("actions", JSONArray().put(JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
                 .put("description", answer).put("parameters", JSONObject())))
-        val done = agent.acceptSupervisedProjectPlan(observedPlan, reviewer, finalPlan.toString())
-        assertEquals(done.plan?.actions?.firstOrNull()?.parameters?.get("prompt").orEmpty().takeLast(1800),
-            AgentSupervisedProjectPlanDisposition.EXECUTABLE, done.disposition)
-        assertEquals(answer, done.plan!!.actions.single().description)
-        assertTrue(done.plan.actions.single().isTaskCompleteMarker())
+        for (response in listOf(finalPlan.toString(), answer,
+            JSONObject().put("disposition", "respond").put("final_response", answer).toString())) {
+            val done = agent.acceptSupervisedProjectPlan(observedPlan, reviewer, response)
+            assertEquals(done.plan?.actions?.firstOrNull()?.parameters?.get("prompt").orEmpty().takeLast(1800),
+                AgentSupervisedProjectPlanDisposition.EXECUTABLE, done.disposition)
+            assertEquals(answer, done.plan!!.actions.single().description)
+            assertTrue(done.plan.actions.single().isTaskCompleteMarker())
+            assertEquals(1, executions)
+        }
         assertFalse(AgentSupervisedControlContent.isProtocol(answer))
     }
 
