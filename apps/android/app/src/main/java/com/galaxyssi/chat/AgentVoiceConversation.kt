@@ -170,9 +170,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     private var reminderHeaderVisible = false
     private var resumeAfterPageChange = false
     private var pendingStart: String? = null
-    private val newsPlayback = AgentVoiceNewsPlayback(activity, onChunk = { text ->
+    private val newsPlayback = AgentVoiceNewsPlayback(activity, onChunk = {
         activity.voiceAssistantSpeaking = true
-        panel.transcript.text = text
         resumeDuplexListening()
     }, onDone = {
         activity.voiceAssistantSpeaking = false
@@ -550,7 +549,6 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         session.mute(false)
         panel.setMuted(false)
         if (newsPlayback.playing) {
-            panel.transcript.text = VoiceNewsPlaybackBus.current.paragraph
             activity.voiceAssistantSpeaking = true
         }
         if (communicationAudio.acquire()) resumeDuplexListening()
@@ -631,7 +629,10 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
 
     fun onTurnSubmitted(traceId: String, turnId: String) {
         session.registerTurn(traceId, turnId)
-        if (session.acceptsTrace(traceId) && session.latestTurnId == turnId) resumeDuplexListening()
+        if (session.acceptsTrace(traceId) && session.latestTurnId == turnId) {
+            panel.transcript.text = ""
+            resumeDuplexListening()
+        }
     }
 
     private fun refreshListeningStatus() {
@@ -647,7 +648,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     private fun resumeDuplexListening(afterPlayback: Boolean = false) {
-        if (!session.active || session.muted || !visible() || !communicationAudio.active) return
+        if (!session.active || session.muted || !visible()) return
         refreshListeningStatus()
         if (bargeIn.active || pendingDuplexListen != null) return
         if (bargeInUnavailableForCall) {
@@ -676,14 +677,21 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     private fun startBargeInMonitor(token: Long) {
-        if (!session.isCurrent(token) || session.muted || !visible() || !communicationAudio.active ||
+        if (!session.isCurrent(token) || session.muted || !visible() ||
             bargeIn.active || bargeInUnavailableForCall) return
+        // Android can relinquish communication mode while ASR or a reply is pending.
+        // Reacquire it at the capture boundary; mode loss does not end the voice session.
+        if (!communicationAudio.acquire()) {
+            updateStatus(activity.getString(R.string.voice_status_recording_failed), "")
+            return
+        }
+        panel.route.text = communicationAudio.label()
         val capture = ++captureRevision
         fun ownsCapture() = session.isCurrent(token) && captureRevision == capture &&
-            !session.muted && visible() && communicationAudio.active
+            !session.muted && visible()
         var inputRevision = speechRevision
         var traceId = ""
-        val playingTrace = session.traceForTurn(session.latestTurnId)
+        val playingTrace = session.traceForTurn(session.latestTurnId).ifBlank { session.latestTraceId }
         fun ownsInput() = ownsCapture() && speechRevision == inputRevision &&
             traceId.isNotBlank() && session.acceptsTrace(traceId)
         val started = bargeIn.start(AcousticBargeInCallbacks(
@@ -707,7 +715,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                     "noise_suppression_enabled" to state.noiseSuppressorEnabled.toString(),
                     "input_route" to state.inputRoute,
                     "audio_source" to state.audioSource.toString()
-                ), once = true)
+                ))
             },
             onDetected = {
                 if (!ownsCapture()) bargeIn.stop() else {
@@ -866,8 +874,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         if (activity.agentTranscriptStore.activeConversation().id != session.conversationId) { end(); return true }
         if (!session.claimInput(traceId)) return true
         AppVoiceControlBridge.capture(activity, traceId)
-        panel.transcript.text = text
-        refreshListeningStatus()
+        panel.transcript.text = ""
+        resumeDuplexListening()
         stopLevelTick()
         if (pendingVisualTraceId == traceId) return true
         if (cameraPreview.active) {
@@ -937,7 +945,10 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             else -> Unit
         }
         val text = state.finalText ?: state.partialText.ifBlank { state.stableText }
-        if (text.isNotBlank() && !activity.voiceAssistantSpeaking) panel.transcript.text = text
+        if (text.isNotBlank() && session.acceptsInputCaption(state.sessionId) && state.phase in setOf(
+                VoiceInteractionPhase.PREPARING, VoiceInteractionPhase.LISTENING,
+                VoiceInteractionPhase.ENDPOINTING, VoiceInteractionPhase.FINALIZING_ASR
+            )) panel.transcript.text = text
     }
 
     fun onEntries(entries: List<AgentTranscriptEntry>) {
@@ -967,7 +978,6 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                             mapOf("playback_session_id" to chunk.requestId,
                                 "speech_characters" to chunk.speechText.codePointCount(0, chunk.speechText.length).toString(),
                                 "tts_provider" to activity.activeProgressiveSpeechProvider), once = true)
-                        panel.transcript.text = chunk.speechText
                         resumeDuplexListening()
                     }
                 },
@@ -1003,6 +1013,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
         if (!session.active) return
         if (status == activity.getString(R.string.voice_status_recording) &&
+            session.acceptsInputCaption(activity.activeVoiceTraceId) &&
             detail.isNotBlank() && detail != activity.getString(R.string.voice_status_recording_detail)
         ) panel.transcript.text = detail
         if (status == activity.getString(R.string.voice_status_recording_failed) ||

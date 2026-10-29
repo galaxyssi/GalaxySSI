@@ -3,8 +3,10 @@ package com.galaxyssi.chat
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.WindowManager
 import androidx.test.platform.app.InstrumentationRegistry
 import com.galaxyssi.chat.voice.VoiceInteractionPhase
 import com.galaxyssi.chat.voice.VoiceInteractionState
@@ -93,7 +95,11 @@ class AgentContinuousListeningDeviceTest {
         val turn = "$trace-turn"
         main {
             voice.registerTrace("voice_wakeup", trace)
+            voice.onUtterance(VoiceInteractionState(sessionId = trace, phase = VoiceInteractionPhase.LISTENING,
+                partialText = "今天的天气"))
+            assertEquals("今天的天气", voice.panel.transcript.text.toString())
             voice.onTurnSubmitted(trace, turn)
+            assertEquals("", voice.panel.transcript.text.toString())
         }
         await("Protected passive capture while waiting for a reply") {
             voice.bargeIn.active && activity.voiceAudioHub().currentState().let {
@@ -123,10 +129,10 @@ class AgentContinuousListeningDeviceTest {
             assertEquals(recorder, activity.voiceAudioHub().activeSession())
             assertEquals(trace, activity.activeProgressiveSpeechTraceId)
             assertEquals(activity.getString(R.string.voice_call_listening), voice.panel.status.text)
-            val caption = voice.panel.transcript.text.toString()
+            assertEquals("Replies belong in the output area", "", voice.panel.transcript.text.toString())
             voice.onUtterance(VoiceInteractionState(sessionId = trace, phase = VoiceInteractionPhase.AGENT_RUNNING,
-                finalText = "这个旧输入不能覆盖朗读内容"))
-            assertEquals(caption, voice.panel.transcript.text.toString())
+                finalText = "这个旧输入不能重新出现在输入区"))
+            assertEquals("", voice.panel.transcript.text.toString())
         }
         await("Speech ends without closing capture or inventing another user turn", 60_000L) {
             assertEquals("Speaker output cannot supersede the submitted turn", trace, voice.session.latestTraceId)
@@ -136,6 +142,9 @@ class AgentContinuousListeningDeviceTest {
         }
         main {
             assertEquals(turn, voice.session.latestTurnId)
+            voice.onUtterance(VoiceInteractionState(sessionId = trace, phase = VoiceInteractionPhase.FINALIZING_ASR,
+                finalText = "迟到的输入回调"))
+            assertEquals("", voice.panel.transcript.text.toString())
             assertEquals(activity.getString(R.string.voice_call_listening), voice.panel.status.text)
             assertEquals(recorder, activity.voiceAudioHub().activeSession())
             voice.panel.microphone.performClick()
@@ -169,6 +178,52 @@ class AgentContinuousListeningDeviceTest {
         }
     }
 
+    @Test fun waitingReacquiresExpiredCommunicationModeAndRenewsAfterFiftySeconds() = withVoice { activity ->
+        val voice = activity.agentVoiceConversation!!
+        val audio = activity.getSystemService(AudioManager::class.java)
+        val trace = "renew-listen-${UUID.randomUUID()}"
+        val turn = "$trace-turn"
+        val volume = audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
+        main {
+            // Reproduce mode expiry during the ASR/model gap without changing the session.
+            audio.mode = AudioManager.MODE_NORMAL
+            voice.registerTrace("voice_wakeup", trace)
+            voice.onTurnSubmitted(trace, turn)
+        }
+        await("Capture must recover communication mode after the model gap") {
+            voice.bargeIn.active && activity.voiceAudioHub().currentState().let {
+                it.phase == PcmRecorderPhase.RECORDING && it.acousticEchoCancelerEnabled
+            }
+        }
+        val first = activity.voiceAudioHub().activeSession()
+        assertNotNull(first)
+        SystemClock.sleep(35_000L)
+        main {
+            assertEquals(trace, voice.session.latestTraceId)
+            assertFalse(voice.bargeIn.collectingUtterance)
+            // Mode is not a session-ownership token: renewal must still run if it changes.
+            audio.mode = AudioManager.MODE_NORMAL
+        }
+        await("The fifty-second monitor must renew instead of silently stopping", 30_000L) {
+            voice.bargeIn.active && activity.voiceAudioHub().activeSession()?.let { it != first } == true &&
+                activity.voiceAudioHub().currentState().let {
+                    it.phase == PcmRecorderPhase.RECORDING && it.acousticEchoCancelerEnabled
+                }
+        }
+        main {
+            assertEquals(trace, voice.session.latestTraceId)
+            assertEquals(turn, voice.session.latestTurnId)
+            assertEquals(activity.getString(R.string.voice_call_listening), voice.panel.status.text)
+            assertTrue(voice.communicationAudio.active)
+            assertEquals(volume, audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL))
+            voice.end()
+        }
+        await("Stop after renewal releases the microphone") { !activity.isVoiceCaptureActive() }
+        instrumentation.sendStatus(0, Bundle().apply {
+            putString("renewal", "mode expiry recovered before capture and at fifty-second renewal; turn preserved")
+        })
+    }
+
     private fun withVoice(test: (MainActivity) -> Unit) {
         val context = instrumentation.targetContext
         assertEquals(PackageManager.PERMISSION_GRANTED, context.checkSelfPermission(Manifest.permission.RECORD_AUDIO))
@@ -185,7 +240,11 @@ class AgentContinuousListeningDeviceTest {
             activity = screen
             await("Initial hydration", 60_000L) { !screen.initialAgentHydrationPending }
             await("TTS initialization", 15_000L) { provider != VoiceAssistantSettings.PROVIDER_ANDROID || screen.androidTtsReady }
-            main { screen.showMainTab(PAGE_AGENT); screen.agentVoiceConversation!!.start() }
+            main {
+                screen.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                screen.showMainTab(PAGE_AGENT)
+                screen.agentVoiceConversation!!.start()
+            }
             await("Initial capture") { screen.isVoiceCaptureActive() }
             main { screen.stopVoiceAssistant() }
             await("Release initial ASR capture") { !screen.isVoiceCaptureActive() }
