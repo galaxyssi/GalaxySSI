@@ -26,7 +26,10 @@ internal class DesktopDraftVoice(
 ) {
     private val context = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val hub = VoiceAudioHub(AndroidPcmRecorder(this.context), scope)
+    private val hub = VoiceAudioHub(AndroidPcmRecorder(this.context), scope,
+        vadFactory = { com.galaxyssi.chat.voice.audio.NeuralSpeechVad(
+            com.galaxyssi.chat.voice.audio.SileroSpeechProbabilityModel(this.context.assets)
+        ) })
     private var session: VoiceAudioSession? = null
     private var busy = false
     @Volatile private var generation = 0L
@@ -63,7 +66,8 @@ internal class DesktopDraftVoice(
             try {
                 val capture = withContext(NonCancellable) { hub.stop(active, reason) }
                 samples = capture?.snapshot?.samples
-                if (transcribe && samples != null && samples.isNotEmpty() && generation == epoch && !closed) {
+                if (transcribe && capture?.snapshot?.speechDetected == true &&
+                    samples != null && samples.isNotEmpty() && generation == epoch && !closed) {
                     val text = LocalWhisperAsr.transcribePcm(context, samples, capture.snapshot.sampleRateHz,
                         language = VoiceAssistantSettings.get(context).asrLanguage,
                         traceId = "desktop-draft-${active.id}",

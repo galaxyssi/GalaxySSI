@@ -940,7 +940,10 @@ internal fun MainActivity.startPcmRecording(purpose: String, autoEndpoint: Boole
 
 internal fun MainActivity.voiceAudioHub(): VoiceAudioHub = pcmVoiceAudioHub ?: VoiceAudioHub(
     recorder = AndroidPcmRecorder(this),
-    scope = voiceAssistantScope
+    scope = voiceAssistantScope,
+    vadFactory = { com.galaxyssi.chat.voice.audio.NeuralSpeechVad(
+        com.galaxyssi.chat.voice.audio.SileroSpeechProbabilityModel(applicationContext.assets)
+    ) }
 ).also { pcmVoiceAudioHub = it }
 
 internal fun MainActivity.isVoiceCaptureActive(): Boolean =
@@ -1115,8 +1118,9 @@ internal fun MainActivity.stopPcmRecording(send: Boolean, reason: String) {
     voiceAssistantScope.launch {
         val captureResult = runCatching { hub.stop(session, stopReason) }
         val result = captureResult.getOrNull()
-        finishStreamingPcmAsr(traceId, result?.snapshot, send, captureResult.isSuccess)
-        val waveFile = if (send && result?.snapshot?.samples?.isNotEmpty() == true) {
+        val recognizedSpeech = result?.snapshot?.speechDetected == true
+        finishStreamingPcmAsr(traceId, result?.snapshot, send && recognizedSpeech, captureResult.isSuccess)
+        val waveFile = if (send && recognizedSpeech && result?.snapshot?.samples?.isNotEmpty() == true) {
             runCatching {
                 PcmWaveFileAdapter.write(
                     result.snapshot,
@@ -1127,6 +1131,7 @@ internal fun MainActivity.stopPcmRecording(send: Boolean, reason: String) {
         } else null
         runOnUiThread {
             if (pcmVoiceSession?.id != session.id) {
+                result?.snapshot?.samples?.fill(0)
                 waveFile?.delete()
                 dismissAgentVoiceTranscriptionPending(pendingAgentVoice)
                 return@runOnUiThread
@@ -1165,7 +1170,7 @@ internal fun MainActivity.stopPcmRecording(send: Boolean, reason: String) {
                     once = true
                 )
             }
-            if (coordinatorSessionId.isNotBlank() && (result?.snapshot?.speechDetected == true || send)) {
+            if (coordinatorSessionId.isNotBlank() && recognizedSpeech) {
                 dispatchVoiceCoordinator(
                     VoiceInteractionEvent.SpeechEnded(
                         coordinatorSessionId,
@@ -1174,17 +1179,20 @@ internal fun MainActivity.stopPcmRecording(send: Boolean, reason: String) {
                 )
             }
             when {
-                reason == "no_speech_timeout" -> {
+                reason == "no_speech_timeout" || (send && result != null && !recognizedSpeech) -> {
+                    result?.snapshot?.samples?.fill(0)
                     waveFile?.delete()
                     dismissAgentVoiceTranscriptionPending(pendingAgentVoice)
                     completeSilentPcmCommand(traceId, coordinatorSessionId)
                 }
                 !send -> {
+                    result?.snapshot?.samples?.fill(0)
                     waveFile?.delete()
                     dismissAgentVoiceTranscriptionPending(pendingAgentVoice)
                     cancelPcmCapture(traceId, coordinatorSessionId, reason)
                 }
                 captureResult.isFailure || result == null || waveFile == null -> {
+                    result?.snapshot?.samples?.fill(0)
                     waveFile?.delete()
                     dismissAgentVoiceTranscriptionPending(pendingAgentVoice)
                     failPcmFinalization(
@@ -1231,7 +1239,8 @@ internal suspend fun MainActivity.finishStreamingPcmAsr(
     mayKeepFinal: () -> Boolean = { true }
 ) {
     val highAccuracyTurn = highAccuracyAsrTurns.remove(traceId)
-    val highAccuracyCompletion = if (send && snapshot?.samples?.isNotEmpty() == true && highAccuracyTurn != null) {
+    val acceptSpeech = send && snapshot?.speechDetected == true && snapshot.samples.isNotEmpty()
+    val highAccuracyCompletion = if (acceptSpeech && highAccuracyTurn != null) {
         runCatching { highAccuracyTurn.finish() }
             .onFailure { Log.w("GalaxySSIVoice", "High accuracy QNN final failed; retained PCM will be used", it) }
             .getOrNull()
@@ -1255,7 +1264,7 @@ internal suspend fun MainActivity.finishStreamingPcmAsr(
         }
     }
     val onlineTurn = onlineRealtimeAsrTurns.remove(traceId)
-    val onlineCompletion = if (send && snapshot?.samples?.isNotEmpty() == true && onlineTurn != null) {
+    val onlineCompletion = if (acceptSpeech && onlineTurn != null) {
         runCatching { onlineTurn.finish(pcmBufferComplete) }.getOrNull()
     } else null
     when (onlineCompletion) {

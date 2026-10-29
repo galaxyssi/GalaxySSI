@@ -3,8 +3,10 @@ package com.galaxyssi.chat.voice.audio
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -78,6 +80,8 @@ class VoiceAudioHub(
         }
         session.job = scope.launch {
             try {
+                session.vad.prepare(session.config.capture.sampleRateHz)
+                if (session.stopRequested.get()) return@launch
                 val frames = recorder.start(session.config.capture)
                 if (session.stopRequested.get()) {
                     recorder.stop(PcmStopReason.USER_CANCEL)
@@ -98,6 +102,10 @@ class VoiceAudioHub(
                     safely { session.listener.onFailure(session.public, error) }
                 }
             } finally {
+                if (!session.stopRequested.get()) {
+                    withContext(NonCancellable) { runCatching { recorder.stop(PcmStopReason.CAPTURE_FAILURE) } }
+                }
+                runCatching { session.vad.close() }
                 session.completion.complete(Unit)
                 if (!session.stopRequested.get()) {
                     session.store.clear()
