@@ -11,9 +11,11 @@ internal object AsrTranscriptCompletenessPolicy {
         text: String,
         decoderComplete: Boolean,
         decodedAudioMs: Long,
-        capturedSpeechMs: Long?
+        capturedSpeechMs: Long?,
+        audioInputComplete: Boolean = true
     ): AsrTranscriptCompletenessDecision {
         if (text.isBlank()) return rejected("empty_transcript")
+        if (!audioInputComplete) return rejected("incomplete_audio_input")
         if (!decoderComplete) return rejected("decoder_output_limit")
         val speechMs = capturedSpeechMs?.takeIf { it > 0L }
             ?: return accepted()

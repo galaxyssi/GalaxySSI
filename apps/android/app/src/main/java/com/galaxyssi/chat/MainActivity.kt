@@ -746,7 +746,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var agentVoiceListening = false
     internal var voiceAssistantListening = false
     internal var voiceAssistantAwake = false
-    internal var voiceAssistantSpeaking = false
+    @Volatile internal var voiceAssistantSpeaking = false
     internal var voiceAssistantRecordingCommand = false
     internal var voiceCommandSpeechDetected = false
     internal var voiceCommandLastVoiceAt = 0L

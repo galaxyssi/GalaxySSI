@@ -12,6 +12,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AcousticBargeInCaptureTest {
+    @Test fun aPauseDoesNotSubmitThePrefixOrDropTheSecondPart() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val recorder = FakeRecorder()
+        val hub = VoiceAudioHub(recorder, scope, vadFactory = { FixedVad() })
+        val capture = AcousticBargeInCapture(hub, scope) { it() }
+        val results = mutableListOf<PcmSnapshot>()
+        try {
+            capture.start(AcousticBargeInCallbacks(onDetected = {}, onUtterance = { results += it }))
+            repeat(30) { recorder.emit(0) }
+            repeat(150) { recorder.emit(5_000) }
+            repeat(45) { recorder.emit(0) }
+            assertTrue(results.isEmpty())
+            assertTrue(capture.collectingUtterance)
+            repeat(100) { recorder.emit(6_000) }
+            repeat(70) { recorder.emit(0) }
+            val result = results.single()
+            assertEquals(150 * 320, result.samples.count { it == 5_000.toShort() })
+            assertEquals(100 * 320, result.samples.count { it == 6_000.toShort() })
+            assertEquals(1, recorder.starts)
+        } finally {
+            results.forEach { it.samples.fill(0) }
+            capture.stop()
+            scope.cancel()
+        }
+    }
+
     @Test fun oneRecorderContinuesFromDetectionThroughFinalSpeech() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val recorder = FakeRecorder()

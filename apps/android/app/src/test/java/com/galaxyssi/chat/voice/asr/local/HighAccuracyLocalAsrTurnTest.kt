@@ -25,6 +25,52 @@ import java.nio.ByteOrder
 import kotlin.io.path.createTempDirectory
 
 class HighAccuracyLocalAsrTurnTest {
+    @Test fun overflowIsBoundedAndRequiresFullPcmWithoutPoisoningTheNextTurn() = runBlocking {
+        val engine = FakeEngine(autoListen = false)
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() }, engineFactory = { engine })
+        try {
+            assertTrue(controller.prepareNow())
+            val turn = requireNotNull(controller.startTurnIfReady(AsrConfig(), "large_v3_turbo") {})
+            repeat(700) { index -> turn.offer(frame(index.toLong(), ShortArray(320) { index.toShort() })) }
+            engine.listen()
+            assertTrue(engine.pushed.size in 1 until 700)
+            assertEquals(699.toShort(), engine.pushed.last().first())
+            engine.pushed.zipWithNext().forEach { (left, right) ->
+                assertEquals(left.first().toInt() + 1, right.first().toInt())
+            }
+            val result = turn.finish()
+            assertFalse(result.audioInputComplete)
+            assertFalse(result.complete)
+            val next = requireNotNull(controller.startTurnIfReady(AsrConfig(), "large_v3_turbo") {})
+            next.offer(frame(0, shortArrayOf(7, 8, 9)))
+            engine.listen()
+            assertTrue(next.finish().audioInputComplete)
+        } finally { controller.close() }
+    }
+
+    @Test fun replayWipesOnlyTheOwnedCopyAndPreservesCompleteInput() = runBlocking {
+        val engine = FakeEngine(autoListen = false)
+        val controller = HighAccuracyLocalAsrController(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            modelDirectoryResolver = { temporaryModelDirectory() }, engineFactory = { engine })
+        try {
+            assertTrue(controller.prepareNow())
+            val turn = requireNotNull(controller.startTurnIfReady(AsrConfig(), "large_v3_turbo") {})
+            val packet = frame(0, shortArrayOf(7, 8, 9))
+            turn.offer(packet)
+            engine.listen()
+            assertEquals(listOf<Short>(7, 8, 9), engine.pushed.single().toList())
+            val retained = engine.pushedBuffers.single().duplicate()
+            while (retained.hasRemaining()) assertEquals(0, retained.get().toInt())
+            assertEquals(7.toShort(), packet.pcm16.duplicate().order(ByteOrder.LITTLE_ENDIAN).getShort())
+            val result = turn.finish()
+            assertTrue(result.complete)
+            assertTrue(result.audioInputComplete)
+        } finally { controller.close() }
+    }
+
     @Test
     fun preparedAsrKeepsQnnPriorityUntilControllerCloses() = runBlocking {
         val engine = FakeEngine()
@@ -235,6 +281,7 @@ class HighAccuracyLocalAsrTurnTest {
         var stopTermination = AsrTranscriptTermination.END_OF_TEXT
         var acceptPcm = true
         val pushed = mutableListOf<ShortArray>()
+        val pushedBuffers = mutableListOf<ByteBuffer>()
         private var config = AsrConfig()
         private var token = 0L
 
@@ -266,6 +313,7 @@ class HighAccuracyLocalAsrTurnTest {
             if (!acceptPcm) return false
             val input = pcm.duplicate().order(ByteOrder.LITTLE_ENDIAN)
             pushed += ShortArray(sampleCount) { input.getShort() }
+            pushedBuffers += pcm.duplicate()
             return true
         }
 
