@@ -103,6 +103,9 @@ class VoiceConversationSession {
     fun acceptsTrace(traceId: String): Boolean =
         active && !muted && traceId == latestTraceId && traces[traceId] == generation
 
+    fun acceptsInputCaption(traceId: String): Boolean =
+        acceptsTrace(traceId) && traceId !in submittedTraces && latestTurnId.isBlank()
+
     /** ASR providers can finalize the same utterance twice. Claim before any side effect. */
     fun claimInput(traceId: String): Boolean {
         if (!acceptsTrace(traceId) || !submittedTraces.add(traceId)) return false

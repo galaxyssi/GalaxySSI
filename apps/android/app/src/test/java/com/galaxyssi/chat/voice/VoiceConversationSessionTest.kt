@@ -4,6 +4,37 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VoiceConversationSessionTest {
+    @Test fun inputCaptionsEndAtSubmissionButTheReplyKeepsItsTrace() {
+        val session = VoiceConversationSession()
+        session.begin("a")
+        session.registerTrace("first")
+        assertTrue(session.acceptsInputCaption("first"))
+        assertTrue(session.claimInput("first"))
+        assertFalse(session.acceptsInputCaption("first"))
+        assertTrue(session.acceptsTrace("first"))
+        session.registerTurn("first", "turn")
+        assertFalse(session.acceptsInputCaption("first"))
+        session.registerTrace("second")
+        assertFalse(session.acceptsInputCaption("first"))
+        assertTrue(session.acceptsInputCaption("second"))
+        session.mute(true)
+        assertFalse(session.acceptsInputCaption("second"))
+        session.end()
+        assertFalse(session.acceptsInputCaption("second"))
+    }
+
+    @Test fun aRegisteredTurnCannotRestoreStaleInputCaptions() {
+        val session = VoiceConversationSession()
+        session.begin("a")
+        session.registerTrace("first")
+        session.registerTurn("first", "turn")
+        assertFalse(session.acceptsInputCaption("first"))
+        session.registerTrace("first")
+        assertFalse(session.acceptsInputCaption("first"))
+        session.begin("b")
+        assertFalse(session.acceptsInputCaption("first"))
+    }
+
     @Test fun callContainsMultipleUtterancesInOneConversation() {
         val session = VoiceConversationSession()
         val token = session.begin("conversation-a")
