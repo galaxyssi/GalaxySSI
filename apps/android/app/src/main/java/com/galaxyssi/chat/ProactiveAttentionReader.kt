@@ -1,7 +1,6 @@
 package com.galaxyssi.chat
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Rect
 import android.os.Handler
@@ -50,7 +49,7 @@ internal class ProactiveAttentionReader(
     private val filters = listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED)
     private val manager = LinearLayoutManager(activity)
     private val adapter = ProactiveAttentionFeedAdapter { ProactiveAttentionArticleView(activity,
-        ::toggle, ::toggleSaved, ask, sources, evidence, ::menu, loadArticle = ::loadArticle) }
+        ::toggle, ::toggleSaved, ask, sources, evidence, ::articleAction, loadArticle = ::loadArticle) }
 
     private fun loadArticle(key: String, expanded: Boolean, loaded: (AttentionArticlePresentation?) -> Unit) {
         if (destroyed || worker.isShutdown) return
@@ -291,14 +290,15 @@ internal class ProactiveAttentionReader(
         undo.visibility = View.VISIBLE; main.postDelayed(dismissUndo, 4_000)
     }
 
-    private fun menu(item: GlobalProactiveInboxItem) {
-        AlertDialog.Builder(activity).setItems(arrayOf(activity.getString(R.string.attention_read),
-            activity.getString(R.string.agent_global_feedback_not_relevant))) { _, which ->
-            if (which == 0) markRead(setOf(item.key)) else worker.execute {
+    private fun articleAction(item: GlobalProactiveInboxItem, action: AttentionHeadlineAction) {
+        when (action) {
+            AttentionHeadlineAction.READ -> markRead(setOf(item.key))
+            AttentionHeadlineAction.NOT_RELEVANT -> worker.execute {
                 val result = runCatching { runtime.recordProactiveFeedback(item.key, GlobalAgentFeedbackKind.NOT_RELEVANT) }
                 main.post { if (!activity.isDestroyed) result.onSuccess { timeline.remove(item.key); publish(); refresh() }.onFailure { error() } }
             }
-        }.show()
+            else -> Unit
+        }
     }
 
     private val readTick = object : Runnable {

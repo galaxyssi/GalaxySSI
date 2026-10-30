@@ -23,13 +23,13 @@ internal class ProactiveAttentionArticleView(
     private val ask: (GlobalProactiveInboxItem) -> Unit,
     private val sources: (GlobalProactiveInboxItem) -> Unit,
     private val evidence: (GlobalProactiveInboxItem, (JSONObject?) -> Unit) -> Unit,
-    private val menu: (GlobalProactiveInboxItem) -> Unit,
+    private val action: (GlobalProactiveInboxItem, AttentionHeadlineAction) -> Unit,
     private val loadBody: (String, (String?) -> Unit) -> Unit = { _, callback -> callback(null) },
     private val loadArticle: (String, Boolean, (AttentionArticlePresentation?) -> Unit) -> Unit = { _, _, callback -> callback(null) }
 ) : LinearLayout(context) {
     private var row: AttentionReaderRow? = null
     private var generation = 0
-    private var headline: TextView? = null
+    private var headline: AttentionHeadlineView? = null
     private var displayedTranslation = ""
     private var displayedTranslationProvider = ""
     private var translationAttribution: ImageView? = null
@@ -85,7 +85,9 @@ internal class ProactiveAttentionArticleView(
         intro.addView(top)
         val titleRow = horizontal()
         val titles = column()
-        headline = label("", if (news) (if (next.expanded) 21f else 18f) else 19.36f).apply {
+        headline = AttentionHeadlineView(context, { toggle(item.key) }, { action(item, it) }).apply {
+            textSize = if (news) (if (next.expanded) 21f else 18f) else 19.36f
+            setTextColor(context.getColor(R.color.text_primary))
             tag = "attention-headline:${item.key}"
             setTypeface(typeface, if (news) Typeface.BOLD else Typeface.NORMAL)
             maxLines = if (next.expanded) Int.MAX_VALUE else 2
@@ -130,7 +132,7 @@ internal class ProactiveAttentionArticleView(
         status.addView(bookmark)
         intro.addView(status)
         intro.setOnClickListener { toggle(item.key) }
-        intro.setOnLongClickListener { menu(item); true }
+        intro.setOnLongClickListener { headline?.showHeadlineActions(); true }
         content.addView(intro)
         val articleBody = column()
         if (next.expanded) {
@@ -231,7 +233,7 @@ internal class ProactiveAttentionArticleView(
         val original = next.item.title.ifBlank {
             next.item.content.lineSequence().firstOrNull().orEmpty().trim('#', '*', ' ')
         }
-        headline?.text = displayedTranslation.ifBlank { original }
+        headline?.updateHeadline(displayedTranslation.ifBlank { original })
         translationAttribution?.visibility = when {
             displayedTranslationProvider == AttentionMlKitTranslator.PROVIDER -> View.VISIBLE
             expectsTranslation(next.item) -> View.INVISIBLE

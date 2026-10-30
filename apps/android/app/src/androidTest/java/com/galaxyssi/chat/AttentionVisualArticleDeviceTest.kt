@@ -88,7 +88,7 @@ class AttentionVisualArticleDeviceTest {
         instrumentation.runOnMainSync {
             val theme = ContextThemeWrapper(context, android.R.style.Theme_Material_Light)
             val callbacks = mutableMapOf<String, (AttentionArticlePresentation?) -> Unit>()
-            val view = ProactiveAttentionArticleView(theme, {}, {}, {}, {}, { _, done -> done(null) }, {},
+            val view = ProactiveAttentionArticleView(theme, {}, {}, {}, {}, { _, done -> done(null) }, { _, _ -> },
                 loadArticle = { key, _, done -> callbacks[key] = done })
             fun item(id: String) = GlobalProactiveInboxPolicy.project(listOf(GlobalProactiveMessage(id = "attention-feed:$id",
                 sourceEventId = "research:attention-research:ai:feed:$id", sourceConversationId = "",

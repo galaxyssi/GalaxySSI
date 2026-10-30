@@ -494,13 +494,13 @@ class ProactiveAttentionDeviceTest {
 
     @Test fun articleTypographyUsesRegularLargerTitlesAndExpandedBody() {
         val item = GlobalProactiveInboxPolicy.project(listOf(message().copy(
-            status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
+            sourceEventId = "test:non-news-typography", status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
         instrumentation.runOnMainSync {
             listOf(1f, 1.3f).forEach { scale ->
                 val configuration = android.content.res.Configuration(instrumentation.targetContext.resources.configuration)
                     .apply { fontScale = scale }
                 val context = instrumentation.targetContext.createConfigurationContext(configuration)
-                val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, callback -> callback(null) }, {})
+                val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, callback -> callback(null) }, { _, _ -> })
                 fun pixels(sp: Float) = android.util.TypedValue.applyDimension(
                     android.util.TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)
                 listOf(false, true, false).forEach { expanded ->
@@ -593,7 +593,7 @@ class ProactiveAttentionDeviceTest {
             status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
         instrumentation.runOnMainSync {
             val context = AppLanguage.wrap(instrumentation.targetContext)
-            val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, done -> done(null) }, {})
+            val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, done -> done(null) }, { _, _ -> })
             var height: Int? = null
             AttentionTitleStatus.entries.forEach { state ->
                 article.bind(AttentionReaderRow(item.copy(titleTranslationStatus = state), false, false))
@@ -629,7 +629,7 @@ class ProactiveAttentionDeviceTest {
             .copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03")
         instrumentation.runOnMainSync {
             val context = instrumentation.targetContext
-            val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, done -> done(null) }, {})
+            val article = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, done -> done(null) }, { _, _ -> })
             listOf(false, true).forEach { expanded ->
                 article.bind(AttentionReaderRow(item, expanded, false))
                 val title = views(article).first { it.tag == "attention-headline:${item.key}" } as TextView
@@ -653,7 +653,7 @@ class ProactiveAttentionDeviceTest {
         ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
             scenario.onActivity { activity ->
                 val host = android.widget.FrameLayout(activity)
-                val article = ProactiveAttentionArticleView(activity, {}, {}, {}, {}, { _, done -> done(null) }, {})
+                val article = ProactiveAttentionArticleView(activity, {}, {}, {}, {}, { _, done -> done(null) }, { _, _ -> })
                 article.bind(AttentionReaderRow(item, false, false))
                 host.addView(article)
                 activity.setContentView(host)
@@ -684,7 +684,7 @@ class ProactiveAttentionDeviceTest {
             status = GlobalProactiveMessageStatus.DELIVERED)), emptyList()).single()
         ActivityScenario.launch<ProactiveAttentionActivity>(Intent(instrumentation.targetContext, ProactiveAttentionActivity::class.java)).use { scenario ->
             scenario.onActivity { activity ->
-                val article = ProactiveAttentionArticleView(activity, {}, {}, {}, {}, { _, done -> done(null) }, {})
+                val article = ProactiveAttentionArticleView(activity, {}, {}, {}, {}, { _, done -> done(null) }, { _, _ -> })
                 article.bind(AttentionReaderRow(item, true, false))
                 activity.setContentView(article)
                 val updated = AttentionReaderRow(item.copy(translatedTitle = "\u65b0\u6a21\u578b\u53d1\u5e03"), true, false)
