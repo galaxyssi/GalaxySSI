@@ -57,7 +57,7 @@ class AttentionLocalTranslationDeviceTest {
                 sourceConversationId = "", target = GlobalProactiveTarget.GLOBAL_DIGEST, title = "New feature",
                 content = "Public summary", topic = "AI", urgent = false, status = GlobalProactiveMessageStatus.DELIVERED)
             val item = GlobalProactiveInboxPolicy.project(listOf(message), emptyList()).single()
-            val view = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, callback -> callback(null) }, {})
+            val view = ProactiveAttentionArticleView(context, {}, {}, {}, {}, { _, callback -> callback(null) }, { _, _ -> })
             fun height(): Int {
                 view.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))

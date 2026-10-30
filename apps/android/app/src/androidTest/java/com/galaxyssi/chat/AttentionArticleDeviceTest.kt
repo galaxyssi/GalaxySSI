@@ -189,7 +189,7 @@ class AttentionArticleDeviceTest {
                 content = "中文预览$id", topic = "科技", urgent = false, status = GlobalProactiveMessageStatus.DELIVERED,
                 newsArticleKey = id, newsTranslationProvider = AttentionMlKitTranslator.PROVIDER)), emptyList()).single()
             val callbacks = mutableMapOf<String, (String?) -> Unit>()
-            val view = ProactiveAttentionArticleView(theme, {}, {}, {}, {}, { _, done -> done(null) }, {},
+            val view = ProactiveAttentionArticleView(theme, {}, {}, {}, {}, { _, done -> done(null) }, { _, _ -> },
                 { key, done -> callbacks[key] = done })
             val first = item("first"); val second = item("second")
             val branded = first.copy(title = "Copilot")
