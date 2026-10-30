@@ -1253,7 +1253,8 @@ internal suspend fun MainActivity.finishStreamingPcmAsr(
             text = completion.text,
             decoderComplete = completion.complete,
             decodedAudioMs = completion.durationMs,
-            capturedSpeechMs = snapshot?.speechDurationMs
+            capturedSpeechMs = snapshot?.speechDurationMs,
+            audioInputComplete = completion.audioInputComplete
         )
         if (completeness.accepted && pcmBufferComplete && mayKeepFinal()) {
             highAccuracyAsrFinals[traceId] = completion

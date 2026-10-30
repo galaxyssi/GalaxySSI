@@ -1,5 +1,7 @@
 package com.galaxyssi.chat.voice.audio
 
+import kotlin.math.pow
+
 internal data class AcousticBargeInUpdate(
     val started: Boolean = false,
     val endpoint: Boolean = false,
@@ -19,11 +21,14 @@ internal class AcousticBargeInPolicy(
     private val settlingMs: Long = 200L,
     private val confirmationMs: Long = 180L,
     private val minimumRms: Float = 0.006f,
-    private val minimumProbability: Float = 0.68f
+    private val minimumProbability: Float = 0.68f,
+    private val endpoint: AdaptiveEndpointConfig = AdaptiveEndpointConfig.forVoiceConversation()
 ) {
     private var samples = 0L
     private var candidateSample: Long? = null
     private var candidateSamples = 0L
+    private var candidateGapSamples = 0L
+    private var outputWasPlaying = false
     private var lastSpeechSample = 0L
     private var terminal = false
     private var maxRms = 0f
@@ -37,42 +42,57 @@ internal class AcousticBargeInPolicy(
     }
 
     @Synchronized
-    fun accept(vad: VadDecision, sampleCount: Int): AcousticBargeInUpdate {
+    fun accept(vad: VadDecision, sampleCount: Int, outputPlaying: Boolean = false): AcousticBargeInUpdate {
         if (terminal || sampleCount <= 0) return AcousticBargeInUpdate()
         val frameStart = samples
         samples += sampleCount
+        if (outputPlaying != outputWasPlaying && utteranceStartSample == null) {
+            candidateSample = null
+            candidateSamples = 0L
+            candidateGapSamples = 0L
+        }
+        outputWasPlaying = outputPlaying
         if (vad.rms.isFinite()) maxRms = maxOf(maxRms, vad.rms.coerceIn(0f, 1f))
         if (vad.probability.isFinite()) maxProbability = maxOf(maxProbability, vad.probability.coerceIn(0f, 1f))
-        val voice = vad.isSpeech && vad.probability >= minimumProbability && vad.rms >= minimumRms
+        // Quiet speech can pass the neural gate without reaching a fixed amplitude. During
+        // playback keep the original amplitude floor as an additional residual-echo guard.
+        val rmsFloor = if (outputPlaying || !vad.noiseFloorDb.isFinite()) minimumRms else
+            (10.0.pow(vad.noiseFloorDb.coerceIn(-90f, -20f) / 20.0) * 1.5).toFloat()
+                .coerceIn(minOf(0.001f, minimumRms), minimumRms)
+        val voice = vad.isSpeech && vad.probability >= minimumProbability && vad.rms >= rmsFloor
         val startedAt = utteranceStartSample
         if (startedAt == null) {
             if (milliseconds(samples) < settlingMs) return AcousticBargeInUpdate()
             if (voice) {
                 if (candidateSample == null) candidateSample = frameStart
                 candidateSamples += sampleCount
+                candidateGapSamples = 0L
                 maxCandidateSamples = maxOf(maxCandidateSamples, candidateSamples)
-                if (milliseconds(candidateSamples) >= confirmationMs) {
+                val span = samples - requireNotNull(candidateSample)
+                if (milliseconds(candidateSamples) >= confirmationMs && candidateSamples * 4 >= span * 3) {
                     utteranceStartSample = candidateSample
                     lastSpeechSample = samples
                     return AcousticBargeInUpdate(started = true)
                 }
             } else {
+                candidateGapSamples += sampleCount
+            }
+            // Bridge a brief unvoiced consonant, but never accumulate isolated noise bursts.
+            if (milliseconds(candidateGapSamples) > 60L ||
+                candidateSample?.let { milliseconds(samples - it) >= confirmationMs * 2 } == true) {
                 candidateSample = null
                 candidateSamples = 0L
+                candidateGapSamples = 0L
             }
             if (candidateSample == null && milliseconds(samples) >= 50_000L) {
                 terminal = true
                 return AcousticBargeInUpdate(renewMonitor = true)
             }
         } else {
-            if (vad.isSpeech && vad.rms >= minimumRms / 2) lastSpeechSample = samples
+            if (vad.isSpeech && vad.rms >= rmsFloor / 2) lastSpeechSample = samples
             val duration = milliseconds(samples - startedAt)
             val silence = milliseconds(samples - lastSpeechSample)
-            val trailingMs = when {
-                duration < 1_200L -> 850L
-                duration < 5_000L -> 650L
-                else -> 500L
-            }
+            val trailingMs = endpoint.trailingSilenceMs(milliseconds(lastSpeechSample - startedAt))
             if (silence >= trailingMs || duration >= 60_000L) {
                 terminal = true
                 return AcousticBargeInUpdate(endpoint = true)

@@ -695,6 +695,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         fun ownsInput() = ownsCapture() && speechRevision == inputRevision &&
             traceId.isNotBlank() && session.acceptsTrace(traceId)
         val started = bargeIn.start(AcousticBargeInCallbacks(
+            isOutputPlaying = { activity.voiceAssistantSpeaking },
             onDiagnostics = { statistics, state, outcome ->
                 VoiceLatencyTelemetry.record(activity, playingTrace, "barge_in_monitor_summary", mapOf(
                     "aec_enabled" to state.acousticEchoCancelerEnabled.toString(),

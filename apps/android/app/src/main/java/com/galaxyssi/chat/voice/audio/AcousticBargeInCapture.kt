@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal data class AcousticBargeInCallbacks(
     val onReady: (PcmRecorderState) -> Unit = {},
     val onDetected: () -> Unit,
+    val isOutputPlaying: () -> Boolean = { false },
     val onLevel: (Int) -> Unit = {},
     // Audio samples are borrowed for this callback and wiped immediately afterwards.
     val onAudio: ((PcmSnapshot) -> Unit)? = null,
@@ -85,7 +86,7 @@ internal class AcousticBargeInCapture(
                         finish(run, unavailable = "echo_protection_lost")
                         return
                     }
-                    val update = run.policy.accept(decision, run.frameSamples)
+                    val update = run.policy.accept(decision, run.frameSamples, callbacks.isOutputPlaying())
                     if (update.started) {
                         run.collecting = true
                         val statistics = run.policy.statistics()

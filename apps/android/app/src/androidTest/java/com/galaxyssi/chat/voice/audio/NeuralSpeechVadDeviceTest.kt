@@ -69,6 +69,53 @@ class NeuralSpeechVadDeviceTest {
         }
     }
 
+    @Test fun realNeuralGateAndContinuousCaptureAcceptQuietChineseWithoutAcceptingNoise() {
+        val speech = WhisperBenchmarkAudioLoader.load(context).window(10_000)
+        val random = Random(71)
+        val fixtures = linkedMapOf(
+            "normal_chinese" to speech,
+            "quiet_chinese" to ShortArray(speech.size) { (speech[it] * 0.12f).toInt().toShort() },
+            "noisy_chinese" to ShortArray(speech.size) {
+                (speech[it].toInt() + random.nextInt(-550, 550)).coerceIn(-32768, 32767).toShort()
+            },
+            "silence" to ShortArray(80_000),
+            "white_noise" to ShortArray(80_000) { random.nextInt(-6_000, 6_000).toShort() },
+            "fan_hum" to ShortArray(80_000) {
+                (2_500 * sin(2 * PI * 100 * it / 16_000) + random.nextInt(-500, 500)).toInt().toShort()
+            },
+            "notification_tone" to ShortArray(80_000) { (6_000 * sin(2 * PI * 1_000 * it / 16_000)).toInt().toShort() },
+            "clicks" to ShortArray(80_000) { if (it % 4_000 < 10) 24_000 else 0 }
+        )
+        try {
+            NeuralSpeechVad(SileroSpeechProbabilityModel(context.assets)).use { vad ->
+                vad.prepare(16_000)
+                fixtures.forEach { (name, samples) ->
+                    vad.reset()
+                    var policy = AcousticBargeInPolicy()
+                    var starts = 0
+                    var sequence = 0L
+                    fun feed(block: ShortArray) {
+                        AudioFrame(sequence++, 0, block, block.size, { it.fill(0) }).use { frame ->
+                            val update = policy.accept(vad.accept(frame), frame.validSamples, outputPlaying = false)
+                            if (update.started) starts++
+                            if (update.endpoint) policy = AcousticBargeInPolicy(settlingMs = 0)
+                        }
+                    }
+                    repeat(30) { feed(ShortArray(320)) }
+                    for (offset in samples.indices step 320) {
+                        feed(samples.copyOfRange(offset, minOf(offset + 320, samples.size)))
+                    }
+                    if (name.endsWith("chinese")) assertTrue("No complete onset: $name", starts > 0)
+                    else assertEquals("False continuous-listening onset: $name", 0, starts)
+                    instrumentation.sendStatus(0, Bundle().apply {
+                        putString("continuous_gate_fixture", name)
+                        putInt("confirmed_onsets", starts)
+                    })
+                }
+            }
+        } finally { fixtures.values.forEach { it.fill(0) } }
+    }
+
     private fun classify(vad: VoiceActivityDetector, samples: ShortArray): Int {
         vad.reset()
         var speechFrames = 0
