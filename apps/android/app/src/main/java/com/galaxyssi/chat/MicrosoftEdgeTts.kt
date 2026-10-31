@@ -2,7 +2,11 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
+import com.galaxyssi.chat.voice.audio.PlaybackEchoReference
 import com.galaxyssi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.galaxyssi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.galaxyssi.chat.voice.metrics.VoiceTraceEvents
@@ -30,6 +34,8 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class MicrosoftEdgeTts(private val context: Context) {
+    internal val echoReference = PlaybackEchoReference()
+    private val referenceCleanup = Handler(Looper.getMainLooper())
     private data class PrefetchRequest(
         val sessionId: String,
         val key: String,
@@ -198,6 +204,7 @@ class MicrosoftEdgeTts(private val context: Context) {
 
     fun shutdown() {
         stop()
+        echoReference.clear()
         prefetchExecutor.shutdownNow()
         client.dispatcher.executorService.shutdown()
     }
@@ -362,7 +369,22 @@ class MicrosoftEdgeTts(private val context: Context) {
         val latch = CountDownLatch(1)
         val failure = AtomicReference<IOException?>(null)
         val mp = MediaPlayer()
+        var reference: FloatArray? = null
+        var referenceId: Long? = null
         try {
+            if (communicationPlayback) {
+                val preparedAt = SystemClock.elapsedRealtime()
+                val prepared = runCatching {
+                    val pcm = LocalWhisperAsr.decodeAudioBytesToPcm16(audio.copyOf(), "mp3")
+                    try { PlaybackEchoReference.prepare(pcm) } finally { pcm.fill(0) }
+                }
+                reference = prepared.getOrNull()
+                trace(traceId, "tts_echo_reference_prepared", mapOf(
+                    "success" to prepared.isSuccess.toString(),
+                    "duration_ms" to (SystemClock.elapsedRealtime() - preparedAt).toString(),
+                    "error_code" to prepared.exceptionOrNull()?.javaClass?.simpleName.orEmpty()
+                ))
+            }
             mp.setAudioAttributes(if (mediaPlayback) android.media.AudioAttributes.Builder()
                 .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                 .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()
@@ -382,12 +404,19 @@ class MicrosoftEdgeTts(private val context: Context) {
             mp.prepare()
             ensureCurrent(generation)
             mp.start()
+            reference?.let {
+                referenceId = echoReference.start(it, SystemClock.elapsedRealtime())
+                reference = null
+            }
             runCatching(onPlaybackStarted)
             trace(traceId, VoiceTraceEvents.TTS_PLAYBACK_STARTED, mapOf("tts_provider" to "microsoft_edge"), once = true)
             check(latch.await(90, TimeUnit.SECONDS)) { "speech_playback_timeout" }
             ensureCurrent(generation)
             failure.get()?.let { throw it }
         } finally {
+            reference?.fill(0f)
+            referenceId?.let { echoReference.finish(it, SystemClock.elapsedRealtime()) }
+            referenceCleanup.postDelayed({ echoReference.prune(SystemClock.elapsedRealtime()) }, 1_100L)
             synchronized(playbackLock) {
                 if (player === mp) player = null
                 if (activePlaybackLatch === latch) activePlaybackLatch = null

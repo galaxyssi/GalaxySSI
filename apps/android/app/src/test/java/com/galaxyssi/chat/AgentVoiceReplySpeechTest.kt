@@ -12,6 +12,84 @@ class AgentVoiceReplySpeechTest {
     }
     private val speech = AgentVoiceReplySpeech(session)
 
+    @Test fun acceptedInputIsAcknowledgedOnceWithoutConsumingTheAnswer() {
+        val text = "正在处理“查一下深圳明天的天气”"
+        val acknowledgement = speech.acknowledge("voice", "turn", text)
+        assertTrue(acknowledgement.beginSessionId.isNotBlank())
+        assertEquals(acknowledgement.beginSessionId, acknowledgement.finishSessionId)
+        assertEquals(text, acknowledgement.chunks.joinToString("") { it.speechText })
+        repeat(10) {
+            session.registerTurn("voice", "turn")
+            assertTrue(speech.acknowledge("voice", "turn", text).chunks.isEmpty())
+            assertTrue(speech.observe(emptyList()).chunks.isEmpty())
+        }
+        speech.controller.disable(acknowledgement.beginSessionId)
+        assertTrue(speech.acknowledge("voice", "turn", text).chunks.isEmpty())
+        val reply = speech.observe(listOf(entry("深圳明天多云。", complete = true)))
+        assertTrue(reply.beginSessionId.isNotBlank())
+        assertNotEquals(acknowledgement.beginSessionId, reply.beginSessionId)
+        assertEquals(listOf("深圳明天多云。"), reply.chunks.map { it.speechText })
+    }
+
+    @Test fun anActualAnswerTakesOverAcknowledgementWithoutReplayingIt() {
+        val acknowledgement = speech.acknowledge("voice", "turn", "正在处理“查天气”")
+        val reply = speech.observe(listOf(entry("天气已经查到了。")))
+        assertTrue(reply.beginSessionId.isNotBlank())
+        assertTrue(speech.controller.disable(acknowledgement.beginSessionId).isEmpty())
+        assertTrue(speech.controller.isPlaying())
+        assertTrue(speech.acknowledge("voice", "turn", "正在处理“查天气”").chunks.isEmpty())
+        val final = speech.observe(listOf(entry("天气已经查到了。明天多云。", complete = true)))
+        assertEquals(reply.beginSessionId, final.finishSessionId)
+        assertEquals(listOf("明天多云。"), final.chunks.map { it.speechText })
+    }
+
+    @Test fun aFastReplySuppressesALateAcknowledgement() {
+        speech.observe(listOf(entry("你好。", complete = true)))
+        assertTrue(speech.acknowledge("voice", "turn", "正在处理“你好”").chunks.isEmpty())
+    }
+
+    @Test fun unacceptedBlankAndOtherInputsCannotProduceAcknowledgements() {
+        assertTrue(speech.acknowledge("voice", "turn", " ").chunks.isEmpty())
+        assertTrue(speech.acknowledge("typed-input", "turn", "正在处理“查天气”").chunks.isEmpty())
+        assertTrue(speech.acknowledge("voice", "unsubmitted", "正在处理“查天气”").chunks.isEmpty())
+        assertTrue(speech.acknowledge("voice", "turn", "正在处理“查天气”").chunks.isNotEmpty())
+    }
+
+    @Test fun aNewUtteranceInterruptsAcknowledgementAndGetsItsOwnConfirmation() {
+        val previous = speech.acknowledge("voice", "turn", "正在处理“查天气”")
+        session.registerTrace("next")
+        assertEquals(previous.beginSessionId, speech.observe(emptyList()).cancelSessionId)
+        assertTrue(speech.acknowledge("voice", "turn", "旧提示").chunks.isEmpty())
+        session.registerTurn("next", "next-turn")
+        val next = speech.acknowledge("next", "next-turn", "正在处理“打开动态”")
+        assertTrue(next.beginSessionId.isNotBlank())
+        assertNotEquals(previous.beginSessionId, next.beginSessionId)
+        assertEquals(listOf("正在处理“打开动态”"), next.chunks.map { it.speechText })
+    }
+
+    @Test fun muteAndHangupStopAcknowledgementWithoutResumingIt() {
+        val previous = speech.acknowledge("voice", "turn", "正在处理“查天气”")
+        session.mute(true)
+        assertEquals(previous.beginSessionId, speech.observe(emptyList()).cancelSessionId)
+        assertTrue(speech.acknowledge("voice", "turn", "旧提示").chunks.isEmpty())
+        session.mute(false)
+        assertTrue(speech.acknowledge("voice", "turn", "旧提示").chunks.isEmpty())
+        session.end()
+        assertTrue(speech.acknowledge("voice", "turn", "旧提示").chunks.isEmpty())
+        session.begin("other-conversation")
+        assertTrue(speech.acknowledge("voice", "turn", "旧提示").chunks.isEmpty())
+    }
+
+    @Test fun visualOnlyResultStopsAcknowledgementAndCompletesSilently() {
+        val acknowledgement = speech.acknowledge("voice", "turn", "正在处理“给出图片”")
+        val result = speech.observe(listOf(visualFinal()))
+        assertTrue(result.completedWithoutPlayback)
+        assertEquals(acknowledgement.beginSessionId, result.cancelSessionId)
+        assertTrue(result.chunks.isEmpty())
+        assertTrue(speech.acknowledge("voice", "turn", "旧提示").chunks.isEmpty())
+        assertFalse(speech.observe(listOf(visualFinal())).completedWithoutPlayback)
+    }
+
     @Test fun startsWithTheFirstSentenceWithoutWaitingForTheFinalAnswer() {
         val first = speech.observe(listOf(entry("第一句已经生成。")))
         assertTrue(first.beginSessionId.isNotBlank())

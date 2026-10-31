@@ -75,7 +75,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     private var wakeDetailView: TextView? = null
     private var wakeToggle: Switch? = null
     private var bargeAsr: AgentBargeInTranscription? = null
-    internal val bargeIn = AcousticBargeInCapture(activity.voiceAudioHub(), activity.voiceAssistantScope) {
+    internal val bargeIn = AcousticBargeInCapture(activity.voiceAudioHub(), activity.voiceAssistantScope,
+        activity.microsoftTts.echoReference) {
         activity.runOnUiThread(it)
     }
     private var bargeInUnavailableForCall = false
@@ -627,10 +628,17 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
     }
 
-    fun onTurnSubmitted(traceId: String, turnId: String) {
+    fun onTurnSubmitted(traceId: String, turnId: String, input: String = "") {
         session.registerTurn(traceId, turnId)
         if (session.acceptsTrace(traceId) && session.latestTurnId == turnId) {
-            panel.transcript.text = ""
+            if (visible() && input.isNotBlank()) {
+                val text = activity.getString(R.string.voice_call_processing_input, input.trim())
+                val command = replySpeech.acknowledge(traceId, turnId, text)
+                if (command.beginSessionId.isNotBlank()) {
+                    panel.transcript.text = text
+                    playSpeech(command, acknowledgement = true)
+                }
+            } else if (input.isBlank()) panel.transcript.text = ""
             resumeDuplexListening()
         }
     }
@@ -706,6 +714,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                     "max_rms" to statistics.maxRms.toString(),
                     "max_vad_probability" to statistics.maxProbability.toString(),
                     "candidate_duration_ms" to statistics.maxCandidateMs.toString(),
+                    "max_echo_correlation" to statistics.maxEchoCorrelation.toString(),
+                    "echo_rejected_frames" to statistics.echoRejectedFrames.toString(),
                     "capture_outcome" to outcome
                 ))
             },
@@ -958,10 +968,17 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         if (!session.active || session.muted || !visible() || bargeIn.collectingUtterance ||
             (activity.isVoiceCaptureActive() && !bargeIn.active)) return
         val command = replySpeech.observe(entries)
+        if (command.beginSessionId.isNotBlank() || command.completedWithoutPlayback) panel.transcript.text = ""
         if (command.completedWithoutPlayback) {
+            speechRevision++
+            activity.applyAgentReplySpeechCommand(command, replySpeech.controller)
             resumeDuplexListening(afterPlayback = true)
             return
         }
+        playSpeech(command)
+    }
+
+    private fun playSpeech(command: AgentReplySpeechCommand, acknowledgement: Boolean = false) {
         val token = session.generation
         if (command.beginSessionId.isNotBlank()) speechRevision++
         val speech = speechRevision
@@ -975,7 +992,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             TtsChunkSchedulerCallbacks(
                 onPlaybackStarted = { chunk ->
                     if (ownsPlayback()) {
-                        VoiceLatencyTelemetry.record(activity, traceId, VoiceTraceEvents.VOICE_REPLY_PLAYBACK_STARTED,
+                        VoiceLatencyTelemetry.record(activity, traceId,
+                            if (acknowledgement) "voice_input_ack_playback_started" else VoiceTraceEvents.VOICE_REPLY_PLAYBACK_STARTED,
                             mapOf("playback_session_id" to chunk.requestId,
                                 "speech_characters" to chunk.speechText.codePointCount(0, chunk.speechText.length).toString(),
                                 "tts_provider" to activity.activeProgressiveSpeechProvider), once = true)
@@ -984,7 +1002,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                 },
                 onFinished = { success, errorCode ->
                     if (ownsPlayback()) {
-                        VoiceLatencyTelemetry.record(activity, traceId, VoiceTraceEvents.VOICE_REPLY_PLAYBACK_FINISHED,
+                        VoiceLatencyTelemetry.record(activity, traceId,
+                            if (acknowledgement) "voice_input_ack_playback_finished" else VoiceTraceEvents.VOICE_REPLY_PLAYBACK_FINISHED,
                             mapOf("playback_session_id" to playbackSessionId, "success" to success.toString(),
                                 "error_code" to errorCode.orEmpty()), once = true)
                         if (!success) Toast.makeText(activity, R.string.agent_reply_speech_failed, Toast.LENGTH_SHORT).show()
@@ -993,7 +1012,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                 },
                 onCancelled = { reason ->
                     if (ownsPlayback()) {
-                        VoiceLatencyTelemetry.record(activity, traceId, VoiceTraceEvents.VOICE_REPLY_PLAYBACK_CANCELLED,
+                        VoiceLatencyTelemetry.record(activity, traceId,
+                            if (acknowledgement) "voice_input_ack_playback_cancelled" else VoiceTraceEvents.VOICE_REPLY_PLAYBACK_CANCELLED,
                             mapOf("playback_session_id" to playbackSessionId, "error_code" to reason.name), once = true)
                         stopAcousticCapture()
                         session.mute(true)

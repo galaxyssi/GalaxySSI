@@ -24,9 +24,11 @@ internal data class AcousticBargeInCallbacks(
 internal class AcousticBargeInCapture(
     private val hub: VoiceAudioHub,
     private val scope: CoroutineScope,
+    private val echoReference: PlaybackEchoReference? = null,
     private val dispatch: (() -> Unit) -> Unit
 ) {
-    private class Run(val callbacks: AcousticBargeInCallbacks) {
+    private class Run(val callbacks: AcousticBargeInCallbacks, reference: PlaybackEchoReference?) {
+        val echoMonitor = reference?.let { PlaybackEchoReference.Monitor(it) }
         val policy = AcousticBargeInPolicy()
         val finishing = AtomicBoolean(false)
         @Volatile var cancelled = false
@@ -46,7 +48,7 @@ internal class AcousticBargeInCapture(
 
     fun start(callbacks: AcousticBargeInCallbacks): Boolean {
         if (current != null || hub.activeSession() != null) return false
-        val run = Run(callbacks)
+        val run = Run(callbacks, echoReference)
         current = run
         run.watchdog = scope.launch {
             delay(115_000L)
@@ -76,6 +78,7 @@ internal class AcousticBargeInCapture(
                 override fun onPcmFrame(session: VoiceAudioSession, frame: PcmFramePacket) {
                     run.frameSamples = frame.samples.size
                     run.frames++
+                    if (!run.collecting) run.echoMonitor?.append(frame)
                     frame.samples.fill(0)
                 }
 
@@ -86,10 +89,11 @@ internal class AcousticBargeInCapture(
                         finish(run, unavailable = "echo_protection_lost")
                         return
                     }
-                    val update = run.policy.accept(decision, run.frameSamples, callbacks.isOutputPlaying())
+                    val echo = !run.collecting && decision.isSpeech && run.echoMonitor?.isEcho() == true
+                    val update = run.policy.accept(decision, run.frameSamples, callbacks.isOutputPlaying(), echo)
                     if (update.started) {
                         run.collecting = true
-                        val statistics = run.policy.statistics()
+                        val statistics = statistics(run)
                         val protectedState = hub.currentState()
                         dispatchIfCurrent(run) {
                             if (run.protectionLost || (!run.finishing.get() &&
@@ -114,6 +118,7 @@ internal class AcousticBargeInCapture(
                 }
 
                 override fun onInputRouteChanged(session: VoiceAudioSession, route: String) {
+                    run.echoMonitor?.clear()
                     if (!AcousticBargeInPolicy.hasEchoProtection(hub.currentState())) {
                         run.protectionLost = true
                         finish(run, unavailable = "audio_route_changed")
@@ -167,7 +172,8 @@ internal class AcousticBargeInCapture(
         val session = run.session ?: return
         if (!run.finishing.compareAndSet(false, true)) return
         run.watchdog?.cancel()
-        val statistics = run.policy.statistics()
+        val statistics = statistics(run)
+        run.echoMonitor?.clear()
         val state = hub.currentState()
         hub.requestStop(session, if (send) PcmStopReason.USER_SEND else PcmStopReason.USER_CANCEL)
         scope.launch {
@@ -206,4 +212,9 @@ internal class AcousticBargeInCapture(
     private fun dispatchIfCurrent(run: Run, block: () -> Unit) = dispatch {
         if (current === run && !run.cancelled) block()
     }
+
+    private fun statistics(run: Run) = run.policy.statistics().copy(
+        maxEchoCorrelation = run.echoMonitor?.maximumCorrelation ?: 0f,
+        echoRejectedFrames = run.echoMonitor?.rejectedFrames ?: 0L
+    )
 }

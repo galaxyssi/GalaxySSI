@@ -3,6 +3,7 @@
     <string name="voice_call_start">开始语音对话</string>
     <string name="voice_call_listening">正在聆听</string>
     <string name="voice_call_processing">正在处理</string>
+    <string name="voice_call_processing_input">正在处理“%1$s”</string>
     <string name="voice_call_task_failed">任务未完成</string>
     <string name="voice_call_speaking">正在回答</string>
     <string name="voice_call_muted">麦克风已暂停</string>
