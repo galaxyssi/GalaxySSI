@@ -353,6 +353,13 @@ class AgentRichContentView(
     }
 
     private fun renderBlock(block: AgentRichBlock, scope: RenderScope): View {
+        if (AgentHtmlArtifactPreview.supports(block) &&
+            (block.metadata["runtime_artifact"] == "true" || block.uri.startsWith("content://"))) {
+            return AgentHtmlArtifactView(activity, block, artifactBlock(block)) { html ->
+                htmlAnimationBlock(block.copy(type = AgentRichBlockType.HTML, text = html, fallbackText = ""),
+                    ((activity.resources.configuration.screenWidthDp - 32) * 1.2f).toInt().coerceIn(320, 520))
+            }
+        }
         return when (block.type) {
         AgentRichBlockType.TEXT -> selectableText(block.text, 16f)
         AgentRichBlockType.HEADING -> selectableText(
@@ -996,7 +1003,7 @@ class AgentRichContentView(
         return container
     }
 
-    private fun htmlAnimationBlock(block: AgentRichBlock): View = LinearLayout(activity).apply {
+    private fun htmlAnimationBlock(block: AgentRichBlock, heightDp: Int = 280): View = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
         block.title.takeIf(String::isNotBlank)?.let { addView(selectableText(it, 15f).apply {
             setTypeface(typeface, Typeface.BOLD)
@@ -1032,7 +1039,7 @@ class AgentRichContentView(
         coordinatePlayback(webView)
         addView(GalaxySSIPinchZoomViewport(activity).apply {
             attach(webView)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(280)))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(heightDp)))
         if (block.fallbackText.isNotBlank()) addView(selectableText(block.fallbackText, 12f).apply {
             setTextColor(Color.parseColor("#66717D"))
             setPadding(0, dp(6), 0, 0)
@@ -1044,7 +1051,7 @@ class AgentRichContentView(
         <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; media-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; font-src 'none'; form-action 'none'; base-uri 'none'">
         <style>html,body{margin:0;padding:0;width:100%;min-height:100%;overflow:auto;background:transparent;color:#14202b;font-family:system-ui,sans-serif;touch-action:pan-x pan-y pinch-zoom}*{box-sizing:border-box;max-width:100%}</style>
-        </head><body>${fragment.take(32_000)}</body></html>
+        </head><body>${fragment.take(AgentHtmlArtifactPreview.MAX_BYTES)}</body></html>
     """.trimIndent()
 
     private fun webPageBlock(block: AgentRichBlock): View {

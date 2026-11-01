@@ -11,6 +11,41 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AgentProcessClockDeviceTest {
+    @Test fun blockedWorkspaceDisplaysFrozenStatusAndStillAllowsAuthoritativeRecovery() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var row: View
+            lateinit var process: AgentTranscriptEntry
+            var blockedText = ""
+            scenario.onActivity { activity ->
+                process = AgentTranscriptEntry("blocked-clock", AgentTranscriptRole.PROCESS, "Preview failed",
+                    System.currentTimeMillis() - 5000, conversationId = "blocked-clock", taskId = "blocked-task",
+                    turnId = "blocked-turn")
+                activity.renderedAgentTranscriptSourceEntries = listOf(process)
+                activity.agentProcessCompletionLookups[process.turnId] = AgentProcessCompletionLookup(
+                    process.timestampMillis + 4000, android.os.SystemClock.elapsedRealtime(), AgentWorkspaceStatus.BLOCKED,
+                    process.timestampMillis, process.conversationId, 8)
+                assertFalse(activity.agentProcessIsRunning(process))
+                assertEquals(process.timestampMillis + 4000,
+                    activity.agentProcessCompletionTimestamp(process, listOf(process)))
+                row = activity.agentProcessTranscriptRow(process)
+                activity.findViewById<ViewGroup>(android.R.id.content).addView(row)
+                blockedText = activity.getString(R.string.agent_trace_blocked, activity.agentProcessedDuration(4000), "").trimEnd()
+                assertEquals(blockedText, status(row).text.toString())
+            }
+            Thread.sleep(1300)
+            scenario.onActivity { activity ->
+                assertEquals(blockedText, status(row).text.toString())
+                activity.agentProcessCompletionLookups[process.turnId] = AgentProcessCompletionLookup(
+                    null, android.os.SystemClock.elapsedRealtime(), AgentWorkspaceStatus.WAITING_RESPONSE,
+                    process.timestampMillis, process.conversationId, 9)
+                assertTrue(activity.agentProcessIsRunning(process))
+                assertNull(activity.agentProcessCompletionTimestamp(process, listOf(process)))
+                (row.parent as ViewGroup).removeView(row)
+                activity.agentProcessCompletionLookups.remove(process.turnId)
+            }
+        }
+    }
+
     @Test fun authoritativeCompletionWinsOverAnInterimReply() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

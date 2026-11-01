@@ -681,7 +681,9 @@ class EncryptedAgentWorkspaceStore(
         if (previousPresentation?.status != normalized.status) {
             AgentConversationWindows.processStateChanged(normalized.conversationId, normalized.workspaceId,
                 AgentProcessCompletionLookup(
-                    completedAtMillis = normalized.updatedAtMillis.takeIf { normalized.status.isTerminal },
+                    completedAtMillis = normalized.updatedAtMillis.takeIf {
+                        AgentTranscriptPresentationPolicy.processClockStopsFor(normalized.status)
+                    },
                     checkedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime(),
                     status = normalized.status,
                     startedAtMillis = normalized.createdAtMillis.takeIf { it > 0L },

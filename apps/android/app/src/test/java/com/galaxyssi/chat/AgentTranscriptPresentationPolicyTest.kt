@@ -625,8 +625,11 @@ class AgentTranscriptPresentationPolicyTest {
     }
 
     @Test
-    fun stopsProcessClockOnlyForTerminalWorkspaceStates() {
+    fun freezesProcessClockForTerminalAndInactiveWorkspaceStates() {
         val stopped = setOf(
+            AgentWorkspaceStatus.BLOCKED,
+            AgentWorkspaceStatus.PAUSED,
+            AgentWorkspaceStatus.WAITING_CONFIRMATION,
             AgentWorkspaceStatus.COMPLETED,
             AgentWorkspaceStatus.FAILED,
             AgentWorkspaceStatus.CANCELLED

@@ -1335,7 +1335,9 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
             manuallyCollapsedWhileActive = groupKey in collapsedActiveAgentProcessGroups
         )
     val timelineRuntime = agentTimelineRuntime(entry)
-    val timelineActions = if (completed) {
+    val timelineActions = if (agentProcessPhase(entry) in setOf(
+            AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED
+        )) {
         emptyList()
     } else {
         timelineRuntime
@@ -1412,6 +1414,12 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                             val nextText = getString(
                                 if (deliveryUnconfirmed) {
                                     R.string.agent_trace_delivery_wait_ended
+                                } else if (agentProcessPhase(entry) == AgentPhase.BLOCKED) {
+                                    R.string.agent_trace_blocked
+                                } else if (agentProcessPhase(entry) == AgentPhase.PAUSED) {
+                                    R.string.agent_trace_paused
+                                } else if (agentProcessPhase(entry) == AgentPhase.WAITING_CONFIRMATION) {
+                                    R.string.agent_trace_waiting_confirmation
                                 } else if (clock.completedAtMillis != null) {
                                     R.string.agent_trace_processed
                                 } else {
