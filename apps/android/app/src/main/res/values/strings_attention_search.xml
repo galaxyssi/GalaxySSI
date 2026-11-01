@@ -1,0 +1,21 @@
+<resources>
+    <string name="attention_search_title">Search news</string>
+    <string name="attention_search_hint">Search all news</string>
+    <string name="attention_search_clear">Clear search</string>
+    <string name="attention_search_all">All news</string>
+    <string name="attention_search_sources">All sources</string>
+    <string name="attention_search_time">All time</string>
+    <string name="attention_search_day">Past 24 hours</string>
+    <string name="attention_search_week">Past 7 days</string>
+    <string name="attention_search_month">Past 30 days</string>
+    <string name="attention_search_relevance">Relevance</string>
+    <string name="attention_search_newest">Newest</string>
+    <string name="attention_search_count">Search results · %1$d</string>
+    <string name="attention_search_loading">Searching…</string>
+    <string name="attention_search_empty">No matching news</string>
+    <string name="attention_search_error">Search failed</string>
+    <string name="attention_search_retry">Retry</string>
+    <string name="attention_search_source_filter">Source</string>
+    <string name="attention_search_time_filter">Time</string>
+    <string name="attention_search_sort">Sort</string>
+</resources>

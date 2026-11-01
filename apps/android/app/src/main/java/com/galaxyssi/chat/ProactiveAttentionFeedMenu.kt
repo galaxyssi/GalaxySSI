@@ -16,7 +16,8 @@ internal class ProactiveAttentionFeedMenu(
     selected: AttentionFeedFilter,
     select: (AttentionFeedFilter) -> Unit,
     settings: () -> Unit,
-    dismissed: () -> Unit
+    dismissed: () -> Unit,
+    search: (() -> Unit)? = null
 ) {
     val content = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -25,6 +26,11 @@ internal class ProactiveAttentionFeedMenu(
     private val popup = PopupWindow(context)
 
     init {
+        if (search != null) {
+            content.addView(row("SEARCH", R.string.attention_search_title, R.drawable.ic_hub_search, false, search))
+            content.addView(View(context).apply { setBackgroundColor(context.getColor(R.color.separator)) },
+                LinearLayout.LayoutParams(-1, dp(1)).apply { marginStart = dp(16); marginEnd = dp(16); topMargin = dp(4); bottomMargin = dp(4) })
+        }
         listOf(
             Triple(AttentionFeedFilter.ALL, R.string.attention_menu_all, R.drawable.ic_attention_all),
             Triple(AttentionFeedFilter.UNREAD, R.string.attention_menu_unread, R.drawable.ic_attention_unread),

@@ -16,7 +16,8 @@ import androidx.core.view.doOnLayout
 
 /** Copy, native selection and article feedback share one anchored menu. */
 internal class AttentionHeadlineView(context: Context, private val openArticle: () -> Unit,
-    private val feedback: (AttentionHeadlineAction) -> Unit) : TextView(context) {
+    private val feedback: (AttentionHeadlineAction) -> Unit,
+    private val decorate: (String) -> CharSequence = { it }) : TextView(context) {
     private var popup: AttentionHeadlineMenu? = null
     private var selectionMode: ActionMode? = null
     private var selecting = false
@@ -54,7 +55,7 @@ internal class AttentionHeadlineView(context: Context, private val openArticle: 
     fun updateHeadline(value: String) {
         // Read receipts and late translations must not replace text under selection handles.
         if (selecting || popup != null) pendingHeadline = value
-        else if (text.toString() != value) text = value
+        else if (text.toString() != value) text = decorate(value)
     }
 
     fun showHeadlineActions() {

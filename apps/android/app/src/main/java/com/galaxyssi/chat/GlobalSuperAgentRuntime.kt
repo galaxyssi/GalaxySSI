@@ -498,6 +498,20 @@ class GlobalAgentRepository(context: Context) {
         return proactiveMessageStore.counts(loadFeedback())
     }
 
+    internal fun newsSearchState(saved: Set<String>, signal: android.os.CancellationSignal): AttentionNewsSearchState {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        signal.throwIfCanceled()
+        val feedback = loadFeedback().groupBy { it.proactiveMessageId }.mapValues { (_, values) -> values.maxBy { it.createdAtMillis } }
+        val excluded = feedback.mapNotNull { (id, value) ->
+            id.takeIf { value.kind in setOf(
+                GlobalAgentFeedbackKind.NOT_RELEVANT, GlobalAgentFeedbackKind.TOO_FREQUENT) }
+                ?.removePrefix("attention-feed:")
+        }.toSet()
+        return AttentionNewsSearchState(proactiveMessageStore.newsViewed(signal).filterKeys { it !in excluded }.mapValues { (id, at) ->
+            maxOf(at, feedback["attention-feed:$id"]?.createdAtMillis ?: 0L)
+        }, saved)
+    }
+
     internal fun voiceReminderPreview(): Pair<List<GlobalProactiveInboxItem>, Int> {
         if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
         return proactiveMessageStore.reminderPreview(loadFeedback())

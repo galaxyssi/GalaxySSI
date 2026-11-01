@@ -18,6 +18,15 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     private val helper = helpers.computeIfAbsent(context.getDatabasePath(name).absolutePath) { Helper(context.applicationContext, name) }
     private val db get() = helper.writableDatabase
 
+    internal fun search(query: AttentionNewsQuery, state: AttentionNewsSearchState, offset: Int,
+        signal: android.os.CancellationSignal) = AttentionNewsSearchSql.query(db, query, state, offset, signal)
+
+    internal fun searchSources(): List<String> = db.rawQuery(
+        "SELECT DISTINCT publisher FROM articles WHERE state='published' AND length(body)>0 " +
+            "AND publisher<>'' ORDER BY publisher COLLATE NOCASE", null).use { c ->
+        buildList { while (c.moveToNext()) add(c.getString(0)) }
+    }
+
     fun enqueue(article: AttentionFeedArticle, topicTitle: String) {
         db.beginTransaction()
         try {
