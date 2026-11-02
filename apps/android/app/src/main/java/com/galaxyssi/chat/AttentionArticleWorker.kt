@@ -86,7 +86,8 @@ class AttentionArticleWorker(context: Context, params: WorkerParameters) : Corou
                     try {
                         val article = prepared[index].getOrThrow()
                         if (article != null) {
-                            val translated = translator.translate(job.title.ifBlank { article.article.title }, article)
+                            val title = if (job.knowledge) article.article.title else job.title.ifBlank { article.article.title }
+                            val translated = translator.translate(title, article)
                             coroutine.ensureActive()
                             store.ready(job.key, translated)
                         }

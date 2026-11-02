@@ -23,6 +23,10 @@ internal object AttentionArticleExtractor {
         val title = document.selectFirst("meta[property=og:title]")?.attr("content")
             ?.takeIf(String::isNotBlank) ?: document.selectFirst("h1")?.text()?.takeIf(String::isNotBlank)
             ?: document.title()
+        // Some textbook layouts call the entire reading pane "sidebar-closed".
+        // Isolate the publisher's explicit body before generic page-chrome removal.
+        val education = AttentionEducationArticleBody.select(url, document)?.clone()
+        if (education != null) document.body().empty().appendChild(education)
         document.select(NOISE).remove()
         document.body().getAllElements().filter {
             it.normalName() !in setOf("body", "html") && (it.classNames() + it.id()).any { identity ->
@@ -30,7 +34,8 @@ internal object AttentionArticleExtractor {
                 noiseIdentity.containsMatchIn(name) && !absentRegion.containsMatchIn(name)
             }
         }.forEach(Element::remove)
-        val explicit = document.select(BODY).filter { it.text().length >= 200 }
+        val explicit = (education?.let(::listOf)
+            ?: document.select(BODY)).filter { it.text().length >= 200 }
         val articles = document.select("article").filter { it.text().length >= 200 }
         // Multiple independent article cards are a listing, not a readable article.
         if (explicit.isEmpty() && articles.count { it.parents().none { parent -> parent in articles } } > 1) return null
@@ -56,7 +61,9 @@ internal object AttentionArticleExtractor {
         val documentBody = if (parsed.body.length < article.content.length * .65)
             AttentionArticleDocument(listOfNotNull(parsed.cover) + AttentionArticleDocument.plain(article.content).blocks) else parsed
         require(documentBody.blocks.size <= 2000) { "article_structure_too_large" }
-        return AttentionArticleSource(article, documentBody)
+        val attribution = AttentionOpenTextbooks.attribution(url, source)
+        return AttentionArticleSource(article, if (attribution == null) documentBody else
+            AttentionArticleDocument(documentBody.blocks + attribution))
     }
 
     private fun linkDensity(element: Element) = element.select("a[href]").sumOf { it.text().length }.toDouble() /

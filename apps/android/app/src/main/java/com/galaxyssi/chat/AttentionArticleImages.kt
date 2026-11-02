@@ -95,7 +95,7 @@ internal object AttentionArticleImages {
 }
 
 internal class AttentionArticleImageView(context: Context, private val image: AttentionArticleBlock,
-    private val thumbnail: Boolean = false) : ImageView(context) {
+    private val thumbnail: Boolean = false, private val diagram: Boolean = false) : ImageView(context) {
     private var generation = 0
     private var job: Future<*>? = null
     private var requested = false
@@ -103,7 +103,7 @@ internal class AttentionArticleImageView(context: Context, private val image: At
 
     init {
         contentDescription = image.text.ifBlank { context.getString(R.string.attention_news_image) }
-        scaleType = if (thumbnail) ScaleType.CENTER_CROP else ScaleType.FIT_CENTER
+        scaleType = if (thumbnail && !diagram) ScaleType.CENTER_CROP else ScaleType.FIT_CENTER
         setBackgroundColor(context.getColor(R.color.separator))
         setOnClickListener { fullscreen() }
     }

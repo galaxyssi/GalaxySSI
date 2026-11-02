@@ -38,6 +38,7 @@ internal class ProactiveAttentionArticleView(
     private var statusLine: TextView? = null
     private var bookmark: ImageButton? = null
     private var sourceName = ""
+    private var knowledge = false
     private var evidenceChecked = false
     private var displayedUnread = false
     private var reloadPresentation: (() -> Unit)? = null
@@ -68,7 +69,7 @@ internal class ProactiveAttentionArticleView(
         }
         displayedTranslation = next.item.translatedTitle
         displayedTranslationProvider = next.item.titleTranslationProvider
-        row = next; sourceName = ""; evidenceChecked = false; reloadPresentation = null
+        row = next; sourceName = ""; knowledge = false; evidenceChecked = false; reloadPresentation = null
         removeAllViews()
         val item = next.item
         val news = item.newsArticleKey.isNotBlank()
@@ -178,6 +179,7 @@ internal class ProactiveAttentionArticleView(
             if (generation == token && presentation != null && presentation != previousPresentation) {
                 previousPresentation = presentation
                 sourceName = presentation.publisher
+                knowledge = presentation.knowledge
                 if (presentation.published > 0) date.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(presentation.published))
                 else date.text = context.getString(R.string.attention_news_collected,
                     SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.deliveredAtMillis)))
@@ -185,12 +187,13 @@ internal class ProactiveAttentionArticleView(
                     if (searchQuery.isBlank()) presentation.preview.ifBlank { preview } else preview, searchQuery)
                 if (!next.expanded && presentation.cover != null) {
                     thumbnail.removeAllViews()
-                    thumbnail.addView(AttentionArticleImageView(context, presentation.cover, true), LayoutParams(-1, -1))
+                    thumbnail.addView(AttentionArticleImageView(context, presentation.cover, true, presentation.knowledge), LayoutParams(-1, -1))
                     thumbnail.visibility = View.VISIBLE
                 }
                 if (next.expanded && presentation.document != null) {
                     articleBody.removeAllViews()
-                    articleBody.addView(AttentionArticleBodyView(context, presentation.document, item.newsArticleKey).apply { tag = "attention-expanded:${item.key}" })
+                    articleBody.addView((if (presentation.knowledge) AttentionKnowledgeReaderView(context, presentation.document, item.newsArticleKey)
+                        else AttentionArticleBodyView(context, presentation.document, item.newsArticleKey)).apply { tag = "attention-expanded:${item.key}" })
                 }
                 row?.let(::updateStatus)
             }
@@ -200,7 +203,8 @@ internal class ProactiveAttentionArticleView(
         evidence(item) { record ->
             if (token == generation) {
                 val source = record?.optJSONArray("sources")?.optJSONObject(0)
-                sourceName = AttentionFeedCollectionPlan.publisher(source?.optString("url").orEmpty(), source?.optString("title").orEmpty())
+                val authority = AttentionFeedCollectionPlan.publisher(source?.optString("url").orEmpty(), source?.optString("title").orEmpty())
+                if (authority.isNotBlank()) sourceName = authority
                 evidenceChecked = record?.optBoolean("verified", false) == true
                 row?.let(::updateStatus)
             }
@@ -222,7 +226,9 @@ internal class ProactiveAttentionArticleView(
         headline?.setTextColor(context.getColor(if (displayedUnread && next.item.newsArticleKey.isBlank()) R.color.attention_unread_title else R.color.text_primary))
         headline?.alpha = 1f
         val status = context.getString(if (evidenceChecked) R.string.attention_reader_checked else R.string.attention_reader_unverified)
-        sourceLine?.text = AttentionNewsSearchText.highlight(sourceName.ifBlank { next.item.topic }, searchQuery)
+        val sourceLabel = listOf(if (knowledge) context.getString(R.string.attention_knowledge_label) else "",
+            sourceName.ifBlank { next.item.topic }).filter(String::isNotBlank).joinToString(" · ")
+        sourceLine?.text = AttentionNewsSearchText.highlight(sourceLabel, searchQuery)
         statusLine?.text = listOf(status, if (displayedUnread) "\u2022" else context.getString(R.string.attention_is_read))
             .filter(String::isNotBlank).joinToString(" · ")
         bookmark?.apply {

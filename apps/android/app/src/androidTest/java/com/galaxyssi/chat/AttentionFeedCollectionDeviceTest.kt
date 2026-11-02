@@ -144,6 +144,52 @@ class AttentionFeedCollectionDeviceTest {
         assertTrue("Fewer than three independent feeds accessible: $passed", passed >= 3)
     }
 
+    @Test fun educationalIndexesAreCheckpointedDailyWithoutPublishingUnfetchedHeadlines() = isolated { context ->
+        val biology = AttentionTopic(AttentionLifeScienceSources.TOPIC, "Biology", "Biology")
+        configure(context, listOf(biology))
+        val requests = mutableListOf<String>()
+        val pdb = AttentionKnowledgeSources.endpoints[0]
+        val genome = AttentionKnowledgeSources.endpoints[1]
+        fun collect(at: Long) = ProactiveAttentionFeedCollector(context) { url ->
+            requests += url
+            when (url) {
+                pdb -> "<a href=\"/motm/1\">Myoglobin</a>"
+                genome -> "<a href=\"/genetics-glossary/RNA\">RNA</a>"
+                else -> feed("https://example.org/protein")
+            }
+        }.collect(at)
+        collect(now)
+        val store = ProactiveAttentionFeedStore(context)
+        assertEquals(now + AttentionKnowledgeSources.REFRESH_MILLIS, store.knowledgeRetryAt(biology.id, pdb))
+        assertTrue(store.articleRecordsAfter("", 100).any { it.optBoolean("knowledge") })
+        assertTrue(GlobalAgentRepository(context).proactiveMessages().isEmpty())
+        val database = AgentEncryptedDatabase(context, "attention_feed_v1")
+        val state = store.topicState(biology.id).put("cursor", 0).put("next", 0)
+        database.writeString("topic:${biology.id}", state.toString())
+        collect(now + 60_000)
+        assertEquals(1, requests.count { it == pdb })
+        assertEquals(1, requests.count { it == genome })
+        database.writeString("topic:${biology.id}", state.toString())
+        collect(now + AttentionKnowledgeSources.REFRESH_MILLIS)
+        assertEquals(2, requests.count { it == pdb })
+    }
+
+    @Test fun failedKnowledgeIndexDoesNotGetSuccessfulDailyCheckpoint() = isolated { context ->
+        val biology = AttentionTopic(AttentionLifeScienceSources.TOPIC, "Biology", "Biology")
+        configure(context, listOf(biology))
+        val pdb = AttentionKnowledgeSources.endpoints[0]
+        val genome = AttentionKnowledgeSources.endpoints[1]
+        ProactiveAttentionFeedCollector(context) { url -> when (url) {
+            pdb -> "<html>Temporarily unavailable</html>"
+            genome -> "<a href=\"/genetics-glossary/DNA\">DNA</a>"
+            else -> feed("https://example.org/protein")
+        } }.collect(now)
+        val store = ProactiveAttentionFeedStore(context)
+        assertEquals(0L, store.knowledgeRetryAt(biology.id, pdb))
+        assertTrue(store.sourceRetryAt(pdb) > now)
+        assertEquals(now + AttentionKnowledgeSources.REFRESH_MILLIS, store.knowledgeRetryAt(biology.id, genome))
+    }
+
     private fun configure(context: Context, topics: List<AttentionTopic>) {
         ProactiveAttentionStore(context).update { previous -> previous.copy(configured = true, enabled = true,
             topics = previous.topics.filter { old -> topics.none { it.id == old.id } }.map { it.copy(enabled = false) } + topics) }
