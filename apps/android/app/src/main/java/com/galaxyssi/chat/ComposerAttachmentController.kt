@@ -37,17 +37,19 @@ internal fun MainActivity.hasPendingPeerAttachmentPicker(): Boolean =
     composerAttachments().let { it.route == ROUTE_PEER && it.target.isNotBlank() }
 
 internal fun MainActivity.previewPickedAttachments(uris: List<Uri>, camera: Boolean = false,
-                                                 contactId: String? = null) {
+                                                 contactId: String? = null, imagesOnly: Boolean = false,
+                                                 onImported: (() -> Unit)? = null) {
     val state = composerAttachments()
     val route = if (contactId != null) ROUTE_PEER else state.route
     val target = contactId ?: state.target
-    if (target.isBlank() || uris.isEmpty()) return
+    if (target.isBlank() || uris.isEmpty()) { onImported?.invoke(); return }
     val activeAgentTarget = route == ROUTE_AGENT && target == agentTranscriptStore.activeConversation().id
     val current = if (activeAgentTarget) agentInputAttachments.map { ComposerAttachmentItem.from(it.draftDescriptor()) }
         else state.peers[target].orEmpty()
     val app = applicationContext
     val owner = java.lang.ref.WeakReference(this)
     attachmentImports.execute {
+      try {
         val base = if (route == ROUTE_AGENT && !activeAgentTarget) {
             val activity = owner.get() ?: return@execute
             AgentWindowStateStore(app).load(activity.conversationWindow.key, target).attachments
@@ -61,20 +63,42 @@ internal fun MainActivity.previewPickedAttachments(uris: List<Uri>, camera: Bool
                 owner.get()?.agentAttachmentMetadata(uri)?.let { metadata ->
                     val retained = ComposerAttachmentImport.retain(app, metadata,
                         if (route == ROUTE_AGENT) MAX_AGENT_ATTACHMENT_BYTES else Long.MAX_VALUE)
+                    if (imagesOnly && !retained.isImage) {
+                        if (retained.uri != metadata.uri) LocalAttachmentUris.resolve(app, retained.uri)?.delete()
+                        error("Clipboard content is not an image")
+                    }
                     ComposerAttachmentItem.from(retained.draftDescriptor())
                 }
             }.onFailure { importFailed = true }.getOrNull()
         }
         owner.get()?.runOnUiThread {
             val activity = owner.get()?.takeUnless { it.isFinishing || it.isDestroyed } ?: return@runOnUiThread
-            if (importFailed) Toast.makeText(activity, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
+            if (importFailed) Toast.makeText(activity, if (imagesOnly) R.string.composer_clipboard_image_unavailable
+                else R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
             if (files.isEmpty()) return@runOnUiThread
             if (uris.distinct().size > limit) {
                 Toast.makeText(activity, R.string.agent_attachment_rejected, Toast.LENGTH_LONG).show()
             }
             activity.acceptPickedAttachments(files, base, route, target, camera)
         }
+      } finally { onImported?.invoke() }
     }
+}
+
+internal fun MainActivity.configureComposerImagePaste() {
+    fun bind(input: android.widget.EditText, agent: Boolean) {
+        val view = input as? com.galaxyssi.chat.ui.ParagraphSelectingEditText ?: return
+        view.imageContentReceiver = com.galaxyssi.chat.ui.ComposerImageContentReceiver(view) { uris, release ->
+            val target = if (agent) agentTranscriptStore.activeConversation().id else selectedContact?.id.orEmpty()
+            if (target.isBlank() || isFinishing || isDestroyed) false else {
+                rememberAttachmentPickerTarget(agent)
+                previewPickedAttachments(uris, imagesOnly = true, onImported = release)
+                true
+            }
+        }
+    }
+    bind(agentGoalInput, true)
+    bind(messageInput, false)
 }
 
 internal fun MainActivity.acceptPickedAttachments(files: List<ComposerAttachmentItem>,

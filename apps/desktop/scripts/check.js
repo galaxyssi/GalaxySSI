@@ -11,6 +11,7 @@ const required = [
   "src/peer_hold_to_talk.js",
   "src/composer_voice_capture.js",
   "src/composer_stt.js",
+  "src/renderer/composer-clipboard.js",
   "src/peer_conversation_preview.js",
   "src/conversation_unread.js",
   "src/conversation_unread_indicator.js",

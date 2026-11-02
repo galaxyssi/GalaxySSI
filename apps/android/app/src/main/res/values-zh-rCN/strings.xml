@@ -944,6 +944,7 @@
     <string name="agent_clarify_memory_content">你希望我记住什么？</string>
     <string name="agent_clarify_automation_details">什么情况触发自动化，触发后执行什么操作？</string>
     <string name="agent_attachment_rejected">部分附件未添加。最多可添加 10 个文件，每个不超过 20 MB。</string>
+    <string name="composer_clipboard_image_unavailable">无法读取剪贴板图片，请重新复制图片或从文件中选择。</string>
     <string name="agent_attachment_hide_navigation">隐藏导航栏</string>
     <string name="agent_attachment_show_navigation">显示导航栏</string>
     <string name="agent_attachment_camera_unavailable">无法打开相机</string>

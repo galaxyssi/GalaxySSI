@@ -1120,6 +1120,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         traceStartup("agent_page")
         configureMessages()
         configureInput()
+        configureComposerImagePaste()
         configureWakePage()
         traceStartup("chat_pages")
         configureSettingsControlCenter()

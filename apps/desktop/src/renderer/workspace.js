@@ -255,6 +255,7 @@ const state = {
   taskBudget: loadTaskBudget(),
   recoveryDiagnostics: {},
   attachments: [],
+  composerPasteEpoch: 0,
   attachmentDetails: new Map(),
   renderingSignature: "",
   polling: false,
@@ -1058,6 +1059,7 @@ async function refreshPeerMessages() {
 }
 
 function clearPeerRuntimePlaintext() {
+  state.composerPasteEpoch++;
   state.composerVoice?.cancel();
   closePeerImageViewer();
   resetPeerImagePreviews();
@@ -1619,6 +1621,7 @@ function releaseStagedAttachments(paths) {
 }
 
 async function addAttachmentPaths(paths, knownDetails = []) {
+  const owner = { peer: state.activePeerRouteId, conversation: state.currentConversationId, epoch: state.composerPasteEpoch };
   const incoming = Array.isArray(paths) ? paths : [];
   const combined = [...state.attachments, ...incoming];
   state.attachments = Array.from(new Set(combined)).slice(0, 12);
@@ -1630,7 +1633,8 @@ async function addAttachmentPaths(paths, knownDetails = []) {
   const missing = state.attachments.filter((path) => !state.attachmentDetails.has(path));
   if (!missing.length) return;
   const details = await window.galaxyssi.describeAttachments(missing);
-  rememberAttachmentDetails(details);
+  if (owner.peer !== state.activePeerRouteId || owner.conversation !== state.currentConversationId || owner.epoch !== state.composerPasteEpoch) return;
+  rememberAttachmentDetails(details.filter((item) => state.attachments.includes(item.path)));
   renderAttachmentTray();
 }
 
@@ -1644,9 +1648,11 @@ async function addAttachments() {
 }
 
 async function pasteAttachments(event) {
-  const clipboardFiles = Array.from(event.clipboardData?.files || []).slice(0, 12);
-  if (!clipboardFiles.length) return;
+  const plan = window.GalaxySSIComposerClipboard.plan(event.clipboardData);
+  const clipboardFiles = plan.files;
+  if (!clipboardFiles.length && !plan.nativeImage) return;
   event.preventDefault();
+  const owner = { peer: state.activePeerRouteId, conversation: state.currentConversationId, epoch: state.composerPasteEpoch };
   try {
     const directPaths = [];
     const buffered = [];
@@ -1664,7 +1670,11 @@ async function pasteAttachments(event) {
     }
     const staged = buffered.length
       ? await window.galaxyssi.stageClipboardAttachments(buffered)
-      : [];
+      : plan.nativeImage ? await window.galaxyssi.pasteClipboardImage() : [];
+    if (owner.peer !== state.activePeerRouteId || owner.conversation !== state.currentConversationId || owner.epoch !== state.composerPasteEpoch) {
+      if (staged.length) releaseStagedAttachments(staged.map((item) => item.path));
+      return;
+    }
     await addAttachmentPaths(
       [...directPaths, ...staged.map((item) => item.path)],
       staged
