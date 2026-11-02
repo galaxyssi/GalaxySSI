@@ -78,6 +78,8 @@ therefore do not imply that all articles are already translated or published.
 
 Public article storage stays unencrypted. Schema 8 adds a single knowledge flag to
 schema 7 without resetting existing bodies, queues or inbox read/bookmark state.
+Schema 9 adds resumable per-article staging as described in
+[public article recovery](news-processing-recovery.md), without replacing published bodies.
 Neither discovery nor indexing requires a Desktop Agent or sends user chats to
 an external model.
 

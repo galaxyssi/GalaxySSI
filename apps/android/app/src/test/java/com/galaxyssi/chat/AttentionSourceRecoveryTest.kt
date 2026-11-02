@@ -7,14 +7,15 @@ import org.junit.Test
 import java.time.Instant
 
 class AttentionSourceRecoveryTest {
-    @Test fun researchUsesDatedThirtyDayWindowWithoutChangingBreakingNews() {
+    @Test fun lifeScienceUsesNinetyDaysWithoutChangingOtherResearchOrBreakingNews() {
         val now = Instant.parse("2026-10-25T12:00:00Z").toEpochMilli()
         val xml = """<rss><channel><item><title>Cell communication</title><link>https://example.org/biology</link>
             <pubDate>Thu, 15 Oct 2026 16:50:00 -0400</pubDate></item></channel></rss>"""
         assertTrue(ProactiveAttentionFeedPolicy.parse(xml, "ai_models", now).isEmpty())
         val parsed = ProactiveAttentionFeedPolicy.parse(xml, "protein_life_sciences", now, 30).single()
         assertEquals(Instant.parse("2026-10-15T20:50:00Z").toEpochMilli(), parsed.publishedAt)
-        assertEquals(30, ProactiveAttentionSourceCatalog.maxAgeDays("protein_life_sciences"))
+        assertEquals(90, ProactiveAttentionSourceCatalog.maxAgeDays("protein_life_sciences"))
+        assertEquals(30, ProactiveAttentionSourceCatalog.maxAgeDays("research_papers"))
         assertEquals(7, ProactiveAttentionSourceCatalog.maxAgeDays("ai_models"))
     }
 

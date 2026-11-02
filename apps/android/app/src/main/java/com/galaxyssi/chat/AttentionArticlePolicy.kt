@@ -93,13 +93,14 @@ internal object AttentionArticlePolicy {
 
 }
 
-internal class AttentionArticleTranslation(private val translate: suspend (String) -> String) {
+internal class AttentionArticleTranslation(private val progress: AttentionTranslationProgress? = null,
+    private val translate: suspend (String) -> String) {
     suspend fun run(title: String, document: AttentionArticleDocument): AttentionChineseArticle {
         require(document.body.length >= 200) { "article_body_missing" }
         var translatedAny = false
         suspend fun convert(text: String): String {
             if (text.isBlank() || !text.any(Char::isLetter) || AttentionArticlePolicy.chinese(text)) return text
-            val result = AttentionTranslationRecovery.convert(text, translate)
+            val result = AttentionTranslationRecovery.convert(text, progress, translate)
             translatedAny = translatedAny || result != text
             return result
         }
@@ -109,7 +110,8 @@ internal class AttentionArticleTranslation(private val translate: suspend (Strin
             block.copy(text = text, emphasis = block.emphasis.filter(text::contains))
         }
         val translated = AttentionArticleDocument(blocks)
-        require(AttentionArticlePolicy.chinese(translated.body)) { "article_translation_not_chinese" }
+        val prose = translated.blocks.filter { it.kind !in setOf("code", "attribution") }.joinToString("\n") { it.text }
+        require(AttentionArticlePolicy.chinese(prose)) { "article_translation_not_chinese" }
         return AttentionChineseArticle(chineseTitle, translated.body,
             if (translatedAny) AttentionMlKitTranslator.PROVIDER else "", translated)
     }
@@ -119,7 +121,7 @@ internal class AttentionArticleTranslation(private val translate: suspend (Strin
         var translatedAny = false
         suspend fun convert(text: String): String {
             if (!text.any(Char::isLetter) || AttentionArticlePolicy.chinese(text)) return text
-            val result = AttentionTranslationRecovery.convert(text, translate)
+            val result = AttentionTranslationRecovery.convert(text, progress, translate)
             translatedAny = translatedAny || result != text
             return result
         }

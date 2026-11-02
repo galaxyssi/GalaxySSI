@@ -31,6 +31,29 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     internal fun curate(items: List<GlobalProactiveInboxItem>, enabled: Set<String>, now: Long): List<GlobalProactiveInboxItem> =
         AttentionNewsCurationStore.decorate(db, items, enabled, now)
 
+    internal fun extracted(key: String, now: Long) = AttentionArticleCheckpoint.source(db, key, now)
+    internal fun checkpoint(key: String, source: AttentionArticleSource, now: Long) = AttentionArticleCheckpoint.save(db, key, source, now)
+    internal fun translationProgress(key: String) = AttentionArticleCheckpoint.progress(db, key)
+    internal fun progressCount(key: String) = AttentionArticleCheckpoint.progressCount(db, key)
+    internal fun continueTranslation(key: String, now: Long) = db.execSQL(
+        "UPDATE articles SET next_at=? WHERE id=? AND state IN ('pending','repair')", arrayOf(now + 1_000L, key))
+    internal fun translationModelReady() = db.execSQL("UPDATE articles SET next_at=0 WHERE state IN ('pending','repair') " +
+        "AND error='article_translation_model_pending'")
+    internal fun learnFeeds(origin: String, urls: List<String>, topics: Set<String>, now: Long) = AttentionLearnedFeedStore.remember(db, origin, urls, topics, now)
+    internal fun backfillSources() = AttentionLearnedFeedStore.backfill(db)
+    internal fun sourceProbe(topics: Set<String>, now: Long) = AttentionLearnedFeedStore.probe(db, topics, now)
+    internal fun sourceProbeDone(host: String, next: Long, status: String) = AttentionLearnedFeedStore.probeDone(db, host, next, status)
+    internal fun dueLearnedFeed(topic: String, now: Long) = AttentionLearnedFeedStore.dueFeed(db, topic, now)
+    internal fun deferLearnedFeed(url: String, until: Long, now: Long) = AttentionLearnedFeedStore.deferFeed(db, url, until, now)
+    internal fun learnedFeedTopics(url: String) = AttentionLearnedFeedStore.feedTopics(db, url)
+    internal fun nextSourceProbe(topics: Set<String>) = AttentionLearnedFeedStore.nextProbe(db, topics)
+    internal fun knownPublisherArticle(article: AttentionFeedArticle): AttentionFeedArticle {
+        val alias = AttentionLearnedFeedPolicy.publisherAlias(article.url) ?: return article
+        val previous = metadata(ProactiveAttentionFeedPolicy.urlKey(alias)) ?: return article
+        return if (previous.url == alias && previous.title.trim().equals(article.title.trim(), ignoreCase = true))
+            article.copy(key = previous.key, url = previous.url) else article
+    }
+
     fun enqueue(article: AttentionFeedArticle, topicTitle: String) {
         db.beginTransaction()
         try {
@@ -117,6 +140,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             put("error", ""); put("next_at", 0)
         }, "id = ?", arrayOf(key))
         db.execSQL("UPDATE articles SET state = 'ready' WHERE id = ? AND state <> 'published'", arrayOf(key))
+        AttentionArticleCheckpoint.complete(db, key)
         db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }
@@ -136,7 +160,10 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     fun requestVisual(key: String): Boolean = db.update("articles", ContentValues().apply { put("visual_requested", 1) },
         "id = ? AND state = 'published' AND visual_revision = 0 AND visual_requested = 0", arrayOf(key)) > 0
 
-    fun published(key: String) { db.execSQL("UPDATE articles SET state = 'published', error = '' WHERE id = ?", arrayOf(key)) }
+    fun published(key: String) {
+        db.execSQL("UPDATE articles SET state = 'published', error = '' WHERE id = ?", arrayOf(key))
+        metadata(key)?.let { AttentionLearnedFeedStore.observe(db, it.url, topics(key).keys) }
+    }
     fun failed(job: AttentionArticleJob, error: String, now: Long) {
         val base = if (error.startsWith("article_") && error !in setOf("article_translation_timeout",
                 "article_translation_model_pending")) 30 * 60_000L else 60_000L
@@ -193,7 +220,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         c.getString(4), c.getString(5), c.getLong(6), c.getLong(7),
         c.getInt(8), c.getString(9), c.getString(10), c.getString(11), c.getString(12), c.getInt(13) != 0)
 
-    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 8) {
+    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 11) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE articles(id TEXT PRIMARY KEY NOT NULL,url TEXT NOT NULL,topic TEXT NOT NULL," +
                 "topic_title TEXT NOT NULL,title TEXT NOT NULL,publisher TEXT NOT NULL,published INTEGER NOT NULL," +
@@ -207,8 +234,21 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             db.execSQL("CREATE TABLE metadata(id TEXT PRIMARY KEY NOT NULL,value TEXT NOT NULL)")
             queueIndex(db)
             AttentionArticleTopics.create(db)
+            AttentionArticleCheckpoint.create(db)
+            AttentionLearnedFeedStore.create(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 10) {
+                AttentionLearnedFeedStore.create(db)
+                db.execSQL("UPDATE articles SET next_at=0 WHERE state IN ('pending','repair') AND error IN " +
+                    "('article_translation_not_chinese','article_translation_numbers_changed','article_language_unknown','article_body_missing')")
+            }
+            if (oldVersion < 9) {
+                AttentionArticleCheckpoint.create(db)
+                db.execSQL("UPDATE articles SET next_at=0 WHERE state IN ('pending','repair') AND error IN " +
+                    "('article_translation_not_chinese','article_translation_numbers_changed','article_language_unknown','article_translation_timeout')")
+            }
+            if (oldVersion < 11) AttentionLearnedFeedStore.pruneDiscussions(db)
             if (oldVersion < 8) {
                 val hasKnowledge = db.rawQuery("PRAGMA table_info(articles)", null).use { c ->
                     var found = false
