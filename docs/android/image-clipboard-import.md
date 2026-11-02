@@ -70,7 +70,7 @@ files use existing owned-temp cleanup.
 ## Verification
 
 - Android debug APK and test APK built successfully; 34 related JVM tests passed.
-- The previous `0.1.7.11` increment passed all 34 S26U device tests: both input layouts, mixed text/image content,
+- All 38 S26U device tests passed on `0.1.7.12`: both input layouts, mixed text/image content,
   keyboard image commits, owner-bound editor launch, private-copy survival after
   deleting the provider cache source, original/compressed quality, crop controls,
   text selection and hold-to-talk.
@@ -87,14 +87,14 @@ files use existing owned-temp cleanup.
   retries for temporary directory locks. Cleanup remains restricted to the
   generated smoke directory under the system temp root.
 
-Four new image-copy device tests cover original encoded bytes for inline/local
+The four new image-copy device tests passed, covering original encoded bytes for inline/local
 Agent images, source deletion, exact image selection after list reordering, and
-the real contact Copy menu followed by native paste into both editors. They
-compile in the `0.1.7.12` test APK but have not yet run on a device: S26U
-disconnected from ADB before the final install. These tests are not counted as
-passed. The `0.1.7.12` install and image-copy device acceptance remain pending.
+the real contact Copy menu followed by native paste into both editors. The
+round-trip test verifies image MIME, absence of clipboard text, and matching
+SHA-256 after deleting the selected source file. Pasting opens the existing
+editor with original quality off by default and does not send a message.
 
-S26U received the previous `0.1.7.11` in-place install without clearing chats, pairing or model data.
+S26U received an in-place `0.1.7.12` (code `1425`) install without clearing chats, pairing or model data.
 No S20U or iOS device claim is made. Test screenshots and logs remain in ignored
 build/smoke directories, not in source control.
 
