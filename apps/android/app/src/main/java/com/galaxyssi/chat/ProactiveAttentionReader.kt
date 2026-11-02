@@ -46,7 +46,7 @@ internal class ProactiveAttentionReader(
     private var saved = emptySet<String>()
     private val pendingSaves = mutableMapOf<String, Boolean>()
     private val pendingReads = mutableSetOf<String>()
-    private val filters = listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED)
+    private val filters = listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED, AttentionFeedFilter.CURATED)
     private val manager = LinearLayoutManager(activity)
     private val adapter = ProactiveAttentionFeedAdapter { ProactiveAttentionArticleView(activity,
         ::toggle, ::toggleSaved, ask, sources, evidence, ::articleAction, loadArticle = ::loadArticle) }

@@ -142,11 +142,15 @@ class ProactiveAttentionActivity : Activity() {
         loader.execute {
             val loaded = runCatching {
                 val p = store.preferences()
+                val articles = AttentionArticleStore(applicationContext)
+                val enabledTopics = p.topics.filter { it.enabled }.map { it.id }.toSet()
                 val savedReaderState = readerStateStore.read()
                 val repository = GlobalAgentRepository(applicationContext)
                 val titles = ProactiveAttentionTitleStore(applicationContext)
-                if (!completeInbox) {
-                    val preview = runCatching { titles.decorate(repository.proactiveInboxPreview(savedReaderState, p.savedKeys)) }
+                // A latest-only preview cannot produce a representative cross-interest shortlist.
+                if (!completeInbox && savedReaderState.filter != AttentionFeedFilter.CURATED) {
+                    val preview = runCatching { articles.curate(titles.decorate(repository.proactiveInboxPreview(savedReaderState, p.savedKeys)),
+                        enabledTopics, System.currentTimeMillis()) }
                         .getOrDefault(emptyList())
                     if (preview.isNotEmpty()) runOnUiThread {
                         if (!isDestroyed && request == revision) {
@@ -159,7 +163,7 @@ class ProactiveAttentionActivity : Activity() {
                 val inbox = GlobalProactiveInboxPolicy.project(messageMap.values.toList(), repository.feedback())
                 val counts = runCatching { AttentionArticleStore(applicationContext)
                     .counts(p.topics.filter { it.enabled }.map { it.id }.toSet()) }.getOrNull()
-                Triple(Triple(p, titles.decorate(inbox), messageMap), savedReaderState, counts)
+                Triple(Triple(p, articles.curate(titles.decorate(inbox), enabledTopics, System.currentTimeMillis()), messageMap), savedReaderState, counts)
             }
             runOnUiThread {
                 reloadRunning = false

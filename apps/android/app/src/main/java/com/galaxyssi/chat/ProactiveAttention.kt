@@ -5,7 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class AttentionAlertMode { IMPORTANT, ALL, SILENT }
-enum class AttentionFeedFilter { ALL, IMPORTANT, UNREAD, SAVED }
+enum class AttentionFeedFilter { ALL, IMPORTANT, UNREAD, SAVED, CURATED }
 enum class AttentionTopicGroup { FINANCE, TECHNOLOGY, GALAXYSSI, RESEARCH, CUSTOM }
 
 data class AttentionTopic(val id: String, val title: String, val query: String, val enabled: Boolean = true)
@@ -127,6 +127,7 @@ object ProactiveAttentionPolicy {
         AttentionFeedFilter.IMPORTANT -> item.urgent
         AttentionFeedFilter.UNREAD -> item.isNew
         AttentionFeedFilter.SAVED -> item.key in saved
+        AttentionFeedFilter.CURATED -> item.newsSummary?.selected == true
     }
 
     fun important(result: String, ledger: GlobalEvidenceLedger): Boolean =

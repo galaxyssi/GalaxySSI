@@ -32,6 +32,7 @@ internal class ProactiveAttentionFeedMenu(
                 LinearLayout.LayoutParams(-1, dp(1)).apply { marginStart = dp(16); marginEnd = dp(16); topMargin = dp(4); bottomMargin = dp(4) })
         }
         listOf(
+            Triple(AttentionFeedFilter.CURATED, R.string.attention_menu_curated, R.drawable.ic_attention_curated),
             Triple(AttentionFeedFilter.ALL, R.string.attention_menu_all, R.drawable.ic_attention_all),
             Triple(AttentionFeedFilter.UNREAD, R.string.attention_menu_unread, R.drawable.ic_attention_unread),
             Triple(AttentionFeedFilter.SAVED, R.string.attention_menu_saved, R.drawable.ic_attention_bookmark)
