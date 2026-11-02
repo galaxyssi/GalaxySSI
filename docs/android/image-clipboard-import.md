@@ -1,6 +1,6 @@
 # Image clipboard import
 
-Android and Desktop version: `0.1.7.11` (Android version code `1424`).
+Android and Desktop version: `0.1.7.12` (Android version code `1425`).
 
 ## Android
 
@@ -28,6 +28,26 @@ clipboard content cannot enter the picker's immediate document-send branch.
 An unavailable clipboard image gets a localized import error. No clipboard
 listener polls or watches background clipboard changes.
 
+### Copying an image
+
+The contact image menu no longer uses the text/attachment-name copy branch.
+Long press carries the exact image attachment and resolves the message by its
+stable ID, so multiple images and list reordering cannot select the wrong image.
+Text and other attachment copy behavior is unchanged.
+
+Agent images, gallery items and full-screen viewers also expose image Copy.
+Copy reads the original encoded image stream, not the displayed thumbnail, and
+creates an independent private cache snapshot. The system clipboard receives an
+image MIME type and a readable content URI, not a filename, path or URL string.
+The snapshot remains readable if the original message file is deleted; native
+paste then enters the same crop/original-quality editor described above.
+
+Copies and cleanup run off the UI thread. Clipboard publication must succeed
+before old snapshots are pruned; the currently published image is protected.
+Unpublished snapshots are discarded on failure or destroyed activities. Source
+attachments are never deleted by clipboard cleanup and no public Download copy
+is created. Clipboard snapshots are transient cache, not message storage.
+
 ## Desktop
 
 Loaded image context menus now offer image copy using Electron's native
@@ -49,8 +69,8 @@ files use existing owned-temp cleanup.
 
 ## Verification
 
-- Android debug APK and test APK built successfully; 31 related JVM tests passed.
-- All 34 S26U device tests passed: both input layouts, mixed text/image content,
+- Android debug APK and test APK built successfully; 34 related JVM tests passed.
+- The previous `0.1.7.11` increment passed all 34 S26U device tests: both input layouts, mixed text/image content,
   keyboard image commits, owner-bound editor launch, private-copy survival after
   deleting the provider cache source, original/compressed quality, crop controls,
   text selection and hold-to-talk.
@@ -59,7 +79,7 @@ files use existing owned-temp cleanup.
   Production touch/selection behavior was not changed by that test adjustment.
 - All 109 Desktop checks passed, including image menu commands, clipboard payload
   variants, text fallback, late result isolation and preview-cache clearing.
-- The isolated Electron UI smoke passed with native clipboard testing enabled:
+- The isolated Electron UI smoke for the previous increment passed with native clipboard testing enabled:
   actual image copy, contact paste, no-file native bitmap fallback and text URL
   paste. Screenshots verified attachment previews. Common clipboard text/image
   formats were restored afterward.
@@ -67,7 +87,14 @@ files use existing owned-temp cleanup.
   retries for temporary directory locks. Cleanup remains restricted to the
   generated smoke directory under the system temp root.
 
-S26U received an in-place install without clearing chats, pairing or model data.
+Four new image-copy device tests cover original encoded bytes for inline/local
+Agent images, source deletion, exact image selection after list reordering, and
+the real contact Copy menu followed by native paste into both editors. They
+compile in the `0.1.7.12` test APK but have not yet run on a device: S26U
+disconnected from ADB before the final install. These tests are not counted as
+passed. The `0.1.7.12` install and image-copy device acceptance remain pending.
+
+S26U received the previous `0.1.7.11` in-place install without clearing chats, pairing or model data.
 No S20U or iOS device claim is made. Test screenshots and logs remain in ignored
 build/smoke directories, not in source control.
 

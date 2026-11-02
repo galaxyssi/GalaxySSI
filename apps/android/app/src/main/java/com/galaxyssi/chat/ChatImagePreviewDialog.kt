@@ -48,6 +48,9 @@ internal class ChatImagePreviewDialog(
         tag = "chat-image-preview-image"
         contentDescription = title
         scaleType = ImageView.ScaleType.FIT_CENTER
+        setOnLongClickListener { ImageClipboard.showCopyMenu(activity, this) { app ->
+            ClipboardImageSource.fromUri(app, uri, title, mimeType)
+        }; true }
     }
     private val details = TextView(activity).apply {
         tag = "chat-image-preview-details"

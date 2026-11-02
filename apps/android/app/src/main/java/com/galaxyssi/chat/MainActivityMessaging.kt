@@ -304,7 +304,8 @@ internal fun MainActivity.configureMessages() {
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
         onMessageActions = { position -> showMessageActions(position) },
         onDeleteMessage = { messageId -> deleteMessageById(messageId) },
-        onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
+        onOpenAttachment = { attachment -> openPeerAttachment(attachment) },
+        onImageMessageActions = { position, attachment -> showMessageActions(position, attachment) })
     messageList.apply {
         layoutManager = ChatMessageLayoutManager(this@configureMessages, ::schedulePeerChatBottomAlignment).apply {
             stackFromEnd = ChatMessageViewportPolicy.stackFromEnd()
