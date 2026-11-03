@@ -42,7 +42,10 @@ struct AgentTerminalDelivery: Codable, Equatable {
   func matches(_ response: AgentConnectorResponse) -> Bool {
     guard executionGeneration == response.executionGeneration else { return false }
     if sourceMessageId > 0, sourceMessageId == response.sourceMessageId {
-      return true
+      return (conversationId.isEmpty || conversationId == Self.clean(response.conversationId)) &&
+        (turnId.isEmpty || turnId == Self.clean(response.turnId)) &&
+        (taskId.isEmpty || taskId == Self.clean(response.taskId)) &&
+        (contactId.isEmpty || contactId == Self.clean(response.contactId))
     }
     guard sourceMessageId == 0,
           !conversationId.isEmpty,

@@ -2,6 +2,30 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentConnectorLateResponseReducerTests: XCTestCase {
+  func testNumericTerminalSourceDoesNotOverrideRecordedScope() {
+    let terminal = AgentTerminalDelivery(sourceMessageId: 71, conversationId: "conversation",
+      turnId: "turn", taskId: "child-a", contactId: "codex", executionGeneration: 2)
+    let response = AgentConnectorResponse(sourceMessageId: 71, contactId: "codex", content: "result",
+      conversationId: "conversation", turnId: "turn", taskId: "child-a", executionGeneration: 2)
+    XCTAssertTrue(terminal.matches(response))
+    var other = response
+    other.taskId = "child-b"
+    XCTAssertFalse(terminal.matches(other))
+    other = response
+    other.contactId = "another-agent"
+    XCTAssertFalse(terminal.matches(other))
+    other = response
+    other.conversationId = "another-conversation"
+    XCTAssertFalse(terminal.matches(other))
+    other = response
+    other.turnId = "another-turn"
+    XCTAssertFalse(terminal.matches(other))
+    other = response
+    other.executionGeneration = 3
+    XCTAssertFalse(terminal.matches(other))
+    XCTAssertTrue(AgentTerminalDelivery(sourceMessageId: 71, executionGeneration: 2).matches(response))
+  }
+
   func testTerminalFailureRequiresExactIdentityAndExecutionGeneration() {
     let waiting = workspace(status: .waitingResponse)
     let failure = AgentTerminalDelivery(
