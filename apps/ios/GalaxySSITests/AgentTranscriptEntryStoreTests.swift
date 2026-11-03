@@ -334,7 +334,11 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     foreign.id = UUID()
     foreign.conversationId = "foreign"
     foreign.turnId = "turn-3"
-    XCTAssertTrue(database.upsertAll(outgoing + [delivered, partial, foreign]))
+    var opened = delivered
+    opened.id = UUID()
+    opened.turnId = "turn-4"
+    opened.deliveryStatus = .read
+    XCTAssertTrue(database.upsertAll(outgoing + [delivered, partial, foreign, opened]))
     var cursor: GalaxySSIChatHistoryCursor?
     var found: [UUID] = []
     repeat {
@@ -347,7 +351,7 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     } while true
     XCTAssertEqual(found.count, outgoing.count)
     XCTAssertEqual(Set(found), Set(outgoing.map(\.id)))
-    XCTAssertEqual(try database.deliveredDesktopReplyTurns(contactId: "hermes", conversationId: "conversation"), ["turn-1"])
+    XCTAssertEqual(try database.deliveredDesktopReplyTurns(contactId: "hermes", conversationId: "conversation"), ["turn-1", "turn-4"])
     XCTAssertTrue(try database.deliveredDesktopReplyTurns(contactId: "other", conversationId: "conversation").isEmpty)
   }
 

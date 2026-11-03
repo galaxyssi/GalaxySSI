@@ -129,7 +129,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
               let message = decode(statement, id: String(cString: id), payloadColumn: 1),
               message.contactId == contactId, message.conversationId == conversationId,
               !message.isMine, !message.isSystem else { throw MqttChunkStorageError.databaseFailure }
-        if message.deliveryStatus == .delivered, !message.turnId.isBlank { turns.insert(message.turnId) }
+        if [ChatDeliveryStatus.delivered, .read].contains(message.deliveryStatus), !message.turnId.isBlank { turns.insert(message.turnId) }
       }
       return turns
     }
