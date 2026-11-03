@@ -4829,6 +4829,12 @@
 "galaxyssi.screen_assistant.expand" = "展开结果";
 "galaxyssi.screen_assistant.compact" = "收起结果";
 "galaxyssi.screen_assistant.close" = "关闭屏幕助手";
+"galaxyssi.screen_assistant.collapse" = "收起屏幕助手";
+"galaxyssi.screen_assistant.restore" = "恢复屏幕助手";
+"galaxyssi.screen_assistant.ready" = "就绪";
+"galaxyssi.screen_assistant.completed" = "已完成";
+"galaxyssi.screen_assistant.processing" = "处理中";
+"galaxyssi.screen_assistant.attention" = "需要处理";
 "galaxyssi.screen_assistant.stop" = "停止分析";
 "galaxyssi.screen_assistant.stopped" = "分析已停止，已保留部分输出。";
 "galaxyssi.screen_assistant.stop_failed" = "本地分析已停止，但未能确认远端取消请求已发送。";

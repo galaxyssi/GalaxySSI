@@ -129,6 +129,7 @@ struct AgentHomeView: View {
   @State var screenshotPickerPresented = false
   @State var screenAssistantConversationID = ""
   @State var screenAssistantCompact = true
+  @State var screenAssistantCollapsed = false
   @State var screenAssistantStartedAt: Date?
   @State var screenAssistantRunID: UUID?
   @State var screenAssistantOwnedTurns: [ChatMessage] = []
@@ -215,17 +216,32 @@ struct AgentHomeView: View {
     }?.id.uuidString
   }
 
+  var screenAssistantBubblePhase: AgentPhase? {
+    guard let startedAt = screenAssistantStartedAt,
+          let outgoing = transcriptMessages.last(where: { $0.isMine && !$0.isSystem && $0.createdAt >= startedAt }) else { return nil }
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    if let task = store.agentTask(id: turn), task.sessionId == screenAssistantConversationID { return task.phase }
+    if let reply = transcriptMessages.last(where: { !$0.isMine && !$0.isSystem && $0.turnId == outgoing.turnId }) {
+      return reply.deliveryStatus == .delivered ? .completed : (reply.deliveryStatus == .failed ? .failed : .executing)
+    }
+    return outgoing.deliveryStatus == .failed ? .failed : .waitingResponse
+  }
+
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
         header
-        if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty {
-          screenAssistantControls
-          agentOutput.frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
-          if screenAssistantCompact { Spacer(minLength: 0) }
-        } else {
-          agentOutput
+        VStack(spacing: 0) {
+          if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty && !screenAssistantCollapsed {
+            screenAssistantControls
+            agentOutput.frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
+            if screenAssistantCompact { Spacer(minLength: 0) }
+          } else {
+            agentOutput
+          }
         }
+        .frame(maxHeight: .infinity)
+        .overlay { screenAssistantRestoreControl }
         agentComposer
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
@@ -377,6 +393,7 @@ struct AgentHomeView: View {
           }
           screenAssistantConversationID = store.activeAgentConversationId
           screenAssistantCompact = true
+          screenAssistantCollapsed = false
           screenAssistantStartedAt = Date()
           screenAssistantRunID = UUID()
           screenAssistantOwnedTurns = []

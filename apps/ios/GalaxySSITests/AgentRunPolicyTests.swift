@@ -1,7 +1,32 @@
 import XCTest
+import CoreGraphics
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  @MainActor
+  func testScreenAssistantBubbleKeepsItsTouchTargetInsideViewport() {
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.visibleDiameter, 46.4, accuracy: 0.001)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.touchDiameter, 48)
+    XCTAssertNil(GalaxySSIScreenAssistantBubble.badgeRGB(for: nil))
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.badgeRGB(for: .executing), 0xE2A430)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.badgeRGB(for: .completed), 0x169F75)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.badgeRGB(for: .failed), 0xD95353)
+    let portrait = CGSize(width: 320, height: 600)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.clamp(CGPoint(x: -100, y: 1000), in: portrait),
+      CGPoint(x: 24, y: 576))
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.center(x: 4, y: -2, in: portrait),
+      CGPoint(x: 296, y: 24))
+    let landscape = CGSize(width: 844, height: 300)
+    let rotated = GalaxySSIScreenAssistantBubble.center(x: 0.99, y: 0.99, in: landscape)
+    XCTAssertEqual(rotated, CGPoint(x: 820, y: 276))
+    let repaired = GalaxySSIScreenAssistantBubble.center(x: .infinity, y: .nan, in: portrait)
+    XCTAssertEqual(repaired.x, 288, accuracy: 0.001)
+    XCTAssertEqual(repaired.y, 420, accuracy: 0.001)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.clamp(.zero, in: CGSize(width: 40, height: 40)),
+      CGPoint(x: 20, y: 20))
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.clamp(.zero, in: .zero), .zero)
+  }
+
   func testVoiceAgentRunRepositoryMigratesAndIndexesEncryptedSnapshots() throws {
     let suite = "voice-run-index-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
