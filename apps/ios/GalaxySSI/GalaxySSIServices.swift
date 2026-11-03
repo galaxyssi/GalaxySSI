@@ -6504,8 +6504,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func reconcileSavedTeamParents() {
-    for saved in AgentTeamExecutionHistoryStore.shared.recent(AgentTeamExecutionHistoryStore.maxSnapshots)
-      where saved.state.deliverable {
+    for saved in AgentTeamExecutionHistoryStore.shared.deliverableSnapshots() {
       guard let session = store.agentSession(id: saved.conversationId), !session.privateMode, !session.trackingPaused,
             let parent = store.agentTask(id: saved.taskId),
             let updated = AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved,
@@ -6527,12 +6526,12 @@ final class MessageCoordinator: ObservableObject {
           !session.privateMode, !session.trackingPaused,
           let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
           let binding = saved.members.first(where: { $0.memberId == member.memberId }),
-          let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+          AgentTeamExecutionHistoryStore.shared.applyReply(supervisorRunId: saved.supervisorRunId, source: binding.sourceMessageId,
             conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
             task: binding.sourceMessageId, contact: member.agentId,
             content: error.ifBlank("Agent team member failed"), success: false,
-            now: AgentControlPlaneClock.nowMillis()) else { return }
-    if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
+            now: AgentControlPlaneClock.nowMillis()) != nil else { return }
+    reconcileSavedTeamParents()
   }
 
   private func persistSynchronousTeamPrimary(member: AgentTeamMember, spec: AgentTeamDispatchSpec,
@@ -6548,11 +6547,11 @@ final class MessageCoordinator: ObservableObject {
               $0.turnId == outgoing.turnId && $0.remoteMessageId == turn &&
               $0.createdAt >= outgoing.createdAt && $0.deliveryStatus == .delivered
           }),
-          let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+          AgentTeamExecutionHistoryStore.shared.applyReply(supervisorRunId: saved.supervisorRunId, source: binding.sourceMessageId,
             conversation: outgoing.conversationId, turn: turn, task: binding.sourceMessageId,
-            contact: member.agentId, content: reply.content, success: true,
-            now: AgentControlPlaneClock.nowMillis()) else { return }
-    if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
+            contact: member.agentId, content: reply.content, richOutputJson: reply.richOutputJson, success: true,
+            now: AgentControlPlaneClock.nowMillis()) != nil else { return }
+    reconcileSavedTeamParents()
   }
 
   private func persistTeamObservation(
@@ -6564,11 +6563,11 @@ final class MessageCoordinator: ObservableObject {
     if let session = store.agentSession(id: outgoing.conversationId), !session.privateMode, !session.trackingPaused,
        let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
        let binding = saved.members.first(where: { $0.memberId == member.memberId }),
-       let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+       AgentTeamExecutionHistoryStore.shared.applyReply(supervisorRunId: saved.supervisorRunId, source: binding.sourceMessageId,
          conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
          task: binding.sourceMessageId, contact: member.agentId, content: text, success: true,
-         now: AgentControlPlaneClock.nowMillis()) {
-      if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
+         now: AgentControlPlaneClock.nowMillis()) != nil {
+      reconcileSavedTeamParents()
     }
     _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
       teamId: spec.definition.teamId,
@@ -10916,12 +10915,12 @@ final class MessageCoordinator: ObservableObject {
     )
     if appPayload.string("type") == "text", taskIdentityStore.matchesRegistered(payload: appPayload),
        let session = store.agentSession(id: responseConversationId), !session.privateMode, !session.trackingPaused {
-      for saved in AgentTeamExecutionHistoryStore.shared.recent(AgentTeamExecutionHistoryStore.maxSnapshots) {
-        if let updated = AgentSavedTeamReplyPolicy.apply(to: saved,
+      for saved in AgentTeamExecutionHistoryStore.shared.recoverable(conversationId: responseConversationId) {
+        if AgentTeamExecutionHistoryStore.shared.applyReply(supervisorRunId: saved.supervisorRunId,
           source: appPayload.string("source_message_id"), conversation: responseConversationId,
-          turn: responseTurnId, task: responseTaskId, contact: contactId, content: content,
-          success: !AgentRemoteOutcomePolicy.isFailure(remoteTaskStatus), now: AgentControlPlaneClock.nowMillis()) {
-          if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
+          turn: responseTurnId, task: responseTaskId, contact: contactId, content: content, richOutputJson: richOutputJson,
+          success: !AgentRemoteOutcomePolicy.isFailure(remoteTaskStatus), now: AgentControlPlaneClock.nowMillis()) != nil {
+          reconcileSavedTeamParents()
         }
       }
     }

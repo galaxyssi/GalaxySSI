@@ -72,6 +72,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var updatedAtMillis: Int64
   var instanceId: String
   var sourceMessageId: String
+  var richOutputJson: String
 
   var memberId: String { instanceId.ifBlank(agentId) }
 
@@ -84,7 +85,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     errorMessage: String = "",
     updatedAtMillis: Int64 = 0,
     instanceId: String = "",
-    sourceMessageId: String = ""
+    sourceMessageId: String = "",
+    richOutputJson: String = ""
   ) {
     self.agentId = agentId
     self.role = role
@@ -95,6 +97,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.updatedAtMillis = max(updatedAtMillis, 0)
     self.instanceId = instanceId.ifBlank(agentId)
     self.sourceMessageId = sourceMessageId
+    self.richOutputJson = richOutputJson
   }
 
   enum CodingKeys: String, CodingKey {
@@ -107,6 +110,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case updatedAtMillis = "updated_at_millis"
     case instanceId = "instance_id"
     case sourceMessageId = "source_message_id"
+    case richOutputJson = "rich_output_json"
   }
 
   init(from decoder: Decoder) throws {
@@ -121,7 +125,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       errorMessage: try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? "",
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0,
       instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId,
-      sourceMessageId: try container.decodeIfPresent(String.self, forKey: .sourceMessageId) ?? ""
+      sourceMessageId: try container.decodeIfPresent(String.self, forKey: .sourceMessageId) ?? "",
+      richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? ""
     )
   }
 }
@@ -267,7 +272,7 @@ enum AgentSavedTeamReplyPolicy {
   }
 
   static func apply(to saved: AgentTeamExecutionSnapshot, source: String, conversation: String,
-                    turn: String, task: String, contact: String, content: String,
+                    turn: String, task: String, contact: String, content: String, richOutputJson: String = "",
                     success: Bool, now: Int64) -> AgentTeamExecutionSnapshot? {
     guard (!saved.state.isTerminal || saved.state == .interrupted), !source.isEmpty,
           saved.conversationId == conversation, saved.taskId == turn, task == source,
@@ -282,6 +287,7 @@ enum AgentSavedTeamReplyPolicy {
     result.members[index].output = success ? String(content.prefix(AgentConnectorResponse.maxContentCharacters)) : ""
     result.members[index].errorMessage = success ? "" : String(content.prefix(AgentTeamMemberSnapshot.maxErrorCharacters))
     result.members[index].updatedAtMillis = now
+    result.members[index].richOutputJson = richOutputJson
     result.updatedAtMillis = max(saved.updatedAtMillis, now)
     if result.members[index].memberId == saved.primaryMemberId && !success {
       result.state = .failed

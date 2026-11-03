@@ -276,6 +276,7 @@ enum AgentPrivateDataInventory {
     localOnly("connector_responses", "Pending connector responses", "user_defaults:galaxyssi_agent_connector_responses.snapshot.v1.encrypted.v1", .ephemeral),
     localOnly("result_receipts", "Pending result receipt confirmations", "files:GalaxySSI/AgentRecovery/result-receipts.sqlite3", .ephemeral),
     localOnly("managed_connector_responses", "Managed child response ledger", "files:GalaxySSI/AgentRecovery/managed-responses.sqlite3", .ephemeral),
+    localOnly("team_execution_history", "Team execution history and pending members", "files:GalaxySSI/AgentRecovery/team-history.sqlite3", .ephemeral),
     localOnly("observation_context", "Recently observed Agent context", "user_defaults:galaxyssi_agent_observation_context_v1", .ephemeral),
     localOnly("mcp_credentials", "MCP connections and credentials", "user_defaults:galaxyssi_mcp_connections", .secret),
     localOnly("mcp_tool_audit", "Redacted MCP permission decisions and tool receipts", "user_defaults:galaxyssi_mcp_tool_audit", .ephemeral),

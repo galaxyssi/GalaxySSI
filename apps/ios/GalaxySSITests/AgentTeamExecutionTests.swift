@@ -2,6 +2,94 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testTeamHistoryUpdatesLatestRosterAcrossInstancesAndPreservesRichReplies() throws {
+    let suite = "team-history-atomic-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let first = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let second = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let initial = durableTeamSnapshot("run")
+    XCTAssertTrue(first.upsert(initial))
+    let rich = #"{"version":1,"blocks":[{"id":"review-image","type":"image","uri":"galaxyssi-artifact://task/image.png"}]}"#
+    XCTAssertNotNil(second.applyReply(supervisorRunId: "run", source: "source-review", conversation: "conversation",
+      turn: "turn", task: "source-review", contact: "review", content: "review", richOutputJson: rich, success: true, now: 20))
+    let final = try XCTUnwrap(first.applyReply(supervisorRunId: "run", source: "source-primary", conversation: "conversation",
+      turn: "turn", task: "source-primary", contact: "primary", content: "answer", success: true, now: 30))
+    XCTAssertEqual(final.state, .succeeded)
+    XCTAssertEqual(second.snapshot(supervisorRunId: "run")?.members.last?.richOutputJson, rich)
+    var stale = initial
+    stale.updatedAtMillis = 99_999
+    XCTAssertTrue(first.upsert(stale))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([stale]), fileURL: file)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.state, .succeeded)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.finalOutput, "answer")
+  }
+
+  func testTeamHistoryRetentionNeverDropsPendingOrInterruptedTeams() {
+    let suite = "team-history-retention-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite3"))
+    for index in 0..<205 { XCTAssertTrue(history.upsert(durableTeamSnapshot("pending-\(index)"))) }
+    var interrupted = durableTeamSnapshot("interrupted")
+    interrupted.state = .interrupted
+    XCTAssertTrue(history.upsert(interrupted))
+    for index in 0..<205 {
+      var final = durableTeamSnapshot("final-\(index)")
+      final.state = .succeeded
+      final.updatedAtMillis = Int64(index + 100)
+      XCTAssertTrue(history.upsert(final))
+    }
+    XCTAssertEqual(history.recoverable(conversationId: "conversation").count, 206)
+    XCTAssertEqual(history.recent(1_000).filter { $0.state.deliverable }.count, 200)
+    XCTAssertEqual(history.recent(1_000).count, 406)
+    XCTAssertTrue(history.recoverable(conversationId: "other").isEmpty)
+  }
+
+  func testTeamHistoryMigrationCommitsBeforeRemovingLegacyAndClearCannotResurrect() throws {
+    let suite = "team-history-migration-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let key = AgentTeamExecutionHistoryStore.defaultStorageKey
+    let legacy = try JSONEncoder().encode([durableTeamSnapshot("legacy")])
+    defaults.set(legacy, forKey: key)
+    let secrets = TeamCompletionFailingSecrets()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertFalse(history.upsert(durableTeamSnapshot("new")))
+    XCTAssertEqual(defaults.data(forKey: key), legacy)
+    secrets.rejectWrites = false
+    XCTAssertNotNil(history.snapshot(supervisorRunId: "legacy"))
+    XCTAssertNil(defaults.object(forKey: key))
+    history.clear()
+    defaults.set(legacy, forKey: key)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertNil(reopened.snapshot(supervisorRunId: "legacy"))
+    XCTAssertNil(defaults.object(forKey: key))
+    XCTAssertTrue(reopened.upsert(durableTeamSnapshot("new")))
+    AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets, fileURL: file)
+    XCTAssertNil(reopened.snapshot(supervisorRunId: "new"))
+  }
+
+  private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {
+    AgentTeamExecutionSnapshot(supervisorRunId: run, teamId: "team", conversationId: "conversation",
+      taskId: "turn", primaryAgentId: "primary", state: .running,
+      members: [AgentTeamMemberSnapshot(agentId: "primary", deliveryMode: .respond, sourceMessageId: "source-primary"),
+        AgentTeamMemberSnapshot(agentId: "review", deliveryMode: .observe, sourceMessageId: "source-review")],
+      createdAtMillis: 1, updatedAtMillis: 1)
+  }
+
   func testOriginalTeamParentSettlementRejectsUserPauseMismatchAndReplacement() throws {
     let members = [
       AgentTeamMember(agentId: "lead", deliveryMode: .respond, requiredCapabilities: [], role: "lead",
@@ -211,9 +299,11 @@ extension GalaxySSIStoreTests {
     let responses = InMemoryAgentConnectorResponseStore()
     let suite = "team-recovery-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let historyRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: historyRoot) }
     let sink = AgentConnectorTeamCompletionSink(responseStore: responses,
-      historyStore: AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(), executionStore: store))
+      historyStore: AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(), executionStore: store,
+        fileURL: historyRoot.appendingPathComponent("teams.sqlite3")))
     let runtime = AgentTeamExecutionRuntime(store: store, mailbox: InMemoryAgentTeamMailbox(), completionSink: sink)
     XCTAssertTrue(runtime.recoverInterrupted().isEmpty)
     XCTAssertTrue(runtime.recoverInterrupted().isEmpty)
@@ -329,10 +419,11 @@ extension GalaxySSIStoreTests {
   func testAgentTeamCompletionRetriesWhenHistoryEncryptionFails() throws {
     let suite = "team-completion-write-failure-" + UUID().uuidString
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let historyRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: historyRoot) }
     let secrets = TeamCompletionFailingSecrets()
     let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
-      executionStore: SavedTeamRecoveryFixture([]))
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: historyRoot.appendingPathComponent("teams.sqlite3"))
     let responses = InMemoryAgentConnectorResponseStore()
     let ledger = AgentTeamCompletionDeliveryLedger()
     let sink = AgentConnectorTeamCompletionSink(responseStore: responses, ledger: ledger,
