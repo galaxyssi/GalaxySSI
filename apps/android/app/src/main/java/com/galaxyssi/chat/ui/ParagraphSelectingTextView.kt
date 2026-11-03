@@ -37,7 +37,7 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
             override fun onDown(event: MotionEvent): Boolean = true
 
             override fun onDoubleTap(event: MotionEvent): Boolean {
-                if (paragraphDoubleTapListener == null) return false
+                if (paragraphDoubleTapListener == null || !hasTextAt(event.x, event.y)) return false
                 doubleTapAnchor = getOffsetForPosition(event.x, event.y).coerceAtLeast(0)
                 consumingDoubleTap = exclusiveParagraphDoubleTap
                 return true
@@ -62,6 +62,16 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
         paragraphDoubleTapListener = listener
     }
 
+    fun hasTextAt(x: Float, y: Float): Boolean {
+        val lines = layout ?: return false
+        val vertical = y - totalPaddingTop + scrollY
+        if (vertical < 0 || vertical >= lines.height) return false
+        val line = lines.getLineForVertical(vertical.toInt())
+        val horizontal = x - totalPaddingLeft + scrollX
+        return horizontal >= lines.getLineLeft(line) && horizontal < lines.getLineRight(line) &&
+            text.subSequence(lines.getLineStart(line), lines.getLineEnd(line)).isNotBlank()
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val doubleTapHandled = paragraphDoubleTapListener != null &&
             doubleTapDetector.onTouchEvent(event)
@@ -77,7 +87,10 @@ class ParagraphSelectingTextView @JvmOverloads constructor(
                 }
                 MotionEvent.ACTION_MOVE -> if (abs(event.x - downX) > touchSlop || abs(event.y - downY) > touchSlop) doubleTapAnchor = -1
                 MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> doubleTapAnchor = -1
-                MotionEvent.ACTION_UP -> dispatchParagraphDoubleTap()
+                MotionEvent.ACTION_UP -> {
+                    if (event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) doubleTapAnchor = -1
+                    dispatchParagraphDoubleTap()
+                }
             }
             if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) consumingDoubleTap = false
             return true
