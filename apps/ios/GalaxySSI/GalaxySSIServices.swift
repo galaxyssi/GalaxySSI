@@ -5580,6 +5580,7 @@ final class MessageCoordinator: ObservableObject {
                 attachments: attachments,
                 outgoing: outgoing
               )
+              persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing)
               primaryPublished = true
             } else {
               let result = try await hiddenLocalTeamReply(
@@ -5607,6 +5608,7 @@ final class MessageCoordinator: ObservableObject {
                 attachments: attachments,
                 outgoing: outgoing
               )
+              persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing)
               primaryPublished = true
             } else {
               let result = try await hiddenCloudTeamReply(
@@ -5949,6 +5951,26 @@ final class MessageCoordinator: ObservableObject {
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
     return text
+  }
+
+  private func persistSynchronousTeamPrimary(member: AgentTeamMember, spec: AgentTeamDispatchSpec,
+                                             outgoing: ChatMessage) {
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    guard let session = store.agentSession(id: outgoing.conversationId),
+          !session.privateMode, !session.trackingPaused,
+          let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
+          saved.primaryMemberId == member.memberId,
+          let binding = saved.members.first(where: { $0.memberId == member.memberId }),
+          let reply = store.messages(for: outgoing.contactId).last(where: {
+            !$0.isMine && !$0.isSystem && $0.conversationId == outgoing.conversationId &&
+              $0.turnId == outgoing.turnId && $0.remoteMessageId == turn &&
+              $0.createdAt >= outgoing.createdAt && $0.deliveryStatus == .delivered
+          }),
+          let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+            conversation: outgoing.conversationId, turn: turn, task: binding.sourceMessageId,
+            contact: member.agentId, content: reply.content, success: true,
+            now: AgentControlPlaneClock.nowMillis()) else { return }
+    AgentTeamExecutionHistoryStore.shared.upsert(updated)
   }
 
   private func persistTeamObservation(
