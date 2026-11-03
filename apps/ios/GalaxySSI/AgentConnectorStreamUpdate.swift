@@ -1,4 +1,74 @@
 import Foundation
+import CryptoKit
+
+struct AgentConnectorPublicProgress: Equatable {
+  static let tracePrefix = "connector-progress:"
+  var eventId: String
+  var generation: Int64
+  var sequence: Int64
+  var text: String
+
+  var traceStage: String {
+    let digest = SHA256.hash(data: Data(eventId.utf8)).map { String(format: "%02x", $0) }.joined()
+    return "\(Self.tracePrefix)\(generation):\(sequence):\(digest)"
+  }
+
+  @MainActor
+  static func entries(_ payload: [String: Any], localize: (String, String) -> String) -> [Self] {
+    guard payload.string("type") == "agent_task_event",
+          let generation = AgentDesktopReplyRecovery.integer(payload["execution_generation"], minimum: 1),
+          let sequence = AgentDesktopReplyRecovery.integer(payload["status_sequence"] ?? payload["status_seq"], minimum: 0) else { return [] }
+    var events = Array(((payload["events"] as? [[String: Any]]) ?? []).suffix(64))
+    if let current = payload.dictionary("progress_event") { events.append(current) }
+    return events.compactMap { event in
+      let id = event.string("event_id").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !id.isEmpty, id.count <= 200, event["user_visible"] as? Bool != false else { return nil }
+      let kind = event.string("kind").lowercased()
+      let code = event.string("code").ifBlank(event.dictionary("metadata")?.string("code") ?? "").lowercased()
+      let detail = event.string("detail").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard kind != "research_checkpoint", code != "heartbeat",
+            !(code == "dynamic_tool" && detail == "research_checkpoint") else { return nil }
+      let text: String
+      if ["narration", "reasoning", "plan"].contains(kind) || ["commentary", "reasoning_summary", "plan"].contains(code) {
+        text = String(detail.ifBlank(event.string("title")).prefix(2_000))
+      } else {
+        let operations: [String: String] = ["command": "Running command", "file_change": "Updating files",
+          "web_search": "Searching the web", "web_image_search": "Searching images", "image_view": "Viewing images",
+          "mcp_tool": "Calling MCP tool", "dynamic_tool": "Calling tool", "image_generation": "Generating image",
+          "agent_collaboration": "Coordinating Agents", "context_compaction": "Compacting context"]
+        guard let operation = operations[code] else { return nil }
+        let label = localize("galaxyssi.agent.progress.operation.\(code)", operation)
+        switch event.string("status").lowercased() {
+        case "running", "started": text = label
+        case "failed": text = String(format: localize("galaxyssi.agent.progress.failed", "Failed: %@"), label)
+        default: text = String(format: localize("galaxyssi.agent.progress.completed", "Completed: %@"), label)
+        }
+      }
+      guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+      return Self(eventId: id, generation: generation, sequence: sequence, text: text)
+    }
+  }
+
+  static func reducing(_ trace: [DeliveryTraceEvent], updates: [Self]) -> [DeliveryTraceEvent] {
+    var result = trace
+    for update in updates {
+      let components = result.filter { $0.stage.hasPrefix(tracePrefix) }.map { $0.stage.split(separator: ":") }
+      let floor = components.compactMap { parts -> (Int64, Int64)? in
+        guard parts.count == 4, let generation = Int64(parts[1]), let sequence = Int64(parts[2]) else { return nil }
+        return (generation, sequence)
+      }.max { $0.0 == $1.0 ? $0.1 < $1.1 : $0.0 < $1.0 }
+      if let floor, update.generation < floor.0 || (update.generation == floor.0 && update.sequence < floor.1) { continue }
+      let suffix = update.traceStage.split(separator: ":").last!
+      if let index = result.firstIndex(where: { $0.stage.hasPrefix(tracePrefix) && $0.stage.split(separator: ":").last == suffix }) {
+        guard result[index].stage != update.traceStage || result[index].detail != update.text else { continue }
+        result[index].stage = update.traceStage
+        result[index].detail = update.text
+      } else { result.append(DeliveryTraceEvent(stage: update.traceStage, detail: update.text)) }
+    }
+    let retained = Set(result.filter { $0.stage.hasPrefix(tracePrefix) }.suffix(64).map(\.id))
+    return result.filter { !$0.stage.hasPrefix(tracePrefix) || retained.contains($0.id) }
+  }
+}
 
 enum AgentScreenAnalysisCancellationPolicy {
   static let activePhases: Set<AgentPhase> = [.observing, .planning, .waitingConfirmation,

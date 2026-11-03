@@ -5,6 +5,60 @@ import CryptoKit
 
 extension GalaxySSIStoreTests {
   @MainActor
+  func testPublicConnectorProgressHidesInternalEventsAndRawCommands() {
+    let events: [[String: Any]] = [
+      ["event_id": "comment", "kind": "narration", "detail": "I will inspect the image."],
+      ["event_id": "command", "kind": "tool", "code": "command", "status": "running", "detail": "C:/private/script.ps1 -token SECRET"],
+      ["event_id": "heartbeat", "kind": "tool", "code": "heartbeat", "title": "Working"],
+      ["event_id": "internal", "kind": "research_checkpoint", "detail": "private checkpoint"],
+      ["event_id": "hidden", "kind": "narration", "detail": "hidden", "user_visible": false],
+      ["event_id": "checkpoint", "kind": "tool", "code": "dynamic_tool", "detail": "research_checkpoint"]
+    ]
+    let payload: [String: Any] = ["type": "agent_task_event", "execution_generation": 2, "status_seq": 3, "events": events]
+    let updates = AgentConnectorPublicProgress.entries(payload) { _, fallback in fallback }
+    XCTAssertEqual(updates.map(\.eventId), ["comment", "command"])
+    XCTAssertEqual(updates.map(\.text), ["I will inspect the image.", "Running command"])
+    XCTAssertFalse(updates.map(\.text).joined().contains("SECRET"))
+  }
+
+  func testPublicConnectorProgressIsIdempotentAndFencesStaleUpdates() throws {
+    let receipt = DeliveryTraceEvent(stage: "delivered", detail: "Transport receipt")
+    let started = AgentConnectorPublicProgress(eventId: "command", generation: 2, sequence: 3, text: "Running command")
+    let first = AgentConnectorPublicProgress.reducing([receipt], updates: [started])
+    XCTAssertEqual(first.count, 2)
+    XCTAssertEqual(AgentConnectorPublicProgress.reducing(first, updates: [started]), first)
+    let completed = AgentConnectorPublicProgress(eventId: "command", generation: 2, sequence: 4, text: "Completed: command")
+    let final = AgentConnectorPublicProgress.reducing(first, updates: [completed])
+    XCTAssertEqual(final.count, 2)
+    XCTAssertEqual(final.first, receipt)
+    XCTAssertEqual(final.last?.id, first.last?.id)
+    XCTAssertEqual(final.last?.detail, "Completed: command")
+    XCTAssertEqual(AgentConnectorPublicProgress.reducing(final, updates: [started]), final)
+    let stale = AgentConnectorPublicProgress(eventId: "other", generation: 1, sequence: 999, text: "Old attempt")
+    XCTAssertEqual(AgentConnectorPublicProgress.reducing(final, updates: [stale]), final)
+    let burst = (0..<100).map { AgentConnectorPublicProgress(eventId: "event-\($0)", generation: 3, sequence: Int64($0), text: "Progress") }
+    let bounded = AgentConnectorPublicProgress.reducing(final, updates: burst)
+    XCTAssertEqual(bounded.count, 65)
+    XCTAssertEqual(bounded.first, receipt)
+    let restored = try JSONDecoder().decode([DeliveryTraceEvent].self, from: JSONEncoder().encode(bounded))
+    XCTAssertEqual(restored, bounded)
+  }
+
+  func testConcretePublicToolProgressChangesOnlyItsOwnGroupSignature() {
+    var tool = transcriptEntry("tool", text: "Running command", dedupeKey: "connector-event:task:TOOL_EVENT:command")
+    tool.conversationId = "conversation"
+    tool.turnId = "turn"
+    var other = tool
+    other.id = "other"
+    other.conversationId = "other"
+    let before = AgentTranscriptRenderPolicy.processGroupSignatures([tool, other])
+    tool.text = "Completed: command"
+    let after = AgentTranscriptRenderPolicy.processGroupSignatures([tool, other])
+    XCTAssertNotEqual(before[AgentTranscriptPresentationPolicy.processGroupKey(tool)], after[AgentTranscriptPresentationPolicy.processGroupKey(tool)])
+    XCTAssertEqual(before[AgentTranscriptPresentationPolicy.processGroupKey(other)], after[AgentTranscriptPresentationPolicy.processGroupKey(other)])
+  }
+
+  @MainActor
   func testManagedDesktopRecoveryUsesOriginalNumericSourceAndExactGeneration() throws {
     let suite = "ManagedDesktopRecovery-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

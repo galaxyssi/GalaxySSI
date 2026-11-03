@@ -87,7 +87,7 @@ enum AgentTranscriptRenderPolicy {
     return Dictionary(uniqueKeysWithValues: Dictionary(grouping: entries.filter { $0.role == .process }) {
       AgentTranscriptPresentationPolicy.processGroupKey($0)
     }.map { key, groupEntries in
-      let visibleNarration = AgentTranscriptPresentationPolicy.narrationSegments(
+      let visibleNarration = AgentTranscriptPresentationPolicy.visibleProcessSegments(
         groupEntries
           .sorted { $0.timestampMillis < $1.timestampMillis }
           .uniquedByProcessNarrationIdentity()
