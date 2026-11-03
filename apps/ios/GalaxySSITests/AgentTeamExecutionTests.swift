@@ -34,6 +34,17 @@ extension GalaxySSIStoreTests {
     foreign = saved
     foreign.supervisorRunId = "replacement"
     XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: foreign, failureText: "Failed", now: 10))
+    var multi = parent
+    let followup = teamAgentAction("followup", "writer", dependsOn: ["team-action"])
+    multi.activePlan = teamBridgePlan(action, followup)
+    let continued = try XCTUnwrap(AgentSavedTeamReplyPolicy.settleParent(multi, saved: saved, failureText: "Failed", now: 10))
+    XCTAssertEqual(continued.phase, .paused)
+    XCTAssertEqual(continued.activePlan?.actions.first?.status, .completed)
+    XCTAssertEqual(continued.activePlan?.actions.last, followup)
+    XCTAssertEqual(continued.pendingActions.map(\.id), ["followup"])
+    XCTAssertNil(continued.teamRecoveryRunId)
+    multi.activePlan = teamBridgePlan(action, action)
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(multi, saved: saved, failureText: "Failed", now: 10))
     parent.result = "Existing answer"
     XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
     parent.result = ""

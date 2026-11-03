@@ -222,9 +222,14 @@ enum AgentSavedTeamReplyPolicy {
           parent.phase == .waitingResponse || (parent.phase == .paused && parent.teamRecoveryRunId == saved.supervisorRunId),
           parent.taskId == saved.taskId, parent.sessionId == saved.conversationId,
           saved.createdAtMillis >= parent.createdAtMillis,
-          var plan = parent.activePlan, plan.actions.count == 1,
-          plan.actions[0].kind == .callConnector,
-          let spec = AgentTeamDispatchSpecCodec.decode(plan.actions[0].parameters[agentTeamSpecParameter] ?? ""),
+          var plan = parent.activePlan else { return nil }
+    let matchingIndices = plan.actions.indices.filter { index in
+      plan.actions[index].kind == .callConnector &&
+        AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? "")?.supervisorRunId == saved.supervisorRunId
+    }
+    guard matchingIndices.count == 1, let index = matchingIndices.first,
+          plan.actions[index].status != .completed,
+          let spec = AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? ""),
           spec.supervisorRunId == saved.supervisorRunId, spec.definition.teamId == saved.teamId,
           spec.definition.primaryMemberId == saved.primaryMemberId,
           spec.definition.members.count == saved.members.count,
@@ -239,8 +244,13 @@ enum AgentSavedTeamReplyPolicy {
     result.teamRecoveryRunId = nil
     result.pendingAction = nil
     result.pendingActions = []
-    plan.actions[0].status = success ? .completed : .failed
-    plan.actions[0].result = result.result
+    plan.actions[index].status = success ? .completed : .failed
+    plan.actions[index].result = result.result
+    if success && !plan.actions.allSatisfy({ $0.status == .completed }) {
+      result.phase = .paused
+      result.pendingActions = AgentToolCoordination.runnableActions(plan)
+      result.pendingAction = result.pendingActions.first
+    }
     result.activePlan = plan
     result.planContext = AgentTaskPlanContext(plan: plan)
     result.updatedAtMillis = max(now, parent.updatedAtMillis)
