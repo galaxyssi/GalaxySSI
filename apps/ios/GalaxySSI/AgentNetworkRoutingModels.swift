@@ -656,6 +656,7 @@ enum AgentConnectorRouteSelector {
     preferredTargetId: String = "",
     goal: String = ""
   ) -> AgentConnectorRouteSelection? {
+    let routingGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
     let reasoningTargets = targets.filter(hasReasoningCapability)
     var eligible = reasoningTargets.filter { $0.status == .available }
     if eligible.isEmpty {
@@ -669,15 +670,15 @@ enum AgentConnectorRouteSelector {
     let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]
     let baselineTarget = preferredTarget ?? defaultTarget(eligible)
     var routingDecision = decision
-    if routingDecision == nil, !goal.isBlank {
+    if routingDecision == nil, !routingGoal.isBlank {
       routingDecision = AgentQualityRoutingService.baselineDecision(
-        goal: goal,
+        goal: routingGoal,
         targets: eligible,
         primaryTargetId: baselineTarget.id
       )
     }
-    if let current = routingDecision, !goal.isBlank {
-      routingDecision = AgentQualityRoutingService.adjustedDecision(goal: goal, decision: current)
+    if let current = routingDecision, !routingGoal.isBlank {
+      routingDecision = AgentQualityRoutingService.adjustedDecision(goal: routingGoal, decision: current)
     }
     let decisionCandidates: [AgentResourceCandidate]
     if let routingDecision {
@@ -694,12 +695,12 @@ enum AgentConnectorRouteSelector {
     })
     let calibratedCandidates = routedCandidates.sorted { lhs, rhs in
       let leftAdjustment = AgentSelfModelReducer.calibrationAdjustment(
-        goal: goal,
+        goal: routingGoal,
         resourceId: lhs.resource.targetId,
         requirements: routingDecision?.requirements ?? AgentTaskRequirements()
       )
       let rightAdjustment = AgentSelfModelReducer.calibrationAdjustment(
-        goal: goal,
+        goal: routingGoal,
         resourceId: rhs.resource.targetId,
         requirements: routingDecision?.requirements ?? AgentTaskRequirements()
       )

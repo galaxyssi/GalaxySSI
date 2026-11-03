@@ -93,7 +93,7 @@ enum AgentModelSelectionSettings {
   }
 
   static func defaultSelection(defaults: UserDefaults = .standard) -> AgentModelSelection {
-    loadSelection(key: defaultSelectionKey, defaults: defaults) ?? AgentModelSelection()
+    AgentModelSelection()
   }
 
   static func selectManual(

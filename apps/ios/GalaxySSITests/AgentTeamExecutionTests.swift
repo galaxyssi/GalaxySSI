@@ -2,6 +2,229 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testOriginalTeamParentSettlementRejectsUserPauseMismatchAndReplacement() throws {
+    let members = [
+      AgentTeamMember(agentId: "lead", deliveryMode: .respond, requiredCapabilities: [], role: "lead",
+        objective: "", dependsOnAgentIds: [], context: [:]),
+      AgentTeamMember(agentId: "reviewer", deliveryMode: .observe, requiredCapabilities: [], role: "reviewer",
+        objective: "", dependsOnAgentIds: [], context: [:])
+    ]
+    let definition = AgentTeamDefinition(teamId: "team", primaryAgentId: "lead", members: members,
+      visibilityMode: .background, collectiveCapabilities: [])
+    let spec = AgentTeamDispatchSpec(definition: definition, supervisorRunId: "original")
+    var action = teamAgentAction("team-action", "lead")
+    action.parameters[agentTeamSpecParameter] = AgentTeamDispatchSpecCodec.encode(spec)
+    var parent = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Goal",
+      phase: .paused, routeKind: .desktopAgent, targetTitle: "Team", risk: .low, blocked: true,
+      activePlan: teamBridgePlan(action), createdAtMillis: 1, updatedAtMillis: 2)
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "original", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .succeeded,
+      members: members.map { AgentTeamMemberSnapshot(agentId: $0.agentId, deliveryMode: $0.deliveryMode,
+        status: .succeeded, instanceId: $0.memberId) }, finalOutput: "Original answer", createdAtMillis: 3)
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+    parent.teamRecoveryRunId = "original"
+    let accepted = try XCTUnwrap(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+    XCTAssertEqual(accepted.phase, .completed)
+    XCTAssertEqual(accepted.result, "Original answer")
+    XCTAssertNil(accepted.teamRecoveryRunId)
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(accepted, saved: saved, failureText: "Failed", now: 20))
+    var foreign = saved
+    foreign.conversationId = "other"
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: foreign, failureText: "Failed", now: 10))
+    foreign = saved
+    foreign.supervisorRunId = "replacement"
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: foreign, failureText: "Failed", now: 10))
+    var multi = parent
+    let followup = teamAgentAction("followup", "writer", dependsOn: ["team-action"])
+    multi.activePlan = teamBridgePlan(action, followup)
+    let continued = try XCTUnwrap(AgentSavedTeamReplyPolicy.settleParent(multi, saved: saved, failureText: "Failed", now: 10))
+    XCTAssertEqual(continued.phase, .paused)
+    XCTAssertEqual(continued.activePlan?.actions.first?.status, .completed)
+    XCTAssertEqual(continued.activePlan?.actions.last, followup)
+    XCTAssertEqual(continued.pendingActions.map(\.id), ["followup"])
+    XCTAssertNil(continued.teamRecoveryRunId)
+    XCTAssertFalse(AgentSavedTeamReplyPolicy.canContinueAutomatically(continued))
+    var automatic = continued
+    automatic.activePlan?.confirmationRequired = false
+    automatic.pendingActions[0].status = .proposed
+    automatic.activePlan?.actions[1].status = .proposed
+    XCTAssertTrue(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
+    automatic.activePlan?.executionMode = .planOnly
+    XCTAssertFalse(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
+    automatic.activePlan?.executionMode = .autoComplete
+    automatic.pendingActions[0].status = .pendingConfirmation
+    automatic.activePlan?.actions[1].status = .pendingConfirmation
+    XCTAssertFalse(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
+    multi.activePlan = teamBridgePlan(action, action)
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(multi, saved: saved, failureText: "Failed", now: 10))
+    parent.result = "Existing answer"
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+    parent.result = ""
+    parent.phase = .cancelled
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+  }
+
+  func testSavedTeamFailureDistinguishesObserverFromPrimary() throws {
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .running,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond, sourceMessageId: "primary"),
+        AgentTeamMemberSnapshot(agentId: "reviewer", sourceMessageId: "observer")
+      ])
+    let observerFailed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "observer",
+      conversation: "conversation", turn: "turn", task: "observer", contact: "reviewer",
+      content: "Unavailable", success: false, now: 10))
+    XCTAssertEqual(observerFailed.state, .running)
+    let primarySucceeded = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: observerFailed, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: "Answer", success: true, now: 20))
+    XCTAssertEqual(primarySucceeded.state, .completedWithFailures)
+    XCTAssertEqual(primarySucceeded.finalOutput, "Answer")
+    let primaryFailed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: "Dispatch failed", success: false, now: 10))
+    XCTAssertEqual(primaryFailed.state, .failed)
+    XCTAssertEqual(primaryFailed.members[1].status, .pending)
+  }
+
+  func testSavedTeamCompletesRegardlessOfObserverReplyOrder() throws {
+    for order in [["lead", "reviewer"], ["reviewer", "lead"]] {
+      var saved = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
+        conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .running,
+        members: [
+          AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond, sourceMessageId: "lead-request"),
+          AgentTeamMemberSnapshot(agentId: "reviewer", deliveryMode: .observe, sourceMessageId: "reviewer-request")
+        ])
+      for (index, agent) in order.enumerated() {
+        saved = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved,
+          source: agent + "-request", conversation: "conversation", turn: "turn",
+          task: agent + "-request", contact: agent,
+          content: agent == "lead" ? "Primary answer" : "Observation",
+          success: true, now: Int64(index + 1)))
+        XCTAssertEqual(saved.state, index == 0 ? .running : .succeeded)
+      }
+      XCTAssertEqual(saved.finalOutput, "Primary answer")
+      XCTAssertTrue(saved.members.allSatisfy { $0.status == .succeeded })
+      XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: saved, source: "reviewer-request",
+        conversation: "conversation", turn: "turn", task: "reviewer-request", contact: "reviewer",
+        content: "Late replacement", success: true, now: 100))
+      XCTAssertEqual(saved.finalOutput, "Primary answer")
+    }
+  }
+
+  func testSavedTeamAllowsEmptyObservationButRequiresPrimaryAnswer() throws {
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .running,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond, sourceMessageId: "primary"),
+        AgentTeamMemberSnapshot(agentId: "reviewer", deliveryMode: .observe, sourceMessageId: "observer")
+      ])
+    XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: saved, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: " \n", success: true, now: 1))
+    let observed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "observer",
+      conversation: "conversation", turn: "turn", task: "observer", contact: "reviewer",
+      content: "", success: true, now: 1))
+    XCTAssertEqual(observed.members[1].status, .succeeded)
+    let completed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: observed, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: "Answer", success: true, now: 2))
+    XCTAssertEqual(completed.state, .succeeded)
+    XCTAssertEqual(completed.finalOutput, "Answer")
+  }
+
+  func testInterruptedTeamAcceptsOnlyOriginalLateResultsWithoutReplacingFinalStates() throws {
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "original", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .interrupted,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond,
+          status: .interrupted, sourceMessageId: "primary"),
+        AgentTeamMemberSnapshot(agentId: "reviewer", deliveryMode: .observe,
+          status: .interrupted, sourceMessageId: "observer")
+      ])
+    XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: saved, source: "replacement",
+      conversation: "conversation", turn: "turn", task: "replacement", contact: "lead",
+      content: "Foreign", success: true, now: 1))
+    let primary = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: "Original answer", success: true, now: 2))
+    XCTAssertEqual(primary.state, .interrupted)
+    let completed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: primary, source: "observer",
+      conversation: "conversation", turn: "turn", task: "observer", contact: "reviewer",
+      content: "Observation", success: true, now: 3))
+    XCTAssertEqual(completed.state, .succeeded)
+    XCTAssertEqual(completed.finalOutput, "Original answer")
+    for state in [AgentTeamExecutionState.cancelled, .failed, .succeeded, .completedWithFailures] {
+      var terminal = saved
+      terminal.state = state
+      XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: terminal, source: "primary",
+        conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+        content: "Late overwrite", success: true, now: 4))
+    }
+  }
+
+  func testSavedTeamReplyRequiresOriginalIdentityAndPreservesTerminalOutcome() throws {
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "team-run", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "agent", state: .running,
+      members: [AgentTeamMemberSnapshot(agentId: "agent", deliveryMode: .respond,
+        instanceId: "lead", sourceMessageId: "request")], primaryInstanceId: "lead")
+    let completed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "request",
+      conversation: "conversation", turn: "turn", task: "request", contact: "agent",
+      content: "Final answer", success: true, now: 100))
+    XCTAssertEqual(completed.state, .succeeded)
+    XCTAssertEqual(completed.finalOutput, "Final answer")
+    XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: completed, source: "request",
+      conversation: "conversation", turn: "turn", task: "request", contact: "agent",
+      content: "Replacement", success: true, now: 200))
+    for identity in [("wrong", "conversation", "turn", "request", "agent"),
+                     ("request", "wrong", "turn", "request", "agent"),
+                     ("request", "conversation", "wrong", "request", "agent"),
+                     ("request", "conversation", "turn", "wrong", "agent"),
+                     ("request", "conversation", "turn", "request", "wrong")] {
+      XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: saved, source: identity.0,
+        conversation: identity.1, turn: identity.2, task: identity.3, contact: identity.4,
+        content: "Foreign answer", success: true, now: 100))
+    }
+  }
+
+  func testTeamMemberRequestIdentityRoundTripAndLegacyDefault() throws {
+    let member = AgentTeamMemberSnapshot(agentId: "agent", instanceId: "reviewer",
+      sourceMessageId: "original-request")
+    let encoded = try JSONEncoder().encode(member)
+    XCTAssertEqual(try JSONDecoder().decode(AgentTeamMemberSnapshot.self, from: encoded), member)
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    legacy.removeValue(forKey: "source_message_id")
+    let restored = try JSONDecoder().decode(AgentTeamMemberSnapshot.self,
+      from: JSONSerialization.data(withJSONObject: legacy))
+    XCTAssertEqual(restored.sourceMessageId, "")
+    XCTAssertEqual(restored.memberId, "reviewer")
+  }
+
+  func testRecoveryRepublishesSavedTerminalTeamWithoutStartingAnotherRun() {
+    let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: "saved-team", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead",
+      state: .succeeded, finalOutput: "Saved answer")
+    var unbound = snapshot
+    unbound.supervisorRunId = "unbound"
+    unbound.conversationId = ""
+    let store = SavedTeamRecoveryFixture([snapshot, unbound])
+    let responses = InMemoryAgentConnectorResponseStore()
+    let suite = "team-recovery-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let sink = AgentConnectorTeamCompletionSink(responseStore: responses,
+      historyStore: AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(), executionStore: store))
+    let runtime = AgentTeamExecutionRuntime(store: store, mailbox: InMemoryAgentTeamMailbox(), completionSink: sink)
+    XCTAssertTrue(runtime.recoverInterrupted().isEmpty)
+    XCTAssertTrue(runtime.recoverInterrupted().isEmpty)
+    XCTAssertEqual(responses.pending().count, 1)
+    XCTAssertEqual(responses.pending().first?.content, "Saved answer")
+    XCTAssertEqual(responses.pending().first?.conversationId, "conversation")
+    XCTAssertEqual(responses.pending().first?.taskId, "turn")
+    XCTAssertEqual(store.creates, 0)
+    runtime.close()
+  }
+
   func testAgentTeamProgressPolicyHidesBackgroundMembersUntilExpanded() {
     let snapshot = AgentTeamExecutionSnapshot(
       supervisorRunId: "progress-supervisor",
@@ -103,6 +326,34 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(responseStore.pending().count, 2)
   }
 
+  func testAgentTeamCompletionRetriesWhenHistoryEncryptionFails() throws {
+    let suite = "team-completion-write-failure-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = TeamCompletionFailingSecrets()
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]))
+    let responses = InMemoryAgentConnectorResponseStore()
+    let ledger = AgentTeamCompletionDeliveryLedger()
+    let sink = AgentConnectorTeamCompletionSink(responseStore: responses, ledger: ledger,
+      historyStore: history)
+    let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: "retry-history",
+      teamId: "team", conversationId: "conversation", taskId: "turn",
+      primaryAgentId: "lead", state: .succeeded, finalOutput: "Answer")
+
+    XCTAssertFalse(sink.publish(snapshot))
+    XCTAssertTrue(responses.pending().isEmpty)
+    XCTAssertTrue(ledger.snapshot().isEmpty)
+    XCTAssertNil(history.snapshot(supervisorRunId: snapshot.supervisorRunId))
+
+    secrets.rejectWrites = false
+    XCTAssertTrue(sink.publish(snapshot))
+    XCTAssertEqual(responses.pending().count, 1)
+    XCTAssertEqual(history.snapshot(supervisorRunId: snapshot.supervisorRunId), snapshot)
+    XCTAssertFalse(sink.publish(snapshot))
+    XCTAssertEqual(responses.pending().count, 1)
+  }
+
   func testAgentTeamCompletionSinkPublishesFailureResponseWithReason() {
     let responseStore = InMemoryAgentConnectorResponseStore()
     let sink = AgentConnectorTeamCompletionSink(
@@ -135,4 +386,39 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(response?.contactId, "agent-team:failed-team")
     XCTAssertEqual(response?.receivedAtMillis, 3_000)
   }
+}
+
+private final class TeamCompletionFailingSecrets: GalaxySSISecretStore {
+  var rejectWrites = true
+  private let backing = InMemorySecretStore()
+
+  func setString(_ value: String, account: String) throws {
+    if rejectWrites { throw GalaxySSIError.invalidPayload("Injected history key write failure") }
+    try backing.setString(value, account: account)
+  }
+
+  func string(account: String) -> String? { backing.string(account: account) }
+  func delete(account: String) { backing.delete(account: account) }
+}
+
+private final class SavedTeamRecoveryFixture: AgentTeamExecutionStore {
+  let saved: [AgentTeamExecutionSnapshot]
+  private(set) var creates = 0
+  init(_ saved: [AgentTeamExecutionSnapshot]) { self.saved = saved }
+  func create(definition: AgentTeamDefinition, request: AgentRunRequest) throws { creates += 1 }
+  func append(_ event: AgentSubagentEvent) async throws {}
+  func snapshot(supervisorRunId: String) -> AgentTeamExecutionSnapshot? {
+    saved.first { $0.supervisorRunId == supervisorRunId }
+  }
+  func snapshots() -> [AgentTeamExecutionSnapshot] { saved }
+  func markInterrupted(supervisorRunId: String, nowMillis: Int64) -> AgentTeamExecutionSnapshot? {
+    XCTFail("Terminal teams must not be interrupted")
+    return nil
+  }
+  func markNonTerminalInterrupted(nowMillis: Int64) -> [AgentTeamExecutionSnapshot] {
+    XCTFail("Recovery must inspect individual original teams")
+    return []
+  }
+  func remove(supervisorRunId: String) {}
+  func clear() {}
 }

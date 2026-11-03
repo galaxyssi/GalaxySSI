@@ -68,7 +68,7 @@ final class ScannedAgentConversationPolicyTests: XCTestCase {
     XCTAssertEqual(selection.reasoningEffort, .medium)
   }
 
-  func testSessionOnlySelectionDoesNotReplaceGlobalDefault() throws {
+  func testSessionOnlySelectionPreservesExistingManualChoiceAndNewSessionAuto() throws {
     let suiteName = "ScannedAgentConversationPolicyTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -95,9 +95,10 @@ final class ScannedAgentConversationPolicyTests: XCTestCase {
       "desktop:claude"
     )
     XCTAssertEqual(
-      AgentModelSelectionSettings.selection(for: "next", defaults: defaults).targetId,
+      AgentModelSelectionSettings.selection(for: "existing", defaults: defaults).targetId,
       "desktop:codex"
     )
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "next", defaults: defaults), AgentModelSelection())
   }
 
   private func contact(

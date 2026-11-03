@@ -2,6 +2,37 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testScreenAnalysisAllowsOnlyExplicitLowRiskReadOnlyIdempotentTools() throws {
+    let descriptors = AgentIOSWebIntelligenceNativeToolCatalog.definitions().map(\.descriptor)
+    let read = try XCTUnwrap(descriptors.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search })
+    XCTAssertTrue(AgentScreenAnalysisToolPolicy.allows(read))
+    for id in [AgentIOSWebIntelligenceNativeToolCatalog.cache, AgentIOSWebIntelligenceNativeToolCatalog.watch] {
+      let mutation = try XCTUnwrap(descriptors.first { $0.id == id })
+      XCTAssertEqual(mutation.risk, .low)
+      XCTAssertEqual(mutation.idempotency, .idempotent)
+      XCTAssertFalse(AgentScreenAnalysisToolPolicy.allows(mutation))
+    }
+    var unknown = read
+    unknown.effect = nil
+    XCTAssertFalse(AgentScreenAnalysisToolPolicy.allows(unknown))
+    unknown = read
+    unknown.risk = .high
+    XCTAssertFalse(AgentScreenAnalysisToolPolicy.allows(unknown))
+    unknown = read
+    unknown.idempotency = .nonIdempotent
+    XCTAssertFalse(AgentScreenAnalysisToolPolicy.allows(unknown))
+    XCTAssertFalse(AgentScreenAnalysisToolPolicy.allows(nil))
+    var action = AgentAction(id: "action", kind: .callNativeTool, target: read.id,
+      risk: .low, status: .proposed, description: "Read")
+    XCTAssertTrue(AgentScreenAnalysisToolPolicy.allows(action, descriptor: read))
+    action.kind = .tap
+    XCTAssertFalse(AgentScreenAnalysisToolPolicy.allows(action, descriptor: read))
+    action.kind = .callConnector
+    XCTAssertFalse(AgentScreenAnalysisToolPolicy.allows(action, descriptor: read))
+    action.kind = .readScreen
+    XCTAssertTrue(AgentScreenAnalysisToolPolicy.allows(action, descriptor: nil))
+  }
+
   func testAgentPhoneNativeToolCatalogRegistersStableDefaultIds() {
     var expected: Set<String> = [
       "galaxyssi.workspace.initialize",

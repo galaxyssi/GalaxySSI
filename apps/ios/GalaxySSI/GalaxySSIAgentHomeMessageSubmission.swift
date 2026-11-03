@@ -49,6 +49,7 @@ extension AgentHomeView {
         attachments: sensitiveAttachments,
         agentGoalOverride: agentGoal,
         requestKind: assistantRunID == nil ? .conversation : .screenAnalysis,
+        readOnlyAnalysis: assistantRunID != nil,
         onOutgoing: { outgoing in
           guard let assistantRunID, screenAssistantRunID == assistantRunID else { return }
           screenAssistantOwnedTurns.append(outgoing)
@@ -74,6 +75,7 @@ extension AgentHomeView {
     guard screenAssistantRunID != nil, !screenAssistantStopping else { return }
     cancelScreenPagePDFImport()
     screenAssistantStopping = true
+    screenAssistantVoiceCancellationRequest &+= 1
     screenAssistantRunID = nil
     screenAssistantStartedAt = nil
     screenshotPickerPresented = false

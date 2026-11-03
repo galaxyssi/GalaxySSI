@@ -3,6 +3,23 @@ import CoreGraphics
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testScreenDictationKeepsEmptyDraftAndRejectsStoppedOwner() throws {
+    let owner = UUID()
+    let snapshot = try XCTUnwrap(AgentVoiceTranscriptPolicy.draftSnapshot(
+      conversationID: "screen", text: "", dictationOnly: true, ownerID: owner))
+    XCTAssertTrue(snapshot.dictationOnly)
+    XCTAssertEqual(snapshot.text, "")
+    XCTAssertTrue(AgentVoiceTranscriptPolicy.canApplyDraft(snapshot, conversationID: "screen", ownerID: owner))
+    XCTAssertFalse(AgentVoiceTranscriptPolicy.canApplyDraft(snapshot, conversationID: "other", ownerID: owner))
+    XCTAssertFalse(AgentVoiceTranscriptPolicy.canApplyDraft(snapshot, conversationID: "screen", ownerID: nil))
+    XCTAssertFalse(AgentVoiceTranscriptPolicy.canApplyDraft(snapshot, conversationID: "screen", ownerID: UUID()))
+    XCTAssertEqual(AgentVoiceTranscriptPolicy.mergeDraftWithTranscript(draft: snapshot.text, transcript: "Hello"), "Hello")
+    XCTAssertNil(AgentVoiceTranscriptPolicy.draftSnapshot(conversationID: "home", text: " "))
+    let edited = try XCTUnwrap(AgentVoiceTranscriptPolicy.draftSnapshot(conversationID: "home", text: "Existing draft"))
+    XCTAssertFalse(edited.dictationOnly)
+    XCTAssertTrue(AgentVoiceTranscriptPolicy.canApplyDraft(edited, conversationID: "home", ownerID: nil))
+  }
+
   @MainActor
   func testScreenAssistantBubbleKeepsItsTouchTargetInsideViewport() {
     XCTAssertEqual(GalaxySSIScreenAssistantBubble.visibleDiameter, 46.4, accuracy: 0.001)

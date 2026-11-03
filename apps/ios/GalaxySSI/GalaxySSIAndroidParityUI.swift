@@ -140,6 +140,8 @@ struct AgentHomeView: View {
   @State var screenAssistantOwnedTurns: [ChatMessage] = []
   @State var screenAssistantSubmissions: [UUID: Task<Void, Never>] = [:]
   @State var screenAssistantStopping = false
+  @State var screenAssistantVoiceCancellationRequest = 0
+  @State var agentVoiceCaptureDictationOnly = false
   @State var screenAssistantAttachmentIDs: Set<String> = []
   @State private var screenAssistantRecoveryRequests: Set<String> = []
   @State var cameraPickerPresented = false
@@ -735,6 +737,7 @@ struct AgentHomeView: View {
         restoreAgentVoiceAttachments()
       },
       onVoiceTranscript: sendAgentVoiceTranscript,
+      voiceCancellationRequest: screenAssistantVoiceCancellationRequest,
       t: t
     )
   }

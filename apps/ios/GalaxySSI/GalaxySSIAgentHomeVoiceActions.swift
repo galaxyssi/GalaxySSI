@@ -16,6 +16,14 @@ extension AgentHomeView {
     agentVoiceDraftSnapshot = nil
     let capturedAttachments = voiceAttachmentSnapshot
     voiceAttachmentSnapshot.removeAll()
+    if agentVoiceCaptureDictationOnly {
+      guard let draftSnapshot, AgentVoiceTranscriptPolicy.canApplyDraft(draftSnapshot,
+        conversationID: store.activeAgentConversationId, ownerID: screenAssistantRunID) else {
+        voiceTranscriptionPending = false
+        voicePendingAttachments.removeAll()
+        return
+      }
+    }
     guard !cleanTranscript.isEmpty else {
       voiceTranscriptionPending = false
       voicePendingAttachments.removeAll()
@@ -26,7 +34,8 @@ extension AgentHomeView {
     if let draftSnapshot {
       voiceTranscriptionPending = false
       voicePendingAttachments.removeAll()
-      guard draftSnapshot.conversationID == store.activeAgentConversationId else { return }
+      guard AgentVoiceTranscriptPolicy.canApplyDraft(draftSnapshot,
+        conversationID: store.activeAgentConversationId, ownerID: screenAssistantRunID) else { return }
       let risk = DefaultVoiceCommandRiskClassifier.classify(cleanTranscript)
       let sessionId = registerAgentVoiceExecution(submission, risk: risk)
       VoiceExecutionLedgerBridge.markUserEdited(sessionId: sessionId)
@@ -143,9 +152,18 @@ extension AgentHomeView {
 
   func beginAgentVoiceCapture() {
     voiceAttachmentSnapshot.removeAll()
+    agentVoiceCaptureDictationOnly = !screenAssistantConversationID.isEmpty &&
+      screenAssistantConversationID == store.activeAgentConversationId
+    if agentVoiceCaptureDictationOnly && screenAssistantRunID == nil {
+      screenAssistantRunID = UUID()
+      screenAssistantStartedAt = Date()
+      screenAssistantOwnedTurns = []
+    }
     agentVoiceDraftSnapshot = AgentVoiceTranscriptPolicy.draftSnapshot(
       conversationID: store.activeAgentConversationId,
-      text: draft
+      text: draft,
+      dictationOnly: agentVoiceCaptureDictationOnly,
+      ownerID: screenAssistantRunID
     )
     guard agentVoiceDraftSnapshot == nil else { return }
     voiceAttachmentSnapshot = attachments

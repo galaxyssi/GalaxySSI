@@ -438,7 +438,8 @@ enum CloudWebGrounding {
     provider: AgentIOSWebIntelligenceToolProviding,
     name: String,
     arguments: AgentMcpJSONObject,
-    context: AgentNativeToolInvocationContext
+    context: AgentNativeToolInvocationContext,
+    readOnlyAnalysis: Bool = false
   ) -> String {
     if name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "web_weather" {
       return executeWeather(provider: provider, arguments: arguments, context: context)
@@ -454,6 +455,14 @@ enum CloudWebGrounding {
       let registry = try AgentNativeToolRegistry().registerExecutables(
         AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider)
       )
+      if readOnlyAnalysis && !AgentScreenAnalysisToolPolicy.allows(
+        registry.lookup(AgentIOSWebIntelligenceNativeToolCatalog.toolId(operation))?.descriptor) {
+        return boundedModelJson([
+          "status": .string("failed"), "tool": .string(name),
+          "code": .string("screen_analysis_read_only"),
+          "error": .string("Read-only analysis cannot modify Web Intelligence cache or watches")
+        ])
+      }
       let result = registry.invoke(
         AgentIOSWebIntelligenceNativeToolCatalog.toolId(operation),
         input: normalizeArguments(name: name, arguments: arguments),

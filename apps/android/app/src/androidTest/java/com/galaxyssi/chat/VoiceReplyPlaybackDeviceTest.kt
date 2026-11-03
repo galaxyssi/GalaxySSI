@@ -93,15 +93,39 @@ class VoiceReplyPlaybackDeviceTest {
         }
     }
 
+    @Test fun liveMixedReplyContinuesAfterAnAnimationWithoutSpeakingItsProgram() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("run_live_audio") == "true")
+        val before = "第一段开始。"
+        val after = "第二段继续。最后一段结束。"
+        val html = "<html><body><canvas></canvas><script>const hidden='不要朗读代码';</script></body></html>"
+        val rich = AgentRichContentCodec.encode(listOf(
+            AgentRichBlock("before", AgentRichBlockType.TEXT, text = before),
+            AgentRichBlock("animation", AgentRichBlockType.HTML, text = html),
+            AgentRichBlock("after", AgentRichBlockType.TEXT, text = after)))
+        withReply("$before\n\n```galaxyssi-html\n$html\n```\n\n$after", rich) { selection ->
+            val entry = AgentTranscriptStore(context).fullEntry(selection.entryId)!!
+            assertEquals("$before $after", selection.text(entry))
+            val chunks = AgentReplySpeechController().toggle(AgentReplySpeechPresentationPolicy.target(entry)!!).chunks
+            assertEquals(listOf(before, "第二段继续。", "最后一段结束。"), chunks.map { it.speechText })
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { VoiceReplyPlayback.start(it, selection) }
+                await("mixed reply audio", 60_000) { it.status == "playing" || it.status == "failed" }
+                assertEquals("playing", snapshot().status)
+                await("all prose completed", 60_000) { it.status == "stopped" || it.status == "failed" }
+                assertEquals("stopped", snapshot().status)
+            }
+        }
+    }
+
     private fun withReply(text: String = (1..12).joinToString("\n\n") {
         "这是后台朗读测试的第${it}段。退出页面后，语音应继续播放。点击停止后，不会继续读取消息。"
-    }, block: (VoiceReplySelection) -> Unit) {
+    }, richOutput: String = "", block: (VoiceReplySelection) -> Unit) {
         val store = AgentTranscriptStore(context)
         val conversation = store.createAgentConversation("后台朗读测试")
         val turn = UUID.randomUUID().toString()
         try {
             store.append(AgentTranscriptRole.ASSISTANT, text, "assistant-final:$turn",
-                conversationId = conversation.id, turnId = turn)
+                conversationId = conversation.id, turnId = turn, richOutputJson = richOutput)
             val entry = store.entriesForTurn(turn).single()
             block(VoiceReplySelection(conversation.id, entry.id))
         } finally {

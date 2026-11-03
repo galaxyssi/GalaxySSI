@@ -10,6 +10,13 @@ enum AgentMentionText {
     _ text: String,
     targets: [AgentCallableTarget]
   ) -> AgentMentionSelection {
+    if let boundary = text.range(of: AgentUntrustedEvidenceBoundary.textMarker) {
+      let instruction = parse(String(text[..<boundary.lowerBound]), targets: targets)
+      let evidence = String(text[boundary.lowerBound...])
+      return AgentMentionSelection(
+        goal: instruction.goal.isEmpty ? evidence : instruction.goal + "\n\n" + evidence,
+        requestedMembers: instruction.requestedMembers)
+    }
     let source = text as NSString
     let candidates = targets
       .filter { [.agent, .model].contains($0.kind) && $0.status == .available }
@@ -165,7 +172,7 @@ enum AgentMentionText {
 
 enum AgentExplicitMultiAgentIntentPolicy {
   static func matches(_ request: String) -> Bool {
-    let normalized = request
+    let normalized = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(request)
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     guard !normalized.isEmpty else { return false }
