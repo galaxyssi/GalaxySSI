@@ -47,6 +47,74 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testDesktopReplyRecoveryCorrelatesAuthenticatedScopeAndPreservesFirstTerminalTime() throws {
+    let suite = "DesktopReplyRecoveryTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets)
+    let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: UUID(),
+      contactId: "agent", agentId: "codex", identity: AgentTaskIdentity(clientRouteId: "route",
+        conversationId: "conversation", taskId: "task", turnId: "turn"))
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    XCTAssertNil(defaults.object(forKey: AgentDesktopReplyRecovery.storageKey))
+    let request = try XCTUnwrap(recovery.request(binding, online: true, now: 1_000))
+    XCTAssertEqual(request["type"] as? String, "agent_task_recovery_request")
+    XCTAssertNil(request["include_result_page"])
+    var item: [String: Any] = binding.fields
+    item.merge(["status": "completed", "remote_run_id": "run", "execution_generation": 1,
+      "status_sequence": 1]) { _, new in new }
+    var response: [String: Any] = ["type": "agent_task_recovery_result", "request_id": request["request_id"]!,
+      "client_route_id": "route", "items": [item]]
+    XCTAssertNil(recovery.receive(response, authenticatedDesktopId: "foreign", now: 2_000))
+    var forged = item
+    forged["turn_id"] = "foreign"
+    response["items"] = [forged]
+    XCTAssertNil(recovery.receive(response, authenticatedDesktopId: "desktop", now: 2_000))
+    response["items"] = [item]
+    XCTAssertEqual(recovery.receive(response, authenticatedDesktopId: "desktop", now: 3_000)?.terminalObservedAt, 3_000)
+    XCTAssertNil(recovery.receive(response, authenticatedDesktopId: "desktop", now: 3_001))
+    let second = try XCTUnwrap(recovery.request(binding, online: true, now: 31_000))
+    response["request_id"] = second["request_id"]!
+    item["status_sequence"] = 2
+    response["items"] = [item]
+    XCTAssertEqual(recovery.receive(response, authenticatedDesktopId: "desktop", now: 32_000)?.terminalObservedAt, 3_000)
+    var final = item
+    final["task_status"] = "completed"
+    final["execution_generation"] = 0
+    XCTAssertFalse(recovery.acceptsFinal(final, desktopId: "desktop"))
+    final["execution_generation"] = 1
+    XCTAssertTrue(recovery.acceptsFinal(final, desktopId: "desktop"))
+    final["status_sequence"] = true
+    XCTAssertFalse(recovery.acceptsFinal(final, desktopId: "desktop"))
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(reopened.pending.first?.terminalObservedAt, 3_000)
+    XCTAssertNil(reopened.pending.first?.expiryReason(now: 3_000 + 15 * 60_000 - 1))
+    XCTAssertEqual(reopened.pending.first?.expiryReason(now: 3_000 + 15 * 60_000), "desktop_result_unavailable")
+  }
+
+  @MainActor
+  func testDesktopReplyRecoveryOfflineProbesDoNotCreateRequestsAndRespectMinimumSilence() throws {
+    let suite = "DesktopReplyOfflineTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: InMemorySecretStore())
+    let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: UUID(),
+      contactId: "agent", agentId: "codex", identity: AgentTaskIdentity(clientRouteId: "route",
+        conversationId: "conversation", taskId: "task", turnId: "turn"))
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    for now in [Int64(1_000), 31_000, 271_000] {
+      XCTAssertNil(recovery.request(binding, online: false, now: now))
+    }
+    XCTAssertEqual(recovery.pending.first?.misses, 3)
+    XCTAssertNil(recovery.pending.first?.expiryReason(now: 300_999))
+    XCTAssertEqual(recovery.pending.first?.expiryReason(now: 301_000), "desktop_status_unavailable")
+    XCTAssertNil(recovery.pending.first?.expiryReason(now: 10))
+    XCTAssertTrue(recovery.retire(binding))
+    XCTAssertTrue(recovery.pending.isEmpty)
+  }
+
+  @MainActor
   func testScreenAssistantBubbleKeepsItsTouchTargetInsideViewport() {
     XCTAssertEqual(GalaxySSIScreenAssistantBubble.visibleDiameter, 46.4, accuracy: 0.001)
     XCTAssertEqual(GalaxySSIScreenAssistantBubble.touchDiameter, 48)

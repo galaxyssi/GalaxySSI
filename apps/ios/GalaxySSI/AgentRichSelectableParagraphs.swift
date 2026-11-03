@@ -7,12 +7,15 @@ struct AgentRichBlockRun: Equatable {
 
 struct AgentRichSelectableParagraphs: View {
   @Environment(\.agentReplyParagraphSpeechAction) private var paragraphSpeechAction
+  @Environment(\.peerTextSelection) private var peerSelection
 
   var blocks: [AgentRichBlock]
 
   @ViewBuilder
   var body: some View {
-    if let paragraphSpeechAction {
+    if let peerSelection, paragraphSpeechAction == nil {
+      GalaxySSIPeerSelectableParagraphs(blocks: blocks, selection: peerSelection)
+    } else if let paragraphSpeechAction {
       VStack(alignment: .leading, spacing: 8) {
         ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
           Text(Self.render(block))

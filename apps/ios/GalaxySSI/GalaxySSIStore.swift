@@ -645,6 +645,11 @@ final class GalaxySSIStore: ObservableObject {
     messagesByContact[contactId] ?? []
   }
 
+  func persistedMessage(id: UUID, contactId: String) -> ChatMessage? {
+    guard let message = chatHistoryDatabase.message(id: id), message.contactId == contactId else { return nil }
+    return message
+  }
+
   @discardableResult
   func loadMessagePage(
     contactId: String,
@@ -878,32 +883,21 @@ final class GalaxySSIStore: ObservableObject {
 
   @discardableResult
   func deleteMessage(_ messageId: UUID, contactId: String? = nil) -> Bool {
-    let stored = chatHistoryDatabase.message(id: messageId)
-    let contactIds = contactId.map { [$0] }
-      ?? stored.map { [$0.contactId] }
-      ?? Array(messagesByContact.keys)
-    for id in contactIds {
-      guard var messages = messagesByContact[id],
-            let index = messages.firstIndex(where: { $0.id == messageId }) else {
-        continue
-      }
-      let removed = messages.remove(at: index)
-      if let deleted = chatHistoryDatabase.deleteMessage(id: messageId) { agentReplyUnreadStore.remove(deleted) }
-      deletePrivateAttachmentCopies(in: [removed])
+    // Commit the scoped deletion and replay marker before changing the UI or removing files.
+    guard let removed = chatHistoryDatabase.deleteMessage(id: messageId, contactId: contactId) else { return false }
+    agentReplyUnreadStore.remove(removed)
+    deletePrivateAttachmentCopies(in: [removed])
+    let id = removed.contactId
+    if var messages = messagesByContact[id] {
+      messages.removeAll { $0.id == messageId }
       if messages.isEmpty {
         messagesByContact.removeValue(forKey: id)
       } else {
         messagesByContact[id] = messages
       }
-      save()
-      return true
     }
-    if let removed = chatHistoryDatabase.deleteMessage(id: messageId) {
-      agentReplyUnreadStore.remove(removed)
-      deletePrivateAttachmentCopies(in: [removed])
-      return true
-    }
-    return false
+    save()
+    return true
   }
 
   @discardableResult
@@ -963,6 +957,7 @@ final class GalaxySSIStore: ObservableObject {
     UserDefaultsAgentRecordedRunStore(defaults: defaults).clear()
     [
       AgentEvalOpsStore.defaultKey,
+      AgentDesktopReplyRecovery.storageKey,
       AgentFailureMemoryStore.defaultKey,
       AgentShadowRoutingStore.defaultKey,
       AgentCognitiveGovernanceStore.defaultKey,

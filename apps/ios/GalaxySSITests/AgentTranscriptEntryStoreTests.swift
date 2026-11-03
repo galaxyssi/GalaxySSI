@@ -314,6 +314,49 @@ final class AgentConversationDatabaseTests: XCTestCase {
 }
 
 final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
+  func testLocalDeletionIsContactScopedAndBlocksReplayAfterReopen() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ChatDeletionTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("history.sqlite")
+    let secrets = InMemorySecretStore()
+    let database = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    let original = ChatMessage(contactId: "desktop-a", content: "Private reply", isMine: false,
+      conversationId: "session", turnId: "turn", remoteMessageId: "remote-reply")
+    XCTAssertTrue(database.upsert(original))
+    XCTAssertNil(database.deleteMessage(id: original.id, contactId: "desktop-b"))
+    XCTAssertEqual(database.message(id: original.id), original)
+    XCTAssertEqual(database.deleteMessage(id: original.id, contactId: "desktop-a"), original)
+    XCTAssertNil(database.message(id: original.id))
+    let reopened = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    XCTAssertFalse(reopened.upsert(original))
+    XCTAssertTrue(reopened.containsIncoming(contactId: "desktop-a", remoteMessageId: "remote-reply"))
+    var replay = original
+    replay.id = UUID()
+    XCTAssertThrowsError(try reopened.persistTransportIncoming(replay)) { error in
+      XCTAssertEqual(error as? GalaxySSIChatHistoryError, .locallyDeleted)
+    }
+    XCTAssertEqual(reopened.count, 0)
+    replay.contactId = "desktop-b"
+    XCTAssertEqual(try reopened.persistTransportIncoming(replay), replay)
+    XCTAssertFalse(reopened.containsIncoming(contactId: "desktop-c", remoteMessageId: "remote-reply"))
+  }
+
+  func testExplicitHistoryRestoreCanReplaceDeletionButCacheReplayCannot() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ChatDeletionRestoreTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite"),
+      secrets: InMemorySecretStore())
+    let original = ChatMessage(contactId: "desktop", content: "Reply", isMine: false, remoteMessageId: "remote")
+    XCTAssertTrue(database.upsert(original))
+    XCTAssertNotNil(database.deleteMessage(id: original.id))
+    XCTAssertFalse(database.upsertAll([original]))
+    XCTAssertEqual(database.count, 0)
+    XCTAssertTrue(database.replaceAll([original.contactId: [original]]))
+    XCTAssertEqual(database.message(id: original.id), original)
+  }
+
   func testScreenAnalysisRequestKindSurvivesEncryptedHistoryAndWireOptions() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("ScreenAnalysisKind-" + UUID().uuidString, isDirectory: true)
