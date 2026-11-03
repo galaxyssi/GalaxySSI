@@ -21,6 +21,32 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testScreenAssistantMenuStaysBesideBubbleAndInsideResizedViewport() {
+    for size in [CGSize(width: 320, height: 600), CGSize(width: 844, height: 300),
+                 CGSize(width: 320, height: 100)] {
+      for x in [0.0, 0.5, 1.0] {
+        for y in [0.0, 0.5, 1.0] {
+          let center = GalaxySSIScreenAssistantBubble.center(x: x, y: y, in: size)
+          let menu = GalaxySSIScreenAssistantBubble.menuRect(near: center, in: size, rows: 3)
+          XCTAssertGreaterThanOrEqual(menu.minX, 0)
+          XCTAssertGreaterThanOrEqual(menu.minY, 0)
+          XCTAssertLessThanOrEqual(menu.maxX, size.width)
+          XCTAssertLessThanOrEqual(menu.maxY, size.height)
+          let icon = CGRect(x: center.x - 24, y: center.y - 24, width: 48, height: 48)
+          if menu.height > 0 { XCTAssertFalse(icon.intersects(menu)) }
+        }
+      }
+    }
+    let right = GalaxySSIScreenAssistantBubble.menuRect(near: CGPoint(x: 296, y: 300),
+      in: CGSize(width: 320, height: 600), rows: 3)
+    XCTAssertLessThanOrEqual(right.maxX, 264)
+    let left = GalaxySSIScreenAssistantBubble.menuRect(near: CGPoint(x: 24, y: 300),
+      in: CGSize(width: 320, height: 600), rows: 3)
+    XCTAssertGreaterThanOrEqual(left.minX, 56)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.menuRect(near: .zero, in: .zero, rows: 3), .zero)
+  }
+
+  @MainActor
   func testScreenAssistantBubbleKeepsItsTouchTargetInsideViewport() {
     XCTAssertEqual(GalaxySSIScreenAssistantBubble.visibleDiameter, 46.4, accuracy: 0.001)
     XCTAssertEqual(GalaxySSIScreenAssistantBubble.touchDiameter, 48)
