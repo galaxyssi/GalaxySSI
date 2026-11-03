@@ -36,6 +36,12 @@ struct AgentManagedDesktopReplySource: Codable, Equatable {
   var executionGeneration: Int64
 }
 
+struct AgentTeamDesktopReplySource: Codable, Equatable {
+  var supervisorRunId: String
+  var memberId: String
+  var sourceMessageId: String
+}
+
 struct AgentDesktopReplyBinding: Codable, Equatable {
   var desktopId: String
   var displayContactId: String
@@ -44,7 +50,8 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   var agentId: String
   var identity: AgentTaskIdentity
   var managedSource: AgentManagedDesktopReplySource? = nil
-  var sourceIdentity: String { managedSource.map { String($0.sourceMessageId) } ?? sourceId.uuidString }
+  var teamSource: AgentTeamDesktopReplySource? = nil
+  var sourceIdentity: String { teamSource?.sourceMessageId ?? managedSource.map { String($0.sourceMessageId) } ?? sourceId.uuidString }
 
   var fields: [String: String] {
     ["client_route_id": identity.clientRouteId, "conversation_id": identity.conversationId,
@@ -53,7 +60,10 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   }
 
   var isValid: Bool {
-    identity.isComplete && (managedSource.map {
+    identity.isComplete && !(managedSource != nil && teamSource != nil) && (teamSource.map {
+      !$0.supervisorRunId.isBlank && $0.supervisorRunId.count <= 200 && !$0.memberId.isBlank &&
+        $0.memberId.count <= 200 && UUID(uuidString: $0.sourceMessageId) != nil
+    } ?? true) && (managedSource.map {
       !$0.ownerRunId.isBlank && $0.ownerRunId.count <= 200 && $0.sourceMessageId > 0 &&
         AgentRemoteOutcomePolicy.validGeneration($0.executionGeneration)
     } ?? true) && ([desktopId, displayContactId] + Array(fields.values))
@@ -63,6 +73,7 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   var key: String {
     var values = [desktopId, displayContactId] + fields.keys.sorted().map { fields[$0]! }
     if let managedSource { values += [managedSource.ownerRunId, String(managedSource.executionGeneration)] }
+    if let teamSource { values += ["team-observer", teamSource.supervisorRunId, teamSource.memberId] }
     let data = (try? JSONEncoder().encode(values)) ?? Data()
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
@@ -91,6 +102,18 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
       sourceId: localKey, contactId: record.contactId, agentId: agentId, identity: identity,
       managedSource: AgentManagedDesktopReplySource(ownerRunId: record.ownerRunId,
         sourceMessageId: record.sourceMessageId, executionGeneration: record.executionGeneration))
+    return binding.isValid ? binding : nil
+  }
+
+  static func teamObserver(owner: AgentTeamReplyOwner, desktopId: String, agentId: String,
+                           identity: AgentTaskIdentity) -> AgentDesktopReplyBinding? {
+    guard owner.deliveryMode == .observe, let source = UUID(uuidString: owner.sourceMessageId),
+          identity.conversationId == owner.conversationId, identity.turnId == owner.turnId,
+          identity.taskId == owner.sourceMessageId else { return nil }
+    let binding = AgentDesktopReplyBinding(desktopId: desktopId, displayContactId: "team-observer",
+      sourceId: source, contactId: owner.contactId, agentId: agentId, identity: identity,
+      teamSource: AgentTeamDesktopReplySource(supervisorRunId: owner.supervisorRunId,
+        memberId: owner.memberId, sourceMessageId: owner.sourceMessageId))
     return binding.isValid ? binding : nil
   }
 }

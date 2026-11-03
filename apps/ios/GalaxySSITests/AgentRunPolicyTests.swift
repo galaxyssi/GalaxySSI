@@ -5,6 +5,27 @@ import CryptoKit
 
 extension GalaxySSIStoreTests {
   @MainActor
+  func testTeamObserverRecoveryPreservesExactUUIDAndRejectsForeignTask() throws {
+    let source = UUID().uuidString.lowercased()
+    let owner = AgentTeamReplyOwner(supervisorRunId: "team-run", memberId: "review-instance",
+      conversationId: "conversation", turnId: "turn", sourceMessageId: source, contactId: "review", deliveryMode: .observe)
+    var identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: source, turnId: "turn")
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: "desktop", agentId: "codex", identity: identity))
+    XCTAssertEqual(binding.sourceIdentity, source)
+    XCTAssertEqual(binding.fields["source_message_id"], source)
+    XCTAssertEqual(binding.checkpointIdentity(generation: 2).sourceMessageId, source)
+    XCTAssertEqual(try JSONDecoder().decode(AgentDesktopReplyBinding.self, from: JSONEncoder().encode(binding)), binding)
+    var sibling = owner
+    sibling.memberId = "other-instance"
+    XCTAssertNotEqual(binding.key, AgentDesktopReplyBinding.teamObserver(owner: sibling, desktopId: "desktop", agentId: "codex", identity: identity)?.key)
+    identity.taskId = "foreign"
+    XCTAssertNil(AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: "desktop", agentId: "codex", identity: identity))
+    var primary = owner
+    primary.deliveryMode = .respond
+    XCTAssertNil(AgentDesktopReplyBinding.teamObserver(owner: primary, desktopId: "desktop", agentId: "codex", identity: binding.identity))
+  }
+
+  @MainActor
   func testManagedDesktopRecoveryUsesOriginalNumericSourceAndExactGeneration() throws {
     let suite = "ManagedDesktopRecovery-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
