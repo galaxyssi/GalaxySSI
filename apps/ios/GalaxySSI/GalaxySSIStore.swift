@@ -645,6 +645,11 @@ final class GalaxySSIStore: ObservableObject {
     messagesByContact[contactId] ?? []
   }
 
+  func persistedMessage(id: UUID, contactId: String) -> ChatMessage? {
+    guard let message = chatHistoryDatabase.message(id: id), message.contactId == contactId else { return nil }
+    return message
+  }
+
   @discardableResult
   func loadMessagePage(
     contactId: String,
@@ -952,6 +957,7 @@ final class GalaxySSIStore: ObservableObject {
     UserDefaultsAgentRecordedRunStore(defaults: defaults).clear()
     [
       AgentEvalOpsStore.defaultKey,
+      AgentDesktopReplyRecovery.storageKey,
       AgentFailureMemoryStore.defaultKey,
       AgentShadowRoutingStore.defaultKey,
       AgentCognitiveGovernanceStore.defaultKey,
