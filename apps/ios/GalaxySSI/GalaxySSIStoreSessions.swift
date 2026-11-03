@@ -54,13 +54,14 @@ final class AgentConversationDatabase {
       guard let payload = encryptedPayload(conversation) else { return false }
       let sql = """
         INSERT INTO agent_conversations
-          (conversation_id, status, pinned, created_at, updated_at, encrypted_payload)
-        VALUES (?, ?, ?, ?, ?, ?)
+          (conversation_id, status, pinned, created_at, updated_at, encrypted_payload, activity_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(conversation_id) DO UPDATE SET
           status = excluded.status,
           pinned = excluded.pinned,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
+          activity_at = excluded.activity_at,
           encrypted_payload = excluded.encrypted_payload
         """
       guard let statement = prepare(sql) else { return false }
@@ -70,6 +71,7 @@ final class AgentConversationDatabase {
       sqlite3_bind_int(statement, 3, conversation.pinned ? 1 : 0)
       sqlite3_bind_int64(statement, 4, conversation.createdAt)
       sqlite3_bind_int64(statement, 5, conversation.updatedAt)
+      sqlite3_bind_int64(statement, 7, conversation.dialogueActivityAt)
       payload.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, 6, bytes.baseAddress, Int32(payload.count), Self.transient)
       }
@@ -152,7 +154,7 @@ final class AgentConversationDatabase {
   func readAll() -> [AgentConversation] {
     locked {
       query(
-        sql: "SELECT conversation_id, encrypted_payload FROM agent_conversations ORDER BY pinned DESC, updated_at DESC, conversation_id DESC",
+        sql: "SELECT conversation_id, encrypted_payload FROM agent_conversations ORDER BY pinned DESC, COALESCE(activity_at, updated_at) DESC, conversation_id DESC",
         bindValues: []
       )
     }
@@ -172,7 +174,7 @@ final class AgentConversationDatabase {
         values.append(.text(status.rawValue))
       }
       if let cursor {
-        clauses.append("(pinned < ? OR (pinned = ? AND updated_at < ?) OR (pinned = ? AND updated_at = ? AND conversation_id < ?))")
+        clauses.append("(pinned < ? OR (pinned = ? AND COALESCE(activity_at, updated_at) < ?) OR (pinned = ? AND COALESCE(activity_at, updated_at) = ? AND conversation_id < ?))")
         let pinned: Int32 = cursor.pinned ? 1 : 0
         values += [
           .int(pinned), .int(pinned), .int64(cursor.updatedAt),
@@ -182,13 +184,13 @@ final class AgentConversationDatabase {
       let predicate = clauses.isEmpty ? "" : " WHERE \(clauses.joined(separator: " AND "))"
       values.append(.int(Int32(safeSize + 1)))
       let rows = query(
-        sql: "SELECT conversation_id, encrypted_payload FROM agent_conversations\(predicate) ORDER BY pinned DESC, updated_at DESC, conversation_id DESC LIMIT ?",
+        sql: "SELECT conversation_id, encrypted_payload FROM agent_conversations\(predicate) ORDER BY pinned DESC, COALESCE(activity_at, updated_at) DESC, conversation_id DESC LIMIT ?",
         bindValues: values
       )
       let hasMore = rows.count > safeSize
       let items = Array(rows.prefix(safeSize))
       let next = hasMore ? items.last.map {
-        AgentConversationPageCursor(pinned: $0.pinned, updatedAt: $0.updatedAt, id: $0.id)
+        AgentConversationPageCursor(pinned: $0.pinned, updatedAt: $0.dialogueActivityAt, id: $0.id)
       } : nil
       return AgentConversationPage(items: items, nextCursor: next, hasMore: hasMore)
     }
@@ -355,6 +357,8 @@ final class AgentConversationDatabase {
     _ = execute("CREATE TABLE IF NOT EXISTS agent_conversations (conversation_id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, pinned INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE TABLE IF NOT EXISTS agent_conversation_drafts (conversation_id TEXT PRIMARY KEY NOT NULL, encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE INDEX IF NOT EXISTS agent_conversations_order ON agent_conversations(status, pinned DESC, updated_at DESC, conversation_id DESC)")
+    _ = execute("ALTER TABLE agent_conversations ADD COLUMN activity_at INTEGER")
+    _ = execute("CREATE INDEX IF NOT EXISTS agent_conversations_activity_order ON agent_conversations(status, pinned DESC, COALESCE(activity_at, updated_at) DESC, conversation_id DESC)")
     _ = execute("CREATE TABLE IF NOT EXISTS agent_conversation_state (state_key TEXT PRIMARY KEY NOT NULL, state_value TEXT NOT NULL)")
   }
 
@@ -733,6 +737,7 @@ extension GalaxySSIStore {
     mergedTarget.outputTokens = saturatingAdd(target.outputTokens, source.outputTokens)
     mergedTarget.costMicros = saturatingAdd(target.costMicros, source.costMicros)
     mergedTarget.updatedAt = max(target.updatedAt, source.updatedAt, now)
+    mergedTarget.latestDialogueAt = max(target.dialogueActivityAt, source.dialogueActivityAt)
 
     agentTaskRecords = agentTaskRecords.map { task in
       guard task.sessionId == source.id else { return task }
@@ -931,6 +936,7 @@ extension GalaxySSIStore {
       conversation.title = conversation.title.ifBlank(contact.displayName)
       conversation.selectedModelOrAgent = conversation.selectedModelOrAgent.ifBlank(contact.displayName)
       conversation.updatedAt = max(conversation.updatedAt, updatedAt)
+      conversation.latestDialogueAt = messages.filter { !$0.isSystem }.map { Self.millis($0.createdAt) }.max() ?? 0
       byId[conversationId] = conversation
     }
     return Self.sortedAgentConversations(Array(byId.values))
@@ -979,6 +985,7 @@ extension GalaxySSIStore {
       conversation.selectedModelOrAgent = contact.displayName.ifBlank("Automatic")
     }
     conversation.updatedAt = max(conversation.updatedAt, timestamp)
+    conversation.latestDialogueAt = max(conversation.latestDialogueAt ?? 0, timestamp)
     persistAgentConversation(conversation)
   }
 
@@ -995,8 +1002,8 @@ extension GalaxySSIStore {
       if left.pinned != right.pinned {
         return left.pinned && !right.pinned
       }
-      if left.updatedAt != right.updatedAt {
-        return left.updatedAt > right.updatedAt
+      if left.dialogueActivityAt != right.dialogueActivityAt {
+        return left.dialogueActivityAt > right.dialogueActivityAt
       }
       return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
     }

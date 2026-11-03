@@ -1121,7 +1121,6 @@ final class GalaxySSIStore: ObservableObject {
       conversationId: resolvedConversationId
     )
     messagesByContact[contactId, default: []].append(message)
-    recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)
     save()
     return message
   }
