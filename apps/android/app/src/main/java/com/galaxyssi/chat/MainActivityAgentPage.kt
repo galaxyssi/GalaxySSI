@@ -366,7 +366,7 @@ internal fun MainActivity.configureAgentPage() {
 
 private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptAdapter: AgentTranscriptRecyclerAdapter) {
     agentOutputList = list
-    agentOutputLayout = LinearLayoutManager(this)
+    agentOutputLayout = AgentTranscriptLayoutManager(this)
     agentTranscriptAdapter = transcriptAdapter
     var olderPageRequestedForGesture = false
     agentOutputList.apply {

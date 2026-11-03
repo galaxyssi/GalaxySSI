@@ -68,6 +68,7 @@ internal open class AgentTranscriptRecyclerAdapter(
 
     override fun onViewAttachedToWindow(holder: AgentTranscriptViewHolder) {
         super.onViewAttachedToWindow(holder)
+        activity.refreshAgentReplySpeechViews(holder.container)
         entries.getOrNull(holder.adapterPosition)?.let { observeDraw(holder, it) }
     }
 
