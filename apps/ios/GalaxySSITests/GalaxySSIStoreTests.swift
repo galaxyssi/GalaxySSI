@@ -1028,6 +1028,18 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(store.displaySettings.textScale, .large)
   }
 
+  func testDeleteMessageRejectsForeignContactAndDoesNotResurrectCachedHistory() {
+    let store = makeStore()
+    let original = store.appendIncoming("Reply", from: "desktop-a", remoteMessageId: "remote-delete")
+    XCTAssertFalse(store.deleteMessage(original.id, contactId: "desktop-b"))
+    XCTAssertTrue(store.messages(for: "desktop-a").contains { $0.id == original.id })
+    XCTAssertTrue(store.deleteMessage(original.id, contactId: "desktop-a"))
+    XCTAssertFalse(store.messages(for: "desktop-a").contains { $0.id == original.id })
+    XCTAssertTrue(store.hasIncomingDuplicate("Reply", from: "desktop-a", remoteMessageId: "remote-delete"))
+    XCTAssertFalse(store.hasIncomingDuplicate("Reply", from: "desktop-b", remoteMessageId: "remote-delete"))
+    XCTAssertFalse(store.deleteMessage(original.id, contactId: "desktop-a"))
+  }
+
   func testAgentSafetySettingsDecodeAndroidPolicyAndEncodeStoredNames() throws {
     let settings = try JSONDecoder.galaxySSI.decode(
       AgentSafetySettings.self,

@@ -12,6 +12,10 @@ struct GalaxySSIChatHistoryPage: Equatable {
   var hasMore: Bool
 }
 
+enum GalaxySSIChatHistoryError: Error, Equatable {
+  case locallyDeleted
+}
+
 final class GalaxySSIChatHistoryDatabase {
   static let defaultPageSize = 100
   static let maximumPageSize = 500
@@ -38,6 +42,8 @@ final class GalaxySSIChatHistoryDatabase {
   func upsert(_ message: ChatMessage) -> Bool {
     locked {
       guard !message.contactId.isBlank,
+            let deleted = try? isLocallyDeleted(contactId: message.contactId, messageId: message.id.uuidString,
+              remoteMessageId: message.remoteMessageId, isMine: message.isMine), !deleted,
             let payload = encryptedPayload(message),
             let statement = prepare("""
               INSERT INTO chat_messages
@@ -123,6 +129,10 @@ final class GalaxySSIChatHistoryDatabase {
             execute("BEGIN IMMEDIATE TRANSACTION") else { throw MqttChunkStorageError.databaseFailure }
       var committed = false
       defer { if !committed { _ = execute("ROLLBACK") } }
+      if try isLocallyDeleted(contactId: message.contactId, messageId: message.id.uuidString,
+        remoteMessageId: message.remoteMessageId, isMine: false) {
+        throw GalaxySSIChatHistoryError.locallyDeleted
+      }
       guard let statement = prepare("""
         SELECT message_id, encrypted_payload FROM chat_messages
         WHERE (contact_id = ? AND remote_message_id = ? AND is_mine = 0) OR message_id = ?
@@ -272,6 +282,9 @@ final class GalaxySSIChatHistoryDatabase {
 
   func containsIncoming(contactId: String, remoteMessageId: String) -> Bool {
     locked {
+      if (try? isLocallyDeleted(contactId: contactId, remoteMessageId: remoteMessageId, isMine: false)) == true {
+        return true
+      }
       guard !remoteMessageId.isBlank,
             let statement = prepare("SELECT 1 FROM chat_messages WHERE contact_id = ? AND remote_message_id = ? AND is_mine = 0 LIMIT 1") else {
         return false
@@ -284,14 +297,52 @@ final class GalaxySSIChatHistoryDatabase {
   }
 
   @discardableResult
-  func deleteMessage(id: UUID) -> ChatMessage? {
+  func deleteMessage(id: UUID, contactId: String? = nil) -> ChatMessage? {
     locked {
-      guard let current = message(id: id),
-            let statement = prepare("DELETE FROM chat_messages WHERE message_id = ?") else { return nil }
+      guard execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"),
+            execute("BEGIN IMMEDIATE TRANSACTION") else { return nil }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard let current = message(id: id), contactId == nil || contactId == current.contactId,
+            let tombstone = prepare("""
+        INSERT OR IGNORE INTO chat_message_deletions (contact_id, message_id, remote_message_id, is_mine)
+        VALUES (?, ?, ?, ?)
+        """) else { return nil }
+      defer { sqlite3_finalize(tombstone) }
+      bind(current.contactId, at: 1, to: tombstone)
+      bind(current.id.uuidString, at: 2, to: tombstone)
+      bind(current.remoteMessageId, at: 3, to: tombstone)
+      sqlite3_bind_int(tombstone, 4, current.isMine ? 1 : 0)
+      guard sqlite3_step(tombstone) == SQLITE_DONE,
+            let statement = prepare("DELETE FROM chat_messages WHERE message_id = ? AND contact_id = ?") else { return nil }
       defer { sqlite3_finalize(statement) }
       bind(id.uuidString, at: 1, to: statement)
-      return sqlite3_step(statement) == SQLITE_DONE ? current : nil
+      bind(current.contactId, at: 2, to: statement)
+      guard sqlite3_step(statement) == SQLITE_DONE, sqlite3_changes(database) == 1,
+            execute("COMMIT") else { return nil }
+      committed = true
+      return current
     }
+  }
+
+  private func isLocallyDeleted(contactId: String, messageId: String = "",
+                                remoteMessageId: String, isMine: Bool) throws -> Bool {
+    guard let statement = prepare("""
+      SELECT 1 FROM chat_message_deletions WHERE contact_id = ? AND message_id = ?
+      UNION ALL
+      SELECT 1 FROM chat_message_deletions WHERE contact_id = ? AND ? <> ''
+        AND remote_message_id = ? AND is_mine = ? LIMIT 1
+      """) else { throw MqttChunkStorageError.databaseFailure }
+    defer { sqlite3_finalize(statement) }
+    bind(contactId, at: 1, to: statement)
+    bind(messageId, at: 2, to: statement)
+    bind(contactId, at: 3, to: statement)
+    bind(remoteMessageId, at: 4, to: statement)
+    bind(remoteMessageId, at: 5, to: statement)
+    sqlite3_bind_int(statement, 6, isMine ? 1 : 0)
+    let step = sqlite3_step(statement)
+    guard step == SQLITE_ROW || step == SQLITE_DONE else { throw MqttChunkStorageError.databaseFailure }
+    return step == SQLITE_ROW
   }
 
   func deleteContact(_ contactId: String) {
@@ -340,7 +391,9 @@ final class GalaxySSIChatHistoryDatabase {
   @discardableResult
   func replaceAll(_ messagesByContact: [String: [ChatMessage]]) -> Bool {
     locked {
-      guard execute("BEGIN IMMEDIATE TRANSACTION"), execute("DELETE FROM chat_messages") else {
+      // Explicit backup restoration is distinct from automatic replay or cache synchronization.
+      guard execute("BEGIN IMMEDIATE TRANSACTION"), execute("DELETE FROM chat_messages"),
+            execute("DELETE FROM chat_message_deletions") else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -360,6 +413,7 @@ final class GalaxySSIChatHistoryDatabase {
 
   func destroyAllData() {
     clear()
+    locked { _ = execute("DELETE FROM chat_message_deletions") }
     cipher.destroyEncryptionKey()
   }
 
@@ -393,6 +447,8 @@ final class GalaxySSIChatHistoryDatabase {
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_contact_order ON chat_messages(contact_id, created_at DESC, message_id DESC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_conversation_order ON chat_messages(conversation_id, created_at ASC, message_id ASC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_remote_dedupe ON chat_messages(contact_id, remote_message_id, is_mine)")
+    _ = execute("CREATE TABLE IF NOT EXISTS chat_message_deletions (contact_id TEXT NOT NULL, message_id TEXT NOT NULL, remote_message_id TEXT NOT NULL, is_mine INTEGER NOT NULL, PRIMARY KEY(contact_id, message_id))")
+    _ = execute("CREATE INDEX IF NOT EXISTS chat_message_deletions_remote ON chat_message_deletions(contact_id, remote_message_id, is_mine)")
   }
 
   private func encryptedPayload(_ message: ChatMessage) -> Data? {

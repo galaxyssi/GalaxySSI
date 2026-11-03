@@ -9444,6 +9444,10 @@ final class MessageCoordinator: ObservableObject {
         conversationId: payload.string("conversation_id"), turnId: turnId,
         richOutputJson: richOutputJson, replacing: pendingMessage
       )
+    } catch GalaxySSIChatHistoryError.locallyDeleted {
+      // The durable local tombstone is the terminal disposition, not a failed inbox handoff.
+      deliveryStore.completeIncoming(messageId: messageId)
+      return
     } catch {
       // Leave the durable inbox pending; an in-memory message is not a successful handoff.
       return
