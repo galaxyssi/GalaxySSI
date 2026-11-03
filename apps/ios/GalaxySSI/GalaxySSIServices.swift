@@ -447,6 +447,7 @@ final class MessageCoordinator: ObservableObject {
         let cancelled = matches && saved?.state == .cancelled
         task.phase = cancelled ? .cancelled : (canWait ? .waitingResponse : .paused)
         task.blocked = !canWait && !cancelled
+        task.teamRecoveryRunId = !canWait && !cancelled ? spec.supervisorRunId : nil
         task.verification = GalaxySSILocalization.string(
           cancelled ? "galaxyssi.team.recovery.cancelled" : (canWait ? "galaxyssi.team.recovery.waiting" : "galaxyssi.team.recovery.missing"),
           fallback: cancelled ? "The original Agent team was cancelled" : (canWait
@@ -3732,6 +3733,7 @@ final class MessageCoordinator: ObservableObject {
     task.blocked = false
     task.result = ""
     task.verification = "User paused native tool execution"
+    task.teamRecoveryRunId = nil
     task.executionLog.append("Native tool task: paused")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
@@ -3744,6 +3746,7 @@ final class MessageCoordinator: ObservableObject {
           task.phase == .paused else {
       return false
     }
+    guard task.teamRecoveryRunId == nil else { return false }
     if task.pendingPlanning?.isReplanning == true {
       task.phase = .planning
       task.blocked = false
