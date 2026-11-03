@@ -5,6 +5,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentCompletionRequirementsTest {
+    @Test fun readOnlyQueryCanDeclareActualFieldsAfterObservationWithAnExplanation() {
+        val initial = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false)
+        val observed = AgentObservedOutcome("media", AgentAndroidSystemNativeTools.AUDIO_STATUS,
+            mapOf("/streams/music/stream" to "music"),
+            mapOf("/streams/music/current" to 2, "/streams/music/max" to 15))
+        val verified = initial.copy(outcomes = listOf(observed))
+        assertFalse(verified.canReplace(initial))
+        assertTrue(verified.copy(reason = "Bound the query to fields from the actual read-only receipt.")
+            .canReplace(initial))
+    }
+
+    @Test fun correctingReceiptPathsPreservesEveryPreviouslyDeclaredOutcome() {
+        val original = AgentObservedOutcome("media", AgentAndroidSystemNativeTools.AUDIO_STATUS,
+            mapOf("/stream" to "music"), mapOf("/current_level" to "observed"))
+        val initial = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false, outcomes = listOf(original))
+        val actual = original.copy(subject = mapOf("/streams/music/stream" to "music"),
+            checks = mapOf("/streams/music/current" to 2))
+        val corrected = initial.copy(outcomes = listOf(actual), reason = "Corrected paths from the actual receipt.")
+        assertTrue(corrected.canReplace(initial))
+        assertFalse(corrected.copy(reason = "").canReplace(initial))
+        assertFalse(corrected.copy(outcomes = emptyList()).canReplace(initial))
+        assertFalse(corrected.copy(outcomes = listOf(actual.copy(id = "unrelated"))).canReplace(initial))
+    }
+
     @Test fun validDeclarationsRoundTripAllPublicationAndRuntimeCombinations() {
         for (publication in AgentPublicationRequirement.entries) for (linux in listOf(false, true)) {
             val value = AgentCompletionRequirements(publication, linux, "User requested this outcome")

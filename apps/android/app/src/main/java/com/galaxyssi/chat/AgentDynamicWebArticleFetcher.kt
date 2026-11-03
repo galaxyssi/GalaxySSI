@@ -161,7 +161,7 @@ internal object AgentDynamicWebFallbackPolicy {
     )
 
     fun reason(fetched: AgentWebIntelligenceFetched): String? {
-        val source = fetched.body.toString(Charsets.UTF_8)
+        val source = AgentWebTextDecoder.decode(fetched.body, fetched.contentType, fetched.url)
         val html = fetched.contentType.contains("html", true) ||
             source.trimStart().startsWith("<!doctype html", true) ||
             source.trimStart().startsWith("<html", true)

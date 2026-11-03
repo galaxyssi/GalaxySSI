@@ -678,6 +678,19 @@ class EncryptedAgentWorkspaceStore(
         state.workspaceIds.addAll(workspaceIds)
         state.recoverableIds.clear()
         state.recoverableIds.addAll(recoverableIds)
+        if (previousPresentation?.status != normalized.status) {
+            AgentConversationWindows.processStateChanged(normalized.conversationId, normalized.workspaceId,
+                AgentProcessCompletionLookup(
+                    completedAtMillis = normalized.updatedAtMillis.takeIf {
+                        AgentTranscriptPresentationPolicy.processClockStopsFor(normalized.status)
+                    },
+                    checkedAtElapsedRealtime = android.os.SystemClock.elapsedRealtime(),
+                    status = normalized.status,
+                    startedAtMillis = normalized.createdAtMillis.takeIf { it > 0L },
+                    conversationId = normalized.conversationId,
+                    revision = normalized.revision
+                ))
+        }
         if (previousPresentation?.status != normalized.status ||
             previousPresentation?.eventJournal?.lastOrNull { it.kind == AgentTaskEventKinds.PROGRESS } !=
             normalized.eventJournal.lastOrNull { it.kind == AgentTaskEventKinds.PROGRESS }) {

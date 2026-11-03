@@ -35,6 +35,7 @@ internal object AgentLatencyContract {
         "phone_context_route_ms" to ("phone_send_started" to "phone_publish_started"),
         "phone_send_prepare_ms" to ("phone_send_started" to "phone_request_queued"),
         "phone_send_first_visible_ms" to ("phone_send_started" to "phone_first_output_visible"),
+        "phone_send_complete_visible_ms" to ("phone_send_started" to "phone_final_output_visible"),
         "phone_publish_prepare_ms" to ("phone_publish_started" to "phone_request_queued"),
         "phone_response_roundtrip_ms" to ("phone_request_queued" to "phone_response_received"),
         "phone_connector_first_visible_ms" to ("phone_publish_started" to "phone_first_output_visible"),
@@ -133,6 +134,11 @@ internal class AgentLatencyTracer(
 
     fun recordOpaque(trace: String, stage: String, operation: String, outcome: String = "", atNs: Long? = null) {
         if (stage !in AgentLatencyContract.stages) return
+        val nowNs = monotonicNs()
+        val nowMs = wallClockMs()
+        val eventNs = (atNs ?: nowNs).coerceAtLeast(0)
+        // Deferred markers must keep the same boundary on both clocks.
+        val eventMs = (nowMs + (eventNs - nowNs) / 1_000_000L).coerceAtLeast(0)
         synchronized(seen) {
             if (!seen.add(Triple(trace, stage, operation))) return
             if (seen.size > AgentLatencyContract.EVENT_LIMIT) seen.remove(seen.first())
@@ -142,7 +148,7 @@ internal class AgentLatencyTracer(
             }
         }
         sink.append(AgentTimingPoint(
-            trace, clockId, stage, (atNs ?: monotonicNs()).coerceAtLeast(0), wallClockMs().coerceAtLeast(0),
+            trace, clockId, stage, eventNs, eventMs,
             operationId = operation,
             outcome = outcome.takeIf { it in AgentLatencyContract.outcomes }.orEmpty()
         ))

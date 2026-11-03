@@ -50,7 +50,8 @@ class AgentConnectorBackgroundWorker(context: Context, parameters: WorkerParamet
             val response = AgentConnectorResponseStore.findPending(applicationContext, key)
                 ?: return Result.success()
             // A page may claim and then disappear before committing. Keep the wake-up until retirement.
-            if (AgentConnectorResponseBus.dispatchPending(response)) return Result.retry()
+            if (!AgentCompletedReplyRecovery.pending(applicationContext, response) &&
+                AgentConnectorResponseBus.dispatchPending(response)) return Result.retry()
             setForeground(AgentRecoveryNotification.foregroundInfo(applicationContext, key))
             if (AgentConnectorBackgroundDelivery(AppLanguage.wrap(applicationContext)).consume(response))
                 Result.success() else Result.retry()
@@ -90,7 +91,9 @@ internal class AgentConnectorBackgroundDelivery(
             if (sessions.load() == null) return false
             var committed = false
             val key = AgentConnectorResponseCodec.identity(response)
-            if (workspace.status.isTerminal) {
+            val finalizationOnly = AgentCompletedReplyRecovery.failedDuringFinalization(workspace) &&
+                AgentCompletedReplyRecovery.matches(checkNotNull(sessions.load()), response, identity)
+            if (workspace.status.isTerminal && !finalizationOnly) {
                 // Only replay a result commit that this exact inbox response already checkpointed.
                 if (!wasAccepted(workspace, key, checkNotNull(sessions.load()))) return false
                 context.finishStructuredAgentHandoff(identity.turnId, response)
@@ -106,6 +109,14 @@ internal class AgentConnectorBackgroundDelivery(
                     val current = taskContext.workspace()
                     val saved = checkNotNull(sessions.load())
                     val accepted = wasAccepted(current, key, saved)
+                    val finishSaved = finalizationOnly && AgentCompletedReplyRecovery.matches(saved, response, identity)
+                    val source = AgentPendingDeliveryStore.recoverySuccessorForResponse(context,
+                        response.sourceMessageId, identity.conversationId, identity.turnId) ?: response.sourceMessageId
+                    if (!accepted && !finishSaved && !AgentConnectorReceiptAdmission.saved(saved, source, response.contactId,
+                            identity.conversationId, identity.turnId, identity.taskId)) {
+                        taskContext.waitForResponse("Awaiting the response bound to this task")
+                        return@AgentTaskResumeHook
+                    }
                     // Restoring an executable runtime normalizes approval waits; projection must not do that.
                     val runtime = if (accepted) null else runtimeFactory(sessions).apply {
                         activeConversationContext = AgentConversationContext(identity.conversationId, "", emptyList(),
@@ -113,11 +124,8 @@ internal class AgentConnectorBackgroundDelivery(
                         activeConversationTurnId = identity.turnId
                     }
                     runtime?.bindExecutionLoopEventSink(AgentExecutionLoopEventSink(taskContext::persistExecutionLoop))
-                    var state = if (accepted) AgentRecoveryTranscript.state(saved) else {
+                    var state = if (accepted || finishSaved) AgentRecoveryTranscript.state(saved) else {
                         checkNotNull(runtime)
-                        val source = AgentPendingDeliveryStore.recoverySuccessorForResponse(context,
-                            response.sourceMessageId, identity.conversationId, identity.turnId)
-                            ?: response.sourceMessageId
                         if (!(runtime.canAcceptConnectorResponse(source, response.contactId,
                             identity.conversationId, identity.turnId, identity.taskId) ||
                             runtime.restoreConflictedConnectorReceipt(source, response.contactId,
@@ -148,7 +156,7 @@ internal class AgentConnectorBackgroundDelivery(
                         AgentPhase.WAITING_CONFIRMATION -> taskContext.waitForConfirmation(state.pendingAction?.description.orEmpty())
                         AgentPhase.WAITING_RESPONSE -> taskContext.waitForResponse(state.lastActionResult?.message.orEmpty())
                         AgentPhase.PAUSED -> taskContext.pause(state.lastActionResult?.message.orEmpty())
-                        AgentPhase.BLOCKED -> taskContext.blockTask(state.plan?.safetyReview?.reason.orEmpty())
+                        AgentPhase.BLOCKED -> taskContext.blockTask(AgentBlockedStatePolicy.reason(state))
                         AgentPhase.CANCELLED -> taskContext.transition(AgentWorkspaceStatus.CANCELLED,
                             AgentTaskEventKinds.CANCELLED, "Task cancelled")
                         AgentPhase.FAILED -> taskContext.transition(AgentWorkspaceStatus.FAILED,

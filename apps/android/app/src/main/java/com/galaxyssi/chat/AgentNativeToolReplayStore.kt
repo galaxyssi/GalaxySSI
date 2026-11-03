@@ -17,6 +17,10 @@ interface AgentNativeToolReplayStore {
     fun observe(key: AgentNativeToolReplayKey): AgentNativeEffectClaim?
     fun put(key: AgentNativeToolReplayKey, result: AgentNativeToolResult)
     fun claim(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String): AgentNativeEffectClaim
+    /** The query and effect ownership must be committed atomically, before execution. */
+    fun claimWithRecovery(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String,
+        recoveryQuery: AgentNativeEffectRecoveryQuery): AgentNativeEffectClaim =
+        error("This replay store does not support atomic recovery queries")
     fun complete(key: AgentNativeToolReplayKey, invocationId: String, result: AgentNativeToolResult)
     fun clear()
 }
@@ -40,9 +44,19 @@ class InMemoryAgentNativeToolReplayStore : AgentNativeToolReplayStore {
 
     @Synchronized
     override fun claim(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String): AgentNativeEffectClaim {
+        return claimInternal(key, inputSha256, invocationId, null)
+    }
+
+    @Synchronized
+    override fun claimWithRecovery(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String,
+        recoveryQuery: AgentNativeEffectRecoveryQuery): AgentNativeEffectClaim =
+        claimInternal(key, inputSha256, invocationId, recoveryQuery)
+
+    private fun claimInternal(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String,
+        recoveryQuery: AgentNativeEffectRecoveryQuery?): AgentNativeEffectClaim {
         claims[key]?.let { return it.copy(acquired = false) }
         entries[key]?.let { return AgentNativeEffectClaim(false, it.receipt.invocationId, it.receipt.inputSha256, it) }
-        return AgentNativeEffectClaim(true, invocationId, inputSha256).also { claims[key] = it }
+        return AgentNativeEffectClaim(true, invocationId, inputSha256, recoveryQuery = recoveryQuery).also { claims[key] = it }
     }
 
     @Synchronized

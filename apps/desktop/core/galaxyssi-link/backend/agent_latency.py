@@ -38,6 +38,7 @@ STAGE_PAIRS = {
     "phone_connector_complete_visible_ms": ("phone_publish_started", "phone_final_output_visible"),
     "phone_render_ms": ("phone_response_received", "phone_first_output_visible"),
     "desktop_prepare_ms": ("desktop_request_received", "desktop_task_created"),
+    "desktop_pre_execution_ms": ("desktop_request_received", "desktop_agent_started"),
     "desktop_receive_queue_ms": ("desktop_request_received", "desktop_decrypt_started"),
     "desktop_ingress_queue_ms": ("desktop_request_received", "desktop_handler_started"),
     "desktop_route_resolve_ms": ("desktop_handler_started", "desktop_wire_open_started"),
@@ -56,6 +57,8 @@ STAGE_PAIRS = {
     "desktop_model_submit_ms": ("desktop_model_submit_started", "desktop_model_submitted"),
     "desktop_model_first_output_ms": ("desktop_model_submit_started", "desktop_first_output"),
 }
+for _phase in ("evidence", "archive", "outbox", "encrypt", "wire_prepare"):
+    STAGE_PAIRS[f"desktop_reply_{_phase}_ms"] = (f"desktop_reply_{_phase}_started", f"desktop_reply_{_phase}_finished")
 STAGES = frozenset(stage for pair in STAGE_PAIRS.values() for stage in pair) | {"phone_final_received"}
 OUTCOMES = frozenset({"", "completed", "failed", "cancelled", "timed_out"})
 
@@ -156,10 +159,15 @@ class AgentLatencyTracer:
         safe_provider = str(provider or "")
         if not re.fullmatch(r"[A-Za-z0-9._:-]{0,96}", safe_provider):
             safe_provider = ""
+        mono_now = self.monotonic_ns()
+        wall_now = self.wall_clock_ms()
+        observed_ns = max(0, mono_now if at_ns is None else at_ns)
+        # Historical callback boundaries need corresponding wall times, not the
+        # later recording time. Durations still use only the monotonic clock.
+        observed_wall_ms = wall_now + (observed_ns - mono_now) // 1_000_000
         self.sink.append(AgentTimingPoint(
             trace_id, self.clock_id, stage,
-            max(0, self.monotonic_ns() if at_ns is None else at_ns),
-            max(0, self.wall_clock_ms()), operation,
+            observed_ns, max(0, observed_wall_ms), operation,
             safe_provider, outcome if outcome in OUTCOMES else "",
         ))
 

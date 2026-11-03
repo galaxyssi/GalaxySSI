@@ -181,18 +181,29 @@ class AgentTaskStore:
                 else record
             )
 
-    def list_recent(self, limit: int, *, hydrate_output: bool = False) -> list[dict]:
+    def list_recent(self, limit: int, *, hydrate_output: bool = False,
+                    conversation_id: str | None = None) -> list[dict]:
         safe_limit = max(1, int(limit or 1))
         with self._connection() as connection:
-            rows = connection.execute(
+            if conversation_id is None:
+                query = """
+                    SELECT payload FROM agent_tasks
+                    ORDER BY updated_at DESC, task_id DESC LIMIT ?
                 """
-                SELECT payload
-                FROM agent_tasks
-                ORDER BY updated_at DESC, task_id DESC
-                LIMIT ?
-                """,
-                (safe_limit,),
-            ).fetchall()
+                arguments = (safe_limit,)
+            else:
+                # Keep the original global recent window, but avoid loading and
+                # decoding unrelated (potentially large) task payloads.
+                query = """
+                    SELECT payload FROM agent_tasks
+                    WHERE conversation_id = ? AND task_id IN (
+                        SELECT task_id FROM agent_tasks
+                        ORDER BY updated_at DESC, task_id DESC LIMIT ?
+                    )
+                    ORDER BY updated_at DESC, task_id DESC
+                """
+                arguments = (conversation_id, safe_limit)
+            rows = connection.execute(query, arguments).fetchall()
             records = [record for row in rows if (record := self._decode(row[0])) is not None]
             return (
                 [self._hydrate_output(connection, record) for record in records]

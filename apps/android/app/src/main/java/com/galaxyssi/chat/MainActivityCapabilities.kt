@@ -257,22 +257,27 @@ internal fun MainActivity.showAgentRecentTasksPage() {
 
 internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot) {
     val projection = AgentTeamProgressPolicy.project(team, expanded = true)
+    val collaboration = team.members.any { it.collaborationGroupId == team.conversationId }
     showFeaturePage(getString(R.string.agent_team_details_title))
     setFeatureBackAction { showAgentRecentTasksPage() }
-    val activeMembers = projection.members.filter { it.deliveryMode != AgentDeliveryMode.IGNORE }
-    val working = activeMembers.count { it.status == AgentSubagentStatus.RUNNING }
+    val activeMembers = if (collaboration) CollaborationCurrentStatePolicy.members(team)
+        else projection.members.filter { it.deliveryMode != AgentDeliveryMode.IGNORE }
+    val teamLabel = if (collaboration && (!team.state.isTerminal || team.state == AgentTeamExecutionState.INTERRUPTED || team.paused))
+        getString(CollaborationCurrentStateStore.status(team).labelRes()) else agentTeamStateText(team.state)
+    val working = activeMembers.count { it.status == AgentSubagentStatus.RUNNING && (!collaboration ||
+        !team.paused && CollaborationCurrentStateStore.metadata(team, it).connectionState.isBlank()) }
     featureContent.addView(featureHeroCard(
         title = team.goal.ifBlank { getString(R.string.agent_team_details_title) },
         subtitle = getString(
             R.string.agent_team_live_summary,
             activeMembers.size,
             working,
-            agentTeamStateText(team.state)
+            teamLabel
         ),
         iconRes = R.drawable.ic_agent_node,
         colorHex = "#16A085",
         badge = if (team.state.isTerminal) {
-            agentTeamStateText(team.state)
+            teamLabel
         } else {
             getString(R.string.agent_team_live_badge)
         }
@@ -288,7 +293,11 @@ internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot)
         } }
         val subtitle = listOf(
             member.role,
-            agentTeamMemberStateText(member.status),
+            if (collaboration) collaborationCurrentMemberLabel(CollaborationCurrentStateStore.metadata(team, member))
+                else agentTeamMemberStateText(member.status),
+            if (collaboration) CollaborationCurrentStateStore.metadata(team, member).updatedAtMillis.takeIf { it > 0L }
+                ?.let { getString(R.string.collaboration_state_updated,
+                    CollaborationReplyTiming.formatReplyTime(it, System.currentTimeMillis())) }.orEmpty() else "",
             member.errorMessage.take(120)
         ).filter(String::isNotBlank).joinToString(" · ")
         featureContent.addView(featureRow(
@@ -303,26 +312,7 @@ internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot)
         })
     }
 
-    val messages = globalSuperAgentRuntime.agentTeamMessages(team.supervisorRunId)
-    if (messages.isNotEmpty()) {
-        addSectionTitle(getString(R.string.agent_team_messages_label))
-        messages.takeLast(20).forEach { message ->
-            featureContent.addView(featureRow(
-                title = getString(
-                    R.string.agent_team_message_route,
-                    message.fromInstanceId,
-                    message.toInstanceId.ifBlank { getString(R.string.agent_team_everyone) }
-                ),
-                subtitle = message.text,
-                iconRes = R.drawable.ic_composer_send_plane,
-                action = when (message.state) {
-                    AgentTeamMessageState.PENDING -> getString(R.string.agent_team_message_pending)
-                    AgentTeamMessageState.DELIVERED -> getString(R.string.agent_team_message_delivered)
-                    AgentTeamMessageState.ACKNOWLEDGED -> getString(R.string.agent_team_message_acknowledged)
-                }
-            ))
-        }
-    }
+    addAgentTeamMessageHistory(team.supervisorRunId)
 
     if (projection.finalOutput.isNotBlank()) {
         addSectionTitle(getString(R.string.agent_team_result_label))
@@ -333,6 +323,7 @@ internal fun MainActivity.showAgentTeamDetails(team: AgentTeamExecutionSnapshot)
             action = ""
         ))
     }
+    if (collaboration) watchCollaborationTeamDetails(team)
 }
 
 internal fun MainActivity.showAgentTeamMessageComposer(

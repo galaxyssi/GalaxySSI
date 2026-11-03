@@ -1,0 +1,288 @@
+package com.galaxyssi.chat
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import com.galaxyssi.chat.voice.modelstream.ModelStreamProvider
+
+/** Real encrypted phone persistence; no provider invocation or existing conversation mutation. */
+@RunWith(AndroidJUnit4::class)
+class CollaborationMilestoneDeviceTest {
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private fun raw(id: String) = JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+        .put("summary", "Synthetic intermediate result").put("candidates", JSONArray()).put("findings", JSONArray())
+        .put("workspace", JSONArray().put(JSONObject().put("id", id).put("kind", "proposal").put("title", "Synthetic candidate")
+            .put("body", JSONObject().put("content", "Original candidate for review")))).toString()
+    private fun input(id: String) = JSONObject().put("mode", "publish").put("milestone_id", id).put("artifact", raw(id))
+
+    @Test fun durablePublicationWakesCoordinatorAndPeerWhileOriginalWorkerStillRuns() = dispatchScenario(false)
+
+    @Test fun assignmentCapabilitySurvivesReopenAndCloudPlannerCannotAdvertisePublication() = fixture { author ->
+        val workspace = CollaborationResearchWorkspace(context)
+        val planner = author.copy(nodeId = "planner")
+        val status = JSONObject(CollaborationMilestoneTool.execute(context, planner, JSONObject().put("mode", "status")))
+        assertTrue(status.getBoolean("success"))
+        assertEquals("assignment_not_enrolled", status.getJSONObject("capability").getString("reason_code"))
+        val denial = JSONObject(CollaborationMilestoneTool.execute(context, planner, input("not-enrolled")))
+        assertEquals("unavailable", denial.getString("status"))
+        assertFalse(denial.getBoolean("artifact_validated"))
+        assertFalse(denial.getBoolean("retryable"))
+        assertNull(workspace.publicationCheckpoint(planner))
+        assertTrue(workspace.browse(planner).revisions.isEmpty())
+        assertEquals("assignment_not_enrolled", CollaborationResearchWorkspace(context)
+            .publicationCapability(planner).getString("reason_code"))
+        for (provider in ModelStreamProvider.entries) {
+            for ((access, expected) in listOf(planner to false, author to true)) {
+                val prepared = PreparedCloudConversationStream("id", provider, "https://test.invalid", emptyMap(), JSONObject(), JSONArray(), "messages")
+                val evidence = CollaborationCloudEvidence(CollaborationEvidenceLedger(context), access)
+                CloudImageAnnotationSession(context, emptyList(), collaborationEvidence = evidence).installCollaborationTools(prepared)
+                assertTrue(prepared.body.toString().contains(CollaborationCloudRecall.NAME))
+                assertEquals(expected, prepared.body.toString().contains(CollaborationMilestoneTool.NAME))
+            }
+        }
+        assertTrue(JSONObject(CollaborationMilestoneTool.execute(context, author, input("real-work"))).getBoolean("success"))
+    }
+
+    @Test fun reopenedGraphDiscoversPublicationWhoseWakeWasMissed() = dispatchScenario(true)
+
+    @Test fun saturatedWorkersDoNotBlockDurableMilestoneCoordination() = dispatchScenario(false, saturated = true)
+
+    @Test fun savedRecordsWaitForDecisionRequestWhileWorkerContinues() = dispatchScenario(false, decisionLinked = true)
+
+    private fun dispatchScenario(publishBeforeStart: Boolean, saturated: Boolean = false, decisionLinked: Boolean = false) = fixture { author -> runBlocking {
+        withTimeout(45_000) {
+            val db = AgentEncryptedDatabase(context, "milestone-dispatch-${UUID.randomUUID()}")
+            try {
+                fun store() = CollaborationAdaptivePilotMilestones.executionStore(context, db)
+                val people = listOf("author", "peer").map { person -> AgentTeamMember("fixture", AgentDeliveryMode.IGNORE,
+                    instanceId = person, context = mapOf("collaboration_group_id" to author.groupId,
+                        CollaborationResearchWorkflow.PERSON to person, CollaborationGoalLoop.ROSTER to "true",
+                        CollaborationLiveGraph.ENABLED to "1", CollaborationResearchWorkflow.STAGE to "DELIVER")) }
+                val producer = people[0].copy(instanceId = author.nodeId, deliveryMode = AgentDeliveryMode.OBSERVE,
+                    objective = "Synthetic candidate", context = people[0].context + mapOf(CollaborationGoalLoop.ROSTER to "false",
+                        CollaborationResearchWorkflow.STAGE to "EXECUTE", CollaborationGoalLoop.WORK_ID to "original"))
+                val final = people[1].copy(instanceId = "final", deliveryMode = AgentDeliveryMode.RESPOND,
+                    dependsOnAgentIds = setOf(author.nodeId), context = people[1].context + (CollaborationGoalLoop.ROSTER to "false"))
+                val extras = if (saturated) listOf("second-worker", "queued-worker").map { id -> producer.copy(instanceId = id,
+                    context = producer.context + (CollaborationGoalLoop.WORK_ID to id)) } else emptyList()
+                val definition = AgentTeamDefinition(author.groupId, "fixture", people + producer + extras + final, primaryInstanceId = "final")
+                val request = AgentRunRequest(author.groupId, author.turnId, "fixture", runId = author.runId,
+                    goal = "Synthetic interim version review", context = mapOf(CollaborationGoalLoop.ROUND to "1"))
+                val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+                val secondStarted = CompletableDeferred<Unit>(); val releaseSecond = CompletableDeferred<Unit>()
+                val coordinated = CompletableDeferred<Unit>(); val queuedStarted = CompletableDeferred<Unit>()
+                val reviewed = CompletableDeferred<CollaborationWorkspaceAccess>(); val releaseReview = CompletableDeferred<Unit>()
+                val finalStarted = CompletableDeferred<Unit>(); val calls = CopyOnWriteArrayList<String>()
+                var phase = "producer startup"
+                fun publish() = JSONObject(CollaborationMilestoneTool.execute(context, author, if (!decisionLinked) input("early") else
+                    input("early").put("artifact", JSONObject().put("format", CollaborationResearchArtifact.FORMAT)
+                        .put("summary", "Choose a discriminating measurement")
+                        .put("coordination", JSONObject().put("mode", "request").put("decision", "Which probe distinguishes the candidates?")
+                            .put("why_now", "A peer can check the method while calibration continues"))
+                        .put("milestones", JSONArray().put("raw")).toString()))).also {
+                    assertTrue(it.toString(), it.getBoolean("success"))
+                }
+                store().create(definition, request)
+                if (publishBeforeStart) publish()
+                val reopened = store()
+                AgentTeamExecutionRuntime(reopened, AgentSubagentLimits(maxConcurrency = 2)).use { runtime ->
+                    val handle = runtime.start(definition, request) { execution ->
+                        calls += execution.member.memberId
+                        when {
+                            execution.member.memberId == author.nodeId -> { started.complete(Unit); release.await(); AgentSubagentOutput("producer ended") }
+                            execution.member.memberId == "second-worker" -> { secondStarted.complete(Unit); releaseSecond.await(); AgentSubagentOutput("second ended") }
+                            execution.member.memberId == "queued-worker" -> { queuedStarted.complete(Unit); AgentSubagentOutput("queued work ended") }
+                            execution.member.memberId == "final" -> { finalStarted.complete(Unit); AgentSubagentOutput("Final fixture assessment") }
+                            CollaborationLiveGraph.planner(execution.member) -> {
+                                val inputs = CollaborationMilestoneDispatch.inputs(execution.member)
+                                if (inputs.isNotEmpty()) coordinated.complete(Unit)
+                                AgentSubagentOutput(JSONObject().put("format", CollaborationLiveGraph.FORMAT).put("summary", "Review early")
+                                    .put("work", JSONArray().apply { if (inputs.isNotEmpty()) put(JSONObject().put("id", "early-review")
+                                        .put("member", "peer").put("stage", "VERIFY").put("assignment", "Check the published version")
+                                        .put("independent_review", true).put("uses_milestones", JSONArray().put(inputs.single().getString("token")))) }).toString())
+                            }
+                            else -> try {
+                                val access = CollaborationWorkspaceAccess.from(execution)
+                                val ref = CollaborationMilestoneDispatch.inputs(execution.member).single().getJSONArray("revisions").getJSONObject(0)
+                                assertNotNull(CollaborationResearchWorkspace(context).read(access, ref.getString("object_id"), ref.getInt("revision")))
+                                assertNull(CollaborationResearchWorkspace(context).read(access.copy(pinnedReads = emptySet()), ref.getString("object_id"), ref.getInt("revision")))
+                                assertTrue(store().deliveryCheckpoint(author.runId)!!.definition.members.contains(execution.member))
+                                reviewed.complete(access); releaseReview.await(); AgentSubagentOutput("Pinned version checked")
+                            } catch (failure: Throwable) {
+                                reviewed.completeExceptionally(failure)
+                                throw failure
+                            }
+                        }
+                    }
+                    try {
+                        started.await()
+                        if (saturated) secondStarted.await()
+                        if (decisionLinked) {
+                            val recordOnly = input("raw").put("artifact", JSONObject(raw("raw"))
+                                .put("coordination", JSONObject().put("mode", "record_only")).toString())
+                            val wakeups = mutableListOf<String>()
+                            CollaborationMilestoneSignals.subscribe { if (it == author.runId) wakeups.add(it) }.use {
+                                val receipt = JSONObject(CollaborationMilestoneTool.execute(context, author, recordOnly))
+                                assertTrue(receipt.toString(), receipt.getBoolean("success"))
+                                assertEquals(receipt.toString(), CollaborationMilestoneTool.execute(context, author, recordOnly))
+                            }
+                            assertTrue(wakeups.isEmpty())
+                            val recovered = CollaborationResearchWorkspace(context)
+                            assertEquals(1, recovered.pendingMilestones(author, emptySet(), setOf(author.nodeId)).size)
+                            assertTrue(recovered.pendingMilestones(author, emptySet(), setOf(author.nodeId), coordinationOnly = true).isEmpty())
+                            assertFalse(reviewed.isCompleted)
+                            assertTrue(store().deliveryCheckpoint(author.runId)!!.definition.members.none(CollaborationLiveGraph::planner))
+                        }
+                        if (!publishBeforeStart) publish()
+                        if (saturated) {
+                            phase = "coordinator admission under saturation"
+                            coordinated.await()
+                            assertFalse(release.isCompleted); assertFalse(queuedStarted.isCompleted)
+                            releaseSecond.complete(Unit)
+                        }
+                        phase = "peer admission"
+                        val peer = reviewed.await()
+                        assertFalse(finalStarted.isCompleted)
+                        assertEquals(AgentSubagentStatus.RUNNING, store().snapshot(author.runId)!!.members.single { it.memberId == author.nodeId }.status)
+                        val saved = store().deliveryCheckpoint(author.runId)!!
+                        assertEquals(peer.pinnedReads, CollaborationMilestoneDispatch.strings(saved.definition.members.single { it.memberId == peer.nodeId }.context[CollaborationMilestoneDispatch.GRANTS]))
+                        val archive = CollaborationAdaptivePilotMilestones(author.groupId, author.runId, author.turnId,
+                            CollaborationResearchWorkspace(context)) { access, ref -> CollaborationEvidenceLedger(context)
+                                .read(access, ref.getString("evidence_id"), ref.getString("sha256")) }
+                        val captured = archive.capture(saved)
+                        assertEquals(if (decisionLinked) 2 else 1, captured.getJSONArray("milestones").length())
+                        assertEquals("Original candidate for review", captured.getJSONArray("milestones").getJSONObject(0)
+                            .getJSONArray("originals").getJSONObject(0).getJSONObject("body").getString("content"))
+                        assertFalse(captured.getBoolean("peer_read_proven"))
+                        repeat(5) { publish() }
+                        assertEquals(captured.toString(), archive.capture(store().deliveryCheckpoint(author.runId)!!).toString())
+                        release.complete(Unit)
+                        assertFalse(finalStarted.isCompleted)
+                        releaseReview.complete(Unit)
+                        phase = "final assessment"
+                        assertEquals(AgentSubagentRunStatus.SUCCEEDED, handle.await().subagentResult.status)
+                        assertEquals(1, calls.count { it == peer.nodeId })
+                        assertEquals(calls.size, calls.distinct().size)
+                    } catch (failure: Throwable) {
+                        throw AssertionError("Failed during $phase; calls=$calls; snapshot=${store().snapshot(author.runId)}", failure)
+                    } finally { release.complete(Unit); releaseSecond.complete(Unit); releaseReview.complete(Unit); handle.cancel() }
+                }
+            } finally { db.clear() }
+        }
+    } }
+
+    @Test fun exactReceiptRecoveryAfterReopenDoesNotRepublishAndRespectsPause() = fixture { access ->
+        val request = input("lost-response")
+        val original = JSONObject(CollaborationMilestoneTool.execute(context, access, request))
+        assertTrue(original.toString(), original.getBoolean("success"))
+        val query = JSONObject().put("mode", "receipt").put("milestone_id", "lost-response")
+            .put("artifact_sha256", AgentResultRecoveryClient.sha256(request.getString("artifact").toByteArray(Charsets.UTF_8)))
+        val before = CollaborationResearchWorkspace(context).milestones(access).toString()
+        val recovered = JSONObject(CollaborationMilestoneTool.execute(context, access, query))
+        assertTrue(recovered.toString(), recovered.getBoolean("success"))
+        assertFalse(recovered.getBoolean("assignment_completed"))
+        assertEquals(original.getJSONArray("revisions").toString(), recovered.getJSONArray("revisions").toString())
+        assertEquals(before, CollaborationResearchWorkspace(context).milestones(access).toString())
+        val changed = JSONObject(query.toString()).put("artifact_sha256", "f".repeat(64))
+        assertFalse(JSONObject(CollaborationMilestoneTool.execute(context, access, changed)).getBoolean("success"))
+        val missing = JSONObject(query.toString()).put("milestone_id", "never-sent")
+        assertEquals("not_recorded", JSONObject(CollaborationMilestoneTool.execute(context, access, missing)).getString("status"))
+        AgentTeamDurableControl(context).set(access.runId, AgentTeamUserControl.PAUSE)
+        assertFalse(JSONObject(CollaborationMilestoneTool.execute(context, access, query)).getBoolean("success"))
+        AgentTeamDurableControl(context).set(access.runId, AgentTeamUserControl.RUN)
+        assertEquals(recovered.toString(), CollaborationMilestoneTool.execute(context, access, query))
+        assertEquals(1, CollaborationResearchWorkspace(context).browse(access).revisions.size)
+    }
+
+    @Test fun reopenRetryAndFinalReferenceKeepOriginalWithoutEndingAssignment() = fixture { access ->
+        val first = JSONObject(CollaborationMilestoneTool.execute(context, access, input("m1")))
+        assertTrue(first.toString(), first.getBoolean("success")); assertFalse(first.getBoolean("assignment_completed"))
+        val reopened = CollaborationResearchWorkspace(context)
+        assertNull(reopened.publicationCheckpoint(access))
+        assertTrue(reopened.publicationRevisions(access, access.nodeId).isEmpty())
+        assertEquals(first.toString(), CollaborationMilestoneTool.execute(context, access, input("m1")))
+        val list = JSONObject(CollaborationMilestoneTool.execute(context, access, JSONObject().put("mode", "list")))
+        assertEquals("m1", list.getJSONArray("milestones").getJSONObject(0).getString("milestone_id"))
+        val final = JSONObject(raw("unused")).put("workspace", JSONArray()).put("milestones", JSONArray(listOf("m1")))
+        val receipt = reopened.submitPublication(access, final.toString())
+        assertEquals(first.getJSONArray("revisions").toString(), receipt.getJSONArray("revisions").toString())
+        assertEquals(1, reopened.publicationRevisions(access, access.nodeId).size)
+    }
+
+    @Test fun omittedNotesPublishAndRecoverWithoutChangingRawIdentityOrEvidenceState() = fixture { access ->
+        val minimal = JSONObject(raw("minimal")).apply { remove("candidates"); remove("findings") }.toString()
+        val request = input("minimal").put("artifact", minimal)
+        val first = JSONObject(CollaborationMilestoneTool.execute(context, access, request))
+        assertTrue(first.toString(), first.getBoolean("success"))
+        assertFalse(first.getBoolean("assignment_completed"))
+        val reopened = CollaborationResearchWorkspace(context)
+        assertEquals(AgentNativeJsonCodec.sha256(minimal), reopened.milestones(access)
+            .getJSONArray("milestones").getJSONObject(0).getString("raw_sha256"))
+        assertEquals(first.toString(), CollaborationMilestoneTool.execute(context, access, request))
+        assertEquals("member_reported_not_verified", reopened.browse(access).revisions.single().getString("evidence_state"))
+        val changed = JSONObject(request.toString()).put("artifact", raw("minimal"))
+        assertFalse(JSONObject(CollaborationMilestoneTool.execute(context, access, changed)).getBoolean("success"))
+        val malformed = input("bad").put("artifact", JSONObject(minimal).put("findings", JSONObject.NULL).toString())
+        val rejection = JSONObject(CollaborationMilestoneTool.execute(context, access, malformed))
+        assertFalse(rejection.getBoolean("success"))
+        assertTrue(rejection.getString("reason").contains("findings must be an array"))
+        val final = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Synthetic data awaiting review")
+            .put("milestones", JSONArray().put("minimal")).toString()
+        assertEquals("recorded", reopened.submitPublication(access, final).getString("status"))
+        val recovered = CollaborationResearchWorkspace(context)
+        assertEquals(final, recovered.publicationCheckpoint(access)!!.getString("raw"))
+        assertEquals(1, recovered.publicationRevisions(access, access.nodeId).size)
+    }
+
+    @Test fun userPauseAndRevocationBlockNewPublicationsAndIndependentReaderStaysIsolated() = fixture { access ->
+        val control = AgentTeamDurableControl(context)
+        control.set(access.runId, AgentTeamUserControl.PAUSE)
+        val paused = JSONObject(CollaborationMilestoneTool.execute(context, access, input("m1")))
+        assertFalse(paused.getBoolean("success"))
+        assertTrue(CollaborationResearchWorkspace(context).browse(access).revisions.isEmpty())
+        control.set(access.runId, AgentTeamUserControl.RUN)
+        val result = JSONObject(CollaborationMilestoneTool.execute(context, access, input("m1")))
+        assertTrue(result.getBoolean("success"))
+        val ref = result.getJSONArray("revisions").getJSONObject(0)
+        val peer = access.copy(nodeId = "peer-node", personId = "peer")
+        assertNull(CollaborationResearchWorkspace(context).read(peer, ref.getString("object_id"), 1))
+        assertNotNull(CollaborationResearchWorkspace(context).read(peer.copy(dependencyNodes = setOf(access.nodeId)), ref.getString("object_id"), 1))
+        CollaborationGroupStore(context).update(access.groupId) {
+            it.copy(members = it.members.filterNot { member -> member.id == access.personId }, coordinatorId = "peer")
+        }
+        assertFalse(JSONObject(CollaborationMilestoneTool.execute(context, access, input("m2"))).getBoolean("success"))
+    }
+
+    @Test fun failedDraftCanBeRepairedButSuccessfulMilestoneCannotBeReplaced() = fixture { access ->
+        val bad = input("m1").put("artifact", "not JSON")
+        val failed = JSONObject(CollaborationMilestoneTool.execute(context, access, bad))
+        assertFalse(failed.getBoolean("success")); assertTrue(failed.getString("reason").isNotBlank())
+        assertTrue(JSONObject(CollaborationMilestoneTool.execute(context, access, input("m1"))).getBoolean("success"))
+        val replacement = input("m1").put("artifact", raw("replacement"))
+        assertFalse(JSONObject(CollaborationMilestoneTool.execute(context, access, replacement)).getBoolean("success"))
+        assertEquals(1, CollaborationResearchWorkspace(context).browse(access).revisions.size)
+    }
+
+    private fun fixture(block: (CollaborationWorkspaceAccess) -> Unit) {
+        val id = "milestone-test-${UUID.randomUUID()}"
+        val access = CollaborationWorkspaceAccess(id, id, "turn", 1, "node", "author")
+        val groups = CollaborationGroupStore(context)
+        groups.update(id) { it.copy(members = listOf("author", "peer").map { person -> CollaborationMember(person, person, "fixture", "Fixture") }, coordinatorId = "author") }
+        CollaborationResearchWorkspace(context).enrollPublication(access, CollaborationResearchStage.EXPLORE)
+        try { block(access) }
+        finally {
+            CollaborationResearchWorkspace(context).removeGroup(id)
+            groups.remove(id)
+            AgentTeamDurableControl(context).remove(id)
+        }
+    }
+}

@@ -5,11 +5,12 @@ MAX_SNAPSHOT_BYTES = 512 * 1024
 OPTION_FIELDS = frozenset({
     "response_language", "response_language_preference", "connector_task_mode",
     "execution_policy_prompt", "execution_mode", "agent_instance_id",
-    "request_kind",
+    "request_kind", "result_contract",
 })
 ATTACHMENT_FIELDS = frozenset({
     "id", "transfer_id", "name", "mime_type", "type", "size", "transport_size",
     "sha256", "transport_status", "attachment_request_id", "data_b64",
+    "historical_source_turn_id",
 })
 
 

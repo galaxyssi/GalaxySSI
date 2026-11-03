@@ -274,6 +274,10 @@ internal fun MainActivity.renderAgentState(
         return
     }
     lastRenderedAgentState = state
+    if (state.phase in setOf(AgentPhase.COMPLETED, AgentPhase.BLOCKED, AgentPhase.FAILED, AgentPhase.PAUSED)) {
+        offerPendingDeviceOperationAccess(conversationId)
+        continueVisibleAgentPermissionGate()
+    }
     val pendingAction = state.pendingAction
     if (syncTranscript) renderAgentOutput(
         state,
@@ -546,6 +550,15 @@ internal fun Context.persistAgentTranscript(
         taskId = state.sessionId,
         turnIdForTask = agentTranscriptStore::turnIdForTask
     )
+    val owners = listOf(
+        transcriptTurnId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::conversationIdForTurn),
+        state.sessionId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::conversationIdForTask),
+        state.lastActionResult?.metadata?.get("conversation_id")
+    )
+    if (!AgentTranscriptOwnership.accepts(conversationId, owners, agentTranscriptStore::resolveMergedConversationId)) {
+        Log.w("GalaxySSIAgent", "Rejected transcript projection with conflicting conversation ownership")
+        return
+    }
     state.plan?.selectedAgentOrModel
         ?.takeIf { it.isNotBlank() }
         ?.let(::agentTraceTargetLabel)
@@ -673,7 +686,8 @@ internal fun Context.persistAgentTranscript(
             richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(
                 AgentRuntimeArtifactUi.mergeWithArtifactOutputs(
                     state.lastActionResult?.metadata?.get("rich_output").orEmpty(),
-                    state.plan?.artifactRichOutputJson.orEmpty()
+                    state.plan?.artifactRichOutputJson.orEmpty(),
+                    fallbackText = result
                 )
             )
         )
@@ -744,7 +758,8 @@ internal fun MainActivity.scrollAgentTranscriptToBottom() {
 }
 
 internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
-    refreshCollaborationStrip()
+    if (isFinishing || isDestroyed || runtimePlaintextCleared) return
+    refreshCollaborationStrip(bindPanel = false)
     val renderStartedAt = SystemClock.elapsedRealtime()
     val activeConversationId = agentRenderedConversationId
         .ifBlank { agentTranscriptWindow.conversationId }
@@ -753,12 +768,13 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
     selectConversationOutputPage(collaboration)
     val liveEntries = liveAgentConnectorStreams.values
         .filter { it.conversationId == activeConversationId }
-    val hydratedEntries = AgentConnectorStreamPresentationPolicy.merge(entries, liveEntries)
+    val hydratedEntries = AgentConnectorStreamPresentationPolicy.merge(
+        entries.filter { it.conversationId == activeConversationId }, liveEntries)
         .map(::expandedAgentTranscriptEntry)
     val cleanupEntryIds = mutableListOf<String>()
     val filteredEntries = hydratedEntries.filterNot { entry ->
         val leakedControlPayload = AgentSupervisedProjectControlPayload
-            .isTranscriptControlPayload(entry.text, entry.richOutputJson)
+            .isTranscriptControlPayload(entry)
         val staleApproval = isLocalAgentApprovalEntry(entry) &&
             (isDirectActionApprovalEntry(entry) || !isAgentApprovalStillWaiting(entry.taskId))
         if (leakedControlPayload || staleApproval) cleanupEntryIds += entry.id
@@ -772,8 +788,16 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         filteredEntries
     )
     renderedAgentTranscriptSourceEntries = filteredEntries
-    val collapsedEntries = if (collaboration) CollaborationPagePolicy.project(filteredEntries)
-        else AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
+    val collapsedEntries = if (collaboration) {
+        val current = CollaborationCurrentStateStore.entries(activeConversationId)
+        val projected = CollaborationPagePolicy.project(filteredEntries, current)
+        val panel = findViewById<CollaborationTeamPanelView>(R.id.collaborationMemberStrip)
+        val group = CollaborationGroupStore.cached(activeConversationId)
+        if (panel != null && group?.members?.isNotEmpty() == true) {
+            panel.bind(this, group, projected, current)
+            CollaborationTeamPanelPolicy.replies(projected)
+        } else projected
+    } else AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
     val waitingResult = AgentReplyWaitingIndicatorPolicy.apply(
         entries = collapsedEntries,
         pending = if (collaboration) emptyList() else pendingAgentReplyIndicators.values,
@@ -837,6 +861,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
             restoreAgentTranscriptScrollAnchor(scrollAnchor)
         }
         conversationWindow.restoreScroll()
+        agentOutputList.post { refreshReplyUnreadDot() }
     }
 }
 
@@ -1290,7 +1315,8 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         processEntries.ifEmpty { listOf(entry) }
     )
     val hasProcessDetails = processSegments.isNotEmpty()
-    val startedAt = processEntries.firstOrNull()?.timestampMillis ?: entry.timestampMillis
+    val startedAt = agentProcessStartTimestamp(entry, turnEntries,
+        processEntries.firstOrNull()?.timestampMillis ?: entry.timestampMillis)
     val completedAt = agentProcessCompletionTimestamp(entry, turnEntries)
     val execution = agentExecutionPresentation(
         entry = entry,
@@ -1298,8 +1324,8 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         startedAtMillis = startedAt,
         completedAtMillis = completedAt
     )
-    val displayCompletedAt = completedAt
-        ?: execution.completedAtMillis.takeIf { it > 0L }
+    val displayCompletedAt = if (agentProcessIsRunning(entry)) null else completedAt
+        ?: execution.completedAtMillis.takeIf { entry.turnId.isBlank() && it > 0L }
     val completed = displayCompletedAt != null
     val deliveryUnconfirmed = turnEntries.any { it.dedupeKey.startsWith("delivery-failed:") }
     val expanded = hasProcessDetails &&
@@ -1309,7 +1335,9 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
             manuallyCollapsedWhileActive = groupKey in collapsedActiveAgentProcessGroups
         )
     val timelineRuntime = agentTimelineRuntime(entry)
-    val timelineActions = if (completed) {
+    val timelineActions = if (agentProcessPhase(entry) in setOf(
+            AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED
+        )) {
         emptyList()
     } else {
         timelineRuntime
@@ -1345,9 +1373,10 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
     val progressPresentation = AgentInteractiveProgressPolicy.project(
         goal = progressGoal,
         plan = progressState?.plan,
-        phase = progressState?.phase,
+        phase = agentProcessPhase(entry),
         processTexts = narrationEntries.map(AgentTranscriptEntry::text),
-        completed = completed
+        completed = completed,
+        fallbackPhase = execution.phase
     )
     return LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -1379,13 +1408,18 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                         val visible = statusView.isShown &&
                             statusView.getGlobalVisibleRect(visibleBounds)
                         if (!hasRendered || visible) {
-                            if (clock.completedAtMillis == null) {
-                                clock.observe(agentProcessCompletionTimestamp(entry, renderedAgentTranscriptSourceEntries))
-                            }
+                            clock.observe(agentProcessCompletionTimestamp(entry, renderedAgentTranscriptSourceEntries),
+                                running = agentProcessIsRunning(entry))
                             val elapsedMillis = clock.elapsed(System.currentTimeMillis())
                             val nextText = getString(
                                 if (deliveryUnconfirmed) {
                                     R.string.agent_trace_delivery_wait_ended
+                                } else if (agentProcessPhase(entry) == AgentPhase.BLOCKED) {
+                                    R.string.agent_trace_blocked
+                                } else if (agentProcessPhase(entry) == AgentPhase.PAUSED) {
+                                    R.string.agent_trace_paused
+                                } else if (agentProcessPhase(entry) == AgentPhase.WAITING_CONFIRMATION) {
+                                    R.string.agent_trace_waiting_confirmation
                                 } else if (clock.completedAtMillis != null) {
                                     R.string.agent_trace_processed
                                 } else {

@@ -69,7 +69,7 @@ class AgentDuplexAecDeviceTest {
                     timestampMillis = System.currentTimeMillis(),
                     conversationId = voice.session.conversationId, turnId = turn)))
             }
-            await("Real TTS playback", 45_000) { screen.agentVoiceConversation!!.panel.status.text == screen.getString(R.string.voice_call_speaking) }
+            await("Real TTS playback", 45_000) { screen.voiceAssistantSpeaking && screen.activeProgressiveSpeechTraceId == trace }
             await("Simultaneous AEC capture", 10_000) {
                 screen.agentVoiceConversation!!.bargeIn.active && screen.voiceAudioHub().currentState().acousticEchoCancelerEnabled
             }

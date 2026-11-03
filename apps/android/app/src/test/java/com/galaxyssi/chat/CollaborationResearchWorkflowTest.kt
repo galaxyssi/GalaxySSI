@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -22,12 +23,22 @@ class CollaborationResearchWorkflowTest {
         .put("summary", summary).put("candidates", JSONArray()).put("findings", JSONArray()).put("questions", JSONArray())
     private fun work(member: String = "person-1", stage: String = "EXECUTE") = JSONObject()
         .put("member", member).put("stage", stage).put("assignment", "Produce and verify the actual artifact")
+    private fun partitionWork(index: Int) = work().put("id", "work-$index").put("assignment",
+        "Verify square checksum for integers ${index * 10}..${index * 10 + 9} against prefix difference.")
+    private fun checkedPartition(index: Int): String {
+        val first = index * 10L
+        val last = first + 9L
+        val checksum = (first..last).sumOf { it * it }
+        fun prefix(n: Long) = n * (n + 1) * (2 * n + 1) / 6
+        assertEquals(prefix(last) - prefix(first - 1), checksum)
+        return artifact("Checked input integers $first..$last: square checksum $checksum").toString()
+    }
     private fun assessment(decision: String = "continue", jobs: Int = 1): JSONObject = JSONObject()
         .put("format", CollaborationGoalLoop.FORMAT).put("summary", "Evidence-backed progress")
         .put("decision", decision).put("criteria", JSONArray().put(JSONObject().put("id", "artifact")
             .put("requirement", "Verified artifact").put("status", if (decision == "achieved") "met" else "open")
             .put("evidence", JSONArray(if (decision == "achieved") listOf("tool:verified-artifact") else emptyList<String>()))))
-        .put("work", JSONArray((0 until jobs).map { work().put("id", "work-$it") })).put("blockers", JSONArray())
+        .put("work", JSONArray((0 until jobs).map(::partitionWork))).put("blockers", JSONArray())
 
     @Test fun initialGraphOnlyAsksCoordinatorToPlanAndRetainsAllPeople() = runBlocking {
         val definition = team(15)
@@ -56,11 +67,14 @@ class CollaborationResearchWorkflowTest {
             if (context.member.deliveryMode == AgentDeliveryMode.RESPOND) {
                 assessments++
                 val plan = assessment(if (assessments > 1001) "achieved" else "continue", if (assessments > 1001) 0 else 1)
-                if (assessments <= 1001) plan.getJSONArray("work").getJSONObject(0).put("id", "iteration-$assessments")
+                if (assessments <= 1001) plan.getJSONArray("work").put(0,
+                    partitionWork(assessments - 1).put("id", "iteration-$assessments"))
                 AgentSubagentOutput(plan.toString())
             } else {
                 assertTrue("Completed side effect must not replay", completed.add(context.request.runId))
-                AgentSubagentOutput(artifact("Verified actual artifact").toString())
+                val index = context.member.context.getValue(CollaborationGoalLoop.WORK_ID).removePrefix("iteration-").toInt() - 1
+                assertEquals(partitionWork(index).getString("assignment"), context.member.objective)
+                AgentSubagentOutput(checkedPartition(index))
             }
         }
         AgentTeamExecutionRuntime(store).use { runtime ->
@@ -88,6 +102,7 @@ class CollaborationResearchWorkflowTest {
         val store = InMemoryAgentTeamExecutionStore()
         val active = AtomicInteger()
         val peak = AtomicInteger()
+        val checked = ConcurrentHashMap.newKeySet<Int>()
         var coordinatorCalls = 0
         AgentTeamExecutionRuntime(store, AgentSubagentLimits(maxConcurrency = 3)).use { runtime ->
             val worker = AgentTeamMemberWorker { context ->
@@ -96,10 +111,13 @@ class CollaborationResearchWorkflowTest {
                     AgentSubagentOutput(assessment(if (coordinatorCalls == 1) "continue" else "achieved",
                         if (coordinatorCalls == 1) 80 else 0).toString())
                 } else {
+                    val index = context.member.context.getValue(CollaborationGoalLoop.WORK_ID).removePrefix("work-").toInt()
+                    assertTrue(checked.add(index))
+                    assertEquals(partitionWork(index).getString("assignment"), context.member.objective)
                     val running = active.incrementAndGet()
                     peak.updateAndGet { maxOf(it, running) }
                     delay(2); active.decrementAndGet()
-                    AgentSubagentOutput(artifact("Evidence").toString())
+                    AgentSubagentOutput(checkedPartition(index))
                 }
             }
             runtime.start(team(), request(), worker).await()
@@ -109,6 +127,7 @@ class CollaborationResearchWorkflowTest {
             val result = runtime.resume(checkpoint, worker).await()
             assertEquals("continue", result.snapshot.goalDisposition)
             assertTrue(peak.get() in 2..3)
+            assertEquals((0 until 80).toSet(), checked)
         }
     }
 

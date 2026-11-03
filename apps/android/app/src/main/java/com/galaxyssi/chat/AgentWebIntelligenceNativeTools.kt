@@ -4,6 +4,7 @@ import android.content.Context
 
 object AgentWebIntelligenceNativeTools {
     const val SEARCH = "galaxyssi.web.intelligence.search"
+    const val IMAGE_SEARCH = "galaxyssi.web.intelligence.image_search"
     const val FETCH = "galaxyssi.web.intelligence.fetch"
     const val CRAWL = "galaxyssi.web.intelligence.crawl"
     const val EXTRACT = "galaxyssi.web.intelligence.extract"
@@ -19,6 +20,7 @@ object AgentWebIntelligenceNativeTools {
 
     val toolIds: Set<String> = linkedSetOf(
         SEARCH,
+        IMAGE_SEARCH,
         FETCH,
         CRAWL,
         EXTRACT,
@@ -29,6 +31,8 @@ object AgentWebIntelligenceNativeTools {
         DIFF,
         WATCH
     )
+
+    val directSearchToolIds: Set<String> = setOf(SEARCH, IMAGE_SEARCH, FETCH, EXTRACT)
 
     fun androidDefinitions(
         context: Context,
@@ -45,7 +49,16 @@ object AgentWebIntelligenceNativeTools {
         definition(
             SEARCH,
             "Search across independent web sources",
-            "Queries parallel general, news, code, academic, community, documentation and knowledge sources, then fuses and locally reranks results.",
+            "Web search across parallel general, news, code, academic, community and documentation sources. Returns cited evidence for synthesis. \u7f51\u9875\u641c\u7d22、\u65b0\u95fb、\u8d44\u6599、\u77e5\u8bc6\u67e5\u8be2。",
+            searchSchema(),
+            60_000L,
+            service,
+            availability
+        ),
+        definition(
+            IMAGE_SEARCH,
+            "Search images with source citations",
+            "Image search returning HTTPS previews, original image URLs, titles and source pages. Metadata is not visual verification. \u56fe\u7247\u641c\u7d22、\u67e5\u627e\u7167\u7247、\u4ea7\u54c1\u56fe\u7247。",
             searchSchema(),
             60_000L,
             service,
@@ -189,18 +202,25 @@ object AgentWebIntelligenceNativeTools {
             timeoutMillis = timeoutMillis,
             timeoutPolicy = timeoutPolicy,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            concurrency = if (id in directSearchToolIds) AgentNativeToolConcurrency.PARALLEL_READ_ONLY
+                else AgentNativeToolConcurrency.SERIAL,
+            effect = if (id in directSearchToolIds) AgentNativeToolEffect.READ_ONLY
+                else null,
             availability = if (networkRequired) availability else AgentNativeToolAvailability.AVAILABLE
         ),
         executor = AgentNativeToolExecutor { invocation ->
             try {
                 invocation.reportProgress("web_intelligence", title)
-                val operation = id.substringAfterLast('.')
-                val output = service.invoke(
+                val imageSearch = id == IMAGE_SEARCH
+                val operation = if (imageSearch) "search" else id.substringAfterLast('.')
+                val input = if (imageSearch) invocation.input + ("verticals" to listOf("image")) else invocation.input
+                val rawOutput = service.invoke(
                     operation,
-                    invocation.input,
+                    input,
                     invocation.cancellationToken,
                     invocation::checkpoint
                 )
+                val output = if (imageSearch) CloudImageSearchEvidence.prepare(rawOutput) else rawOutput
                 AgentNativeToolExecutionResult.success(
                     output = output,
                     message = "$title completed",

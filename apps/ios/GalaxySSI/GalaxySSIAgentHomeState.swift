@@ -179,7 +179,8 @@ extension AgentHomeView {
   }
 
   var unreadTotal: Int {
-    store.visibleContacts.reduce(0) { total, contact in
+    _ = replyUnreadRevision
+    return store.visibleContacts.filter { $0.id != "hermes" }.reduce(agentUnreadCount) { total, contact in
       total + store.conversationSummary(for: contact.id).unreadCount
     }
   }

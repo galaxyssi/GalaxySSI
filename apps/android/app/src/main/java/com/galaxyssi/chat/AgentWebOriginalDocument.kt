@@ -14,7 +14,15 @@ internal object AgentWebOriginalDocument {
     private val imageTypes = setOf("image/jpeg", "image/png", "image/gif", "image/webp", "image/avif")
     private val cssUrl = Regex("url\\(\\s*(['\"]?)(.*?)\\1\\s*\\)", RegexOption.IGNORE_CASE)
 
-    fun build(url: String, source: ByteArray, load: (String) -> OriginalPageAsset?): OriginalPageDocument {
+    fun build(
+        url: String,
+        source: ByteArray,
+        notice: (Int, String) -> String = { missing, address ->
+            "GalaxySSI static web archive. Text and image order is preserved; scripts and interactions are disabled. " +
+                "Unloaded content may be incomplete. Unsaved images: $missing; fonts and decorations may be missing. Source: $address"
+        },
+        load: (String) -> OriginalPageAsset?
+    ): OriginalPageDocument {
         val document = source.inputStream().use { Jsoup.parse(it, null, url) }
         document.outputSettings().prettyPrint(false).charset(Charsets.UTF_8)
         var embedded = 0
@@ -108,7 +116,7 @@ internal object AgentWebOriginalDocument {
         document.head().appendElement("meta").attr("name", "referrer").attr("content", "no-referrer")
         document.head().appendElement("meta").attr("name", "galaxyssi-archive-missing-assets").attr("content", missing.size.toString())
         document.body().appendElement("p").attr("style", "font:12px sans-serif;color:#666;white-space:normal")
-            .text("GalaxySSI 网页静态备份 · 保留抓取时图文顺序；脚本及交互不运行，未加载内容不保证完整。未保存图片：$missingImages；部分字体和装饰可能缺失。来源：$url")
+            .text(notice(missingImages, url))
         return OriginalPageDocument(document.outerHtml(), embedded, missing.size)
     }
 }

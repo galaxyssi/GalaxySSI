@@ -2,22 +2,25 @@
 set -euo pipefail
 
 ffmpeg_version="8.1.2"
+pack_version="$ffmpeg_version+png.1"
 ffmpeg_archive_sha256="464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c"
 zig_version="0.16.0"
 zig_archive_sha256="70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
+zlib_version="1.3.2"
+zlib_archive_sha256="bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_dir/../.." && pwd)"
 source "$script_dir/runtime-download.sh"
 work_root="${GALAXYSSI_RUNTIME_BUILD_DIR:-$repository_root/build/runtime/ffmpeg}"
 download_dir="${GALAXYSSI_RUNTIME_DOWNLOAD_DIR:-$repository_root/build/runtime/downloads}"
-output="${1:-$repository_root/build/runtime/release/ffmpeg-$ffmpeg_version-arm64-v8a.img}"
+output="${1:-$repository_root/build/runtime/release/ffmpeg-$pack_version-arm64-v8a.img}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "The FFmpeg image must be built on Linux." >&2
   exit 2
 fi
-for command in curl sha256sum tar node realpath mv make nproc install llvm-strip; do
+for command in curl sha256sum tar node realpath mv make nproc install llvm-strip qemu-aarch64; do
   command -v "$command" >/dev/null || {
     echo "Missing build dependency: $command" >&2
     exit 2
@@ -30,6 +33,7 @@ download_dir="$(realpath -m "$download_dir")"
 output="$(realpath -m "$output")"
 ffmpeg_archive="$download_dir/ffmpeg-$ffmpeg_version.tar.xz"
 zig_archive="$download_dir/zig-x86_64-linux-$zig_version.tar.xz"
+zlib_archive="$download_dir/zlib-$zlib_version.tar.gz"
 if [[ -z "$work_root" || "$work_root" == "/" || "$work_root" == "$repository_root" ]]; then
   echo "Refusing to use an unsafe runtime build directory." >&2
   exit 2
@@ -46,15 +50,32 @@ download_verified_runtime_input \
   "$zig_archive" \
   "$zig_archive_sha256" \
   "Zig host compiler $zig_version"
+download_verified_runtime_input \
+  "https://zlib.net/fossils/zlib-$zlib_version.tar.gz" \
+  "$zlib_archive" \
+  "$zlib_archive_sha256" \
+  "zlib $zlib_version"
 
 source_tree="$work_root/ffmpeg-source"
 zig_root="$work_root/zig-host"
 install_root="$work_root/install-root"
 source_root="$work_root/source-root"
-rm -rf "$source_tree" "$zig_root" "$install_root" "$source_root"
-mkdir -p "$source_tree" "$zig_root" "$install_root" "$source_root/bin" "$source_root/share/licenses/ffmpeg"
+zlib_source="$work_root/zlib-source"
+zlib_install="$work_root/zlib-install"
+rm -rf "$source_tree" "$zig_root" "$install_root" "$source_root" "$zlib_source" "$zlib_install"
+mkdir -p "$source_tree" "$zig_root" "$install_root" "$source_root/bin" "$source_root/share/licenses/ffmpeg" "$zlib_source"
 tar --extract --xz --file "$ffmpeg_archive" --directory "$source_tree" --strip-components=1
 tar --extract --xz --file "$zig_archive" --directory "$zig_root" --strip-components=1
+tar --extract --gzip --file "$zlib_archive" --directory "$zlib_source" --strip-components=1
+
+# PNG encoding depends on zlib; --disable-autodetect must not silently omit it.
+pushd "$zlib_source" >/dev/null
+CC="$zig_root/zig cc -target aarch64-linux-musl" \
+AR="$zig_root/zig ar" RANLIB="$zig_root/zig ranlib" \
+  ./configure --static --prefix="$zlib_install"
+make -j"$(nproc)"
+make install
+popd >/dev/null
 
 pushd "$source_tree" >/dev/null
 ./configure \
@@ -75,19 +96,26 @@ pushd "$source_tree" >/dev/null
   --disable-network \
   --disable-shared \
   --enable-static \
-  --extra-ldflags=-static
+  --enable-zlib \
+  --enable-encoder=png \
+  --enable-decoder=png \
+  --extra-cflags="-I$zlib_install/include" \
+  --extra-ldflags="-static -L$zlib_install/lib"
 make -j"$(nproc)"
 make install
 popd >/dev/null
+
+bash "$script_dir/verify-ffmpeg-images.sh" "$install_root/bin/ffmpeg" "$install_root/bin/ffprobe" qemu-aarch64
 
 install -m 0755 "$install_root/bin/ffmpeg" "$source_root/bin/ffmpeg"
 install -m 0755 "$install_root/bin/ffprobe" "$source_root/bin/ffprobe"
 install -m 0644 "$source_tree/COPYING.LGPLv2.1" "$source_root/share/licenses/ffmpeg/COPYING.LGPLv2.1"
 install -m 0644 "$source_tree/COPYING.LGPLv3" "$source_root/share/licenses/ffmpeg/COPYING.LGPLv3"
+install -m 0644 "$zlib_source/README" "$source_root/share/licenses/ffmpeg/zlib-README"
 
 node "$repository_root/tools/runtime/build-runtime-image.mjs" \
   --pack-id ffmpeg \
-  --version "$ffmpeg_version" \
+  --version "$pack_version" \
   --source "$source_root" \
   --output "$output" \
   --license "LGPL-2.1-or-later"

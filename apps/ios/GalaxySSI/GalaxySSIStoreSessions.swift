@@ -804,6 +804,7 @@ extension GalaxySSIStore {
     let removedAnything = removedConversations > 0 || removedChatMessages > 0 ||
       removedTranscripts > 0 || removedMessages > 0 || !knownConversations.isEmpty
     guard removedAnything else { return 0 }
+    removeAgentReplyUnreadConversations(ids)
     if ids.contains(activeAgentConversationId) {
       ensureActiveAgentSession()
     }

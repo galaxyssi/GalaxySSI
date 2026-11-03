@@ -78,7 +78,7 @@ class AgentConversationWindowsInstrumentedTest {
             instrumentation.runOnMainSync {
                 assertFalse(visibleIds(root).orEmpty().any { it in conversations && it != draft.id })
                 root.agentSessionsDialog?.dismiss()
-                root.findViewById<View>(R.id.agentBrandNewConversation).performClick()
+                root.findViewById<View>(R.id.agentActionNewSession).performClick()
                 conversations += root.agentTranscriptStore.activeConversation().id
                 assertEquals("", root.agentGoalInput.text.toString())
             }

@@ -42,7 +42,7 @@ internal class AgentRuntimeTiming(
             "image_prepare", "image_original_probe", "image_decode", "image_encode",
             "knowledge_source_total", "knowledge_source_stage", "knowledge_source_prepare",
             "knowledge_source_commit", "knowledge_source_ownership", "knowledge_source_apply",
-            "knowledge_source_observe")
+            "knowledge_source_observe", "reply_session", "reply_workspace", "reply_timeline")
         val NONE = AgentRuntimeTiming(null)
     }
 }

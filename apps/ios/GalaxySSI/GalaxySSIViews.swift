@@ -503,6 +503,9 @@ private struct GalaxySSIConversationVoiceRiskConfirmation: Identifiable {
 struct ConversationView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var conversationVisible = false
+  @State private var conversationWindowFocused = false
   @EnvironmentObject private var store: GalaxySSIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var draft = ""
@@ -539,6 +542,24 @@ struct ConversationView: View {
 
   private var contact: GalaxySSIContact {
     store.contact(id: contactId) ?? GalaxySSIContact.hermes()
+  }
+
+  private func refreshVisibleContactReadState() {
+    guard AgentReplyUnreadPolicy.canRead(
+      visible: conversationVisible, active: scenePhase == .active, focused: conversationWindowFocused
+    ) else {
+      GalaxySSIVisibleConversationTracker.shared.markHidden(token: visibilityToken)
+      return
+    }
+    GalaxySSIVisibleConversationTracker.shared.markVisible(contactId: contact.id, token: visibilityToken)
+    if contact.id == "hermes" {
+      for conversationId in Set(renderedMessages.map(\.conversationId)) {
+        store.markAgentRepliesRead(conversationId: conversationId, rendered: renderedMessages)
+      }
+    } else {
+      store.markContactRead(contact.id)
+    }
+    NotificationService.cancelIncomingMessage(contactId: contact.id)
   }
 
   private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
@@ -662,7 +683,7 @@ struct ConversationView: View {
                 proxy.scrollTo(last.id, anchor: .bottom)
               }
             }
-            store.markContactRead(contact.id)
+            refreshVisibleContactReadState()
           }
           .onChange(of: waitingMessageIDs.count) { _ in
             guard GalaxySSIChatMessageViewportPolicy.followsLatest(
@@ -725,26 +746,21 @@ struct ConversationView: View {
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .background(navigationShortcuts)
+    .background(GalaxySSIConversationFocusProbe(focused: $conversationWindowFocused))
     .navigationBarHidden(true)
     .onAppear {
-      GalaxySSIVisibleConversationTracker.shared.markVisible(
-        contactId: contact.id,
-        token: visibilityToken
-      )
+      conversationVisible = true
       resetMessageWindowIfNeeded()
-      store.markContactRead(contact.id)
-      NotificationService.cancelIncomingMessage(contactId: contact.id)
+      refreshVisibleContactReadState()
     }
     .onChange(of: contactId) { _ in
-      GalaxySSIVisibleConversationTracker.shared.markVisible(
-        contactId: contact.id,
-        token: visibilityToken
-      )
       resetMessageWindowIfNeeded()
-      store.markContactRead(contact.id)
-      NotificationService.cancelIncomingMessage(contactId: contact.id)
+      refreshVisibleContactReadState()
     }
+    .onChange(of: scenePhase) { _ in refreshVisibleContactReadState() }
+    .onChange(of: conversationWindowFocused) { _ in refreshVisibleContactReadState() }
     .onDisappear {
+      conversationVisible = false
       GalaxySSIVisibleConversationTracker.shared.markHidden(token: visibilityToken)
       attachmentMenuPresented = false
     }

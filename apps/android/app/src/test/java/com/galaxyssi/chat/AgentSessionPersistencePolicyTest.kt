@@ -8,6 +8,48 @@ import org.json.JSONObject
 import org.junit.Test
 
 class AgentSessionPersistencePolicyTest {
+    @Test fun boundedRecoveryAndRemoteIdentitySurviveNoisyMetadata() {
+        val recovery = mapOf("remote_task_id" to "remote", "remote_task_status" to "timed_out",
+            "remote_execution_generation" to "2", "connector_task_mode" to PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+            AgentCodexSilenceRecovery.ORIGIN to "codex", AgentCodexSilenceRecovery.TIMEOUTS to "2",
+            AgentCodexSilenceRecovery.FINAL to "true")
+        val compact = AgentSessionPersistencePolicy.compactMetadata(
+            (0..100).associate { "noise_$it" to "$it" } + recovery)
+        recovery.forEach { (key, value) -> assertEquals(value, compact[key]) }
+    }
+
+    @Test fun unverifiedOutcomeRestoresWithoutResettingTheAcceptedAction() {
+        val scope = AgentPlanContinuationScope("conversation", "turn")
+        val accepted = scope.bind(AgentAction("accepted", AgentActionKind.CALL_NATIVE_TOOL, "write", AgentRisk.LOW,
+            AgentActionStatus.COMPLETED, "Accepted", mapOf("tool_id" to "write"),
+            evidence = """{"state_verified":false,"message":"Outcome unverified"}"""))
+        val plan = AgentPlan("Verify the outcome", ScreenContext("Test", pageTitle = "Test"), emptyList(),
+            listOf(accepted), planId = "retained-plan")
+        val token = AgentRuntimeOutcomeContinuation.forPlan("session", scope, plan)!!
+        val blocked = token.bind(AgentOutcomeCompletion.blockedResult(AgentActionResult("accepted", true, "Accepted"),
+            AgentOutcomeCompletion.pending(AgentPhase.COMPLETED, plan, scope) { null }))
+        val snapshot = AgentSessionSnapshot("session", AgentPhase.BLOCKED, plan.goal, plan.screen, plan, emptyList(), blocked,
+            updatedAtMillis = 1_000L)
+        val store = SharedPreferencesAgentSessionStore(MemoryCheckpointStorage())
+        store.save(snapshot)
+        val restored = requireNotNull(store.load())
+        assertEquals(AgentPhase.BLOCKED, restored.phase)
+        assertEquals(AgentActionStatus.COMPLETED, restored.currentPlan!!.actions.single().status)
+        assertEquals(accepted.evidence, restored.currentPlan!!.actions.single().evidence)
+        assertFalse(AgentGoalEvidence.permitsSuccess(restored.lastActionResult))
+        assertEquals(token, AgentRuntimeOutcomeContinuation.parse(restored.lastActionResult))
+        assertTrue(token.matches(restored.sessionId, scope, restored.currentPlan!!))
+    }
+
+    @Test fun teamRecoveryOwnershipAndPauseMarkerSurviveNoisyMetadata() {
+        val recovery = mapOf("team_run_id" to "run", "team_id" to "team", "resource_location" to "distributed",
+            "team_recovery_paused" to "true", "team_state" to "interrupted", "conversation_id" to "group",
+            "turn_id" to "turn", "task_id" to "task")
+        val metadata = (0..100).associate { "noise_$it" to "$it" } + recovery
+        val compact = AgentSessionPersistencePolicy.compactMetadata(metadata)
+        recovery.forEach { (key, value) -> assertEquals(value, compact[key]) }
+        assertEquals(24, compact.size)
+    }
     @Test
     fun recoveryMetadataSurvivesEntryCompaction() {
         val metadata = buildMap {

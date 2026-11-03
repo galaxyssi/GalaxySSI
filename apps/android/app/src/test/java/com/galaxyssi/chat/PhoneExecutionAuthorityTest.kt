@@ -2,12 +2,42 @@ package com.galaxyssi.chat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class PhoneExecutionAuthorityTest {
     private val screen = ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent")
+
+    @Test fun cancellationBeforeSubscriptionIsDeliveredImmediatelyWithoutRetainingAListener() {
+        val id = "public-authority-${java.util.UUID.randomUUID()}"
+        try {
+            PhoneExecutionAuthority.requestCancellation(id)
+            var calls = 0
+            PhoneExecutionAuthority.observeCancellation(id) { calls++ }.dispose()
+            assertEquals(1, calls)
+            assertEquals(0, PhoneExecutionAuthority.cancellationListenerCount(id))
+        } finally { PhoneExecutionAuthority.clearCancellation(id) }
+    }
+
+    @Test fun repeatedStopIsOneShotAndBrokenListenerDoesNotPreventOtherTasksFromBeingNotified() {
+        val id = "public-authority-${java.util.UUID.randomUUID()}"
+        val first = PhoneExecutionAuthority.observeCancellation(id) { error("Public observer failure") }
+        var calls = 0
+        val second = PhoneExecutionAuthority.observeCancellation(id) {
+            calls++
+            // Callback dispatch must not hold the authority's registration lock.
+            PhoneExecutionAuthority.observeCancellation("$id-nested") { }.dispose()
+        }
+        try {
+            PhoneExecutionAuthority.requestCancellation(id)
+            PhoneExecutionAuthority.requestCancellation(id)
+            assertEquals(1, calls)
+            assertFalse(PhoneExecutionAuthority.isCancelled("$id-nested"))
+        } finally { first.dispose(); second.dispose(); PhoneExecutionAuthority.clearCancellation(id) }
+        assertEquals(0, PhoneExecutionAuthority.cancellationListenerCount(id))
+    }
 
     @Test
     fun phoneCloudModelApiRunsAsConcurrentRead() {

@@ -16,6 +16,19 @@ class AgentPhoneNativeToolCatalogTest {
     private lateinit var storageRoot: Path
     private lateinit var fileTools: AgentWorkspaceFileTools
 
+    @Test
+    fun timerSchemaExplainsHostGeneratedIdentityWithoutRequiringAnIdForCreation() {
+        val timer = registry().lookup(AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM))!!.descriptor
+        val properties = timer.inputSchema.document["properties"] as Map<*, *>
+        val parameters = properties["parameters"] as Map<*, *>
+        val fields = parameters["properties"] as Map<*, *>
+        val identity = fields["operation_id"] as Map<*, *>
+        assertTrue(identity["description"].toString().contains("Omit when starting a new timer"))
+        assertTrue(identity["description"].toString().contains("Never invent"))
+        assertFalse((parameters["required"] as List<*>).contains("operation_id"))
+        assertTrue(timer.description.contains("metadata.timer_state"))
+    }
+
     @Before
     fun setUp() {
         storageRoot = Files.createTempDirectory("agent-phone-native-catalog-")
@@ -57,6 +70,7 @@ class AgentPhoneNativeToolCatalogTest {
             "galaxyssi.workspace.files.patch.exact.batch",
             "galaxyssi.workspace.file.diff.summary",
             "galaxyssi.workspace.file.sha256",
+            "galaxyssi.workspace.file.export",
             "galaxyssi.workspace.zip.create",
             "galaxyssi.workspace.zip.list",
             "galaxyssi.workspace.zip.extract",
@@ -87,6 +101,7 @@ class AgentPhoneNativeToolCatalogTest {
     fun exposesCompleteDefaultIdsWithoutBuildingAndroidExecutors() {
         val expected = linkedSetOf<String>().apply {
             addAll(AgentPhoneNativeToolCatalog.toolIds)
+            addAll(AgentAppControlTools.toolIds)
             addAll(AgentWebMediaNativeTools.toolIds)
             addAll(AgentWebIntelligenceNativeTools.toolIds)
             addAll(AgentHardwareNativeTools.toolIds)
@@ -101,12 +116,34 @@ class AgentPhoneNativeToolCatalogTest {
             addAll(AgentMobileProjectArchiveTools.toolIds)
             addAll(AgentMobileProjectNativeTools.toolIds)
             addAll(AgentOnDeviceRuntimeTools.toolIds)
+            addAll(AgentInteractiveBrowserTools.toolIds)
             addAll(AgentLinuxSoftwareNativeTools.toolIds)
             addAll(AgentSelfEvolutionNativeTools.toolIds)
             addAll(AgentDesktopRemoteNativeTools.toolIds)
+            add(AgentToolInspectionTools.DESCRIBE)
+            add(AgentToolDiscoveryTools.ID)
         }
 
         assertEquals(expected, AgentPhoneNativeToolCatalog.defaultToolIds)
+    }
+
+    @Test
+    fun exportSchemaDescribesNestedReviewEvidenceAndAcceptsActualReceipts() {
+        val schema = registry().descriptors().single { it.id == AgentPhoneNativeToolCatalog.WORKSPACE_EXPORT }.outputSchema
+        val json = AgentNativeJsonCodec.stringify(schema.document)
+        assertTrue(json.contains("artifacts"))
+        assertTrue(json.contains("relative_path"))
+        assertTrue(json.contains("text_complete"))
+        assertTrue(json.contains("characters_read"))
+        for (text in listOf("value\n49\n", "x".repeat(8193))) {
+            fileTools.writeText("test", "review.csv", text)
+            val result = (fileTools.exportArtifact("test", "review.csv") as AgentWorkspaceFileResult.Success).value
+            assertTrue(AgentNativeJsonSchemaValidator.validate(schema, result).isValid)
+        }
+        fileTools.write("test", "invalid.txt", byteArrayOf(0xc3.toByte(), 0x28))
+        val invalid = (fileTools.exportArtifact("test", "invalid.txt") as AgentWorkspaceFileResult.Success).value
+        assertTrue(AgentNativeJsonSchemaValidator.validate(schema, invalid).isValid)
+        assertFalse(AgentNativeJsonSchemaValidator.validate(schema, mapOf("path" to "review.csv", "openability" to "verified")).isValid)
     }
 
     @Test

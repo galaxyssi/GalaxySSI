@@ -8,6 +8,41 @@ import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 
 internal object AgentOfficeDocumentExtractor {
+    fun verifyOpenability(bytes: ByteArray, extension: String) {
+        val main = when (extension) {
+            "docx" -> "word/document.xml"
+            "xlsx" -> "xl/workbook.xml"
+            "pptx" -> "ppt/presentation.xml"
+            else -> error("Unsupported Office package")
+        }
+        val entries = readEntries(bytes) { it == "[Content_Types].xml" || it == "_rels/.rels" || it.endsWith(".xml") }
+        val types = parseXml(requireNotNull(entries["[Content_Types].xml"]) { "Office content types are missing" })
+        require(types.documentElement.localName == "Types") { "Office content types are invalid" }
+        val mainType = when (extension) {
+            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+            else -> "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"
+        }
+        require(types.getElementsByTagNameNS("*", "Override").asElements().any {
+            it.getAttribute("PartName") == "/$main" && it.getAttribute("ContentType") == mainType
+        }) { "Office main content type does not match its format" }
+        val relationships = parseXml(requireNotNull(entries["_rels/.rels"]) { "Office root relationships are missing" })
+        require(relationships.getElementsByTagNameNS("*", "Relationship").asElements().any {
+            it.getAttribute("Type").endsWith("/officeDocument") &&
+                it.getAttribute("Target").removePrefix("/") == main && it.getAttribute("TargetMode") != "External"
+        }) { "Office main document relationship is missing" }
+        val root = parseXml(requireNotNull(entries[main]) { "Office main document is missing" }).documentElement
+        require(root.localName == when (extension) { "docx" -> "document"; "xlsx" -> "workbook"; else -> "presentation" }) {
+            "Office document root does not match its format"
+        }
+        entries.filterKeys { it.endsWith(".xml") }.values.forEach { parseXml(it) }
+        when (extension) {
+            "docx" -> require(root.getElementsByTagNameNS("*", "body").length > 0) { "DOCX body is missing" }
+            "xlsx" -> extractXlsx(bytes)
+            "pptx" -> extractPptx(bytes)
+        }
+    }
+
     fun extractXlsx(bytes: ByteArray): String {
         val entries = readEntries(bytes) { name ->
             name == "xl/sharedStrings.xml" ||

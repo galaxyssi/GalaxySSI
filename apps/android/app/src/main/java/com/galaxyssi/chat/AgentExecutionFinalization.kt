@@ -5,14 +5,18 @@ internal fun finalizeAgentExecution(
     turnId: String,
     state: AgentUiState,
     recordAgentRunFromState: (String, AgentUiState) -> Unit
-): AgentUiState {
+): AgentUiState = synchronized(runtime) {
+    // Foreground restoration must not replace the loop between FINALIZE and LEARN.
+    if (runtime.phaseSnapshot() != state.phase) {
+        return@synchronized runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
+    }
     if (runtime.executionLoopSnapshot()?.phase == AgentExecutionLoopPhase.COMPLETED) {
         recordAgentRunFromState(turnId, state)
-        return state
+        return@synchronized state
     }
     if (state.phase != AgentPhase.COMPLETED) {
         recordAgentRunFromState(turnId, state)
-        return state
+        return@synchronized state
     }
     val loopPhase = runtime.executionLoopSnapshot()?.phase
     if (loopPhase !in setOf(
@@ -21,14 +25,14 @@ internal fun finalizeAgentExecution(
         ) &&
         !runtime.beginExecutionFinalization()
     ) {
-        return runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
+        return@synchronized runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
     }
     if (runtime.executionLoopSnapshot()?.phase != AgentExecutionLoopPhase.LEARN &&
         !runtime.beginExecutionLearning()
     ) {
-        return runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
+        return@synchronized runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
     }
-    return runCatching {
+    runCatching {
         recordAgentRunFromState(turnId, state)
         runtime.completeExecutionLoop()
         runtime.snapshot()

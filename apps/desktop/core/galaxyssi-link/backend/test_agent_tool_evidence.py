@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 from agent_task_store import AgentTaskStore, AgentTaskWriteConflict
 from agent_tool_evidence import (AgentToolEvidence, EvidenceConflict, IDENTITY_FIELDS, INDEX_PAGE_SIZE,
                                  PAGE_BYTES, canonical, completed_tool_observation, observation_outcome, task_identity)
-from codex_tool_evidence_bridge import capture
+from codex_tool_evidence_bridge import capture, query as bridge_query
 
 
 class AgentToolEvidenceTest(unittest.TestCase):
@@ -58,6 +58,96 @@ class AgentToolEvidenceTest(unittest.TestCase):
         self.assertEqual(original, self.read(receipt)["observation"])
         self.assertEqual("execution_observed_not_claim_verified", receipt["trust"])
         self.assertEqual("provider_payload_as_received", receipt["coverage"])
+
+    def test_small_original_can_share_index_with_exact_page_and_sealed_boundary(self):
+        entry = self.archive.record(self.task, self.observation())
+        self.assertEqual([], self.query()["inline_pages"])
+        running = self.query(inline_page_bytes=PAGE_BYTES)
+        self.assertFalse(running["archive_final"])
+        self.assertEqual([entry], running["entries"])
+        inline = running["inline_pages"][0]
+        ordinary = self.query(mode="page", evidence_id=entry["evidence_id"], sha256=entry["sha256"], page_index=0)
+        self.assertTrue(all(ordinary[key] == value for key, value in inline.items()))
+        self.store.upsert({**self.store.get("task"), "status": "completed", "status_seq": 2})
+        terminal = self.query(inline_page_bytes=PAGE_BYTES)
+        self.assertTrue(terminal["archive_final"])
+        self.assertFalse(terminal["has_more"])
+        self.assertEqual(entry["sha256"], hashlib.sha256(base64.b64decode(inline["data_b64"])).hexdigest())
+
+    def test_inline_byte_budget_is_total_and_large_originals_still_page(self):
+        for i in range(5):
+            self.archive.record(self.task, self.observation(str(i), aggregatedOutput="x" * 7000))
+        self.archive.record(self.task, self.observation("large", aggregatedOutput="x" * 40000))
+        response = self.query(inline_page_bytes=PAGE_BYTES)
+        self.assertEqual(6, len(response["entries"]))
+        self.assertEqual(2, len(response["inline_pages"]))
+        self.assertLessEqual(sum(len(base64.b64decode(p["data_b64"])) for p in response["inline_pages"]), PAGE_BYTES)
+        for entry in response["entries"]:
+            self.assertIsNotNone(self.read(entry))
+
+    def test_invalid_inline_budget_never_opens_database(self):
+        for value in (True, -1, PAGE_BYTES + 1, "16384", 1.5, None):
+            with patch.object(self.archive, "_connect") as connect:
+                self.assertIsNone(self.query(inline_page_bytes=value))
+                connect.assert_not_called()
+
+    def test_inline_projection_cannot_return_phone_owned_recall_bodies(self):
+        self.archive.record(self.task, self.observation("recall", type="dynamicToolCall", tool="collaboration_recall"))
+        external = self.archive.record(self.task, self.observation("external"))
+        result = self.archive.query(self.request(inline_page_bytes=PAGE_BYTES), client_route_id="phone", phone_import=True)
+        self.assertEqual([external["evidence_id"]], [p["evidence_id"] for p in result["inline_pages"]])
+
+    def test_phone_import_omits_recall_echo_but_full_audit_and_original_are_retained(self):
+        original = self.observation("recall", type="dynamicToolCall", tool="collaboration_recall",
+                                    result={"contentItems": [{"type": "inputText", "text": "phone-original" * 5000}]})
+        recall = self.archive.record(self.task, original)
+        external = self.archive.record(self.task, self.observation("actual-command"))
+        projected = self.archive.query(self.request(), client_route_id="phone", phone_import=True)
+        self.assertEqual([external], projected["entries"])
+        self.assertEqual("external_execution_observations", projected["projection"])
+        self.assertFalse(projected["provider_history_complete"])
+        self.assertEqual(2, len(self.query()["entries"]))
+        self.assertEqual(original, self.read(recall)["observation"])
+        from codex_tool_evidence_bridge import query
+        manager = SimpleNamespace(tool_evidence=self.archive)
+        self.assertEqual([external], query(manager, self.request(), client_route_id="phone")["entries"])
+        self.assertIsNone(query(manager, self.request(), client_route_id="other-phone"))
+
+    def test_projection_cursor_skips_internal_reads_without_losing_external_observations(self):
+        external = []
+        for i in range(45):
+            self.archive.record(self.task, self.observation(f"read-{i}", type="dynamicToolCall", tool="collaboration_recall"))
+            external.append(self.archive.record(self.task, self.observation(f"command-{i}")))
+        cursor, found = 0, []
+        while True:
+            page = self.archive.query(self.request(after_sequence=cursor), client_route_id="phone", phone_import=True)
+            found.extend(page["entries"])
+            cursor = page["next_sequence"]
+            if not page["has_more"]: break
+        self.assertEqual(external, found)
+        self.assertEqual(90, cursor)
+
+    def test_only_host_registered_internal_recall_type_is_excluded(self):
+        receipts = []
+        for i, (kind, tool) in enumerate((("mcpToolCall", "collaboration_recall"), ("commandExecution", "collaboration_recall"),
+                                         ("dynamicToolCall", "web_fetch"), ("dynamicToolCall", "other"))):
+            receipts.append(self.archive.record(self.task, self.observation(str(i), type=kind, tool=tool)))
+        self.assertEqual(receipts, self.archive.query(self.request(), client_route_id="phone", phone_import=True)["entries"])
+
+    def test_legacy_evidence_schema_adds_projection_without_dropping_observations(self):
+        from secure_state import encrypt_text
+        receipt = self.archive.record(self.task, self.observation(aggregatedOutput="legacy-output" * PAGE_BYTES))
+        receipt.pop("phone_import")
+        with closing(sqlite3.connect(self.path)) as db, db:
+            scope = db.execute("SELECT scope FROM agent_tool_evidence").fetchone()[0]
+            encrypted = encrypt_text(self.path, canonical(receipt).decode(),
+                                     purpose=self.archive._purpose(scope, receipt["evidence_id"], "meta"))
+            db.execute("UPDATE agent_tool_evidence SET descriptor=?", (encrypted,))
+            db.execute("DROP INDEX tool_evidence_phone_import")
+            db.execute("ALTER TABLE agent_tool_evidence DROP COLUMN phone_import")
+        self.archive = AgentToolEvidence(self.path)
+        self.assertEqual([receipt], self.archive.query(self.request(), client_route_id="phone", phone_import=True)["entries"])
+        self.assertEqual("legacy-output" * PAGE_BYTES, self.read(receipt)["observation"]["item"]["aggregatedOutput"])
 
     def test_duplicate_is_exact_replay_and_conflict_cannot_overwrite(self):
         original = self.archive.record(self.task, self.observation())
@@ -267,6 +357,21 @@ print(json.dumps({'index':index,'original':json.loads(raw)}))
         mutations.snapshot = lambda: None
         self.assertIsNone(capture(mutations, result))
         manager.tool_evidence.record.assert_not_called()
+
+    def test_query_diagnostics_do_not_log_private_request_result_or_exception_text(self):
+        manager = SimpleNamespace(tool_evidence=Mock())
+        request = {"task_id": "private-task", "request_id": "private-nonce"}
+        for response in (None, {"status": "ready", "body": "private-original"}):
+            manager.tool_evidence.query.return_value = response
+            with self.assertLogs("codex_tool_evidence_bridge", level="INFO") as logs:
+                self.assertIs(response, bridge_query(manager, request, client_route_id="private-route"))
+            self.assertNotIn("private-", " ".join(logs.output))
+            self.assertIn("outcome=" + ("ready" if response else "rejected"), " ".join(logs.output))
+        manager.tool_evidence.query.side_effect = OSError("private-file-path")
+        with self.assertLogs("codex_tool_evidence_bridge", level="WARNING") as logs:
+            self.assertIsNone(bridge_query(manager, request, client_route_id="private-route"))
+        self.assertIn("OSError", " ".join(logs.output))
+        self.assertNotIn("private-", " ".join(logs.output))
 
 
 if __name__ == "__main__":

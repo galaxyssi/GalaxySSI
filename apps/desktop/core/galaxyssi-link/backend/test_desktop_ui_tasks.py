@@ -4,6 +4,8 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
+
 import agent_task_manager as task_module
 import main
 
@@ -12,21 +14,45 @@ class LoopbackRequest:
     client = SimpleNamespace(host="127.0.0.1")
 
 
-def wait_for_terminal(manager, task_id: str, timeout: float = 3.0):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+def wait_for_terminal(manager, task_id: str, timeout: float = 15.0):
+    completed = threading.Event()
+
+    def observe(snapshot):
+        if snapshot.get("task_id") == task_id and snapshot.get("status") in task_module.TERMINAL_STATES:
+            completed.set()
+
+    subscription = manager.subscribe(observe)
+    try:
+        # Subscribe before the snapshot so completion cannot be lost between them.
         task = manager.get(task_id)
         if task and task.status in task_module.TERMINAL_STATES:
             return task
-        time.sleep(0.02)
-    raise AssertionError("Desktop task did not reach a terminal state")
+        completed.wait(timeout)
+        task = manager.get(task_id)
+        assert task and task.status in task_module.TERMINAL_STATES, (
+            f"Desktop task {task_id} did not reach a terminal state: "
+            f"status={getattr(task, 'status', 'missing')}, "
+            f"step={getattr(task, 'current_step', '')!r}, "
+            f"pool={manager._work_pool.snapshot()}"
+        )
+        return task
+    finally:
+        manager.unsubscribe(subscription)
 
 
-def test_desktop_task_runs_async_and_reuses_conversation_context(tmp_path, monkeypatch):
+@pytest.fixture
+def manager(tmp_path, monkeypatch):
     monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
-    manager = task_module.AgentTaskManager()
-    monkeypatch.setattr(main, "agent_task_manager", manager)
+    instance = task_module.AgentTaskManager()
+    monkeypatch.setattr(main, "agent_task_manager", instance)
     monkeypatch.setenv("GALAXYSSI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+    yield instance
+    results = [pool.close(wait=True, cancel_pending=True, timeout=15.0)
+               for pool in (instance._work_pool, instance._control_work_pool)]
+    assert all(results), "Desktop test workers outlived their patched dependencies"
+
+
+def test_desktop_task_runs_async_and_reuses_conversation_context(tmp_path, monkeypatch, manager):
     monkeypatch.setattr(
         main,
         "_desktop_evolution_manager",
@@ -113,13 +139,9 @@ def test_desktop_auto_uses_super_agent_and_explicit_agents_remain_direct(monkeyp
 
 
 def test_desktop_task_forwards_plan_only_policy_without_requesting_artifacts(
-    tmp_path,
     monkeypatch,
+    manager,
 ):
-    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
-    manager = task_module.AgentTaskManager()
-    monkeypatch.setattr(main, "agent_task_manager", manager)
-    monkeypatch.setenv("GALAXYSSI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
     monkeypatch.setattr(
         main,
         "connector_diagnostics",
@@ -154,13 +176,9 @@ def test_desktop_task_forwards_plan_only_policy_without_requesting_artifacts(
 
 
 def test_prompt_can_override_desktop_plan_default_with_auto_complete(
-    tmp_path,
     monkeypatch,
+    manager,
 ):
-    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
-    manager = task_module.AgentTaskManager()
-    monkeypatch.setattr(main, "agent_task_manager", manager)
-    monkeypatch.setenv("GALAXYSSI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
     monkeypatch.setattr(
         main,
         "connector_diagnostics",
@@ -187,11 +205,7 @@ def test_prompt_can_override_desktop_plan_default_with_auto_complete(
     assert policies[0]["requires_artifact"] is True
 
 
-def test_desktop_asks_once_then_uses_the_same_conversation_context(tmp_path, monkeypatch):
-    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
-    manager = task_module.AgentTaskManager()
-    monkeypatch.setattr(main, "agent_task_manager", manager)
-    monkeypatch.setenv("GALAXYSSI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+def test_desktop_asks_once_then_uses_the_same_conversation_context(monkeypatch, manager):
     monkeypatch.setattr(
         main,
         "connector_diagnostics",
@@ -234,11 +248,7 @@ def test_desktop_asks_once_then_uses_the_same_conversation_context(tmp_path, mon
     assert len(deliveries) == 1
 
 
-def test_failed_attachment_task_retries_in_the_same_conversation(tmp_path, monkeypatch):
-    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
-    manager = task_module.AgentTaskManager()
-    monkeypatch.setattr(main, "agent_task_manager", manager)
-    monkeypatch.setenv("GALAXYSSI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+def test_failed_attachment_task_retries_in_the_same_conversation(tmp_path, monkeypatch, manager):
     monkeypatch.setattr(
         main,
         "connector_diagnostics",
@@ -292,11 +302,7 @@ def test_failed_attachment_task_retries_in_the_same_conversation(tmp_path, monke
     assert policies[0]["task_budget"]["allow_paid_providers"] is False
 
 
-def test_failed_task_can_switch_agent_or_return_diagnostics(tmp_path, monkeypatch):
-    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
-    manager = task_module.AgentTaskManager()
-    monkeypatch.setattr(main, "agent_task_manager", manager)
-    monkeypatch.setenv("GALAXYSSI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+def test_failed_task_can_switch_agent_or_return_diagnostics(monkeypatch, manager):
     monkeypatch.setattr(
         main,
         "connector_diagnostics",
@@ -348,11 +354,7 @@ def test_failed_task_can_switch_agent_or_return_diagnostics(tmp_path, monkeypatc
     assert completed.retry_of == failed.task_id
 
 
-def test_safe_fallback_restarts_in_plan_only_mode(tmp_path, monkeypatch):
-    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
-    manager = task_module.AgentTaskManager()
-    monkeypatch.setattr(main, "agent_task_manager", manager)
-    monkeypatch.setenv("GALAXYSSI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+def test_safe_fallback_restarts_in_plan_only_mode(monkeypatch, manager):
     monkeypatch.setattr(
         main,
         "connector_diagnostics",
@@ -388,12 +390,9 @@ def test_safe_fallback_restarts_in_plan_only_mode(tmp_path, monkeypatch):
     assert policies[-1]["requires_artifact"] is False
 
 
-def test_desktop_task_can_pause_take_over_and_continue_in_place(tmp_path, monkeypatch):
+def test_desktop_task_can_pause_take_over_and_continue_in_place(manager):
     from desktop_run_control import desktop_run_control
 
-    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
-    manager = task_module.AgentTaskManager()
-    monkeypatch.setattr(main, "agent_task_manager", manager)
     first_runner_started = threading.Event()
     release_first_runner = threading.Event()
 
@@ -458,3 +457,42 @@ def test_desktop_task_can_pause_take_over_and_continue_in_place(tmp_path, monkey
     finally:
         release_first_runner.set()
         main._configure_desktop_run_control()
+
+
+def test_terminal_wait_observes_a_task_that_already_completed(manager):
+    task = manager.create(
+        agent_id="codex", contact_id="codex", source_message_id="desktop:already-complete",
+        prompt="Test prior completion", runner=lambda _task: "completed earlier",
+        on_event=lambda _event: None,
+    )
+    assert manager._work_pool.wait_idle(15.0)
+    assert wait_for_terminal(manager, task.task_id, timeout=0).result == "completed earlier"
+    assert not manager._listeners
+
+
+def test_terminal_wait_reports_missing_task_and_removes_listener(manager):
+    with pytest.raises(AssertionError, match="status=missing"):
+        wait_for_terminal(manager, "missing-task", timeout=0)
+    assert not manager._listeners
+
+
+def test_terminal_wait_does_not_accept_an_unfinished_task(manager):
+    started = threading.Event()
+    release = threading.Event()
+
+    def runner(_task):
+        started.set()
+        assert release.wait(15.0)
+        return "released"
+
+    task = manager.create(
+        agent_id="codex", contact_id="codex", source_message_id="desktop:unfinished",
+        prompt="Test pending completion", runner=runner, on_event=lambda _event: None,
+    )
+    try:
+        assert started.wait(15.0)
+        with pytest.raises(AssertionError, match="status=running"):
+            wait_for_terminal(manager, task.task_id, timeout=0)
+        assert not manager._listeners
+    finally:
+        release.set()

@@ -27,6 +27,8 @@ from agent_execution_harness import (
 )
 from latency_feature_flags import agent_output_delta_enabled
 from codex_generated_images import capture_run_image, finalize_run_images, is_generated_image
+from codex_notification_batch import CodexNotificationBatcher, QueuedNotification
+from codex_phone_policy import is_phone_planner, permits_host_tool, thread_config, thread_policy, thread_sandbox, thread_tools
 from model_directed_search import (
     CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
@@ -43,13 +45,16 @@ from web_evidence_pack import (
 from research_quality import assess_answer, quality_repair_prompt, research_quality_prompt, research_stage
 from research_audit import ResearchEvidenceAudit, TOOL as RESEARCH_AUDIT_TOOL, tool_spec as research_audit_tool_spec
 from research_trace import search_receipt
+from codex_compaction import CompactionPhase, COMPACTION_TIMEOUT_SECONDS
+from codex_provider_recovery import ProviderRecovery
+from research_checkpoint import ResearchCheckpoints, TOOL as RESEARCH_CHECKPOINT_TOOL, tool_spec as research_checkpoint_tool_spec, handoff_prompt, transport_packets, with_handoff, checkpoint_store
 from office_preview import TOOL as OFFICE_PREVIEW_TOOL, tool_spec as office_preview_tool_spec, execute as execute_office_preview
 
 
 log = logging.getLogger("galaxyssi.codex")
 TaskEvent = Callable[[str, dict], None]
 CONVERSATION_THREADS_PATH = Path.home() / ".galaxyssi" / "codex_conversation_threads.json"
-CONVERSATION_THREAD_VERSION = "v6"
+CONVERSATION_THREAD_VERSION = "v8"
 CODEX_THREAD_CONFIG = {"web_search": "live"}
 CODEX_TASK_POLICY = """
 GalaxySSI execution policy:
@@ -179,6 +184,7 @@ class CodexRun:
     last_output_delta_text: str = ""
     last_output_delta_monotonic: float = 0.0
     working_directory: str = ""
+    sandbox: str = "read-only"
     model: str = "gpt-5.6-sol"
     reasoning_effort: str = "medium"
     web_evidence_packs: list[dict[str, Any]] = field(default_factory=list)
@@ -186,6 +192,10 @@ class CodexRun:
     research_observed: bool = False
     research_quality: dict[str, Any] = field(default_factory=dict)
     research_audit: ResearchEvidenceAudit = field(default_factory=ResearchEvidenceAudit, repr=False)
+    compaction: CompactionPhase = field(default_factory=CompactionPhase)
+    provider_recovery: ProviderRecovery = field(default_factory=ProviderRecovery)
+    context_checkpoint_requested: bool = False
+    research_output_digests: set[str] = field(default_factory=set)
     generated_images: dict[str, dict] = field(default_factory=dict)
     generated_image_errors: dict[str, str] = field(default_factory=dict)
     host_config_guard: object | None = field(default=None, repr=False)
@@ -196,10 +206,15 @@ class CodexRun:
 
 
 class CodexAppServer:
-    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent) -> None:
+    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, collaboration_file=None, collaboration_test=None, experiment_boundary=None) -> None:
         self.executable = executable
-        self.env = env
+        self.env = dict(env) if experiment_boundary is not None else env
         self.on_event = on_event
+        self._experiment_boundary = experiment_boundary
+        self._collaboration_recall = collaboration_recall
+        self._collaboration_publish = collaboration_publish
+        self._collaboration_file = collaboration_file
+        self._collaboration_test = collaboration_test
         self.process: subprocess.Popen | None = None
         self._lock = threading.RLock()
         self._process_start_lock = threading.RLock()
@@ -213,7 +228,28 @@ class CodexAppServer:
         self._loaded_thread_access_sequence = 0
         self._thread_lifecycle_lock = threading.RLock()
         self._initialized_process_pid = 0
-        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec(), research_audit_tool_spec(), office_preview_tool_spec()]
+        self._dynamic_tools = [codex_dynamic_search_tool_spec(), codex_dynamic_fetch_tool_spec(), research_audit_tool_spec(), research_checkpoint_tool_spec(), office_preview_tool_spec()]
+        if collaboration_recall is not None:
+            from collaboration_recall_bridge import tool_spec
+            self._dynamic_tools.append(tool_spec())
+        if collaboration_publish is not None:
+            from collaboration_milestone_bridge import tool_spec
+            self._dynamic_tools.append(tool_spec())
+        if collaboration_test is not None:
+            from collaboration_tool_test_bridge import tool_spec, run_tool_spec
+            self._dynamic_tools.extend([tool_spec(), run_tool_spec()])
+        if collaboration_recall is not None and collaboration_publish is not None:
+            from collaboration_text_artifact import tool_spec
+            self._dynamic_tools.append(tool_spec())
+            if collaboration_file is not None:
+                from collaboration_file_artifact import tool_spec
+                self._dynamic_tools.append(tool_spec())
+        if experiment_boundary is not None:
+            self._dynamic_tools = []
+            self._collaboration_recall = None
+            self._collaboration_publish = None
+            self._collaboration_file = None
+            self._collaboration_test = None
         self._write_lock = threading.Lock()
 
     def warm(self) -> dict[str, object]:
@@ -279,6 +315,10 @@ class CodexAppServer:
         sandbox: str = "workspace-write",
         execution_policy: AgentExecutionPolicy | None = None,
     ) -> CodexRun:
+        if self._experiment_boundary is not None:
+            policy = execution_policy or execution_policy_for(prompt)
+            self._experiment_boundary.admit(conversation_id, cwd, model, policy.reasoning_effort.value,
+                [*(image_paths or []), *(fresh_thread_image_paths or [])])
         self._ensure_started()
         local_images = self._existing_image_paths(image_paths)
         restored_images = self._existing_image_paths(
@@ -308,13 +348,17 @@ class CodexAppServer:
             execution_policy=resolved_policy,
             execution_harness=execution_harness,
             working_directory=str(Path(cwd).expanduser().resolve()),
+            sandbox=sandbox,
             model=model,
             reasoning_effort=resolved_policy.reasoning_effort.value,
         )
         # Plain conversation does not read or modify the workspace, so a host
         # configuration snapshot would only add file-system latency. Tool and
         # artifact tasks retain the full before/after guard.
-        run.host_config_guard = None if fast_chat else self._begin_host_config_guard(run)
+        phone_planner = clean_conversation_id.startswith("phone-planner-v1:") and (
+            run.execution_policy.execution_mode.value == "plan_only"
+        )
+        run.host_config_guard = None if fast_chat or phone_planner else self._begin_host_config_guard(run)
         reused_thread = False
         try:
             with self._lock:
@@ -324,9 +368,12 @@ class CodexAppServer:
                 self._runs[task_id] = run
                 conversation_key = self._conversation_key(clean_conversation_id)
                 run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key else ""
+                # This active reservation prevents eviction of a loaded thread.
+                # Warm turns need not wait for unrelated lifecycle RPCs.
+                thread_loaded = run.thread_id in self._loaded_thread_ids
             # Reserve this conversation under the state lock, then release it
             # before RPC waits. Reader callbacks also need this lock.
-            if run.thread_id:
+            if run.thread_id and not thread_loaded:
                 try:
                     self._resume_thread(
                         run.thread_id,
@@ -334,7 +381,7 @@ class CodexAppServer:
                         sandbox=sandbox,
                     )
                 except RuntimeError as exc:
-                    if not self._is_thread_not_found_error(exc):
+                    if self._experiment_boundary is not None or not self._is_thread_not_found_error(exc):
                         raise
                     with self._lock:
                         self._conversation_threads.pop(conversation_key, None)
@@ -362,13 +409,28 @@ class CodexAppServer:
             raise RuntimeError("Codex App Server did not return a thread id")
         self.on_event(task_id, {"status": "starting", "thread_id": run.thread_id, "current_step": "Starting Codex turn"})
         base_turn_prompt = prompt if reused_thread else (fresh_thread_prompt or prompt)
+        if not reused_thread and self._experiment_boundary is None:
+            store = self._research_store()
+            store.bind_task(run.task_id, self._research_scope(run))
+            base_turn_prompt = with_handoff(base_turn_prompt, store.handoff(self._research_scope(run)))
         turn_prompt = (
             base_turn_prompt
-            if fast_chat
+            if fast_chat or phone_planner
             else self._with_execution_contract(base_turn_prompt, run.execution_policy)
         )
         turn_images = local_images if reused_thread else restored_images
+        planner_receipt = None
         try:
+            if clean_conversation_id.startswith("phone-planner-v1:") and self._experiment_boundary is None:
+                from codex_planner_continuation import PlannerContinuations
+                with self._lock:
+                    if not hasattr(self, "_planner_continuations"):
+                        self._planner_continuations = PlannerContinuations()
+                original_prompt, original_images = turn_prompt, turn_images
+                turn_prompt, turn_images, planner_receipt = self._planner_continuations.prepare(
+                    run.thread_id, turn_prompt, turn_images)
+                log.info("Phone planner continuation reused=%s prompt_chars=%s->%s images=%s->%s",
+                    reused_thread, len(original_prompt), len(turn_prompt), len(original_images), len(turn_images))
             execution_harness.begin_attempt()
             execution_harness.account_usage(
                 input_tokens=estimate_text_tokens(turn_prompt),
@@ -386,7 +448,7 @@ class CodexAppServer:
                     include_task_policy=False,
                 )
             except RuntimeError as exc:
-                if not run.thread_id or not self._is_thread_not_found_error(exc):
+                if self._experiment_boundary is not None or not run.thread_id or not self._is_thread_not_found_error(exc):
                     raise
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
@@ -399,15 +461,17 @@ class CodexAppServer:
                         approval_policy=approval_policy,
                         sandbox=sandbox,
                     )
+                planner_receipt = None  # A lost provider thread needs the complete prompt and images again.
                 self.on_event(task_id, {
                     "status": "starting", "thread_id": run.thread_id,
                     "current_step": "Starting a fresh Codex thread",
                 })
                 fallback_prompt = fresh_thread_prompt or prompt
+                fallback_prompt = with_handoff(fallback_prompt, self._research_store().handoff(self._research_scope(run)))
                 response = self._start_turn_confirmed(
                     run,
                     run.thread_id,
-                    fallback_prompt if fast_chat else self._with_execution_contract(
+                    fallback_prompt if fast_chat or phone_planner else self._with_execution_contract(
                         fallback_prompt, run.execution_policy
                     ),
                     model,
@@ -421,6 +485,8 @@ class CodexAppServer:
             raise
         run.turn_id = str((response.get("turn") or {}).get("id") or "")
         if run.turn_id:
+            if planner_receipt is not None:
+                self._planner_continuations.commit(run.thread_id, planner_receipt)
             self._turn_tasks[run.turn_id] = task_id
         threading.Thread(
             target=self._watch_run,
@@ -477,6 +543,9 @@ class CodexAppServer:
         image_paths: list[str] | None = None,
     ) -> CodexRun:
         """Reconnect to a turn or continue its goal from the durable checkpoint."""
+        if self._experiment_boundary is not None:
+            policy = execution_policy or execution_policy_for(original_prompt)
+            self._experiment_boundary.admit(conversation_id, cwd, model, policy.reasoning_effort.value, image_paths or [])
         clean_thread_id = str(thread_id or "").strip()
         clean_turn_id = str(turn_id or "").strip()
         if not clean_thread_id or not clean_turn_id:
@@ -509,6 +578,7 @@ class CodexAppServer:
             prefers_chinese=self._contains_chinese(original_prompt),
             execution_policy=execution_policy or execution_policy_for(original_prompt),
             working_directory=str(Path(cwd).expanduser().resolve()) if cwd else "",
+            sandbox=sandbox,
             model=model,
         )
         run.execution_harness = AgentExecutionHarness(
@@ -521,6 +591,12 @@ class CodexAppServer:
             "observe",
             recovery="thread_resume",
         )
+        saved_compaction = run.execution_harness.checkpoint.verification.get("context_compaction") or {}
+        if (saved_compaction.get("thread_id") == clean_thread_id
+                and saved_compaction.get("turn_id") == clean_turn_id
+                and isinstance(saved_compaction.get("started_at"), (int, float))):
+            run.compaction.item_id = str(saved_compaction.get("item_id") or "context-compaction")
+            run.compaction.started = now - max(0, time.time() - saved_compaction["started_at"])
         with self._lock:
             self._runs[task_id] = run
             self._turn_tasks[clean_turn_id] = task_id
@@ -537,9 +613,9 @@ class CodexAppServer:
                 response = self._request("thread/resume", {
                     "threadId": clean_thread_id,
                     "approvalPolicy": approval_policy,
-                    "sandbox": sandbox,
-                    "config": CODEX_THREAD_CONFIG,
-                    "developerInstructions": CODEX_TASK_POLICY.strip(),
+                    "sandbox": thread_sandbox(run.conversation_id, sandbox),
+                    "config": thread_config(run.conversation_id, CODEX_THREAD_CONFIG),
+                    "developerInstructions": thread_policy(run.conversation_id, CODEX_TASK_POLICY),
                 }, timeout=30)
                 with self._lock:
                     self._mark_thread_loaded_locked(clean_thread_id)
@@ -659,6 +735,12 @@ class CodexAppServer:
                     f"The original Codex turn returned an unsupported status: {turn_status or 'unknown'}"
                 )
 
+            items = turn.get("items") or []
+            if items and items[-1].get("type") == "contextCompaction" and items[-1].get("status") != "completed":
+                self._observe_compaction(run, "item/started", {"item": items[-1]}, time.monotonic())
+            elif run.compaction.started is not None:
+                self._observe_compaction(run, "thread/compacted", {}, time.monotonic())
+
             thread_status = thread.get("status") or {}
             active_flags = (
                 thread_status.get("activeFlags") or []
@@ -705,6 +787,9 @@ class CodexAppServer:
         sandbox: str,
         execution_policy: AgentExecutionPolicy | None,
     ) -> CodexRun:
+        if self._experiment_boundary is not None:
+            from codex_experiment_boundary import reject
+            reject("checkpoint_not_reusable")
         clean_conversation_id = str(conversation_id or "").strip()
         if clean_conversation_id:
             with self._lock:
@@ -749,6 +834,10 @@ class CodexAppServer:
         run.final_text = ""
         run.last_agent_text = ""
         run.finished = False
+        run.compaction = CompactionPhase()
+        run.provider_recovery = ProviderRecovery()
+        run.context_checkpoint_requested = False
+        run.research_output_digests.clear()
         run.turn_started_event.clear()
         if run.execution_harness is not None:
             run.execution_harness.progress(
@@ -764,10 +853,12 @@ class CodexAppServer:
             "recovery_mode": "continuation_turn",
         })
         recovery_prompt = self._checkpoint_recovery_prompt(original_prompt, reason)
+        recovery_prompt += handoff_prompt(self._research_store().handoff(self._research_scope(run)))
         response = self._start_turn_confirmed(
             run,
             run.thread_id,
-            self._with_execution_contract(recovery_prompt, run.execution_policy),
+            recovery_prompt if is_phone_planner(run.conversation_id)
+                else self._with_execution_contract(recovery_prompt, run.execution_policy),
             model,
             self._existing_image_paths(image_paths),
             cwd=cwd,
@@ -790,7 +881,7 @@ class CodexAppServer:
     def _checkpoint_recovery_prompt(original_prompt: str, reason: str) -> str:
         return (
             "Continue the original user goal after an execution-runtime interruption. "
-            "First inspect the current durable workspace and existing outputs. Preserve "
+            "First read the saved task checkpoint, existing outputs and supplied source evidence. Preserve "
             "verified work, do not repeat completed side effects, replan only the "
             "unfinished steps, then verify and return the requested final result.\n\n"
             f"Runtime observation: {str(reason or '').strip()}\n\n"
@@ -820,53 +911,195 @@ class CodexAppServer:
                 except RuntimeError:
                     pass
             now = time.monotonic()
-            stall_timeout = max(
+            compacting = run.compaction.started is not None
+            compaction_budget = COMPACTION_TIMEOUT_SECONDS
+            if compacting and run.compaction.probe_due(now):
+                run.compaction.last_probe = now
+                self._probe_compaction(run)
+                if run.finished:
+                    return
+                # A completed compaction resumes the ordinary progress clock.
+                compacting = run.compaction.started is not None
+            stall_timeout = min(
+                180.0,
                 float(CODEX_STALL_TIMEOUT_SECONDS),
-                run.execution_policy.no_progress_timeout_seconds,
             )
             stalled = (
                 now - run.last_meaningful_progress_monotonic >= stall_timeout
             )
+            if compacting:
+                stalled = run.compaction.expired(now, compaction_budget)
+            provider_failed = run.provider_recovery.expired(now)
             if run.pending_requests:
                 continue
-            if not stalled:
+            if not stalled and not provider_failed:
                 continue
-            stall_failure = (
-                f"No meaningful progress was observed for {stall_timeout:g} seconds. "
-                "Inspect the current workspace checkpoint and choose a different path."
-            )
-            can_replan = True
-            if run.execution_harness is not None:
-                can_replan, _ = run.execution_harness.record_failure(
-                    "no_progress",
-                    stall_failure,
-                )
-            if can_replan and self._attempt_replan(
-                run,
-                stall_failure,
-                source="stall_watchdog",
-            ):
+            # Reconcile the exact turn before interrupting: notifications can be lost.
+            # A merely "active" snapshot does not prove inference is making progress.
+            before_progress = run.last_meaningful_progress_monotonic
+            self._probe_compaction(run)
+            if run.finished:
+                return
+            if provider_failed and not run.provider_recovery.expired(time.monotonic()):
+                continue  # Real output can recover the connection while the probe is in flight.
+            if not provider_failed and (run.last_meaningful_progress_monotonic > before_progress
+                    or (not compacting and run.compaction.started is not None)):
                 continue
+            # The caller owns bounded retries and provider failover. Steering this
+            # silent turn renews its deadline without evidence and hides failure.
+            try:
+                self._emit_research_packet(run, self._research_store().handoff(self._research_scope(run)))
+            except Exception:
+                log.warning("Research handoff replay failed; saved evidence remains available on retry")
             run.finished = True
+            self._retire_stalled_thread(run)
             self._finish_host_config_guard(run)
             message = (
                 "Codex \u957f\u65f6\u95f4\u6ca1\u6709\u65b0\u8fdb\u5c55\uff0c\u4efb\u52a1\u5df2\u505c\u6b62\uff0c\u907f\u514d\u7ee7\u7eed\u963b\u585e\u540e\u7eed\u8bf7\u6c42\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u4e00\u6b21\u3002"
                 if run.prefers_chinese else
                 "Codex made no progress for too long, so the task was stopped instead of blocking later requests. Please send it again."
             )
+            if compacting:
+                message = ("Codex 上下文压缩在 5 分钟内未完成，已停止本次尝试；恢复将接续已保存的检索证据。"
+                           if run.prefers_chinese else
+                           "Codex context compaction did not finish within 5 minutes. This attempt stopped; recovery retains saved research evidence.")
+            if provider_failed:
+                message = run.provider_recovery.error
             self.on_event(task_id, {
                 "thread_id": run.thread_id,
                 "turn_id": run.turn_id,
-                "status": "timed_out",
+                "status": "failed" if provider_failed and run.provider_recovery.terminal else "timed_out",
                 "current_step": "",
                 "result": message,
-                "error": "Codex task stalled",
+                "error": message if provider_failed else "Codex context compaction timed out" if compacting else "Codex task stalled",
+                "failure_code": "codex_provider_unavailable" if provider_failed else "codex_compaction_timeout" if compacting else "codex_no_progress_timeout",
+                **({"compaction_timeout_seconds": compaction_budget, "timeout_stage": "compaction"}
+                   if compacting else {"no_progress_timeout_seconds": stall_timeout}),
+                **({"timeout_stage": "provider_connection", "provider_recovery_timeout_seconds": run.provider_recovery.budget_seconds}
+                   if provider_failed else {}),
+                **({"progress_event": {"event_id": "codex:context_compaction:" + run.compaction.item_id,
+                    "kind": "tool", "status": "failed", "title": message,
+                    "metadata": {"code": "context_compaction", "phase": "compaction"}}} if compacting else {}),
             })
             try:
                 self.interrupt(task_id)
             except Exception:
                 pass
             return
+
+    def _probe_compaction(self, run: CodexRun) -> None:
+        """Inspect only the owned turn; an active snapshot never renews its hard deadline."""
+        try:
+            response = self._request("thread/read", {"threadId": run.thread_id, "includeTurns": True}, timeout=10)
+            thread = response.get("thread") or {}
+            if thread.get("id") != run.thread_id or run.finished:
+                return
+            turn = next((row for row in thread.get("turns", []) if row.get("id") == run.turn_id), None)
+            if turn is None:
+                return
+            common = {"threadId": run.thread_id, "turnId": run.turn_id}
+            if turn.get("status") in {"completed", "failed", "interrupted"}:
+                for item in turn.get("items", []):
+                    if item.get("type") in {"agentMessage", "contextCompaction"}:
+                        self._handle_event({"method": "item/completed", "params": {**common, "item": item}})
+                self._handle_event({"method": "turn/completed", "params": {**common, "turn": turn}})
+                return
+            items = turn.get("items", [])
+            if run.compaction.started is None and items and items[-1].get("type") == "contextCompaction" \
+                    and items[-1].get("status") != "completed" \
+                    and str(items[-1].get("id") or "context-compaction") not in run.compaction.closed:
+                self._handle_event({"method": "item/started", "params": {**common, "item": items[-1]}})
+            if run.compaction.started is None:
+                return
+            for index, item in enumerate(items):
+                if item.get("type") != "contextCompaction" or item.get("id") != run.compaction.item_id:
+                    continue
+                if item.get("status") == "completed" or index < len(items) - 1:
+                    self._handle_event({"method": "item/completed", "params": {**common, "item": item}})
+                    return
+            if run.compaction.started is None:
+                return
+            self._emit_progress(run.task_id, {"thread_id": run.thread_id, "turn_id": run.turn_id}, {
+                "event_id": "codex:context_compaction:" + run.compaction.item_id, "kind": "tool", "status": "running",
+                "title": "正在压缩上下文" if run.prefers_chinese else "Compacting context",
+                "metadata": {"code": "context_compaction", "phase": "compaction", "provider_turn_status": turn.get("status", "unknown"),
+                             "deadline_seconds": COMPACTION_TIMEOUT_SECONDS}})
+        except Exception:
+            log.warning("Codex compaction status probe failed; bounded deadline remains unchanged")
+
+    def _observe_compaction(self, run, method, params, now):
+        before = run.compaction.started
+        run.compaction.observe(method, params, now)
+        if before == run.compaction.started:
+            return
+        if run.compaction.started is None:
+            # A new compacted context may no longer contain an earlier raw tool result.
+            run.research_output_digests.clear()
+        self._checkpoint_progress(run, "observe", context_compaction={
+            "thread_id": run.thread_id, "turn_id": run.turn_id, "item_id": run.compaction.item_id,
+            "started_at": time.time()} if run.compaction.started is not None else {})
+
+    @staticmethod
+    def _research_scope(run: CodexRun) -> str:
+        return run.conversation_id if run.conversation_id.startswith("phone-planner-v1:") else run.task_id
+
+    @staticmethod
+    def _research_store() -> ResearchCheckpoints:
+        return checkpoint_store(CONVERSATION_THREADS_PATH.with_name("research_checkpoints.sqlite3"))
+
+    def _save_research(self, run: CodexRun, entries: list[dict]) -> dict:
+        if run.finished:
+            return {"entries": []}
+        store = self._research_store()
+        store.bind_task(run.task_id, self._research_scope(run))
+        packet = store.merge(self._research_scope(run), entries, run.research_audit)
+        self._emit_research_packet(run, packet)
+        return packet
+
+    def _emit_research_packet(self, run: CodexRun, packet: dict) -> None:
+        for batch in transport_packets(packet):
+            self._emit_progress(run.task_id, {"thread_id": run.thread_id, "turn_id": run.turn_id}, {
+                "event_id": "research-checkpoint-" + str(batch["entries"][-1]["revision"]),
+                "kind": "research_checkpoint", "status": "completed", "title": "Research evidence saved",
+                "metadata": {"research_checkpoint": batch}})
+
+    def _save_research_trace(self, run: CodexRun, trace: dict) -> None:
+        entries = [{"id": hashlib.sha256(str(query).encode()).hexdigest(), "kind": "query", "text": str(query)[:1024]}
+                   for query in trace.get("queries", []) if isinstance(query, str)]
+        entries += [{"id": hashlib.sha256(str(row.get("url", "")).encode()).hexdigest(), "kind": "source",
+                     "text": str(row.get("title", ""))[:1600], "url": row.get("url", "")}
+                    for row in trace.get("sources", []) if isinstance(row, dict)]
+        for offset in range(0, len(entries), 24):
+            self._save_research(run, entries[offset:offset + 24])
+
+    def _request_research_checkpoint(self, run: CodexRun) -> None:
+        if run.finished or run.compaction.started is not None:
+            return
+        try:
+            self._request("turn/steer", {"threadId": run.thread_id, "expectedTurnId": run.turn_id,
+                "input": self._user_input("Context is approaching its limit. Save concise findings, source URLs, "
+                    "supporting quotes and remaining gaps with research_checkpoint now (or research_audit if that "
+                    "checkpoint tool is unavailable on this resumed thread). Do not repeat retrieved pages. "
+                    "If the requested scope is supported, deliver the answer with explicit unknown fields; "
+                    "otherwise investigate only material gaps. This is runtime maintenance, not a new user goal. "
+                    "Preserve the original goal and constraints; the final answer must answer them, not just "
+                    "acknowledge a checkpoint.", [],
+                    include_task_policy=False, include_response_policy=False)}, timeout=10)
+        except Exception:
+            log.warning("Research checkpoint request was not accepted; original silence deadline is unchanged")
+
+    def _retire_stalled_thread(self, run: CodexRun) -> None:
+        with self._lock:
+            changed = False
+            for key in (self._conversation_key(run.conversation_id), run.conversation_id):
+                if self._conversation_threads.get(key) == run.thread_id:
+                    self._conversation_threads.pop(key, None)
+                    changed = True
+            if changed:
+                self._save_conversation_threads()
+            continuations = getattr(self, "_planner_continuations", None)
+            if continuations is not None:
+                continuations.forget(run.thread_id)
 
     def _attempt_replan(self, run: CodexRun, failure: str, *, source: str) -> bool:
         with self._lock:
@@ -881,7 +1114,6 @@ class CodexAppServer:
             run.replan_inflight = True
             run.stall_replans += 1
             replan_number = run.stall_replans
-            run.last_meaningful_progress_monotonic = time.monotonic()
         self._checkpoint_progress(
             run,
             "replan",
@@ -928,15 +1160,8 @@ class CodexAppServer:
             run.replan_inflight = False
 
     def recover_stalled_task(self, task_id: str, failure: str) -> bool:
-        """Request a guarded replan when the outer task supervisor detects a stall."""
-        run = self._runs.get(str(task_id or "").strip())
-        if run is None or run.finished:
-            return False
-        return self._attempt_replan(
-            run,
-            str(failure or "The external task supervisor detected no progress."),
-            source="task_manager_watchdog",
-        )
+        """The 180-second watchdog owns silence; do not steer or renew its lease."""
+        return False
 
     def _record_failed_item(self, run: CodexRun, item: dict) -> None:
         if run.finished:
@@ -1062,10 +1287,10 @@ class CodexAppServer:
             self._make_loaded_thread_room()
             response = self._request("thread/start", {
                 "cwd": self._resolved_path(cwd), "model": model, "ephemeral": False,
-                "approvalPolicy": approval_policy, "sandbox": sandbox,
-                "config": CODEX_THREAD_CONFIG,
-                "developerInstructions": CODEX_TASK_POLICY.strip(),
-                "dynamicTools": self._dynamic_tools,
+                "approvalPolicy": approval_policy, "sandbox": thread_sandbox(conversation_id, sandbox),
+                "config": thread_config(conversation_id, CODEX_THREAD_CONFIG),
+                "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
+                "dynamicTools": thread_tools(conversation_id, self._dynamic_tools),
             }, timeout=30)
             thread_id = str((response.get("thread") or {}).get("id") or "")
             if thread_id:
@@ -1096,7 +1321,7 @@ class CodexAppServer:
                 sandbox=sandbox,
             )
         except CodexAppServerRequestTimeout as exc:
-            if exc.method != "thread/start":
+            if self._experiment_boundary is not None or exc.method != "thread/start":
                 raise
             log.warning(
                 "Codex thread startup acknowledgement timed out; retrying once "
@@ -1126,12 +1351,17 @@ class CodexAppServer:
                     self._mark_thread_loaded_locked(clean_thread_id)
                     return
             self._make_loaded_thread_room(incoming_thread_id=clean_thread_id)
+            with self._lock:
+                conversation_id = next((
+                    key.partition(":")[2] for key, value in self._conversation_threads.items()
+                    if value == clean_thread_id and key.startswith(f"{CONVERSATION_THREAD_VERSION}:")
+                ), "")
             self._request("thread/resume", {
                 "threadId": clean_thread_id,
                 "approvalPolicy": approval_policy,
-                "sandbox": sandbox,
-                "config": CODEX_THREAD_CONFIG,
-                "developerInstructions": CODEX_TASK_POLICY.strip(),
+                "sandbox": thread_sandbox(conversation_id, sandbox),
+                "config": thread_config(conversation_id, CODEX_THREAD_CONFIG),
+                "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
             }, timeout=30)
             with self._lock:
                 self._mark_thread_loaded_locked(clean_thread_id)
@@ -1174,6 +1404,11 @@ class CodexAppServer:
                     candidates,
                     key=lambda candidate: self._loaded_thread_recency.get(candidate, 0),
                 )
+                # Fence warm reuse before releasing the state lock for the RPC.
+                # A new reservation must resume behind the lifecycle lock once
+                # this thread has been selected for unloading.
+                self._loaded_thread_ids.discard(thread_id)
+                self._loaded_thread_recency.pop(thread_id, None)
             try:
                 self._request(
                     "thread/unsubscribe",
@@ -1304,13 +1539,15 @@ class CodexAppServer:
         cwd: str,
         reasoning_effort: str,
         include_task_policy: bool = True,
+        include_response_policy: bool = True,
     ) -> dict:
         return self._request("turn/start", {
             "threadId": thread_id,
             "input": self._user_input(
                 prompt,
                 image_paths,
-                include_task_policy=include_task_policy,
+                include_task_policy=include_task_policy and self._experiment_boundary is None,
+                include_response_policy=include_response_policy,
             ),
             "model": model,
             "effort": reasoning_effort,
@@ -1339,6 +1576,10 @@ class CodexAppServer:
                 cwd=cwd,
                 reasoning_effort=reasoning_effort,
                 include_task_policy=include_task_policy,
+                include_response_policy=not (
+                    run.conversation_id.startswith("phone-planner-v1:")
+                    and run.execution_policy.execution_mode.value == "plan_only"
+                ),
             )
         except CodexAppServerRequestTimeout as exc:
             if exc.method != "turn/start":
@@ -1360,9 +1601,12 @@ class CodexAppServer:
         image_paths: list[str] | None,
         *,
         include_task_policy: bool,
+        include_response_policy: bool = True,
     ) -> list[dict]:
         from response_policy import apply_response_policy
-        styled_prompt = apply_response_policy(prompt)
+        # The phone supplies the planner contract. Repeating the full answer/research
+        # policy on every tool round inflates context and can conflict with JSON output.
+        styled_prompt = apply_response_policy(prompt) if include_response_policy else prompt
         text = styled_prompt.rstrip()
         if include_task_policy:
             text = f"{text}\n\n{CODEX_TASK_POLICY}"
@@ -1373,6 +1617,12 @@ class CodexAppServer:
             {"type": "localImage", "path": path, "detail": "original"}
             for path in (image_paths or [])
         )
+        if len(image_paths or []) == 1:
+            try:
+                from vision_orientation import supplementary_input
+                user_input.extend(supplementary_input(image_paths))
+            except ImportError:
+                log.warning("Orientation evidence unavailable; retaining the original image")
         return user_input
 
     @staticmethod
@@ -1445,6 +1695,8 @@ class CodexAppServer:
         return ""
 
     def _load_conversation_threads(self) -> dict[str, str]:
+        if self._experiment_boundary is not None:
+            return self._experiment_boundary.conversations()
         try:
             data = json.loads(CONVERSATION_THREADS_PATH.read_text(encoding="utf-8"))
             return {
@@ -1456,6 +1708,9 @@ class CodexAppServer:
             return {}
 
     def _save_conversation_threads(self) -> None:
+        if self._experiment_boundary is not None:
+            self._experiment_boundary.save_conversations(self._conversation_threads)
+            return
         try:
             CONVERSATION_THREADS_PATH.parent.mkdir(parents=True, exist_ok=True)
             temporary = CONVERSATION_THREADS_PATH.with_suffix(".tmp")
@@ -1541,6 +1796,8 @@ class CodexAppServer:
             self._close_process()
 
     def _close_process(self) -> None:
+        if self._experiment_boundary is not None:
+            self._experiment_boundary.reset_process()
         with self._lock:
             process = self.process
             self.process = None
@@ -1560,6 +1817,8 @@ class CodexAppServer:
 
     def _ensure_started(self) -> None:
         with self._process_start_lock:
+            if self._experiment_boundary is not None:
+                self._experiment_boundary.verify_storage_environment(self.env)
             if self.is_ready():
                 return
             if self.process is None or self.process.poll() is not None:
@@ -1568,6 +1827,10 @@ class CodexAppServer:
                     "-c", "sandbox_workspace_write.network_access=true",
                     "app-server", "--listen", "stdio://",
                 ]
+                if self._experiment_boundary is not None:
+                    self._experiment_boundary.reset_process()
+                    overrides = [item for value in self._experiment_boundary.process_overrides() for item in ("-c", value)]
+                    command = [self.executable, *overrides, "app-server", "--listen", "stdio://"]
                 if os.name == "nt" and self.executable.lower().endswith((".cmd", ".bat")):
                     command = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", *command]
                 self.process = subprocess.Popen(
@@ -1586,9 +1849,40 @@ class CodexAppServer:
                 "capabilities": {"experimentalApi": True},
             }, timeout=15)
             self._notify("initialized", {})
+            if self._experiment_boundary is not None:
+                try:
+                    self._experiment_boundary.verify_runtime(self._rpc_request)
+                except Exception:
+                    self._close_process()
+                    raise
             self._initialized_process_pid = self.process.pid
 
     def _request(self, method: str, params: dict, timeout: int) -> dict:
+        boundary = self._experiment_boundary
+        if boundary is not None:
+            params = boundary.prepare(method, params)
+            if method in {"turn/start", "turn/steer"}:
+                try:
+                    boundary.verify_storage_environment(self.env)
+                    boundary.verify_runtime(self._rpc_request)
+                    boundary.verify_capabilities(params["threadId"],
+                        params.get("cwd") or str(boundary.workspace), self._rpc_request)
+                except Exception:
+                    self._close_process()
+                    raise
+        response = self._rpc_request(method, params, timeout)
+        if boundary is not None and method in {"thread/start", "thread/resume"}:
+            try:
+                boundary.verify_thread(method, params, response, self._rpc_request)
+            except Exception:
+                self._close_process()
+                raise
+        return response
+
+    def _rpc_request(self, method: str, params: dict, timeout: int) -> dict:
+        started = time.perf_counter()
+        written = None
+        outcome = "failed"
         with self._lock:
             request_id = self._next_id
             self._next_id += 1
@@ -1596,11 +1890,19 @@ class CodexAppServer:
             self._pending[request_id] = response_queue
         try:
             self._write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+            written = time.perf_counter()
             response = response_queue.get(timeout=timeout)
+            outcome = "failed" if "error" in response else "completed"
         except queue.Empty as exc:
             raise CodexAppServerRequestTimeout(method, timeout) from exc
         finally:
             self._pending.pop(request_id, None)
+            if method in {"initialize", "thread/start", "thread/resume", "turn/start"}:
+                finished = time.perf_counter()
+                # No params, prompt, output, paths or provider credentials.
+                log.info("Codex RPC timing method=%s outcome=%s write_ms=%.1f reply_wait_ms=%.1f",
+                         method, outcome, ((written or finished) - started) * 1000,
+                         (finished - written) * 1000 if written is not None else 0.0)
         if "error" in response:
             raise RuntimeError(str(response["error"]))
         return response.get("result") or {}
@@ -1624,22 +1926,43 @@ class CodexAppServer:
         if process is None or process.stdout is None:
             return
         events: queue.Queue = queue.Queue(maxsize=4096)
+        batches = CodexNotificationBatcher(events, MAX_VISIBLE_OUTPUT_TEXT)
         reader_done = threading.Event()
 
         def dispatch_events() -> None:
+            last_slow_log = 0.0
             while self.process is process:
                 try:
-                    message = events.get(timeout=0.1)
+                    batch = batches.get(timeout=0.1)
                 except queue.Empty:
                     if reader_done.is_set():
                         return
                     continue
+                started = time.monotonic()
                 try:
-                    self._handle_event(message)
+                    self._handle_event(batch.message)
                 except Exception:
                     log.exception("Codex event handling failed; dispatcher will continue")
                 finally:
-                    events.task_done()
+                    batches.task_done(batch)
+                    ended = time.monotonic()
+                    received = started if batch.received_monotonic is None else batch.received_monotonic
+                    wait_ms = max(0.0, started - received) * 1000
+                    handling_ms = max(0.0, ended - started) * 1000
+                    method = str(batch.message.get("method") or "")
+                    terminal = method == "turn/completed"
+                    if terminal or ((wait_ms >= 1000 or handling_ms >= 100) and ended - last_slow_log >= 5):
+                        last_slow_log = ended
+                        params = batch.message.get("params") or {}
+                        params = params if isinstance(params, dict) else {}
+                        turn = params.get("turn") or {}
+                        turn = turn if isinstance(turn, dict) else {}
+                        # Content-free timing: never log prompts, tool data or reasoning.
+                        log.info("Codex event dispatch method=%s thread_id=%s turn_id=%s "
+                                 "queue_wait_ms=%.1f handler_ms=%.1f batch_entries=%s queued=%s",
+                                 method, params.get("threadId", ""),
+                                 params.get("turnId") or turn.get("id", ""),
+                                 wait_ms, handling_ms, batch.entries, events.qsize())
 
         # Keep ordered notifications off the RPC reader: checkpoints, MQTT
         # callbacks and dynamic tools must not prevent it receiving replies.
@@ -1658,10 +1981,11 @@ class CodexAppServer:
                         waiter.put_nowait(message)
                     continue
                 if "method" in message:
+                    queued = QueuedNotification(message, time.monotonic())
                     # Bounded backpressure, never silently drop terminal events.
                     while self.process is process:
                         try:
-                            events.put(message, timeout=0.1)
+                            events.put(queued, timeout=0.1)
                             break
                         except queue.Full:
                             continue
@@ -1671,6 +1995,35 @@ class CodexAppServer:
     def _handle_event(self, message: dict) -> None:
         method = str(message.get("method") or "")
         params = message.get("params") or {}
+        if method == "thread/compacted" or (
+            method in {"item/started", "item/completed"}
+            and (params.get("item") or {}).get("type") == "contextCompaction"
+        ):
+            continuations = getattr(self, "_planner_continuations", None)
+            if continuations is not None:
+                continuations.forget(str(params.get("threadId") or ""))
+        if self._experiment_boundary is not None and "id" in message:
+            if method == "item/tool/call":
+                self._write_server_response(message["id"], {"success": False, "contentItems": [
+                    {"type": "inputText", "text": "experiment_boundary_dynamic_tool_disabled"}]})
+            else:
+                approval = self._pending_approval("", message)
+                if approval is not None:
+                    self._write_server_response(message["id"], self._approval_result(approval, approved=False))
+                else:
+                    self._write({"jsonrpc": "2.0", "id": message["id"],
+                        "error": {"code": -32601, "message": "experiment_boundary_request_disabled"}})
+            return
+        if method == "thread/tokenUsage/updated":
+            self._capture_provider_usage(params)
+            return
+        if method == "model/rerouted":
+            self._capture_provider_usage(params, kind="model_rerouted")
+            return
+        if method == "thread/compacted" and not params.get("turnId"):
+            # A thread-only notification cannot finish a newer turn's phase.
+            # Its watcher reconciles the exact owned turn with thread/read.
+            return
         turn_id = str(params.get("turnId") or (params.get("turn") or {}).get("id") or "")
         thread_id = str(params.get("threadId") or "")
         task_id = self._turn_tasks.get(turn_id, "")
@@ -1693,12 +2046,19 @@ class CodexAppServer:
             return
         now = time.monotonic()
         run.last_event_monotonic = now
+        self._observe_compaction(run, method, params, now)
         meaningful_event = self._is_meaningful_event(method, message, params)
+        if method == "error":
+            run.provider_recovery.observe(params, now)
+        elif meaningful_event and (method in {"item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/textDelta"}
+                or method == "item/completed" and (params.get("item") or {}).get("type") in {"agentMessage", "reasoning", "contextCompaction"}):
+            run.provider_recovery.recovered()
         if meaningful_event:
             run.last_meaningful_progress_monotonic = now
             self._checkpoint_progress(
                 run,
                 self._checkpoint_phase(method),
+                stream=method == "item/agentMessage/delta" and "id" not in message,
                 app_server_event=method,
             )
         common = {"thread_id": run.thread_id, "turn_id": turn_id or run.turn_id}
@@ -1709,6 +2069,7 @@ class CodexAppServer:
             if approval is not None:
                 approved = (
                     run.execution_policy.execution_mode.value != "plan_only"
+                    and not is_phone_planner(run.conversation_id)
                 )
                 self._write_server_response(
                     approval.request_id,
@@ -1735,6 +2096,7 @@ class CodexAppServer:
                 run.turn_id = turn_id
                 self._turn_tasks[turn_id] = task_id
                 run.turn_started_event.set()
+            self._capture_provider_usage({"threadId": run.thread_id, "turnId": run.turn_id}, kind="turn_started")
             self.on_event(task_id, {**common, "turn_id": run.turn_id, "status": "running", "current_step": "Codex is working"})
         elif method == "item/agentMessage/delta":
             item_id = str(params.get("itemId") or "agent-message")
@@ -1789,7 +2151,12 @@ class CodexAppServer:
             item_type = str(item.get("type") or "")
             if item_type == "webSearch":
                 run.research_observed = True
-                run.research_audit.observe({"research_trace": search_receipt(item, completed=True)})
+                trace = search_receipt(item, completed=True)
+                run.research_audit.observe({"research_trace": trace})
+                try:
+                    self._save_research_trace(run, trace)
+                except Exception:
+                    log.warning("Research source checkpoint unavailable; original tool evidence is retained")
                 self._checkpoint_progress(run, "observe", research=research_stage("retrieval_observed"))
             item_id = str(item.get("id") or params.get("itemId") or "")
             if is_generated_image(item):
@@ -1866,6 +2233,8 @@ class CodexAppServer:
         elif method == "turn/completed":
             completed_turn = params.get("turn") or {}
             status = str(completed_turn.get("status") or "completed")
+            self._capture_provider_usage({"threadId": run.thread_id, "turnId": turn_id or run.turn_id},
+                                         kind="turn_terminal", status=status)
             mapped = {"completed": "completed", "failed": "failed", "interrupted": "cancelled"}.get(status, status)
             turn_error = self._turn_error(completed_turn)
             if not run.final_text:
@@ -1945,6 +2314,42 @@ class CodexAppServer:
                 elif "waitingOnUserInput" in detail:
                     self.on_event(task_id, {**common, "status": "waiting_input", "current_step": "Waiting for user input"})
 
+    def _capture_provider_usage(self, params: dict, *, kind="usage_snapshot", status="") -> None:
+        from codex_provider_usage import normalize
+        if not isinstance(params, dict):
+            return
+        # Never infer ownership from a reused thread without an exact turn identity.
+        with self._lock:
+            turn_id, thread_id = params.get("turnId"), params.get("threadId")
+            if not isinstance(turn_id, str) or not isinstance(thread_id, str) or not turn_id or not thread_id:
+                return
+            run = self._runs.get(self._turn_tasks.get(turn_id, ""))
+            if run is None:
+                # The active index is removed on completion. Accept a late snapshot
+                # only while its exact finished run is still retained and unique.
+                candidates = [item for item in self._runs.values()
+                              if item.thread_id == thread_id and item.turn_id == turn_id]
+                if len(candidates) != 1:
+                    return
+                run = candidates[0]
+            if run.thread_id != thread_id or run.turn_id != turn_id:
+                return
+            observation = normalize(params, model=run.model, effort=run.reasoning_effort, kind=kind, status=status)
+            task_id = run.task_id
+        if observation is not None:
+            last_input = (observation.get("last") or {}).get("input_tokens")
+            window = observation.get("model_context_window")
+            if (not run.finished and run.research_observed and not run.context_checkpoint_requested
+                    and isinstance(last_input, int) and isinstance(window, int) and window > 0
+                    and last_input >= window * 0.65 and self._experiment_boundary is None):
+                run.context_checkpoint_requested = True
+                threading.Thread(target=self._request_research_checkpoint, args=(run,), daemon=True,
+                                 name="codex-research-checkpoint").start()
+            try:
+                self.on_event(task_id, {"provider_usage_only": True, "provider_usage": observation})
+            except Exception:
+                log.warning("Codex usage observer failed; task execution is unchanged")
+
     @staticmethod
     def _is_meaningful_event(method: str, message: dict, params: dict) -> bool:
         if "id" in message:
@@ -1956,7 +2361,7 @@ class CodexAppServer:
             "item/completed",
         }:
             return True
-        if method.endswith("/delta"):
+        if method.endswith(("/delta", "/textDelta", "/summaryTextDelta", "/outputDelta")):
             return bool(
                 str(
                     params.get("delta")
@@ -1965,10 +2370,6 @@ class CodexAppServer:
                     or ""
                 ).strip()
             )
-        if method == "thread/status/changed":
-            status = params.get("status") or {}
-            flags = status.get("activeFlags", []) if isinstance(status, dict) else []
-            return bool(flags)
         return False
 
     def _emit_progress(self, task_id: str, common: dict, progress: dict) -> None:
@@ -2018,13 +2419,79 @@ class CodexAppServer:
             else True
         )
         try:
-            if tool_name == RESEARCH_AUDIT_TOOL:
+            with self._lock:
+                owner = self._runs.get(task_id)
+                if owner is not None and not permits_host_tool(owner.conversation_id, tool_name):
+                    raise ValueError("Phone-owned task: return an Android tool action; Desktop execution is unavailable")
+            if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool", "collaboration_run_tool"}:
+                callback = (self._collaboration_test if tool_name in {"collaboration_test_tool", "collaboration_run_tool"} else
+                            self._collaboration_file if tool_name == "collaboration_file_artifact" else
+                            self._collaboration_recall if tool_name == "collaboration_recall" else self._collaboration_publish)
+                with self._lock:
+                    run = self._runs.get(task_id)
+                    if (run is None or run.finished or callback is None
+                            or common.get("thread_id", run.thread_id) != run.thread_id
+                            or common.get("turn_id", run.turn_id) != run.turn_id):
+                        raise ValueError("Collaboration tool is not available for this task")
+                def active():
+                    with self._lock:
+                        return (self._runs.get(task_id) is run and not run.finished
+                                and common.get("thread_id", run.thread_id) == run.thread_id
+                                and common.get("turn_id", run.turn_id) == run.turn_id)
+                if tool_name in {"collaboration_test_tool", "collaboration_run_tool"}:
+                    from collaboration_tool_test_bridge import validate_arguments
+                    arguments = validate_arguments(arguments, tool=tool_name)
+                    if (arguments["mode"] == "start" and (run.sandbox not in {"workspace-write", "danger-full-access"}
+                            or run.execution_policy.execution_mode.value == "plan_only"
+                            or "screen_analysis" in run.execution_policy.task_intent_signals)):
+                        raise ValueError("This task cannot execute saved collaboration tools")
+                    recalled = callback(task_id, arguments, active)
+                elif tool_name in {"collaboration_text_artifact", "collaboration_file_artifact"}:
+                    if (self._collaboration_recall is None or self._collaboration_publish is None
+                            or run.sandbox not in {"workspace-write", "danger-full-access"}
+                            or run.execution_policy.execution_mode.value == "plan_only"
+                            or "screen_analysis" in run.execution_policy.task_intent_signals):
+                        raise ValueError("This task cannot create collaboration file artifacts")
+                    if tool_name == "collaboration_file_artifact":
+                        recalled = callback(task_id, run.working_directory, arguments, active)
+                    else:
+                        from collaboration_text_artifact import execute
+                        recalled = execute(task_id, run.working_directory, arguments, active=active,
+                            publish=lambda values: self._collaboration_publish(task_id, values, active),
+                            recall=lambda values: self._collaboration_recall(task_id, values, active))
+                else:
+                    recalled = callback(task_id, arguments, active)
+                result = {"success": recalled.get("success") is True,
+                    "contentItems": [{"type": "inputText", "text": json.dumps(recalled, ensure_ascii=False)}]}
+            elif tool_name == RESEARCH_CHECKPOINT_TOOL:
+                run = self._runs.get(task_id)
+                if run is None or run.finished:
+                    raise ValueError("Research task is no longer active")
+                if "entries" in arguments:
+                    self._save_research(run, arguments["entries"])
+                page = self._research_store().page(self._research_scope(run), arguments.get("after", 0), kind=arguments.get("kind"))
+                self._write_server_response(message.get("id"), {"success": True,
+                    "contentItems": [{"type": "inputText", "text": json.dumps(page, ensure_ascii=False)}]})
+                return
+            elif tool_name == RESEARCH_AUDIT_TOOL:
                 with self._lock:
                     run = self._runs.get(task_id)
                     if run is None or run.finished:
                         raise ValueError("Research task is no longer active")
                     audit = run.research_audit.submit(arguments if isinstance(arguments, Mapping) else {})
                 self._checkpoint_progress(run, "verify", research_audit=audit)
+                if audit.get("status") == "recorded":
+                    self._save_research(run, [{"id": "scope", "kind": "goal", "text": audit.get("scope", "")[:1600]}])
+                    for claim in audit.get("claims", []):
+                        refs = claim.get("evidence", [])
+                        ref = next((row for row in refs if row.get("passage_observed")), refs[0] if refs else {})
+                        self._save_research(run, [{"id": claim["id"], "kind": "finding", "text": claim["statement"],
+                            "url": ref.get("url", ""), "quote": ref.get("quote", ""),
+                            "status": "resolved" if claim.get("assessment") == "supported" else "uncertain"}])
+                    for gap in audit.get("coverage", []):
+                        self._save_research(run, [{"id": hashlib.sha256(gap["facet"].encode()).hexdigest(),
+                            "kind": "gap", "text": gap["facet"] + ": " + gap.get("gap", ""),
+                            "status": "open" if gap.get("gap") or not gap.get("query_observed") else "resolved"}])
                 self._write_server_response(message.get("id"), {"success": audit.get("status") == "recorded",
                     "contentItems": [{"type": "inputText", "text": json.dumps(audit, ensure_ascii=False)}]})
                 return
@@ -2054,7 +2521,9 @@ class CodexAppServer:
                 }
         except Exception as exc:
             log.exception("GalaxySSI dynamic tool failed task_id=%s tool=%s", task_id, tool_name)
-            result = {
+            from collaboration_transport_feedback import model_failure_result
+            structured = model_failure_result(exc) if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool", "collaboration_run_tool"} else None
+            result = structured or {
                 "success": False,
                 "contentItems": [{
                     "type": "inputText",
@@ -2080,7 +2549,65 @@ class CodexAppServer:
                     run.research_audit.observe({"evidence_pack": dict(evidence_pack), "research_trace": {
                         "queries": [query] if query and tool_name == CODEX_DYNAMIC_SEARCH_TOOL else []}})
                     run.research_observed = True
+            if run is not None and not run.finished:
+                try:
+                    self._save_research_trace(run, {"queries": [query] if query else [],
+                        "sources": evidence_pack.get("items", [])})
+                    for entry in evidence_pack.get("items", []):
+                        url = str(entry.get("url", ""))
+                        excerpt = str(entry.get("excerpt", ""))[:1200]
+                        if url and excerpt:
+                            self._save_research(run, [{"id": hashlib.sha256(url.encode()).hexdigest(),
+                                "kind": "finding", "text": excerpt, "url": url, "quote": excerpt}])
+                except Exception:
+                    log.warning("Research passage checkpoint unavailable; original tool evidence is retained")
+        if tool_name in {CODEX_DYNAMIC_SEARCH_TOOL, CODEX_DYNAMIC_FETCH_TOOL} and result.get("success"):
+            run = self._runs.get(task_id)
+            if run is not None and not run.finished:
+                digest = hashlib.sha256(json.dumps(result, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                if digest in run.research_output_digests:
+                    result = {"success": True, "contentItems": [{"type": "inputText", "text":
+                        "This retrieval returned exactly the same evidence and status as an earlier tool response. "
+                        "No new passage was observed. Reuse that response or research_checkpoint; investigate only "
+                        "remaining material gaps, or synthesize supported results with uncertainty noted."}]}
+                else:
+                    run.research_output_digests.add(digest)
         self._write_server_response(message.get("id"), result)
+        if tool_name in {"collaboration_test_tool", "collaboration_run_tool"}:
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": "Saved tool execution status returned" if result.get("success") else "Saved tool execution needs attention",
+                "trace_stage": "collaboration_tool_run_returned" if tool_name == "collaboration_run_tool" else "collaboration_tool_test_returned", "telemetry_only": True})
+            return
+        if tool_name in {"collaboration_text_artifact", "collaboration_file_artifact"}:
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": "Collaboration file handoff returned" if result.get("success") else "Collaboration file handoff needs attention",
+                "trace_stage": tool_name + "_returned", "telemetry_only": True})
+            return
+        if tool_name == "collaboration_publish":
+            if arguments.get("mode") == "validate_assessment":
+                if result.get("success") is not True or not isinstance(result.get("schema_valid"), bool):
+                    preflight_step = "Assessment draft check unavailable; not submitted"
+                elif result["schema_valid"]:
+                    preflight_step = "Assessment draft schema checked; not submitted"
+                else:
+                    preflight_step = "Assessment draft needs correction; not submitted"
+                self.on_event(task_id, {**dict(common), "status": "running",
+                    "current_step": preflight_step,
+                    "trace_stage": "collaboration_assessment_preflight_returned", "telemetry_only": True})
+                return
+            publication_step = {"list": "Read saved milestone IDs", "status": "Read assignment publication capability",
+                                "receipt": "Recover exact publication receipt"}
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": (publication_step.get(arguments.get("mode"), "Interim collaboration artifact recorded")
+                                 if result.get("success") else "Interim publication needs attention"),
+                "trace_stage": "collaboration_publication_returned", "telemetry_only": True})
+            return
+        if tool_name == "collaboration_recall":
+            # Internal evidence reads must not be misreported as web searches.
+            self.on_event(task_id, {**dict(common), "status": "running",
+                "current_step": "Read saved collaboration evidence" if result.get("success") else "Collaboration evidence read unavailable",
+                "trace_stage": "collaboration_recall_completed", "telemetry_only": True})
+            return
         if tool_name == OFFICE_PREVIEW_TOOL:
             with self._lock:
                 active_run = self._runs.get(task_id)
@@ -2388,11 +2915,15 @@ class CodexAppServer:
     def _checkpoint_progress(
         run: CodexRun,
         phase: str,
+        *,
+        stream: bool = False,
         **verification: object,
     ) -> None:
         if run.execution_harness is not None:
             try:
-                run.execution_harness.progress(phase, **verification)
+                progress = (run.execution_harness.stream_progress if stream
+                            else run.execution_harness.progress)
+                progress(phase, **verification)
             except Exception:
                 log.exception(
                     "Codex checkpoint update failed task_id=%s phase=%s",

@@ -124,7 +124,13 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
 
   func clear() {
     locked {
-      try? fileManager.removeItem(at: fileURL)
+      guard fileManager.fileExists(atPath: fileURL.path) else { return }
+      do {
+        try fileManager.removeItem(at: fileURL)
+        NotificationCenter.default.post(name: .galaxySSIWorkspaceDidPersist, object: self)
+      } catch {
+        // Keep the existing snapshot visible when clearing persistent state failed.
+      }
     }
   }
 
@@ -149,6 +155,7 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
       withIntermediateDirectories: true
     )
     try store.serializedSnapshot().write(to: fileURL, atomically: true, encoding: .utf8)
+    NotificationCenter.default.post(name: .galaxySSIWorkspaceDidPersist, object: self)
   }
 
   private func locked<T>(_ body: () throws -> T) rethrows -> T {

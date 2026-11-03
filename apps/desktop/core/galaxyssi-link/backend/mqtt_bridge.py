@@ -40,8 +40,10 @@ from agent_task_manager import (
     agent_task_manager,
 )
 from codex_app_server import CodexAppServer, CodexConversationBusyError
+import codex_experiment_registry as codex_experiments
 from research_quality import standard as research_quality_standard
 from research_trace import replay_receipts
+from research_checkpoint import task_packets as research_task_packets
 import phone_tool_broker as phone_tool
 from unified_commands import default_command_engine
 import link_delivery as link_delivery_storage
@@ -57,7 +59,7 @@ from link_delivery import (
     mark_outbound_deferred,
     mark_outbound_published,
     mark_outbound_retryable,
-    mark_outbound_sending,
+    mark_outbound_batch_sending,
     message_for_ciphertext,
     outbound_inflight_count,
     outbound_status,
@@ -304,6 +306,8 @@ durable_outbound_lock = threading.RLock()
 outbound_retry_stop_event = threading.Event()
 outbound_retry_wake_event = threading.Event()
 signal_receipt_replay_gate = ReceiptReplayGate()
+from mqtt_stored_receipt_publisher import StoredReceiptPublisher
+stored_receipt_publisher = StoredReceiptPublisher()
 outbound_retry_thread: threading.Thread | None = None
 outbound_retry_start_lock = threading.Lock()
 
@@ -396,6 +400,7 @@ class MqttTransportProbeState:
         self._next_probe_at = 0.0
         self._generation = 0
         self._connected = False
+        self._pending_path: tuple[str, int] | None = None
 
     def connected(self, now: float, initial_delay_seconds: float = 0.0) -> int:
         with self._lock:
@@ -430,7 +435,17 @@ class MqttTransportProbeState:
                 return False
             self._pending_nonce = str(nonce)
             self._sent_at = float(now)
+            self._pending_path = None
             return True
+
+    def bind_path(self, nonce: str, broker: str, generation: int) -> None:
+        with self._lock:
+            if self._pending_nonce == nonce and broker and generation > 0:
+                self._pending_path = (broker, generation)
+
+    def pending_path(self) -> tuple[str, int] | None:
+        with self._lock:
+            return self._pending_path if self._pending_nonce else None
 
     def acknowledge(self, nonce: str, now: float) -> float | None:
         with self._lock:
@@ -1836,6 +1851,8 @@ def _publish_transport_probe(mqttc, now: float | None = None) -> bool:
         log.warning("MQTT transport probe publish rejected rc=%s", info.rc)
         _request_transport_reconnect(mqttc, f"probe_publish_rc_{info.rc}")
         return False
+    if isinstance(mqttc, MqttPoolClient):
+        transport_probe_state.bind_path(nonce, info.broker_id, info.generation)
     return True
 
 
@@ -1883,7 +1900,15 @@ def _transport_reconnect_age(now: float | None = None) -> float | None:
 
 def _request_transport_reconnect(mqttc, reason: str, generation: int | None = None) -> None:
     if isinstance(mqttc, MqttPoolClient):
+        if generation is not None and transport_probe_state.stalled(time.monotonic())[2] != generation:
+            return
+        path = transport_probe_state.pending_path() if reason == "probe_timeout" else None
+        if path:
+            mqttc.repair_path(*path, reason)
         mqttc.repair_subscriptions()
+        transport_probe_state.disconnected()
+        if mqttc.is_connected():
+            transport_probe_state.connected(time.monotonic(), initial_delay_seconds=2.0)
         return
     if not _begin_transport_reconnect():
         return
@@ -1996,13 +2021,72 @@ def _dispatch_codex_event(task_id: str, event: dict) -> None:
             codex_task_callbacks.pop(task_id, None)
 
 
-def _codex_server(executable: str, env: dict) -> CodexAppServer:
+def _codex_collaboration_recall(task_id, arguments, active):
+    from collaboration_recall_bridge import broker
+    return _codex_collaboration_exchange(broker, task_id, arguments, active)
+
+
+def _codex_collaboration_publish(task_id, arguments, active):
+    from collaboration_milestone_bridge import broker
+    return _codex_collaboration_exchange(broker, task_id, arguments, active)
+
+
+def _codex_collaboration_test(task_id, arguments, active):
+    from collaboration_tool_test_bridge import broker
+    return _codex_collaboration_exchange(broker, task_id, arguments, active)
+
+
+def _codex_collaboration_file(task_id, working_directory, arguments, active):
+    from collaboration_file_artifact import authenticated_scope, execute
+
+    def snapshot():
+        task = agent_task_manager.get(task_id)
+        value = task.public() if task is not None else None
+        peer = get_client(value.get("client_route_id")) if value is not None else None
+        return authenticated_scope(value, peer, desktop_id())
+
+    scope = snapshot()
+
+    def still_active():
+        try:
+            return active() and snapshot() == scope
+        except ValueError:
+            return False
+
+    return execute(Path(DATA_DIR) / "collaboration-file-artifacts", working_directory, scope, arguments,
+        active=still_active,
+        publish=lambda values: _codex_collaboration_publish(task_id, values, still_active),
+        recall=lambda values: _codex_collaboration_recall(task_id, values, still_active))
+
+
+def _codex_collaboration_exchange(broker, task_id, arguments, active):
+    from collaboration_transport_feedback import PublishObservation
+
+    def snapshot():
+        task = agent_task_manager.get(task_id)
+        return task.public() if task is not None else None
+
+    def publish(request):
+        route = request["client_route_id"]
+        observed = []
+        accepted = _publish_phone_payload(client, {"scheme": "signal", "_client_route_id": route},
+                                          request, durable=False, observe=observed.append)
+        return observed[-1] if observed else PublishObservation(accepted)
+
+    return broker.query(snapshot, arguments, publish, active=active)
+
+
+def _codex_server(executable: str, env: dict, experiment=None) -> CodexAppServer:
+    if experiment is not None:
+        return experiment.get_server(executable, env, _dispatch_codex_event, CodexAppServer)
     global codex_app_server
     previous = None
     with codex_task_callbacks_lock:
         if codex_app_server is None or codex_app_server.executable != executable:
             previous = codex_app_server
-            codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event)
+            codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event,
+                collaboration_recall=_codex_collaboration_recall, collaboration_publish=_codex_collaboration_publish,
+                collaboration_file=_codex_collaboration_file, collaboration_test=_codex_collaboration_test)
         server = codex_app_server
     if previous is not None:
         previous.close()
@@ -2460,6 +2544,7 @@ def mqtt_bridge_status() -> dict[str, Any]:
     subscriptions = mqtt_subscription_status()
     status["subscriptions"] = subscriptions
     status["ingress"] = mqtt_ingress_status()
+    status["stored_receipts"] = stored_receipt_publisher.snapshot()
     status["receive_ready"] = bool(status["connected"] and subscriptions["ready"])
     status["paths"] = active_client.path_snapshot()["paths"] if isinstance(active_client, MqttPoolClient) else {}
     status["scheduling"] = active_client.policy.diagnostics() if isinstance(active_client, MqttPoolClient) else None
@@ -2577,6 +2662,7 @@ def _publish_mqtt_wire_payload(
     link_secret: str,
     timing_scope: tuple[str, str] | None = None,
     transport_traffic: str = "message",
+    transient_identity: tuple[str, str, str, str] | None = None,
 ):
     raw_packets = encode_wire_payload(wire_payload)
     packets = [
@@ -2596,6 +2682,14 @@ def _publish_mqtt_wire_payload(
                     return _DeferredPublishInfo()
             if delivery is not None and delivery.size_bound <= mqttc.policy.limits.small_packet_bytes:
                 info = mqttc.publish_delivery(topic, delivery)
+            elif isinstance(mqttc, MqttPoolClient) and transient_identity is not None:
+                from mqtt_multipath_policy import Traffic
+                packet = packets[0].encode("utf-8") if isinstance(packets[0], str) else packets[0]
+                publication = mqttc.peer_routes.transient_publication(topic, packet, Traffic(transport_traffic),
+                                                                       authenticated_identity=transient_identity)
+                if publication is None:
+                    return _DeferredPublishInfo()
+                info = mqttc.publish_transient_control(topic, packets[0], publication=publication)
             else:
                 info = mqttc.publish(topic, packets[0], qos=MQTT_QOS)
         except Exception:
@@ -2862,6 +2956,7 @@ def _record_publish_completion(mqttc, mid: int, failed: bool, reason_code=None):
                 early_outbound_acks.pop(next(iter(early_outbound_acks)))
     if outbound:
         (mark_outbound_retryable if failed else mark_outbound_published)(*outbound)
+        outbound_retry_wake_event.set()
 
 
 def track_outbound_publish(info, client_route_id: str, message_id: str, *, mqttc=None, generation=None) -> None:
@@ -2890,6 +2985,8 @@ def track_outbound_publish(info, client_route_id: str, message_id: str, *, mqttc
         mark_outbound_retryable(client_route_id, message_id)
     elif completed_before_tracking:
         mark_outbound_published(client_route_id, message_id)
+    if retryable or completed_before_tracking:
+        outbound_retry_wake_event.set()
 
 
 def track_delivery_ack(mqttc, info, payload: dict, stage: str, detail: object = ""):
@@ -3072,22 +3169,34 @@ def _publish_phone_payload(
     reply_payload: dict,
     *,
     durable: bool | None = None,
+    observe=None,
+    expected_receipt_binding: str = "",
 ) -> bool:
+    def observed(accepted, reason="unknown"):
+        if observe is not None:
+            from collaboration_transport_feedback import PublishObservation
+            route = str(wire_payload.get("_client_route_id") or "")
+            state = mqttc.peer_routes.admission_state(route) if isinstance(mqttc, MqttPoolClient) else "not_observed"
+            connected = mqttc.is_connected() if isinstance(mqttc, MqttPoolClient) else None
+            observe(PublishObservation(accepted, reason, state, connected))
+        return accepted
+
     if _local_only_transport_payload(reply_payload):
         log.warning(
             "Blocked local-only payload from phone transport type=%s",
             reply_payload.get("type"),
         )
-        return False
+        return observed(False, "local_only_payload")
     paired_client = _wire_client(wire_payload)
     if not paired_client:
         log.warning("Phone publish skipped: no active client route")
-        return False
+        return observed(False, "missing_recipient")
     from agent_worker_routing import recipient_allowed
     if not recipient_allowed(sys.modules[__name__], str(reply_payload.get("task_id") or ""), paired_client):
-        return False
+        log.warning("Phone publish rejected: original task recipient is not authorized")
+        return observed(False, "recipient_not_authorized")
     channel = "control" if reply_payload.get("type") in {
-        "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest",
+        "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest", "peer_attention",
         "agent_task_approval_result",
         ARTIFACT_RECEIPT_TYPE,
         INPUT_ATTACHMENT_RECEIPT_TYPE,
@@ -3105,6 +3214,13 @@ def _publish_phone_payload(
     from mqtt_query_delivery import needs_durable_outbox
     reliable = needs_durable_outbox(reply_payload.get("type")) if durable is None else bool(durable)
     with phone_publish_lock:
+        if expected_receipt_binding:
+            if reply_payload.get("type") != "delivery_ack":
+                raise ValueError("Receipt binding is only valid for stored acknowledgements")
+            paired_client = _wire_client(wire_payload)
+            if (not paired_client or paired_client.get("revoked_at")
+                    or _receipt_binding_for_client(paired_client) != expected_receipt_binding):
+                return observed(False, "receipt_pair_changed")
         info = _publish_to_registered_client(
             mqttc, paired_client, reply_payload, channel,
             durable=reliable,
@@ -3123,8 +3239,9 @@ def _publish_phone_payload(
         if deferred:
             log.debug("MQTT encrypted reply queued behind durable window topic=%s", target_topic)
         else:
-            log.info(f"MQTT encrypted reply published mid={info.mid} rc={info.rc}")
-        return info.rc == mqtt.MQTT_ERR_SUCCESS
+            log.info("MQTT encrypted reply published mid=%s rc=%s reason=%s", info.mid, info.rc,
+                     getattr(info, "reason_code", "unknown"))
+        return observed(info.rc == mqtt.MQTT_ERR_SUCCESS, getattr(info, "reason_code", "unknown"))
 
 
 def _peer_attachment_descriptors(
@@ -3944,6 +4061,10 @@ def _agent_task_payload(
     research_receipts = replay_receipts(events)
     if research_receipts:
         payload["research_trace"] = research_receipts
+    if include_progress_replay or status in TERMINAL_STATES:
+        checkpoints = research_task_packets(task)
+        if checkpoints:
+            payload["research_checkpoints"] = checkpoints
     receipt, snapshot = _task_reputation_evidence(task)
     if receipt:
         payload["execution_receipt"] = receipt
@@ -4137,22 +4258,32 @@ def _publish_or_queue_task_result(mqttc, wire_payload: dict, payload: dict, *, r
         f"{PROTOCOL_NAME}:task-result:" + json.dumps([fields, generation], sort_keys=True)))
     from agent_task_result_archive import archive
 
-    receipt = archive.put(persisted_payload)
+    from agent_reply_timing import measure as measure_reply
+    receipt = measure_reply(task_id, "archive", lambda: archive.put(persisted_payload))
     if receipt is not None:
         persisted_payload["result_recovery"] = receipt
-    pending = queue_task_result(
+    pending = measure_reply(task_id, "outbox", lambda: queue_task_result(
         task_id,
         client_route_id,
         dict(wire_payload),
         persisted_payload,
         replay=replay,
-    )
+    ))
     if pending is None:
         return False
     _ensure_outbound_retry_thread()
     if mqttc is None or not mqttc.is_connected():
         return False
-    return _publish_pending_task_result(mqttc, pending)
+    accepted = _publish_pending_task_result(mqttc, pending)
+    if accepted and isinstance(mqttc, MqttPoolClient):
+        # The ciphertext is durable and the Signal publish lock is released.
+        # Deliver a final reply without waiting behind inbox compaction/recovery.
+        try:
+            flush_outbound_messages(mqttc, preferred_client_route_id=client_route_id)
+        except Exception as exc:
+            log.debug("Immediate final delivery deferred (%s)", type(exc).__name__)
+            outbound_retry_wake_event.set()
+    return accepted
 
 
 def _publish_pending_task_result(mqttc, pending: dict) -> bool:
@@ -4194,6 +4325,8 @@ def _publish_task_artifacts(
     artifacts: list,
     *,
     common: dict,
+    chunk_indices: list[int] | None = None,
+    durable: bool | None = None,
 ) -> bool:
     from artifact_delivery import artifact_chunk_payloads
 
@@ -4204,9 +4337,10 @@ def _publish_task_artifacts(
     )
     all_published = True
     for artifact in artifacts:
-        for payload in artifact_chunk_payloads(artifact, common=identity_common):
+        for payload in artifact_chunk_payloads(artifact, common=identity_common, chunk_indices=chunk_indices):
             try:
-                all_published = _publish_phone_payload(mqttc, wire_payload, payload) and all_published
+                options = {} if durable is None else {"durable": durable}
+                all_published = _publish_phone_payload(mqttc, wire_payload, payload, **options) and all_published
             except Exception as exc:
                 all_published = False
                 log.warning(
@@ -4405,9 +4539,12 @@ def _interrupt_agent_runtime(task, on_event=None) -> None:
     agent_id = str(getattr(task, "agent_id", "") or "").strip()
     if not task_id:
         return
-    if agent_id == "codex" and codex_app_server is not None:
+    experiment_owned, experiment_server = codex_experiments.active_server(task_id)
+    runtime = experiment_server if experiment_owned else codex_app_server
+    if agent_id == "codex" and (runtime is not None or experiment_owned):
         try:
-            codex_app_server.interrupt(task_id)
+            if runtime is not None:
+                runtime.interrupt(task_id)
         except Exception as exc:
             log.warning("Codex turn interrupt failed task_id=%s: %s", task_id, exc)
     elif agent_id:
@@ -4591,6 +4728,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
     execution_policy = execution_policy_for(
         execution_policy_prompt,
+        requested_result_contract=payload.get("result_contract", ""),
         request_kind=payload.get("request_kind", ""),
         attachments=(
             str(item.get("name") or "")
@@ -4628,6 +4766,37 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         policy=execution_policy.public(),
     )
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
+    from codex_experiment_boundary import ExperimentBoundaryError, reject as reject_experiment
+    try:
+        codex_experiment = codex_experiments.admit(
+            route=client_route_id, conversation=client_conversation_id,
+            backend_conversation=backend_conversation_id, task_id=requested_task_id,
+            model=selected_agent_model, effort=execution_policy.reasoning_effort.value,
+            agent_id=agent_id, attachments=attachments or mobile_context.attachments,
+            snapshot=getattr(existing_task, "request_snapshot", {}) if existing_task is not None else None,
+            read_only=plan_only or read_only_screen_analysis, full_executor=full_desktop_executor,
+            scope_hint=str(payload.get("codex_experiment_admission") or ""),
+        )
+        if codex_experiment is not None:
+            if not structured_connector_response or read_only_screen_analysis:
+                reject_experiment("structured_text_mode_required")
+            recovery_snapshot[codex_experiments.MARKER] = codex_experiment.marker
+    except ExperimentBoundaryError as error:
+        # Persist and deliver rejection; an admission failure must not leave the phone waiting.
+        def rejected_event(value):
+            _enqueue_task_event(mqttc, wire_payload, value, trace)
+        if existing_task is None:
+            agent_task_manager.create_external(
+                agent_id=agent_id, contact_id=contact_id, source_message_id=source_message_id,
+                prompt=content, on_event=rejected_event, task_id=requested_task_id,
+                request_snapshot=recovery_snapshot, conversation_id=backend_conversation_id,
+                client_conversation_id=client_conversation_id, client_route_id=client_route_id,
+                client_turn_id=client_turn_id, execution_prompt=execution_policy_prompt,
+                execution_policy=execution_policy.public(),
+            )
+        agent_task_manager.update(requested_task_id, "failed", on_event=rejected_event,
+            current_step="", result="", error=str(error))
+        return
     from video_generation_policy import video_creation_requested
     programmatic_video_requested = (
         not plan_only and not structured_connector_response and not read_only_screen_analysis
@@ -5242,9 +5411,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
         task_id = str(task.get("task_id") or "")
         raw_result = str(task.get("result") or "")
+        from research_delivery import research_summary
+        research_publication = research_summary(raw_result) is not None
         from remote_reply_images import PreparedReplyImages, prepare_reply_images
         remote_images = PreparedReplyImages(raw_result)
-        if not plan_only and not structured_connector_response and not read_only_screen_analysis:
+        if not plan_only and not structured_connector_response and not read_only_screen_analysis and not research_publication:
             remote_images = prepare_reply_images(task_id, raw_result, scope={
                 "task_id": task_id, "client_route_id": client_route_id,
                 "conversation_id": task.get("client_conversation_id") or client_conversation_id,
@@ -5303,6 +5474,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     execution_policy_prompt,
                     agent_id,
                     allow_device_install=full_desktop_executor,
+                    reply_content=raw_result,
+                    execution_policy=execution_policy,
                 )
             )
         from task_workspace import select_reply_artifacts
@@ -5325,12 +5498,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         # Only a failure notice is sent until explicit delivery retry succeeds.
         if preparation_error is not None:
             deliverable_output_files = output_files
-        retain_on_desktop = bool(
+        retain_on_desktop = research_publication or bool(
             not artifact_fast_path
             and full_desktop_executor
             and _requests_desktop_artifact_retention(current_user_request)
         )
-        if structured_connector_response:
+        if structured_connector_response or research_publication:
             reply = raw_result.strip()
             rich_output = None
         else:
@@ -5379,6 +5552,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         research_receipts = replay_receipts(task.get("events") or [])
         if research_receipts:
             reply_payload["research_trace"] = research_receipts
+        checkpoints = research_task_packets(task)
+        if checkpoints:
+            reply_payload["research_checkpoints"] = checkpoints
         if rich_output:
             artifact_by_uri = {artifact.artifact_uri: artifact for artifact in artifacts}
             for block in rich_output.get("blocks", []):
@@ -5400,7 +5576,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 block["metadata"] = metadata
             reply_payload["rich_output"] = rich_output
         reply_payload["artifact_verification"] = finalization.verification
-        receipt, reputation_snapshot = _task_reputation_evidence(task)
+        from agent_reply_timing import measure as measure_reply
+        receipt, reputation_snapshot = measure_reply(task_id, "evidence", lambda: _task_reputation_evidence(task))
         if receipt:
             reply_payload["execution_receipt"] = receipt
             reply_payload["reputation_snapshot"] = reputation_snapshot
@@ -5572,9 +5749,19 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
     if agent_id == "codex" and not programmatic_video_requested:
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
+        from phone_planner_session import phone_planner_session
         codex_conversation_id = backend_conversation_id
-        codex_run_conversation_id = "" if plan_only or read_only_screen_analysis else codex_conversation_id
-        parallel_codex_task = plan_only or read_only_screen_analysis
+        planner_session = phone_planner_session(
+            mode=connector_task_mode, client_route=client_route_id,
+            conversation=codex_conversation_id, turn=client_turn_id,
+            model=selected_agent_model or "gpt-5.6-sol",
+        ) if plan_only and not read_only_screen_analysis and codex_experiment is None else ""
+        codex_run_conversation_id = (
+            codex_conversation_id if codex_experiment is not None
+            else planner_session if planner_session
+            else "" if plan_only or read_only_screen_analysis else codex_conversation_id
+        )
+        parallel_codex_task = codex_experiment is None and (plan_only or read_only_screen_analysis)
         if payload.get("_recovered_task") is True:
             active_conversation_task = None
             task = agent_task_manager.resume_external(str(payload.get("task_id") or ""), publish_event)
@@ -5635,10 +5822,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
                 active_conversation_task = None
                 parallel_codex_task = True
-                # An unscoped Codex run gets a fresh thread. GalaxySSI still
-                # owns the durable mobile conversation and returns this result
-                # under the original client turn.
-                codex_run_conversation_id = ""
+                # Phone planning reuses only its goal-scoped thread; other
+                # parallel work remains unscoped. Never steer the chat run.
+                codex_run_conversation_id = planner_session
         add_task_trace("desktop_task_created", task.task_id)
         codex_execution_generation = task.execution_generation
         from agent_execution_mutations import AgentExecutionMutations
@@ -5846,6 +6032,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             if task_id != task.task_id or task.execution_generation != codex_execution_generation:
                 return
             nonlocal result_published, recovery_attempts
+            if event.get("provider_usage_only") is True:
+                from codex_provider_usage import capture
+                capture(codex_mutations, event)
+                return
             if event.get("evidence_only") is True:
                 from codex_tool_evidence_bridge import capture
                 capture(codex_mutations, event)
@@ -5937,14 +6127,14 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 event.get("result"),
                 event.get("error"),
             )
-            if event_status == "completed" and not parallel_codex_task:
+            if event_status == "completed" and not parallel_codex_task and codex_experiment is None:
                 from agent_conversation_sessions import agent_conversation_sessions
 
                 sessions = agent_conversation_sessions()
                 thread_id = str(event.get("thread_id") or "")
                 if thread_id:
                     sessions.put("codex", codex_conversation_id, thread_id)
-            if event_status == "completed" and str(event_result or "").strip():
+            if event_status == "completed" and str(event_result or "").strip() and codex_experiment is None:
                 parsed_recovery = parse_model_recovery(
                     str(event_result),
                     mobile_context.attachments,
@@ -6110,7 +6300,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             else "One required detail could not be recovered automatically. Provide it to continue."
                         )
                     )
-            if event_status == "completed" and str(event_result or "").strip():
+            if event_status == "completed" and str(event_result or "").strip() and codex_experiment is None:
                 from task_workspace import (
                     import_referenced_task_artifacts,
                     referenced_relative_artifact_paths,
@@ -6122,7 +6312,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 if direct_references or relative_references:
                     source_task_ids = [
                         str(candidate.get("task_id") or "")
-                        for candidate in agent_task_manager.list(limit=500)
+                        for candidate in agent_task_manager.list(limit=500, conversation_id=backend_conversation_id)
                         if str(candidate.get("task_id") or "") != task_id
                         and str(candidate.get("agent_id") or "") == agent_id
                         and str(candidate.get("conversation_id") or "") == backend_conversation_id
@@ -6136,6 +6326,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         add_task_trace("referenced_artifacts_imported", len(imported))
             if (
                 event_status == "completed"
+                and codex_experiment is None
                 and execution_policy.requires_artifact
                 and not image_artifact_required
             ):
@@ -6146,6 +6337,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     execution_policy_prompt,
                     agent_id,
                     allow_device_install=full_desktop_executor,
+                    reply_content=str(event_result or ""),
+                    execution_policy=execution_policy,
                 )
                 if finalization.verification.get("status") != "passed":
                     if schedule_required_artifact_repair(finalization.verification):
@@ -6229,7 +6422,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         "This run did not produce a valid answer to your latest request."
                     )
                     event["error"] = response_review.diagnostic
-            if event_status == "completed" and not parallel_codex_task:
+            if event_status == "completed" and not parallel_codex_task and codex_experiment is None:
                 completed_task = agent_task_manager.get(task_id)
                 mark_conversation_synced("codex", completed_task)
             if event_status == "running" and visible_progress is not None:
@@ -6323,7 +6516,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         task.task_id, "starting", on_event=publish_event,
                         current_step="Reconnecting to Codex turn",
                     )
-                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]))
+                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]), codex_experiment)
                     server.warm()
                     add_task_trace("codex_server_ready", f"pid={server.process.pid if server.process else 0}")
                     started_at = int(task.started_at or task.created_at or 0)
@@ -6348,7 +6541,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         thread_id=task.thread_id,
                         turn_id=task.turn_id,
                         original_prompt=content,
-                        conversation_id=codex_conversation_id,
+                        conversation_id=codex_run_conversation_id,
                         elapsed_seconds=elapsed_seconds,
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
@@ -6369,7 +6562,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 sessions = agent_conversation_sessions()
                 session_binding = (
                     None
-                    if plan_only or read_only_screen_analysis
+                    if plan_only or read_only_screen_analysis or codex_experiment is not None
                     else sessions.get("codex", codex_conversation_id)
                 )
                 restored_context_paths: list[Path] = []
@@ -6382,12 +6575,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 prior_tasks = (
                     [
                         candidate
-                        for candidate in agent_task_manager.list(limit=500)
+                        for candidate in agent_task_manager.list(limit=500, conversation_id=codex_conversation_id)
                         if str(candidate.get("task_id") or "") != task.task_id
                         and str(candidate.get("agent_id") or "") == "codex"
                         and str(candidate.get("conversation_id") or "") == codex_conversation_id
                     ]
-                    if not fast_chat_delivery or mobile_context.attachments
+                    if codex_experiment is None and (not fast_chat_delivery or mobile_context.attachments)
                     else []
                 )
                 prior_sources: list[Path] = []
@@ -6529,7 +6722,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
                 server = None
                 if active_conversation_task is not None:
-                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]))
+                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]), codex_experiment)
                     server.warm()
                     add_task_trace("codex_server_ready", f"pid={server.process.pid if server.process else 0}")
                     add_task_trace("codex_turn_steer_started", active_conversation_task.task_id)
@@ -6576,7 +6769,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         codex_task_callbacks.pop(task.task_id, None)
                     return
                 if server is None:
-                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]))
+                    server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]), codex_experiment)
                     server.warm()
                     add_task_trace("codex_server_ready", f"pid={server.process.pid if server.process else 0}")
                 codex_runtime["server"] = server
@@ -6595,9 +6788,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         sandbox=codex_sandbox,
                         execution_policy=execution_policy,
                     )
-                    if not parallel_codex_task:
+                    if not parallel_codex_task and codex_experiment is None:
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
                 except CodexConversationBusyError as busy:
+                    if codex_experiment is not None or planner_session:
+                        raise  # Never fork or steer a different goal when its scoped thread is busy.
                     busy_task = agent_task_manager.get(busy.active_task_id)
                     busy_decision = (
                         classify_active_turn(
@@ -7076,7 +7271,7 @@ def _publish_chunk_state(mqttc, paired, query, ingress, *, repeat_receipt=False,
         log.warning("Chunk state response deferred (%s)", type(exc).__name__)
 
 
-def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None, chunk_transfer=None, wire_hash=""):
+def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, duplicate=False, delivery_frame=None, chunk_transfer=None, wire_hash="", paired_client=None):
     message_id = str(envelope["message_id"])
     route = str(wire_payload["_client_route_id"])
     from mqtt_delivery_envelope import stored_receipt
@@ -7109,8 +7304,16 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
     })
     try:
         # Keep confirmation after the sender's attempt window expires or restarts.
-        signal_receipt_replay_gate.publish((route, message_id, wire_hash),
-            lambda: _publish_phone_payload(mqttc, wire_payload, receipt), duplicate=duplicate)
+        if isinstance(mqttc, MqttPoolClient):
+            paired = paired_client or get_client(route)
+            if paired and not paired.get("revoked_at"):
+                admitted = stored_receipt_publisher.submit(sys.modules[__name__], mqttc, paired, receipt,
+                                                            duplicate=duplicate)
+                if admitted not in {"accepted", "coalesced"}:
+                    log.warning("Stored-message receipt deferred (%s); durable replay remains available", admitted)
+        else:
+            signal_receipt_replay_gate.publish((route, message_id, wire_hash),
+                lambda: _publish_phone_payload(mqttc, wire_payload, receipt), duplicate=duplicate)
     except Exception as exc:
         # Receipt delivery cannot prevent a durably received task from starting.
         log.warning("Stored-message receipt deferred (%s)", type(exc).__name__)
@@ -7118,6 +7321,7 @@ def _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, *, du
 
 def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, payload, trace, *, admission_token="", timings=(), ciphertext_digest="", delivery_frame=None, chunk_transfer=None):
     import signal_receive_dispatch as dispatch
+    from collaboration_receive_observation import observe
 
     route = str(paired_client["client_route_id"])
     message_id = str(envelope["message_id"])
@@ -7133,7 +7337,8 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                     from mqtt_delivery_envelope import content_hash
                     bind_ciphertext(route, ciphertext_digest, message_id, receipt_hash=content_hash(wire_payload))
                 _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, duplicate=True,
-                                        delivery_frame=delivery_frame, chunk_transfer=chunk_transfer)
+                                        delivery_frame=delivery_frame, chunk_transfer=chunk_transfer,
+                                        paired_client=paired_client)
             return
         handler_started = False
         try:
@@ -7155,8 +7360,10 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
                 for stage, at_ns in timings:
                     record_task(identity["task_id"], stage, at_ns=at_ns, once=True)
                 record_task(identity["task_id"], "desktop_request_decrypted", once=True)
+            observe(payload, timings, "stored", timing_now_ns())
             _ack_stored_application(mqttc, wire_payload, envelope, payload, trace, delivery_frame=delivery_frame,
-                                    chunk_transfer=chunk_transfer)
+                                    chunk_transfer=chunk_transfer, paired_client=paired_client)
+            observe(payload, timings, "dispatch", timing_now_ns())
             handler_started = True
             if control_type == "delivery_ack":
                 acknowledged_id = acknowledged_transport_message_id(payload, envelope)
@@ -7173,11 +7380,13 @@ def _deliver_stored_application(mqttc, paired_client, wire_payload, envelope, pa
             else:
                 _dispatch_application_payload(mqttc, paired_client, wire_payload, envelope, payload, trace)
         except Exception as exc:
+            observe(payload, timings, "failed", timing_now_ns())
             dispatch.finish(guard, claim, error=exc,
                             replayable=not handler_started or dispatch.retry_safe(envelope))
             raise
         else:
             dispatch.finish(guard, claim)
+            observe(payload, timings, "finished", timing_now_ns())
 
 
 def _process_stored_message(mqttc, message: _StoredInboxMessage):
@@ -7270,8 +7479,10 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
             )
         return
 
-    if payload.get("type") == ARTIFACT_REDELIVERY_REQUEST_TYPE:
-        from artifact_delivery import artifact_for_redelivery
+    if payload.get("type") in {ARTIFACT_REDELIVERY_REQUEST_TYPE, "artifact_missing_chunks_request"}:
+        from artifact_delivery import artifact_for_redelivery, validate_missing_chunks
+
+        missing_only = payload.get("type") == "artifact_missing_chunks_request"
 
         artifact = artifact_for_redelivery(
             payload,
@@ -7283,6 +7494,8 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
                 str(payload.get("artifact_id") or "")[:12],
                 client_route_id[-8:],
             )
+            if missing_only:
+                return
             _publish_phone_payload(
                 mqttc,
                 wire_payload,
@@ -7297,6 +7510,11 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
                 },
             )
             return
+        indices = None
+        if missing_only:
+            indices = validate_missing_chunks(payload.get("missing_chunks"), artifact.chunk_count)
+            if payload.get("task_id") != artifact.task_id:
+                raise ValueError("Artifact recovery task mismatch")
         original_task = agent_task_manager.get(artifact.task_id)
         if original_task is None:
             from peer_chat_store import peer_chat_store
@@ -7344,6 +7562,7 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
             wire_payload,
             [artifact],
             common=redelivery_common,
+            **({"chunk_indices": indices, "durable": False} if missing_only else {}),
         )
         return
 
@@ -7389,6 +7608,16 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
         if receipt is not None:
             attachment_request_broker.accept_receipt(receipt)
             _publish_phone_payload(mqttc, wire_payload, receipt.payload())
+        return
+
+    if payload.get("type") == "peer_attention":
+        from peer_reminders import peer_reminders, reply_payload
+        if str(payload.get("contact_id") or "") != desktop_id():
+            raise ValueError("Reminder target is not this Desktop")
+        reminder = peer_reminders().receive(client_route_id, str(paired_client.get("profile_name")
+            or paired_client.get("display_name") or paired_client.get("device_name") or "GalaxySSI"), payload)
+        if reminder and payload.get("reminder_action") == "request":
+            _publish_phone_payload(mqttc, wire_payload, reply_payload(reminder), durable=True)
         return
 
     if _route_peer_message_payload(
@@ -7475,11 +7704,26 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
         )
         return
 
+    if msg_type == "collaboration_recall_result":
+        from collaboration_recall_bridge import broker
+        broker.receive(payload, client_route_id)
+        return
+
+    if msg_type == "collaboration_publish_result":
+        from collaboration_milestone_bridge import broker
+        broker.receive(payload, client_route_id)
+        return
+
+    if msg_type == "collaboration_tool_test_result":
+        from collaboration_tool_test_bridge import broker
+        broker.receive(payload, client_route_id)
+        return
+
     if msg_type == "agent_task_evidence_request":
-        from codex_tool_evidence_bridge import query
+        from codex_tool_evidence_bridge import query, publish_response
         response = query(agent_task_manager, payload, client_route_id=client_route_id)
         if response is not None:
-            _publish_phone_payload(mqttc, wire_payload, response)
+            publish_response(payload, lambda: _publish_phone_payload(mqttc, wire_payload, response))
         return
 
     if msg_type == "agent_task_recovery_request":
@@ -8352,17 +8596,22 @@ def _publish_to_registered_client(
                 preferred_client_route_id=client_route_id,
             )
             return published.get((client_route_id, message_id), _DeferredPublishInfo())
-        encrypted = encrypt_signal_payload(
+        from agent_reply_timing import measure as measure_reply
+        encrypted = measure_reply(transport_task_id(payload), "encrypt", lambda: encrypt_signal_payload(
             application_envelope,
             remote_name=paired_client["signal_name"],
-        )
+        ))
         wire_payload = json.dumps(encrypted, ensure_ascii=False)
         if not durable:
+            from mqtt_query_delivery import transient_traffic
+            traffic = transient_traffic(payload.get("type"))
             return _publish_mqtt_wire_payload(
                 mqttc,
                 topic,
                 wire_payload,
                 link_secret,
+                transport_traffic=traffic,
+                transient_identity=_chunk_peer_identity(paired_client) if traffic != "message" else None,
             )
         queue_outbound(
             client_route_id,
@@ -8409,7 +8658,7 @@ def _outbound_delivery_priority(payload: dict) -> int:
     if payload_type in {
         INPUT_ATTACHMENT_RECEIPT_TYPE, INPUT_ATTACHMENT_REQUEST_TYPE, "artifact_redelivery_result",
         "agent_task_recovery_result", "agent_task_result_page", "agent_task_result_receipt_confirmed",
-        "agent_task_cancel", "pairing_revoked",
+        "agent_task_cancel", "pairing_revoked", "peer_attention",
     }:
         return OUTBOUND_PRIORITY_DEPENDENCY
     if payload_type == ARTIFACT_CHUNK_TYPE:
@@ -8437,7 +8686,7 @@ def _outbound_delivery_priority(payload: dict) -> int:
 
 def _outbound_transport_traffic(payload: dict) -> str:
     payload_type = str(payload.get("type") or "").strip().lower()
-    if payload_type in {"agent_task_cancel", "pairing_revoked"}:
+    if payload_type in {"agent_task_cancel", "pairing_revoked", "peer_attention"}:
         return "control"
     if payload_type == "delivery_ack":
         return "receipt"
@@ -8563,14 +8812,22 @@ def flush_outbound_messages(
                     break
             route_candidates = next_round
         try:
+            eligible = []
             for pending in selected:
                 client_route_id = str(pending["client_route_id"])
                 message_id = str(pending["message_id"])
                 if not get_client(client_route_id):
                     acknowledge_outbound(client_route_id, message_id)
                     continue
-                mark_outbound_sending(client_route_id, message_id)
-                with pending_outbound_acks_lock:
+                eligible.append(pending)
+            selected = eligible
+            mark_outbound_batch_sending([
+                (str(item["client_route_id"]), str(item["message_id"])) for item in selected
+            ])
+            with pending_outbound_acks_lock:
+                for pending in selected:
+                    client_route_id = str(pending["client_route_id"])
+                    message_id = str(pending["message_id"])
                     outbound_publish_reservations[(client_route_id, message_id)] = int(pending.get("priority") or OUTBOUND_PRIORITY_NORMAL)
         except BaseException:
             _release_outbound_reservations(selected)
@@ -8644,20 +8901,32 @@ def _publish_reserved_outbound(mqttc, selected: list[dict]) -> dict[tuple[str, s
 
 def _outbound_retry_loop() -> None:
     global outbound_retry_thread
+    next_recovery = time.monotonic() + OUTBOUND_RETRY_POLL_SECONDS
     try:
         while not outbound_retry_stop_event.is_set():
-            outbound_retry_wake_event.wait(OUTBOUND_RETRY_POLL_SECONDS)
+            woken = outbound_retry_wake_event.wait(max(0.0, next_recovery - time.monotonic()))
             outbound_retry_wake_event.clear()
             if outbound_retry_stop_event.is_set():
                 break
             mqttc = client
             if mqttc is None:
+                next_recovery = time.monotonic() + OUTBOUND_RETRY_POLL_SECONDS
+                continue
+            if mqttc.is_connected():
+                try:
+                    flush_outbound_messages(mqttc)
+                except Exception as exc:
+                    log.debug("Priority outbound delivery deferred (%s)", type(exc).__name__)
+            # Enqueue/PUBACK wakeups only drain transport. Re-running recovery
+            # scans for every packet would contend with live inbox/task commits.
+            if woken and time.monotonic() < next_recovery:
                 continue
             try:
                 flush_pending_inbound_messages(mqttc)
             except Exception as exc:
                 log.debug("MQTT inbox recovery deferred (%s)", type(exc).__name__)
             if not mqttc.is_connected():
+                next_recovery = time.monotonic() + OUTBOUND_RETRY_POLL_SECONDS
                 continue
             try:
                 # Task results are persisted before their encrypted MQTT
@@ -8671,6 +8940,8 @@ def _outbound_retry_loop() -> None:
                 flush_worker_notifications(sys.modules[__name__], mqttc)
             except Exception as exc:
                 log.debug("MQTT durable replay deferred: %s", exc)
+            finally:
+                next_recovery = time.monotonic() + OUTBOUND_RETRY_POLL_SECONDS
     finally:
         if threading.current_thread() is outbound_retry_thread:
             outbound_retry_thread = None
@@ -9257,6 +9528,7 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
     from rich_output import build_rich_output
     from response_policy import remove_unfulfilled_artifact_claims, sanitize_assistant_response
     from task_workspace import task_workspace
+    from research_delivery import research_summary
 
     agent_id = str(task.get("agent_id") or "")
     task_id = str(task.get("task_id") or "")
@@ -9268,15 +9540,18 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
     ]
     from task_workspace import select_reply_artifacts
     output_files = select_reply_artifacts(raw_result, list(task.get("output_files") or []), task_id)
-    cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs)
-    cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, output_files)
-    reply, rich_output = build_rich_output(
-        cleaned_reply,
-        output_files,
-        task_id,
-        inline_artifacts=False,
-        artifact_selection_content=raw_result,
-    )
+    if research_summary(raw_result) is not None:
+        reply, rich_output = raw_result.strip(), None
+    else:
+        cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs)
+        cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, output_files)
+        reply, rich_output = build_rich_output(
+            cleaned_reply,
+            output_files,
+            task_id,
+            inline_artifacts=False,
+            artifact_selection_content=raw_result,
+        )
     trace = _desktop_trace(
         _trace_event("desktop_task_result_replay", task_id),
         _trace_event("agent_replied", f"{agent_id} chars={len(reply)}"),
@@ -9314,6 +9589,9 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
     research_receipts = replay_receipts(task.get("events") or [])
     if research_receipts:
         payload["research_trace"] = research_receipts
+    checkpoints = research_task_packets(task)
+    if checkpoints:
+        payload["research_checkpoints"] = checkpoints
     return payload
 
 
@@ -9335,14 +9613,18 @@ def republish_agent_task_result(task_id: str) -> dict:
     resumed = resume_deferred_artifacts(sys.modules[__name__], task.public(), route_id)
     if resumed is not None:
         return resumed
-    from remote_reply_images import prepare_reply_images
+    from remote_reply_images import PreparedReplyImages, prepare_reply_images
+    from research_delivery import research_summary
     public_task = task.public()
-    remote_images = prepare_reply_images(public_task["task_id"], str(public_task.get("result") or ""), scope={
-        "task_id": public_task["task_id"], "client_route_id": route_id,
-        "conversation_id": public_task.get("client_conversation_id") or public_task.get("conversation_id"),
-        "turn_id": _client_task_turn_id(public_task), "source_message_id": str(public_task.get("source_message_id") or ""),
-        "execution_generation": public_task.get("execution_generation", 1),
-    })
+    raw_result = str(public_task.get("result") or "")
+    remote_images = PreparedReplyImages(raw_result)
+    if research_summary(raw_result) is None:
+        remote_images = prepare_reply_images(public_task["task_id"], raw_result, scope={
+            "task_id": public_task["task_id"], "client_route_id": route_id,
+            "conversation_id": public_task.get("client_conversation_id") or public_task.get("conversation_id"),
+            "turn_id": _client_task_turn_id(public_task), "source_message_id": str(public_task.get("source_message_id") or ""),
+            "execution_generation": public_task.get("execution_generation", 1),
+        })
     current = agent_task_manager.get(task.task_id)
     latest = current.public() if current is not None else {}
     if any(latest.get(key) != public_task.get(key) for key in (
@@ -9359,12 +9641,17 @@ def republish_agent_task_result(task_id: str) -> dict:
         by_path.update({item["relative_path"]: item for item in native_images})
         public_task["output_files"] = list(by_path.values())
     from artifact_delivery import prepare_artifacts, register_artifact_batch
+    from task_workspace import select_reply_artifacts
 
+    public_task["output_files"] = select_reply_artifacts(
+        public_task["result"], public_task["output_files"], task.task_id,
+        discover_unlisted=bool(public_task["output_files"]),
+    )
     artifacts = prepare_artifacts(task.task_id, public_task["output_files"])
     register_artifact_batch(
         artifacts,
         client_route_id=route_id,
-        retain_on_desktop=False,
+        retain_on_desktop=research_summary(public_task["result"]) is not None,
     )
     payload = _build_republished_task_result(public_task, route_id)
     wire_payload = {"scheme": "signal", "_client_route_id": route_id}
@@ -9680,9 +9967,11 @@ def _ensure_mqtt_supervisor() -> None:
 
 def start_background():
     """Start MQTT support and keep its broker worker supervised."""
-    global inbound_route_accepting
+    global inbound_route_accepting, stored_receipt_publisher
     with inbound_route_pool_lock:
         inbound_route_accepting = True
+        if stored_receipt_publisher.snapshot()["closed"]:
+            stored_receipt_publisher = StoredReceiptPublisher()
     _ensure_task_event_publisher()
     _ensure_delivery_ack_publisher()
     _ensure_presence_thread()
@@ -9721,6 +10010,7 @@ def stop():
     transport_probe_state.disconnected()
     _clear_transport_reconnect()
     _stop_inbound_route_workers()
+    stored_receipt_publisher.close(wait=False)
     _close_phone_tool_sessions(reason="Desktop MQTT bridge stopped")
     if client:
         client.disconnect()
@@ -9743,6 +10033,7 @@ def stop():
     if codex_app_server is not None:
         codex_app_server.close()
         codex_app_server = None
+    codex_experiments.close()
     with codex_task_callbacks_lock:
         codex_task_callbacks.clear()
 

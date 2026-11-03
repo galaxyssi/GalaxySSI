@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_remote_draft_send">Send to computer</string>
+    <string name="desktop_remote_draft_voice">Voice input</string>
+    <string name="desktop_remote_draft_recording">Release to transcribe, slide up to cancel</string>
+    <string name="desktop_remote_draft_transcribing">Transcribing…</string>
+    <string name="desktop_remote_draft_sending">Sending…</string>
+    <string name="desktop_remote_draft_failed">%1$s. Draft kept; check the computer before sending again.</string>
+    <string name="desktop_remote_draft_voice_failed">Voice recognition failed. Please try again.</string>
+    <string name="desktop_remote_draft_no_target">Select an input field on the computer first.</string>
+</resources>

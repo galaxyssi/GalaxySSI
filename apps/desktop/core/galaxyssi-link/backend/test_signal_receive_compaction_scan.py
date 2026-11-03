@@ -27,24 +27,29 @@ class CompactionScanTest(unittest.TestCase):
                 (client_route_id,message_id,received_at,status,dispatch_state) VALUES(?,?,?,'RX_STORED','dispatched')""",
                 (("peer", f"m-{i}", i) for i in range(10000)))
             db.commit()
-            traced = Mock(wraps=db)
-            with patch.object(compaction, "compact_in_transaction") as compact:
-                compaction.compact_backlog(traced, "peer")
-                compact.assert_not_called()
-            sql, args = traced.execute.call_args.args
-            plan = " ".join(row[-1] for row in db.execute("EXPLAIN QUERY PLAN " + sql, args))
-            operations = [0]
-            def count_steps():
-                operations[0] += 100
-                return 0
-            db.set_progress_handler(count_steps, 100)
-            try:
-                self.assertEqual([], db.execute(sql, args).fetchall())
-            finally:
-                db.set_progress_handler(None, 0)
-            print(f"COMPACTION_QUERY_VM_STEPS={operations[0]} PLAN={plan}", flush=True)
-            self.assertLess(operations[0], 1000, "Small completed history was scanned")
-            self.assertIn("inbound_signal_compaction_queue", plan)
+            for analyzed in (False, True):
+                if analyzed:
+                    db.execute("ANALYZE")
+                for route in ("peer", None):
+                    with self.subTest(route=route, analyzed=analyzed):
+                        traced = Mock(wraps=db)
+                        with patch.object(compaction, "compact_in_transaction") as compact:
+                            compaction.compact_backlog(traced, route)
+                            compact.assert_not_called()
+                        sql, args = traced.execute.call_args.args
+                        plan = " ".join(row[-1] for row in db.execute("EXPLAIN QUERY PLAN " + sql, args))
+                        operations = [0]
+                        def count_steps():
+                            operations[0] += 100
+                            return 0
+                        db.set_progress_handler(count_steps, 100)
+                        try:
+                            self.assertEqual([], db.execute(sql, args).fetchall())
+                        finally:
+                            db.set_progress_handler(None, 0)
+                        print(f"COMPACTION_QUERY_VM_STEPS={operations[0]} PLAN={plan}", flush=True)
+                        self.assertLess(operations[0], 1000, "Small completed history was scanned")
+                        self.assertRegex(plan, r"^(SEARCH|SCAN) q\b")
 
     def test_large_candidates_keep_peer_scope_order_and_page_bound(self):
         with closing(delivery._connect()) as db:
@@ -67,6 +72,10 @@ class CompactionScanTest(unittest.TestCase):
                 compaction.compact_backlog(db, "peer", limit=2)
             self.assertEqual(["older", "newer"], [call.args[2] for call in compact.call_args_list])
             self.assertTrue(all(call.args[1] == "peer" for call in compact.call_args_list))
+            with patch.object(compaction, "compact_in_transaction") as compact:
+                compaction.compact_backlog(db, limit=2)
+            self.assertEqual([("other", "private"), ("peer", "older")],
+                             [call.args[1:3] for call in compact.call_args_list])
 
     def test_existing_database_gets_index_without_erasing_rows(self):
         with closing(delivery._connect()) as db:

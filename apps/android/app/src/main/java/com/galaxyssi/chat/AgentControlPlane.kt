@@ -1049,7 +1049,7 @@ internal fun AgentRunControlEvent.toJson(): JSONObject = JSONObject()
     .put("type", type.name)
     .put("sequence", sequence)
     .put("timestamp_millis", timestampMillis)
-    .put("payload", JSONObject(payload))
+    .put("payload", JSONObject(AgentNativeJsonCodec.stringify(payload)))
 
 private fun AgentHandoffRecord.toJson(): JSONObject = JSONObject()
     .put("handoff_id", request.handoffId)
@@ -1113,7 +1113,7 @@ internal fun JSONObject.toRunEvent(): AgentRunControlEvent? = runCatching {
         type = enumValue(optString("type"), AgentRunControlEventType.RUN_FAILED),
         sequence = getLong("sequence"),
         timestampMillis = optLong("timestamp_millis", System.currentTimeMillis()),
-        payload = optJSONObject("payload")?.toNativeMap().orEmpty(),
+        payload = optJSONObject("payload").toNativeObject(),
         protocolId = optString("protocol", AGENT_RUN_EVENT_PROTOCOL),
         schemaVersion = optInt("schema_version", AGENT_RUN_EVENT_SCHEMA_VERSION),
         idempotencyKey = optString("idempotency_key").ifBlank { getString("event_id") },

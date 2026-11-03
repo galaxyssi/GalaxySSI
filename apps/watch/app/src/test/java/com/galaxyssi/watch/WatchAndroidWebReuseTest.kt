@@ -5,6 +5,15 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 class WatchAndroidWebReuseTest {
+    @Test fun sharedProgressHasNoPhoneOnlyRuntimeDependency() {
+        val source = java.io.File("build/generated/phoneWebParser/com/galaxyssi/chat/CloudWebToolLoopProgress.kt").readText()
+        for (dependency in listOf("CollaborationGoalContractStore", "CollaborationCloudRecall",
+            "CollaborationRemoteEvidenceProtocol", "CollaborationEvolutionProtocol")) {
+            assertFalse(dependency, source.contains(dependency))
+        }
+        assertTrue(source.contains("CloudGoalPageProtocol"))
+    }
+
     @Test fun modelReceivesArticleNavigationWithoutTreatingItAsEvidence() {
         val article = "https://example.com/2026/09/14/new-product/"
         val result = JSONObject(CloudWebGrounding.boundedModelJson(mapOf(

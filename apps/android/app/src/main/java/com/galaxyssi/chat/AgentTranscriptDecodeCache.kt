@@ -4,7 +4,7 @@ internal class AgentTranscriptDecodeCache(
     private val capacity: Int = DEFAULT_CAPACITY,
     private val ttlNanos: Long = DEFAULT_TTL_NANOS,
     private val clockNanos: () -> Long = System::nanoTime
-) {
+) : RuntimeSensitiveCache {
     private data class CachedEntry(
         val encryptedPayload: String,
         val entry: AgentTranscriptEntry,
@@ -40,6 +40,7 @@ internal class AgentTranscriptDecodeCache(
             entry = entry,
             expiresAtNanos = clockNanos() + ttlNanos
         )
+        RuntimeSensitiveCaches.track(this)
     }
 
     @Synchronized
@@ -52,12 +53,20 @@ internal class AgentTranscriptDecodeCache(
         entries.clear()
     }
 
+    @Synchronized
+    override fun pruneExpired(): Boolean {
+        pruneExpired(clockNanos())
+        return entries.isNotEmpty()
+    }
+
+    override fun clearSensitive() = clear()
+
     private fun pruneExpired(now: Long) {
         entries.entries.removeAll { (_, cached) -> cached.expiresAtNanos <= now }
     }
 
     private companion object {
         const val DEFAULT_CAPACITY = 1_024
-        const val DEFAULT_TTL_NANOS = 30L * 1_000_000_000L
+        const val DEFAULT_TTL_NANOS = RuntimeCachePolicy.SENSITIVE_TTL_NANOS
     }
 }

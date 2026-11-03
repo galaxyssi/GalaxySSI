@@ -59,6 +59,7 @@ data class CompactedConversationContext(
  * is offline and avoids recursively embedding an earlier generated summary.
  */
 object ConversationContextCompactor {
+    private const val ORIGINAL_GOAL_HEADER = "Original user goal (reference; later user changes take precedence):"
     private const val SUMMARY_HEADER = "[EARLIER CONVERSATION SUMMARY - REFERENCE ONLY]"
     private const val SUMMARY_FOOTER = "[END OF EARLIER CONVERSATION SUMMARY]"
     private const val TRUNCATED_MARKER = "\n...[content compacted]...\n"
@@ -70,7 +71,8 @@ object ConversationContextCompactor {
     private val dataPayload = Regex("""(?i)data:[^;\s]+;base64,[A-Za-z0-9+/=\s]{80,}""")
     private val longOpaqueValue = Regex("""\b[A-Za-z0-9+/=_-]{160,}\b""")
     private val pathOrUrl = Regex(
-        """(?i)(?:https://[^\s<>()]+|[A-Za-z]:\\[^\r\n<>:"|?*]+|/(?:[\w.\- ]+/)+[\w.\- ]+|[\w .()\-]+\.(?:pdf|docx?|xlsx?|csv|txt|md|json|ya?ml|zip|png|jpe?g|gif|webp|mp[34]|wav|py|kt|java|js|ts|rs|go|c|cpp|h))"""
+        // Bare filenames cannot span prose. Bound path segments to avoid quadratic backtracking.
+        """(?i)(?:https://[^\s<>()]{1,2048}|[A-Za-z]:\\[^\r\n<>:"|?*]{1,2048}|/(?:[\w.\- ]{1,128}/){1,32}[\w.\- ]{1,256}|(?<![\w.])[\w.()\-]{1,160}\.(?:pdf|docx?|xlsx?|csv|txt|md|json|ya?ml|zip|png|jpe?g|gif|webp|mp[34]|wav|py|kt|java|js|ts|rs|go|c|cpp|h)\b)"""
     )
     private val preferenceTerms = listOf(
         "prefer", "must", "never", "always", "constraint", "requirement", "decision",
@@ -217,6 +219,14 @@ object ConversationContextCompactor {
         return ceil(cjk * 1.15 + other / 4.0).toInt() + 6
     }
 
+    internal fun sanitizeReference(value: String): String = value
+        .replace(dataPayload, "[embedded payload removed]")
+        .replace(secretAssignment) { match ->
+            "${match.groupValues[1]}${match.groupValues[2]}[redacted]"
+        }
+        .replace(bearerSecret, "Bearer [redacted]")
+        .replace(longOpaqueValue, "[opaque payload removed]")
+
     private fun estimateTokens(item: ConversationContextItem): Int =
         estimateTokens(item.content) + 4
 
@@ -243,12 +253,19 @@ object ConversationContextCompactor {
         return groups
     }
 
+    internal fun handoffSummary(
+        messages: List<ConversationContextItem>, previousSummary: String, maximumTokens: Int
+    ): String = summarize(messages, previousSummary, maximumTokens)
+
     private fun summarize(
         older: List<ConversationContextItem>,
         previousSummary: String,
         maximumTokens: Int
     ): String {
         if (older.isEmpty()) return previousSummary
+        val originalGoal = previousSummary.lineSequence().dropWhile { it != ORIGINAL_GOAL_HEADER }
+            .drop(1).firstOrNull()?.removePrefix("- ")?.takeIf(String::isNotBlank)
+            ?: older.firstOrNull { it.role == ConversationContextRole.USER }?.content?.oneLine(800)
         val priorFacts = takeLastWithinTokenBudget(
             summaryBullets(previousSummary).asSequence(),
             (maximumTokens / 4).coerceAtLeast(64)
@@ -288,6 +305,7 @@ object ConversationContextCompactor {
             (maximumTokens / 6).coerceAtLeast(64)
         )
         val summary = buildString {
+            originalGoal?.let { append(ORIGINAL_GOAL_HEADER).append("\n- ").append(it).append('\n') }
             section("Prior durable facts", priorFacts)
             section("Earlier user goals", userGoals)
             section("Verified outcomes and decisions", outcomes)
@@ -335,14 +353,7 @@ object ConversationContextCompactor {
     }
 
     private fun sanitize(value: String, maximumCharacters: Int): String {
-        val redacted = value
-            .replace(dataPayload, "[embedded payload removed]")
-            .replace(secretAssignment) { match ->
-                "${match.groupValues[1]}${match.groupValues[2]}[redacted]"
-            }
-            .replace(bearerSecret, "Bearer [redacted]")
-            .replace(longOpaqueValue, "[opaque payload removed]")
-            .trim()
+        val redacted = sanitizeReference(value).trim()
         if (redacted.length <= maximumCharacters) return redacted
         val markerBudget = TRUNCATED_MARKER.length
         val remaining = (maximumCharacters - markerBudget).coerceAtLeast(2)

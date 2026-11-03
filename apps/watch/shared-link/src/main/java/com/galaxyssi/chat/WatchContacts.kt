@@ -135,15 +135,24 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
             require(payload.optString("pairing_token") == session.getString("token"))
             val claim = PhoneContactCard.claimSession(context, topic, payload.getString("pairing_token"),
                 card.getString("identity_fingerprint")) ?: error("QR already claimed")
-            if (claim.alreadyClaimed && existing != null) { replyToClaim(id); return }
+            if (claim.alreadyClaimed && existing != null) {
+                replyToClaim(id)
+                queueReceipt(id, payload)
+                return
+            }
         } else {
             require(existing != null && topic in routes.receiveWindow)
             require(existing.getJSONObject("card").getString("identity_fingerprint") == routes.remoteFingerprint)
             require(existing.getString("secret") == routes.linkSecret)
         }
-        // Repeated claims must still recover the bundle/decision if a broker dropped it.
-        if (!PhoneContactCard.acceptControlMessage(context, payload)) {
+        if (type == PhoneContactCard.RECEIPT_TYPE) {
+            acknowledgeControl(id, payload)
+            return
+        }
+        // A lost receipt must not repeat a completed state transition.
+        if (PhoneContactCard.wasControlAccepted(context, payload)) {
             if (type == PhoneContactCard.REQUEST_TYPE && existing != null) replyToClaim(id)
+            queueReceipt(id, payload)
             return
         }
         if (existing?.optString("status") == "deleted" && type != PhoneContactCard.REQUEST_TYPE) return
@@ -170,6 +179,27 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
             PhoneContactCard.REQUEST_TYPE -> { replyToClaim(id); if (record.optString("status") == "pending" && existing?.optString("status") != "pending") incoming(person(record), "", true) }
             PhoneContactCard.BUNDLE_REFRESH_TYPE -> queueControl(id, PhoneContactCard.BUNDLE_RESPONSE_TYPE)
         }
+        PhoneContactCard.acceptControlMessage(context, payload)
+        queueReceipt(id, payload)
+    }
+
+    private fun acknowledgeControl(id: String, receipt: JSONObject) {
+        val matched = controls.entries().firstOrNull { (_, raw) ->
+            val entry = JSONObject(raw)
+            entry.optString("peer") == id &&
+                PhonePairingControlReceipt.matches(entry.getJSONObject("payload"), receipt)
+        } ?: return
+        controls.remove(matched.first)
+    }
+
+    private fun queueReceipt(id: String, payload: JSONObject) {
+        val receipt = PhoneContactCard.controlPayload(
+            PhoneContactCard.RECEIPT_TYPE, id, PhoneContactCard.identityCard(context)
+        ).put("ack_control_id", payload.getString("control_id"))
+            .put("ack_payload_hash", PhonePairingControlReceipt.payloadHash(payload))
+        controls.writeString("$id:${PhoneContactCard.RECEIPT_TYPE}:${payload.getString("control_id")}",
+            JSONObject().put("peer", id).put("payload", receipt).toString())
+        lastControl = 0
     }
 
     private fun replyToClaim(id: String) {
@@ -288,8 +318,9 @@ class WatchContacts(private val context: Context, private val changed: () -> Uni
                 }
                 val link = link(entry.getString("peer")) ?: return@forEach
                 val request = payload.optString("type") == PhoneContactCard.REQUEST_TYPE
-                transport.bootstrap(if (request) entry.getString("pairing_topic") else link.routes.up,
+                val sent = transport.bootstrap(if (request) entry.getString("pairing_topic") else link.routes.up,
                     GalaxySSILinkProtocol.sealWirePacket(payload.toString(), if (request) entry.getString("pairing_secret") else link.routes.linkSecret), link.routes.receiveWindow.toSet())
+                if (sent && payload.optString("type") == PhoneContactCard.RECEIPT_TYPE) controls.remove(key)
             }
         }
         if (now - lastSend >= 10_000) {

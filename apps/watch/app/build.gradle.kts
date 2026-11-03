@@ -54,8 +54,8 @@ android {
         applicationId = "com.galaxyssi.watch"
         minSdk = 33
         targetSdk = 35
-        versionCode = 86
-        versionName = "0.3.54"
+        versionCode = 88
+        versionName = "0.3.56"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -173,9 +173,9 @@ val webFiles = listOf(
     "voice/metrics/VoiceLatencyTracer.kt", "voice/audio/VoiceCommunicationAudioSession.kt",
     "voice/modelstream/SentenceCommitter.kt", "ui/AgentComposerUiPolicy.kt", "ui/ParagraphSelectingTextView.kt", "ui/ParagraphSelectingEditText.kt",
     "AgentWebReadingWindow.kt", "AgentResearchTrace.kt", "ResearchEvidenceAudit.kt",
-    "CloudEvidenceCitations.kt", "ResearchQualityStandard.kt", "CloudWebToolLoopProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
+    "CloudEvidenceCitations.kt", "ResearchQualityStandard.kt", "CloudWebToolLoopProgress.kt", "CloudGoalPageProtocol.kt", "CloudMethodHistoryProgress.kt", "CloudWebGrounding.kt", "CloudWeatherLookup.kt", "CloudImageSearchEvidence.kt", "CloudImageAnnotationPlan.kt"
 )
-val webSlices = listOf("AgentModelSelectionSettings.kt", "MobileAgentConnectors.kt", "AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
+val webSlices = listOf("CollaborationResearchCandidates.kt", "AgentModelSelectionSettings.kt", "MobileAgentConnectors.kt", "AgentWebMediaNativeTools.kt", "AgentNativeToolRegistry.kt",
     "AgentWebIntelligenceNativeTools.kt", "AgentUntrustedEvidenceBoundary.kt", "GalaxySSIApplication.kt", "AgentRemoteOutcomeCodec.kt", "AgentResultReceipt.kt")
 val webParserOutput = layout.buildDirectory.dir("generated/phoneWebParser")
 val syncPhoneWebParser by tasks.registering {
@@ -199,8 +199,24 @@ val syncPhoneWebParser by tasks.registering {
             slice(phoneWebRoot.resolve("MobileAgentConnectors.kt").readText(),
                 "object AgentConnectorAvailability {", "    fun cloudModelReady(") + "}\n")
         webFiles.forEach { write(it, phoneWebRoot.resolve(it).readText().let { source ->
-            if (it == "CloudWebGrounding.kt") source.replace("package com.galaxyssi.chat", "package com.galaxyssi.chat\nimport com.galaxyssi.watch.R") else source
+            when (it) {
+                "CloudWebGrounding.kt" -> source.replace("package com.galaxyssi.chat", "package com.galaxyssi.chat\nimport com.galaxyssi.watch.R")
+                // The watch exposes web tools, not the phone's private collaboration-rule service.
+                // Reject its rule pages rather than replacing exact host-reference validation with trust in model text.
+                "CloudWebToolLoopProgress.kt" -> source
+                    .replace("CollaborationGoalContractStore.PAGE_FORMAT", "CloudGoalPageProtocol.FORMAT")
+                    .replace("CollaborationCloudRecall.NAME", "CloudGoalPageProtocol.RECALL_TOOL")
+                    .replace("CollaborationRemoteEvidenceProtocol.integer", "CloudGoalPageProtocol.integer")
+                    .replace("CollaborationEvolutionProtocol.rules(topic).toString()", "error(\"Collaboration rules are unavailable on Watch\")")
+                "CloudMethodHistoryProgress.kt" -> source
+                    .replace("CollaborationRemoteEvidenceProtocol.integer", "CloudGoalPageProtocol.integer")
+                    .replace("CollaborationResearchCandidates.same", "WatchSharedMethodIdentity.same")
+                else -> source
+            }
         }) }
+        // Share the exact pure identity comparison without compiling the phone's candidate store.
+        write("WatchSharedMethodIdentity.kt", "package com.galaxyssi.chat\nimport org.json.JSONObject\ninternal object WatchSharedMethodIdentity {\n" +
+            slice(phoneWebRoot.resolve("CollaborationResearchCandidates.kt").readText(), "        fun same(", "        fun reference(") + "}\n")
         write("GalaxySSIApplication.kt", phoneWebRoot.resolve("GalaxySSIApplication.kt").readText()
             .replace("class GalaxySSIApplication", "open class GalaxySSIApplication"))
         // The UI response bus below this boundary belongs to the phone; version fencing is shared.

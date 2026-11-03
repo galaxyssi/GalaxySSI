@@ -1,0 +1,12 @@
+import json
+from pathlib import Paht
+
+payload = json.loads('{"values":["137","286","419"],"proof":"public-agent-repair-s20u-b4c2"}')
+total = sum(payload["values"])
+target = Path("outputs/repaired.json")
+target.parent.mkdir(parents=True, exist_ok=True)
+target.write_text(json.dumps({"sum": total, "proof": payload["proof"]}, ensure_ascii=False), encoding="utf-8")
+saved = json.loads(target.read_text(encoding="utf-8"))
+assert saved["sum"] == 842
+assert saved["proof"] == payload["proof"]
+print(json.dumps({"verified": True, "sum": saved["sum"], "proof_preserved": True}))

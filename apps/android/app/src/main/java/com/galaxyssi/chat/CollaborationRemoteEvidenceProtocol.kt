@@ -2,49 +2,7 @@ package com.galaxyssi.chat
 
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
-
-/** Read-only, nonce-bound queries. No model dispatch, resume or effect operation is exposed here. */
-internal class CollaborationRemoteEvidenceClient {
-    private data class Pending(val desktop: String, val request: JSONObject,
-        val result: CompletableDeferred<JSONObject> = CompletableDeferred())
-    private val pending = ConcurrentHashMap<String, Pending>()
-
-    suspend fun query(desktop: String, fields: JSONObject, selection: JSONObject, timeoutMillis: Long = 8_000,
-        publish: (JSONObject) -> Boolean): JSONObject? {
-        require(CollaborationRemoteEvidenceProtocol.validScope(fields) && desktop.isNotBlank())
-        val nonce = UUID.randomUUID().toString()
-        val request = CollaborationRemoteEvidenceProtocol.scope(fields)
-            .put("type", "agent_task_evidence_request").put("desktop_id", desktop).put("request_id", nonce)
-        listOf("mode", "after_sequence", "evidence_id", "sha256", "page_index").forEach {
-            if (selection.has(it)) request.put(it, selection.get(it))
-        }
-        val waiter = Pending(desktop, request)
-        pending[nonce] = waiter
-        try {
-            if (!publish(request)) return null
-            return withTimeoutOrNull(timeoutMillis) { waiter.result.await() }
-        } finally { pending.remove(nonce, waiter); waiter.result.cancel() }
-    }
-
-    fun receive(payload: JSONObject, authenticatedDesktop: String): Boolean {
-        val waiter = pending[payload.optString("request_id")] ?: return false
-        val request = waiter.request
-        if (authenticatedDesktop != waiter.desktop || payload.opt("type") != "agent_task_evidence" ||
-            payload.opt("contract") != CollaborationRemoteEvidenceProtocol.CONTRACT ||
-            !CollaborationRemoteEvidenceProtocol.sameScope(request, payload) ||
-            payload.opt("mode") != request.opt("mode") || payload.opt("status") !in setOf("ready", "unavailable")) return false
-        if (payload.opt("status") == "ready" && request.opt("mode") == "page" &&
-            listOf("page_index", "sha256", "evidence_id").any { payload.opt(it) != request.opt(it) }) return false
-        return waiter.result.complete(JSONObject(payload.toString()))
-    }
-
-    internal val pendingCount get() = pending.size
-}
 
 internal object CollaborationRemoteEvidenceProtocol {
     const val CONTRACT = "galaxyssi.desktop-tool-evidence/1"
@@ -52,8 +10,19 @@ internal object CollaborationRemoteEvidenceProtocol {
     const val TRUST = "execution_observed_not_claim_verified"
     // A per-object phone parsing guard, not a source-count or research-step limit. Larger originals stay remote.
     const val MAX_BODY_BYTES = 8L * 1024 * 1024
+    const val INLINE_PAGE_BYTES = 16_384L
     val TYPES = setOf("commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch")
+    val RECORDED_TOOLS = TYPES.mapTo(linkedSetOf()) { "codex.$it" }
+    fun recordedTool(type: String): String {
+        require(type in TYPES) { "Unsupported Desktop evidence event type" }
+        return "codex.$type"
+    }
     private val HASH = Regex("[a-f0-9]{64}")
+    fun diagnosticToken(value: JSONObject): String {
+        val id = value.opt("request_id") as? String ?: return "unavailable"
+        if (id.length !in 1..128) return "unavailable"
+        return AgentResultRecoveryClient.sha256(id.toByteArray(Charsets.UTF_8)).take(16)
+    }
     fun integer(value: JSONObject, key: String): Long? = when (val number = value.opt(key)) {
         is Int -> number.toLong()
         is Long -> number

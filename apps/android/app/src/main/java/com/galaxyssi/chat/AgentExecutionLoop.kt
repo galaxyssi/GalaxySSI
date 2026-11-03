@@ -358,7 +358,9 @@ class AgentExecutionLoop private constructor(
 
     fun pause(reason: String = "Task paused"): AgentExecutionLoopEvent {
         val current = requireNotNull(snapshot) { "Agent execution loop has not started" }
-        val resumable = current.phase.takeIf { it.isActive } ?: current.resumePhase
+        // A pre-dispatch block must recheck the original plan after explicit resume.
+        val resumable = if (current.phase == AgentExecutionLoopPhase.BLOCKED) AgentExecutionLoopPhase.PLAN
+            else current.phase.takeIf { it.isActive } ?: current.resumePhase
         val event = transition(AgentExecutionLoopPhase.PAUSED, reason)
         val adjusted = event.snapshot.copy(resumePhase = resumable)
         snapshot = adjusted
@@ -428,6 +430,8 @@ class AgentExecutionLoop private constructor(
         retry: Boolean
     ) {
         if (from == to) return
+        if (from == AgentExecutionLoopPhase.BLOCKED &&
+            to in setOf(AgentExecutionLoopPhase.PAUSED, AgentExecutionLoopPhase.CANCELLED)) return
         if (from.isTerminal) {
             require(retry && from in RETRYABLE_TERMINAL_PHASES && to in RETRY_TARGET_PHASES) {
                 "Terminal Agent loop cannot transition from $from to $to"

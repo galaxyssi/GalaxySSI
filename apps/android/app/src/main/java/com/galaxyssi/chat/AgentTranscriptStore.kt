@@ -233,9 +233,9 @@ object AgentTranscriptPresentationPolicy {
     ): Boolean = !completed && executionCancellable && taskId.isNotBlank()
 
     fun processClockStopsFor(status: AgentWorkspaceStatus): Boolean = status in setOf(
-        AgentWorkspaceStatus.WAITING_CONFIRMATION,
-        AgentWorkspaceStatus.PAUSED,
         AgentWorkspaceStatus.BLOCKED,
+        AgentWorkspaceStatus.PAUSED,
+        AgentWorkspaceStatus.WAITING_CONFIRMATION,
         AgentWorkspaceStatus.COMPLETED,
         AgentWorkspaceStatus.FAILED,
         AgentWorkspaceStatus.CANCELLED
@@ -299,10 +299,21 @@ object AgentTranscriptPresentationPolicy {
     fun visibleProcessSegments(entries: List<AgentTranscriptEntry>): List<ProcessSegment> =
         processSegments(entries).mapNotNull { segment ->
             val visible = segment.entries.filter {
-                segment.kind == ProcessContentKind.NARRATION || it.dedupeKey.startsWith("connector-event:")
+                segment.kind == ProcessContentKind.NARRATION ||
+                    (it.dedupeKey.startsWith("connector-event:") && !isHiddenToolReceiptDisplay(it.text))
             }
             visible.takeIf { it.isNotEmpty() }?.let { segment.copy(entries = it) }
         }
+
+    // Keep execution receipts in storage without repeating routine search/tool statuses in chat.
+    private fun isHiddenToolReceiptDisplay(text: String): Boolean {
+        val value = text.trim()
+        return listOf("Completed: web search", "已完成：搜索网页", "Running: web search", "正在执行：搜索网页",
+            "Completed: tool call", "已完成：调用工具").any { prefix ->
+            value.startsWith(prefix, ignoreCase = true) &&
+                value.substring(prefix.length).let { it.isEmpty() || it.startsWith(" · ") }
+        }
+    }
 
     fun controlMessageKind(value: String): ControlMessageKind? = when (
         value.trim().lowercase()
@@ -340,6 +351,7 @@ object AgentTranscriptPresentationPolicy {
             "started",
             "working",
             "working complete",
+            "planning",
             "completed"
         )
     }
@@ -438,7 +450,7 @@ internal object AgentConversationAutoTitlePolicy {
             !AgentVoiceTranscriptPolicy.isPending(entry)
 }
 
-private data class AgentContextArtifact(
+internal data class AgentContextArtifact(
     val id: String,
     val kind: String,
     val name: String,
@@ -458,7 +470,7 @@ private data class AgentContextArtifact(
             }
 }
 
-private fun AgentTranscriptEntry.contextArtifacts(): List<AgentContextArtifact> =
+internal fun AgentTranscriptEntry.contextArtifacts(): List<AgentContextArtifact> =
     AgentRichContentCodec.decode(richOutputJson).mapNotNull { block ->
         if (block.type !in CONTEXT_ARTIFACT_TYPES) return@mapNotNull null
         val name = block.title.ifBlank {
@@ -625,35 +637,40 @@ data class AgentConversationContext(
             }
             inputBudget = (inputBudget * 0.72).toInt().coerceAtLeast(2_048)
         }
-        val latest = turns.lastOrNull()
-        val fallbackSummary = ConversationContextCompactor.fitTextToTokenBudget(
-            summary,
-            maximumTokens = (safeMaximum / 3).coerceAtLeast(512),
-            preserveTail = false
-        )
-        val fallbackItems = latest?.let { entry ->
-            listOf(
-                ConversationContextItem(
-                    id = entry.id,
-                    role = if (entry.role == AgentTranscriptRole.USER) {
-                        ConversationContextRole.USER
-                    } else {
-                        ConversationContextRole.ASSISTANT
-                    },
-                    content = ConversationContextCompactor.fitTextToTokenBudget(
-                        entry.contextText(),
-                        maximumTokens = (safeMaximum / 2).coerceAtLeast(768)
-                    ),
-                    groupId = entry.turnId.ifBlank { "entry:${entry.id}" }
-                )
-            )
-        }.orEmpty()
-        return encodeTransportBlock(
-            fallbackSummary,
-            fallbackItems,
-            entriesById,
-            globalContext = transportGlobalContext
-        )
+        return encodeBoundedHandoff(sourceItems, entriesById, safeMaximum, transportGlobalContext)
+    }
+
+    private fun encodeBoundedHandoff(
+        source: List<ConversationContextItem>,
+        entriesById: Map<String, AgentTranscriptEntry>,
+        maximumTokens: Int,
+        globalContext: String
+    ): String {
+        val groups = source.groupBy { it.groupId }.values.toList()
+        var recentGroups = groups.takeLast(3)
+        var summaryTokens = maximumTokens / 3
+        var itemTokens = ((maximumTokens - summaryTokens) / recentGroups.sumOf { it.size }.coerceAtLeast(1))
+            .coerceAtLeast(32)
+        var artifactLimit = MAX_COMPACT_ARTIFACTS_PER_ENTRY
+        repeat(24) {
+            val recent = recentGroups.flatten()
+            val recentIds = recent.mapTo(hashSetOf(), ConversationContextItem::id)
+            val older = source.filterNot { it.id in recentIds }
+            // Summarize discarded dialogue, never fall back to the pre-compaction (possibly empty) summary.
+            val handoff = ConversationContextCompactor.handoffSummary(older, summary, summaryTokens)
+            val boundedSummary = ConversationContextCompactor.fitTextToTokenBudget(handoff, summaryTokens)
+            val boundedItems = recent.map { item -> item.copy(content =
+                ConversationContextCompactor.fitTextToTokenBudget(item.content, itemTokens)) }
+            val encoded = encodeTransportBlock(boundedSummary, boundedItems, entriesById,
+                includeAttachmentIndex = false, maximumArtifactsPerEntry = artifactLimit,
+                globalContext = ConversationContextCompactor.fitTextToTokenBudget(globalContext, maximumTokens / 16))
+            if (ConversationContextCompactor.estimateTokens(encoded) <= maximumTokens) return encoded
+            if (itemTokens > 48) itemTokens = (itemTokens * 0.7).toInt().coerceAtLeast(48)
+            else if (artifactLimit > 0) artifactLimit--
+            else if (recentGroups.size > 1) recentGroups = recentGroups.drop(1)
+            else summaryTokens = (summaryTokens * 0.8).toInt().coerceAtLeast(128)
+        }
+        error("Conversation handoff metadata exceeds transport capacity; history was not discarded")
     }
 
     private fun encodeCompactTransportBlock(
@@ -804,7 +821,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     private val preferences = AgentEncryptedDatabase(context.applicationContext, PREFS)
     private val windowState by lazy { AgentWindowStateStore(appContext) }
     private val conversationDatabase = sharedConversationDatabase(context.applicationContext)
-    private val entryDatabase = AgentTranscriptEntryDatabase(context.applicationContext)
+    private val entryDatabase = AgentTranscriptEntryDatabase.shared(context.applicationContext)
     private val entryMutationLock = AgentTranscriptWindowMutationLock
     @Volatile private var draftConversation: AgentConversation? = null
     @Volatile private var emptyConversationsPruned = false
@@ -867,7 +884,30 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     internal fun prepareConversationPaging() {
         prepareWindowDraftStorage()
         conversationDatabase.prepareForPaging()
+        reconcileUnreadReplies()
     }
+
+    internal fun reconcileUnreadReplies(): Int = AgentReplyUnreadStore.snapshot(appContext).entries.sumOf { (id, tokens) ->
+        synchronized(entryMutationLock) {
+            val missing = tokens.filter { token ->
+                if (!entryDatabase.containsUnreadToken(id, token)) true
+                else if (token.startsWith(ConversationScheduledReplyPolicy.RESULT_PREFIX)) {
+                    // Inspect only pending schedule results, never scan/decrypt the whole history.
+                    val entry = entryDatabase.findByDedupeKey(id, token)
+                    entry != null && (ConversationScheduledTasks.isQuietLegacyStatus(appContext, entry) ||
+                        ownedEntries(listOf(entry)).isEmpty())
+                } else false
+            }.toSet()
+            AgentReplyUnreadStore.discard(appContext, id, missing)
+        }
+    }
+
+    internal fun readRepliesThrough(conversationId: String, sequence: Long, tokens: Set<String>): Int =
+        synchronized(entryMutationLock) {
+            AgentReplyUnreadStore.discard(appContext, conversationId, tokens.filterTo(mutableSetOf()) {
+                entryDatabase.unreadTokenThrough(conversationId, it, sequence)
+            })
+        }
 
     private fun prepareWindowDraftStorage() {
         ensureConversationMigration()
@@ -1144,7 +1184,16 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
     }
 
     fun list(conversationId: String = activeConversation().id): List<AgentTranscriptEntry> =
-        entryDatabase.listConversation(conversationId)
+        ownedEntries(entryDatabase.listConversation(conversationId))
+
+    internal fun ownedEntries(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
+        val projected = entries.map { entry ->
+            ConversationScheduledReplyPolicy.projectLegacy(entry, ::conversationIdForTurn,
+                { taskId -> AgentProactiveTaskStore(appContext).task(taskId)?.action?.conversationId },
+                ::resolveMergedConversationId)
+        }
+        return AgentTranscriptOwnership.filter(projected, ::conversationIdForTurn, ::resolveMergedConversationId)
+    }
 
     internal fun latestEntriesByConversation(): Map<String, AgentTranscriptEntry> =
         entryDatabase.latestEntriesByConversation()
@@ -1182,8 +1231,15 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         conversationId: String = activeConversation().id,
         beforeSequenceExclusive: Long? = null,
         pageSize: Int = 100
-    ): AgentTranscriptPage =
-        entryDatabase.listConversationPage(conversationId, beforeSequenceExclusive, pageSize)
+    ): AgentTranscriptPage {
+        var before = beforeSequenceExclusive
+        while (true) {
+            val page = entryDatabase.listConversationPage(conversationId, before, pageSize)
+            val entries = ownedEntries(page.entries)
+            if (entries.isNotEmpty() || !page.hasMore) return page.copy(entries = entries)
+            before = requireNotNull(page.nextBeforeSequence)
+        }
+    }
 
     internal fun clearRuntimeDecodeCache() {
         entryDatabase.clearRuntimeDecodeCache()
@@ -1196,11 +1252,15 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         pageSize: Int = 100
     ): AgentTranscriptDelta =
         entryDatabase.listConversationAfter(conversationId, afterSequenceExclusive, pageSize)
+            .let { it.copy(entries = ownedEntries(it.entries)) }
 
     internal fun entriesForTurn(turnId: String): List<AgentTranscriptEntry> {
         val cleanTurnId = turnId.trim()
         return if (cleanTurnId.isBlank()) emptyList() else entryDatabase.listTurn(cleanTurnId)
     }
+
+    internal fun firstTimestampForTurn(conversationId: String, turnId: String): Long? =
+        entryDatabase.firstTimestampForTurn(conversationId.trim(), turnId.trim())
 
     internal fun entriesForTask(taskId: String): List<AgentTranscriptEntry> {
         val cleanTaskId = taskId.trim()
@@ -1295,10 +1355,16 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return mutation.result
     }
 
-    @Synchronized
     fun deleteEntry(entryId: String): Boolean {
-        val removed = entryDatabase.findById(entryId) ?: return false
-        if (!entryDatabase.deleteById(entryId)) return false
+        val event = synchronized(this) { deleteEntryLocked(entryId) } ?: return false
+        publishDeletedEntry(event)
+        return true
+    }
+
+    private fun deleteEntryLocked(entryId: String): Pair<AgentConversation?, AgentTranscriptEntry>? {
+        val removed = entryDatabase.findById(entryId) ?: return null
+        if (!entryDatabase.deleteById(entryId)) return null
+        AgentReplyUnreadStore.read(appContext, removed.conversationId, listOf(removed))
         preparedContextCache.invalidate(removed.conversationId)
         emptyConversationsPruned = false
         invalidateCompactionIfNeeded(removed.conversationId, listOf(removed))
@@ -1308,31 +1374,26 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         ) {
             refreshLatestMessagePreview(removed.conversationId)
         }
-        conversationForEvent(removed.conversationId)?.let { conversation ->
-            GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, removed)
-        }
-        return true
+        return conversationForEvent(removed.conversationId) to removed
     }
 
-    @Synchronized
     fun deleteByDedupeKey(conversationId: String, dedupeKey: String): Boolean {
         val cleanKey = dedupeKey.trim()
         if (cleanKey.isBlank()) return false
-        val removed = entryDatabase.findByDedupeKey(conversationId, cleanKey) ?: return false
-        if (!entryDatabase.deleteById(removed.id)) return false
-        preparedContextCache.invalidate(conversationId)
-        emptyConversationsPruned = false
-        invalidateCompactionIfNeeded(conversationId, listOf(removed))
-        if (
-            removed.role != AgentTranscriptRole.PROCESS &&
-            conversationForEvent(conversationId)?.latestMessageEntryId == removed.id
-        ) {
-            refreshLatestMessagePreview(conversationId)
-        }
-        conversationForEvent(conversationId)?.let { conversation ->
-            GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, removed)
-        }
+        val event = synchronized(this) {
+            val removed = entryDatabase.findByDedupeKey(conversationId, cleanKey) ?: return false
+            deleteEntryLocked(removed.id)
+        } ?: return false
+        publishDeletedEntry(event)
         return true
+    }
+
+    private fun publishDeletedEntry(event: Pair<AgentConversation?, AgentTranscriptEntry>) {
+        // Learning may wait for a large background read. Never retain the transcript monitor here.
+        if (event.second.role == AgentTranscriptRole.PROCESS) return
+        event.first?.let { conversation ->
+            GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, event.second)
+        }
     }
 
     fun context(
@@ -1355,7 +1416,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         excludeTurnId: String
     ): AgentConversationContext {
         val window = unsummarizedDialogue(conversation)
-        val dialogue = window.dialogue.filterNot {
+        val dialogue = ownedEntries(window.dialogue).filterNot {
             excludeTurnId.isNotBlank() && it.turnId == excludeTurnId
         }
         val compacted = compileContext(window.conversation, dialogue)
@@ -1445,6 +1506,25 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             }
         }
         return true
+    }
+
+    internal fun persistCollaborationDelivery(conversationId: String, taskId: String, turnId: String,
+        dedupeKey: String, text: String, at: Long, metadata: String) {
+        require(dedupeKey.startsWith("collaboration-delivery:") && text.isNotBlank())
+        require(conversationDatabase.read(conversationId) != null) { "Interim conversation no longer exists" }
+        val existing = synchronized(entryMutationLock) { entryDatabase.findByDedupeKey(conversationId, dedupeKey) }
+        if (existing == null) upsert(AgentTranscriptRole.PROCESS, text, dedupeKey, at, conversationId, turnId, taskId,
+            collaborationJson = metadata)
+        val saved = requireNotNull(synchronized(entryMutationLock) { entryDatabase.findByDedupeKey(conversationId, dedupeKey) }) {
+            "Interim conversation entry was not persisted"
+        }
+        require(saved.role == AgentTranscriptRole.PROCESS && saved.text == text && saved.turnId == turnId && saved.taskId == taskId) {
+            "An interim conversation entry cannot be replaced with different content or ownership"
+        }
+        if (conversationDatabase.read(conversationId) == null) {
+            entryDatabase.deleteById(saved.id)
+            throw IllegalStateException("Interim conversation was deleted during persistence")
+        }
     }
 
     fun upsert(
@@ -1565,22 +1645,21 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         emptyConversationsPruned = false
     }
 
-    @Synchronized
     fun removeExactText(text: String): Int {
-        val current = allEntries()
-        val removed = current.filter { it.text == text }
-        if (removed.isEmpty()) return 0
-        entryDatabase.deleteEntries(removed.map(AgentTranscriptEntry::id))
-        emptyConversationsPruned = false
-        val removedByConversation = removed.groupBy(AgentTranscriptEntry::conversationId)
-        preparedContextCache.invalidate(removedByConversation.keys)
-        removedByConversation.forEach { (conversationId, entries) ->
-            conversationForEvent(conversationId)?.let { conversation ->
-                entries.forEach { entry ->
-                    GlobalConversationEventBus.publishTranscriptEntryDeleted(appContext, conversation, entry)
-                }
+        val removed = synchronized(this) {
+            val entries = allEntries().filter { it.text == text }
+            if (entries.isEmpty()) return 0
+            entryDatabase.deleteEntries(entries.map(AgentTranscriptEntry::id))
+            emptyConversationsPruned = false
+            val byConversation = entries.groupBy(AgentTranscriptEntry::conversationId)
+            preparedContextCache.invalidate(byConversation.keys)
+            byConversation.flatMap { (conversationId, items) ->
+                AgentReplyUnreadStore.read(appContext, conversationId, items)
+                val conversation = conversationForEvent(conversationId)
+                items.map { conversation to it }
             }
         }
+        removed.forEach(::publishDeletedEntry)
         return removed.size
     }
 
@@ -1772,7 +1851,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
                 beforeSequenceExclusive = beforeSequence,
                 pageSize = MAX_PREVIEW_BACKFILL_PAGE_SIZE
             )
-            page.entries.lastOrNull { it.role != AgentTranscriptRole.PROCESS }?.let { return it }
+            ownedEntries(page.entries).lastOrNull { it.role != AgentTranscriptRole.PROCESS }?.let { return it }
             beforeSequence = page.nextBeforeSequence
         } while (page.hasMore && beforeSequence != null)
         return null
@@ -1866,7 +1945,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             return AgentContextWindow(
                 conversation = conversation,
                 dialogue = AgentFinalResponseIdentity.coalesce(
-                    entryDatabase.listConversation(conversation.id)
+                    ownedEntries(entryDatabase.listConversation(conversation.id))
                 ).filter {
                     it.role != AgentTranscriptRole.PROCESS &&
                         !AgentVoiceTranscriptPolicy.isPending(it)
@@ -1880,7 +1959,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         if (recent != null) {
             return AgentContextWindow(
                 conversation = conversation,
-                dialogue = AgentFinalResponseIdentity.coalesce(recent)
+                dialogue = AgentFinalResponseIdentity.coalesce(ownedEntries(recent))
                     .filter {
                         it.role != AgentTranscriptRole.PROCESS &&
                             !AgentVoiceTranscriptPolicy.isPending(it)
@@ -1902,7 +1981,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return AgentContextWindow(
             conversation = reset,
             dialogue = AgentFinalResponseIdentity.coalesce(
-                entryDatabase.listConversation(conversation.id)
+                ownedEntries(entryDatabase.listConversation(conversation.id))
             ).filter {
                 it.role != AgentTranscriptRole.PROCESS &&
                     !AgentVoiceTranscriptPolicy.isPending(it)
@@ -1914,8 +1993,8 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         conversationId: String,
         changedEntries: List<AgentTranscriptEntry>
     ) {
-        val conversation = conversations(includeArchived = true)
-            .firstOrNull { it.id == conversationId } ?: return
+        if (changedEntries.none { it.role != AgentTranscriptRole.PROCESS }) return
+        val conversation = conversationForEvent(conversationId) ?: return
         if (conversation.contextCompactedThroughMillis <= 0L) return
         val affectsSummary = changedEntries.any { entry ->
             entry.role != AgentTranscriptRole.PROCESS &&

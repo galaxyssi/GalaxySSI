@@ -28,6 +28,8 @@ import com.galaxyssi.chat.voice.VoiceInteractionPhase
 import com.galaxyssi.chat.voice.VoiceInteractionState
 import com.galaxyssi.chat.voice.audio.AcousticBargeInCallbacks
 import com.galaxyssi.chat.voice.audio.AcousticBargeInCapture
+import com.galaxyssi.chat.voice.audio.AcousticBargeInPolicy
+import com.galaxyssi.chat.voice.audio.PcmRecorderPhase
 import com.galaxyssi.chat.voice.audio.PcmSnapshot
 import com.galaxyssi.chat.voice.audio.PcmWaveFileAdapter
 import com.galaxyssi.chat.voice.metrics.VoiceLatencyTelemetry
@@ -52,6 +54,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     private var pendingPermission = false
     private var pendingWakePermission = false
     private var speechRevision = 0L
+    private var captureRevision = 0L
+    private var pendingDuplexListen: Runnable? = null
     private var wakeArmed = false
     private var ownsScreenCapture = false
     private var screenPermissionGeneration: Long? = null
@@ -71,7 +75,8 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     private var wakeDetailView: TextView? = null
     private var wakeToggle: Switch? = null
     private var bargeAsr: AgentBargeInTranscription? = null
-    internal val bargeIn = AcousticBargeInCapture(activity.voiceAudioHub(), activity.voiceAssistantScope) {
+    internal val bargeIn = AcousticBargeInCapture(activity.voiceAudioHub(), activity.voiceAssistantScope,
+        activity.microsoftTts.echoReference) {
         activity.runOnUiThread(it)
     }
     private var bargeInUnavailableForCall = false
@@ -136,6 +141,17 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             }
         }
         panel.hangup.setOnClickListener { end() }
+        AppVoiceControlBridge.bind(activity)
+        communicationAudio.onRouteChanged = { panel.route.text = communicationAudio.label() }
+        panel.route.setOnClickListener {
+            val devices = communicationAudio.choices()
+            if (devices.isNotEmpty()) AlertDialog.Builder(externalSurface.get() ?: activity)
+                .setTitle(R.string.voice_control_audio_route)
+                .setItems(devices.map { communicationAudio.label(it) }.toTypedArray()) { _, index ->
+                    if (!communicationAudio.select(devices[index])) Toast.makeText(activity,
+                        R.string.voice_control_route_failed, Toast.LENGTH_SHORT).show()
+                }.show()
+        }
         panel.camera.setOnClickListener { toggleCamera() }
         panel.screen.setOnClickListener {
             if (!session.active || !visible() || screenPermissionGeneration != null ||
@@ -150,7 +166,104 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
     }
 
-    fun visible(): Boolean = foreground && hasAgentSurface()
+    private var externalSurface = java.lang.ref.WeakReference<android.app.Activity>(null)
+    private val reminders by lazy { AgentVoiceReminders(activity) }
+    private var reminderHeaderVisible = false
+    private var resumeAfterPageChange = false
+    private var pendingStart: String? = null
+    private val newsPlayback = AgentVoiceNewsPlayback(activity, onChunk = {
+        activity.voiceAssistantSpeaking = true
+        resumeDuplexListening()
+    }, onDone = {
+        activity.voiceAssistantSpeaking = false
+        if (VoiceNewsPlaybackBus.current.state == "failed") Toast.makeText(activity, R.string.agent_reply_speech_failed, Toast.LENGTH_SHORT).show()
+        AppVoiceControlBridge.update(activity); resumeDuplexListening(afterPlayback = true)
+    }, onPaused = {
+        if (activity.activeProgressiveSpeechSessionId.isBlank()) activity.voiceAssistantSpeaking = false
+        if (!bargeIn.collectingUtterance) stopAcousticCapture()
+        if (session.active && !activity.voiceAssistantAwake) {
+            session.mute(true)
+            panel.setMuted(true)
+            showStatus(R.string.voice_news_paused)
+        }
+    })
+    val newsArticleId get() = newsPlayback.articleId
+    val contextArticleId get() = (externalSurface.get() as? ProactiveAttentionActivity)?.visibleVoiceArticleId()
+        ?.takeIf(String::isNotBlank) ?: newsArticleId
+    val newsPlaybackState get() = newsPlayback.state
+
+    fun hasForegroundHost(): Boolean = foreground || externalSurface.get() != null
+    fun hasExternalForegroundHost(): Boolean = externalSurface.get() != null
+    fun visible(): Boolean = hasForegroundHost() && (hasAgentSurface() ||
+        session.active && (externalSurface.get() != null || activity.chatPage.visibility == View.VISIBLE))
+
+    fun attachExternalSurface(host: android.app.Activity, container: LinearLayout) {
+        if (!session.active) return
+        externalSurface = java.lang.ref.WeakReference(host)
+        activity.restoreRuntimePlaintextAfterForeground()
+        activity.conversationWindow.resume()
+        AgentConnectorStreamBus.addListener(activity.agentConnectorStreamListener)
+        activity.requestForegroundAgentReload()
+        (panel.parent as? ViewGroup)?.removeView(panel)
+        container.addView(panel, LinearLayout.LayoutParams(-1, -2))
+        panel.visibility = View.VISIBLE
+        if (resumeAfterPageChange) { resumeAfterPageChange = false; resumeForegroundVoice() }
+    }
+
+    fun detachExternalSurface(host: android.app.Activity) {
+        if (externalSurface.get() !== host) return
+        resumeAfterPageChange = session.active && !session.muted
+        pauseMicrophone(preserveNews = newsPlayback.playing)
+        panel.transcript.text = ""
+        communicationAudio.release()
+        externalSurface.clear()
+        activity.conversationWindow.pause()
+        AgentConnectorStreamBus.removeListener(activity.agentConnectorStreamListener)
+        activity.clearRuntimePlaintextForBackground()
+        (panel.parent as? ViewGroup)?.removeView(panel)
+    }
+
+    fun returnToMainSurface() {
+        externalSurface.get()?.let { host ->
+            detachExternalSurface(host)
+            host.finish()
+        }
+    }
+
+    fun startWhenForeground(command: String = "") {
+        if (foreground && hasAgentSurface()) start(command) else pendingStart = command
+    }
+
+    fun controlPlayback(input: AgentNativeJsonObject): AgentNativeJsonObject {
+        when (input["operation"]) {
+            "play_news" -> {
+                val ids = (input["article_ids"] as? List<*>)?.mapNotNull { it as? String }.orEmpty()
+                if (ids.isEmpty()) throw AppControlFailure("news_queue_empty", "Choose observed article IDs first.")
+                pauseMicrophone(); session.mute(false)
+                requirePlaybackRoute()
+                newsPlayback.replace(ids)
+            }
+            "pause" -> { newsPlayback.pause(); listen(afterPlayback = true) }
+            "stop" -> { newsPlayback.stop(clear = true); listen(afterPlayback = true) }
+            "resume", "next" -> {
+                pauseMicrophone(); session.mute(false)
+                requirePlaybackRoute()
+                if (input["operation"] == "next") newsPlayback.next() else newsPlayback.resume()
+            }
+            else -> throw AppControlFailure("invalid_playback_action", "Unknown playback operation.")
+        }
+        AppVoiceControlBridge.update(activity)
+        return mapOf("article_id" to newsArticleId, "state" to "queued", "previous_state" to newsPlaybackState,
+            "requested_action" to input["operation"], "command_queued" to true)
+    }
+
+    private fun requirePlaybackRoute() {
+        if (!communicationAudio.acquire()) {
+            session.mute(true)
+            showStatus(R.string.voice_call_audio_route_unavailable)
+            throw AppControlFailure("audio_route_unavailable", "Another call owns audio, or the selected audio route is unavailable.")
+        }
+    }
 
     private fun hasAgentSurface(): Boolean = activity.activeMainTab == PAGE_AGENT &&
         activity.agentPage.visibility == View.VISIBLE && activity.mainPage.visibility == View.VISIBLE &&
@@ -169,13 +282,16 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         activity.agentPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
         entry.isSelected = session.active
         entry.imageTintList = ColorStateList.valueOf(activity.getColor(
-            if (session.active) R.color.agent_voice_transcript_dot else R.color.text_primary
+            R.color.agent_voice_transcript_dot
         ))
     }
 
     fun onForeground(value: Boolean) {
         foreground = value
         if (!value) {
+            reminders.setActive(false)
+            resumeAfterPageChange = session.active && !session.muted
+            panel.transcript.text = ""
             cameraPreview.stop()
             cancelVisualSubmission()
             if (screenCaptureJob != null) {
@@ -184,13 +300,21 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             }
             chineseWake.stop()
             wakeArmed = false
-            if (session.active) pauseMicrophone() else activity.releaseWakeWordEngine()
+            if (session.active) pauseMicrophone(preserveNews = newsPlayback.playing) else activity.releaseWakeWordEngine()
             communicationAudio.release()
+        } else if (pendingStart != null) {
+            val command = pendingStart.orEmpty()
+            pendingStart = null
+            start(command)
         } else if (pendingPermission && activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             pendingPermission = false
             start()
         } else if (resumeAfterVisualInput && session.active) {
             onVisualInputReturned()
+        } else if (resumeAfterPageChange && session.active) {
+            resumeAfterPageChange = false
+            onNavigationChanged()
+            resumeForegroundVoice()
         } else if (!session.active) {
             refreshWake()
         }
@@ -198,10 +322,22 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             activity.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             onCameraPermission(true)
         }
+        if (value) onNavigationChanged()
     }
 
     fun onNavigationChanged() {
-        if (session.active && (!hasAgentSurface() || activity.agentTranscriptStore.activeConversation().id != session.conversationId)) end()
+        if (session.active && activity.agentTranscriptStore.activeConversation().id != session.conversationId) end()
+        if (externalSurface.get() == null) {
+            val row = if (session.active && activity.chatPage.visibility == View.VISIBLE)
+                activity.findViewById<View>(R.id.chatComposerRow) else activity.agentComposerRow
+            val container = row.parent as LinearLayout
+            if (panel.parent !== container) {
+                (panel.parent as? ViewGroup)?.removeView(panel)
+                container.addView(panel, container.indexOfChild(row), LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+        render()
+        AppVoiceControlBridge.update(activity)
         refreshWake()
     }
 
@@ -375,7 +511,12 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         pendingVisualTraceId = ""
     }
 
-    fun end() {
+    fun end(preserveNews: Boolean = false) {
+        pendingStart = null
+        resumeAfterPageChange = false
+        panel.transcript.text = ""
+        reminders.setActive(false)
+        if (!preserveNews) newsPlayback.stop(clear = true)
         resumeAfterVisualInput = false
         screenConsentDialog?.dismiss()
         screenCaptureJob?.cancel()
@@ -389,7 +530,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             activity.dispatchVoiceCoordinator(VoiceInteractionEvent.Cancelled(trace, "inline_call_ended"))
         }
         speechRevision++
-        stopReplySpeech()
+        stopReplySpeech(preserveNews = true)
         wakeArmed = false
         resumeAfterVisualInput = false
         stopLevelTick()
@@ -398,7 +539,20 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         communicationAudio.release()
         ownsScreenCapture = false
         render()
+        AppVoiceControlBridge.update(activity)
         // Hanging up ends media, not an already dispatched agent task.
+    }
+
+    fun release() { end(preserveNews = true); newsPlayback.release() }
+
+    private fun resumeForegroundVoice() {
+        if (!newsPlayback.playing && session.latestTurnId.isBlank()) { listen(); return }
+        session.mute(false)
+        panel.setMuted(false)
+        if (newsPlayback.playing) {
+            activity.voiceAssistantSpeaking = true
+        }
+        if (communicationAudio.acquire()) resumeDuplexListening()
     }
 
     private fun expand() {
@@ -447,11 +601,15 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
     }
 
-    private fun stopReplySpeech() {
+    private fun stopReplySpeech(preserveNews: Boolean = false) {
+        if (!preserveNews && newsPlayback.playing) newsPlayback.pause()
         activity.applyAgentReplySpeechCommand(replySpeech.controller.stop(), replySpeech.controller)
     }
 
     fun stopAcousticCapture() {
+        captureRevision++
+        pendingDuplexListen?.let(activity.handler::removeCallbacks)
+        pendingDuplexListen = null
         bargeAsr?.close()
         bargeAsr = null
         bargeIn.stop()
@@ -470,16 +628,82 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
     }
 
-    private fun startBargeInMonitor(token: Long, speech: Long) {
-        fun ownsSpeech() = session.isCurrent(token) && speechRevision == speech && !session.muted && visible() && communicationAudio.active
-        if (!communicationAudio.active) return
-        if (!ownsSpeech() || bargeIn.active || bargeInUnavailableForCall || !activity.voiceAssistantSpeaking) return
-        var inputRevision = speech
+    fun onTurnSubmitted(traceId: String, turnId: String, input: String = "") {
+        session.registerTurn(traceId, turnId)
+        if (session.acceptsTrace(traceId) && session.latestTurnId == turnId) {
+            if (visible() && input.isNotBlank()) {
+                val text = activity.getString(R.string.voice_call_processing_input, input.trim())
+                val command = replySpeech.acknowledge(traceId, turnId, text)
+                if (command.beginSessionId.isNotBlank()) {
+                    panel.transcript.text = text
+                    playSpeech(command, acknowledgement = true)
+                }
+            } else if (input.isBlank()) panel.transcript.text = ""
+            resumeDuplexListening()
+        }
+    }
+
+    private fun refreshListeningStatus() {
+        val recording = if (bargeIn.active) {
+            val state = activity.voiceAudioHub().currentState()
+            state.phase == PcmRecorderPhase.RECORDING && AcousticBargeInPolicy.hasEchoProtection(state)
+        } else activity.isVoiceCaptureActive() && !activity.voiceAssistantSpeaking
+        showStatus(when {
+            session.muted -> R.string.voice_call_muted
+            recording -> R.string.voice_call_listening
+            else -> 0
+        })
+    }
+
+    private fun resumeDuplexListening(afterPlayback: Boolean = false) {
+        if (!session.active || session.muted || !visible()) return
+        refreshListeningStatus()
+        if (bargeIn.active || pendingDuplexListen != null) return
+        if (bargeInUnavailableForCall) {
+            if (afterPlayback) listen(afterPlayback = true)
+            return
+        }
+        // Passive capture must not register a new input trace or supersede the pending reply.
+        val token = session.generation
+        val revision = captureRevision
+        val deadline = SystemClock.elapsedRealtime() + 3_000L
+        val rearm = object : Runnable {
+            override fun run() {
+                if (pendingDuplexListen !== this) return
+                pendingDuplexListen = null
+                if (!session.isCurrent(token) || captureRevision != revision || session.muted || !visible()) return
+                if (!activity.isVoiceCaptureActive()) {
+                    startBargeInMonitor(token)
+                } else if (SystemClock.elapsedRealtime() < deadline) {
+                    pendingDuplexListen = this
+                    activity.handler.postDelayed(this, 50L)
+                } else updateStatus(activity.getString(R.string.voice_status_recording_failed), "")
+            }
+        }
+        pendingDuplexListen = rearm
+        activity.handler.post(rearm)
+    }
+
+    private fun startBargeInMonitor(token: Long) {
+        if (!session.isCurrent(token) || session.muted || !visible() ||
+            bargeIn.active || bargeInUnavailableForCall) return
+        // Android can relinquish communication mode while ASR or a reply is pending.
+        // Reacquire it at the capture boundary; mode loss does not end the voice session.
+        if (!communicationAudio.acquire()) {
+            updateStatus(activity.getString(R.string.voice_status_recording_failed), "")
+            return
+        }
+        panel.route.text = communicationAudio.label()
+        val capture = ++captureRevision
+        fun ownsCapture() = session.isCurrent(token) && captureRevision == capture &&
+            !session.muted && visible()
+        var inputRevision = speechRevision
         var traceId = ""
-        val playingTrace = session.traceForTurn(session.latestTurnId)
-        fun ownsInput() = session.isCurrent(token) && speechRevision == inputRevision &&
-            !session.muted && visible() && traceId.isNotBlank() && session.acceptsTrace(traceId)
-        bargeIn.start(AcousticBargeInCallbacks(
+        val playingTrace = session.traceForTurn(session.latestTurnId).ifBlank { session.latestTraceId }
+        fun ownsInput() = ownsCapture() && speechRevision == inputRevision &&
+            traceId.isNotBlank() && session.acceptsTrace(traceId)
+        val started = bargeIn.start(AcousticBargeInCallbacks(
+            isOutputPlaying = { activity.voiceAssistantSpeaking },
             onDiagnostics = { statistics, state, outcome ->
                 VoiceLatencyTelemetry.record(activity, playingTrace, "barge_in_monitor_summary", mapOf(
                     "aec_enabled" to state.acousticEchoCancelerEnabled.toString(),
@@ -490,26 +714,29 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                     "max_rms" to statistics.maxRms.toString(),
                     "max_vad_probability" to statistics.maxProbability.toString(),
                     "candidate_duration_ms" to statistics.maxCandidateMs.toString(),
+                    "max_echo_correlation" to statistics.maxEchoCorrelation.toString(),
+                    "echo_rejected_frames" to statistics.echoRejectedFrames.toString(),
                     "capture_outcome" to outcome
                 ))
             },
             onReady = { state ->
+                if (ownsCapture()) refreshListeningStatus()
                 VoiceLatencyTelemetry.record(activity, playingTrace, "barge_in_monitor_ready", mapOf(
                     "aec_enabled" to state.acousticEchoCancelerEnabled.toString(),
                     "noise_suppression_enabled" to state.noiseSuppressorEnabled.toString(),
                     "input_route" to state.inputRoute,
                     "audio_source" to state.audioSource.toString()
-                ), once = true)
+                ))
             },
             onDetected = {
-                if (!ownsSpeech()) bargeIn.stop() else {
+                if (!ownsCapture()) bargeIn.stop() else {
                     VoiceLatencyTelemetry.record(activity, playingTrace, VoiceTraceEvents.TTS_BARGE_IN_STARTED, once = true)
                     speechRevision++
                     inputRevision = speechRevision
+                    activity.voiceAssistantAwake = true
                     stopReplySpeech()
                     activity.stopSpeechPlaybackOnly(TtsCancelReason.USER_STOP)
                     activity.releaseVoicePlaybackAudioFocus()
-                    activity.voiceAssistantAwake = true
                     traceId = VoiceLatencyTelemetry.startSession(activity, mapOf("recording_source" to "acoustic_barge_in"))
                     val coordinator = activity.beginVoiceCoordinatorSession("voice_wakeup", traceId)
                     activity.activeVoiceTraceId = traceId
@@ -535,15 +762,16 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             onAudio = { snapshot -> if (ownsInput()) updateBargeInTranscription { it.offer(snapshot) } },
             onUtterance = { snapshot ->
                 if (!ownsInput()) snapshot.samples.fill(0) else {
-                    showStatus(R.string.voice_call_processing)
+                    refreshListeningStatus()
                     panel.waveform.reset()
                     transcribeBargeIn(snapshot, traceId, token, inputRevision)
                 }
             },
-            onMonitorRenewal = { if (ownsSpeech()) startBargeInMonitor(token, speech) },
+            onMonitorRenewal = { if (ownsCapture()) resumeDuplexListening() },
             onUnavailable = {
-                if (traceId.isBlank() && ownsSpeech()) {
+                if (traceId.isBlank() && ownsCapture()) {
                     bargeInUnavailableForCall = true
+                    refreshListeningStatus()
                     Toast.makeText(activity, R.string.voice_call_barge_unavailable, Toast.LENGTH_LONG).show()
                 } else if (ownsInput()) {
                     bargeAsr?.close()
@@ -552,6 +780,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
                 }
             }
         ))
+        if (!started && ownsCapture()) updateStatus(activity.getString(R.string.voice_status_recording_failed), "")
     }
 
     private fun transcribeBargeIn(snapshot: PcmSnapshot, traceId: String, token: Long, revision: Long) {
@@ -615,12 +844,12 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         if (accepted) routeTranscript(text, traceId)
     }
 
-    private fun pauseMicrophone(preserveMediaPlayback: Boolean = false) {
+    private fun pauseMicrophone(preserveMediaPlayback: Boolean = false, preserveNews: Boolean = false) {
         cancelVisualSubmission()
         if (!preserveMediaPlayback) session.mute(true)
         session.cancelPendingInput()
         speechRevision++
-        stopReplySpeech()
+        stopReplySpeech(preserveNews)
         stopLevelTick()
         activity.stopVoiceAssistant()
         showStatus(R.string.voice_call_muted)
@@ -654,8 +883,10 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         if (!session.ownsTrace(traceId)) return false
         if (!session.acceptsTrace(traceId) || !visible()) return true
         if (activity.agentTranscriptStore.activeConversation().id != session.conversationId) { end(); return true }
-        panel.transcript.text = text
-        showStatus(R.string.voice_call_processing)
+        if (!session.claimInput(traceId)) return true
+        AppVoiceControlBridge.capture(activity, traceId)
+        panel.transcript.text = ""
+        resumeDuplexListening()
         stopLevelTick()
         if (pendingVisualTraceId == traceId) return true
         if (cameraPreview.active) {
@@ -707,7 +938,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             VoiceInteractionPhase.PREPARING, VoiceInteractionPhase.LISTENING, VoiceInteractionPhase.ENDPOINTING -> showStatus(R.string.voice_call_listening)
             VoiceInteractionPhase.FINALIZING_ASR, VoiceInteractionPhase.ROUTING,
             VoiceInteractionPhase.WAITING_MODEL_FIRST_TOKEN, VoiceInteractionPhase.STARTING_AGENT,
-            VoiceInteractionPhase.AGENT_RUNNING, VoiceInteractionPhase.EXECUTING_LOCAL_ACTION -> showStatus(R.string.voice_call_processing)
+            VoiceInteractionPhase.AGENT_RUNNING, VoiceInteractionPhase.EXECUTING_LOCAL_ACTION -> refreshListeningStatus()
             VoiceInteractionPhase.FAILED -> {
                 stopLevelTick()
                 if (state.failure?.code in setOf(
@@ -725,17 +956,29 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             else -> Unit
         }
         val text = state.finalText ?: state.partialText.ifBlank { state.stableText }
-        if (text.isNotBlank()) panel.transcript.text = text
+        if (text.isNotBlank() && session.acceptsInputCaption(state.sessionId) && state.phase in setOf(
+                VoiceInteractionPhase.PREPARING, VoiceInteractionPhase.LISTENING,
+                VoiceInteractionPhase.ENDPOINTING, VoiceInteractionPhase.FINALIZING_ASR
+            )) panel.transcript.text = text
     }
 
     fun onEntries(entries: List<AgentTranscriptEntry>) {
+        updateReminders(entries.isEmpty())
+        if (newsPlayback.playing) return
         if (!session.active || session.muted || !visible() || bargeIn.collectingUtterance ||
             (activity.isVoiceCaptureActive() && !bargeIn.active)) return
         val command = replySpeech.observe(entries)
+        if (command.beginSessionId.isNotBlank() || command.completedWithoutPlayback) panel.transcript.text = ""
         if (command.completedWithoutPlayback) {
-            listen()
+            speechRevision++
+            activity.applyAgentReplySpeechCommand(command, replySpeech.controller)
+            resumeDuplexListening(afterPlayback = true)
             return
         }
+        playSpeech(command)
+    }
+
+    private fun playSpeech(command: AgentReplySpeechCommand, acknowledgement: Boolean = false) {
         val token = session.generation
         if (command.beginSessionId.isNotBlank()) speechRevision++
         val speech = speechRevision
@@ -749,29 +992,30 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
             TtsChunkSchedulerCallbacks(
                 onPlaybackStarted = { chunk ->
                     if (ownsPlayback()) {
-                        VoiceLatencyTelemetry.record(activity, traceId, VoiceTraceEvents.VOICE_REPLY_PLAYBACK_STARTED,
+                        VoiceLatencyTelemetry.record(activity, traceId,
+                            if (acknowledgement) "voice_input_ack_playback_started" else VoiceTraceEvents.VOICE_REPLY_PLAYBACK_STARTED,
                             mapOf("playback_session_id" to chunk.requestId,
                                 "speech_characters" to chunk.speechText.codePointCount(0, chunk.speechText.length).toString(),
                                 "tts_provider" to activity.activeProgressiveSpeechProvider), once = true)
-                        showStatus(R.string.voice_call_speaking)
-                        panel.transcript.text = chunk.speechText
-                        startBargeInMonitor(token, speech)
+                        resumeDuplexListening()
                     }
                 },
                 onFinished = { success, errorCode ->
                     if (ownsPlayback()) {
-                        VoiceLatencyTelemetry.record(activity, traceId, VoiceTraceEvents.VOICE_REPLY_PLAYBACK_FINISHED,
+                        VoiceLatencyTelemetry.record(activity, traceId,
+                            if (acknowledgement) "voice_input_ack_playback_finished" else VoiceTraceEvents.VOICE_REPLY_PLAYBACK_FINISHED,
                             mapOf("playback_session_id" to playbackSessionId, "success" to success.toString(),
                                 "error_code" to errorCode.orEmpty()), once = true)
                         if (!success) Toast.makeText(activity, R.string.agent_reply_speech_failed, Toast.LENGTH_SHORT).show()
-                        listen(afterPlayback = true)
+                        resumeDuplexListening(afterPlayback = true)
                     }
                 },
                 onCancelled = { reason ->
                     if (ownsPlayback()) {
-                        VoiceLatencyTelemetry.record(activity, traceId, VoiceTraceEvents.VOICE_REPLY_PLAYBACK_CANCELLED,
+                        VoiceLatencyTelemetry.record(activity, traceId,
+                            if (acknowledgement) "voice_input_ack_playback_cancelled" else VoiceTraceEvents.VOICE_REPLY_PLAYBACK_CANCELLED,
                             mapOf("playback_session_id" to playbackSessionId, "error_code" to reason.name), once = true)
-                        bargeIn.stop()
+                        stopAcousticCapture()
                         session.mute(true)
                         panel.setMuted(true)
                         showStatus(R.string.voice_call_muted)
@@ -790,6 +1034,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         }
         if (!session.active) return
         if (status == activity.getString(R.string.voice_status_recording) &&
+            session.acceptsInputCaption(activity.activeVoiceTraceId) &&
             detail.isNotBlank() && detail != activity.getString(R.string.voice_status_recording_detail)
         ) panel.transcript.text = detail
         if (status == activity.getString(R.string.voice_status_recording_failed) ||
@@ -893,6 +1138,13 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         content.addView(label(R.string.voice_call_wake_settings).apply {
             setOnClickListener { dialog.dismiss(); activity.showVoiceAssistantSettingsPage() }
         })
+        content.addView(label(R.string.voice_control_phone_title).apply {
+            setOnClickListener {
+                dialog.dismiss()
+                end()
+                activity.startActivity(android.content.Intent(activity, PhoneAssistantActivity::class.java))
+            }
+        })
         dialog.setContentView(content)
         dialog.setOnDismissListener {
             wakeStatusView = null
@@ -934,27 +1186,33 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     private fun render() {
+        updateReminders(activity.renderedAgentTranscriptSourceEntries.isEmpty())
         panel.visibility = if (session.active && session.expanded) View.VISIBLE else View.GONE
+        activity.agentChatShortcuts.visibility = if (session.active && session.expanded) View.GONE else View.VISIBLE
         activity.agentComposerRow.visibility = if (session.active && session.expanded) View.GONE else View.VISIBLE
+        activity.findViewById<View>(R.id.chatComposerRow).visibility =
+            if (session.active && session.expanded && activity.chatPage.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        panel.route.text = communicationAudio.label()
+        AppVoiceControlBridge.update(activity)
         updateEntry(activity.agentGoalInput.text?.isNotBlank() == true || activity.agentInputAttachments.isNotEmpty())
     }
 
+    private fun updateReminders(empty: Boolean) {
+        val show = session.active && session.expanded && foreground && hasAgentSurface() && empty
+        reminders.setActive(show)
+        if (show) activity.agentSessionTitle.setText(R.string.voice_control_reminders)
+        else if (reminderHeaderVisible) activity.refreshAgentConversationHeader()
+        reminderHeaderVisible = show
+    }
+
     private fun showStatus(resource: Int) {
-        val text = activity.getString(resource)
+        val text = if (resource == 0) "" else activity.getString(resource)
         if (lastStatus != text) { lastStatus = text; panel.status.text = text }
     }
 
     private fun startLevelTick() {
         stopLevelTick()
-        val token = session.generation
-        levelTick = object : Runnable {
-            override fun run() {
-                if (!session.isCurrent(token) || session.muted || !visible()) return
-                val amplitude = runCatching { activity.currentVoiceAmplitude() }.getOrDefault(0)
-                panel.waveform.pushAmplitude(amplitude)
-                activity.handler.postDelayed(this, 100)
-            }
-        }.also { activity.handler.post(it) }
+        // The compact voice mode has no waveform, so there is no UI amplitude polling.
     }
 
     private fun stopLevelTick() { levelTick?.let(activity.handler::removeCallbacks); levelTick = null; panel.waveform.reset() }

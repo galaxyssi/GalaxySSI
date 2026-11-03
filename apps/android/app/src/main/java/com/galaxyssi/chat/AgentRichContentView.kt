@@ -95,7 +95,8 @@ class AgentRichContentView(
 
     private fun presentationBlocks(entry: AgentTranscriptEntry): List<AgentRichBlock> {
         val explicit = AgentRichContentCodec.decode(entry.richOutputJson)
-        val parsed = explicit.ifEmpty { AgentRichContentCodec.fromText(entry.text) }
+        val parsed = ConversationScheduleCardPresentation.visibleBlocks(explicit)
+            .ifEmpty { AgentRichContentCodec.fromText(entry.text) }
         return AgentImagePresentation.annotate(parsed,
             entry.text + "\n" + parsed.filter { it.type == AgentRichBlockType.TEXT }.joinToString("\n") { it.text },
             activity.resources.configuration.locales[0].language == "zh",
@@ -352,6 +353,13 @@ class AgentRichContentView(
     }
 
     private fun renderBlock(block: AgentRichBlock, scope: RenderScope): View {
+        if (AgentHtmlArtifactPreview.supports(block) &&
+            (block.metadata["runtime_artifact"] == "true" || block.uri.startsWith("content://"))) {
+            return AgentHtmlArtifactView(activity, block, artifactBlock(block)) { html ->
+                htmlAnimationBlock(block.copy(type = AgentRichBlockType.HTML, text = html, fallbackText = ""),
+                    ((activity.resources.configuration.screenWidthDp - 32) * 1.2f).toInt().coerceIn(320, 520))
+            }
+        }
         return when (block.type) {
         AgentRichBlockType.TEXT -> selectableText(block.text, 16f)
         AgentRichBlockType.HEADING -> selectableText(
@@ -619,7 +627,8 @@ class AgentRichContentView(
         val markdownImage = block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank()
         if (!markdownImage && block.dataB64.isBlank() && !isPreviewableUri(block.uri)) return artifactBlock(block)
         val desktopArtifact = block.metadata["transport"] == "encrypted-fragmented" ||
-            block.metadata["artifact_source_uri"].orEmpty().isNotBlank() || CloudImageAnnotationSession.isLocalImage(block)
+            block.metadata["artifact_source_uri"].orEmpty().isNotBlank() || CloudImageAnnotationSession.isLocalImage(block) ||
+            AgentPrivateAttachmentExport.canSave(activity, block)
         val savedToDownloads = block.metadata["saved_to_downloads"].toBoolean()
         return LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -665,6 +674,9 @@ class AgentRichContentView(
                 )
                 clipToOutline = true
                 setOnClickListener { showImageFullscreen(block) }
+                setOnLongClickListener { ImageClipboard.showCopyMenu(activity, this) { app ->
+                    ClipboardImageSource.fromBlock(app, block)
+                }; true }
             }
             val loading = ProgressBar(activity).apply {
                 isIndeterminate = true
@@ -780,6 +792,9 @@ class AgentRichContentView(
                             )
                             clipToOutline = true
                             setOnClickListener { showImageFullscreen(itemBlock) }
+                            setOnLongClickListener { ImageClipboard.showCopyMenu(activity, this) { app ->
+                                ClipboardImageSource.fromBlock(app, itemBlock)
+                            }; true }
                             loadImage(itemBlock.uri, this) { success ->
                                 if (success) {
                                     applyImageThumbnailSize(
@@ -994,7 +1009,7 @@ class AgentRichContentView(
         return container
     }
 
-    private fun htmlAnimationBlock(block: AgentRichBlock): View = LinearLayout(activity).apply {
+    private fun htmlAnimationBlock(block: AgentRichBlock, heightDp: Int = 280): View = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
         block.title.takeIf(String::isNotBlank)?.let { addView(selectableText(it, 15f).apply {
             setTypeface(typeface, Typeface.BOLD)
@@ -1030,7 +1045,7 @@ class AgentRichContentView(
         coordinatePlayback(webView)
         addView(GalaxySSIPinchZoomViewport(activity).apply {
             attach(webView)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(280)))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(heightDp)))
         if (block.fallbackText.isNotBlank()) addView(selectableText(block.fallbackText, 12f).apply {
             setTextColor(Color.parseColor("#66717D"))
             setPadding(0, dp(6), 0, 0)
@@ -1042,7 +1057,7 @@ class AgentRichContentView(
         <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; media-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; font-src 'none'; form-action 'none'; base-uri 'none'">
         <style>html,body{margin:0;padding:0;width:100%;min-height:100%;overflow:auto;background:transparent;color:#14202b;font-family:system-ui,sans-serif;touch-action:pan-x pan-y pinch-zoom}*{box-sizing:border-box;max-width:100%}</style>
-        </head><body>${fragment.take(32_000)}</body></html>
+        </head><body>${fragment.take(AgentHtmlArtifactPreview.MAX_BYTES)}</body></html>
     """.trimIndent()
 
     private fun webPageBlock(block: AgentRichBlock): View {
@@ -1185,7 +1200,8 @@ class AgentRichContentView(
         val saveAction = block.actions.firstOrNull { it.verb == "save_runtime_artifact" }
         val canOpen = previewAction == null && saveAction == null && isOpenableUri(block.uri)
         val desktopArtifact = block.metadata["transport"] == "encrypted-fragmented" ||
-            block.metadata["artifact_source_uri"].orEmpty().isNotBlank()
+            block.metadata["artifact_source_uri"].orEmpty().isNotBlank() ||
+            AgentPrivateAttachmentExport.canSave(activity, block)
         val savedToDownloads = block.metadata["saved_to_downloads"].toBoolean()
         val detailParts = buildList {
             val customDetail = block.metadata["detail"].orEmpty()
@@ -1415,6 +1431,11 @@ class AgentRichContentView(
 
     private fun actionBlock(block: AgentRichBlock, approval: Boolean): View = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
+        if (!approval) block.actions.singleOrNull()?.takeIf { it.verb == "edit_scheduled_task" }?.let { action ->
+            addView(scheduledTaskCard(block, action), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            return@apply
+        }
         setPadding(dp(12), dp(11), dp(12), dp(11))
         background = roundedBackground(if (approval) "#FFFFFF" else "#F6F8FA", 6f, "#DDE3E8")
         if (approval) {
@@ -1422,7 +1443,7 @@ class AgentRichContentView(
         } else {
             val heading = block.title.ifBlank { activity.getString(R.string.rich_output_actions) }
             addView(selectableText(heading, 15f).apply { setTypeface(typeface, Typeface.BOLD) })
-            if (block.text.isNotBlank()) addView(selectableText(block.text, 14f).apply {
+            if (block.text.isNotBlank() && block.actions.none { it.verb == "edit_scheduled_task" }) addView(selectableText(block.text, 14f).apply {
                 setPadding(0, dp(5), 0, dp(5))
             })
         }
@@ -1472,6 +1493,41 @@ class AgentRichContentView(
         addView(actionRows, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(10)
         })
+    }
+
+    private fun scheduledTaskCard(block: AgentRichBlock, action: AgentRichAction): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(64)
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        background = roundedBackground("#FFFFFF", 8f, "#E6E8EB")
+        isFocusable = true
+        contentDescription = activity.getString(R.string.schedule_edit) + " " + block.title
+        setOnClickListener { onAction(action) }
+        addView(ImageView(activity).apply {
+            setImageResource(android.R.drawable.ic_menu_recent_history)
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#62666C"))
+            background = roundedBackground("#F5F6F7", 6f, "#F5F6F7")
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(12) })
+        addView(LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(activity).apply {
+                text = block.title
+                textSize = 14f
+                includeFontPadding = false
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(Color.parseColor("#20242A"))
+            }, LinearLayout.LayoutParams(-1, -2))
+            addView(ConversationScheduleStatusView(activity, action.value, includeSchedule = true, cardTitle = block.title).apply {
+                textSize = 12f
+                text = ConversationScheduleCardPresentation.compactDetail(block)
+                includeFontPadding = false
+                setPadding(0, dp(5), 0, 0)
+            }, LinearLayout.LayoutParams(-1, -2))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
     }
 
     private fun approvalHeader(block: AgentRichBlock): View = LinearLayout(activity).apply {
@@ -1648,8 +1704,8 @@ class AgentRichContentView(
                 val file = runCatching { AgentMarkdownImageStore.load(activity, block.uri) }.getOrNull()
                 activity.runOnUiThread {
                     if (!activity.isDestroyed && !activity.isFinishing) {
-                        if (file != null) activity.showAgentImagePreview(Uri.fromFile(file), displayTitle) {
-                            saveDesktopArtifact(block)
+                        if (file != null) activity.showAgentImagePreview(Uri.fromFile(file), displayTitle, block.mimeType) {
+                            saveArtifactResult(block)
                         } else Toast.makeText(activity, R.string.rich_output_load_failed, Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -1658,9 +1714,10 @@ class AgentRichContentView(
         }
         if (block.dataB64.isBlank() && !isPreviewableUri(block.uri)) return
         if (activity is MainActivity && block.dataB64.isBlank() &&
-            (block.metadata["artifact_source_uri"].orEmpty().isNotBlank() || CloudImageAnnotationSession.isLocalImage(block))) {
-            activity.showAgentImagePreview(Uri.parse(block.uri), displayTitle) {
-                saveDesktopArtifact(block)
+            (block.metadata["artifact_source_uri"].orEmpty().isNotBlank() || CloudImageAnnotationSession.isLocalImage(block) ||
+                AgentPrivateAttachmentExport.canSave(activity, block))) {
+            activity.showAgentImagePreview(Uri.parse(block.uri), displayTitle, block.mimeType) {
+                saveArtifactResult(block)
             }
             return
         }
@@ -1669,6 +1726,9 @@ class AgentRichContentView(
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = displayTitle
             setBackgroundColor(Color.BLACK)
+            setOnLongClickListener { ImageClipboard.showCopyMenu(activity, this) { app ->
+                ClipboardImageSource.fromBlock(app, block)
+            }; true }
         }
         val viewport = GalaxySSIPinchZoomViewport(activity).apply {
             setBackgroundColor(Color.BLACK)
@@ -1892,11 +1952,7 @@ class AgentRichContentView(
         button?.isEnabled = false
         button?.alpha = 0.35f
         ARTIFACT_EXECUTOR.execute {
-            val result = if (CloudImageAnnotationSession.isLocalImage(block)) {
-                CloudImageAnnotationSession.save(activity, block)
-            } else if (block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank()) {
-                AgentMarkdownImageStore.save(activity, block)
-            } else AgentDesktopArtifactStore.saveToDownloads(activity, block)
+            val result = saveArtifactResult(block)
             Handler(Looper.getMainLooper()).post {
                 if (activity.isDestroyed) return@post
                 result.onSuccess { path ->
@@ -1915,6 +1971,14 @@ class AgentRichContentView(
                 }
             }
         }
+    }
+
+    private fun saveArtifactResult(block: AgentRichBlock): Result<String> = when {
+        CloudImageAnnotationSession.isLocalImage(block) -> CloudImageAnnotationSession.save(activity, block)
+        block.metadata[AgentMarkdownImages.SOURCE].orEmpty().isNotBlank() -> AgentMarkdownImageStore.save(activity, block)
+        block.metadata["artifact_source_uri"].orEmpty().isNotBlank() ||
+            block.metadata["transport"] == "encrypted-fragmented" -> AgentDesktopArtifactStore.saveToDownloads(activity, block)
+        else -> AgentPrivateAttachmentExport.save(activity, block)
     }
 
     private fun openDesktopArtifact(

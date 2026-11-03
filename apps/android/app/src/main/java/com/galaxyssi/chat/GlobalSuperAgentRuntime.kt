@@ -11,14 +11,6 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 
-data class GlobalAgentProcessingBatch(
-    val processedEventCount: Int,
-    val changedWorldItemCount: Int,
-    val queuedResearchTasks: List<GlobalResearchTask>,
-    val proactiveMessages: List<GlobalProactiveMessage>,
-    val queuedCognitionTasks: List<GlobalCognitionTask> = emptyList()
-)
-
 data class GlobalAgentDashboardSnapshot(
     val pendingEventCount: Int = 0,
     val retryingEventCount: Int = 0,
@@ -42,13 +34,6 @@ data class GlobalAgentDashboardSnapshot(
     val updatedAtMillis: Long = 0L
 )
 
-data class GlobalAgentNotificationCandidate(
-    val title: String,
-    val content: String,
-    val conversationId: String,
-    val messageIds: Set<String>
-)
-
 data class GlobalPromptContextSnapshot(
     val world: PersonalWorldModel,
     val topicGraph: GlobalTopicProjectGraph,
@@ -58,6 +43,8 @@ data class GlobalPromptContextSnapshot(
 class GlobalAgentRepository(context: Context) {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(appContext, DATABASE_NAME)
+    private val deadLetterStore = GlobalDeadLetterStore(database)
+    private val proactiveMessageStore = GlobalProactiveMessageStore(database, ::encodeProactiveMessage, ::decodeProactiveMessage)
     private val deliberationStore = GlobalAgentDeliberationStore(appContext)
     private val longHorizonStore = GlobalLongHorizonGoalStore(appContext)
     private val topicGraphStore = GlobalTopicProjectGraphStore(appContext)
@@ -92,7 +79,7 @@ class GlobalAgentRepository(context: Context) {
         val mutation = GlobalEventQueuePolicy.enqueue(
             state = GlobalEventQueueState(loadEvents(), loadOverflowEvents()),
             incoming = normalizedIncoming,
-            deadLetterEventIds = loadDeadLetters().mapTo(mutableSetOf()) { it.event.id },
+            deadLetterEventIds = deadLetterStore.ids(),
             readyCapacity = MAX_PENDING_EVENTS,
             overflowCapacity = MAX_OVERFLOW_EVENTS
         )
@@ -109,14 +96,14 @@ class GlobalAgentRepository(context: Context) {
         saveOverflowEvents(mutation.state.overflow)
         if (mutation.capacityRejected.isNotEmpty()) {
             val now = System.currentTimeMillis()
-            saveDeadLetters(
-                loadDeadLetters() + mutation.capacityRejected.map { event ->
+            deadLetterStore.upsert(
+                mutation.capacityRejected.map { event ->
                     GlobalDeadLetterEvent(
                         event = event,
                         failure = GlobalEventRetryPolicy.capacityFailure(event.id, now),
                         quarantinedAtMillis = now,
                         quarantinedVersionCode = currentVersionCode
-                    )
+                    ).let(::encodeDeadLetter)
                 }
             )
         }
@@ -181,13 +168,12 @@ class GlobalAgentRepository(context: Context) {
         nowMillis: Long = System.currentTimeMillis(),
         versionCode: Int = currentVersionCode
     ) = synchronized(STORE_LOCK) {
-        saveDeadLetters(loadDeadLetters().filterNot { it.event.id == event.id } +
-            GlobalDeadLetterEvent(
+        deadLetterStore.upsert(listOf(encodeDeadLetter(GlobalDeadLetterEvent(
                 event = event,
                 failure = failure.copy(quarantined = true, nextAttemptAtMillis = 0L),
                 quarantinedAtMillis = nowMillis,
                 quarantinedVersionCode = versionCode.coerceAtLeast(0)
-            ))
+            ))))
         saveEventFailures(loadEventFailures().filterNot { it.eventId == event.id })
     }
 
@@ -223,6 +209,7 @@ class GlobalAgentRepository(context: Context) {
         limit: Int = GlobalDeadLetterUpgradeRecoveryPolicy.DEFAULT_RECOVERY_LIMIT
     ): Int = synchronized(STORE_LOCK) {
         if (currentVersionCode <= 0) return@synchronized 0
+        if (!deadLetterStore.hasRecoveryCandidate(currentVersionCode)) return@synchronized 0
         var queueState = GlobalEventQueueState(loadEvents(), loadOverflowEvents())
         var letters = loadDeadLetters()
         var journal = loadContextJournal()
@@ -370,7 +357,11 @@ class GlobalAgentRepository(context: Context) {
     }
 
     fun loadWorld(): PersonalWorldModel = synchronized(STORE_LOCK) {
-        cachedWorld ?: decodeWorld(database.readString(KEY_WORLD, "")).also { cachedWorld = it }
+        cachedWorld ?: decodeWorld(database.readString(KEY_WORLD, "")).let { stored ->
+            val repaired = GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(stored)
+            if (repaired != stored) database.writeString(KEY_WORLD, encodeWorld(repaired).toString())
+            repaired.also { cachedWorld = it }
+        }
     }
 
     fun saveWorld(world: PersonalWorldModel) = synchronized(STORE_LOCK) {
@@ -413,8 +404,7 @@ class GlobalAgentRepository(context: Context) {
         }
         return synchronized(STORE_LOCK) {
             GlobalPromptContextSnapshot(
-                world = cachedWorld ?: decodeWorld(database.readString(KEY_WORLD, ""))
-                    .also { cachedWorld = it },
+                world = loadWorld(),
                 topicGraph = cachedTopicGraph ?: topicGraphStore.load()
                     .also { cachedTopicGraph = it },
                 entityGraph = cachedEntityMemoryGraph ?: entityMemoryGraphStore.load()
@@ -453,35 +443,15 @@ class GlobalAgentRepository(context: Context) {
         updated
     }
 
-    fun claimResearchTask(nowMillis: Long = System.currentTimeMillis()): GlobalResearchTask? = synchronized(STORE_LOCK) {
-        val tasks = loadResearchTasks()
-            .map { GlobalResearchTaskPolicy.recoverIfStale(it, nowMillis) }
-            .toMutableList()
-        val index = tasks.indices
-            .filter { index ->
-                tasks[index].status in setOf(
-                    GlobalResearchTaskStatus.QUEUED,
-                    GlobalResearchTaskStatus.SCHEDULED,
-                    GlobalResearchTaskStatus.WAITING_FOR_RESOURCE
-                ) && tasks[index].nextAttemptAtMillis <= nowMillis
-            }
-            .maxByOrNull { index -> GlobalResearchTaskPolicy.selectionScore(tasks[index], nowMillis) }
-            ?: -1
-        if (index < 0) {
-            saveResearchTasks(tasks)
-            return@synchronized null
-        }
-        val claimed = tasks[index].copy(
-            status = GlobalResearchTaskStatus.RUNNING,
-            attemptCount = tasks[index].attemptCount + 1,
-            sourceMessageId = 0L,
-            leaseExpiresAtMillis = nowMillis + GlobalResearchTaskPolicy.leaseMillis(tasks[index].depth),
-            updatedAtMillis = nowMillis
-        )
-        tasks[index] = claimed
-        saveResearchTasks(tasks)
-        claimed
+    fun claimResearchTask(nowMillis: Long = System.currentTimeMillis(), attentionOnly: Boolean = false): GlobalResearchTask? = synchronized(STORE_LOCK) {
+        val selection = GlobalResearchClaimCoordinator.claim(loadResearchTasks(), nowMillis, attentionOnly,
+            appContext.getDatabasePath(DATABASE_NAME).absolutePath)
+        saveResearchTasks(selection.tasks)
+        selection.claimed
     }
+
+    internal fun releaseResearchPreparation(task: GlobalResearchTask) = GlobalResearchClaimCoordinator.release(
+        appContext.getDatabasePath(DATABASE_NAME).absolutePath, task)
 
     fun cognitionTasks(): List<GlobalCognitionTask> = deliberationStore.cognitionTasks()
 
@@ -517,24 +487,73 @@ class GlobalAgentRepository(context: Context) {
 
     fun proactiveMessages(): List<GlobalProactiveMessage> = synchronized(STORE_LOCK) { loadProactiveMessages() }
 
+    internal fun proactiveInboxPreview(state: AttentionReaderState, saved: Set<String>): List<GlobalProactiveInboxItem> {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        // The index and rows are committed together. Reading does not wait for unrelated research under STORE_LOCK.
+        return GlobalProactiveInboxPolicy.project(proactiveMessageStore.preview(state, saved), loadFeedback())
+    }
+
+    internal fun proactiveInboxCounts(): ProactiveInboxCounts {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        return proactiveMessageStore.counts(loadFeedback())
+    }
+
+    internal fun newsSearchState(saved: Set<String>, signal: android.os.CancellationSignal): AttentionNewsSearchState {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        signal.throwIfCanceled()
+        val feedback = loadFeedback().groupBy { it.proactiveMessageId }.mapValues { (_, values) -> values.maxBy { it.createdAtMillis } }
+        val excluded = feedback.mapNotNull { (id, value) ->
+            id.takeIf { value.kind in setOf(
+                GlobalAgentFeedbackKind.NOT_RELEVANT, GlobalAgentFeedbackKind.TOO_FREQUENT) }
+                ?.removePrefix("attention-feed:")
+        }.toSet()
+        return AttentionNewsSearchState(proactiveMessageStore.newsViewed(signal).filterKeys { it !in excluded }.mapValues { (id, at) ->
+            maxOf(at, feedback["attention-feed:$id"]?.createdAtMillis ?: 0L)
+        }, saved)
+    }
+
+    internal fun voiceReminderPreview(): Pair<List<GlobalProactiveInboxItem>, Int> {
+        if (!proactiveMessageStore.previewReady()) synchronized(STORE_LOCK) { proactiveMessageStore.preparePreview() }
+        return proactiveMessageStore.reminderPreview(loadFeedback())
+    }
+
+    fun proactiveMessage(id: String): GlobalProactiveMessage? = synchronized(STORE_LOCK) { proactiveMessageStore.get(id) }
+
     fun saveProactiveMessages(messages: List<GlobalProactiveMessage>) = synchronized(STORE_LOCK) {
-        val array = JSONArray()
-        messages.sortedBy(GlobalProactiveMessage::createdAtMillis).takeLast(MAX_PROACTIVE_MESSAGES)
-            .forEach { array.put(encodeProactiveMessage(it)) }
-        database.writeString(KEY_PROACTIVE_MESSAGES, array.toString())
+        proactiveMessageStore.replace(messages)
     }
 
     fun appendProactiveMessage(message: GlobalProactiveMessage): Boolean = synchronized(STORE_LOCK) {
-        val messages = loadProactiveMessages()
-        if (messages.any {
-                it.id == message.id ||
-                    message.sourceEventId.isNotBlank() && it.sourceEventId == message.sourceEventId
-            }
-        ) {
+        proactiveMessageStore.append(message)
+    }
+
+    internal fun publishNewsArticle(message: GlobalProactiveMessage): Boolean = synchronized(STORE_LOCK) {
+        require(message.newsArticleKey.isNotBlank() && message.id == "attention-feed:" + message.newsArticleKey)
+        val previous = proactiveMessageStore.get(message.id)
+        if (previous?.status == GlobalProactiveMessageStatus.DISMISSED || previous?.let {
+            it.newsArticleKey == message.newsArticleKey && it.title == message.title && it.content == message.content &&
+                it.newsTranslationProvider == message.newsTranslationProvider && it.newsArticleRevision == message.newsArticleRevision
+        } == true)
             return@synchronized false
-        }
-        saveProactiveMessages(messages + message)
+        proactiveMessageStore.put(previous?.copy(title = message.title, content = message.content,
+            newsArticleKey = message.newsArticleKey, newsTranslationProvider = message.newsTranslationProvider,
+            newsArticleRevision = message.newsArticleRevision,
+            status = GlobalProactiveMessageStatus.DELIVERED) ?: message)
         true
+    }
+
+    fun reviseProactiveMessage(id: String, content: String, important: Boolean): Boolean = synchronized(STORE_LOCK) {
+        val previous = proactiveMessageStore.get(id) ?: return false
+        if (previous.status == GlobalProactiveMessageStatus.DISMISSED) return false
+        if (previous.content == content && previous.urgent == important) return false
+        val updated = previous.copy(content = content, urgent = important,
+            notifiedAtMillis = if (important && !previous.urgent) 0L else previous.notifiedAtMillis)
+        proactiveMessageStore.put(updated)
+        true
+    }
+
+    fun bindProactiveConversation(id: String, conversationId: String) = synchronized(STORE_LOCK) {
+        proactiveMessageStore.get(id)?.let { proactiveMessageStore.put(it.copy(deliveredConversationId = conversationId)) }
     }
 
     fun claimProactiveMessages(
@@ -690,10 +709,10 @@ class GlobalAgentRepository(context: Context) {
 
     fun markProactiveViewed(messageIds: Set<String>, nowMillis: Long): Int = synchronized(STORE_LOCK) {
         if (messageIds.isEmpty() || nowMillis <= 0L) return@synchronized 0
-        val messages = loadProactiveMessages()
+        val messages = messageIds.mapNotNull(proactiveMessageStore::get)
         val updated = GlobalProactiveInboxPolicy.markViewed(messages, messageIds, nowMillis)
         val changed = updated.indices.count { index -> updated[index] != messages[index] }
-        if (changed > 0) saveProactiveMessages(updated)
+        updated.indices.filter { updated[it] != messages[it] }.forEach { proactiveMessageStore.put(updated[it]) }
         changed
     }
 
@@ -833,7 +852,9 @@ class GlobalAgentRepository(context: Context) {
                 }
             )
         })
-        payload.optJSONObject("world")?.let { saveWorld(decodeWorld(it.toString())) }
+        payload.optJSONObject("world")?.let {
+            saveWorld(GlobalMemorySupersessionPolicy.restoreTruncatedForwardLinks(decodeWorld(it.toString())))
+        }
         payload.optJSONObject("topic_project_graph")?.let(topicGraphStore::restore)
         payload.optJSONObject("memory_evolution")?.let(memoryEvolutionStore::restore)
         payload.optJSONObject("entity_memory_graph")?.let(entityMemoryGraphStore::restore)
@@ -848,7 +869,7 @@ class GlobalAgentRepository(context: Context) {
         payload.optJSONArray("proactive_messages")?.let { array ->
             saveProactiveMessages(buildList {
                 for (index in 0 until array.length()) decodeProactiveMessage(array.optJSONObject(index))?.let(::add)
-            }.takeLast(MAX_PROACTIVE_MESSAGES))
+            })
         }
         payload.optJSONObject("intervention_history")?.let {
             saveInterventionHistory(decodeInterventionHistory(it.toString()))
@@ -922,18 +943,10 @@ class GlobalAgentRepository(context: Context) {
         database.writeString(KEY_EVENT_FAILURES, array.toString())
     }
 
-    private fun loadDeadLetters(): List<GlobalDeadLetterEvent> = runCatching {
-        val array = JSONArray(database.readString(KEY_DEAD_LETTERS, "[]"))
-        buildList {
-            for (index in 0 until array.length()) decodeDeadLetter(array.optJSONObject(index))?.let(::add)
-        }
-    }.getOrDefault(emptyList())
+    private fun loadDeadLetters(): List<GlobalDeadLetterEvent> = deadLetterStore.all().mapNotNull(::decodeDeadLetter)
 
     private fun saveDeadLetters(letters: List<GlobalDeadLetterEvent>) {
-        val array = JSONArray()
-        letters.distinctBy { it.event.id }.sortedBy(GlobalDeadLetterEvent::quarantinedAtMillis)
-            .takeLast(MAX_DEAD_LETTERS).forEach { array.put(encodeDeadLetter(it)) }
-        database.writeString(KEY_DEAD_LETTERS, array.toString())
+        deadLetterStore.replace(letters.map(::encodeDeadLetter))
     }
 
     private fun loadContextJournal(): List<GlobalConversationEvent> = cachedContextJournal ?: runCatching {
@@ -995,12 +1008,7 @@ class GlobalAgentRepository(context: Context) {
         }
     }.getOrDefault(emptyList())
 
-    private fun loadProactiveMessages(): List<GlobalProactiveMessage> = runCatching {
-        val array = JSONArray(database.readString(KEY_PROACTIVE_MESSAGES, "[]"))
-        buildList {
-            for (index in 0 until array.length()) decodeProactiveMessage(array.optJSONObject(index))?.let(::add)
-        }
-    }.getOrDefault(emptyList())
+    private fun loadProactiveMessages(): List<GlobalProactiveMessage> = proactiveMessageStore.all()
 
     private fun loadFeedback(): List<GlobalAgentFeedback> = runCatching {
         val array = JSONArray(database.readString(KEY_FEEDBACK, "[]"))
@@ -1193,7 +1201,7 @@ class GlobalAgentRepository(context: Context) {
                 }
             ),
             conflictGroupId = json.optString("conflict_group_id"),
-            supersedesItemIds = json.optJSONArray("supersedes_item_ids").strings().takeLast(12),
+            supersedesItemIds = json.optJSONArray("supersedes_item_ids").strings().distinct(),
             supersededByItemId = json.optString("superseded_by_item_id"),
             firstSeenAtMillis = json.optLong("first_seen_at_millis"),
             lastSeenAtMillis = json.optLong("last_seen_at_millis"),
@@ -1499,73 +1507,8 @@ class GlobalAgentRepository(context: Context) {
         )
     }
 
-    private fun encodeProactiveMessage(message: GlobalProactiveMessage): JSONObject = JSONObject()
-        .put("id", message.id)
-        .put("source_event_id", message.sourceEventId)
-        .put("causal_event_ids", JSONArray(message.causalEventIds.toList()))
-        .put("source_conversation_id", message.sourceConversationId)
-        .put("target", message.target.name)
-        .put("title", message.title)
-        .put("content", message.content)
-        .put("topic", message.topic)
-        .put("urgent", message.urgent)
-        .put("status", message.status.name)
-        .put("created_at_millis", message.createdAtMillis)
-        .put("notified_at_millis", message.notifiedAtMillis)
-        .put("delivery_conversation_id", message.deliveryConversationId)
-        .put("delivery_lease_expires_at_millis", message.deliveryLeaseExpiresAtMillis)
-        .put("delivery_attempt_count", message.deliveryAttemptCount)
-        .put("delivery_budget_counted", message.deliveryBudgetCounted)
-        .put("last_delivery_error", message.lastDeliveryError)
-        .put("delivered_at_millis", message.deliveredAtMillis)
-        .put("delivered_conversation_id", message.deliveredConversationId)
-        .put("delivery_group_id", message.deliveryGroupId)
-        .put("viewed_at_millis", message.viewedAtMillis)
-
-    private fun decodeProactiveMessage(json: JSONObject?): GlobalProactiveMessage? {
-        if (json == null) return null
-        val id = json.optString("id")
-        if (id.isBlank()) return null
-        val status = enumValue(json.optString("status"), GlobalProactiveMessageStatus.PENDING)
-        val createdAtMillis = json.optLong("created_at_millis")
-        val notifiedAtMillis = if (json.has("notified_at_millis")) {
-            json.optLong("notified_at_millis")
-        } else if (status in setOf(
-                GlobalProactiveMessageStatus.NOTIFIED,
-                GlobalProactiveMessageStatus.DELIVERED
-            )
-        ) {
-            json.optLong("delivered_at_millis").takeIf { it > 0L } ?: createdAtMillis
-        } else 0L
-        return GlobalProactiveMessage(
-            id = id,
-            sourceEventId = json.optString("source_event_id"),
-            causalEventIds = json.optJSONArray("causal_event_ids").strings().toSet()
-                .ifEmpty { setOf(json.optString("source_event_id")) },
-            sourceConversationId = json.optString("source_conversation_id"),
-            target = enumValue(json.optString("target"), GlobalProactiveTarget.CURRENT_CONVERSATION),
-            title = GlobalAgentText.productTitle(json.optString("title")),
-            content = json.optString("content"),
-            topic = json.optString("topic"),
-            urgent = json.optBoolean("urgent"),
-            status = status,
-            createdAtMillis = createdAtMillis,
-            notifiedAtMillis = notifiedAtMillis,
-            deliveryConversationId = json.optString("delivery_conversation_id"),
-            deliveryLeaseExpiresAtMillis = json.optLong("delivery_lease_expires_at_millis"),
-            deliveryAttemptCount = json.optInt("delivery_attempt_count").coerceAtLeast(0),
-            deliveryBudgetCounted = if (json.has("delivery_budget_counted")) {
-                json.optBoolean("delivery_budget_counted")
-            } else {
-                status == GlobalProactiveMessageStatus.NOTIFIED
-            },
-            lastDeliveryError = json.optString("last_delivery_error").take(600),
-            deliveredAtMillis = json.optLong("delivered_at_millis"),
-            deliveredConversationId = json.optString("delivered_conversation_id"),
-            deliveryGroupId = json.optString("delivery_group_id"),
-            viewedAtMillis = json.optLong("viewed_at_millis")
-        )
-    }
+    private fun encodeProactiveMessage(message: GlobalProactiveMessage) = GlobalProactiveMessageCodec.encode(message)
+    private fun decodeProactiveMessage(json: JSONObject?) = GlobalProactiveMessageCodec.decode(json)
 
     private fun encodeFeedback(feedback: GlobalAgentFeedback): JSONObject = JSONObject()
         .put("id", feedback.id)
@@ -1734,13 +1677,11 @@ class GlobalAgentRepository(context: Context) {
         private const val KEY_OVERFLOW_EVENTS_INDEX = "conversation_event_overflow_index_v2"
         private const val KEY_OVERFLOW_EVENT_RECORD_PREFIX = "conversation_event_overflow_v2:"
         private const val KEY_EVENT_FAILURES = "conversation_event_failures"
-        private const val KEY_DEAD_LETTERS = "conversation_event_dead_letters"
         private const val KEY_CONTEXT_JOURNAL = "conversation_context_journal"
         private const val KEY_CONTEXT_JOURNAL_INDEX = "conversation_context_journal_index_v2"
         private const val KEY_CONTEXT_JOURNAL_RECORD_PREFIX = "conversation_context_journal_v2:"
         private const val KEY_WORLD = "personal_world_model"
         private const val KEY_RESEARCH_TASKS = "research_tasks"
-        private const val KEY_PROACTIVE_MESSAGES = "proactive_messages"
         private const val KEY_INTERVENTION_HISTORY = "intervention_history"
         private const val KEY_SETTINGS = "settings"
         private const val KEY_PERSISTENT_CONTEXT_SYNC_VERSION = "persistent_context_sync_version"
@@ -1749,10 +1690,8 @@ class GlobalAgentRepository(context: Context) {
         private const val MAX_PENDING_EVENTS = 2_000
         private const val MAX_OVERFLOW_EVENTS = 8_000
         private const val MAX_EVENT_FAILURES = 1_000
-        private const val MAX_DEAD_LETTERS = 1_000
         private const val MAX_PROCESS_BATCH = 250
         private const val MAX_RESEARCH_TASKS = 300
-        private const val MAX_PROACTIVE_MESSAGES = 300
         private const val MAX_FEEDBACK_ITEMS = 800
         private const val MAX_COUNTED_DELIVERY_GROUPS = 800
         private const val MAX_CONVERSATION_TOMBSTONES = 500
@@ -1800,6 +1739,11 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val startedAt = SystemClock.elapsedRealtime()
         val settings = repository.settings()
         cachedSettings = settings
+        if (!settings.enabled) {
+            AndroidCognitionScheduler.cancelLearning(appContext)
+            Log.i("GalaxySSIStartup", "global_runtime_background_disabled")
+            return
+        }
         val recoveredAfterUpgrade = if (settings.enabled) {
             repository.recoverDeadLettersAfterUpgrade(repository.appVersionCode())
         } else 0
@@ -1823,13 +1767,13 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     }
 
     fun processPending(maxEvents: Int = 100, retractionsOnly: Boolean = false): GlobalAgentProcessingBatch = synchronized(PROCESS_LOCK) {
+        val settings = settings()
+        if (!settings.enabled) {
+            return@synchronized GlobalAgentProcessingBatch(0, 0, emptyList(), emptyList())
+        }
         if (!syntheticEvalArtifactsPurged) {
             repository.purgeSyntheticConversation(AgentEvalSideEffectPolicy.SYNTHETIC_CONVERSATION_ID)
             syntheticEvalArtifactsPurged = true
-        }
-        val settings = repository.settings()
-        if (!settings.enabled) {
-            return@synchronized GlobalAgentProcessingBatch(0, 0, emptyList(), emptyList())
         }
         if (!retractionsOnly) {
             synchronizePersistentContext()
@@ -1869,7 +1813,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         var changedItems = 0
         val handledEventIds = mutableSetOf<String>()
         val retryingEventIds = repository.eventFailures().mapTo(mutableSetOf(), GlobalEventProcessingFailure::eventId)
-        events.forEach { event ->
+        // Commit the completed portion of this batch when learning is paused between events.
+        events.asSequence().takeWhile { cachedSettings.enabled }.forEach { event ->
             val worldBefore = world
             val topicGraphBefore = topicGraph
             val memoryInboxBefore = memoryInbox
@@ -2284,6 +2229,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     }
 
     fun prewarmContextSnapshot() {
+        if (!settings().enabled) return
         repository.promptContextSnapshot()
         realtimeContext.prewarm()
     }
@@ -2418,7 +2364,10 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun processProactiveDiscoveryCycle(
         force: Boolean = false
-    ): GlobalProactiveDiscoveryCycleResult = proactiveDiscoveryCoordinator.processDue(force = force)
+    ): GlobalProactiveDiscoveryCycleResult {
+        ProactiveAttentionCoordinator(appContext).reconcile()
+        return proactiveDiscoveryCoordinator.processDue(force = force)
+    }
 
     fun proactiveDiscoveryState(): GlobalProactiveDiscoveryState = proactiveDiscoveryCoordinator.state()
 
@@ -2505,7 +2454,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val updated = transform(previous)
         repository.saveSettings(updated)
         cachedSettings = updated
-        if (updated.proactiveDiscoveryEnabled && updated.modelUnderstandingEnabled && (
+        if (updated.enabled && updated.proactiveDiscoveryEnabled && updated.modelUnderstandingEnabled && (
                 !previous.proactiveDiscoveryEnabled || !previous.modelUnderstandingEnabled
             )
         ) {
@@ -2515,6 +2464,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             if (!previous.enabled) repository.savePersistentContextSyncVersion(0)
             AgentMemoryRetractionRecovery.enqueue(appContext)
             GlobalConversationEventBus.requestProcessing(appContext)
+        } else {
+            AndroidCognitionScheduler.cancelLearning(appContext)
         }
         scheduleNextWake()
         return updated
@@ -2584,7 +2535,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         repository.savePersistentContextSyncVersion(PERSISTENT_CONTEXT_SYNC_VERSION)
     }
 
-    fun executeResearchCycle(explicitUserOverride: Boolean = false): GlobalResearchExecutionResult? {
+    fun executeResearchCycle(explicitUserOverride: Boolean = false, attentionOnly: Boolean = false): GlobalResearchExecutionResult? {
         val settings = repository.settings()
         if (!settings.enabled || !settings.autonomousResearchEnabled) return null
         val budget = backgroundBudgetDecision(
@@ -2593,8 +2544,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             explicitUserOverride = explicitUserOverride
         )
         if (!budget.allowed) return null
-        if (!modelCallBudget.availability(settings).granted) return null
-        return researchExecutor.executeNext()
+        return researchExecutor.executeNext(attentionOnly)
     }
 
     fun executeCognitionCycle(explicitUserOverride: Boolean = false): GlobalCognitionExecutionResult? {
@@ -2766,7 +2716,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                             message.deliveryLeaseExpiresAtMillis.takeIf { it > 0L }?.let(::add)
                         GlobalProactiveMessageStatus.PENDING,
                         GlobalProactiveMessageStatus.NOTIFIED -> {
-                            val eligibleAt = GlobalProactiveDeliveryPolicy.nextEligibleAtMillis(
+                            val eligibleAt = if (ProactiveAttentionPolicy.isAttention(message)) nowMillis else GlobalProactiveDeliveryPolicy.nextEligibleAtMillis(
                                 message,
                                 settings,
                                 profile,
@@ -2816,7 +2766,8 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
     )
 
     fun consumeConnectorResponse(response: AgentConnectorResponse): Boolean =
-        GlobalConnectorResponseScope.consume(
+        (response.conversationId.startsWith(AttentionTitleRequest.PREFIX) &&
+            ProactiveAttentionPairedTitles(appContext).consume(response)) || GlobalConnectorResponseScope.consume(
             response,
             cognition = { cognitionExecutor.consumeConnectorResponse(response) },
             autonomous = { autonomousRunExecutor.consumeConnectorResponse(response) },
@@ -2828,13 +2779,14 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 
     fun pendingProactiveMessages(nowMillis: Long = System.currentTimeMillis()): List<GlobalProactiveMessage> =
         repository.proactiveMessages()
+            .filter(AttentionArticlePolicy::visible)
             .filter { GlobalProactiveDeliveryPolicy.isRecoverable(it, nowMillis) }
             .sortedWith(
                 compareByDescending<GlobalProactiveMessage> { it.urgent }
                     .thenBy(GlobalProactiveMessage::createdAtMillis)
             )
 
-    fun proactiveInboxItems(limit: Int = 50): List<GlobalProactiveInboxItem> =
+    fun proactiveInboxItems(limit: Int = Int.MAX_VALUE): List<GlobalProactiveInboxItem> =
         GlobalProactiveInboxPolicy.project(
             messages = repository.proactiveMessages(),
             feedback = repository.feedback(),
@@ -2842,7 +2794,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         )
 
     fun newProactiveInsightCount(): Int =
-        GlobalProactiveInboxPolicy.newCount(proactiveInboxItems(limit = 100))
+        GlobalProactiveInboxPolicy.newCount(proactiveInboxItems())
 
     fun markProactiveInboxViewed(messageIds: Set<String>): Int =
         repository.markProactiveViewed(messageIds, System.currentTimeMillis())
@@ -2851,49 +2803,33 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         delivered: List<GlobalProactiveMessage>
     ): GlobalAgentNotificationCandidate? {
         val settings = repository.settings()
-        if (!settings.enabled || !settings.proactiveInsightsEnabled || !settings.notificationsEnabled) return null
-        val messages = delivered.filter { it.notifiedAtMillis <= 0L && it.deliveredConversationId.isNotBlank() }
-            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
-        if (messages.isEmpty()) return null
-        val primary = messages.lastOrNull(GlobalProactiveMessage::urgent) ?: messages.last()
-        if (messages.size == 1) {
-            return GlobalAgentNotificationCandidate(
-                title = GlobalAgentText.productTitle(primary.title).ifBlank { "GalaxySSI" },
-                content = primary.content.take(240),
-                conversationId = primary.deliveredConversationId,
-                messageIds = setOf(primary.id)
-            )
-        }
-        val chinese = messages.any { GlobalAgentText.containsCjk(it.content) }
-        val title = if (chinese) {
-            "GalaxySSI \u6709 ${messages.size} \u6761\u65b0\u53d1\u73b0"
-        } else {
-            "GalaxySSI has ${messages.size} new insights"
-        }
-        val content = messages.asReversed()
-            .distinctBy { GlobalAgentText.normalize(it.topic) }
-            .take(3)
-            .joinToString(" \u00b7 ") { it.topic.ifBlank { it.content.take(48) } }
-        return GlobalAgentNotificationCandidate(
-            title = title,
-            content = content,
-            conversationId = primary.deliveredConversationId,
-            messageIds = messages.map(GlobalProactiveMessage::id).toSet()
-        )
+        if (!settings.notificationsEnabled) return null
+        val attention = ProactiveAttentionStore(appContext).preferences()
+        val messages = delivered.filter { it.notifiedAtMillis <= 0L &&
+            (it.deliveredConversationId.isNotBlank() || it.id.startsWith("attention-feed:")) }
+            .filter { GlobalProactiveNotificationPolicy.enabledFor(it, settings) }
+            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it, attention) }
+        return GlobalProactiveNotificationPolicy.candidate(messages)
     }
 
-    fun unnotifiedDeliveredMessages(limit: Int = 24): List<GlobalProactiveMessage> =
-        repository.proactiveMessages()
+    fun unnotifiedDeliveredMessages(limit: Int = 24): List<GlobalProactiveMessage> {
+        val settings = repository.settings()
+        if (!settings.notificationsEnabled) return emptyList()
+        val attention = ProactiveAttentionStore(appContext).preferences()
+        return repository.proactiveMessages()
             .asSequence()
+            .filter { GlobalProactiveNotificationPolicy.enabledFor(it, settings) }
             .filter {
                 it.status == GlobalProactiveMessageStatus.DELIVERED &&
                     it.notifiedAtMillis <= 0L &&
-                    it.deliveredConversationId.isNotBlank()
+                    (it.deliveredConversationId.isNotBlank() || it.id.startsWith("attention-feed:"))
             }
-            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it) }
-            .sortedBy(GlobalProactiveMessage::deliveredAtMillis)
+            .sortedByDescending(GlobalProactiveMessage::deliveredAtMillis)
+            .filter { AgentCognitiveEvalBridge.shouldNotify(appContext, it, attention) }
+            .take(limit.coerceIn(1, 100))
             .toList()
-            .takeLast(limit.coerceIn(1, 100))
+            .reversed()
+    }
 
     fun markNotified(messageIds: Set<String>) {
         repository.markProactiveNotified(messageIds, System.currentTimeMillis())
@@ -2910,13 +2846,18 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         if (messages.isEmpty()) return@synchronized emptyList()
         val delivered = mutableListOf<GlobalProactiveMessage>()
         val excludedConversationIds = repository.excludedConversationIds()
+        val attentionStore = ProactiveAttentionStore(appContext)
+        val attentionPreferences = attentionStore.preferences()
 
         messages.asSequence()
             .filterNot { it.target == GlobalProactiveTarget.GLOBAL_DIGEST }
+            .filter { attentionStore.allows(it, attentionPreferences) }
             .forEach { message ->
                 val profile = adaptiveProfile()
                 val history = repository.interventionHistory()
-                if (!GlobalProactiveDeliveryPolicy.canDeliver(message, settings, profile, history, nowMillis)) {
+                // Saving an explicitly followed finding is independent of notification frequency.
+                if (!ProactiveAttentionPolicy.isAttention(message) &&
+                    !GlobalProactiveDeliveryPolicy.canDeliver(message, settings, profile, history, nowMillis)) {
                     return@forEach
                 }
                 val currentConversations = transcriptStore.conversations(includeArchived = true)
@@ -2966,7 +2907,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                     messageIds = setOf(message.id),
                     conversationId = route.conversationId,
                     deliveryGroupId = groupId,
-                    countBudget = claimed.none(GlobalProactiveMessage::deliveryBudgetCounted),
+                    countBudget = !ProactiveAttentionPolicy.isAttention(message) && claimed.none(GlobalProactiveMessage::deliveryBudgetCounted),
                     nowMillis = nowMillis
                 )
             }
@@ -3256,6 +3197,9 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         instanceId: String = ""
     ): List<AgentTeamMessageEnvelope> = agentTeamController.messages(supervisorRunId, instanceId)
 
+    fun recentAgentTeamMessages(supervisorRunId: String, limit: Int = 20): List<AgentTeamMessageEnvelope> =
+        agentTeamController.recentMessages(supervisorRunId, limit)
+
     fun agentReputation(
         agentId: String,
         capabilities: Set<AgentCapability> = emptySet()
@@ -3519,7 +3463,7 @@ object GlobalConversationEventBus {
         entry: AgentTranscriptEntry,
         timestampMillis: Long = System.currentTimeMillis()
     ): Boolean {
-        if (conversation.trackingPaused || conversation.privateMode) return false
+        if (conversation.trackingPaused || conversation.privateMode || entry.role == AgentTranscriptRole.PROCESS) return false
         val repository = GlobalAgentRepository(context)
         if (!repository.settings().enabled) return false
         val deletedEventId = "transcript:${entry.id}"

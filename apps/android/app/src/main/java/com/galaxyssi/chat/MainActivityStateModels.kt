@@ -226,7 +226,11 @@ import kotlin.math.sin
 
 internal data class AgentProcessCompletionLookup(
     val completedAtMillis: Long?,
-    val checkedAtElapsedRealtime: Long
+    val checkedAtElapsedRealtime: Long,
+    val status: AgentWorkspaceStatus? = null,
+    val startedAtMillis: Long? = null,
+    val conversationId: String = "",
+    val revision: Long = -1L
 )
 
 internal data class PendingDirectSystemAction(

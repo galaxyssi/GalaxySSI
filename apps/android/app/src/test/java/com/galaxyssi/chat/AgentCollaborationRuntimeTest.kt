@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +20,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentCollaborationRuntimeTest {
+    @Test fun richArtifactsSurviveTeamAggregationWithoutLeakingObserverOutput() = runBlocking {
+        val image = AgentRichContentCodec.encode(listOf(AgentRichBlock("image", AgentRichBlockType.IMAGE,
+            uri = "galaxyssi-artifact://primary/outputs/result.png", mimeType = "image/png")))
+        val file = AgentRichContentCodec.encode(listOf(AgentRichBlock("file", AgentRichBlockType.FILE,
+            uri = "galaxyssi-artifact://observer/private.md")))
+        val store = InMemoryAgentTeamExecutionStore()
+        val runtime = AgentTeamExecutionRuntime(store)
+        try {
+            val result = runtime.start(teamDefinition(), request()) { context ->
+                AgentSubagentOutput("done", richOutputJson = if (context.member.memberId == "primary") image else file)
+            }.await()
+            assertEquals(image, result.snapshot.finalRichOutputJson)
+            assertEquals(image, result.subagentResult["primary"]?.richOutputJson)
+            assertEquals(image, store.snapshot(request().runId)?.finalRichOutputJson)
+            assertFalse(result.snapshot.finalRichOutputJson.contains("private.md"))
+        } finally { runtime.close() }
+    }
+
     @Test fun managedAssignmentPromptWinsOverSharedGoalOnlyForHostManagedTeams() {
         val action = AgentAction(id = "assignment", kind = AgentActionKind.CALL_CONNECTOR, target = "test", risk = AgentRisk.LOW,
             status = AgentActionStatus.RUNNING, description = "test", parameters = mapOf("prompt" to "Only Curie's assignment",
@@ -122,19 +141,25 @@ class AgentCollaborationRuntimeTest {
             fromInstanceId = "user",
             toInstanceId = "primary",
             kind = AgentTeamMessageKind.USER_DIRECTIVE,
-            text = "Preserve the public API"
+            text = "Preserve the public API",
+            metadata = mapOf("candidate_id" to "alternative-2", "stage" to "VERIFY")
         ))
         val runtime = AgentTeamExecutionRuntime(
             InMemoryAgentTeamExecutionStore(),
-            mailbox = mailbox
+            mailbox = object : AgentTeamMailbox by mailbox {
+                override fun messages(supervisorRunId: String, instanceId: String, afterSequence: Long): List<AgentTeamMessageEnvelope> =
+                    error("A member dispatch must not reload all historical messages")
+                override fun pendingMessages(supervisorRunId: String, instanceId: String) = mailbox.pendingMessages(supervisorRunId, instanceId)
+            }
         )
         var received = ""
 
         runtime.start(teamDefinition(), request()) { context ->
             if (context.member.memberId == "primary") {
                 @Suppress("UNCHECKED_CAST")
-                val messages = context.request.context["team_messages"] as List<Map<String, String>>
-                received = messages.single().getValue("text")
+                val messages = context.request.context["team_messages"] as List<Map<String, Any?>>
+                received = messages.single().getValue("text") as String
+                assertEquals(mapOf("candidate_id" to "alternative-2", "stage" to "VERIFY"), messages.single()["metadata"])
                 AgentSubagentOutput("final")
             } else {
                 AgentSubagentOutput("evidence")
@@ -158,6 +183,7 @@ class AgentCollaborationRuntimeTest {
         )
         val activeObservers = AtomicInteger()
         val maximumActiveObservers = AtomicInteger()
+        val bothObserversStarted = CompletableDeferred<Unit>()
         val executed = CopyOnWriteArrayList<String>()
         val definition = teamDefinition()
         val request = request()
@@ -167,7 +193,8 @@ class AgentCollaborationRuntimeTest {
             if (context.member.deliveryMode == AgentDeliveryMode.OBSERVE) {
                 val active = activeObservers.incrementAndGet()
                 maximumActiveObservers.updateAndGet { maxOf(it, active) }
-                delay(60L)
+                if (active == 2) bothObserversStarted.complete(Unit)
+                withTimeout(5_000L) { bothObserversStarted.await() }
                 activeObservers.decrementAndGet()
                 AgentSubagentOutput("${context.member.agentId}-evidence")
             } else {
@@ -387,12 +414,15 @@ class AgentCollaborationRuntimeTest {
             sourceMessageId = 71L,
             content = "verified evidence"
         )
-        val primary = managedResponse(
+        val primaryWithoutArtifacts = managedResponse(
             ownerRunId = "primary-run",
             agentId = "primary",
             sourceMessageId = 72L,
             content = "final reviewed answer"
         )
+        val rich = AgentRichContentCodec.encode(listOf(AgentRichBlock("file", AgentRichBlockType.FILE,
+            uri = "galaxyssi-artifact://primary/result.md", mimeType = "text/markdown")))
+        val primary = primaryWithoutArtifacts.copy(response = primaryWithoutArtifacts.response!!.copy(richOutputJson = rich))
 
         assertTrue(store.applyLateResponse(observer))
         assertEquals(AgentTeamExecutionState.INTERRUPTED, store.snapshot(request.runId)?.state)
@@ -401,6 +431,7 @@ class AgentCollaborationRuntimeTest {
         val eventCount = store.records().single().events.size
         assertEquals(AgentTeamExecutionState.SUCCEEDED, completed.state)
         assertEquals("final reviewed answer", completed.finalOutput)
+        assertEquals(rich, completed.finalRichOutputJson)
         assertEquals(AgentSubagentStatus.SUCCEEDED, completed.members.first {
             it.agentId == "observer"
         }.status)
@@ -901,7 +932,7 @@ class AgentCollaborationRuntimeTest {
         val managedResponses = InMemoryAgentManagedResponseLedger()
         val registrations = listOf(
             registration("primary", AgentCapability.CODE),
-            registration("observer", AgentCapability.RESEARCH)
+            registration("observer", AgentCapability.RESEARCH).copy(adapterType = "codex-app-server-or-cli")
         )
         val provider = ActionExecutorAgentProvider(
             registrationSource = { registrations },
@@ -953,7 +984,8 @@ class AgentCollaborationRuntimeTest {
                 AgentTeamMember("primary", AgentDeliveryMode.RESPOND, setOf(AgentCapability.CODE)),
                 AgentTeamMember("observer", AgentDeliveryMode.OBSERVE, setOf(AgentCapability.RESEARCH),
                     objective = "Review the saved document and report the observed evidence",
-                    context = mapOf("collaboration_group_id" to "conversation", "collaboration_model_id" to "selected-model"))
+                    context = mapOf("collaboration_group_id" to "conversation", "collaboration_model_id" to "selected-model",
+                        CollaborationReasoningSelection.KEY to "xhigh"))
             )
         )
 
@@ -972,10 +1004,12 @@ class AgentCollaborationRuntimeTest {
         assertEquals("respond", observerAction.parameters["delivery_mode"])
         assertEquals("selected-model", observerAction.parameters["agent_model_id"])
         assertEquals("selected-model", observerAction.parameters["manual_model_id"])
+        assertEquals("xhigh", observerAction.parameters["agent_reasoning_effort"])
         assertEquals("true", observerAction.parameters["manual_target_locked"])
         assertTrue(observerAction.parameters["prompt"].orEmpty().contains("Respond only as this one member"))
         assertTrue(observerAction.parameters["prompt"].orEmpty().contains("You are not the coordinator"))
         assertNull(primaryAction.parameters["manual_model_id"])
+        assertNull(primaryAction.parameters["agent_reasoning_effort"])
         assertEquals("Review the saved document and report the observed evidence",
             observerAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])
         assertEquals(policyPrompt, primaryAction.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER])

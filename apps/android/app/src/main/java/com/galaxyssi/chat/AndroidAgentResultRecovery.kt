@@ -23,6 +23,9 @@ internal object AndroidAgentResultRecovery {
             "agent_task_result_page" -> receive(context, payload, desktop)
             "agent_task_recovery_result" -> AndroidAgentRemoteRecovery.receive(context, payload, desktop)
             "agent_task_evidence" -> AndroidCollaborationRemoteEvidence.receive(context, payload, desktop)
+            "collaboration_recall_request" -> AndroidCollaborationRemoteRecall.receive(context, payload, desktop)
+            "collaboration_publish_request" -> AndroidCollaborationRemoteMilestone.receive(context, payload, desktop)
+            CollaborationSavedToolTest.REQUEST -> AndroidCollaborationSavedToolTest.receive(context, payload, desktop)
             else -> return false
         }
         return true
@@ -106,6 +109,17 @@ internal object AndroidAgentResultRecovery {
         }
     }
 
+    /** Failure events are sufficient to settle a request even if its separate final reply is lost. */
+    internal fun persistAuthenticatedFailure(context: Context, payload: JSONObject) {
+        require(AgentTaskIdentityStore.matchesRegistered(context, payload))
+        val response = AgentRemoteOutcomeCodec.terminalFailureEvent(payload,
+            AgentRemoteOutcomeCodec.content(context, payload)) ?: return
+        val consumed = AgentConnectorResponseBus.publish(context, response)
+        check(consumed || AgentConnectorResponseStore.wasRecorded(context, response)) {
+            "Terminal Agent event is not durable; keep the transport envelope for replay"
+        }
+    }
+
     private fun captureEvidence(context: Context, payload: JSONObject, desktop: String) {
         runCatching { AndroidCollaborationRemoteEvidence.capture(context, payload, desktop) }.onFailure {
             // The completed model response must remain deliverable even if a separate evidence store fails.
@@ -137,9 +151,11 @@ internal object AndroidAgentResultRecovery {
             (pending.taskId != fields.optString("task_id") && pending.taskId != pending.turnId) ||
             pending.recoverySuccessorSourceMessageId > 0) return false
         val currentGeneration = !fields.has("execution_generation")
-        if (AgentConnectorResponseStore.receivedExecution(context, observation, currentGeneration)) {
+        if (AgentConnectorResponseStore.receivedExecution(context, observation, currentGeneration) &&
+            (ordinary != null || !AgentTeamReplyRecovery.awaitsResult(context, pending))) {
             // Do not rewrite task state here: another execution generation can
-            // start concurrently. Its own generation-bound result remains eligible.
+            // start concurrently. An exact interrupted child may need its original body
+            // even when a transport receipt was committed without a supervisor event.
             return false
         }
         return !AgentPendingDeliveryStore.isSuperseded(context, source, pending.conversationId, pending.turnId) &&

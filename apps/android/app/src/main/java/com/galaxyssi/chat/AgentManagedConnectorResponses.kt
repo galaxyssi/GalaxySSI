@@ -24,6 +24,7 @@ data class AgentManagedResponseRecord(
 )
 
 interface AgentManagedResponseLedger {
+    fun findOwner(ownerRunId: String): AgentManagedResponseRecord?
     fun register(record: AgentManagedResponseRecord)
     fun complete(response: AgentConnectorResponse): AgentManagedResponseRecord?
     fun acknowledge(response: AgentConnectorResponse): AgentManagedResponseRecord?
@@ -38,9 +39,12 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
     private val records = linkedMapOf<String, AgentManagedResponseRecord>()
 
     @Synchronized
+    override fun findOwner(ownerRunId: String): AgentManagedResponseRecord? = records[ownerRunId]
+
+    @Synchronized
     override fun register(record: AgentManagedResponseRecord) {
         require(record.ownerRunId.isNotBlank() && record.sourceMessageId > 0L)
-        records[record.ownerRunId] = record
+        records[record.ownerRunId] = records[record.ownerRunId]?.preserveRegistration(record) ?: record
         compact()
     }
 
@@ -110,21 +114,31 @@ class InMemoryAgentManagedResponseLedger : AgentManagedResponseLedger {
 }
 
 class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedResponseLedger {
-    private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
+    private val rows = AgentManagedResponseRows(context)
+
+    init { synchronized(PROCESS_LOCK) { rows.migrate() } }
+
+    override fun findOwner(ownerRunId: String): AgentManagedResponseRecord? = synchronized(PROCESS_LOCK) {
+        rows.find(ownerRunId)?.takeUnless { it.isStale(System.currentTimeMillis()) }
+    }
 
     internal fun ownsRecordedSource(source: Long, conversation: String, turn: String): Boolean = synchronized(PROCESS_LOCK) {
-        source > 0 && conversation.isNotBlank() && turn.isNotBlank() && load().any {
-            it.sourceMessageId == source && it.conversationId == conversation && it.turnId == turn
+        source > 0 && conversation.isNotBlank() && turn.isNotBlank() && rows.forSource(source).any {
+            !it.isStale(System.currentTimeMillis()) && it.conversationId == conversation && it.turnId == turn
         }
     }
 
     internal fun pendingRecoveryDeliveries(): List<AgentPendingDelivery> = synchronized(PROCESS_LOCK) {
-        load().mapNotNull { it.pendingRecoveryDelivery() }.distinct()
+        rows.forState(AgentManagedResponseState.PENDING).mapNotNull { it.pendingRecoveryDelivery() }.distinct()
+    }
+
+    internal fun pendingOwner(delivery: AgentPendingDelivery): AgentManagedResponseRecord? = synchronized(PROCESS_LOCK) {
+        rows.forSource(delivery.sourceMessageId).singleOrNull { it.pendingRecoveryDelivery() == delivery }
     }
 
     internal fun pendingRecoveryDelivery(source: Long, contact: String, conversation: String,
         turn: String, task: String): AgentPendingDelivery? = synchronized(PROCESS_LOCK) {
-        load().firstNotNullOfOrNull { record ->
+        rows.forSource(source).firstNotNullOfOrNull { record ->
             record.pendingRecoveryDelivery()?.takeIf {
                 it.sourceMessageId == source && it.contactId == contact && it.conversationId == conversation &&
                     it.turnId == turn && it.taskId == task
@@ -134,84 +148,73 @@ class EncryptedAgentManagedResponseLedger(context: Context) : AgentManagedRespon
 
     override fun register(record: AgentManagedResponseRecord) = synchronized(PROCESS_LOCK) {
         require(record.ownerRunId.isNotBlank() && record.sourceMessageId > 0L)
-        val next = load().filterNot { it.ownerRunId == record.ownerRunId }
-            .plus(record)
-        save(next)
+        val stored = rows.find(record.ownerRunId)
+        val previous = stored?.takeUnless { it.isStale(System.currentTimeMillis()) }
+        val next = previous?.preserveRegistration(record) ?: record
+        rows.put(if (next.state == AgentManagedResponseState.APPLIED) next.copy(response = null) else next, stored)
+        if (next.state == AgentManagedResponseState.APPLIED) rows.compact()
     }
 
     override fun complete(response: AgentConnectorResponse): AgentManagedResponseRecord? = synchronized(PROCESS_LOCK) {
-        val records = load().toMutableList()
-        val index = records.indexOfFirst { it.correlates(response) }
-        if (index < 0) return@synchronized null
-        if (records[index].state != AgentManagedResponseState.PENDING) return@synchronized records[index]
-        val completed = records[index].copy(
+        val record = matching(response) ?: return@synchronized null
+        if (record.state != AgentManagedResponseState.PENDING) return@synchronized record
+        val completed = record.copy(
             state = AgentManagedResponseState.COMPLETED,
             response = response,
             completedAtMillis = response.receivedAtMillis
         )
-        records[index] = completed
-        save(records)
+        rows.put(completed, record)
         AgentLateManagedResponseBus.publish(completed)
         completed
     }
 
     override fun acknowledge(response: AgentConnectorResponse): AgentManagedResponseRecord? =
         synchronized(PROCESS_LOCK) {
-            val records = load().toMutableList()
-            val index = records.indexOfFirst { it.correlates(response) }
-            if (index < 0) return@synchronized null
-            if (records[index].state != AgentManagedResponseState.PENDING) return@synchronized records[index]
-            val acknowledged = records[index].copy(
+            val record = matching(response) ?: return@synchronized null
+            if (record.state != AgentManagedResponseState.PENDING) return@synchronized record
+            val acknowledged = record.copy(
                 state = AgentManagedResponseState.COMPLETED,
                 response = response,
                 completedAtMillis = response.receivedAtMillis
             )
-            records[index] = acknowledged
-            save(records)
+            rows.put(acknowledged, record)
             acknowledged
         }
 
     override fun pendingForSupervisor(supervisorRunId: String): List<AgentManagedResponseRecord> =
         synchronized(PROCESS_LOCK) {
-            load().filter {
-                it.supervisorRunId == supervisorRunId && it.state == AgentManagedResponseState.PENDING
+            rows.forSupervisor(supervisorRunId).filter {
+                it.state == AgentManagedResponseState.PENDING
             }.sortedBy(AgentManagedResponseRecord::createdAtMillis)
         }
 
     override fun completedUnapplied(): List<AgentManagedResponseRecord> = synchronized(PROCESS_LOCK) {
-        load().filter { it.state == AgentManagedResponseState.COMPLETED && it.response != null }
+        rows.forState(AgentManagedResponseState.COMPLETED).filter { it.response != null }
             .sortedBy(AgentManagedResponseRecord::completedAtMillis)
     }
 
     override fun markApplied(ownerRunId: String) = synchronized(PROCESS_LOCK) {
-        val records = load().toMutableList()
-        val index = records.indexOfFirst { it.ownerRunId == ownerRunId }
-        if (index >= 0 && records[index].state != AgentManagedResponseState.APPLIED) {
-            records[index] = records[index].copy(state = AgentManagedResponseState.APPLIED)
-            save(records)
+        val record = rows.find(ownerRunId)
+        if (record != null && record.state != AgentManagedResponseState.APPLIED) {
+            rows.put(record.copy(state = AgentManagedResponseState.APPLIED, response = null), record)
+            rows.compact()
         }
     }
 
     override fun removeOwner(ownerRunId: String) = synchronized(PROCESS_LOCK) {
-        save(load().filterNot { it.ownerRunId == ownerRunId })
+        rows.find(ownerRunId)?.let(rows::remove)
+        rows.compact()
+        Unit
     }
 
-    override fun clear() = synchronized(PROCESS_LOCK) { database.clear() }
+    override fun clear() = synchronized(PROCESS_LOCK) { rows.clear() }
 
-    private fun load(): List<AgentManagedResponseRecord> = AgentManagedResponseRetentionPolicy.retain(
-        AgentManagedResponseCodec.decode(database.readString(KEY_RECORDS, "[]"))
-    )
-
-    private fun save(records: List<AgentManagedResponseRecord>) {
-        database.writeString(
-            KEY_RECORDS,
-            AgentManagedResponseCodec.encode(AgentManagedResponseRetentionPolicy.retain(records)).toString()
-        )
-    }
+    private fun matching(response: AgentConnectorResponse): AgentManagedResponseRecord? =
+        rows.forSource(response.sourceMessageId).firstOrNull {
+            !it.isStale(System.currentTimeMillis()) && it.correlates(response)
+        }
 
     private companion object {
-        const val DATABASE = "galaxyssi_managed_connector_responses_v2"
-        const val KEY_RECORDS = "records"
         val PROCESS_LOCK = Any()
     }
 }
@@ -262,6 +265,13 @@ object AgentLateManagedResponseBus {
     }
 }
 
+private fun AgentManagedResponseRecord.preserveRegistration(next: AgentManagedResponseRecord): AgentManagedResponseRecord {
+    require(supervisorRunId == next.supervisorRunId && agentId == next.agentId && deliveryMode == next.deliveryMode &&
+        sourceMessageId == next.sourceMessageId && contactId == next.contactId && conversationId == next.conversationId &&
+        turnId == next.turnId && taskId == next.taskId) { "Managed response owner already belongs to another execution" }
+    return this
+}
+
 private fun AgentManagedResponseRecord.correlates(response: AgentConnectorResponse): Boolean =
     sourceMessageId == response.sourceMessageId &&
         (contactId.isBlank() || response.contactId.isBlank() || contactId == response.contactId) &&
@@ -300,7 +310,7 @@ private fun AgentManagedResponseRecord.isStale(nowMillis: Long): Boolean =
     state == AgentManagedResponseState.APPLIED &&
         maxOf(createdAtMillis, completedAtMillis) < nowMillis - MAX_MANAGED_RESPONSE_AGE_MILLIS
 
-private object AgentManagedResponseCodec {
+internal object AgentManagedResponseCodec {
     fun encode(records: List<AgentManagedResponseRecord>): JSONArray = JSONArray().apply {
         records.forEach { record ->
             put(JSONObject()
@@ -355,6 +365,9 @@ private object AgentManagedResponseCodec {
         .put("turn_id", response.turnId)
         .put("task_id", response.taskId)
         .put("success", response.success)
+        .put("task_status", response.taskStatus)
+        .put("execution_generation", response.executionGeneration)
+        .put("status_sequence", response.statusSequence)
         .put("delivery_failure_code", response.deliveryFailureCode)
         .put("input_tokens", response.inputTokens)
         .put("output_tokens", response.outputTokens)
@@ -370,6 +383,9 @@ private object AgentManagedResponseCodec {
         val content = json.optString("content")
         val richOutput = json.optString("rich_output")
         if (sourceMessageId <= 0L || (content.isBlank() && richOutput.isBlank())) return null
+        val version = requireNotNull(AgentRemoteOutcomeCodec.version(json)) { "Invalid managed response execution version" }
+        val status = json.optString("task_status")
+        require(status.isBlank() || status in AgentRemoteOutcomeCodec.TERMINAL) { "Invalid managed terminal status" }
         return AgentConnectorResponse(
             sourceMessageId = sourceMessageId,
             contactId = json.optString("contact_id"),
@@ -377,7 +393,10 @@ private object AgentManagedResponseCodec {
             conversationId = json.optString("conversation_id"),
             turnId = json.optString("turn_id"),
             taskId = json.optString("task_id"),
-            success = json.optBoolean("success", true),
+            success = if (status.isBlank()) json.optBoolean("success", true) else status == "completed",
+            taskStatus = status,
+            executionGeneration = version.generation,
+            statusSequence = version.sequence,
             inputTokens = json.optLong("input_tokens"),
             outputTokens = json.optLong("output_tokens"),
             costMicros = json.optLong("cost_micros"),

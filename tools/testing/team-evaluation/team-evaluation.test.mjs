@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { readJson } from "../../benchmark/agent-benchmark-lib.mjs";
 import { accountingTemplate, assessQuality, compare, createPlan, digest, importBenchmark,
-  measureRun, renderMarkdown, reviewerPacket, UNKNOWN, validatePlan } from "./lib.mjs";
+  measureRun, renderMarkdown, reviewerPacket, UNKNOWN, validateCorpus, validateExport, validatePlan } from "./lib.mjs";
 import { fixtureExport } from "./fixture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +21,39 @@ const reportFor = ({ plan, input }) => compare(plan, corpus, input, "fixture");
 const observed = (value) => ({ value, complete: true, evidence_ref: "unit-test-only" });
 function firstKnown(data) { return data.input.runs.find((r) => r.accounting.ledger.calls[0].cost_micros.complete); }
 function rowFor(report, run) { return report.records.find((r) => r.slot_id === run.slot_id); }
+
+function makeActual(sourceConfig = { ...config, controls: {
+  model_policy: "pinned-model-parameters", tool_policy: "read-only-tools-v1",
+  environment: "test-build-digest", context_policy: "reset-every-slot-v1"
+} }) {
+  // Independent in-memory schema test data, not captured execution or relabeled fixtures.
+  const { plan } = createPlan(corpus, sourceConfig);
+  const input = { schema_version: 1, evidence_kind: "actual", plan_sha256: plan.plan_sha256,
+    warning: "UNIT_TEST_ONLY: constructed receipts, not observed execution.",
+    runs: plan.slots.map((slot) => {
+      const scenario = corpus.scenarios.find((s) => s.id === slot.scenario_id);
+      const runId = `test-run-${slot.slot_id}`;
+      const ref = (name) => `unit-test-receipts.json#${runId}/${name}`;
+      const receipt = (name, value) => ({ value, complete: true, evidence_ref: ref(name) });
+      const failed = scenario.id === corpus.scenarios[0].id && slot.repetition === 2;
+      return {
+        slot_id: slot.slot_id, run_id: runId, evidence_kind: "actual",
+        controls: structuredClone(plan.controls),
+        budget: { limits: structuredClone(plan.budget), scope: "entire_trial", enforced: true, evidence_ref: ref("budget") },
+        capture: { complete: true, assignment_verified: true, controls_verified: true, reset_verified: true,
+          scope: "entire_trial", order: slot.order, request_sha256: digest(scenario.request), evidence_ref: ref("capture") },
+        result: { run_id: runId, scenario_id: scenario.id, status: failed ? "failed" : "completed",
+          response: failed ? "" : JSON.stringify(scenario.answers), events: [], tools: [],
+          failure_reasons: failed ? ["unit-test-terminal-failure"] : [] },
+        accounting: { wall_time_ms: receipt("wall-time", 1200), rework_count: receipt("rework", failed ? 1 : 0),
+          intervention_count: receipt("intervention", 0),
+          ledger: { complete: true, scope: "entire_trial", evidence_ref: ref("ledger"), participants: ["test-participant"],
+            calls: [{ call_id: `${runId}-call-1`, participant_id: "test-participant",
+              total_tokens: receipt("tokens", 300), cost_micros: receipt("cost", 500) }] } }
+      };
+    }) };
+  return { plan, input };
+}
 
 test("fixed corpus has six types and three repeated paired trials with balanced order", () => {
   const { plan, private_key } = make();
@@ -314,7 +347,7 @@ test("CLI requires explicit adapters, produces auditable local files, and never 
   assert.equal(emptyReport.eligible_pairs, 0);
   assert.equal(emptyReport.arms.A.observed + emptyReport.arms.B.observed, 0);
   assert.equal(emptyReport.conclusion, "INCOMPLETE_NO_SUPERIORITY_CLAIM");
-  for (const name of ["run.mjs", "lib.mjs", "fixture.mjs"]) {
+  for (const name of ["run.mjs", "lib.mjs", "fixture.mjs", "assigned-outcomes.mjs"]) {
     const source = fs.readFileSync(path.join(here, name), "utf8");
     assert.doesNotMatch(source, /child_process|\beval\s*\(|new Function|\bfetch\s*\(/);
   }
@@ -335,26 +368,159 @@ test("eligible differences use matched pairs, with task-level repetition counts"
   assert.equal(report.by_task.reduce((n, task) => n + task.eligible_pairs, 0), 17);
 });
 
-test("mock actual-shaped evidence stays descriptive, and placeholder policies exclude it", () => {
-  // Unit-test mock only; never emitted as an actual run artifact by the CLI.
-  const realConfig = structuredClone(config);
-  realConfig.controls = { model_policy: "pinned-model-parameters", tool_policy: "read-only-tools-v1",
-    environment: "test-build-digest", context_policy: "reset-every-slot-v1" };
-  const { plan } = createPlan(corpus, realConfig);
-  const input = fixtureExport(plan, corpus);
-  input.evidence_kind = "actual";
-  for (const run of input.runs) {
-    run.evidence_kind = "actual";
-    run.accounting.ledger.calls[0].cost_micros = observed(500);
-  }
+test("independently built actual-shaped receipts stay descriptive and placeholder policies exclude them", () => {
+  const { plan, input } = makeActual();
   const report = compare(plan, corpus, input, "actual");
   assert.equal(report.eligible_pairs, 18);
   assert.equal(report.conclusion, "DESCRIPTIVE_ONLY_NO_SUPERIORITY_CLAIM");
   assert.equal(report.arms.A.failed, 1);
-  const placeholder = make();
-  placeholder.input.evidence_kind = "actual";
-  for (const run of placeholder.input.runs) run.evidence_kind = "actual";
+  assert.equal(report.arms.B.failed, 1);
+  assert.equal(JSON.stringify(input).includes("FIXTURE_ONLY"), false);
+  const placeholder = makeActual(config);
   assert.equal(compare(placeholder.plan, corpus, placeholder.input, "actual").eligible_pairs, 0);
+});
+
+test("actual provenance rejects each explicit fixture receipt field independently", () => {
+  const targets = [
+    (r) => r.budget, (r) => r.capture, (r) => r.accounting.ledger,
+    (r) => r.accounting.wall_time_ms, (r) => r.accounting.rework_count,
+    (r) => r.accounting.intervention_count,
+    (r) => r.accounting.ledger.calls[0].total_tokens,
+    (r) => r.accounting.ledger.calls[0].cost_micros
+  ];
+  const markers = ["FIXTURE_ONLY", "FIXTURE_ONLY:receipt", " fixture_only:receipt \n",
+    "FIXTURE_ONLY-receipt", "FIXTURE_ONLY_receipt", "FIXTURE_ONLY receipt"];
+  for (const target of targets) for (const marker of markers) {
+    const { plan, input } = makeActual();
+    target(input.runs[0]).evidence_ref = marker;
+    assert.throws(() => validateExport(input, plan, "actual"), /Explicit fixture provenance/, marker);
+  }
+});
+
+test("actual provenance checks cover later failed calls and all importing or reporting entry points", () => {
+  const { plan, input } = makeActual();
+  const run = input.runs.at(-1);
+  run.accounting.ledger.calls.push({ call_id: "late-failed-call", participant_id: "test-participant", status: "failed",
+    total_tokens: observed(10), cost_micros: { ...observed(20), evidence_ref: "FIXTURE_ONLY:failed-call" } });
+  assert.throws(() => compare(plan, corpus, input, "actual"), /Explicit fixture provenance/);
+  assert.throws(() => reviewerPacket(plan, corpus, input, "actual"), /Explicit fixture provenance/);
+  const results = input.runs.map((r) => r.result);
+  const accounting = { ...input, runs: input.runs.map(({ result, ...row }) => row) };
+  assert.throws(() => importBenchmark(plan, corpus, { results }, accounting), /Explicit fixture provenance/);
+});
+
+test("fixture marker checks do not scan answer bodies or result metadata", () => {
+  const { plan, input } = makeActual();
+  const run = input.runs.find((r) => r.result.status === "completed");
+  run.result.response = JSON.stringify({ quoted_text: "FIXTURE_ONLY: source text, not a receipt" });
+  run.result.events = [{ message: "FIXTURE_ONLY: quoted source" }];
+  run.result.failure_reasons = ["FIXTURE_ONLY: quoted diagnostic"];
+  assert.equal(validateExport(input, plan, "actual"), input);
+  assert.equal(rowFor(compare(plan, corpus, input, "actual"), run).eligible, true);
+  const packet = reviewerPacket(plan, corpus, input, "actual");
+  assert.equal(packet.items.find((item) => item.slot_id === run.slot_id).response, run.result.response);
+});
+
+test("receipt marker matching is explicit and does not coerce unknown references", () => {
+  const { plan, input } = makeActual();
+  const cost = input.runs[0].accounting.ledger.calls[0].cost_micros;
+  for (const ref of ["NOT_FIXTURE_ONLY:receipt", "FIXTURE_ONLYISH:receipt", "test-receipt-123"]) {
+    cost.evidence_ref = ref;
+    assert.equal(validateExport(input, plan, "actual"), input);
+    assert.equal(measureRun(input.runs[0]).cost_micros, 500);
+  }
+  for (const ref of [undefined, null, 0, false, {}, " "]) {
+    cost.evidence_ref = ref;
+    assert.equal(validateExport(input, plan, "actual"), input);
+    assert.equal(measureRun(input.runs[0]).cost_micros, UNKNOWN);
+  }
+  cost.evidence_ref = "FIXTURE_ONLY:incomplete";
+  cost.complete = false;
+  assert.throws(() => validateExport(input, plan, "actual"), /Explicit fixture provenance/);
+});
+
+test("quality excludes pure latency for either criticality without mutating the scenario", () => {
+  for (const critical of [false, true]) {
+    const scenario = structuredClone(corpus.scenarios[0]);
+    scenario.expect.max_duration_ms = 100;
+    scenario.expect.latency_is_critical = critical;
+    const original = structuredClone(scenario);
+    const result = { status: "completed", response: JSON.stringify(scenario.answers), duration_ms: 99 };
+    const quality = assessQuality(scenario, result);
+    assert.equal(quality.score, 1);
+    assert.equal(quality.passed, true);
+    assert.equal(quality.assertions.some((a) => a.name === "latency_budget"), false);
+    for (const duration of [100, 101, undefined]) {
+      assert.deepEqual(assessQuality(scenario, { ...result, duration_ms: duration }), quality);
+    }
+    assert.deepEqual(scenario, original);
+  }
+});
+
+test("removing latency from quality keeps tool and terminal failures authoritative", () => {
+  const scenario = structuredClone(corpus.scenarios.at(-1));
+  scenario.expect.max_duration_ms = 1;
+  scenario.expect.latency_is_critical = true;
+  const result = { status: "completed", response: JSON.stringify(scenario.answers), duration_ms: 2 };
+  const unsafe = assessQuality(scenario, { ...result, tools: ["upload"] });
+  assert.equal(unsafe.score, 0);
+  assert.equal(unsafe.passed, false);
+  assert.ok(unsafe.assertions.some((a) => a.name === "forbidden_tools" && !a.passed));
+  const failed = assessQuality(scenario, { ...result, status: "failed" });
+  assert.equal(failed.score, 0);
+  assert.equal(failed.passed, false);
+});
+
+test("custom-corpus quality stays separate while whole-trial wall-time eligibility is enforced", () => {
+  const custom = structuredClone(corpus);
+  const scenario = custom.scenarios.find((s) => s.id === "dependency-plan");
+  scenario.expect.max_duration_ms = 100;
+  scenario.expect.latency_is_critical = true;
+  const { plan } = createPlan(custom, config);
+  const input = fixtureExport(plan, custom);
+  const run = input.runs.find((r) => r.result.scenario_id === scenario.id);
+  const row = () => rowFor(compare(plan, custom, input, "fixture"), run);
+  run.result.duration_ms = 101;
+  run.accounting.wall_time_ms = observed(plan.budget.max_wall_time_ms);
+  assert.equal(row().metrics.quality, 1);
+  assert.equal(row().eligible, true);
+  run.accounting.wall_time_ms.value += 1;
+  assert.equal(row().metrics.quality, 1);
+  assert.ok(row().exclusion_reasons.includes("over_budget_wall_time_ms"));
+  assert.equal(row().eligible, false);
+  run.accounting.wall_time_ms = { value: UNKNOWN, complete: false };
+  assert.equal(row().metrics.quality, 1);
+  assert.ok(row().exclusion_reasons.includes("unknown_wall_time_ms"));
+  assert.equal(row().eligible, false);
+});
+
+test("canonical request deduplication ignores nested object key order", () => {
+  const custom = structuredClone(corpus);
+  const prompt = custom.scenarios[0].request.prompt;
+  custom.scenarios[0].request = { prompt, context: { rows: [{ id: "r1", count: 2 }], options: { a: 1, b: 2 } } };
+  custom.scenarios[1].request = { context: { options: { b: 2, a: 1 }, rows: [{ count: 2, id: "r1" }] }, prompt };
+  assert.equal(digest(custom.scenarios[0].request), digest(custom.scenarios[1].request));
+  assert.throws(() => validateCorpus(custom), /Duplicate corpus request/);
+  assert.throws(() => createPlan(custom, config), /Duplicate corpus request/);
+});
+
+test("canonical request deduplication preserves meaningful array content and scheduled repetitions", () => {
+  const custom = structuredClone(corpus);
+  const prompt = custom.scenarios[0].request.prompt;
+  custom.scenarios[0].request = { prompt, context: ["first", "second"] };
+  custom.scenarios[1].request = { prompt, context: ["second", "first"] };
+  assert.notEqual(digest(custom.scenarios[0].request), digest(custom.scenarios[1].request));
+  assert.equal(validateCorpus(custom), custom);
+  for (const repetitions of [3, 4, 10]) {
+    const { plan } = createPlan(custom, config, repetitions);
+    assert.equal(validatePlan(plan, custom), plan);
+    assert.equal(plan.slots.length, custom.scenarios.length * repetitions * 2);
+    for (const scenario of custom.scenarios) for (const arm of ["A", "B"]) {
+      const slots = plan.slots.filter((s) => s.scenario_id === scenario.id && s.arm_label === arm);
+      assert.equal(slots.length, repetitions);
+      assert.equal(new Set(slots.map((s) => s.repetition)).size, repetitions);
+    }
+  }
 });
 
 test("config caps are exact typed limits and four controlled policies are mandatory", () => {
@@ -380,4 +546,205 @@ test("a rehashed plan with all pairs in the same arm order is still rejected", (
   const { plan_sha256, ...body } = plan;
   plan.plan_sha256 = digest(body);
   assert.throws(() => validatePlan(plan, corpus), /Unbalanced/);
+});
+
+function policyData() {
+  const data = makeActual();
+  for (const run of data.input.runs) {
+    run.result.status = "completed";
+    run.result.response = JSON.stringify(corpus.scenarios.find((s) => s.id === run.result.scenario_id).answers);
+  }
+  return data;
+}
+const policyReport = ({ plan, input }) => compare(plan, corpus, input, "actual");
+const policyRow = (report, run) => report.all_assigned.outcomes.find((row) => row.slot_id === run.slot_id);
+
+test("all-assigned completion uses every scheduled slot and matches complete known pairs", () => {
+  const data = policyData();
+  const report = policyReport(data);
+  assert.equal(report.analysis_version, 2);
+  for (const arm of ["A", "B"]) {
+    assert.deepEqual(report.all_assigned.arms[arm], { scheduled: 18, known: 18, unknown: 0,
+      mean: 1, lower: 1, upper: 1, verified_successes: 18, verified_policy_failures: 0 });
+  }
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.mean, 0);
+  assert.equal(report.all_assigned.outcomes.length, 36);
+  assert.equal(report.all_assigned.pairs.length, 18);
+  assert.equal(report.eligible_pair_analysis, "diagnostic_only_post_assignment_selection");
+  assert.equal(report.arms.A.metrics_all_scheduled.quality.mean_basis, "available_observations_only");
+});
+
+test("budget excess stays a policy failure even when eligible-only comparisons hide it", () => {
+  const data = policyData();
+  const slot = data.plan.slots.find((s) => s.arm_label === "B");
+  const run = data.input.runs.find((r) => r.slot_id === slot.slot_id);
+  run.accounting.wall_time_ms = observed(data.plan.budget.max_wall_time_ms + 1);
+  const report = policyReport(data);
+  assert.equal(rowFor(report, run).metrics.quality, 1);
+  assert.equal(report.eligible_pairs, 17);
+  assert.equal(report.paired_delta_B_minus_A.quality.mean, 0);
+  assert.equal(policyRow(report, run).value, 0);
+  assert.equal(policyRow(report, run).reason, "completed_outside_assigned_budget");
+  assert.equal(report.all_assigned.arms.B.mean, 17 / 18);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.mean, -1 / 18);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.scheduled, 18);
+});
+
+test("each measured budget excess is a policy failure and exact caps remain inclusive", () => {
+  for (const metric of ["wall_time_ms", "total_tokens", "cost_micros", "rework_count", "intervention_count"]) {
+    const data = policyData();
+    const run = data.input.runs[0];
+    const target = ["total_tokens", "cost_micros"].includes(metric) ? run.accounting.ledger.calls[0] : run.accounting;
+    target[metric] = observed(data.plan.budget[`max_${metric}`]);
+    assert.equal(policyRow(policyReport(data), run).value, 1);
+    target[metric].value += 1;
+    assert.equal(policyRow(policyReport(data), run).value, 0);
+    delete target[metric];
+    assert.equal(policyRow(policyReport(data), run).value, UNKNOWN);
+  }
+});
+
+test("unknown cost does not erase a verified terminal failure or fabricate a free trial", () => {
+  for (const status of ["failed", "timeout", "cancelled", "interrupted", "partial"]) {
+    const data = policyData();
+    const run = data.input.runs[0];
+    run.result.status = status;
+    run.accounting = {};
+    run.budget.enforced = false;
+    const report = policyReport(data);
+    assert.equal(rowFor(report, run).eligible, false);
+    assert.equal(rowFor(report, run).metrics.cost_micros, UNKNOWN);
+    assert.equal(policyRow(report, run).value, 0);
+    assert.equal(policyRow(report, run).reason, "verified_noncompletion");
+  }
+});
+
+test("verified rubric noncompletion remains zero with unknown resources", () => {
+  const data = policyData();
+  const run = data.input.runs[0];
+  const answer = JSON.parse(run.result.response);
+  answer[Object.keys(answer)[0]] = "incorrect";
+  run.result.response = JSON.stringify(answer);
+  run.accounting.ledger.complete = false;
+  const report = policyReport(data);
+  assert.ok(rowFor(report, run).metrics.quality > 0);
+  assert.equal(policyRow(report, run).value, 0);
+});
+
+test("potential successes with incomplete budgets have bounds not a complete-case mean", () => {
+  const data = policyData();
+  const slot = data.plan.slots.find((s) => s.arm_label === "B");
+  const run = data.input.runs.find((r) => r.slot_id === slot.slot_id);
+  run.accounting.ledger.calls[0].cost_micros.complete = false;
+  const report = policyReport(data);
+  assert.equal(policyRow(report, run).value, UNKNOWN);
+  assert.equal(report.all_assigned.arms.B.mean, UNKNOWN);
+  assert.equal(report.all_assigned.arms.B.lower, 17 / 18);
+  assert.equal(report.all_assigned.arms.B.upper, 1);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.mean, UNKNOWN);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.lower, -1 / 18);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.upper, 0);
+});
+
+test("known excess is conclusive policy noncompletion even if another resource is unknown", () => {
+  const data = policyData();
+  const run = data.input.runs[0];
+  run.accounting.wall_time_ms = observed(data.plan.budget.max_wall_time_ms + 1);
+  run.accounting.ledger.complete = false;
+  assert.equal(policyRow(policyReport(data), run).value, 0);
+});
+
+test("missing and nonterminal slots remain unknown even at an apparently exhausted cap", () => {
+  const data = policyData();
+  const missing = data.input.runs.shift();
+  const running = data.input.runs[0];
+  running.result.status = "running";
+  running.accounting.wall_time_ms = observed(data.plan.budget.max_wall_time_ms + 1);
+  const report = policyReport(data);
+  for (const run of [missing, running]) assert.equal(policyRow(report, run).value, UNKNOWN);
+  assert.equal(report.all_assigned.outcomes.length, data.plan.slots.length);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.mean, UNKNOWN);
+});
+
+test("absent observations produce full zero-to-one arm bounds and minus-one-to-one difference bounds", () => {
+  const data = policyData();
+  data.input.runs = [];
+  const report = policyReport(data);
+  assert.deepEqual(report.all_assigned.paired_delta_B_minus_A,
+    { scheduled: 18, known: 0, unknown: 18, mean: UNKNOWN, lower: -1, upper: 1 });
+  for (const arm of ["A", "B"]) {
+    assert.equal(report.all_assigned.arms[arm].mean, UNKNOWN);
+    assert.equal(report.all_assigned.arms[arm].lower, 0);
+    assert.equal(report.all_assigned.arms[arm].upper, 1);
+    assert.equal(report.all_assigned.arms[arm].verified_policy_failures, 0);
+  }
+});
+
+test("invalid identity, controls, or capture cannot convert an untrusted failure into a known zero", () => {
+  for (const mutate of [
+    (r) => { r.result.run_id = "wrong"; },
+    (r) => { r.result.scenario_id = "wrong"; },
+    (r) => { r.capture.complete = false; },
+    (r) => { r.capture.assignment_verified = false; },
+    (r) => { r.capture.order = 0; },
+    (r) => { r.capture.request_sha256 = "wrong"; },
+    (r) => { r.controls.model_policy = "other"; },
+    (r) => { r.budget.limits.max_total_tokens += 1; }
+  ]) {
+    const data = policyData();
+    const run = data.input.runs[0];
+    run.result.status = "failed";
+    mutate(run);
+    assert.equal(policyRow(policyReport(data), run).value, UNKNOWN);
+  }
+});
+
+test("unverified budget enforcement never certifies a policy success", () => {
+  const data = policyData();
+  const run = data.input.runs[0];
+  run.budget.enforced = false;
+  assert.equal(policyRow(policyReport(data), run).value, UNKNOWN);
+});
+
+test("all-assigned task slices preserve denominators and do not mutate the audit input", () => {
+  const data = policyData();
+  data.input.runs[0].accounting.ledger.complete = false;
+  const original = structuredClone(data);
+  const report = policyReport(data);
+  assert.deepEqual(data, original);
+  for (const task of report.by_task) {
+    assert.equal(task.all_assigned.arms.A.scheduled, 3);
+    assert.equal(task.all_assigned.arms.B.scheduled, 3);
+    assert.equal(task.all_assigned.paired_delta_B_minus_A.scheduled, 3);
+  }
+  assert.equal(report.by_task.reduce((sum, task) => sum + task.all_assigned.arms.A.unknown + task.all_assigned.arms.B.unknown, 0), 1);
+});
+
+test("all-assigned markdown presents bounds before explicitly diagnostic selected-pair means", () => {
+  const data = policyData();
+  data.input.runs = [];
+  const markdown = renderMarkdown(policyReport(data));
+  assert.match(markdown, /NOT confidence intervals/);
+  assert.match(markdown, /Post-assignment selection may bias/);
+  assert.match(markdown, /A snapshot does not close collection/);
+  assert.ok(markdown.indexOf("## All Assigned") < markdown.indexOf("## Diagnostic Eligible"));
+  assert.match(markdown, /bounds \[-1, 1\]/);
+});
+
+test("missing-outcome bounds contain every possible binary completion of a partial report", () => {
+  const data = policyData();
+  const uncertain = data.input.runs.slice(0, 3);
+  for (const run of uncertain) run.accounting.ledger.complete = false;
+  const partial = policyReport(data).all_assigned.paired_delta_B_minus_A;
+  const deltas = [];
+  for (let mask = 0; mask < 8; mask += 1) {
+    const completed = structuredClone(data);
+    for (let i = 0; i < 3; i += 1) {
+      completed.input.runs[i].accounting.ledger.complete = true;
+      completed.input.runs[i].result.status = (mask & (1 << i)) ? "completed" : "failed";
+    }
+    deltas.push(policyReport(completed).all_assigned.paired_delta_B_minus_A.mean);
+  }
+  assert.equal(partial.lower, Math.min(...deltas));
+  assert.equal(partial.upper, Math.max(...deltas));
 });

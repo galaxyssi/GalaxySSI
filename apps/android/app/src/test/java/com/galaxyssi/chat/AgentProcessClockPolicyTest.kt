@@ -4,9 +4,80 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentProcessClockPolicyTest {
+    @Test fun explicitRecoveryResumesClockButMissingProjectionDoesNot() {
+        val clock = AgentProcessClock(1000, 3000)
+        clock.observe(null)
+        assertEquals(2000L, clock.elapsed(8000))
+        clock.observe(3000, running = true)
+        assertEquals(7000L, clock.elapsed(8000))
+        clock.observe(9000)
+        assertEquals(8000L, clock.elapsed(10000))
+    }
+
+    @Test fun inactiveWaitsFreezeTheClockWithoutChangingTaskRecoverability() {
+        for (status in listOf(AgentWorkspaceStatus.WAITING_CONFIRMATION, AgentWorkspaceStatus.PAUSED,
+            AgentWorkspaceStatus.BLOCKED)) {
+            assertTrue(status.name, AgentTranscriptPresentationPolicy.processClockStopsFor(status))
+            assertFalse(status.name, status.isTerminal)
+            assertFalse(AgentProcessClockPolicy.isRunning(AgentProcessClockPolicy.phase(status, AgentPhase.EXECUTING)))
+        }
+        for (status in listOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.FAILED, AgentWorkspaceStatus.CANCELLED)) {
+            assertTrue(status.name, AgentTranscriptPresentationPolicy.processClockStopsFor(status))
+        }
+        assertTrue(AgentProcessClockPolicy.isRunning(AgentPhase.WAITING_RESPONSE))
+        assertFalse(AgentTranscriptPresentationPolicy.processClockStopsFor(AgentWorkspaceStatus.WAITING_RESPONSE))
+        assertFalse(AgentProcessClockPolicy.isRunning(AgentPhase.BLOCKED))
+        assertFalse(AgentProcessClockPolicy.isRunning(AgentPhase.COMPLETED))
+    }
+
+    @Test fun blockedClockSurvivesReloadAndOnlyANewerRecoveryRestartsIt() {
+        val blocked = AgentProcessCompletionLookup(3000, 100, AgentWorkspaceStatus.BLOCKED, 1000, "c", 8)
+        val repeated = blocked.copy(completedAtMillis = 7000, revision = 9)
+        assertEquals(3000L, AgentProcessClockPolicy.merge(blocked, repeated).completedAtMillis)
+        val stale = blocked.copy(status = AgentWorkspaceStatus.RUNNING, completedAtMillis = null, revision = 7)
+        assertEquals(blocked, AgentProcessClockPolicy.merge(blocked, stale))
+        val recovery = stale.copy(revision = 10)
+        assertNull(AgentProcessClockPolicy.merge(blocked, recovery).completedAtMillis)
+    }
+
     private val process = AgentTranscriptEntry("p", AgentTranscriptRole.PROCESS, "Working", 1000,
         conversationId = "c", turnId = "turn", taskId = "task")
     private val final = process.copy(id = "final", role = AgentTranscriptRole.ASSISTANT, text = "Done", timestampMillis = 3000)
+
+    @Test fun durationIncludesDispatchTimeButNotAnotherTurnsMessage() {
+        val user = process.copy(role = AgentTranscriptRole.USER, timestampMillis = 500)
+        assertEquals(500L, AgentProcessClockPolicy.startedAt(process, listOf(user), 1000))
+        assertEquals(1000L, AgentProcessClockPolicy.startedAt(process, listOf(user.copy(turnId = "other")), 1000))
+    }
+
+    @Test fun pagedHistoryUsesTheWholeTurnStartNotTheFirstVisibleToolStep() {
+        val requestedAt = 1792201020731L
+        val firstVisibleAt = 1792201084297L
+        val completedAt = 1792201171037L
+        val lateStep = process.copy(timestampMillis = firstVisibleAt)
+        val start = AgentProcessClockPolicy.startedAt(lateStep, listOf(lateStep), firstVisibleAt, requestedAt)
+        assertEquals(150306L, AgentProcessClock(start, completedAt).elapsed(completedAt + 60_000))
+        assertEquals(86740L, completedAt - firstVisibleAt)
+    }
+
+    @Test fun loadingEarlierPagesOrRebindingCannotChangeAResolvedStart() {
+        val user = process.copy(role = AgentTranscriptRole.USER, timestampMillis = 500)
+        val pagedStart = AgentProcessClockPolicy.startedAt(process, listOf(process), 1000, 500)
+        val expandedStart = AgentProcessClockPolicy.startedAt(process, listOf(user, process), 1000, 500)
+        assertEquals(pagedStart, expandedStart)
+        assertEquals(500L, pagedStart)
+    }
+
+    @Test fun visibleUserRequestIncludesPreparationBeforeWorkspaceCreation() {
+        val user = process.copy(role = AgentTranscriptRole.USER, timestampMillis = 500)
+        assertEquals(500L, AgentProcessClockPolicy.startedAt(process, listOf(user), 1000, 700))
+    }
+
+    @Test fun invalidPersistentStartDoesNotBorrowAnotherTurnsUserMessage() {
+        val other = process.copy(role = AgentTranscriptRole.USER, turnId = "other", timestampMillis = 100)
+        assertEquals(1000L, AgentProcessClockPolicy.startedAt(process, listOf(other), 1000, 0))
+        assertEquals(1000L, AgentProcessClockPolicy.startedAt(process, listOf(other), 1000, -1))
+    }
 
     @Test fun completionFreezesEvenWhenAProjectionTemporarilyLosesTheEvent() {
         val clock = AgentProcessClock(1000)

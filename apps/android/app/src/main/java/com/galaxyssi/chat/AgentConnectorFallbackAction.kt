@@ -13,6 +13,9 @@ internal object AgentConnectorFallbackAction {
 
     fun effectAttemptKey(action: AgentAction): String {
         val selected = action.parameters["connector_id"].orEmpty().trim()
+        action.parameters[AgentCodexSilenceRecovery.ATTEMPT]?.let { attempt ->
+            return "${action.id}/codex-recovery/$attempt"
+        }
         if (action.kind != AgentActionKind.CALL_CONNECTOR || !hasActiveTrail(action) ||
             action.parameters["manual_target_locked"] == "true" || selected.isBlank()) return action.id
         // Persisted routing history distinguishes fallback attempts without hashing arbitrary action input.
@@ -27,8 +30,9 @@ internal object AgentConnectorFallbackAction {
     fun forDispatch(action: AgentAction): AgentAction {
         val owner = action.parameters[ACTION_ID_PARAMETER] ?: return action
         if (owner == action.id) return action
-        return action.copy(parameters = action.parameters - setOf(
-            ACTION_ID_PARAMETER, ATTEMPTED_PARAMETER, "routing_deferred_retry_ids", "routing_retried_resource_ids"
+        return action.copy(parameters = action.parameters.filterKeys { !it.startsWith(AgentCodexSilenceRecovery.PREFIX) } - setOf(
+            ACTION_ID_PARAMETER, ATTEMPTED_PARAMETER, "routing_deferred_retry_ids", "routing_retried_resource_ids",
+            AgentResearchCheckpoint.RECOVERY
         ))
     }
 
@@ -39,7 +43,7 @@ internal object AgentConnectorFallbackAction {
     ): AgentAction {
         // Model IDs and instance IDs belong to the previous resource, not the fallback.
         val parameters = action.parameters - setOf(
-            "manual_model_id", "agent_model_id", "agent_reasoning_effort", "agent_instance_id"
+            "manual_model_id", "agent_model_id", "agent_reasoning_effort", "agent_instance_id", AgentInvocationBinding.TARGET
         ) + mapOf(
             "connector_id" to selection.resourceId,
             "connector_kind" to target?.kind?.name.orEmpty().lowercase(Locale.ROOT),
@@ -75,7 +79,10 @@ internal object AgentConnectorFallbackAction {
             .filter { it.isNotBlank() && (it == selected || it !in attempted) }.distinct()
     }
 
-    fun resultMetadata(action: AgentAction): Map<String, String> = mapOf(
+    fun resultMetadata(action: AgentAction): Map<String, String> = action.parameters.filterKeys {
+        it.startsWith(AgentCodexSilenceRecovery.PREFIX)
+    } + mapOf(
+        "connector_adapter_type" to action.parameters["connector_adapter_type"].orEmpty(),
         ATTEMPTED_RESULT to action.parameters[ATTEMPTED_PARAMETER].orEmpty(),
         "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty(),
         "deferred_retry_ids" to action.parameters["routing_deferred_retry_ids"].orEmpty(),

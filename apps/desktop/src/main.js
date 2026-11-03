@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, powerMonitor } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, powerMonitor, Notification } = require("electron");
 const { spawn, spawnSync, execFile } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -7,7 +7,8 @@ const os = require("node:os");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { preparePeerVoicePlayback } = require("./peer_voice_playback");
-const { buildTextContextMenuTemplate } = require("./text_context_menu");
+const { transcribeComposerSpeech } = require("./composer_stt");
+const { buildTextContextMenuTemplate, buildImageContextMenuItem } = require("./text_context_menu");
 const { createConversationUnreadIndicator } = require("./conversation_unread_indicator");
 const { WindowsTaskbarBadge } = require("./windows_taskbar_badge");
 
@@ -31,7 +32,10 @@ if (UI_SMOKE) {
 }
 
 let mainWindow;
+const updateReminderNotification = require("./peer_reminder_notifications").createReminderNotifications({ Notification,
+  getWindow: () => mainWindow, translate: (key, language) => loadLocale(String(language).startsWith("zh") ? "zh-CN" : "en")[key] || key });
 let peerContextTarget = null;
+let workspaceLocale = {};
 const windowsTaskbarBadge = process.platform === "win32" ? new WindowsTaskbarBadge() : null;
 const conversationUnreadIndicator = createConversationUnreadIndicator({ getWindow: () => mainWindow, nativeImage,
   setNativeOverlay: windowsTaskbarBadge ? (window, count) => windowsTaskbarBadge.update(window, count) : undefined });
@@ -143,11 +147,15 @@ function createWindow() {
   mainWindow.webContents.on("context-menu", (event, params) => {
     const peer = peerContextTarget;
     peerContextTarget = null;
+    const imageActions = {
+      copyImageLabel: workspaceLocale["Copy Image"] || "Copy Image",
+      copyImage: () => { if (!mainWindow.isDestroyed()) mainWindow.webContents.copyImageAt(params.x, params.y); }
+    };
     if (peer && Date.now() - peer.at < 1_000 && Math.abs(peer.x - params.x) <= 2 &&
         Math.abs(peer.y - params.y) <= 2 && !params.isEditable) {
       event.preventDefault();
       Menu.buildFromTemplate([
-        { label: peer.copyLabel, enabled: Boolean(params.selectionText || peer.copyText),
+        buildImageContextMenuItem(params, imageActions) || { label: peer.copyLabel, enabled: Boolean(params.selectionText || peer.copyText),
           click: () => clipboard.writeText(String(params.selectionText || peer.copyText)) },
         { label: peer.deleteLabel, click: async () => {
           try {
@@ -162,7 +170,7 @@ function createWindow() {
       ]).popup({ window: mainWindow });
       return;
     }
-    const template = buildTextContextMenuTemplate(params);
+    const template = buildTextContextMenuTemplate(params, imageActions);
     if (!template.length || mainWindow.isDestroyed()) return;
     event.preventDefault();
     Menu.buildFromTemplate(template).popup({ window: mainWindow });
@@ -399,16 +407,8 @@ async function runUiSmoke() {
         const separator = document.querySelector(".header-separator");
         const statusDot = document.querySelector("#routeStatusDot");
         const route = document.querySelector("#routeText");
-        const originalRecognition = window.SpeechRecognition;
         app.classList.add("peer-mode");
         route.textContent = "GalaxySSI Link encrypted";
-        window.SpeechRecognition = class {
-          start() {
-            this.onresult?.({ results: [[{ transcript: "device voice input" }]] });
-            this.onend?.();
-          }
-          stop() { this.onend?.(); }
-        };
         prompt.value = "";
         button.click();
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -424,14 +424,13 @@ async function runUiSmoke() {
           route: route.textContent
         };
         app.classList.remove("peer-mode");
-        window.SpeechRecognition = originalRecognition;
         prompt.value = "";
         return result;
       })()
     `);
     if (peerVoiceInput.display === "none"
         || peerVoiceInput.disabled
-        || peerVoiceInput.transcript !== "device voice input"
+        || peerVoiceInput.transcript !== ""
         || peerVoiceInput.taskStateDisplay !== "none"
         || peerVoiceInput.separatorDisplay !== "none"
         || peerVoiceInput.statusDotDisplay === "none"
@@ -568,6 +567,11 @@ async function runUiSmoke() {
       throw new Error(`Desktop peer image viewer did not render: ${JSON.stringify(peerImageViewerState)}`);
     }
     await captureSmokeScreenshot(peerImageViewerPath);
+    if (process.env.GALAXYSSI_CLIPBOARD_SMOKE === "1") {
+      const result = await require("./clipboard_smoke").verifyNativeClipboard(mainWindow, clipboard, nativeImage,
+        path.join(__dirname, "renderer", "galaxyssi-mark.png"), path.join(outDir, "desktop-native-image-paste.png"));
+      console.log(`[ui-smoke] clipboard ${JSON.stringify(result)}`);
+    }
     await mainWindow.webContents.executeJavaScript(`closePeerImageViewer(); newTask();`);
     const composerAttachmentState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
@@ -2845,6 +2849,15 @@ async function stageClipboardAttachments(items = []) {
   }
 }
 
+async function pasteNativeClipboardImage() {
+  const image = clipboard.readImage();
+  if (image.isEmpty()) return [];
+  const bytes = image.toPNG();
+  try {
+    return await stageClipboardAttachments([{ name: "pasted-image.png", mimeType: "image/png", bytes }]);
+  } finally { bytes.fill(0); }
+}
+
 function releaseComposerAttachments(filePaths = []) {
   const root = path.resolve(app.getPath("temp"), "GalaxySSI", "composer-attachments");
   for (const filePath of Array.isArray(filePaths) ? filePaths : []) {
@@ -2895,6 +2908,9 @@ ipcMain.handle("conversations:unread", (event, count, representations) => {
   return conversationUnreadIndicator.update(count, representations);
 });
 ipcMain.handle("tts:synthesize", (_event, payload) => synthesizeSpeech(payload));
+ipcMain.handle("stt:transcribe", (_event, payload) => transcribeComposerSpeech(payload, {
+  startBackend, origin: BACKEND_ORIGIN, token: desktopTaskStreamToken
+}));
 ipcMain.handle("backend:start", startBackend);
 ipcMain.handle("backend:status", backendStatus);
 ipcMain.handle("runtime:diagnostics", (_event, refresh = false) => runtimeDiagnostics(Boolean(refresh)));
@@ -2932,6 +2948,16 @@ ipcMain.handle("mobile:sync-status", syncMobileStatus);
 ipcMain.handle("peer-messages:list", (_event, clientRouteId, limit) =>
   listPeerMessages(clientRouteId, limit));
 ipcMain.handle("peer-messages:send", (_event, payload) => sendPeerMessage(payload));
+ipcMain.handle("peer-reminders:respond", (_event, id, action) => {
+  if (!mainWindow || _event.sender !== mainWindow.webContents ||
+      !/^[a-zA-Z0-9-]{16,64}$/.test(String(id)) || !["muted", "dismissed", "acknowledged"].includes(action)) {
+    throw new Error("Invalid reminder action");
+  }
+  return fetchJson(`/api/peer/reminders/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+});
+ipcMain.on("peer-reminders:notification", (event, value) => {
+  if (mainWindow && event.sender === mainWindow.webContents) updateReminderNotification(value);
+});
 ipcMain.on("peer-messages:context-target", (_event, payload) => {
   if (!mainWindow || _event.sender !== mainWindow.webContents || !payload?.routeId || !payload?.messageId) return;
   peerContextTarget = {
@@ -3031,10 +3057,14 @@ ipcMain.handle("desktop-mcp:delete", (_event, connectionId) => deleteDesktopMcp(
 ipcMain.handle("files:choose", chooseAttachments);
 ipcMain.handle("files:describe", (_event, filePaths) => describeComposerAttachments(filePaths));
 ipcMain.handle("files:stage-clipboard", (_event, items) => stageClipboardAttachments(items));
+ipcMain.handle("files:paste-image", (event) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error("Clipboard request is not from the workspace");
+  return pasteNativeClipboardImage();
+});
 ipcMain.handle("files:release-staged", (_event, filePaths) => releaseComposerAttachments(filePaths));
 ipcMain.handle("task-artifact:open", (_event, taskId, relativePath) => openTaskArtifact(taskId, relativePath));
 ipcMain.handle("task-workspace:reveal", (_event, taskId) => revealTaskWorkspace(taskId));
-ipcMain.handle("i18n:load", (_event, language) => loadLocale(language));
+ipcMain.handle("i18n:load", (_event, language) => { workspaceLocale = loadLocale(language); return workspaceLocale; });
 ipcMain.handle("pairing:url", () => PAIRING_URL);
 ipcMain.handle("open:external", (_event, url) => shell.openExternal(url));
 ipcMain.handle("clipboard:write", (_event, text) => {

@@ -34,6 +34,9 @@ internal enum class VoiceCommand {
 
 /** Converts short Whisper transcripts into an explicit, allow-listed glasses action. */
 internal object VoiceCommandCatalog {
+    private val spokenChineseWake = Regex("^(哈喽|哈罗|你好|海螺)[\\s,，。]*(哈喽|哈罗|你好|海螺)")
+    fun stripSpokenWake(text: String) = spokenChineseWake.replaceFirst(text.trim(), "").trim()
+
     private val ignoredCharacters = Regex("[\\s,，。.!！?？、:：;；'\"“”‘’_\\-]+")
     private val aliases = buildMap {
         fun command(command: VoiceCommand, vararg phrases: String) {

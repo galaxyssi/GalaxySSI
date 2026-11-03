@@ -54,6 +54,12 @@ internal object AgentRemoteOutcomeCodec {
             success = if (status.isBlank()) payload.optBoolean("success", true) else status == "completed")
     }
 
+    fun terminalFailureEvent(payload: JSONObject, content: String): AgentConnectorResponse? {
+        if (payload.optString("type") != "agent_task_event" ||
+            payload.optString("task_status") !in FAILURES) return null
+        return decode(payload, content)
+    }
+
     fun content(context: Context, payload: JSONObject, supplied: String = ""): String {
         val status = payload.optString("task_status").lowercase()
         if (status in FAILURES) {

@@ -228,6 +228,7 @@ internal fun MainActivity.showMainTab(
     tab: String,
     preserveNavigationContent: Boolean = false
 ) {
+    if (tab != activeMainTab) mainPageBackPressGate.reset()
     AppForegroundTracker.onConversationHidden(this)
     val navigationToken = if (preserveNavigationContent) null else navigationContentGate.begin()
     val previousTab = activeMainTab
@@ -303,16 +304,32 @@ internal fun MainActivity.configureMessages() {
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
         onMessageActions = { position -> showMessageActions(position) },
         onDeleteMessage = { messageId -> deleteMessageById(messageId) },
-        onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
+        onOpenAttachment = { attachment -> openPeerAttachment(attachment) },
+        onImageMessageActions = { position, attachment -> showMessageActions(position, attachment) })
     messageList.apply {
-        layoutManager = LinearLayoutManager(this@configureMessages).apply {
+        layoutManager = ChatMessageLayoutManager(this@configureMessages, ::schedulePeerChatBottomAlignment).apply {
             stackFromEnd = ChatMessageViewportPolicy.stackFromEnd()
         }
         adapter = messageAdapter
         addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            private var userScrolling = false
+
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    userScrolling = true
+                    peerChatViewport.beginUserScroll()
+                }
+                if (userScrolling) {
+                    peerChatViewport.userScroll(isMessageListNearBottom(), selectedContact?.id == CONTACT_SYSTEM.id)
+                }
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) userScrolling = false
+            }
+
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (!userScrolling) return
                 val layout = recyclerView.layoutManager as? LinearLayoutManager ?: return
                 val contactId = selectedContact?.id ?: return
+                peerChatViewport.userScroll(isMessageListNearBottom(), contactId == CONTACT_SYSTEM.id)
                 if (
                     dy < 0 &&
                     layout.findFirstVisibleItemPosition() <= CHAT_HISTORY_PREFETCH_POSITION
@@ -331,6 +348,7 @@ internal fun MainActivity.configureMessages() {
 }
 
 internal fun MainActivity.configureInput() {
+    contactReminderComposer = ContactReminderComposer(this)
     sendButton.setOnClickListener {
         exitChatComposerTextMode(hideKeyboard = true)
         sendText()
@@ -409,14 +427,16 @@ internal fun MainActivity.configureInput() {
 internal fun MainActivity.updateInputActions() {
     val hasText = !messageInput.text?.toString()?.trim().isNullOrEmpty()
     val composerState = AgentComposerUiPolicy.resolve(
-        hasInput = hasText,
+        hasInput = hasText || peerComposerAttachments().isNotEmpty(),
         textModeActive = chatComposerTextMode,
-        actionTrayRequested = isChatActionTrayExpanded()
+        actionTrayRequested = isChatActionTrayExpanded(),
+        voiceEntryAvailable = selectedContact?.let { AppStore.isDirectPeerContact(this, it.id) } == true
     )
     setChatActionTrayRequested(composerState.showActionTray)
     chatPrimaryActionSlot.visibility = if (composerState.showPrimaryActionSlot) View.VISIBLE else View.GONE
     imageButton.visibility = if (composerState.showMoreButton) View.VISIBLE else View.GONE
     sendButton.visibility = if (composerState.showSendButton) View.VISIBLE else View.GONE
+    contactReminderComposer?.update(composerState.showVoiceButton)
     renderChatActionTray(composerState.showActionTray)
     imageButton.renderComposerMoreButton(composerState.showActionTray)
     imageButton.contentDescription = getString(
@@ -493,10 +513,14 @@ internal fun MainActivity.ensureRecordPermission(): Boolean {
 
 internal fun MainActivity.sendText() {
     val content = messageInput.text?.toString()?.trim().orEmpty()
-    if (content.isEmpty()) return
     val contact = selectedContact ?: return
+    val attachments = peerComposerAttachments(contact.id)
+    if (content.isEmpty() && attachments.isEmpty()) return
     messageInput.text?.clear()
-    sendOutgoingText(contact, content)
+    if (attachments.isNotEmpty()) {
+        sendPeerAttachments(contact, emptyList(), content, attachments)
+        setPeerComposerAttachments(contact.id, emptyList())
+    } else sendOutgoingText(contact, content)
 }
 
 internal fun MainActivity.sendOutgoingText(contact: Contact, content: String, voiceTraceId: String = "") {

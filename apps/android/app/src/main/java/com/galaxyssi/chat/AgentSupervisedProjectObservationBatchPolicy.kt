@@ -1,6 +1,6 @@
 package com.galaxyssi.chat
 
-/** Admits ordered tool graphs while checking every unordered pair for resource conflicts. */
+/** Admits tool graphs; execution concurrency remains owned by the batch executor. */
 internal object AgentSupervisedProjectObservationBatchPolicy {
     const val MAX_PARALLEL_ACTIONS = AgentAdaptiveConcurrencyPolicy.MAX_CONCURRENCY
 
@@ -62,9 +62,10 @@ internal object AgentSupervisedProjectObservationBatchPolicy {
         descriptor: AgentNativeToolDescriptor?
     ): Boolean {
         val toolId = toolId()
-        val parallelReadOnly = descriptor?.concurrency == AgentNativeToolConcurrency.PARALLEL_READ_ONLY ||
+        // A serial read can share a plan without being dispatched concurrently.
+        val readOnly = descriptor?.let { it.risk == AgentNativeToolRisk.LOW && !it.requiresEffectClaim } == true ||
             (descriptor == null && toolId in LEGACY_BATCHABLE_TOOLS)
-        return kind == AgentActionKind.CALL_NATIVE_TOOL && parallelReadOnly
+        return kind == AgentActionKind.CALL_NATIVE_TOOL && readOnly
     }
 
     private fun AgentAction.observationIdentity(): String =

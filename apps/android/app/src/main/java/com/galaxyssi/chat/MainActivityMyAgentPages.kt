@@ -16,7 +16,8 @@ internal fun MainActivity.myAgentHomeRow(route: ControlCenterRoute): ControlCent
         ControlCenterRoute.VOICE -> R.string.my_agent_voice to R.drawable.ic_settings_voice
         ControlCenterRoute.SCREEN_ASSISTANT -> R.string.screen_assistant_title to R.drawable.ic_agent_screen
         ControlCenterRoute.MEMORY_HUB -> R.string.my_agent_memory to R.drawable.ic_agent_memory
-        ControlCenterRoute.PROACTIVE_HUB -> R.string.my_agent_proactive to R.drawable.ic_agent_node
+        ControlCenterRoute.PROACTIVE_HUB -> R.string.attention_title to R.drawable.ic_settings_notification
+        ControlCenterRoute.SCHEDULED_TASKS -> R.string.schedule_title to R.drawable.ic_automation_line
         ControlCenterRoute.SKILLS_HUB -> R.string.my_agent_skills to R.drawable.ic_agent_skill
         ControlCenterRoute.SAFETY_HUB -> R.string.my_agent_safety to R.drawable.ic_security_shield
         ControlCenterRoute.GENERAL -> R.string.my_agent_general to R.drawable.ic_tab_settings
@@ -180,11 +181,14 @@ internal fun MainActivity.renderMyAgentDiagnosticsPage() {
 
 internal fun MainActivity.handleMyAgentDesignAction(action: String): Boolean {
     when {
+        action == routeAction(ControlCenterRoute.PROACTIVE_HUB) -> {
+            startActivity(android.content.Intent(this, ProactiveAttentionActivity::class.java).putExtra("settings", true))
+        }
         action == "my_agent.scan" -> { startSecurityScan() }
         action.startsWith("my_agent.desktop:") -> {
             desktopControlDevices().firstOrNull { it.id == action.substringAfter("my_agent.desktop:") }?.let {
                 DesktopRemoteControl.requestAuthorizations(it.id)
-                openExistingControlCenterPage { showDesktopRemoteControlPage(it) }
+                openExistingControlCenterPage { openDesktopRemoteControlPage(it) }
             }
         }
         action == "my_agent.skills" || action == "my_agent.tools" || action == "my_agent.mcp" -> {

@@ -4812,3 +4812,15 @@
 "voice_microsoft_xiaoxiao" = "晓晓自然音";
 "voice_microsoft_xiaoxiao_dragon_hd_flash" = "晓晓 Dragon HD Flash";
 "voice_microsoft_xiaoxiao2_dragon_hd_flash" = "晓晓 2 Dragon HD Flash";
+"galaxyssi.conversation_status.queued" = "排队中";
+"galaxyssi.conversation_status.running" = "运行中";
+"galaxyssi.conversation_status.waitingResponse" = "等待回复";
+"galaxyssi.conversation_status.reconnecting" = "重新连接中";
+"galaxyssi.conversation_status.delivering" = "正在交付回复";
+"galaxyssi.conversation_status.completeUnread" = "已完成，未读";
+"galaxyssi.conversation_status.read" = "已读";
+"galaxyssi.conversation_status.waitingConfirmation" = "等待确认";
+"galaxyssi.conversation_status.paused" = "已暂停";
+"galaxyssi.conversation_status.blocked" = "受阻";
+"galaxyssi.conversation_status.failed" = "失败";
+"galaxyssi.conversation_status.cancelled" = "已取消";

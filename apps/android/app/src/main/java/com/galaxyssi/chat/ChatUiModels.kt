@@ -285,7 +285,8 @@ internal class MessageAdapter(
     internal val onPlayVoiceMessage: ((Long) -> Unit)? = null,
     internal val onMessageActions: ((Int) -> Unit)? = null,
     internal val onDeleteMessage: ((Long) -> Unit)? = null,
-    internal val onOpenAttachment: ((PeerChatAttachment) -> Unit)? = null
+    internal val onOpenAttachment: ((PeerChatAttachment) -> Unit)? = null,
+    internal val onImageMessageActions: ((Int, PeerChatAttachment) -> Unit)? = null
 ) : RecyclerView.Adapter<MessageAdapter.VH>() {
 
     internal var messages: List<ChatMessage> = MessageListSnapshot.copy(initialMessages)
@@ -421,6 +422,7 @@ internal class MessageAdapter(
         attachment: PeerChatAttachment,
         position: Int
     ): View = PeerImageAttachmentView(holder.itemView.context).apply {
+        val messageId = messages[position].id
         val initialSize = agentImageThumbnailSize(1, 2)
         layoutParams = LinearLayout.LayoutParams(
             holder.itemView.dp(initialSize.widthDp),
@@ -429,7 +431,13 @@ internal class MessageAdapter(
         bind(
             attachment = attachment,
             onOpen = { onOpenAttachment?.invoke(attachment) },
-            onLongPress = { onMessageActions?.invoke(position) }
+            onLongPress = {
+                val current = messages.indexOfFirst { it.id == messageId }
+                if (current >= 0) {
+                    if (onImageMessageActions != null) onImageMessageActions.invoke(current, attachment)
+                    else onMessageActions?.invoke(current)
+                }
+            }
         )
     }
 

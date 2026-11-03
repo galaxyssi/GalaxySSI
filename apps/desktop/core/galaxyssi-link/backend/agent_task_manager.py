@@ -363,6 +363,8 @@ class AgentTaskManager:
         self._store = AgentTaskStore(store_path)
         from agent_tool_evidence import AgentToolEvidence
         self.tool_evidence = AgentToolEvidence(store_path)
+        from agent_provider_usage import AgentProviderUsage
+        self.provider_usage = AgentProviderUsage(store_path)
         self._run_events = run_event_sink or AgentTaskRunEventSink(store_path)
         if self._run_events.ledger.path.resolve() != store_path.resolve():
             raise ValueError("Task store and Run ledger must share one database")
@@ -918,7 +920,7 @@ class AgentTaskManager:
                 task.error = error
             if status in TERMINAL_STATES or status == "interrupted":
                 task.completed_at = now
-                task.output_files = self._task_artifacts(task.task_id)
+                task.output_files = self._task_artifacts(task.task_id, task.result)
             if status in TERMINAL_STATES:
                 task.current_step = ""
                 task.pending_approval = {}
@@ -1976,9 +1978,11 @@ class AgentTaskManager:
             ]
             return max(candidates, key=lambda item: (item.created_at, item.task_id), default=None)
 
-    def list(self, limit: int = 100, include_prompt: bool = False) -> list[dict]:
+    def list(self, limit: int = 100, include_prompt: bool = False, *,
+             conversation_id: str | None = None) -> list[dict]:
         with self._lock:
-            records = self._store.list_recent(max(1, min(int(limit or 100), 500)))
+            records = self._store.list_recent(max(1, min(int(limit or 100), 500)),
+                                              conversation_id=conversation_id)
             owned = self._store.worker_owned_ids(record.get("task_id") for record in records)
             return [
                 self._public_with_output_preview(
@@ -2258,7 +2262,7 @@ class AgentTaskManager:
             task.error = error
             task.current_step = ""
             task.pending_approval = {}
-            task.output_files = self._task_artifacts(task.task_id)
+            task.output_files = self._task_artifacts(task.task_id, task.result)
             task.recovery_state = (
                 "exhausted"
                 if status == "timed_out" else
@@ -2655,10 +2659,10 @@ class AgentTaskManager:
         return merged[-MAX_DELIVERY_TRACE_EVENTS:]
 
     @staticmethod
-    def _task_artifacts(task_id: str) -> list[dict]:
+    def _task_artifacts(task_id: str, result: str = "") -> list[dict]:
         try:
-            from task_workspace import task_artifacts
-            return task_artifacts(task_id)
+            from task_workspace import select_reply_artifacts, task_artifacts
+            return select_reply_artifacts(result, task_artifacts(task_id), task_id, discover_unlisted=True)
         except Exception:
             return []
 

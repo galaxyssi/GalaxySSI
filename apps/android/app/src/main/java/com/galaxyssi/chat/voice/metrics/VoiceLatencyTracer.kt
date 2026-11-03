@@ -303,14 +303,14 @@ object VoiceTracePrivacy {
         "short_read_count", "zero_read_count", "dropped_frame_count", "overrun_count",
         "route_change_count", "playback_session_id", "speech_characters",
         "aec_enabled", "noise_suppression_enabled", "max_rms", "max_vad_probability",
-        "candidate_duration_ms", "capture_outcome"
+        "candidate_duration_ms", "capture_outcome", "max_echo_correlation", "echo_rejected_frames"
     )
     private val numericKeys = setOf(
         "android_api", "thread_count", "thermal_status", "battery_percent",
         "audio_duration_ms", "rtf", "http_status", "queue_depth", "retry_count",
         "duration_ms", "audio_source", "short_read_count", "zero_read_count",
         "dropped_frame_count", "overrun_count", "route_change_count", "speech_characters",
-        "max_rms", "max_vad_probability", "candidate_duration_ms"
+        "max_rms", "max_vad_probability", "candidate_duration_ms", "max_echo_correlation", "echo_rejected_frames"
     )
     private val booleanKeys = setOf("is_charging", "success", "cold_start", "fallback",
         "aec_enabled", "noise_suppression_enabled")

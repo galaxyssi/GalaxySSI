@@ -202,6 +202,10 @@ internal object AndroidAgentRemoteRecovery {
         if (persist) {
             if (!AgentConnectorResponseStore.observeExecution(context, identity)) return null
             AndroidAgentRecoveryPacing.observed(context, identity.sourceMessageId, result)
+            runCatching { CollaborationProgressStore.recovered(context, identity.sourceMessageId,
+                identity.conversationId, identity.turnId, observation.status) }.onFailure {
+                Log.w("GalaxySSIRecovery", "Member progress projection deferred: ${it.javaClass.simpleName}")
+            }
             if (terminal) AndroidAgentResultRecovery.request(context, query.desktopId, fields,
                 firstPage = result.optJSONObject("result_page"))
         }

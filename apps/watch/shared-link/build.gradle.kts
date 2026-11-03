@@ -13,6 +13,7 @@ val syncPhoneSources by tasks.registering(Sync::class) {
             "com/galaxyssi/chat/AndroidPersistentSignalStore.kt",
             "com/galaxyssi/chat/GalaxySSICrypto.kt",
             "com/galaxyssi/chat/PhoneRelationshipIdentityBinding.kt",
+            "com/galaxyssi/chat/PhonePairingControlReceipt.kt",
             "com/galaxyssi/chat/GalaxySSIDeviceIdentity.kt",
             "com/galaxyssi/chat/GalaxySSILinkProtocol.kt",
             "com/galaxyssi/chat/GalaxySSIMqttWireChunking.kt",
@@ -58,7 +59,7 @@ val syncPhoneTransportTests by tasks.registering(Sync::class) {
             "MqttChunkReceiptsTest", "MqttChunkFlowTest", "MqttReceiptRetryTest", "MqttTrafficPolicyTest",
             "MqttOutboxRetryWindowTest", "MqttInboxDispatchGateTest", "MqttInboundRoutePoolTest",
             "MqttInboundBindingsTest", "GalaxySSIMqttWireChunkingTest", "PhoneContactCardTest",
-            "PhoneRelationshipIdentityBindingTest").forEach { include("com/galaxyssi/chat/$it.kt") }
+            "PhoneRelationshipIdentityBindingTest", "PhonePairingControlReceiptTest").forEach { include("com/galaxyssi/chat/$it.kt") }
     }
     into(layout.buildDirectory.dir("generated/phone-tests"))
 }

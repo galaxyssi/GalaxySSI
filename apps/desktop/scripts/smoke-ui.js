@@ -7,9 +7,10 @@ const { acquireGalaxySSILock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
 const electronCliCandidates = [
+  process.env.GALAXYSSI_ELECTRON_CLI,
   path.join(root, ".electron-runtime", "node_modules", "electron", "cli.js"),
   path.join(root, "node_modules", "electron", "cli.js")
-];
+].filter(Boolean);
 const electronCli = electronCliCandidates.find((candidate) => fs.existsSync(candidate)) || electronCliCandidates[0];
 const screenshotDir = path.join(root, "ui-smoke");
 const screenshots = [
@@ -46,13 +47,13 @@ const smokeStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-ui-smoke-
 fs.rmSync(screenshotDir, { recursive: true, force: true });
 fs.mkdirSync(screenshotDir, { recursive: true });
 
-function cleanupSmokeState() {
+async function cleanupSmokeState() {
   const resolved = path.resolve(smokeStateDir);
   const tempRoot = `${path.resolve(os.tmpdir())}${path.sep}`;
   if (!resolved.startsWith(tempRoot) || !path.basename(resolved).startsWith("galaxyssi-ui-smoke-")) {
     throw new Error(`Refusing to remove unexpected smoke state directory: ${resolved}`);
   }
-  fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await fs.promises.rm(resolved, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
 }
 
 function findFreeLoopbackPort() {
@@ -90,9 +91,13 @@ async function main() {
     }
   });
 
-  child.on("exit", (code) => {
+  child.on("close", async (code) => {
     releaseLock();
-    cleanupSmokeState();
+    try { await cleanupSmokeState(); } catch (error) {
+      console.error(`[ui-smoke] cleanup failed: ${error.message}`);
+      process.exitCode = 1;
+      return;
+    }
     if (code !== 0) {
       process.exit(code || 1);
       return;

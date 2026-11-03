@@ -20,6 +20,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 
 object SharedCloudModelHttpClient {
     val client: OkHttpClient by lazy {
@@ -51,10 +52,26 @@ class OkHttpCloudModelStreamClient(
 
     override fun stream(request: ModelStreamRequest): Flow<ModelStreamEvent> = channelFlow {
         val timings = ModelStreamTimings(request.requestId)
+        val singleHttpRequest = try { request.auditSink?.singleHttpRequest() == true } catch (_: Exception) {
+            send(ModelStreamEvent.Failed(request.requestId,
+                ModelStreamError("ACCOUNTING_UNAVAILABLE", "Cannot read model admission policy")))
+            return@channelFlow
+        }
+        val dispatched = AtomicBoolean(false)
         val client = baseClient.newBuilder()
             .eventListener(timings)
             .connectTimeout(request.connectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(request.readTimeoutMs, TimeUnit.MILLISECONDS)
+            .apply { if (singleHttpRequest) {
+                retryOnConnectionFailure(false)
+                followRedirects(false)
+                followSslRedirects(false)
+                addNetworkInterceptor { chain ->
+                    // Also stops authentication/503 follow-ups not governed by connection retry settings.
+                    if (!dispatched.compareAndSet(false, true)) throw IOException("Trial HTTP admission already consumed")
+                    chain.proceed(chain.request())
+                }
+            } }
             .build()
         val httpRequest = Request.Builder()
             .url(request.endpoint)
@@ -75,10 +92,34 @@ class OkHttpCloudModelStreamClient(
             return@channelFlow
         }
         val reader = launch(Dispatchers.IO) {
+            var accounting: ModelCallAccounting? = null
             try {
+                if (request.auditSink != null) {
+                    val pending = ModelCallAccounting(request, request.auditSink, singleHttpRequest = singleHttpRequest)
+                    try { pending.begin() } catch (denied: ModelCallAdmissionDenied) {
+                        send(ModelStreamEvent.Failed(request.requestId,
+                            ModelStreamError(ModelCallAdmissionDenied.CODE, denied.message.orEmpty())))
+                        return@launch
+                    } catch (_: Exception) {
+                        send(ModelStreamEvent.Failed(request.requestId,
+                            ModelStreamError("ACCOUNTING_UNAVAILABLE", "Cannot record model request before dispatch")))
+                        return@launch
+                    }
+                    accounting = pending
+                }
                 timings.mark("reader_started")
-                readStream(request, active, timings).collect { send(it) }
+                readStream(request, active, timings, accounting).collect {
+                    accounting?.event(it)
+                    send(it)
+                }
+            } catch (cancelled: CancellationException) {
+                accounting?.cancelled()
+                throw cancelled
             } finally {
+                // A completed model call must not be repeated because its final receipt could not persist.
+                runCatching { accounting?.finish(timings.requestAttempts()) }.onFailure {
+                    runCatching { android.util.Log.w("GalaxySSIModelUsage", "Model receipt incomplete; do not retry the model for accounting") }
+                }
                 runCatching { onTiming(timings.snapshot()) }
                 activeCalls.remove(request.requestId, active)
                 channel.close()
@@ -92,7 +133,8 @@ class OkHttpCloudModelStreamClient(
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun readStream(request: ModelStreamRequest, active: ActiveRequest, timings: ModelStreamTimings): Flow<ModelStreamEvent> = flow {
+    private fun readStream(request: ModelStreamRequest, active: ActiveRequest, timings: ModelStreamTimings,
+                           accounting: ModelCallAccounting?): Flow<ModelStreamEvent> = flow {
         val call = active.call
         val adapter = ModelStreamProviderAdapters.create(request.provider)
         val state = StreamEmissionState(timings = timings)
@@ -127,13 +169,14 @@ class OkHttpCloudModelStreamClient(
                     return@use
                 }
                 if (request.transport == ModelStreamTransport.COMPLETE_JSON) {
-                    emitParsedFrame(request.requestId, adapter.parseCompleteJson(body.string()), state)
+                    val data = body.string()
+                    emitParsedFrame(request.requestId, adapter.parseCompleteJson(data), state, accounting, data)
                 } else {
                     val reader = ModelStreamFrameReader(body.source(), request.transport)
                     while (!state.sawTerminal) {
                         val next = reader.next() ?: break
                         throwIfCancelled(request.requestId)
-                        if (emitParsedFrame(request.requestId, adapter.parse(next.data, next.eventName), state)) break
+                        if (emitParsedFrame(request.requestId, adapter.parse(next.data, next.eventName), state, accounting, next.data)) break
                     }
                 }
                 if (!state.sawTerminal) {
@@ -198,7 +241,9 @@ class OkHttpCloudModelStreamClient(
     private suspend fun FlowCollector<ModelStreamEvent>.emitParsedFrame(
         requestId: String,
         frame: ParsedModelStreamFrame,
-        state: StreamEmissionState
+        state: StreamEmissionState,
+        accounting: ModelCallAccounting?,
+        data: String
     ): Boolean {
         state.timings.mark("first_frame")
         val providerSequence = frame.providerSequence
@@ -209,6 +254,7 @@ class OkHttpCloudModelStreamClient(
         }
         if (providerSequence != null) state.lastProviderSequence = providerSequence
         throwIfCancelled(requestId)
+        accounting?.observe(data)
         val frameError = frame.error
         if (frameError != null) {
             emit(ModelStreamEvent.Failed(requestId, frameError.copy(partialResponse = state.emittedPayload)))

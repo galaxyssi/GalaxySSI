@@ -20,7 +20,8 @@ internal class GalaxySSILinkInbox(
     data class Replay(val messageId: String, val receiptRequired: Boolean, val completed: Boolean,
                       val contentHash: String, val recordKey: String, val wireHash: String = "")
     class ContentConflict : IllegalArgumentException("Conflicting authenticated message content")
-    class CapacityExceeded : IllegalStateException("Durable inbox capacity exceeded")
+    class CapacityExceeded(val reason: String = "pending_capacity") : IllegalStateException("Durable inbox capacity exceeded: $reason")
+    data class Usage(val retainedRecords: Long, val pendingRecords: Long, val pendingBytes: Long)
 
     init {
         require(maxPendingBytes > 0 && maxRecords > 0 && maxPeerPendingBytes > 0 && maxPeerRecords > 0)
@@ -34,6 +35,17 @@ internal class GalaxySSILinkInbox(
             db.execSQL("CREATE INDEX IF NOT EXISTS link_inbox_expiry ON link_inbox_records(completed,retain_until,record_key)")
             db.execSQL("CREATE TABLE IF NOT EXISTS link_inbox_usage (scope_digest TEXT PRIMARY KEY NOT NULL, " +
                 "record_count INTEGER NOT NULL CHECK(record_count>=0), pending_bytes INTEGER NOT NULL CHECK(pending_bytes>=0))")
+            val hasPendingCount = db.rawQuery("PRAGMA table_info(link_inbox_usage)", null).use { cursor ->
+                var found = false
+                while (cursor.moveToNext()) if (cursor.getString(1) == "pending_count") found = true
+                found
+            }
+            if (!hasPendingCount) {
+                // Old record_count includes completed replay tombstones. Migrate once without deleting either kind.
+                db.execSQL("ALTER TABLE link_inbox_usage ADD COLUMN pending_count INTEGER NOT NULL DEFAULT 0 CHECK(pending_count>=0)")
+                db.execSQL("UPDATE link_inbox_usage SET pending_count=(SELECT COUNT(*) FROM link_inbox_records r " +
+                    "WHERE r.completed=0 AND (link_inbox_usage.scope_digest='' OR r.scope_digest=link_inbox_usage.scope_digest))")
+            }
             db.execSQL("""CREATE TABLE IF NOT EXISTS link_inbox_ciphertexts (
                 scope_digest TEXT NOT NULL, ciphertext_digest TEXT NOT NULL, record_key TEXT NOT NULL,
                 receipt_hash TEXT NOT NULL DEFAULT '',
@@ -85,7 +97,7 @@ internal class GalaxySSILinkInbox(
                 if (knownCipher == null) {
                     db.rawQuery("SELECT COUNT(*) FROM link_inbox_ciphertexts WHERE record_key=?", arrayOf(key)).use {
                         check(it.moveToFirst())
-                        if (it.getInt(0) >= 8) throw CapacityExceeded()
+                        if (it.getInt(0) >= 8) throw CapacityExceeded("ciphertext_aliases")
                     }
                 }
                 db.execSQL("INSERT OR IGNORE INTO link_inbox_ciphertexts(scope_digest,ciphertext_digest,record_key) VALUES(?,?,?)",
@@ -138,8 +150,8 @@ internal class GalaxySSILinkInbox(
             val value = record(db, key) ?: return@indexedTransaction false
             check(value.messageId == payload.optString("message_id")) { "Inbox completion identity mismatch" }
             if (!value.completed) {
-                adjustUsage(db, "", 0, -value.payloadBytes)
-                adjustUsage(db, value.scopeDigest, 0, -value.payloadBytes)
+                adjustUsage(db, "", 0, -value.payloadBytes, pending = -1)
+                adjustUsage(db, value.scopeDigest, 0, -value.payloadBytes, pending = -1)
                 db.execSQL("UPDATE link_inbox_records SET completed=1,payload_bytes=0 WHERE record_key=?", arrayOf(key))
                 database.remove(payloadKey(key))
             }
@@ -206,25 +218,34 @@ internal class GalaxySSILinkInbox(
 
     private fun remove(db: SQLiteDatabase, key: String) {
         val value = record(db, key) ?: return
-        adjustUsage(db, "", -1, -value.payloadBytes)
-        adjustUsage(db, value.scopeDigest, -1, -value.payloadBytes)
+        val pending = if (value.completed) 0 else -1
+        adjustUsage(db, "", -1, -value.payloadBytes, pending)
+        adjustUsage(db, value.scopeDigest, -1, -value.payloadBytes, pending)
         db.execSQL("DELETE FROM link_inbox_ciphertexts WHERE record_key=?", arrayOf(key))
         db.execSQL("DELETE FROM link_inbox_records WHERE record_key=?", arrayOf(key))
         database.remove(payloadKey(key))
     }
 
     private fun checkQuota(db: SQLiteDatabase, scope: String, records: Int, bytes: Long, incomingBytes: Int) {
-        db.rawQuery("SELECT record_count,pending_bytes FROM link_inbox_usage WHERE scope_digest=?", arrayOf(scope)).use {
+        db.rawQuery("SELECT pending_count,pending_bytes FROM link_inbox_usage WHERE scope_digest=?", arrayOf(scope)).use {
             if (it.moveToFirst()) {
-                if (it.getLong(0) >= records || it.getLong(1) + incomingBytes > bytes) throw CapacityExceeded()
-            } else if (incomingBytes > bytes) throw CapacityExceeded()
+                if (it.getLong(0) >= records) throw CapacityExceeded("pending_records")
+                if (it.getLong(1) + incomingBytes > bytes) throw CapacityExceeded("pending_bytes")
+            } else if (incomingBytes > bytes) throw CapacityExceeded("pending_bytes")
         }
     }
 
-    private fun adjustUsage(db: SQLiteDatabase, scope: String, records: Int, bytes: Int) {
-        db.execSQL("INSERT OR IGNORE INTO link_inbox_usage(scope_digest,record_count,pending_bytes) VALUES(?,0,0)", arrayOf(scope))
-        db.execSQL("UPDATE link_inbox_usage SET record_count=record_count+?,pending_bytes=pending_bytes+? WHERE scope_digest=?",
-            arrayOf(records, bytes, scope))
+    fun usage(peerScope: String? = null): Usage = database.indexedTransaction { db ->
+        val scope = peerScope?.let(MqttImmutableContent::sha256).orEmpty()
+        db.rawQuery("SELECT record_count,pending_count,pending_bytes FROM link_inbox_usage WHERE scope_digest=?", arrayOf(scope)).use {
+            if (it.moveToFirst()) Usage(it.getLong(0), it.getLong(1), it.getLong(2)) else Usage(0, 0, 0)
+        }
+    }
+
+    private fun adjustUsage(db: SQLiteDatabase, scope: String, records: Int, bytes: Int, pending: Int = records) {
+        db.execSQL("INSERT OR IGNORE INTO link_inbox_usage(scope_digest,record_count,pending_bytes,pending_count) VALUES(?,0,0,0)", arrayOf(scope))
+        db.execSQL("UPDATE link_inbox_usage SET record_count=record_count+?,pending_bytes=pending_bytes+?,pending_count=pending_count+? WHERE scope_digest=?",
+            arrayOf(records, bytes, pending, scope))
         if (records < 0) db.execSQL("DELETE FROM link_inbox_usage WHERE scope_digest=? AND record_count=0", arrayOf(scope))
     }
 

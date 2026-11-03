@@ -4,6 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecords) {
+    var callAdmissionEnabled = true
+        private set
     var restored = false
         private set
     val cancelled: Boolean get() = records.read("cancelled") != null
@@ -18,8 +20,11 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
             }
         val existing = records.read("initial")
         if (existing == null) {
-            records.write("initial", encode(mapOf("binding" to binding, "messages" to messages)))
-            return request
+            val prepared = AgentProblemSolvingPolicy.prepare(request)
+            records.write("initial", encode(mapOf("binding" to binding,
+                "problem_solving_version" to AgentProblemSolvingPolicy.VERSION,
+                "messages" to prepared.messages.map(::messageValue))))
+            return prepared
         }
         val decoded = objectValue(existing)
         checkBinding(decoded["binding"], binding)
@@ -27,20 +32,32 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
         return request.copy(messages = list(decoded["messages"]).map { message(map(it)) })
     }
 
-    fun response(request: AgentModelRequest): AgentModelResponse? =
-        records.read("model:${request.round}")?.let { encoded ->
+    fun response(request: AgentModelRequest): AgentModelResponse? {
+        val encoded = records.read("model:${request.round}") ?: run {
+            callAdmissionEnabled = true
+            return null
+        }
+        return encoded.let {
             val record = objectValue(encoded)
             checkBinding(record["binding"], modelBinding(request))
+            callAdmissionEnabled = (record["call_admission_version"] as? Number)?.toInt() == 1
             val value = map(record["response"])
             val usage = map(value["usage"])
             AgentModelResponse(value["text"] as String, list(value["calls"]).map { call(map(it)) },
-                AgentModelUsage(number(usage["input"]), number(usage["output"])), map(value["metadata"]))
+                AgentModelUsage(number(usage["input"]), number(usage["output"])), map(value["metadata"]),
+                value["continuation"]?.let { AgentProviderContinuation.restore(map(it)) },
+                value["context_handoff"]?.let { AgentModelContextHandoff.restore(map(it)) })
         }
+    }
 
     fun response(request: AgentModelRequest, response: AgentModelResponse) = records.write("model:${request.round}",
-        encode(mapOf("binding" to modelBinding(request), "response" to mapOf("text" to response.assistantText,
+        encode(mapOf("binding" to modelBinding(request), "call_admission_version" to 1,
+            "response" to mutableMapOf<String, Any?>("text" to response.assistantText,
             "calls" to response.toolCalls.map(::callValue), "metadata" to response.providerMetadata,
-            "usage" to mapOf("input" to response.usage.inputTokens, "output" to response.usage.outputTokens)))))
+            "usage" to mapOf("input" to response.usage.inputTokens, "output" to response.usage.outputTokens)).apply {
+                response.continuation?.let { put("continuation", it.record()) }
+                response.contextHandoff?.let { put("context_handoff", it.record()) }
+            })))
 
     data class Invocation(val operation: String, val binding: String, val id: String,
         val result: AgentNativeToolResult?, val sequence: Long)
@@ -73,6 +90,22 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
         "${invocation.operation}:result", encode(mapOf("binding" to invocation.binding,
             "result" to result.toJsonValue(), "sequence" to sequence)))
 
+    fun waitResult(invocation: Invocation): AgentNativeToolResult? =
+        records.read("${invocation.operation}:event-result")?.let { encoded ->
+            val record = objectValue(encoded)
+            checkBinding(record["binding"], invocation.binding)
+            val result = JSONObject(encode(record["result"])).toNativeToolResult()
+                ?: throw AgentModelLoopRecoveryException("model_loop_event_result_invalid")
+            check(result.receipt.invocationId == invocation.id) { "model_loop_event_invocation_changed" }
+            result
+        }
+
+    fun waitResult(invocation: Invocation, result: AgentNativeToolResult) {
+        check(result.receipt.invocationId == invocation.id) { "model_loop_event_invocation_changed" }
+        records.write("${invocation.operation}:event-result", encode(mapOf("binding" to invocation.binding,
+            "result" to result.toJsonValue())))
+    }
+
     private fun modelBinding(request: AgentModelRequest) = AgentNativeJsonCodec.sha256(mapOf(
         "round" to request.round, "messages" to request.messages.map(::messageValue),
         "manifest" to request.toolManifestSha256))
@@ -94,7 +127,11 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
                 "message" to it.message, "error" to it.error?.let { error -> mapOf("code" to error.code,
                     "message" to error.message, "retryable" to error.retryable, "details" to error.details) },
                 "invocation" to it.invocationId, "retries" to it.retryCount, "receipt" to it.receipt, "native" to it.nativeResult)
-        })
+        }).toMutableMap().apply {
+            message.continuation?.let { put("continuation", it.record()) }
+            message.contextHandoff?.let { put("context_handoff", it.record()) }
+            if (message.providerRoute.isNotBlank()) put("provider_route", message.providerRoute)
+        }
 
     private fun message(value: Map<String, Any?>): AgentModelMessage {
         val result = value["result"]?.let { raw ->
@@ -107,7 +144,10 @@ internal class AgentModelLoopCheckpoint(private val records: AgentModelLoopRecor
                 }, r["invocation"] as? String, number(r["retries"]).toInt(), r["receipt"]?.let(::map), r["native"]?.let(::map))
         }
         return AgentModelMessage(AgentModelMessageRole.valueOf(value["role"] as String), value["text"] as String,
-            list(value["calls"]).map { call(map(it)) }, result)
+            list(value["calls"]).map { call(map(it)) }, result,
+            value["continuation"]?.let { AgentProviderContinuation.restore(map(it)) },
+            value["context_handoff"]?.let { AgentModelContextHandoff.restore(map(it)) },
+            value["provider_route"] as? String ?: "")
     }
 
     private fun encode(value: Any?) = AgentNativeJsonCodec.stringify(value)

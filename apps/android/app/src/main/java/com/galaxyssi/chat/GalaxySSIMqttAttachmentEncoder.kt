@@ -24,7 +24,8 @@ internal object GalaxySSIMqttAttachmentEncoder {
                     context,
                     attachment,
                     minOf(remaining, mediaProfile.imageTargetBytes),
-                    taskId = taskId
+                    taskId = taskId,
+                    originalByteLimit = remaining
                 )
                 try {
                     if (encoded != null && encoded.bytes.isNotEmpty() && encoded.bytes.size <= remaining) {

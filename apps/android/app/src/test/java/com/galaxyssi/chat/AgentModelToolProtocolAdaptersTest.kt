@@ -28,7 +28,7 @@ class AgentModelToolProtocolAdaptersTest {
     fun providerCatalogsExposeParallelSafeReadContract() {
         val catalog = catalog()
         val expectedHint = "Parallel-safe read-only: request independent calls together; results preserve call order."
-        val serialDescription = "Test adapter tool $SUM_TOOL_ID."
+        val serialDescription = "Test adapter tool $SUM_TOOL_ID. Native tool ID: $SUM_TOOL_ID."
 
         val openAi = OpenAiCompatibleAgentModelToolProtocolAdapter().encodeToolCatalog(catalog)
         assertTrue(openAi.getJSONObject(0).getJSONObject("function").getString("description").contains(expectedHint))
@@ -54,7 +54,7 @@ class AgentModelToolProtocolAdaptersTest {
         assertEquals(2, tools.length())
         assertEquals("function", tools.getJSONObject(0).getString("type"))
         val echoFunction = tools.getJSONObject(0).getJSONObject("function")
-        assertEquals(ECHO_TOOL_ID, echoFunction.getString("name"))
+        assertEquals(AgentModelToolWireNames.name(ECHO_TOOL_ID), echoFunction.getString("name"))
         assertEquals("object", echoFunction.getJSONObject("parameters").getString("type"))
 
         val response = adapter.decodeResponse(
@@ -128,7 +128,7 @@ class AgentModelToolProtocolAdaptersTest {
         val catalog = catalog()
 
         val tools = adapter.encodeToolCatalog(catalog)
-        assertEquals(ECHO_TOOL_ID, tools.getJSONObject(0).getString("name"))
+        assertEquals(AgentModelToolWireNames.name(ECHO_TOOL_ID), tools.getJSONObject(0).getString("name"))
         assertEquals("object", tools.getJSONObject(0).getJSONObject("input_schema").getString("type"))
 
         val response = adapter.decodeResponse(
@@ -194,7 +194,7 @@ class AgentModelToolProtocolAdaptersTest {
         val tools = adapter.encodeToolCatalog(catalog)
         val declarations = tools.getJSONObject(0).getJSONArray("functionDeclarations")
         assertEquals(2, declarations.length())
-        assertEquals(ECHO_TOOL_ID, declarations.getJSONObject(0).getString("name"))
+        assertEquals(AgentModelToolWireNames.name(ECHO_TOOL_ID), declarations.getJSONObject(0).getString("name"))
         assertEquals("object", declarations.getJSONObject(0).getJSONObject("response").getString("type"))
 
         val responseJson = """

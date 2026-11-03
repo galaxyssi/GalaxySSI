@@ -57,17 +57,20 @@ struct GalaxySSILogoView: View {
 struct GalaxySSITopBar<Leading: View, Trailing: View>: View {
   var title: String
   var onTitleTap: (() -> Void)? = nil
+  let sideContentWidth: CGFloat
   let leading: Leading
   let trailing: Trailing
 
   init(
     title: String,
     onTitleTap: (() -> Void)? = nil,
+    sideContentWidth: CGFloat = 40,
     @ViewBuilder leading: () -> Leading,
     @ViewBuilder trailing: () -> Trailing
   ) {
     self.title = title
     self.onTitleTap = onTitleTap
+    self.sideContentWidth = sideContentWidth
     self.leading = leading()
     self.trailing = trailing()
   }
@@ -75,7 +78,7 @@ struct GalaxySSITopBar<Leading: View, Trailing: View>: View {
   var body: some View {
     HStack(spacing: 0) {
       leading
-        .frame(width: 40, height: 56)
+        .frame(width: sideContentWidth, height: 56, alignment: .leading)
       if let onTitleTap {
         Button(action: onTitleTap) {
           titleLabel
@@ -86,7 +89,7 @@ struct GalaxySSITopBar<Leading: View, Trailing: View>: View {
         titleLabel
       }
       trailing
-        .frame(width: 40, height: 56)
+        .frame(width: sideContentWidth, height: 56, alignment: .trailing)
     }
     .padding(.horizontal, 16)
     .frame(height: 56)
@@ -97,6 +100,8 @@ struct GalaxySSITopBar<Leading: View, Trailing: View>: View {
     Text(title)
       .font(.system(size: 17, weight: .bold))
       .foregroundColor(.galaxySSITextPrimary)
+      .lineLimit(1)
+      .minimumScaleFactor(0.75)
       .frame(maxWidth: .infinity, minHeight: 56)
   }
 }

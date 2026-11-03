@@ -100,6 +100,7 @@ object AgentResponseSelfCheck {
             .trim()
             .lowercase(Locale.ROOT)
         if (clean in ACK_EXACT) return true
+        if (CONTINUATION_PROMISE.matches(clean)) return true
         if (clean.length > 400 || clean.split(' ').size > 60) return false
         return ACK_START.containsMatchIn(clean) && FUTURE_ONLY.containsMatchIn(clean)
     }
@@ -205,6 +206,11 @@ object AgentResponseSelfCheck {
             "working on it|starting now|" +
             "\u597d\u7684|\u6536\u5230|\u660e\u767d|\u6211\u4f1a|\u6211\u5c06|" +
             "\u9a6c\u4e0a|\u6b63\u5728|\u5f00\u59cb\u5904\u7406)",
+        RegexOption.IGNORE_CASE
+    )
+    private val CONTINUATION_PROMISE = Regex(
+"^(?:\u597d\u7684|\u597d|\u6536\u5230|\u660e\u767d)[\uff0c,\u3002\\s]*(?:\u4e0d\u52a0\u4efb\u4f55\u989d\u5916\u6761\u4ef6[\uff0c,\u3002\\s]*)?(?:\u6211\u4f1a|\u6211\u5c06|\u6211\u73b0\u5728|\u76f4\u63a5)?" +
+            "\u7ee7\u7eed(?:\u67e5\u627e|\u641c\u7d22|\u67e5|\u627e|\u5904\u7406|\u5206\u6790)[^\u3002\uff01\uff1f!?\\n]{0,60}[\u3002.!]?$",
         RegexOption.IGNORE_CASE
     )
     private val FUTURE_ONLY = Regex(

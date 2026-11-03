@@ -1,5 +1,9 @@
 # Multi-Agent Collaboration Architecture
 
+Evidence-driven innovation and learning extend this architecture through the existing work graph,
+workspace and executor boundaries. See [Collaborative Evolution](COLLABORATIVE_EVOLUTION.md) for
+typed capability gaps, innovation hypotheses, preregistered comparisons and regression-gated lessons.
+
 GalaxySSI treats an Agent team as one host-owned Run, not as several unrelated chat messages. The host owns the team graph, identity, delivery policy, evidence handoff, final response, persistence, and cancellation boundary.
 
 ## Agent Profiles And Instances
@@ -61,7 +65,135 @@ Terminal team delivery has a separate encrypted deduplication ledger. The final 
 
 An explicit retry is a new attempt rather than a replay of the old supervisor. The host rekeys the team, supervisor, idempotency key, and synthetic response identity before execution, then persists those identities with the reset Action.
 
+For the narrower case of an already completed but unpublished documentary candidate
+review, a coordinator can explicitly reassign work without resetting the team.
+The new dispatch atomically enrolls its publication contract and retires the old
+workspace writer. Late old output remains auditable but cannot publish revisions
+or reopen a repair loop. This survives process recreation and does not stop
+unrelated branches. It is not permission to take over an uncertain remote task or
+repeat an external side effect. See [publication retirement](../testing/COLLABORATION_PUBLICATION_RETIREMENT.md).
+
 ## User Experience
+
+### Evidence Binding Admission
+
+New Desktop observation constraints are checked against the authenticated evidence
+protocol's recorded event families before criteria or assignments are admitted.
+For example, a callable `exec_command` name is not the recorded
+`codex.commandExecution` family. Invalid drafts receive the exact field, valid
+recorded names and valid-JSON status while all proposed work remains unstarted.
+The coordinator can correct its draft without repeating a tool operation.
+
+Existing constraints remain byte-preserved and readable; this admission check
+does not reinterpret them as aliases, loosen receipt matching or certify content.
+Other evidence origins keep their own tool namespaces. This prevents a new
+unfulfillable binding, but does not repair an already-established wrong binding
+or settle the separate review-versus-delivery lifecycle issue.
+
+### Shared Documentary Review Scope
+
+Authors, independent reviewers and the goal coordinator receive the same host
+delivery lifecycle guidance. Documentary review concerns the saved artifact's
+readiness before final delivery, not an assertion that future transport or user
+reading already happened. An explicitly requested recipient acknowledgement,
+post-delivery audit or external effect still needs its own actual evidence.
+Content readiness never substitutes for these requirements.
+
+This guidance lives in the mandatory response protocol, including budgeted and
+recovered reviewer prompts. It does not rewrite criteria, change review verdicts,
+waive unresolved issues or add an automatic completion path. Runtime acceptance
+and exact-version independent review checks remain unchanged. Real-model
+compliance must be validated separately from prompt inclusion tests.
+
+### Reviewable Final Delivery
+
+Goal coverage distinguishes requested `outcome` segments, operating `constraint`
+segments and explanatory `context` segments. Every original source segment still
+needs an independent coverage review. Outcomes require links to acceptance
+criteria; constraints/context may have empty criterion links and must retain an
+explanation of their applicability. The reviewer must check the classification,
+not merely copy it. Mixed outcome/constraint segments remain outcomes. Already
+established criteria cannot be removed, weakened or reclassified away.
+
+This avoids inventing a separate universal-compliance proof task from every
+restriction. It does not grant permissions, prove that no unseen action occurred,
+or remove original restrictions. Coverage remains a semantic reviewer judgment,
+not an oracle. An explicitly requested compliance audit is still a deliverable.
+
+A goal assessment may select `final_delivery: {object_id, revision, sha256}`.
+The reference must identify the current, in-scope substantive text of a met
+criterion. The result finalizer archives the complete model response, then
+projects that exact saved `body.content` into the public summary before the
+normal host acceptance checks. Independent reviews, dissent checks, evidence
+read coverage, computational qualification and unchanged-criteria checks still
+apply. The acceptance receipt binds the projected reply; the original archive
+hash continues to identify the unmodified model response. Recovery uses the
+same projection without another model request or workspace publication.
+
+Prepare the final text before reviewing it. Do not ask a reviewer to verify an
+as-yet-unwritten terminal response before it may be submitted. A requested
+post-delivery audit needs its own observable boundary; content acceptance,
+persistence and user/device receipt remain separate facts. This path does not
+claim that a user read the result or that a transport acknowledgment exists.
+
+### Decision Ownership During Execution
+
+A recorded successful result does not automatically start another incremental
+coordinator when an unfinished, declared downstream assignment already owns its
+handoff. The successor receives the unchanged result, including questions and
+negative evidence. This is structural dispatch ownership, not a host judgment
+that the content is sufficient, true or accepted.
+Ownership extends through completed successful dependency nodes: in A -> B -> C,
+pending C keeps both B and A covered after B finishes. The traversal visits each
+dependency once; it neither copies evidence nor erases completed predecessors.
+
+Failed, truncated, unstructured or unrecorded results still request a checkpoint.
+An explicit `coordination:{mode:"request",decision,why_now}` in the final artifact
+also requests intervention even when a successor exists. Intermediate publication
+requests retain their independent wake path. Candidate-cycle outcomes retain
+their existing coordination policy. A successor with a known unsuccessful input,
+an ignored/removed successor, or a result with no remaining successor does not
+hide the need for coordination.
+
+Deferral is derived from durable current dependencies and results; it never marks
+the result consumed or accepted. Recovery reevaluates the same facts. When the
+graph becomes quiescent, the normal final coordinator owns goal assessment.
+There is no new research-step limit, forced scientific strategy, shortened
+evidence, or exemption from independent review and final acceptance.
+
+### Reviewed Interim Conversation Delivery
+
+A continuing assessment may request `interim_delivery: {criterion_id, target}`
+for an exact, current artifact of an already established criterion. An independent
+review may add `content_readiness: {verdict, rationale, unresolved}` inside its
+`acceptance_review`, distinct from the overall criterion verdict. This allows
+reviewed content to be presented before a user acknowledgement or another
+post-delivery condition exists. It must not erase an overall negative/untested
+verdict, weaken the criterion, or count as completed computation or experiments.
+
+The host checks exact versions, independent authorship, current review dissent,
+and read coverage for cited original evidence before interim release. Every
+current review must support content readiness; an incomplete review without a
+separate readiness judgment cannot release content. Final acceptance continues
+to require the original overall verdicts, all source requirements, coverage and
+qualified validation. Readiness does not replace those checks.
+
+The Android finalizer persists the text as a PROCESS entry in the originating
+collaboration conversation, not an ASSISTANT completion. A content-addressed
+intent, conversation write confirmation and evidence receipt make retry/recovery
+idempotent across coordinator dispatches. A confirmed message is not recreated
+if receipt recording retries after a user deletes it. Outer whitespace trimming
+is declared explicitly; the receipt binds the displayed text hash and saved
+artifact version. Group removal deletes the scoped journal with the workspace.
+
+The host records `android_native_tool/galaxyssi.collaboration.conversation_delivery`
+as a recallable observation. It means local conversation persistence, not visual
+rendering, user reading, remote acknowledgement or goal completion. The original
+model response remains archived, model-supplied receipts are discarded, and
+pause/stop/removal checks apply before writing. Failure is returned as an
+unconfirmed operation, not a fabricated delivery or successful goal. Agents can
+use the real receipt in later work without holding all content until the complete
+goal has passed. Real-model adoption is a separate acceptance requirement.
 
 Background teams expose only their aggregate status by default. The existing Recent Tasks page includes an Agent teams section. Opening a team now uses a full detail page rather than a text dialog. It shows the aggregate state, role-bound instances, member status, bounded team messages, and one team conclusion. While a Run is active, tapping a member opens a focused composer for constraints, questions, or new evidence.
 

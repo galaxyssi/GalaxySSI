@@ -2,10 +2,13 @@ package com.galaxyssi.chat
 
 /** Compiles bounded, credential-safe tool observations for any reasoning provider. */
 internal object AgentPlannerObservation {
-    fun from(action: AgentAction, maximumCharacters: Int): String? = sanitize(
-        values = listOf(action.result, action.evidence),
-        maximumCharacters = maximumCharacters
-    )
+    fun from(action: AgentAction, maximumCharacters: Int): String? {
+        if (action.status == AgentActionStatus.COMPLETED &&
+            AgentWebObservation.compact(action.evidence, maximumCharacters) != null) {
+            return sanitize(action.evidence, maximumCharacters)
+        }
+        return sanitize(listOf(action.result, action.evidence), maximumCharacters)
+    }
 
     fun sanitize(value: String, maximumCharacters: Int): String? = sanitize(
         values = listOf(value),
@@ -43,6 +46,8 @@ internal object AgentPlannerObservation {
     }
 
     private fun compact(value: String, maximumCharacters: Int): String {
+        if (maximumCharacters <= 0) return ""
+        AgentWebObservation.compact(value, maximumCharacters)?.let { return it }
         if (value.length <= maximumCharacters) return value
         if (maximumCharacters <= COMPACTION_MARKER.length + 2) {
             return value.takeLast(maximumCharacters)

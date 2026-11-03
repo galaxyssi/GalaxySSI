@@ -39,7 +39,8 @@ internal class AgentActionEffectExecutor(
         }
 
         val outcome = try {
-            delegate.execute(action, screen)
+            delegate.execute(if (action.kind == AgentActionKind.SET_ALARM) action.copy(parameters = action.parameters +
+                mapOf(INTERNAL_CONVERSATION_ID to context.conversationId, INTERNAL_TURN_ID to context.turnId)) else action, screen)
         } catch (error: Exception) {
             failure(action, "action_execution_failed",
                 "Action execution failed; inspect external state before a new action: ${error.message}")

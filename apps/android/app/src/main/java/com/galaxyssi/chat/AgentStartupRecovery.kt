@@ -49,6 +49,7 @@ class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters)
                 reconciled = AgentColdBootRecoveryCoordinator.pauseInterruptedTasks(
                     applicationContext, "Task interrupted by a previous app process"
                 )
+                AgentInterruptedCloudRecovery.reconcile(applicationContext)
             },
             dispatch = {
                 AgentTeamBackgroundRecovery.enqueue(applicationContext)

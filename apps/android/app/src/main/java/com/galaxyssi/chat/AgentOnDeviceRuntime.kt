@@ -291,12 +291,25 @@ data class AgentRuntimeExecutionResponse(
     val projectFingerprint: String = "",
     val projectFingerprintChecked: Boolean = false,
     val checkpointId: String = "",
-    val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED
-)
+    val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED,
+    val stdoutOriginalChars: Int? = null,
+    val stderrOriginalChars: Int? = null,
+    val outputCaptureLimitChars: Int? = null,
+    val runtimeInstanceId: String = ""
+) {
+    internal fun boundedOutput(maxChars: Int, maxArtifacts: Int): AgentRuntimeExecutionResponse {
+        require(maxChars >= 0 && maxArtifacts >= 0)
+        return copy(stdout = stdout.take(maxChars), stderr = stderr.take(maxChars), artifacts = artifacts.take(maxArtifacts),
+            stdoutOriginalChars = maxOf(stdoutOriginalChars ?: 0, stdout.length),
+            stderrOriginalChars = maxOf(stderrOriginalChars ?: 0, stderr.length), outputCaptureLimitChars = maxChars)
+    }
+}
 
 fun interface AgentOnDeviceRuntimeBridge {
+    val runtimeInstanceId: String get() = ""
     fun execute(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse
     fun health(): AgentRuntimeBridgeHealth = AgentRuntimeBridgeHealth(ready = true)
+    fun refreshHealth(): AgentRuntimeBridgeHealth = health()
     fun cancel(requestId: String): Boolean = false
 }
 
@@ -368,7 +381,8 @@ class AgentOnDeviceRuntimeManager(
                 AgentOnDeviceRuntimeSupervisor.cachedHealth(candidate)
             } else {
                 runCatching { candidate.health() }.getOrElse { error ->
-                    AgentRuntimeBridgeHealth(false, reason = error.message ?: "Guest bridge health check failed")
+                    AgentRuntimeBridgeHealth(false, reason = error.message ?: "Guest bridge health check failed",
+                        observationConfirmed = false)
                 }
             }
         }
@@ -576,13 +590,14 @@ class AgentOnDeviceRuntimeManager(
                 AgentRuntimeWorkspaceDisposition.FAILED_CANDIDATE
             }
             val response = rawResponse.copy(
+                runtimeInstanceId = activeBridge.runtimeInstanceId,
                 artifacts = artifacts,
                 requestId = normalizedRequest.requestId,
                 projectFileCount = durableProject?.fileCount ?: durableStatus?.fileCount ?: 0,
                 projectBytes = durableProject?.totalBytes ?: durableStatus?.totalBytes ?: 0L,
                 checkpointId = commit?.checkpoint?.checkpointId.orEmpty(),
                 workspaceDisposition = disposition
-            ).bounded()
+            ).boundedOutput(MAX_OUTPUT_CHARS, MAX_ARTIFACTS)
             val receipt = receiptStore.complete(normalizedRequest.requestId, response, artifacts)
             runCatching {
                 workspaceManager.markFinished(
@@ -597,7 +612,10 @@ class AgentOnDeviceRuntimeManager(
             )
             response.copy(executionReceipt = receipt)
         } catch (error: Throwable) {
-            val runtimeWasReset = if (error is AgentNativeToolTimeoutException && runtimeLease != null) {
+            val timeoutHealth = if (error is AgentNativeToolTimeoutException && runtimeLease != null) {
+                runCatching(activeBridge::refreshHealth).getOrNull()
+            } else null
+            val runtimeWasReset = if (runtimeLease != null && AgentRuntimeTimeoutRecovery.shouldQuarantine(error, timeoutHealth)) {
                 runCatching { AgentOnDeviceRuntimeRecovery.quarantine(appContext, runtimeLease) }
                     .onFailure { recoveryError -> error.addSuppressed(recoveryError) }
                     .getOrDefault(false)
@@ -653,6 +671,10 @@ class AgentOnDeviceRuntimeManager(
                     "On-device execution failed and its workspace could not be restored",
                     error
                 )
+            }
+            if (error is AgentNativeToolTimeoutException) {
+                throw AgentNativeToolTimeoutException(error.details + AgentRuntimeTimeoutRecovery.evidence(timeoutHealth, runtimeWasReset))
+                    .also { it.initCause(error) }
             }
             throw error
         }
@@ -903,12 +925,6 @@ class AgentOnDeviceRuntimeManager(
         }
     }
 
-    private fun AgentRuntimeExecutionResponse.bounded(): AgentRuntimeExecutionResponse = copy(
-        stdout = stdout.take(MAX_OUTPUT_CHARS),
-        stderr = stderr.take(MAX_OUTPUT_CHARS),
-        artifacts = artifacts.take(MAX_ARTIFACTS)
-    )
-
     private fun automaticCheckpointId(requestId: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(requestId.toByteArray(Charsets.UTF_8))
@@ -1009,7 +1025,8 @@ object AgentOnDeviceRuntimeTools {
         WORKSPACE_ROLLBACK,
         LIST_PACKS,
         INSTALL_PACK,
-        EXECUTE
+        EXECUTE,
+        *AgentRuntimeControlTools.toolIds.toTypedArray()
     )
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> {
@@ -1143,13 +1160,22 @@ object AgentOnDeviceRuntimeTools {
                     availability = executionAvailability(manager)
                 ),
                 executor = AgentNativeToolExecutor { invocation ->
+                    val generated = try { CollaborationToolRuntime.prepare(context, invocation) }
+                    catch (error: Exception) {
+                        return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("collaboration_tool_invalid", error.message ?: "Invalid saved tool",
+                            details = (error as? CollaborationToolFeedback.Invalid)?.let {
+                                mapOf(CollaborationRecordValidation.DETAIL to it.problem.toNativeObject())
+                            } ?: emptyMap())
+                    }
                     val verificationKind = AgentRuntimeVerificationKind.fromWireValue(
                         invocation.input["verification_kind"]?.toString().orEmpty()
                     )
-                    val requestedSource = invocation.input["source"]?.toString().orEmpty()
+                    val requestedSource = generated?.source ?: invocation.input["source"]?.toString().orEmpty()
                     val automaticVerification = requestedSource.isBlank() &&
                         verificationKind != AgentRuntimeVerificationKind.NONE
-                    val language = if (automaticVerification) {
+                    val language = if (generated != null) {
+                        AgentRuntimeLanguage.PYTHON
+                    } else if (automaticVerification) {
                         AgentRuntimeLanguage.SHELL
                     } else {
                         AgentRuntimeLanguage.entries.firstOrNull {
@@ -1175,7 +1201,10 @@ object AgentOnDeviceRuntimeTools {
                     } else {
                         requestedSource.ifBlank {
                             return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
-                                "runtime_source_required", "Runtime source is required"
+                                "runtime_source_required",
+                                "Provide non-empty source containing the code or shell command to execute. " +
+                                    "arguments only supplies arguments to that source; it is not a script entry path. " +
+                                    "No command was executed. Inspect the current workspace and choose the next call."
                             )
                         }
                     }
@@ -1238,7 +1267,8 @@ object AgentOnDeviceRuntimeTools {
                                     architecture = manager.architecture()
                                 )
                             }
-                            runtimeExecutionResult(response, recoveryCandidates)
+                            val result = runtimeExecutionResult(response, recoveryCandidates)
+                            if (generated == null) result else CollaborationToolRuntime.finish(generated, response, result)
                         },
                         onFailure = { error ->
                             Log.e(
@@ -1274,7 +1304,7 @@ object AgentOnDeviceRuntimeTools {
                 ),
                 availabilityProvider = AgentNativeToolAvailabilityProvider { executionAvailability(manager) }
             )
-        )
+        ) + AgentRuntimeControlTools.definitions(appContext)
     }
 
     internal fun runtimeExecutionResult(
@@ -1352,16 +1382,21 @@ object AgentOnDeviceRuntimeTools {
         invocation: AgentNativeToolInvocation,
         requestedPack: String
     ): AgentNativeToolExecutionResult {
+        fun installedResult(output: Map<String, Any?>): AgentNativeToolExecutionResult {
+            if (requestedPack in setOf("linux-base", "browser-automation", "node-js") &&
+                AgentBrowserRuntimeReadiness.availability(manager.cachedStatus()).status == AgentNativeToolAvailabilityStatus.AVAILABLE) {
+                return AgentBrowserRuntimeReadiness.verifyInstalled(invocation, output, manager::execute,
+                    { AgentInteractiveBrowserTools.stageHelpers(context.applicationContext) })
+            }
+            return AgentNativeToolExecutionResult.success(output, "Trusted runtime pack is ready")
+        }
         if (requestedPack !in AgentOnDeviceRuntimeManager.REQUIRED_PACKS) {
             return AgentNativeToolExecutionResult.failure(
                 "invalid_runtime_pack", "Runtime pack is invalid"
             )
         }
         readyRuntimePackInstallOutput(requestedPack, manager.packStatuses())?.let { output ->
-            return AgentNativeToolExecutionResult.success(
-                output,
-                "Trusted runtime pack is already ready"
-            )
+            return installedResult(output)
         }
         val catalogManager = AgentRuntimePackCatalogManager(context)
         return try {
@@ -1414,10 +1449,7 @@ object AgentOnDeviceRuntimeTools {
                     )
                 }
             }
-            AgentNativeToolExecutionResult.success(
-                mapOf("requested_pack" to requestedPack, "installed" to installed),
-                "Trusted runtime pack is ready"
-            )
+            installedResult(mapOf("requested_pack" to requestedPack, "installed" to installed))
         } catch (error: AgentNativeToolCancelledException) {
             throw error
         } catch (error: Throwable) {
@@ -1439,6 +1471,8 @@ object AgentOnDeviceRuntimeTools {
                 status.state == AgentRuntimePackState.READY &&
                 status.manifest != null
         } ?: return null
+        if (requestedPack == "linux-base" &&
+            !AgentBrowserRuntimeReadiness.supportsLinuxVersion(ready.manifest!!.version)) return null
         return mapOf(
             "requested_pack" to requestedPack,
             "installed" to listOf(
@@ -1461,12 +1495,17 @@ object AgentOnDeviceRuntimeTools {
         put("exit_code", response.exitCode)
         put("stdout", stdout.text)
         put("stderr", stderr.text)
-        put("stdout_total_chars", stdout.totalChars)
-        put("stderr_total_chars", stderr.totalChars)
-        put("stdout_truncated", stdout.truncated)
-        put("stderr_truncated", stderr.truncated)
-        if (stdout.truncated) put("stdout_omitted_chars", stdout.omittedChars)
-        if (stderr.truncated) put("stderr_omitted_chars", stderr.omittedChars)
+        val stdoutTotal = maxOf(response.stdoutOriginalChars ?: 0, stdout.totalChars)
+        val stderrTotal = maxOf(response.stderrOriginalChars ?: 0, stderr.totalChars)
+        val stdoutOmitted = stdout.omittedChars + stdoutTotal - stdout.totalChars
+        val stderrOmitted = stderr.omittedChars + stderrTotal - stderr.totalChars
+        put("stdout_total_chars", stdoutTotal)
+        put("stderr_total_chars", stderrTotal)
+        put("stdout_truncated", stdoutOmitted > 0)
+        put("stderr_truncated", stderrOmitted > 0)
+        if (stdoutOmitted > 0) put("stdout_omitted_chars", stdoutOmitted)
+        if (stderrOmitted > 0) put("stderr_omitted_chars", stderrOmitted)
+        response.outputCaptureLimitChars?.let { put("output_capture_limit_chars", it) }
         put("duration_ms", response.durationMillis)
         put("workspace_file_count", response.projectFileCount)
         put("workspace_bytes", response.projectBytes)
@@ -1504,6 +1543,8 @@ object AgentOnDeviceRuntimeTools {
 
     private fun executionInputSchema() = AgentNativeJsonSchema.objectSchema(
         properties = mapOf(
+            CollaborationToolRuntime.INPUT to AgentNativeJsonSchema.objectSchema(additionalProperties = true,
+                description = "Scoped saved tool: mode=test with tool_test_plan ref, or mode=run with tool_release ref and parameters. Recall evolution_rules for details."),
             "language" to AgentNativeJsonSchema.string(enumValues = AgentRuntimeLanguage.entries.map { it.wireValue }),
             "source" to AgentNativeJsonSchema.string(maxLength = 256 * 1024),
             "arguments" to AgentNativeJsonSchema.array(AgentNativeJsonSchema.string(maxLength = 8 * 1024), maxItems = 256),
@@ -1547,9 +1588,14 @@ object AgentOnDeviceRuntimeTools {
             .ifBlank { invocation.context.conversationId }
             .ifBlank { invocation.context.invocationId }
 
-    private fun runtimeStatusOutput(status: AgentOnDeviceRuntimeStatus): Map<String, Any?> = mapOf(
+    internal fun runtimeStatusOutput(status: AgentOnDeviceRuntimeStatus): Map<String, Any?> = mapOf(
         "backend" to status.backend.wireValue,
         "backend_ready" to status.backendReady,
+        "execution_tool_availability" to executionAvailability(status).status.wireValue,
+        "execution_startup" to if (status.backend == AgentOnDeviceRuntimeBackend.NONE) "requires_setup" else "on_demand",
+        "execution_readiness_note" to if (status.backend == AgentOnDeviceRuntimeBackend.NONE) status.reason else
+            "runtime.execute starts or reconnects the guest on demand. backend_ready describes the current bridge, " +
+                "not whether an execution may be attempted. Inspect the execution receipt for the actual outcome.",
         "reason" to status.reason,
         "lifecycle" to mapOf(
             "phase" to status.lifecyclePhase.wireValue,

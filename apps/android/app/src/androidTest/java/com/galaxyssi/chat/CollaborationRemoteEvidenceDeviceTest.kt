@@ -6,7 +6,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.Base64
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -67,12 +70,12 @@ class CollaborationRemoteEvidenceDeviceTest {
             }
         } finally { CollaborationGroupStore(context).remove(group); file.delete() }
     }
-    private class Fixture(private val fields: JSONObject) {
+    private class Fixture(private val fields: JSONObject, repeats: Int = 3000) {
         val body = JSONObject(fields.toString()).put("contract", CollaborationRemoteEvidenceProtocol.CONTRACT)
             .put("trust", CollaborationRemoteEvidenceProtocol.TRUST).put("coverage", "provider_payload_as_received")
             .put("observation", JSONObject().put("provider", "codex").put("thread_id", "provider-thread")
                 .put("turn_id", "provider-turn").put("item", JSONObject().put("id", "fixture-item")
-                    .put("type", "commandExecution").put("exitCode", 0).put("aggregatedOutput", "Fixture original \u8bc1\u636e. ".repeat(3000))))
+                    .put("type", "commandExecution").put("exitCode", 0).put("aggregatedOutput", "Fixture original \u8bc1\u636e. ".repeat(repeats))))
             .toString().toByteArray()
         val descriptor = JSONObject().put("evidence_id", AgentNativeJsonCodec.sha256("fixture-item"))
             .put("sha256", AgentResultRecoveryClient.sha256(body)).put("sequence", 1)
@@ -86,7 +89,7 @@ class CollaborationRemoteEvidenceDeviceTest {
             if (selection.getString("mode") == "index") return reply
                 .put("entries", JSONArray().apply { if (selection.getLong("after_sequence") == 0L) put(descriptor) })
                 .put("next_sequence", 1).put("has_more", false).put("provider_history_complete", false)
-                .put("coverage", "observed_completed_items_only")
+                .put("coverage", "observed_completed_items_only").put("archive_final", true)
             val page = selection.getInt("page_index")
             requested.add(page)
             descriptor.keys().forEach { reply.put(it, descriptor.get(it)) }
@@ -94,6 +97,94 @@ class CollaborationRemoteEvidenceDeviceTest {
             return reply.put("page_index", page).put("data_b64", Base64.getEncoder().encodeToString(bytes))
                 .put("page_sha256", AgentResultRecoveryClient.sha256(bytes))
         }
+    }
+
+    @Test fun inlineSmallOriginalPersistsWithoutASecondQuery(): Unit = runBlocking {
+        val group = "remote-evidence-inline-${UUID.randomUUID()}"
+        create(group)
+        try {
+            val identity = fields(group)
+            val fixture = Fixture(identity, repeats = 4)
+            val store = CollaborationRemoteEvidenceStore(context)
+            val ledger = CollaborationEvidenceLedger(context)
+            val key = store.create("fixture-desktop", identity, access(group))
+            var queries = 0
+            assertTrue(CollaborationRemoteEvidenceImporter(store, ledger).run(key, { true }) { _, _, selection ->
+                queries++
+                assertEquals("index", selection.getString("mode"))
+                assertEquals(0L, selection.getLong("after_sequence"))
+                assertEquals(16_384L, selection.getLong("inline_page_bytes"))
+                fixture.reply(selection).put("archive_final", true).put("inline_pages", JSONArray().put(
+                    fixture.reply(JSONObject().put("mode", "page").put("page_index", 0))))
+            })
+            assertEquals(1, queries)
+            val reopened = CollaborationEvidenceLedger(context)
+            val ref = reopened.browse(access(group)).first.single()
+            val original = JSONObject(reopened.read(access(group), ref.getString("evidence_id"))!!.getString("output_json"))
+            assertEquals(String(fixture.body, Charsets.UTF_8), original.getString("original_json"))
+            val saved = CollaborationRemoteEvidenceStore(context).read(key)!!
+            assertEquals("imported", saved.getString("status"))
+            assertFalse(saved.getBoolean("provider_history_complete"))
+        } finally { CollaborationGroupStore(context).remove(group) }
+    }
+
+    @Test fun liveOriginalCanBePublishedAndReadByAssignedPeerBeforeTerminal(): Unit = runBlocking {
+        val group = "remote-evidence-live-${UUID.randomUUID()}"
+        create(group)
+        CollaborationGroupStore(context).update(group) { it.copy(members = it.members +
+            CollaborationMember("reviewer", "Curie", "fixture", "Fixture")) }
+        try {
+            val identity = fields(group); val fixture = Fixture(identity, repeats = 4)
+            val store = CollaborationRemoteEvidenceStore(context); val ledger = CollaborationEvidenceLedger(context)
+            val key = store.createIntent("fixture-desktop", identity, access(group), terminal = false).first
+            assertTrue(CollaborationRemoteEvidenceImporter(store, ledger).run(key, { true }) { _, _, selection ->
+                fixture.reply(selection).put("archive_final", false)
+            })
+            assertEquals("snapshot_imported", CollaborationRemoteEvidenceStore(context).read(key)!!.getString("status"))
+            assertFalse(store.read(key)!!.getBoolean("terminal_requested"))
+            val ref = ledger.browse(access(group)).first.single()
+            val peer = access(group).copy(nodeId = "peer", personId = "reviewer", dependencyNodes = setOf("node"))
+            val original = CollaborationEvidenceLedger(context).read(peer, ref.getString("evidence_id"), ref.getString("sha256"))!!
+            assertEquals(String(fixture.body, Charsets.UTF_8), JSONObject(original.getString("output_json")).getString("original_json"))
+            assertNull(ledger.read(peer.copy(dependencyNodes = emptySet()), ref.getString("evidence_id")))
+            val unread = ledger.references(access(group), JSONArray().put(ref)).getJSONObject(0)
+                .getJSONObject(CollaborationEvidenceReadCoverage.FIELD)
+            assertEquals("same_dispatch_execution", unread.getString("mode"))
+            assertFalse(unread.getBoolean("complete"))
+            val authorPage = ledger.readPage(access(group), ref.getString("evidence_id"), ref.getString("sha256"),
+                recordCoverage = false)!!
+            assertNull(authorPage.next)
+            ledger.confirmPage(access(group), ref.getString("evidence_id"), ref.getString("sha256"), 0,
+                MqttImmutableContent.sha256(authorPage.content))
+            val artifact = JSONObject().put("format", CollaborationResearchArtifact.FORMAT).put("summary", "Live fixture")
+                .put("candidates", JSONArray()).put("findings", JSONArray()).put("questions", JSONArray())
+                .put("workspace", JSONArray().put(JSONObject().put("id", "live-receipt").put("kind", "evidence")
+                    .put("title", "Measured output, not a verified claim").put("body", JSONObject().put("content", "Fixture"))
+                    .put("observations", JSONArray().put(ref)))).toString()
+            val publication = CollaborationResearchWorkspace(context).publish(access(group), artifact)
+            assertEquals("recorded", publication.getString("status"))
+            val revision = publication.getJSONArray("revisions").getJSONObject(0)
+            val delivered = CollaborationResearchWorkspace(context).read(peer, revision.getString("object_id"),
+                revision.getInt("revision"))!!
+            assertEquals(revision.getString("sha256"), delivered.getString("sha256"))
+            val authorReceipt = delivered.getJSONArray("host_observations").getJSONObject(0)
+                .getJSONObject(CollaborationEvidenceReadCoverage.FIELD)
+            assertEquals("scoped_pages", authorReceipt.getString("mode"))
+            assertTrue(authorReceipt.getBoolean("complete"))
+            assertEquals("author", authorReceipt.getJSONObject("reader").getString("person_id"))
+            assertFalse(CollaborationEvidenceLedger(context).references(peer, JSONArray().put(ref)).getJSONObject(0)
+                .getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getBoolean("complete"))
+            assertEquals("same_dispatch_execution", unread.getString("mode"))
+            assertFalse(unread.getBoolean("complete"))
+            assertTrue(store.createIntent("fixture-desktop", identity, access(group)).second)
+            assertEquals(1, store.pending().count { it.second == key })
+            assertTrue(CollaborationRemoteEvidenceImporter(CollaborationRemoteEvidenceStore(context), CollaborationEvidenceLedger(context))
+                .run(key, { true }) { _, _, selection ->
+                    assertEquals(1L, selection.getLong("after_sequence")); fixture.reply(selection)
+                })
+            assertEquals("imported", store.read(key)!!.getString("status"))
+            assertEquals(1L, store.read(key)!!.getLong("imported"))
+        } finally { CollaborationGroupStore(context).remove(group) }
     }
 
     @Test fun encryptedPagesResumeAndBecomeExactWorkspaceEvidence(): Unit = runBlocking {
@@ -133,6 +224,102 @@ class CollaborationRemoteEvidenceDeviceTest {
         assertTrue(CollaborationRemoteEvidenceStore(context).states(group, 456).isEmpty())
     }
 
+    @Test fun slicedTransferResumesWithoutRepeatingVerifiedPages(): Unit = runBlocking {
+        val group = "remote-evidence-slices-${UUID.randomUUID()}"
+        create(group)
+        try {
+            val identity = fields(group); val fixture = Fixture(identity)
+            val store = CollaborationRemoteEvidenceStore(context)
+            val key = store.create("fixture-desktop", identity, access(group))
+            var outcome = CollaborationEvidenceSlice.YIELDED
+            var passes = 0
+            while (outcome == CollaborationEvidenceSlice.YIELDED) {
+                var queries = 0
+                outcome = CollaborationRemoteEvidenceImporter(CollaborationRemoteEvidenceStore(context),
+                    CollaborationEvidenceLedger(context)).runSlice(key, { true }, maxQueries = 2) { _, _, query ->
+                    queries++; fixture.reply(query)
+                }
+                assertTrue(queries <= 2)
+                passes++
+            }
+            assertTrue(passes > 1)
+            assertEquals(CollaborationEvidenceSlice.COMPLETE, outcome)
+            assertEquals(fixture.requested.distinct(), fixture.requested)
+            val ledger = CollaborationEvidenceLedger(context)
+            val reference = ledger.browse(access(group)).first.single()
+            val original = JSONObject(ledger.read(access(group), reference.getString("evidence_id"))!!.getString("output_json"))
+            assertEquals(String(fixture.body, Charsets.UTF_8), original.getString("original_json"))
+            assertEquals("imported", store.read(key)!!.getString("status"))
+        } finally { CollaborationGroupStore(context).remove(group) }
+    }
+
+    @Test fun slowMemberDoesNotHoldAnotherMembersEvidence(): Unit = runBlocking {
+        val groups = listOf("slow", "fast").map { "remote-evidence-lanes-$it-${UUID.randomUUID()}" }
+        groups.forEach(::create)
+        val release = CompletableDeferred<Unit>()
+        try {
+            val store = CollaborationRemoteEvidenceStore(context)
+            val ledger = CollaborationEvidenceLedger(context)
+            val keys = groups.map { store.create("fixture-desktop", fields(it), access(it)) }
+            val fixtures = groups.map { Fixture(fields(it), repeats = 4) }
+            val slowStarted = CompletableDeferred<Unit>()
+            val fastFinished = CompletableDeferred<Unit>()
+            val runner = async {
+                CollaborationEvidenceRecoveryScheduler().run(keys.map { it to it }, {}, { _, e -> throw e }) { key ->
+                    val index = keys.indexOf(key)
+                    CollaborationRemoteEvidenceImporter(store, ledger).runSlice(key, { true }) { _, _, query ->
+                        if (index == 0) { slowStarted.complete(Unit); release.await() }
+                        fixtures[index].reply(query)
+                    }.also { if (index == 1 && it == CollaborationEvidenceSlice.COMPLETE) fastFinished.complete(Unit) }
+                }
+            }
+            try {
+                withTimeout(30_000) { slowStarted.await(); fastFinished.await() }
+                assertEquals("pending", store.read(keys[0])!!.getString("status"))
+                assertEquals("imported", store.read(keys[1])!!.getString("status"))
+                assertTrue(ledger.browse(access(groups[0])).first.isEmpty())
+                assertEquals(1, ledger.browse(access(groups[1])).first.size)
+            } finally { release.complete(Unit) }
+            runner.await()
+            assertTrue(keys.all { store.read(it)!!.getString("status") == "imported" })
+        } finally { release.complete(Unit); groups.forEach { CollaborationGroupStore(context).remove(it) } }
+    }
+
+    @Test fun lateIndexAndPageResumeIntoExactOriginalWithoutRepeatingQueries(): Unit = runBlocking {
+        val group = "remote-evidence-late-${UUID.randomUUID()}"
+        create(group)
+        try {
+            val identity = fields(group)
+            val fixture = Fixture(identity)
+            val store = CollaborationRemoteEvidenceStore(context)
+            val ledger = CollaborationEvidenceLedger(context)
+            val key = store.create("fixture-desktop", identity, access(group))
+            val client = CollaborationRemoteEvidenceClient()
+            var delayed: JSONObject? = null
+            val sent = mutableListOf<String>()
+            suspend fun run(delayMode: String?): Boolean = CollaborationRemoteEvidenceImporter(store, ledger)
+                .run(key, { true }) { desktop, fields, selection ->
+                    client.query(desktop, fields, selection, 20) { request ->
+                        sent.add("${request.getString("mode")}:${request.optInt("page_index", -1)}")
+                        if (request.getString("mode") == delayMode) { delayed = request; true }
+                        else client.receive(fixture.reply(request), desktop)
+                    }
+                }
+            assertFalse(run("index"))
+            assertTrue(client.receive(fixture.reply(requireNotNull(delayed)), "fixture-desktop"))
+            assertTrue(ledger.browse(access(group)).first.isEmpty())
+            assertFalse(run("page"))
+            assertTrue(client.receive(fixture.reply(requireNotNull(delayed)), "fixture-desktop"))
+            assertTrue(run(null))
+            assertEquals(sent.size, sent.distinct().size)
+            val ref = ledger.browse(access(group)).first.single()
+            val saved = JSONObject(CollaborationEvidenceLedger(context).read(access(group), ref.getString("evidence_id"))!!.getString("output_json"))
+            assertEquals(String(fixture.body, Charsets.UTF_8), saved.getString("original_json"))
+            assertEquals("imported", CollaborationRemoteEvidenceStore(context).read(key)!!.getString("status"))
+            assertEquals(0, client.lateCount)
+        } finally { CollaborationGroupStore(context).remove(group) }
+    }
+
     @Test fun processCheckpointPhase(): Unit = runBlocking {
         val args = InstrumentationRegistry.getArguments()
         val phase = args.getString("remoteEvidencePhase").orEmpty()
@@ -146,15 +333,18 @@ class CollaborationRemoteEvidenceDeviceTest {
         val ledger = CollaborationEvidenceLedger(context)
         val key = store.create("fixture-desktop", fields(group), access(group))
         if (phase == "seed") {
-            assertFalse(CollaborationRemoteEvidenceImporter(store, ledger).run(key, { true }) { _, _, selection ->
-                if (selection.optInt("page_index", -1) == 1) null else fixture.reply(selection)
-            })
+            assertEquals(CollaborationEvidenceSlice.YIELDED, CollaborationRemoteEvidenceImporter(store, ledger)
+                .runSlice(key, { true }, maxQueries = 2) { _, _, selection -> fixture.reply(selection) })
             assertNotNull(store.read(key)!!.optJSONObject("active"))
         } else try {
-            assertTrue(CollaborationRemoteEvidenceImporter(store, ledger).run(key, { true }) { _, _, selection ->
-                check(selection.optInt("page_index", -1) != 0) { "Saved page must not be requested again" }
-                fixture.reply(selection)
-            })
+            var outcome = CollaborationEvidenceSlice.YIELDED
+            while (outcome == CollaborationEvidenceSlice.YIELDED) {
+                outcome = CollaborationRemoteEvidenceImporter(store, ledger).runSlice(key, { true }, maxQueries = 2) { _, _, selection ->
+                    check(selection.optInt("page_index", -1) != 0) { "Saved page must not be requested again" }
+                    fixture.reply(selection)
+                }
+            }
+            assertEquals(CollaborationEvidenceSlice.COMPLETE, outcome)
             val reference = ledger.browse(access(group)).first.single()
             val original = JSONObject(ledger.read(access(group), reference.getString("evidence_id"))!!.getString("output_json"))
             assertEquals(String(fixture.body, Charsets.UTF_8), original.getString("original_json"))

@@ -81,7 +81,7 @@ data class AgentTaskLivenessPolicy(
         volatileActivityAtMillis: Long = 0L
     ): AgentTaskLivenessDecision {
         if (workspace.status.isTerminal || workspace.cancellationRequested ||
-            workspace.status in USER_CONTROLLED_STATUSES
+            workspace.status in USER_CONTROLLED_STATUSES || AgentLocalBrowserDispatchPolicy.isWaiting(workspace)
         ) {
             return AgentTaskLivenessDecision(AgentTaskLivenessState.HEALTHY)
         }

@@ -154,7 +154,8 @@ internal class MqttMultipathPolicy(
 
     @Synchronized fun plan(
         peer: String, messageId: String, traffic: Traffic, wireBytes: Int, receiveTopics: Set<String>,
-        now: Long, ingress: String? = null, attempted: Set<String> = emptySet()
+        now: Long, ingress: String? = null, attempted: Set<String> = emptySet(),
+        authorizedPaths: Map<String, Long>? = null
     ): List<Dispatch> {
         chunks.expire(now)
         if (messageId.isBlank() || wireBytes !in 1..MqttBrokerCatalog.PACKET_BYTES) return emptyList()
@@ -162,7 +163,8 @@ internal class MqttMultipathPolicy(
         if (route.expiresAt <= now || wireBytes > route.packetBytes ||
             (traffic == Traffic.CHUNK && !route.chunkAcks)) return emptyList()
         val common = (readyBrokers(receiveTopics) intersect route.receiveBrokers)
-            .filter { wireBytes <= paths.getValue(it).packetBytes }
+            .filter { wireBytes <= paths.getValue(it).packetBytes &&
+                (authorizedPaths == null || authorizedPaths[it] == paths.getValue(it).generation) }
         val unused = common.filterNot(attempted::contains)
         val candidates = (unused.ifEmpty { common }).sortedWith(
             compareBy<String> { score(peer, it, now, traffic, wireBytes) }.thenBy { tie(peer, messageId, it) }

@@ -17,7 +17,8 @@ class AgentArtifactRequestRoutingTest {
         requests.forEach { goal ->
             assertFalse(goal, AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
             assertFalse(goal, AgentCapability.TASK_EXECUTION in AgentTaskRequirementAnalyzer.analyze(goal).capabilities)
-            assertFalse(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+            assertEquals(goal, AgentTaskIntentClassifier.classify(goal).intent == AgentTaskIntent.FILE,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
         }
     }
 
@@ -54,7 +55,8 @@ class AgentArtifactRequestRoutingTest {
         ).forEach { goal ->
             assertFalse(goal, AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
             assertFalse(goal, AgentCapability.TASK_EXECUTION in AgentTaskRequirementAnalyzer.analyze(goal).capabilities)
-            assertFalse(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+            assertEquals(goal, AgentTaskIntentClassifier.classify(goal).intent == AgentTaskIntent.FILE,
+                AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
         }
     }
 
@@ -70,6 +72,14 @@ class AgentArtifactRequestRoutingTest {
         ).forEach { goal ->
             assertTrue(goal, AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
             assertTrue(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+        }
+    }
+
+    @Test fun fileDeliverablesUseModelPlanningWithoutBecomingDevelopmentProjects() {
+        for (goal in listOf("Create a DOCX report", "Create a CSV file")) {
+            assertEquals(AgentTaskIntent.FILE, AgentTaskIntentClassifier.classify(goal).intent)
+            assertTrue(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal))
+            assertFalse(AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal))
         }
     }
 }

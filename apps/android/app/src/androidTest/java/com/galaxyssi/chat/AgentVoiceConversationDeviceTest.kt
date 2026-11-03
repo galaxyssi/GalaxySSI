@@ -287,7 +287,8 @@ class AgentVoiceConversationDeviceTest {
             awaitState("Visual completion must rearm the microphone without fabricated speech") {
                 activity.isVoiceCaptureActive() && !activity.voiceAssistantSpeaking &&
                     activity.activeProgressiveSpeechSessionId.isBlank() &&
-                    activity.agentVoiceConversation!!.session.latestTraceId != "voice-ui-media-fixture"
+                    activity.agentVoiceConversation!!.bargeIn.active &&
+                    activity.agentVoiceConversation!!.session.latestTraceId == "voice-ui-media-fixture"
             }
         }
     }
@@ -337,7 +338,7 @@ class AgentVoiceConversationDeviceTest {
                     assertFalse(activity.progressiveTtsScheduler.snapshot().inputClosed)
                 }
                 awaitState("The platform must acknowledge actual audio playback", 15_000L) {
-                    activity.agentVoiceConversation!!.panel.status.text == activity.getString(R.string.voice_call_speaking)
+                    activity.voiceAssistantSpeaking && activity.activeProgressiveSpeechTraceId == traceId
                 }
                 awaitState("Real echo-protected capture must run while TTS is speaking", 10_000L) {
                     activity.agentVoiceConversation!!.bargeIn.active &&
@@ -370,15 +371,15 @@ class AgentVoiceConversationDeviceTest {
                 awaitState("Final audio must return to microphone capture", 45_000L) {
                     assertFalse("Speaker playback alone must not trigger barge-in",
                         activity.agentVoiceConversation!!.bargeIn.collectingUtterance)
-                    !activity.agentVoiceConversation!!.bargeIn.active &&
-                        activity.recordingPurpose == "voice_wakeup" &&
-                        activity.agentVoiceConversation!!.session.latestTraceId != traceId &&
+                    (if (disableEcho) activity.recordingPurpose == "voice_wakeup"
+                        else activity.agentVoiceConversation!!.bargeIn.active) &&
                         activity.isVoiceCaptureActive() && activity.activeProgressiveSpeechSessionId.isBlank() &&
                         activity.agentVoiceConversation!!.panel.status.text == activity.getString(R.string.voice_call_listening)
                 }
                 instrumentation.runOnMainSync {
                     assertTrue(activity.agentVoiceConversation!!.session.active)
-                    assertNotEquals(traceId, activity.agentVoiceConversation!!.session.latestTraceId)
+                    if (disableEcho) assertNotEquals(traceId, activity.agentVoiceConversation!!.session.latestTraceId)
+                    else assertEquals(traceId, activity.agentVoiceConversation!!.session.latestTraceId)
                 }
             } finally {
                 overrideEffect?.let { effect ->

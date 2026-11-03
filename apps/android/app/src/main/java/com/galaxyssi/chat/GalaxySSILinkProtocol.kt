@@ -412,7 +412,10 @@ object GalaxySSILinkProtocol {
     }
 
     @Synchronized
-    fun clear(context: Context) = storage(context).clear()
+    fun clear(context: Context) {
+        storage(context).clear()
+        AgentInvocationMetadataCache.shared.invalidate()
+    }
 
     fun makeEnvelope(payload: JSONObject, sourceId: String, targetId: String): JSONObject {
         require(payload.optString("content").toByteArray(Charsets.UTF_8).size <= MAX_TEXT_BYTES) {
@@ -486,6 +489,7 @@ object GalaxySSILinkProtocol {
         val array = JSONArray()
         links.forEach { array.put(it.toJson()) }
         storage(context).writeString(KEY_SERVERS, array.toString())
+        AgentInvocationMetadataCache.shared.invalidate()
     }
 
     private fun kdf(secret: ByteArray, label: ByteArray): ByteArray {

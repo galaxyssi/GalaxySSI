@@ -1190,6 +1190,7 @@
     <string name="agent_clarify_memory_content">What should I remember?</string>
     <string name="agent_clarify_automation_details">What should trigger the automation, and what should it do?</string>
     <string name="agent_attachment_rejected">Some attachments were skipped. You can add up to 10 files, 20 MB each.</string>
+    <string name="composer_clipboard_image_unavailable">Could not add the clipboard image. Copy it again or select the image file.</string>
     <string name="agent_attachment_hide_navigation">Hide navigation bar</string>
     <string name="agent_attachment_show_navigation">Show navigation bar</string>
     <string name="agent_attachment_camera_unavailable">Camera is unavailable</string>
@@ -1914,6 +1915,9 @@
     <string name="agent_trace_reasoning_summary">Analyzed the request · %1$s</string>
     <string name="agent_trace_processed">Worked for %1$s %2$s</string>
     <string name="agent_trace_processing">Working for %1$s %2$s</string>
+    <string name="agent_trace_blocked">Blocked · %1$s %2$s</string>
+    <string name="agent_trace_paused">Paused · %1$s %2$s</string>
+    <string name="agent_trace_waiting_confirmation">Awaiting confirmation · %1$s %2$s</string>
     <string name="agent_trace_duration_hours">%1$dh</string>
     <string name="agent_trace_duration_minutes">%1$dm</string>
     <string name="agent_trace_duration_seconds">%1$ds</string>
@@ -1950,6 +1954,10 @@
     <string name="agent_plan_progress_running">In progress</string>
     <string name="agent_plan_progress_complete">Done</string>
     <string name="agent_plan_progress_failed">Failed</string>
+    <string name="agent_plan_progress_waiting">Waiting</string>
+    <string name="agent_plan_progress_stopped">Stopped</string>
+    <string name="agent_plan_progress_not_executed">Not executed</string>
+    <string name="agent_plan_progress_recorded">Process record</string>
     <string name="agent_plan_progress_fallback_understand">Confirm the task and constraints</string>
     <string name="agent_plan_progress_fallback_plan">Prepare the execution plan</string>
     <string name="agent_plan_progress_fallback_execute">Execute the plan</string>
@@ -2918,4 +2926,5 @@
     <string name="nearby_nfc_failed">Could not complete the request. Reopen the watch pairing page and try again.</string>
     <string name="nearby_nfc_send">Codes match · Send friend request</string>
     <string name="nearby_nfc_sent">Request sent. Approve it on the watch.</string>
+    <string name="agent_codex_recovery_exhausted">Stopped after Codex timed out and the available alternatives failed to return a usable result. The final Codex retry also failed. Last error: %1$s</string>
 </resources>

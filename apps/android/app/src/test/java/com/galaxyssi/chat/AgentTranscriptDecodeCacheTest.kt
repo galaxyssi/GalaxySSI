@@ -49,6 +49,31 @@ class AgentTranscriptDecodeCacheTest {
         assertNull(cache.get(entry.id, "ciphertext"))
     }
 
+    @Test
+    fun defaultTtlIsTenMinutesAndHitsDoNotExtendIt() {
+        var now = 0L
+        val cache = AgentTranscriptDecodeCache(clockNanos = { now })
+        val entry = transcriptEntry("entry-ttl", "sensitive")
+        cache.put(entry.id, "ciphertext", entry)
+        now = RuntimeCachePolicy.SENSITIVE_TTL_NANOS - 1
+        assertEquals(entry, cache.get(entry.id, "ciphertext"))
+        now++
+        assertNull(cache.get(entry.id, "ciphertext"))
+    }
+
+    @Test
+    fun maintenanceDropsExpiredReferencesAndBackgroundClearsOtherStores() {
+        var now = 0L
+        val cache = AgentTranscriptDecodeCache(clockNanos = { now })
+        val entry = transcriptEntry("entry-maintenance", "sensitive")
+        cache.put(entry.id, "ciphertext", entry)
+        now = RuntimeCachePolicy.SENSITIVE_TTL_NANOS
+        assertEquals(false, cache.pruneExpired())
+        cache.put(entry.id, "ciphertext", entry)
+        RuntimeSensitiveCaches.clearAll()
+        assertNull(cache.get(entry.id, "ciphertext"))
+    }
+
     private fun transcriptEntry(id: String, text: String) = AgentTranscriptEntry(
         id = id,
         role = AgentTranscriptRole.ASSISTANT,

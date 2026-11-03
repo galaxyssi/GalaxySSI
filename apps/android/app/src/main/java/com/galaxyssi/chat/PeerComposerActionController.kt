@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import java.util.WeakHashMap
@@ -48,6 +49,18 @@ internal fun MainActivity.clearPendingChatCamera(): Uri? {
     return uri
 }
 
+internal fun MainActivity.savePendingChatCamera(out: Bundle) {
+    val state = peerComposerActionState()
+    out.putString("chat_camera_uri", state.pendingCameraUri?.toString())
+    out.putString("chat_camera_contact", state.pendingCameraContactId)
+}
+
+internal fun MainActivity.restorePendingChatCamera(saved: Bundle?) {
+    val uri = saved?.getString("chat_camera_uri")?.let(Uri::parse) ?: return
+    val contactId = saved.getString("chat_camera_contact") ?: return
+    rememberPendingChatCamera(uri, contactId)
+}
+
 internal fun MainActivity.handleChatCameraActivityResult(
     requestCode: Int,
     resultCode: Int
@@ -62,12 +75,15 @@ internal fun MainActivity.handleChatCameraActivityResult(
         val contact = selectedContact?.takeIf { it.id == contactId }
             ?: buildChatContacts().firstOrNull { it.id == contactId }
         if (contact != null) {
-            sendImageForChatContact(contact, uri)
+            val captured = PrivateCameraStorage.finish(this, uri, accepted = true)
+            if (captured != null) previewPickedAttachments(listOf(captured), camera = true, contactId = contact.id)
+            else android.widget.Toast.makeText(this, R.string.agent_attachment_camera_unavailable,
+                android.widget.Toast.LENGTH_SHORT).show()
         } else {
-            contentResolver.delete(uri, null, null)
+            PrivateCameraStorage.finish(this, uri, accepted = false)
         }
     } else if (uri != null) {
-        contentResolver.delete(uri, null, null)
+        PrivateCameraStorage.finish(this, uri, accepted = false)
     }
     return true
 }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="vertical" android:background="@android:color/white">
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#EEEEEE" />
+    <TextView android:id="@+id/remoteDraftStatus" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:paddingStart="12dp" android:paddingEnd="12dp"
+        android:paddingTop="6dp" android:textSize="12sp" android:textColor="@color/text_secondary"
+        android:accessibilityLiveRegion="polite" android:visibility="gone" />
+    <LinearLayout android:id="@+id/remoteDraftRow" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:minHeight="72dp" android:orientation="horizontal"
+        android:gravity="bottom" android:paddingBottom="9dp" android:paddingEnd="12dp">
+        <com.galaxyssi.chat.ui.ParagraphSelectingEditText android:id="@+id/remoteDraftInput"
+            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:background="@android:color/transparent" android:hint="@string/agent_goal_hint"
+            android:textSize="15sp" android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary"
+            android:minHeight="54dp" android:minLines="1" android:maxLines="8" android:gravity="top|start"
+            android:paddingStart="12dp" android:paddingTop="14dp" android:paddingEnd="6dp" android:paddingBottom="14dp"
+            android:inputType="textCapSentences|textMultiLine" android:imeOptions="flagNoEnterAction|flagNoExtractUi|flagNoPersonalizedLearning"
+            android:scrollbars="vertical" android:fadeScrollbars="false" android:saveEnabled="false" />
+        <FrameLayout android:layout_width="54dp" android:layout_height="54dp" android:layout_marginStart="4dp">
+            <ImageButton android:id="@+id/remoteDraftMore" android:layout_width="match_parent" android:layout_height="match_parent"
+                android:padding="4dp" android:src="@drawable/ic_input_menu_layers" android:background="@android:color/transparent"
+                android:contentDescription="@string/common_more" />
+            <ImageButton android:id="@+id/remoteDraftSend" android:layout_width="match_parent" android:layout_height="match_parent"
+                android:padding="11dp" android:src="@drawable/ic_composer_send_plane" android:background="@android:color/transparent"
+                android:contentDescription="@string/desktop_remote_draft_send" android:visibility="gone" />
+            <ImageButton android:id="@+id/remoteDraftVoice" android:layout_width="match_parent" android:layout_height="match_parent"
+                android:padding="11dp" android:src="@drawable/ic_voice_call_wave" android:background="@android:color/transparent"
+                android:contentDescription="@string/input_press_to_talk" android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/remoteDraftRecording" android:layout_width="match_parent"
+        android:layout_height="120dp" android:orientation="vertical" android:gravity="center" android:visibility="gone">
+        <TextView android:id="@+id/remoteDraftInstruction" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/desktop_remote_draft_recording" android:textColor="@color/text_secondary" android:textSize="12sp" />
+        <com.galaxyssi.chat.ui.VoiceWaveformView android:id="@+id/remoteDraftWaveform"
+            android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginHorizontal="48dp" />
+        <TextView android:id="@+id/remoteDraftTimer" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary" android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>

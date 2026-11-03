@@ -5,6 +5,13 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class VoiceCommandCatalogTest {
+    @Test fun stripsOnlyTheExistingSpokenWakePrefix() {
+        assertEquals("拍照", VoiceCommandCatalog.stripSpokenWake(" 哈喽，哈罗 拍照 "))
+        assertEquals("几点了", VoiceCommandCatalog.stripSpokenWake("你好你好 几点了"))
+        assertEquals("你好，请介绍眼镜", VoiceCommandCatalog.stripSpokenWake("你好，请介绍眼镜"))
+        assertEquals("take photo", VoiceCommandCatalog.stripSpokenWake(" take photo "))
+    }
+
     @Test fun mapsEveryControlGroupToItsAction() {
         val expected = mapOf(
             VoiceCommand.SEND to listOf("发送", "提交", "确认发送"),

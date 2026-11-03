@@ -96,12 +96,12 @@ internal object AgentQemuLaunchPlanBuilder {
                 "-chardev",
                 "socket,id=galaxyssi_api,path=${spec.socketFile.absolutePath},server=on,wait=on",
                 "-device", "virtio-serial-device",
-                "-device", "virtserialport,chardev=galaxyssi_api,name=org.galaxyssi.runtime",
+                "-device", "virtserialport,chardev=galaxyssi_api,name=${AgentRuntimeGuestAbi.CHANNEL}",
                 "-fsdev",
                 "local,id=galaxyssi_workspaces,path=${spec.workspacesDirectory.absolutePath},security_model=none,multidevs=remap",
-                "-device", "virtio-9p-device,fsdev=galaxyssi_workspaces,mount_tag=galaxyssi_workspaces",
-                "-fw_cfg", "name=opt/com.galaxyssi/runtime-session,file=${sessionFile.absolutePath}",
-                "-fw_cfg", "name=opt/com.galaxyssi/runtime-config,file=${configFile.absolutePath}",
+                "-device", "virtio-9p-device,fsdev=galaxyssi_workspaces,mount_tag=${AgentRuntimeGuestAbi.WORKSPACE_MOUNT}",
+                "-fw_cfg", "name=${AgentRuntimeGuestAbi.SESSION},file=${sessionFile.absolutePath}",
+                "-fw_cfg", "name=${AgentRuntimeGuestAbi.CONFIG},file=${configFile.absolutePath}",
                 "-object", "rng-random,id=galaxyssi_rng,filename=/dev/urandom",
                 "-device", "virtio-rng-device,rng=galaxyssi_rng"
             ))
@@ -172,8 +172,8 @@ internal object AgentQemuRuntimeConfigBuilder {
         .put("guest_api_version", AgentRuntimeGuestProtocol.VERSION)
         .put("host_epoch_millis", System.currentTimeMillis())
         .put("architecture", spec.architecture)
-        .put("api_channel", "org.galaxyssi.runtime")
-        .put("workspace_mount_tag", "galaxyssi_workspaces")
+        .put("api_channel", AgentRuntimeGuestAbi.CHANNEL)
+        .put("workspace_mount_tag", AgentRuntimeGuestAbi.WORKSPACE_MOUNT)
         .put("workspace_uid", workspaceUid)
         .put("workspace_gid", workspaceUid)
         .put("execution_mode", "full_access")
@@ -183,7 +183,7 @@ internal object AgentQemuRuntimeConfigBuilder {
         .put("system_disk", JSONObject()
             .put("serial", AgentRuntimePersistentDisk.SERIAL)
             .put("filesystem", "ext4")
-            .put("mount_path", "/var/lib/galaxyssi")
+            .put("mount_path", AgentRuntimeGuestAbi.SYSTEM_ROOT)
             .put("logical_bytes", AgentRuntimePersistentDisk.LOGICAL_BYTES))
         .put("packs", JSONArray().apply {
             spec.packAttachments.sortedBy(AgentRuntimePackAttachment::packId).forEachIndexed { index, pack ->
@@ -223,6 +223,8 @@ class AgentQemuRuntimeEngineController(
     @Volatile private var activeSocketFile: File? = null
     @Volatile private var startedAtMillis: Long = 0L
     @Volatile private var lastExitCode: Int? = null
+    @Volatile override var instanceId: String = ""
+        private set
 
     override val controllerId: String = "galaxyssi.qemu.tcg.v1"
 
@@ -231,6 +233,7 @@ class AgentQemuRuntimeEngineController(
         val current = process ?: return false
         if (current.isAlive) return true
         lastExitCode = runCatching(current::exitValue).getOrNull()
+        if (instanceId.isNotBlank()) AgentRuntimeInstanceEvents.hub.exited(instanceId)
         process = null
         clearEphemeralFiles()
         return false
@@ -278,7 +281,9 @@ class AgentQemuRuntimeEngineController(
         activeSocketFile = spec.socketFile
         startedAtMillis = System.currentTimeMillis()
         lastExitCode = null
-        monitor(child)
+        instanceId = java.util.UUID.randomUUID().toString()
+        AgentRuntimeInstanceEvents.hub.started(instanceId)
+        monitor(child, instanceId)
     }
 
     @Synchronized
@@ -330,9 +335,9 @@ class AgentQemuRuntimeEngineController(
         )
     }
 
-    private fun monitor(child: Process) {
-        Thread({
-            val exitCode = runCatching(child::waitFor).getOrNull()
+    private fun monitor(child: Process, instance: String) {
+        AgentRuntimeProcessMonitor.start(child) { exitCode ->
+            AgentRuntimeInstanceEvents.hub.exited(instance)
             synchronized(this) {
                 if (process === child) {
                     process = null
@@ -342,9 +347,6 @@ class AgentQemuRuntimeEngineController(
                     clearEphemeralFiles()
                 }
             }
-        }, "galaxyssi-qemu-monitor").apply {
-            isDaemon = true
-            start()
         }
     }
 

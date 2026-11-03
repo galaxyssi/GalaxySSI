@@ -22,27 +22,67 @@ internal class CollaborationRemoteEvidenceStore(private val rows: CollaborationR
     fun create(desktop: String, fields: JSONObject, access: CollaborationWorkspaceAccess): String =
         createIntent(desktop, fields, access).first
 
-    fun createIntent(desktop: String, fields: JSONObject, access: CollaborationWorkspaceAccess): Pair<String, Boolean> = synchronized(LOCK) {
+    fun createIntent(desktop: String, fields: JSONObject, access: CollaborationWorkspaceAccess,
+        terminal: Boolean = true): Pair<String, Boolean> = synchronized(LOCK) {
         require(CollaborationRemoteEvidenceProtocol.validScope(fields) && desktop.isNotBlank() &&
             access.groupId == fields.getString("conversation_id") && access.turnId == fields.getString("turn_id"))
         val scope = CollaborationRemoteEvidenceProtocol.scope(fields)
         val key = sourcePrefix(access.groupId, fields.getString("source_message_id")) +
             AgentNativeJsonCodec.sha256(JSONArray(listOf(desktop) + AgentResultRecoveryClient.identity(scope) +
                 scope.getLong("execution_generation")).toString())
-        val created = rows.read(key) == null
-        if (created) {
+        val existing = rows.read(key)?.let(::JSONObject)
+        var wake = existing == null
+        if (existing == null) {
             val job = JSONObject().put("desktop", desktop).put("fields", scope).put("run_id", access.runId)
                 .put("node_id", access.nodeId).put("status", "pending").put("cursor", 0).put("imported", 0)
-                .put("skipped_large", 0).put("provider_history_complete", false)
+                .put("skipped_large", 0).put("provider_history_complete", false).put("terminal_requested", terminal)
             rows.mutate(mapOf(key to job.toString(), pendingKey(key) to key))
+        } else {
+            require(existing.getString("run_id") == access.runId && existing.getString("node_id") == access.nodeId)
+            val upgrade = terminal && !existing.optBoolean("terminal_requested", true)
+            if (upgrade) existing.put("terminal_requested", true)
+            if (existing.optString("status") in SNAPSHOT_STATUSES) {
+                existing.put("status", "pending").remove("index_complete")
+                wake = true
+            }
+            if (upgrade || wake) writeJob(key, existing)
         }
-        key to created
+        key to wake
     }
 
     fun read(key: String): JSONObject? = synchronized(LOCK) { rows.read(key)?.let(::JSONObject) }
     fun save(key: String, value: JSONObject) = synchronized(LOCK) {
-        if (rows.read(key) != null) rows.mutate(mapOf(key to value.toString()),
-            if (value.optString("status") != "pending") listOf(pendingKey(key)) else emptyList())
+        if (rows.read(key) != null) writeJob(key, value)
+    }
+
+    /** A terminal notification can arrive while a live snapshot is importing. Never lose that demand. */
+    fun completeSnapshot(key: String, value: JSONObject): Boolean = synchronized(LOCK) {
+        val latest = rows.read(key)?.let(::JSONObject) ?: return true
+        if (latest.optString("status") != "pending") return true
+        val sealed = value.optBoolean("archive_final")
+        val terminal = latest.optBoolean("terminal_requested", true)
+        val status = when {
+            terminal && !sealed -> "pending"
+            sealed && value.getLong("skipped_large") == 0L -> "imported"
+            sealed -> "partial_large_objects"
+            value.getLong("skipped_large") == 0L -> "snapshot_imported"
+            else -> "snapshot_partial_large_objects"
+        }
+        value.put("status", status).put("snapshot_at", System.currentTimeMillis())
+        if (status == "pending") value.remove("index_complete")
+        writeJob(key, value)
+        status != "pending"
+    }
+
+    private fun writeJob(key: String, value: JSONObject, remove: List<String> = emptyList()) {
+        val latest = rows.read(key)?.let(::JSONObject) ?: return
+        if (value.optString("status") == "pending" && latest.optString("status") != "pending" &&
+            latest.optString("status") !in SNAPSHOT_STATUSES) return
+        val copy = JSONObject(value.toString()).put("terminal_requested",
+            latest.optBoolean("terminal_requested", true) || value.optBoolean("terminal_requested", true))
+        val values = mutableMapOf(key to copy.toString())
+        if (copy.optString("status") == "pending") values[pendingKey(key)] = key
+        rows.mutate(values, remove + if (copy.optString("status") != "pending") listOf(pendingKey(key)) else emptyList())
     }
     fun pending(after: String = ""): List<Pair<String, String>> = synchronized(LOCK) {
         rows.keys("pending:", after, 20).mapNotNull { index -> rows.read(index)?.let { index to it } }
@@ -76,7 +116,7 @@ internal class CollaborationRemoteEvidenceStore(private val rows: CollaborationR
         value.put("cursor", descriptor.getLong("sequence")).remove("active")
         val counter = if (imported) "imported" else "skipped_large"
         value.put(counter, value.getLong(counter) + 1)
-        if (rows.read(key) != null) rows.mutate(mapOf(key to value.toString()), pageKeys(key, descriptor))
+        if (rows.read(key) != null) writeJob(key, value, pageKeys(key, descriptor))
     }
     private fun pageKeys(key: String, descriptor: JSONObject): List<String> = buildList {
         val prefix = pagePrefix(key, descriptor)
@@ -97,6 +137,7 @@ internal class CollaborationRemoteEvidenceStore(private val rows: CollaborationR
 
     companion object {
         private val LOCK = Any()
+        private val SNAPSHOT_STATUSES = setOf("snapshot_imported", "snapshot_partial_large_objects")
         private const val DATABASE = "collaboration_remote_evidence_v1"
         private fun groupPrefix(group: String) = "group:${AgentNativeJsonCodec.sha256(group)}:"
         private fun sourcePrefix(group: String, source: String) = groupPrefix(group) + "source:$source:"

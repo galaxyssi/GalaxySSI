@@ -3,9 +3,32 @@ package com.galaxyssi.chat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class AgentSupervisedProjectProgressSnapshotCacheTest {
+    @Test fun latestObservationIsTheWholeLastHostEntryIncludingFailureAndFieldIndex() {
+        val first = action("first").copy(evidence = "OLD_SUCCESS", result = "OLD_SUCCESS")
+        val latest = action("latest").copy(status = AgentActionStatus.FAILED, evidence = "READBACK_FAILED")
+        val snapshot = AgentSupervisedProjectProgressSnapshotCache.compile(listOf(first, latest))
+        assertTrue(requireNotNull(snapshot.promptLedger).endsWith(snapshot.latestObservation))
+        assertTrue(snapshot.latestObservation.contains("status=FAILED"))
+        assertTrue(snapshot.latestObservation.contains("READBACK_FAILED"))
+        assertFalse(snapshot.latestObservation.contains("OLD_SUCCESS"))
+        val observed = action("native").copy(evidence = """{"file":{"path":"outputs/a.txt","readable":true}}""")
+        val withFields = AgentSupervisedProjectProgressSnapshotCache.compile(listOf(observed))
+        assertTrue(withFields.latestObservation.contains("/file/readable"))
+        assertTrue(withFields.promptLedger!!.endsWith(withFields.latestObservation))
+    }
+
+    @Test fun historyWithNoActualReceiptDoesNotInventPinnedEvidence() {
+        val snapshot = AgentSupervisedProjectProgressSnapshotCache.compile(listOf(action("pending").copy(
+            status = AgentActionStatus.RUNNING)))
+        assertEquals("", snapshot.latestObservation)
+        assertEquals(null, snapshot.promptLedger)
+    }
+
     @Test
     fun sameImmutableHistoryCompilesProgressOnce() {
         val history = listOf(action("observe"))

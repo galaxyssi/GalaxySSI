@@ -140,7 +140,48 @@ class DeliveryDatabaseInitializationTest(unittest.TestCase):
         with patch.object(link_delivery.sqlite3, "connect", side_effect=connect):
             self.assertEqual([record], link_delivery.pending_task_results())
         self.assertNotIn("PRAGMA journal_mode=WAL", statements)
+        self.assertFalse(any(sql.startswith(("CREATE ", "ALTER "))
+                             for sql in statements), statements)
+        self.assertFalse(any(sql.startswith("INSERT INTO delivery_metadata") for sql in statements))
+        self.assertIn("PRAGMA synchronous=FULL", statements)
         self.assertEqual(keys, {path.name: path.read_bytes() for path in self.root.glob(".galaxyssi-state-key*")})
+
+    def test_schema_cookie_change_repairs_index_without_losing_results(self):
+        record = self.enqueue("preserved")
+        with closing(self.real_connect(self.path)) as db:
+            db.execute("DROP INDEX outbound_messages_status_route")
+            db.commit()
+        self.assertEqual([record], link_delivery.pending_task_results())
+        with closing(self.real_connect(self.path)) as db:
+            self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE name=?",
+                                           ("outbound_messages_status_route",)).fetchone())
+
+    def test_contract_change_revalidates_and_marks_only_after_success(self):
+        record = self.enqueue("preserved")
+        with patch.object(link_delivery, "INITIALIZATION_VERSION", "test-next"), \
+                patch("signal_receive_handoff.ensure_schema", side_effect=RuntimeError("injected migration failure")):
+            with self.assertRaisesRegex(RuntimeError, "injected migration failure"):
+                link_delivery._connect()
+        with closing(self.real_connect(self.path)) as db:
+            marker = db.execute("SELECT value FROM delivery_metadata WHERE key='initialized_schema'").fetchone()[0]
+            self.assertFalse(marker.startswith("test-next:"))
+        self.assertEqual([record], link_delivery.pending_task_results())
+
+    def test_missing_migration_marker_revalidates_even_without_ddl(self):
+        record = self.enqueue("preserved")
+        with closing(self.real_connect(self.path)) as db:
+            db.execute("DELETE FROM delivery_metadata WHERE key='receive_active_usage_v1'")
+            db.commit()
+        self.assertEqual([record], link_delivery.pending_task_results())
+        with closing(self.real_connect(self.path)) as db:
+            self.assertEqual("1", db.execute("SELECT value FROM delivery_metadata "
+                                             "WHERE key='receive_active_usage_v1'").fetchone()[0])
+
+    def test_replaced_database_at_same_path_is_initialized(self):
+        self.enqueue("old")
+        self.path.unlink()
+        record = self.enqueue("new")
+        self.assertEqual([record], link_delivery.pending_task_results())
 
     def run_process_burst(self, *, legacy=False):
         if legacy:

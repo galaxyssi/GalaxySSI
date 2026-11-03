@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_remote_back">Back</string>
+    <string name="desktop_remote_fullscreen">Fullscreen</string>
+    <string name="desktop_remote_exit_fullscreen">Exit fullscreen</string>
+    <string name="desktop_remote_fit">Fit screen</string>
+    <string name="desktop_remote_hide_tools">Hide controls</string>
+    <string name="desktop_remote_show_tools">Show controls</string>
+    <string name="desktop_remote_keyboard">Show keyboard</string>
+    <string name="desktop_remote_advanced">Advanced controls</string>
+    <string name="desktop_remote_connected">Authorized · Encrypted connection</string>
+    <string name="desktop_remote_connecting">Connecting to computer…</string>
+    <string name="desktop_remote_waiting">Authorized · Waiting for screen</string>
+    <string name="desktop_remote_frame_timeout">No screen received from the computer. Tap Refresh to retry.</string>
+    <string name="desktop_remote_frame_failed">Screen request failed (%1$s). Tap Refresh to retry.</string>
+    <string name="desktop_remote_input_timeout">Input confirmation timed out. Pending input was cleared; check the computer before trying again.</string>
+    <string name="desktop_remote_input_busy">The computer is not keeping up. Pending input was cleared; try again after the screen updates.</string>
+    <string name="desktop_remote_text_too_long">Paste up to 4,096 characters at a time.</string>
+</resources>

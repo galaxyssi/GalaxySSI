@@ -8,6 +8,13 @@ internal object CollaborationProgressStore {
     private val seenEvents = linkedMapOf<String, Pair<Long, String>>()
     private fun db(context: Context) = AgentEncryptedDatabase(context.applicationContext, "collaboration_progress_bindings")
 
+    fun evidenceTransfer(context: Context, fields: JSONObject, imported: Long) {
+        val binding = binding(context, fields.getString("source_message_id").toLong(),
+            fields.getString("conversation_id"), fields.getString("turn_id")) ?: return
+        write(context, binding, "evidence-transfer", context.getString(R.string.collaboration_evidence_transfer_count, imported),
+            System.currentTimeMillis(), connectionState = "evidence_sync")
+    }
+
     fun evidenceWaiting(context: Context, execution: AgentTeamMemberExecutionContext) {
         val request = execution.request
         val source = AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}")
@@ -21,7 +28,46 @@ internal object CollaborationProgressStore {
         val binding = binding(context, source, request.conversationId, request.messageId) ?: return
         write(context, binding, "connection-wait", context.getString(if (prolonged)
             R.string.collaboration_waiting_connection_long else R.string.collaboration_waiting_connection),
-            System.currentTimeMillis())
+            System.currentTimeMillis(), connectionState = if (AgentTeamDispatchCheckpoint(context)
+                .wasNotDispatched(request.runId)) "" else "waiting")
+    }
+
+    fun dispatched(context: Context, execution: AgentTeamMemberExecutionContext) {
+        val request = execution.request
+        val source = AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}")
+        val binding = binding(context, source, request.conversationId, request.messageId) ?: return
+        write(context, binding, "connection-wait", context.getString(R.string.collaboration_running), System.currentTimeMillis())
+    }
+
+    fun reconnecting(context: Context, execution: AgentTeamMemberExecutionContext) {
+        val request = execution.request
+        val source = AgentTeamDispatchIds.sourceMessageId("member:${request.idempotencyKey}")
+        val binding = binding(context, source, request.conversationId, request.messageId) ?: return
+        write(context, binding, "connection-wait", context.getString(R.string.collaboration_connection_reconciling),
+            System.currentTimeMillis(), connectionState = "reconciling")
+    }
+
+    /** Only the authenticated recovery observer may replace an unconfirmed connection state. */
+    fun recovered(context: Context, source: Long, conversation: String, turn: String, status: String) {
+        val label = when (status) {
+            "accepted", "queued" -> R.string.collaboration_queued
+            "starting", "running", "recovering" -> R.string.collaboration_running
+            "waiting_input", "waiting_approval" -> R.string.agent_task_status_waiting_approval
+            "pausing", "paused", "takeover" -> R.string.collaboration_team_paused
+            "interrupted" -> R.string.collaboration_connection_reconciling
+            "completed", "failed", "timed_out", "cancelled" -> R.string.agent_status_waiting_response
+            else -> return
+        }
+        val binding = binding(context, source, conversation, turn) ?: return
+        val connection = when (status) {
+            "interrupted" -> "reconciling"
+            "accepted", "queued" -> "remote_queued"
+            "pausing", "paused", "takeover" -> "remote_paused"
+            "completed", "failed", "timed_out", "cancelled" -> "delivering"
+            else -> ""
+        }
+        write(context, binding, "connection-wait", context.getString(label), System.currentTimeMillis(),
+            connectionState = connection, confirmed = true)
     }
 
     @Synchronized
@@ -36,7 +82,8 @@ internal object CollaborationProgressStore {
                 member.context["collaboration_model_id"].orEmpty()), member.role,
             AgentSubagentStatus.RUNNING, request.parentRunId, activity = true,
             primary = member.deliveryMode == AgentDeliveryMode.RESPOND,
-            researchStage = member.context[CollaborationResearchWorkflow.STAGE].orEmpty(), executionMemberId = member.memberId)
+            researchStage = member.context[CollaborationResearchWorkflow.STAGE].orEmpty(), executionMemberId = member.memberId,
+            startedAtMillis = request.createdAtMillis)
         val binding = JSONObject().put("conversation", request.conversationId).put("turn", request.messageId)
             .put("task", request.taskId).put("metadata", metadata.encode())
         val database = db(context)
@@ -69,7 +116,7 @@ internal object CollaborationProgressStore {
             val text = context.connectorProgressText(event)
             if (text.isNotBlank()) write(context, binding, event.optString("event_id").ifBlank {
                 AgentNativeJsonCodec.sha256(text)
-            }, text, event.optLong("updated_at", event.optLong("created_at", System.currentTimeMillis())))
+            }, text, event.optLong("updated_at", event.optLong("created_at", System.currentTimeMillis())), confirmed = true)
         }
         return true
     }
@@ -80,17 +127,27 @@ internal object CollaborationProgressStore {
         if (event.researchTraceJson.isNotBlank()) AgentResearchTraceStore.merge(context, conversation,
             metadata.traceTurnId, AgentResearchTrace.decode(JSONObject(event.researchTraceJson)))
         val text = listOf(event.tool, event.stage, event.detail).filter(String::isNotBlank).joinToString(" · ").take(1800)
-        write(context, binding, AgentNativeJsonCodec.sha256(text), text, System.currentTimeMillis())
+        write(context, binding, AgentNativeJsonCodec.sha256(text), text, System.currentTimeMillis(), confirmed = true)
+        return true
+    }
+
+    fun local(context: Context, identity: AgentLocalDispatchIdentity, eventId: String, text: String, at: Long): Boolean {
+        val binding = binding(context, identity.sourceMessageId, identity.conversationId, identity.turnId) ?: return false
+        if (binding.optString("task") != identity.taskId) return false
+        write(context, binding, "local-model:$eventId", text, at, confirmed = true)
         return true
     }
 
     @Synchronized
-    private fun write(context: Context, binding: JSONObject, eventId: String, text: String, at: Long) {
+    private fun write(context: Context, binding: JSONObject, eventId: String, text: String, at: Long,
+        connectionState: String = "", confirmed: Boolean = false) {
         val metadata = requireNotNull(CollaborationTranscriptMetadata.decode(binding.getString("metadata")))
+            .copy(connectionState = connectionState)
         val key = "${metadata.traceTurnId}:activity:${AgentNativeJsonCodec.sha256(eventId)}"
         val hash = AgentNativeJsonCodec.sha256(text)
         val previous = seenEvents[key]
-        if (previous != null && (previous.first > at || previous.second == hash)) return
+        if (previous != null && (previous.first > at || previous.second == hash && !confirmed)) return
+        CollaborationCurrentStateStore.observe(context, metadata, CollaborationMemberObservation(at, text, connectionState, confirmed))
         AgentTranscriptStore(context).upsert(AgentTranscriptRole.PROCESS, text,
             dedupeKey = key,
             conversationId = binding.getString("conversation"), turnId = binding.getString("turn"),

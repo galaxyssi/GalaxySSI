@@ -39,7 +39,9 @@ class AgentControlPlaneActionExecutor private constructor(
             ?: return provider.executeDelegate(action, screen)
         val conversationId = action.parameters[CONVERSATION_ID_KEY].orEmpty()
         val turnId = action.parameters[TURN_ID_KEY].orEmpty()
-        val runId = stableRunId(conversationId, turnId, action.id, agentId)
+        val attemptKey = AgentConnectorFallbackAction.effectAttemptKey(action)
+        val runId = stableRunId(conversationId, turnId, attemptKey, agentId)
+        val explicitIdempotencyKey = action.parameters["idempotency_key"].orEmpty()
         val request = AgentRunRequest(
             conversationId = conversationId,
             messageId = turnId.ifBlank { action.id },
@@ -55,7 +57,11 @@ class AgentControlPlaneActionExecutor private constructor(
                 "action_target" to action.target,
                 "risk" to action.risk.name.lowercase(Locale.ROOT)
             ),
-            idempotencyKey = action.parameters["idempotency_key"].orEmpty().ifBlank { runId }
+            idempotencyKey = when {
+                explicitIdempotencyKey.isBlank() -> runId
+                attemptKey != action.id -> "$explicitIdempotencyKey/$runId"
+                else -> explicitIdempotencyKey
+            }
         )
         provider.prepare(agentId, request, action, screen)
         val dispatchStartedAtMillis = System.currentTimeMillis()
@@ -290,6 +296,8 @@ internal class ActionExecutorAgentProvider(
 
     fun discardPrepared(agentId: String, runId: String) = transports[agentId]?.discardPrepared(runId)
 
+    fun detachRun(agentId: String, runId: String) = transports[agentId]?.detachRun(runId)
+
     fun executeDelegate(action: AgentAction, screen: ScreenContext): AgentActionResult = delegate.execute(action, screen)
 
     private fun registrationSnapshot(): List<AgentRegistration> {
@@ -358,6 +366,10 @@ private class ActionExecutorAgentTransport(
         trim(events)
     }
 
+    fun detachRun(runId: String) {
+        removeActive(runId)
+    }
+
     override suspend fun open(): AgentProtocolRange = currentRegistration().protocol
 
     override suspend fun close() = Unit
@@ -368,7 +380,7 @@ private class ActionExecutorAgentTransport(
         val item = prepared.remove(request.runId)
             ?: throw IllegalStateException("No prepared connector action for Run ${request.runId}")
         emit(request, item.registration, AgentRunControlEventType.AGENT_CONNECTED, 1L)
-        val result = delegate.execute(item.action, item.screen)
+        val result = delegate.execute(AgentManagedDispatchIntent.bind(item.action, request, agentId), item.screen)
         results[request.runId] = result
         val awaitingResponse = result.metadata["awaiting_response"] == "true"
         val sourceMessageId = result.metadata["source_message_id"]?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
@@ -431,6 +443,7 @@ private class ActionExecutorAgentTransport(
                 "success" to result.success,
                 "source_message_id" to result.metadata["source_message_id"].orEmpty(),
                 "result" to result.message,
+                "rich_output" to result.metadata["rich_output"].orEmpty(),
                 "error" to if (result.success) "" else result.message
             )
         )
@@ -493,10 +506,9 @@ private class ActionExecutorAgentTransport(
         val active = removeActive(runId)
         active?.let { globalRunSlots?.releaseBySourceMessageId(it.sourceMessageId) }
         val current = results[runId]
-        // A local cancellation is not a remote terminal acknowledgement. Keep Desktop ownership
-        // so the durable team controller can retry the exact stop after a disconnect/restart.
-        if (active?.request?.context?.get(MANAGED_TEAM_CONTEXT_KEY)?.toString()?.toBoolean() != true ||
-            current?.metadata?.get("resource_location") == "cloud") managedResponses.markApplied(runId)
+        // Only the durable team checkpoint may consume managed evidence. The callback may
+        // already have removed its live owner while its result is still uncommitted.
+        if (active == null && current != null && current.metadata["awaiting_response"] != "true") return
         AgentCloudDispatchRegistry.cancel(current)
         results[runId] = current?.copy(
             success = false,

@@ -12,16 +12,22 @@ internal object CollaborationGoalRecruitment {
     const val TEMPLATE = "collaboration_research_recruit_template"
     const val PUBLISHED = "collaboration_research_recruit_published"
     const val FEEDBACK = "collaboration_research_recruit_feedback"
-    data class Plan(val people: List<AgentTeamMember>, val aliases: Map<String, String>, val error: String = "")
+    private const val BINDINGS = "collaboration_research_recruit_bindings"
+    data class Plan(val people: List<AgentTeamMember>, val aliases: Map<String, String>, val error: String = "",
+                    val organization: CollaborationTeamOrganization.Decision? = null)
 
-    fun plan(people: List<AgentTeamMember>, requests: JSONArray?, work: JSONArray, names: List<String>): Plan {
-        if (requests == null || requests.length() == 0) return Plan(people, emptyMap())
+    fun plan(people: List<AgentTeamMember>, requests: JSONArray?, work: JSONArray, names: List<String>,
+             checkpoint: CollaborationTeamOrganization.Checkpoint? = null): Plan {
+        if (checkpoint == null && (requests == null || requests.length() == 0)) return Plan(people, emptyMap())
         return runCatching {
             val roster = people.toMutableList()
             val templates = people.associateBy { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
             val aliases = linkedMapOf<String, String>()
-            repeat(requests.length()) { index ->
-                val item = requests.getJSONObject(index)
+            val jobs = (0 until work.length()).map { work.getJSONObject(it) }
+            val occupied = jobs.filter { CollaborationWorkGraph.id(it) !in checkpoint?.finishedWork.orEmpty() }
+                .mapTo(hashSetOf()) { it.optString("member") }
+            repeat(requests?.length() ?: 0) { index ->
+                val item = requests!!.getJSONObject(index)
                 val id = item.getString("id").trim()
                 require(id.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "Recruitment needs a stable vacancy ID" }
                 require("recruit:$id" !in aliases) { "Duplicate vacancy ID" }
@@ -36,19 +42,29 @@ internal object CollaborationGoalRecruitment {
                 val signature = fingerprint(listOf(template.agentId, template.context["collaboration_model_id"].orEmpty(), role, scope))
                 val personId = UUID.nameUUIDFromBytes(
                     "${template.context["collaboration_group_id"]}:recruit:$signature".toByteArray()).toString()
-                val sameId = roster.firstOrNull { it.context[VACANCY] == id }
-                require(sameId == null || sameId.context[SIGNATURE] == signature) { "A vacancy ID cannot be reused for a different role or scope" }
+                val sameId = roster.firstOrNull { it.context[VACANCY] == id || bindings(it).has(id) }
+                require(sameId == null || (if (sameId.context[VACANCY] == id) sameId.context[SIGNATURE]
+                    else bindings(sameId).optString(id)) == signature) { "A vacancy ID cannot be reused for a different role or scope" }
                 val existing = sameId ?: roster.firstOrNull { it.context[SIGNATURE] == signature ||
                     it.context[CollaborationResearchWorkflow.PERSON] == personId }
                 require(existing == null || existing.agentId == template.agentId && existing.role.equals(role, true) &&
+                    existing.requiredCapabilities == template.requiredCapabilities &&
+                    existing.context["collaboration_group_id"] == template.context["collaboration_group_id"] &&
                     existing.context["collaboration_model_id"].orEmpty() == template.context["collaboration_model_id"].orEmpty()) {
                     "Existing member was edited; reuse its current role or choose a distinct scope"
                 }
-                val person = existing ?: run {
+                val vacancyWork = jobs.filter { it.optString("member") == "recruit:$id" }
+                require(checkpoint == null || existing == null || CollaborationTeamOrganization.availableForReuse(
+                    existing, vacancyWork, occupied + aliases.values, checkpoint)) {
+                    "Bound vacancy member is busy, coordinating or a target author; retain its identity and replan with an available authorized member"
+                }
+                val reused = if (checkpoint != null && existing == null) CollaborationTeamOrganization.reusable(
+                    roster, template, role, vacancyWork, occupied + aliases.values, checkpoint) else null
+                val person = existing ?: reused ?: run {
                     require(roster.size < CollaborationGroup.MAX_MEMBERS) { "Group directory is full; reassign existing members instead" }
                     template.copy(instanceId = personId, deliveryMode = AgentDeliveryMode.IGNORE,
                         role = role, objective = scope, dependsOnAgentIds = emptySet(),
-                        context = (template.context - CollaborationGoalLoop.WORK_ID) + mapOf(
+                        context = (template.context - CollaborationGoalLoop.WORK_ID - BINDINGS) + mapOf(
                             CollaborationGoalLoop.ROSTER to "true", CollaborationResearchWorkflow.PERSON to personId,
                             "collaboration_name" to CollaborationNamePolicy.allocate(names, roster.map { it.context["collaboration_name"].orEmpty() }),
                             "_galaxyssi_role_hint" to role, "collaboration_receive_results" to "false",
@@ -57,6 +73,13 @@ internal object CollaborationGoalRecruitment {
                         )).also(roster::add)
                 }
                 aliases["recruit:$id"] = person.context.getValue(CollaborationResearchWorkflow.PERSON)
+                if (reused != null) {
+                    require(roster.sumOf { bindings(it).length() } < CollaborationGroup.MAX_MEMBERS) {
+                        "Vacancy binding directory is full; assign existing person IDs directly instead of adding vacancy aliases"
+                    }
+                    val position = roster.indexOf(reused)
+                    roster[position] = reused.copy(context = reused.context + (BINDINGS to bindings(reused).put(id, signature).toString()))
+                }
             }
             val identities = roster.mapTo(hashSetOf()) { it.context.getValue(CollaborationResearchWorkflow.PERSON) }
             require((0 until work.length()).all { index -> work.getJSONObject(index).let {
@@ -65,13 +88,21 @@ internal object CollaborationGoalRecruitment {
                     !CollaborationResourceRecovery.isReservedWorkId(it.optString("id")) &&
                     it.optString("stage") in setOf("EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE")
             } }) { "Recruitment and all assignments must form a valid plan" }
-            Plan(roster, aliases)
+            val resolved = jobs.map { item -> JSONObject(item.toString()).also {
+                it.put("member", aliases[item.optString("member")] ?: item.optString("member"))
+            } }
+            if (checkpoint != null) CollaborationTeamOrganization.validateWork(resolved, checkpoint)
+            val organization = checkpoint?.let { CollaborationTeamOrganization.allocate(roster, resolved, it) }
+            Plan(organization?.people ?: roster, aliases, organization = organization)
         }.getOrElse { Plan(people, emptyMap(), it.message ?: "Invalid recruitment request") }
     }
 
     private fun fingerprint(parts: List<String>) = UUID.nameUUIDFromBytes(parts.joinToString("\u001f") {
         it.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
     }.toByteArray()).toString()
+
+    private fun bindings(member: AgentTeamMember): JSONObject =
+        runCatching { JSONObject(member.context[BINDINGS] ?: "{}") }.getOrDefault(JSONObject())
 
     /** Idempotent projection into the editable group directory; never overwrite user changes. */
     fun project(group: CollaborationGroup, recruits: List<AgentTeamMember>, names: List<String>): Pair<CollaborationGroup, Map<String, String>> {
@@ -112,6 +143,12 @@ internal object CollaborationGoalRecruitment {
             record.definition.members.filter { it.memberId != record.definition.primaryMemberId &&
                 it.dependsOnAgentIds.any(removedNodes::contains) }.mapTo(removedNodes) { it.memberId }
         } while (removedNodes.size != size)
+        if (record.events.any { it.childId in removedNodes && (it.result != null ||
+                it.childStatus?.let { status -> status != AgentSubagentStatus.QUEUED } == true) }) {
+            return record.copy(request = record.request.copy(context = record.request.context + (FEEDBACK to
+                "Recruitment projection deferred: affected work has already started or returned a result. " +
+                    "Retain its identity and history; reconcile authorization at a settled checkpoint without cancelling work.")))
+        }
         val members = record.definition.members.filterNot { it.memberId in removedNodes }.map { member ->
             val id = member.context[CollaborationResearchWorkflow.PERSON]
             member.copy(dependsOnAgentIds = member.dependsOnAgentIds - removedNodes,
@@ -120,6 +157,7 @@ internal object CollaborationGoalRecruitment {
         }
         return record.copy(definition = record.definition.copy(members = members), request = record.request.copy(
             context = record.request.context + (FEEDBACK to if (rejected.isEmpty()) "" else
-                "Recruitment was not admitted for $rejected: template was removed/changed or directory capacity exhausted. Reassign authorized existing members or state the missing permission; do not bypass it.")))
+                "Recruitment was not admitted for $rejected: template was removed/changed or directory capacity exhausted. Reassign authorized existing members or state the missing permission; do not bypass it.") +
+                if (rejected.isNotEmpty()) mapOf(CollaborationTeamOrganizationContext.SUMMARY to "") else emptyMap()))
     }
 }
