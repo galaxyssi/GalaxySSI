@@ -6,10 +6,12 @@ import java.util.UUID
 import org.json.JSONObject
 
 internal enum class HealthMetric(val fields: List<String>, val units: List<String>) {
-    BLOOD_PRESSURE(listOf("systolic", "diastolic", "pulse"), listOf("mmHg")),
+    BLOOD_PRESSURE(listOf("systolic", "diastolic", "pulse"), listOf("mmHg", "kPa")),
     GLUCOSE(listOf("glucose"), listOf("mmol/L", "mg/dL")),
     WEIGHT(listOf("weight"), listOf("kg", "lb")),
-    HEART_RATE(listOf("pulse"), listOf("bpm"));
+    HEART_RATE(listOf("pulse"), listOf("bpm")),
+    CHOLESTEROL(listOf("cholesterol"), listOf("mmol/L", "mg/dL")),
+    HEMOGLOBIN(listOf("hemoglobin"), listOf("g/L", "g/dL"));
     val requiredFields get() = if (this == BLOOD_PRESSURE) fields.take(2) else fields
 }
 
@@ -22,14 +24,16 @@ internal data class HealthDraft(
     val side: String = "unspecified",
     val note: String = "",
     val recordId: String = "",
-    val revision: Int = 0
+    val revision: Int = 0,
+    val evidence: HealthEvidence? = null
 ) {
-    fun hasInput() = values.values.any(String::isNotBlank) || note.isNotBlank()
+    fun hasInput() = evidence != null || values.values.any(String::isNotBlank) || note.isNotBlank()
     fun unitFor(field: String) = if (metric == HealthMetric.BLOOD_PRESSURE && field == "pulse") "bpm" else unit
     fun json() = JSONObject().put("metric", metric.name).put("values", JSONObject(values)).put("unit", unit)
         .put("component_units", JSONObject(values.keys.associateWith(::unitFor)))
         .put("measured_at", measuredAt).put("condition", condition).put("side", side).put("note", note)
         .put("record_id", recordId).put("revision", revision)
+        .apply { evidence?.let { put("evidence", it.json()) } }
 
     companion object {
         fun from(json: JSONObject): HealthDraft {
@@ -37,7 +41,7 @@ internal data class HealthDraft(
             val draft = HealthDraft(HealthMetric.valueOf(json.getString("metric")),
                 values.keys().asSequence().associateWith(values::getString), json.getString("unit"),
                 json.getLong("measured_at"), json.getString("condition"), json.getString("side"),
-                json.getString("note"), json.getString("record_id"), json.getInt("revision"))
+                json.getString("note"), json.getString("record_id"), json.getInt("revision"), json.optJSONObject("evidence")?.let(HealthEvidence::from))
             val units = json.getJSONObject("component_units")
             require(draft.values.keys.all { units.getString(it) == draft.unitFor(it) })
             return draft
@@ -65,11 +69,12 @@ internal data class HealthObservation(
     }
 }
 
-internal enum class HealthValidationIssue { MISSING_VALUE, INVALID_NUMBER, INVALID_UNIT, INVALID_TIME, INVALID_CONTEXT }
+internal enum class HealthValidationIssue { MISSING_VALUE, INVALID_NUMBER, INVALID_UNIT, INVALID_TIME, INVALID_CONTEXT, UNCONFIRMED_SOURCE }
 internal data class HealthValidationError(val issue: HealthValidationIssue, val field: String = "")
 
 internal object HealthObservationPolicy {
     fun validate(draft: HealthDraft, now: Long = System.currentTimeMillis()): HealthValidationError? {
+        if (draft.evidence?.let { !it.valid() || !it.confirmed } == true) return HealthValidationError(HealthValidationIssue.UNCONFIRMED_SOURCE)
         if (draft.unit !in draft.metric.units) return HealthValidationError(HealthValidationIssue.INVALID_UNIT)
         if (draft.measuredAt <= 0 || draft.measuredAt > now + 60_000) return HealthValidationError(HealthValidationIssue.INVALID_TIME)
         if (draft.condition !in listOf("unspecified", "resting", "after_exercise", "fasting", "after_meal", "other") ||
@@ -101,7 +106,7 @@ internal object HealthObservationPolicy {
         require(validate(draft, now) == null)
         val normalized = normalize(draft)
         return HealthObservation(draft.recordId.ifBlank { UUID.randomUUID().toString() }, draft.revision + 1,
-            normalized.copy(recordId = "", revision = 0), now)
+            normalized.copy(recordId = "", revision = 0), now, source = if (draft.evidence == null) "manual" else "ocr")
     }
 
     fun duplicateKey(record: HealthObservation): String {

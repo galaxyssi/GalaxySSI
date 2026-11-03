@@ -61,6 +61,8 @@ internal fun HealthMetric.titleResource(): Int = when (this) {
     HealthMetric.GLUCOSE -> R.string.health_glucose
     HealthMetric.WEIGHT -> R.string.health_weight
     HealthMetric.HEART_RATE -> R.string.health_heart_rate
+    HealthMetric.CHOLESTEROL -> R.string.health_cholesterol
+    HealthMetric.HEMOGLOBIN -> R.string.health_hemoglobin
 }
 
 internal fun healthFieldResource(field: String): Int = when (field) {
@@ -68,6 +70,8 @@ internal fun healthFieldResource(field: String): Int = when (field) {
     "diastolic" -> R.string.health_diastolic
     "pulse" -> R.string.health_pulse
     "glucose" -> R.string.health_glucose
+    "cholesterol" -> R.string.health_cholesterol
+    "hemoglobin" -> R.string.health_hemoglobin
     else -> R.string.health_weight
 }
 

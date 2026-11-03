@@ -6,6 +6,12 @@ import android.os.Build
 import android.webkit.WebView
 
 class GalaxySSIApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || getProcessName() == packageName) {
+            HealthImportScheduler.recoverAsync(this)
+        }
+    }
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
