@@ -224,6 +224,23 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
 }
 
 extension AgentHomeView {
+  @ViewBuilder
+  var screenAssistantRestoreControl: some View {
+    if screenAssistantCollapsed, !screenAssistantConversationID.isEmpty,
+       screenAssistantConversationID == store.activeAgentConversationId {
+      GalaxySSIScreenAssistantBubble(
+        restoreLabel: t("galaxyssi.screen_assistant.restore", "Restore screen assistant"),
+        closeLabel: t("galaxyssi.screen_assistant.close", "Close screen assistant"),
+        pending: !waitingMessageIDs.isEmpty,
+        onRestore: { screenAssistantCollapsed = false },
+        onClose: {
+          screenAssistantCollapsed = false
+          screenAssistantConversationID = ""
+        }
+      )
+    }
+  }
+
   var screenAssistantControls: some View {
     HStack(spacing: 12) {
       Label(t("galaxyssi.screen_assistant.title", "Screen assistant"), systemImage: "viewfinder")
@@ -241,11 +258,11 @@ extension AgentHomeView {
         : t("galaxyssi.screen_assistant.compact", "Compact result"))
       .accessibilityIdentifier("ios.screen-assistant.resize")
       Button {
-        screenAssistantConversationID = ""
+        screenAssistantCollapsed = true
       } label: {
-        Image(systemName: "xmark").frame(width: 44, height: 44)
+        Image(systemName: "minus").frame(width: 44, height: 44)
       }
-      .accessibilityLabel(t("galaxyssi.screen_assistant.close", "Close screen assistant"))
+      .accessibilityLabel(t("galaxyssi.screen_assistant.collapse", "Collapse screen assistant"))
       .accessibilityIdentifier("ios.screen-assistant.close")
     }
     .buttonStyle(.plain)
@@ -253,6 +270,78 @@ extension AgentHomeView {
     .padding(.trailing, 4)
     .foregroundColor(.galaxySSITextPrimary)
     .background(Color.galaxySSIPageBackground)
+  }
+}
+
+struct GalaxySSIScreenAssistantBubble: View {
+  static let visibleDiameter: CGFloat = 46.4
+  static let touchDiameter: CGFloat = 48
+  @SceneStorage("galaxyssi.screenAssistant.bubble.x") private var positionX = 0.9
+  @SceneStorage("galaxyssi.screenAssistant.bubble.y") private var positionY = 0.7
+  @GestureState private var translation = CGSize.zero
+  var restoreLabel: String
+  var closeLabel: String
+  var pending: Bool
+  var onRestore: () -> Void
+  var onClose: () -> Void
+
+  var body: some View {
+    GeometryReader { geometry in
+      let anchor = Self.center(x: positionX, y: positionY, in: geometry.size)
+      let current = Self.clamp(CGPoint(x: anchor.x + translation.width,
+        y: anchor.y + translation.height), in: geometry.size)
+      Button(action: onRestore) {
+        ZStack {
+          Circle().fill(Color(red: 85 / 255, green: 89 / 255, blue: 94 / 255))
+            .overlay(Circle().stroke(Color(red: 133 / 255, green: 137 / 255, blue: 141 / 255), lineWidth: 0.696))
+            .frame(width: 45.472, height: 45.472)
+          Circle().fill(Color(red: 128 / 255, green: 132 / 255, blue: 135 / 255))
+            .frame(width: 32.48, height: 32.48)
+          Circle().fill(Color(red: 173 / 255, green: 176 / 255, blue: 179 / 255))
+            .frame(width: 25.984, height: 25.984)
+          Circle().fill(Color(red: 250 / 255, green: 251 / 255, blue: 252 / 255))
+            .frame(width: 19.488, height: 19.488)
+        }
+        .frame(width: Self.visibleDiameter, height: Self.visibleDiameter)
+        .overlay(alignment: .topTrailing) {
+          Circle().fill(pending ? Color.accentColor : Color.gray)
+            .frame(width: 8, height: 8)
+        }
+        .opacity(0.5)
+        .frame(width: Self.touchDiameter, height: Self.touchDiameter)
+        .contentShape(Circle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(restoreLabel)
+      .accessibilityIdentifier("ios.screen-assistant.bubble")
+      .help(restoreLabel)
+      .contextMenu {
+        Button(action: onRestore) { Label(restoreLabel, systemImage: "arrow.up.left.and.arrow.down.right") }
+        Button(action: onClose) { Label(closeLabel, systemImage: "xmark") }
+      }
+      .highPriorityGesture(DragGesture(minimumDistance: 4)
+        .updating($translation) { value, state, _ in state = value.translation }
+        .onEnded { value in
+          let end = Self.clamp(CGPoint(x: anchor.x + value.translation.width,
+            y: anchor.y + value.translation.height), in: geometry.size)
+          positionX = Double(end.x / max(geometry.size.width, 1))
+          positionY = Double(end.y / max(geometry.size.height, 1))
+        })
+      .position(current)
+    }
+  }
+
+  static func center(x: Double, y: Double, in size: CGSize) -> CGPoint {
+    clamp(CGPoint(x: (x.isFinite ? x : 0.9) * Double(size.width),
+      y: (y.isFinite ? y : 0.7) * Double(size.height)), in: size)
+  }
+
+  static func clamp(_ point: CGPoint, in size: CGSize) -> CGPoint {
+    guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return .zero }
+    let halfWidth = min(touchDiameter / 2, size.width / 2)
+    let halfHeight = min(touchDiameter / 2, size.height / 2)
+    return CGPoint(x: min(max(point.x.isFinite ? point.x : halfWidth, halfWidth), size.width - halfWidth),
+      y: min(max(point.y.isFinite ? point.y : halfHeight, halfHeight), size.height - halfHeight))
   }
 }
 

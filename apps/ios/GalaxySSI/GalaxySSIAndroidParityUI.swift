@@ -129,6 +129,7 @@ struct AgentHomeView: View {
   @State var screenshotPickerPresented = false
   @State var screenAssistantConversationID = ""
   @State var screenAssistantCompact = true
+  @State var screenAssistantCollapsed = false
   @State private var screenAssistantStartedAt: Date?
   @State private var screenAssistantRecoveryRequests: Set<String> = []
   @State var cameraPickerPresented = false
@@ -214,7 +215,7 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
-        if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty {
+        if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty && !screenAssistantCollapsed {
           screenAssistantControls
           agentOutput.frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
           if screenAssistantCompact { Spacer(minLength: 0) }
@@ -224,6 +225,7 @@ struct AgentHomeView: View {
         agentComposer
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
+      .overlay { screenAssistantRestoreControl }
       .task(id: screenAssistantRecoveryKey) {
         guard let key = screenAssistantRecoveryKey,
               !screenAssistantRecoveryRequests.contains(key) else { return }
@@ -371,6 +373,7 @@ struct AgentHomeView: View {
           }
           screenAssistantConversationID = store.activeAgentConversationId
           screenAssistantCompact = true
+          screenAssistantCollapsed = false
           screenAssistantStartedAt = Date()
         }
       }
