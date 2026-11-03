@@ -231,13 +231,15 @@ extension AgentHomeView {
       GalaxySSIScreenAssistantBubble(
         restoreLabel: t("galaxyssi.screen_assistant.restore", "Restore screen assistant"),
         closeLabel: t("galaxyssi.screen_assistant.close", "Close screen assistant"),
+        stopLabel: t("galaxyssi.screen_assistant.stop", "Stop analysis"),
         phase: screenAssistantBubblePhase,
         statusLabel: screenAssistantBubbleStatusLabel,
         onRestore: { screenAssistantCollapsed = false },
         onClose: {
           screenAssistantCollapsed = false
           screenAssistantConversationID = ""
-        }
+        },
+        onStop: screenAssistantRunID == nil || screenAssistantStopping ? nil : { stopScreenAnalysis() }
       )
     }
   }
@@ -258,6 +260,14 @@ extension AgentHomeView {
         .font(.subheadline.weight(.semibold))
         .lineLimit(1)
       Spacer(minLength: 0)
+      if screenAssistantRunID != nil || screenAssistantStopping {
+        Button(action: stopScreenAnalysis) {
+          Image(systemName: "stop.circle").frame(width: 44, height: 44)
+        }
+        .disabled(screenAssistantStopping)
+        .accessibilityLabel(t("galaxyssi.screen_assistant.stop", "Stop analysis"))
+        .accessibilityIdentifier("ios.screen-assistant.stop")
+      }
       Button {
         screenAssistantCompact.toggle()
       } label: {
@@ -292,10 +302,12 @@ struct GalaxySSIScreenAssistantBubble: View {
   @GestureState private var translation = CGSize.zero
   var restoreLabel: String
   var closeLabel: String
+  var stopLabel: String
   var phase: AgentPhase?
   var statusLabel: String
   var onRestore: () -> Void
   var onClose: () -> Void
+  var onStop: (() -> Void)? = nil
 
   var body: some View {
     GeometryReader { geometry in
@@ -335,6 +347,9 @@ struct GalaxySSIScreenAssistantBubble: View {
       .help(restoreLabel)
       .contextMenu {
         Button(action: onRestore) { Label(restoreLabel, systemImage: "arrow.up.left.and.arrow.down.right") }
+        if let onStop {
+          Button(role: .destructive, action: onStop) { Label(stopLabel, systemImage: "stop.circle") }
+        }
         Button(action: onClose) { Label(closeLabel, systemImage: "xmark") }
       }
       .highPriorityGesture(DragGesture(minimumDistance: 4)

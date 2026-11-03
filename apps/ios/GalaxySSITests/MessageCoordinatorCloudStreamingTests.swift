@@ -3,6 +3,57 @@ import XCTest
 
 final class MessageCoordinatorCloudStreamingTests: XCTestCase {
   @MainActor
+  func testScreenAnalysisStopTargetsOwnedTurnAndPreservesPartialOutput() async throws {
+    let fixture = try makeFixture()
+    let stream = RecordingCloudConversationStream(events: [])
+    let coordinator = MessageCoordinator(store: fixture.store, cloudStreamEngine: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let owned = fixture.store.appendOutgoing("Analyze screenshot", to: fixture.contact.id, turnId: "owned")
+    let unrelated = fixture.store.appendOutgoing("Other request", to: fixture.contact.id, turnId: "other")
+    let partial = fixture.store.appendIncoming("Partial answer", from: fixture.contact.id,
+      remoteMessageId: "partial", status: .sent, conversationId: owned.conversationId, turnId: owned.turnId)
+
+    let cancelled = await coordinator.cancelScreenAnalysis([owned])
+    XCTAssertTrue(cancelled)
+    XCTAssertEqual(stream.cancelledRequestIDs, ["owned"])
+    let messages = fixture.store.messages(for: fixture.contact.id)
+    let stopped = try XCTUnwrap(messages.first { $0.id == owned.id })
+    XCTAssertTrue(stopped.deliveryTrace.contains { $0.stage == "screen_analysis_cancelled" })
+    XCTAssertEqual(messages.first { $0.id == partial.id }?.content, "Partial answer")
+    XCTAssertEqual(messages.first { $0.id == unrelated.id }?.deliveryStatus, unrelated.deliveryStatus)
+    var payload: [String: Any] = ["type": "agent_task_event", "source_message_id": owned.id.uuidString,
+      "conversation_id": owned.conversationId, "turn_id": owned.turnId]
+    XCTAssertTrue(AgentScreenAnalysisReplyPolicy.isStopped(payload, messages: messages))
+    payload["source_message_id"] = unrelated.id.uuidString
+    XCTAssertFalse(AgentScreenAnalysisReplyPolicy.isStopped(payload, messages: messages))
+    payload["source_message_id"] = owned.id.uuidString
+    payload["turn_id"] = "other"
+    XCTAssertFalse(AgentScreenAnalysisReplyPolicy.isStopped(payload, messages: messages))
+    payload["turn_id"] = owned.turnId
+    payload["conversation_id"] = "foreign"
+    XCTAssertFalse(AgentScreenAnalysisReplyPolicy.isStopped(payload, messages: messages))
+    payload["conversation_id"] = owned.conversationId
+    payload["type"] = "delivery_ack"
+    XCTAssertFalse(AgentScreenAnalysisReplyPolicy.isStopped(payload, messages: messages))
+  }
+
+  @MainActor
+  func testScreenAnalysisStopDoesNotInvalidateCompletedAnswer() async throws {
+    let fixture = try makeFixture()
+    let stream = RecordingCloudConversationStream(events: [])
+    let coordinator = MessageCoordinator(store: fixture.store, cloudStreamEngine: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let outgoing = fixture.store.appendOutgoing("Analyze", to: fixture.contact.id, turnId: "finished")
+    _ = fixture.store.appendIncoming("Final answer", from: fixture.contact.id,
+      remoteMessageId: "final", status: .delivered, conversationId: outgoing.conversationId, turnId: outgoing.turnId)
+    let before = fixture.store.messages(for: fixture.contact.id)
+    let cancelled = await coordinator.cancelScreenAnalysis([outgoing])
+    XCTAssertTrue(cancelled)
+    XCTAssertTrue(stream.cancelledRequestIDs.isEmpty)
+    XCTAssertEqual(fixture.store.messages(for: fixture.contact.id), before)
+  }
+
+  @MainActor
   func testCitationPreviewIsReplacedInTheSameSilentAssistantRow() async throws {
     let fixture = try makeFixture()
     let stream = RecordingCloudConversationStream(events: [
@@ -136,6 +187,11 @@ private final class RecordingCloudConversationStream: CloudConversationStreaming
 
   var calls: [Call] = []
   var events: [ModelStreamEvent]
+  var cancelledRequestIDs: [String] = []
+
+  func cancel(requestId: String, reason: ModelStreamCancelReason) async {
+    cancelledRequestIDs.append(requestId)
+  }
 
   init(events: [ModelStreamEvent]) {
     self.events = events

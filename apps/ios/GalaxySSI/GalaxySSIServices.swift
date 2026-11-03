@@ -1659,6 +1659,86 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func cancelScreenAnalysis(_ ownedTurns: [ChatMessage]) async -> Bool {
+    let verified = ownedTurns.compactMap { owned in
+      store.messages(for: owned.contactId).first {
+        $0.id == owned.id && $0.isMine && $0.conversationId == owned.conversationId &&
+          $0.turnId == owned.turnId
+      }
+    }
+    var delivered = verified.count == ownedTurns.count
+    let originals = verified.filter { outgoing in
+      !store.messages(for: outgoing.contactId).contains {
+        !$0.isMine && !$0.isSystem && $0.conversationId == outgoing.conversationId &&
+          $0.turnId == outgoing.turnId && $0.deliveryStatus == .delivered
+      }
+    }
+    for outgoing in originals {
+      let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      for task in store.agentTasks(forSession: outgoing.conversationId, limit: 500)
+        where task.taskId == turn {
+        _ = cancelLocalAgentTask(taskId: task.taskId, emitReply: false)
+      }
+      PhoneExecutionAuthority.requestCancellation(taskId: turn)
+      finishPendingAgentReply(for: outgoing)
+      _ = deliveryStore.discardClientSourceMessage(outgoing.id.uuidString)
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
+        stage: "screen_analysis_cancelled", detail: "User stopped this screen analysis turn", status: .failed)
+    }
+    for outgoing in originals {
+      let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      await cloudStreamEngine.cancel(requestId: turn, reason: .userStop)
+      let remoteTasks = remoteAgentTaskStatuses.values.filter {
+        $0.conversationId == outgoing.conversationId && $0.turnId == turn &&
+          !AgentRemoteTaskStatusPolicy.isTerminal($0.status)
+      }
+      for remote in remoteTasks {
+        if !(await cancelRemoteAgentTask(remote)) { delivered = false }
+      }
+      for contact in store.visibleContacts {
+        guard let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: outgoing.id.uuidString),
+              identity.conversationId == outgoing.conversationId, identity.turnId == turn,
+              !remoteTasks.contains(where: { $0.taskId == identity.taskId && $0.clientRouteId == identity.clientRouteId }) else { continue }
+        if !(await cancelRegisteredScreenAnalysis(identity: identity, contact: contact, source: outgoing.id.uuidString)) {
+          delivered = false
+        }
+      }
+    }
+    return delivered
+  }
+
+  private func cancelRegisteredScreenAnalysis(identity: AgentTaskIdentity, contact: GalaxySSIContact,
+                                              source: String) async -> Bool {
+    guard let link = store.serverLinks.first(where: {
+      $0.paired && $0.routes.clientRouteId == identity.clientRouteId
+    }) else { return false }
+    let payload: [String: Any] = [
+      "type": "agent_task_cancel", "task_id": identity.taskId,
+      "client_route_id": identity.clientRouteId, "conversation_id": identity.conversationId,
+      "turn_id": identity.turnId, "contact_id": contact.id, "source_message_id": source,
+      "agent_id": contact.connectorAgentId, "desktop_id": link.desktopId,
+      "time": AgentControlPlaneClock.nowMillis()
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else { return false }
+    deliveryStore.enqueue(messageId: wire.messageId, topic: link.routes.upTopic,
+      wirePayload: wire.wireText, clientSourceMessageId: source, contactId: contact.id)
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    switch result {
+    case .published:
+      deliveryStore.markPublished(messageId: wire.messageId)
+      scheduleOutboxFlushFromStore()
+      return true
+    case .queued:
+      scheduleOutboxFlushFromStore()
+      return true
+    case .failed:
+      scheduleOutboxFlush(after: 0)
+      return false
+    }
+  }
+
+  @discardableResult
   func cancelRemoteAgentTask(_ snapshot: AgentRemoteTaskStatusSnapshot) async -> Bool {
     guard !snapshot.taskId.isEmpty,
           !snapshot.clientRouteId.isEmpty,
@@ -2330,7 +2410,8 @@ final class MessageCoordinator: ObservableObject {
     agentGoalOverride: String = "",
     voiceSessionId: String = "",
     peerMessageKind: String = "",
-    peerDurationMillis: Int64 = 0
+    peerDurationMillis: Int64 = 0,
+    onOutgoing: ((ChatMessage) -> Void)? = nil
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
@@ -2413,6 +2494,8 @@ final class MessageCoordinator: ObservableObject {
       richOutputJson: richOutputJson,
       messageId: outgoingMessageId
     )
+    onOutgoing?(outgoing)
+    guard !Task.isCancelled else { return false }
     if isPeerSend {
       store.appendDeliveryTrace(
         outgoing.id,
@@ -2467,6 +2550,7 @@ final class MessageCoordinator: ObservableObject {
         status: stagedAttachments.isEmpty ? .failed : .delivered
       )
     }
+    guard !Task.isCancelled else { return false }
     if contact.id == "hermes", !effectiveAttachments.isEmpty, !reusedPriorAttachments {
       let importedCount = AgentAttachmentKnowledgeImporter.importDocuments(
         AgentAttachmentKnowledgeImporter.inputs(from: effectiveAttachments),
@@ -3934,6 +4018,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     initialPlan: AgentPlan? = nil
   ) async throws {
+    try Task.checkCancellation()
     let taskId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let createdAt = Int64(Date().timeIntervalSince1970 * 1_000)
     let isNativeRoute = initialPlan != nil
@@ -5923,6 +6008,7 @@ final class MessageCoordinator: ObservableObject {
       images: images,
       requestId: requestId
     ) {
+      try Task.checkCancellation()
       switch event {
       case .textDelta(let delta): accumulated += delta.text
       case .completed: completed = true
@@ -7811,6 +7897,7 @@ final class MessageCoordinator: ObservableObject {
       images: images,
       requestId: requestId
     ) {
+      try Task.checkCancellation()
       switch event {
       case .connected, .usage, .toolCallDelta:
         continue
@@ -8511,6 +8598,7 @@ final class MessageCoordinator: ObservableObject {
     executionMode: AgentTaskExecutionMode,
     teamContext: AgentOutboundTeamContext? = nil
   ) async throws -> AgentDisclosureStatus {
+    try Task.checkCancellation()
     let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     let link = requestedDesktopId.isEmpty
       ? (store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first)
@@ -9803,6 +9891,13 @@ final class MessageCoordinator: ObservableObject {
     }
     if shouldValidateAgentTaskIdentity(appPayload),
        !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
+      return
+    }
+    if taskIdentityStore.matchesRegistered(payload: appPayload),
+       AgentScreenAnalysisReplyPolicy.isStopped(appPayload,
+         messages: store.agentSessionMessages(appPayload.string("conversation_id"))) {
+      let stoppedMessageId = appPayload.string("message_id")
+      if !stoppedMessageId.isEmpty { deliveryStore.completeIncoming(messageId: stoppedMessageId) }
       return
     }
     if appPayload.string("type") == "agent_task_event" {
