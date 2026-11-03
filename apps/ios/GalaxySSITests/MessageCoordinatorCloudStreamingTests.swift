@@ -3,6 +3,25 @@ import XCTest
 
 final class MessageCoordinatorCloudStreamingTests: XCTestCase {
   @MainActor
+  func testScreenAnalysisSubmissionPersistsHostRequestKind() async throws {
+    let fixture = try makeFixture()
+    let stream = RecordingCloudConversationStream(events: [
+      .textDelta(ModelStreamTextDelta(requestId: "turn", sequence: 1, text: "Answer", receivedAtElapsedMs: 1)),
+      .completed(ModelStreamCompleted(requestId: "turn", finishReason: "stop", completedAtElapsedMs: 2))
+    ])
+    let coordinator = MessageCoordinator(store: fixture.store, cloudStreamEngine: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    var outgoing: ChatMessage?
+    let sent = await coordinator.send("Analyze screenshot", to: fixture.contact, requestKind: .screenAnalysis,
+      onOutgoing: { outgoing = $0 })
+    XCTAssertTrue(sent)
+    let original = try XCTUnwrap(outgoing)
+    XCTAssertEqual(original.requestKind, .screenAnalysis)
+    XCTAssertEqual(fixture.store.messages(for: fixture.contact.id).first { $0.id == original.id }?.requestKind, .screenAnalysis)
+    XCTAssertEqual(stream.calls.last?.turns.last?.requestKind, .screenAnalysis)
+  }
+
+  @MainActor
   func testScreenAnalysisStopTargetsOwnedTurnAndPreservesPartialOutput() async throws {
     let fixture = try makeFixture()
     let stream = RecordingCloudConversationStream(events: [])

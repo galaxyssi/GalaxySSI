@@ -242,6 +242,10 @@ struct GalaxySSIAgentRecentTasksView: View {
       return
     }
     let goal = task.goal
+    guard let kind = AgentRequestKind.forTask(task, messages: store.agentSessionMessages(task.sessionId)) else {
+      statusText = t("galaxyssi.agent.original_request_unavailable", "The original Agent request is no longer available.")
+      return
+    }
     statusText = t("galaxyssi.agent_tasks.retrying", "Retrying task...")
     Task { @MainActor in
       guard let contact = store.contact(id: "hermes") else {
@@ -253,7 +257,7 @@ struct GalaxySSIAgentRecentTasksView: View {
       } else {
         _ = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"))
       }
-      let sent = await coordinator.send(goal, to: contact)
+      let sent = await coordinator.send(goal, to: contact, requestKind: kind)
       statusText = sent
         ? t("galaxyssi.agent_tasks.retry_sent", "Task sent to Agent")
         : t("galaxyssi.agent_tasks.retry_failed", "The task could not be sent")

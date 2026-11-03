@@ -103,9 +103,17 @@ extension AgentHomeView {
     let resolvedLanguage = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
     let chinese = resolvedLanguage.lowercased().hasPrefix("zh")
     let instruction = AgentFailureRecoveryPolicy.instruction(payload: payload, chinese: chinese)
+    guard let kind = store.agentSessionMessages(conversationID).first(where: {
+      $0.isMine && $0.conversationId == conversationID &&
+        ((!payload.turnId.isEmpty && $0.turnId == payload.turnId) || $0.id.uuidString == taskID)
+    })?.requestKind else {
+      recoveringAgentTaskIDs.remove(taskID)
+      richActionStatus = t("galaxyssi.agent.original_request_unavailable", "The original Agent request is no longer available.")
+      return
+    }
     richActionStatus = t("galaxyssi.agent.action_status.recovery_started", "Recovery request started.")
     Task { @MainActor in
-      let sent = await coordinator.send(instruction, to: contact)
+      let sent = await coordinator.send(instruction, to: contact, requestKind: kind)
       recoveringAgentTaskIDs.remove(taskID)
       if !sent {
         richActionStatus = t(

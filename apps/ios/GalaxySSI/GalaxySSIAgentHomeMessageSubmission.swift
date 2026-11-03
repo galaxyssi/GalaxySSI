@@ -48,6 +48,7 @@ extension AgentHomeView {
         to: contact,
         attachments: sensitiveAttachments,
         agentGoalOverride: agentGoal,
+        requestKind: assistantRunID == nil ? .conversation : .screenAnalysis,
         onOutgoing: { outgoing in
           guard let assistantRunID, screenAssistantRunID == assistantRunID else { return }
           screenAssistantOwnedTurns.append(outgoing)

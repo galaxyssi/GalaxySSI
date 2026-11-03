@@ -2411,6 +2411,7 @@ final class MessageCoordinator: ObservableObject {
     voiceSessionId: String = "",
     peerMessageKind: String = "",
     peerDurationMillis: Int64 = 0,
+    requestKind: AgentRequestKind = .conversation,
     onOutgoing: ((ChatMessage) -> Void)? = nil
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2492,7 +2493,8 @@ final class MessageCoordinator: ObservableObject {
       to: contact.id,
       turnId: voiceSessionId,
       richOutputJson: richOutputJson,
-      messageId: outgoingMessageId
+      messageId: outgoingMessageId,
+      requestKind: requestKind
     )
     onOutgoing?(outgoing)
     guard !Task.isCancelled else { return false }
@@ -8807,6 +8809,7 @@ final class MessageCoordinator: ObservableObject {
         payload["attachments"] = attachmentDescriptors
       }
     }
+    outgoing.requestKind.apply(to: &payload)
     if payload["task_budget"] != nil {
       let estimatedBytes = Int64((try? GalaxySSILinkProtocol.jsonData(payload).count) ?? 0)
       let taskBudgetUsage = AgentTaskBudgetUsage(

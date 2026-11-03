@@ -579,7 +579,12 @@ struct AgentHomeView: View {
       if let destination = store.agentSessionDestination(id: task.sessionId) {
         _ = store.switchAgentSession(destination)
       }
-      let sent = await coordinator.send(request, to: contact)
+      guard let kind = AgentRequestKind.forTask(task, messages: store.agentSessionMessages(task.sessionId)) else {
+        retryingAgentTaskIDs.remove(task.taskId)
+        richActionStatus = t("galaxyssi.agent.original_request_unavailable", "The original Agent request is no longer available.")
+        return
+      }
+      let sent = await coordinator.send(request, to: contact, requestKind: kind)
       retryingAgentTaskIDs.remove(task.taskId)
       resumePendingAgentDeliveryAfterTaskAction()
       if !sent {
