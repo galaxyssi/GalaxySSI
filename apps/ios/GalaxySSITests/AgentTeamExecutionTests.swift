@@ -2,6 +2,45 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testOriginalTeamParentSettlementRejectsUserPauseMismatchAndReplacement() throws {
+    let members = [
+      AgentTeamMember(agentId: "lead", deliveryMode: .respond, requiredCapabilities: [], role: "lead",
+        objective: "", dependsOnAgentIds: [], context: [:]),
+      AgentTeamMember(agentId: "reviewer", deliveryMode: .observe, requiredCapabilities: [], role: "reviewer",
+        objective: "", dependsOnAgentIds: [], context: [:])
+    ]
+    let definition = AgentTeamDefinition(teamId: "team", primaryAgentId: "lead", members: members,
+      visibilityMode: .background, collectiveCapabilities: [])
+    let spec = AgentTeamDispatchSpec(definition: definition, supervisorRunId: "original")
+    var action = teamAgentAction("team-action", "lead")
+    action.parameters[agentTeamSpecParameter] = AgentTeamDispatchSpecCodec.encode(spec)
+    var parent = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Goal",
+      phase: .paused, routeKind: .desktopAgent, targetTitle: "Team", risk: .low, blocked: true,
+      activePlan: teamBridgePlan(action), createdAtMillis: 1, updatedAtMillis: 2)
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "original", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .succeeded,
+      members: members.map { AgentTeamMemberSnapshot(agentId: $0.agentId, deliveryMode: $0.deliveryMode,
+        status: .succeeded, instanceId: $0.memberId) }, finalOutput: "Original answer", createdAtMillis: 3)
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+    parent.teamRecoveryRunId = "original"
+    let accepted = try XCTUnwrap(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+    XCTAssertEqual(accepted.phase, .completed)
+    XCTAssertEqual(accepted.result, "Original answer")
+    XCTAssertNil(accepted.teamRecoveryRunId)
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(accepted, saved: saved, failureText: "Failed", now: 20))
+    var foreign = saved
+    foreign.conversationId = "other"
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: foreign, failureText: "Failed", now: 10))
+    foreign = saved
+    foreign.supervisorRunId = "replacement"
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: foreign, failureText: "Failed", now: 10))
+    parent.result = "Existing answer"
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+    parent.result = ""
+    parent.phase = .cancelled
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+  }
+
   func testSavedTeamFailureDistinguishesObserverFromPrimary() throws {
     let saved = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
       conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .running,
