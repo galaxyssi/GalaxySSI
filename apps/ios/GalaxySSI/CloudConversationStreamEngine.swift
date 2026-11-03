@@ -539,7 +539,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             requestId: requestId,
             conversationId: conversationId,
             turnId: turnId,
-            images: images
+            images: images,
+            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
           )
         )
         if let failedOutcome = outcomes.first(where: { $0.errorMessage != nil }) {

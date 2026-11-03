@@ -3,6 +3,49 @@ import CoreGraphics
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testScreenDictationKeepsEmptyDraftAndRejectsStoppedOwner() throws {
+    let owner = UUID()
+    let snapshot = try XCTUnwrap(AgentVoiceTranscriptPolicy.draftSnapshot(
+      conversationID: "screen", text: "", dictationOnly: true, ownerID: owner))
+    XCTAssertTrue(snapshot.dictationOnly)
+    XCTAssertEqual(snapshot.text, "")
+    XCTAssertTrue(AgentVoiceTranscriptPolicy.canApplyDraft(snapshot, conversationID: "screen", ownerID: owner))
+    XCTAssertFalse(AgentVoiceTranscriptPolicy.canApplyDraft(snapshot, conversationID: "other", ownerID: owner))
+    XCTAssertFalse(AgentVoiceTranscriptPolicy.canApplyDraft(snapshot, conversationID: "screen", ownerID: nil))
+    XCTAssertFalse(AgentVoiceTranscriptPolicy.canApplyDraft(snapshot, conversationID: "screen", ownerID: UUID()))
+    XCTAssertEqual(AgentVoiceTranscriptPolicy.mergeDraftWithTranscript(draft: snapshot.text, transcript: "Hello"), "Hello")
+    XCTAssertNil(AgentVoiceTranscriptPolicy.draftSnapshot(conversationID: "home", text: " "))
+    let edited = try XCTUnwrap(AgentVoiceTranscriptPolicy.draftSnapshot(conversationID: "home", text: "Existing draft"))
+    XCTAssertFalse(edited.dictationOnly)
+    XCTAssertTrue(AgentVoiceTranscriptPolicy.canApplyDraft(edited, conversationID: "home", ownerID: nil))
+  }
+
+  @MainActor
+  func testScreenAssistantMenuStaysBesideBubbleAndInsideResizedViewport() {
+    for size in [CGSize(width: 320, height: 600), CGSize(width: 844, height: 300),
+                 CGSize(width: 320, height: 100)] {
+      for x in [0.0, 0.5, 1.0] {
+        for y in [0.0, 0.5, 1.0] {
+          let center = GalaxySSIScreenAssistantBubble.center(x: x, y: y, in: size)
+          let menu = GalaxySSIScreenAssistantBubble.menuRect(near: center, in: size, rows: 3)
+          XCTAssertGreaterThanOrEqual(menu.minX, 0)
+          XCTAssertGreaterThanOrEqual(menu.minY, 0)
+          XCTAssertLessThanOrEqual(menu.maxX, size.width)
+          XCTAssertLessThanOrEqual(menu.maxY, size.height)
+          let icon = CGRect(x: center.x - 24, y: center.y - 24, width: 48, height: 48)
+          if menu.height > 0 { XCTAssertFalse(icon.intersects(menu)) }
+        }
+      }
+    }
+    let right = GalaxySSIScreenAssistantBubble.menuRect(near: CGPoint(x: 296, y: 300),
+      in: CGSize(width: 320, height: 600), rows: 3)
+    XCTAssertLessThanOrEqual(right.maxX, 264)
+    let left = GalaxySSIScreenAssistantBubble.menuRect(near: CGPoint(x: 24, y: 300),
+      in: CGSize(width: 320, height: 600), rows: 3)
+    XCTAssertGreaterThanOrEqual(left.minX, 56)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.menuRect(near: .zero, in: .zero, rows: 3), .zero)
+  }
+
   @MainActor
   func testDesktopReplyRecoveryCorrelatesAuthenticatedScopeAndPreservesFirstTerminalTime() throws {
     let suite = "DesktopReplyRecoveryTests-\(UUID().uuidString)"

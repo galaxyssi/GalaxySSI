@@ -82,6 +82,17 @@ enum AgentNativeToolEffect: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+enum AgentScreenAnalysisToolPolicy {
+  static func allows(_ descriptor: AgentNativeToolDescriptor?) -> Bool {
+    guard let descriptor else { return false }
+    return descriptor.effect == .readOnly && descriptor.risk == .low && descriptor.idempotency == .idempotent
+  }
+
+  static func allows(_ action: AgentAction, descriptor: AgentNativeToolDescriptor?) -> Bool {
+    action.kind == .readScreen || (action.kind == .callNativeTool && allows(descriptor))
+  }
+}
+
 enum AgentNativeToolTimeoutPolicy: String, Codable, CaseIterable, Identifiable {
   case fixed
   case progressAware = "progress_aware"

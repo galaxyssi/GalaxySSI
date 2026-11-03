@@ -71,6 +71,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var errorMessage: String
   var updatedAtMillis: Int64
   var instanceId: String
+  var sourceMessageId: String
 
   var memberId: String { instanceId.ifBlank(agentId) }
 
@@ -82,7 +83,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     output: String = "",
     errorMessage: String = "",
     updatedAtMillis: Int64 = 0,
-    instanceId: String = ""
+    instanceId: String = "",
+    sourceMessageId: String = ""
   ) {
     self.agentId = agentId
     self.role = role
@@ -92,6 +94,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.errorMessage = String(errorMessage.prefix(Self.maxErrorCharacters))
     self.updatedAtMillis = max(updatedAtMillis, 0)
     self.instanceId = instanceId.ifBlank(agentId)
+    self.sourceMessageId = sourceMessageId
   }
 
   enum CodingKeys: String, CodingKey {
@@ -103,6 +106,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case errorMessage = "error_message"
     case updatedAtMillis = "updated_at_millis"
     case instanceId = "instance_id"
+    case sourceMessageId = "source_message_id"
   }
 
   init(from decoder: Decoder) throws {
@@ -116,7 +120,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       output: try container.decodeIfPresent(String.self, forKey: .output) ?? "",
       errorMessage: try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? "",
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0,
-      instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId
+      instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId,
+      sourceMessageId: try container.decodeIfPresent(String.self, forKey: .sourceMessageId) ?? ""
     )
   }
 }
@@ -210,6 +215,87 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
   }
 }
 
+enum AgentSavedTeamReplyPolicy {
+  static func canContinueAutomatically(_ task: AgentTaskRecord) -> Bool {
+    guard task.phase == .paused, task.teamRecoveryRunId == nil,
+          let plan = task.activePlan, plan.executionMode == .autoComplete,
+          !plan.confirmationRequired else { return false }
+    let runnable = AgentToolCoordination.runnableActions(plan)
+    return !runnable.isEmpty && runnable.allSatisfy { $0.status == .proposed }
+  }
+
+  static func settleParent(_ parent: AgentTaskRecord, saved: AgentTeamExecutionSnapshot,
+                           failureText: String, now: Int64) -> AgentTaskRecord? {
+    guard saved.state.deliverable, parent.result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          parent.phase == .waitingResponse || (parent.phase == .paused && parent.teamRecoveryRunId == saved.supervisorRunId),
+          parent.taskId == saved.taskId, parent.sessionId == saved.conversationId,
+          saved.createdAtMillis >= parent.createdAtMillis,
+          var plan = parent.activePlan else { return nil }
+    let matchingIndices = plan.actions.indices.filter { index in
+      plan.actions[index].kind == .callConnector &&
+        AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? "")?.supervisorRunId == saved.supervisorRunId
+    }
+    guard matchingIndices.count == 1, let index = matchingIndices.first,
+          plan.actions[index].status != .completed,
+          let spec = AgentTeamDispatchSpecCodec.decode(plan.actions[index].parameters[agentTeamSpecParameter] ?? ""),
+          spec.supervisorRunId == saved.supervisorRunId, spec.definition.teamId == saved.teamId,
+          spec.definition.primaryMemberId == saved.primaryMemberId,
+          spec.definition.members.count == saved.members.count,
+          spec.definition.members.allSatisfy({ expected in
+            saved.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
+          }) else { return nil }
+    let success = [.succeeded, .completedWithFailures].contains(saved.state) && !saved.finalOutput.isEmpty
+    var result = parent
+    result.phase = saved.state == .cancelled ? .cancelled : (success ? .completed : .failed)
+    result.result = success ? saved.finalOutput : failureText
+    result.blocked = false
+    result.teamRecoveryRunId = nil
+    result.pendingAction = nil
+    result.pendingActions = []
+    plan.actions[index].status = success ? .completed : .failed
+    plan.actions[index].result = result.result
+    if success && !plan.actions.allSatisfy({ $0.status == .completed }) {
+      result.nativeActionResults = Array((result.nativeActionResults + [String(saved.finalOutput.prefix(600))]).suffix(8))
+      result.phase = .paused
+      result.pendingActions = AgentToolCoordination.runnableActions(plan)
+      result.pendingAction = result.pendingActions.first
+    }
+    result.activePlan = plan
+    result.planContext = AgentTaskPlanContext(plan: plan)
+    result.updatedAtMillis = max(now, parent.updatedAtMillis)
+    return result
+  }
+
+  static func apply(to saved: AgentTeamExecutionSnapshot, source: String, conversation: String,
+                    turn: String, task: String, contact: String, content: String,
+                    success: Bool, now: Int64) -> AgentTeamExecutionSnapshot? {
+    guard (!saved.state.isTerminal || saved.state == .interrupted), !source.isEmpty,
+          saved.conversationId == conversation, saved.taskId == turn, task == source,
+          let index = saved.members.firstIndex(where: {
+            $0.sourceMessageId == source && $0.agentId == contact &&
+              (!$0.status.isTerminal || (saved.state == .interrupted && $0.status == .interrupted))
+          }),
+          !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            (success && saved.members[index].deliveryMode == .observe) else { return nil }
+    var result = saved
+    result.members[index].status = success ? .succeeded : .failed
+    result.members[index].output = success ? String(content.prefix(AgentConnectorResponse.maxContentCharacters)) : ""
+    result.members[index].errorMessage = success ? "" : String(content.prefix(AgentTeamMemberSnapshot.maxErrorCharacters))
+    result.members[index].updatedAtMillis = now
+    result.updatedAtMillis = max(saved.updatedAtMillis, now)
+    if result.members[index].memberId == saved.primaryMemberId && !success {
+      result.state = .failed
+    } else if result.members.allSatisfy({ $0.status.isTerminal && $0.status != .interrupted }),
+       let primary = result.members.first(where: { $0.memberId == saved.primaryMemberId }) {
+      result.finalOutput = primary.output
+      if primary.status == .succeeded && !primary.output.isEmpty {
+        result.state = result.members.contains(where: { $0.status != .succeeded }) ? .completedWithFailures : .succeeded
+      } else { result.state = .failed }
+    }
+    return result
+  }
+}
+
 protocol AgentTeamCompletionSink: AnyObject {
   @discardableResult
   func publish(_ snapshot: AgentTeamExecutionSnapshot) -> Bool
@@ -244,7 +330,7 @@ final class AgentConnectorTeamCompletionSink: AgentTeamCompletionSink {
 
   @discardableResult
   func publish(_ snapshot: AgentTeamExecutionSnapshot) -> Bool {
-    historyStore.upsert(snapshot)
+    guard historyStore.upsert(snapshot) else { return false }
     guard snapshot.state.deliverable,
       !ledger.contains(snapshot.supervisorRunId) else {
       return false

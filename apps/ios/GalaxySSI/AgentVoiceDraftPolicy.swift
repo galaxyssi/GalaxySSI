@@ -3,16 +3,25 @@ import Foundation
 struct AgentVoiceDraftSnapshot: Equatable {
   let conversationID: String
   let text: String
+  var dictationOnly = false
+  var ownerID: UUID? = nil
 }
 
 extension AgentVoiceTranscriptPolicy {
-  static func draftSnapshot(conversationID: String, text: String) -> AgentVoiceDraftSnapshot? {
+  static func draftSnapshot(conversationID: String, text: String, dictationOnly: Bool = false,
+                            ownerID: UUID? = nil) -> AgentVoiceDraftSnapshot? {
     let draft = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !draft.isEmpty else { return nil }
+    guard dictationOnly || !draft.isEmpty else { return nil }
     return AgentVoiceDraftSnapshot(
       conversationID: conversationID.trimmingCharacters(in: .whitespacesAndNewlines),
-      text: draft
+      text: draft,
+      dictationOnly: dictationOnly,
+      ownerID: ownerID
     )
+  }
+
+  static func canApplyDraft(_ snapshot: AgentVoiceDraftSnapshot, conversationID: String, ownerID: UUID?) -> Bool {
+    snapshot.conversationID == conversationID && (!snapshot.dictationOnly || snapshot.ownerID == ownerID)
   }
 
   static func mergeDraftWithTranscript(draft: String, transcript: String) -> String {

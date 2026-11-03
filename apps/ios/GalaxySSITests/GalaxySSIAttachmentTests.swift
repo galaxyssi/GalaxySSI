@@ -3,6 +3,75 @@ import UIKit
 @testable import GalaxySSI
 
 final class GalaxySSIAttachmentTests: XCTestCase {
+  @MainActor
+  func testScreenPagePDFCreatesOriginalAndEscapedPaginatedEvidence() throws {
+    let pdf = screenPagePDF(["First page <script>hidden()</script>", "Second page"])
+    let result = try AgentIOSScreenPagePDFCapture.collect(data: pdf)
+    XCTAssertEqual(result.pageCount, 2)
+    XCTAssertEqual(result.extractedPages, 2)
+    XCTAssertFalse(result.truncated)
+    XCTAssertEqual(result.attachments.map(\.mimeType), ["application/pdf", "text/plain", "text/html"])
+    XCTAssertEqual(result.attachments[0].data, pdf)
+    let text = String(decoding: result.attachments[1].data, as: UTF8.self)
+    let html = String(decoding: result.attachments[2].data, as: UTF8.self)
+    XCTAssertTrue(text.contains("[Page 2]"))
+    XCTAssertTrue(text.contains("Second page"))
+    XCTAssertTrue(html.contains("&lt;script&gt;"))
+    XCTAssertFalse(html.contains("<script>"))
+    XCTAssertTrue(html.contains("default-src 'none'"))
+    let limited = try AgentIOSScreenPagePDFCapture.collect(data: pdf, maximumCharacters: 2)
+    XCTAssertTrue(limited.truncated)
+    XCTAssertEqual(limited.extractedPages, 1)
+    XCTAssertEqual(limited.attachments[0].data, pdf)
+
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("PagePDF-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let staged = try AgentAttachmentWorkspaceStager.stage(conversationId: "owner", turnId: "turn-1",
+      attachments: result.attachments, projectRoot: root)
+    XCTAssertEqual(staged.count, 3)
+    XCTAssertTrue(staged.allSatisfy { $0.relativePath.hasPrefix("inputs/turn-1/") })
+    let owner = root.appendingPathComponent(AgentWorkspaceScope.id(conversationId: "owner"))
+    XCTAssertEqual(try Data(contentsOf: owner.appendingPathComponent(staged[0].relativePath)), pdf)
+    XCTAssertFalse(FileManager.default.fileExists(atPath:
+      root.appendingPathComponent(AgentWorkspaceScope.id(conversationId: "other")).path))
+  }
+
+  @MainActor
+  func testScreenPagePDFDoesNotTreatImageOnlyPagesAsVerifiedText() throws {
+    let result = try AgentIOSScreenPagePDFCapture.collect(data: screenPagePDF([""]))
+    XCTAssertEqual(result.emptyTextPages, 1)
+    let text = String(decoding: result.attachments[1].data, as: UTF8.self)
+    XCTAssertTrue(text.contains("Image-only pages have not been OCR-verified"))
+    XCTAssertThrowsError(try AgentIOSScreenPagePDFCapture.collect(data: Data("not a PDF".utf8)))
+    XCTAssertThrowsError(try AgentIOSScreenPagePDFCapture.collect(data:
+      screenPagePDF(Array(repeating: "", count: AgentIOSScreenPagePDFCapture.maximumPages + 1)))) { error in
+      XCTAssertEqual(error as? AgentIOSScreenPagePDFError, .pageLimit)
+    }
+  }
+
+  @MainActor
+  func testCancelledScreenPagePDFCollectionProducesNoBundle() async {
+    let pdf = screenPagePDF(["Page"])
+    let task = Task { try AgentIOSScreenPagePDFCapture.collect(data: pdf) }
+    task.cancel()
+    do {
+      _ = try await task.value
+      XCTFail("Cancelled collection must not produce attachments")
+    } catch {
+      XCTAssertTrue(error is CancellationError)
+    }
+  }
+
+  @MainActor
+  private func screenPagePDF(_ pages: [String]) -> Data {
+    UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 400, height: 600)).pdfData { context in
+      for text in pages {
+        context.beginPage()
+        (text as NSString).draw(at: CGPoint(x: 20, y: 20), withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
+      }
+    }
+  }
+
   func testLatestVisualContextUsesOnlyTheNewestUserImage() throws {
     let older = ChatMessage(
       contactId: "hermes", content: "", isMine: true, turnId: "turn-1",

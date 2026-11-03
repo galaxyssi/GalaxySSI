@@ -468,6 +468,38 @@ final class MessageCoordinator: ObservableObject {
     for var task in store.recentAgentTasks(limit: 500) where task.phase == .executing {
       guard var plan = task.activePlan else { continue }
       let outgoing = localOutgoingMessage(for: task)
+      let teamSpecs = plan.actions.filter { $0.kind == .callConnector }.compactMap {
+        AgentTeamDispatchSpecCodec.decode($0.parameters[agentTeamSpecParameter] ?? "")
+      }
+      if teamSpecs.count == 1, let spec = teamSpecs.first, let outgoing,
+         task.taskId == outgoing.turnId.ifBlank(outgoing.id.uuidString),
+         task.sessionId == outgoing.conversationId {
+        let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId)
+        let matches = saved.map { savedTeam in
+          savedTeam.teamId == spec.definition.teamId && savedTeam.conversationId == outgoing.conversationId &&
+            savedTeam.taskId == task.taskId && savedTeam.primaryMemberId == spec.definition.primaryMemberId &&
+            savedTeam.members.count == spec.definition.members.count &&
+            spec.definition.members.allSatisfy { expected in
+              savedTeam.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
+            }
+        } ?? false
+        let canWait = matches && saved?.state != .interrupted
+        let cancelled = matches && saved?.state == .cancelled
+        task.phase = cancelled ? .cancelled : (canWait ? .waitingResponse : .paused)
+        task.blocked = !canWait && !cancelled
+        task.teamRecoveryRunId = !canWait && !cancelled ? spec.supervisorRunId : nil
+        task.verification = GalaxySSILocalization.string(
+          cancelled ? "galaxyssi.team.recovery.cancelled" : (canWait ? "galaxyssi.team.recovery.waiting" : "galaxyssi.team.recovery.missing"),
+          fallback: cancelled ? "The original Agent team was cancelled" : (canWait
+            ? "Awaiting validation of the original Agent team outcome"
+            : "The original Agent team is unavailable; waiting without redispatch"),
+          language: store.languagePolicy.interfaceLanguage)
+        task.executionLog.append("Agent team recovery: retained original team " + spec.supervisorRunId)
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
+        recoveredTaskCount += 1
+        continue
+      }
       var recoveredActions: [AgentAction] = []
       var foundJournaledNode = false
       var journalRecoveryFailed = false
@@ -815,6 +847,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func refreshAgentHomeState() {
+    reconcileSavedTeamParents()
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
     downloadCompletionCoordinator.deliverPendingCompletions()
@@ -1672,16 +1705,17 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     var delivered = verified.count == ownedTurns.count
+    var seen: Set<UUID> = []
     let originals = verified.filter { outgoing in
-      !store.messages(for: outgoing.contactId).contains {
-        !$0.isMine && !$0.isSystem && $0.conversationId == outgoing.conversationId &&
-          $0.turnId == outgoing.turnId && $0.deliveryStatus == .delivered
-      }
+      seen.insert(outgoing.id).inserted && AgentScreenAnalysisCancellationPolicy.shouldCancel(outgoing,
+        messages: store.messages(for: outgoing.contactId),
+        localTasks: store.agentTasks(forSession: outgoing.conversationId, limit: 500),
+        remoteTasks: Array(remoteAgentTaskStatuses.values))
     }
     for outgoing in originals {
       let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
       for task in store.agentTasks(forSession: outgoing.conversationId, limit: 500)
-        where task.taskId == turn {
+        where task.taskId == turn || task.taskId == outgoing.id.uuidString {
         _ = cancelLocalAgentTask(taskId: task.taskId, emitReply: false)
       }
       PhoneExecutionAuthority.requestCancellation(taskId: turn)
@@ -2495,6 +2529,8 @@ final class MessageCoordinator: ObservableObject {
     voiceSessionId: String = "",
     peerMessageKind: String = "",
     peerDurationMillis: Int64 = 0,
+    requestKind: AgentRequestKind = .conversation,
+    readOnlyAnalysis: Bool = false,
     onOutgoing: ((ChatMessage) -> Void)? = nil
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2576,7 +2612,9 @@ final class MessageCoordinator: ObservableObject {
       to: contact.id,
       turnId: voiceSessionId,
       richOutputJson: richOutputJson,
-      messageId: outgoingMessageId
+      messageId: outgoingMessageId,
+      requestKind: requestKind,
+      readOnlyAnalysis: readOnlyAnalysis
     )
     onOutgoing?(outgoing)
     guard !Task.isCancelled else { return false }
@@ -2654,7 +2692,7 @@ final class MessageCoordinator: ObservableObject {
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
         .filter { $0.id != outgoing.id && !$0.isSystem }
-      if effectiveAttachments.isEmpty,
+      if !readOnlyAnalysis, effectiveAttachments.isEmpty,
          let command = AgentTaskControlCommand.parse(requestText),
          let localControlTarget = localAgentTaskControlTarget(for: outgoing.conversationId),
          AgentActiveTurnPolicy.hasLocalControlTarget(hasCurrentPlan: localControlTarget.planContext != nil) {
@@ -2694,7 +2732,7 @@ final class MessageCoordinator: ObservableObject {
       if clarification.mode == .askWithModel {
         requestText = attachmentClarificationGoal(effectiveAttachments)
       }
-      if taskExecutionMode != .planOnly,
+      if !readOnlyAnalysis, taskExecutionMode != .planOnly,
          let active = activeAgentTurn(for: outgoing.conversationId) {
         let decision = AgentActiveTurnPolicy.decide(
           request: originalRequestText,
@@ -2748,7 +2786,7 @@ final class MessageCoordinator: ObservableObject {
         hasUserGoal: !trimmed.isEmpty
       )
     }
-    if taskExecutionMode != .planOnly,
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
        let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
@@ -2777,6 +2815,7 @@ final class MessageCoordinator: ObservableObject {
       return true
     }
     let workflowCommand: (text: String, actionId: String)? = {
+      guard !readOnlyAnalysis else { return nil }
       if let result = AgentWorkflowCommandRouter.handle(displayText) {
         return (result.text, result.actionId)
       }
@@ -2785,7 +2824,7 @@ final class MessageCoordinator: ObservableObject {
       }
       return nil
     }()
-    if taskExecutionMode != .planOnly,
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
        let commandResult = workflowCommand {
@@ -2808,7 +2847,7 @@ final class MessageCoordinator: ObservableObject {
       onIncomingMessage?(response)
       return true
     }
-    if taskExecutionMode != .planOnly,
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
        let commandResult = AgentWorkflowTemplateCommandRouter.handle(displayText) {
@@ -2836,7 +2875,7 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if taskExecutionMode != .planOnly,
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
        let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
@@ -2931,7 +2970,7 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
-      if contact.id == "hermes",
+      if !readOnlyAnalysis, contact.id == "hermes",
          let directPlan = deterministicLocalNativePlan(
           for: requestText,
           hasAttachments: !effectiveAttachments.isEmpty
@@ -2959,7 +2998,7 @@ final class MessageCoordinator: ObservableObject {
           conversationId: outgoing.conversationId,
           runtimeTarget: localProfile.displayName
         )
-        if taskExecutionMode != .planOnly,
+        if !readOnlyAnalysis, taskExecutionMode != .planOnly,
            effectiveAttachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
@@ -3566,6 +3605,8 @@ final class MessageCoordinator: ObservableObject {
           task.phase == .waitingConfirmation else {
       return
     }
+    if let outgoing = localOutgoingMessage(for: task),
+       rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return }
     // Android requires a second, explicit confirmation for high-risk actions.
     guard action.risk.weight < AgentRisk.high.weight || highRiskConfirmed else {
       return
@@ -3681,7 +3722,9 @@ final class MessageCoordinator: ObservableObject {
     let planRequest = AgentPlanRequest(
       goal: task.goal,
       screen: currentAgentScreenContext,
-      nativeTools: runtime.registry.descriptors(),
+      nativeTools: runtime.registry.descriptors().filter {
+        !outgoing.readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0)
+      },
       responseLanguage: store.languagePolicy.responseLanguage,
       completionRequirements: previousPlan?.completionRequirements
     )
@@ -3905,6 +3948,7 @@ final class MessageCoordinator: ObservableObject {
     task.blocked = false
     task.result = ""
     task.verification = "User paused native tool execution"
+    task.teamRecoveryRunId = nil
     task.executionLog.append("Native tool task: paused")
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
@@ -3912,10 +3956,15 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
-  func resumeLocalNativeAction(taskId: String) -> Bool {
+  func resumeLocalNativeAction(taskId: String, automatic: Bool = false) -> Bool {
     guard var task = store.agentTask(id: taskId),
           task.phase == .paused else {
       return false
+    }
+    guard task.teamRecoveryRunId == nil else { return false }
+    if automatic {
+      guard store.agentSafetySettings.taskExecutionMode == .autoComplete,
+            AgentSavedTeamReplyPolicy.canContinueAutomatically(task) else { return false }
     }
     if task.pendingPlanning?.isReplanning == true {
       task.phase = .planning
@@ -3945,9 +3994,11 @@ final class MessageCoordinator: ObservableObject {
     task.phase = .executing
     task.blocked = false
     task.result = ""
-    task.verification = "User resumed paused native tool execution"
+    task.verification = automatic
+      ? localizedReply("galaxyssi.team.recovery.continuing", fallback: "Continuing the plan after the original team outcome")
+      : "User resumed paused native tool execution"
     let toolId = action.parameters["tool_id"] ?? action.target
-    task.executionLog.append("Native tool \(toolId): resumed")
+    task.executionLog.append("Native tool \(toolId): " + (automatic ? "continued after original team" : "resumed"))
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
     guard let outgoing = localOutgoingMessage(for: task) else {
@@ -4162,7 +4213,7 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-      if executionMode != .planOnly {
+      if !outgoing.readOnlyAnalysis, executionMode != .planOnly {
         if handleDirectAgentScreenOverview(
           requestText: requestText,
           outgoing: outgoing,
@@ -4257,7 +4308,7 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
-      if executionMode != .planOnly {
+      if !outgoing.readOnlyAnalysis, executionMode != .planOnly {
         if handleMatchedLocalSkill(
           requestText: requestText,
           outgoing: outgoing,
@@ -4338,7 +4389,8 @@ final class MessageCoordinator: ObservableObject {
         turnID: outgoing.turnId,
         taskID: task.taskId,
         baseSystemPrompt: localModelSystemPrompt,
-        registry: localNativeToolRuntime.registry
+        registry: localNativeToolRuntime.registry,
+        readOnlyAnalysis: outgoing.readOnlyAnalysis
       )
       let response = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
@@ -5717,6 +5769,25 @@ final class MessageCoordinator: ObservableObject {
       return lhs.deliveryMode != .respond
     }
     let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let teamCreatedAt = AgentControlPlaneClock.nowMillis()
+    let savedTeam = AgentTeamExecutionSnapshot(
+      supervisorRunId: spec.supervisorRunId, teamId: spec.definition.teamId,
+      conversationId: outgoing.conversationId, taskId: homeTurnId,
+      primaryAgentId: spec.definition.primaryAgentId, goal: requestText,
+      visibilityMode: spec.definition.visibilityMode, state: .running,
+      members: ordered.map { AgentTeamMemberSnapshot(agentId: $0.agentId, role: $0.role,
+        deliveryMode: $0.deliveryMode, status: .pending, instanceId: $0.memberId,
+        sourceMessageId: AgentControlPlaneActionExecutor.stableRunId(
+          conversationId: outgoing.conversationId, turnId: homeTurnId,
+          actionId: action.id, agentId: $0.memberId)) },
+      createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
+      primaryInstanceId: spec.definition.primaryMemberId)
+    let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
+      !$0.privateMode && !$0.trackingPaused
+    } ?? false
+    guard !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
+      throw GalaxySSIError.invalidPayload("The original Agent team identity could not be saved")
+    }
     agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
     var primaryPublished = false
     var observerFailures: [String] = []
@@ -5724,6 +5795,7 @@ final class MessageCoordinator: ObservableObject {
 
     for member in ordered {
       guard let target = targetsById[member.agentId], target.status == .available else {
+        persistTeamMemberFailure("The selected Agent is unavailable", member: member, spec: spec, outgoing: outgoing)
         if member.deliveryMode == .respond {
           throw GalaxySSIError.invalidPayload("The selected primary Agent is unavailable")
         }
@@ -5766,6 +5838,7 @@ final class MessageCoordinator: ObservableObject {
                 attachments: attachments,
                 outgoing: outgoing
               )
+              persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing)
               primaryPublished = true
             } else {
               let result = try await hiddenLocalTeamReply(
@@ -5793,6 +5866,7 @@ final class MessageCoordinator: ObservableObject {
                 attachments: attachments,
                 outgoing: outgoing
               )
+              persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing)
               primaryPublished = true
             } else {
               let result = try await hiddenCloudTeamReply(
@@ -5837,6 +5911,8 @@ final class MessageCoordinator: ObservableObject {
         }
         if member.deliveryMode == .respond { primaryPublished = true }
       } catch {
+        if error is CancellationError { throw error }
+        persistTeamMemberFailure(error.localizedDescription, member: member, spec: spec, outgoing: outgoing)
         if member.deliveryMode == .respond {
           throw error
         }
@@ -6131,11 +6207,64 @@ final class MessageCoordinator: ObservableObject {
       turnID: outgoing.turnId,
       taskID: outgoing.turnId.ifBlank(outgoing.id.uuidString),
       baseSystemPrompt: localModelSystemPrompt,
-      registry: localNativeToolRuntime.registry
+      registry: localNativeToolRuntime.registry,
+      readOnlyAnalysis: outgoing.readOnlyAnalysis
     )
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
     return text
+  }
+
+  private func reconcileSavedTeamParents() {
+    for saved in AgentTeamExecutionHistoryStore.shared.recent(AgentTeamExecutionHistoryStore.maxSnapshots)
+      where saved.state.deliverable {
+      guard let session = store.agentSession(id: saved.conversationId), !session.privateMode, !session.trackingPaused,
+            let parent = store.agentTask(id: saved.taskId),
+            let updated = AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved,
+              failureText: localizedReply("galaxyssi.team.recovery.failed", fallback: "The original Agent team did not complete successfully."),
+              now: AgentControlPlaneClock.nowMillis()) else { continue }
+      store.upsertAgentTask(updated)
+      if AgentSavedTeamReplyPolicy.canContinueAutomatically(updated) {
+        Task { @MainActor [weak self] in
+          guard let self, self.store.agentTask(id: updated.taskId) == updated else { return }
+          _ = self.resumeLocalNativeAction(taskId: updated.taskId, automatic: true)
+        }
+      }
+    }
+  }
+
+  private func persistTeamMemberFailure(_ error: String, member: AgentTeamMember,
+                                        spec: AgentTeamDispatchSpec, outgoing: ChatMessage) {
+    guard let session = store.agentSession(id: outgoing.conversationId),
+          !session.privateMode, !session.trackingPaused,
+          let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
+          let binding = saved.members.first(where: { $0.memberId == member.memberId }),
+          let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+            conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+            task: binding.sourceMessageId, contact: member.agentId,
+            content: error.ifBlank("Agent team member failed"), success: false,
+            now: AgentControlPlaneClock.nowMillis()) else { return }
+    if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
+  }
+
+  private func persistSynchronousTeamPrimary(member: AgentTeamMember, spec: AgentTeamDispatchSpec,
+                                             outgoing: ChatMessage) {
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    guard let session = store.agentSession(id: outgoing.conversationId),
+          !session.privateMode, !session.trackingPaused,
+          let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
+          saved.primaryMemberId == member.memberId,
+          let binding = saved.members.first(where: { $0.memberId == member.memberId }),
+          let reply = store.messages(for: outgoing.contactId).last(where: {
+            !$0.isMine && !$0.isSystem && $0.conversationId == outgoing.conversationId &&
+              $0.turnId == outgoing.turnId && $0.remoteMessageId == turn &&
+              $0.createdAt >= outgoing.createdAt && $0.deliveryStatus == .delivered
+          }),
+          let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+            conversation: outgoing.conversationId, turn: turn, task: binding.sourceMessageId,
+            contact: member.agentId, content: reply.content, success: true,
+            now: AgentControlPlaneClock.nowMillis()) else { return }
+    if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
   }
 
   private func persistTeamObservation(
@@ -6144,6 +6273,15 @@ final class MessageCoordinator: ObservableObject {
     spec: AgentTeamDispatchSpec,
     outgoing: ChatMessage
   ) {
+    if let session = store.agentSession(id: outgoing.conversationId), !session.privateMode, !session.trackingPaused,
+       let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
+       let binding = saved.members.first(where: { $0.memberId == member.memberId }),
+       let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+         conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+         task: binding.sourceMessageId, contact: member.agentId, content: text, success: true,
+         now: AgentControlPlaneClock.nowMillis()) {
+      if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
+    }
     _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
       teamId: spec.definition.teamId,
       conversationId: outgoing.conversationId,
@@ -6204,6 +6342,7 @@ final class MessageCoordinator: ObservableObject {
     task: inout AgentTaskRecord,
     executionMode: AgentTaskExecutionMode
   ) -> Bool {
+    guard !outgoing.readOnlyAnalysis else { return false }
     guard let runtime = localNativeToolRuntime else { return false }
     let request = AgentPlanRequest(
       goal: requestText,
@@ -6346,7 +6485,9 @@ final class MessageCoordinator: ObservableObject {
     let planRequest = AgentPlanRequest(
       goal: requestText,
       screen: currentAgentScreenContext,
-      nativeTools: runtime.registry.descriptors(),
+      nativeTools: runtime.registry.descriptors().filter {
+        !outgoing.readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0)
+      },
       responseLanguage: store.languagePolicy.responseLanguage,
       executionMode: executionMode,
       completionRequirements: completionRequirements
@@ -6548,6 +6689,18 @@ final class MessageCoordinator: ObservableObject {
     return String(([heading] + lines).joined(separator: "\n").prefix(3_000))
   }
 
+  private func rejectReadOnlyAnalysisAction(_ action: AgentAction, outgoing: ChatMessage,
+                                            task: inout AgentTaskRecord) -> Bool {
+    guard outgoing.readOnlyAnalysis else { return false }
+    let descriptor = action.kind == .callNativeTool
+      ? localNativeToolRuntime?.registry.lookup(action.parameters["tool_id"] ?? action.target)?.descriptor : nil
+    guard !AgentScreenAnalysisToolPolicy.allows(action, descriptor: descriptor) else { return false }
+    markLocalNativeActionBlocked(action: action, outgoing: outgoing, task: &task,
+      reason: localizedReply("galaxyssi.screen_assistant.read_only",
+        fallback: "Screen analysis is read-only and cannot execute this action."))
+    return true
+  }
+
   private func applyLocalNativeActions(
     actions: [AgentAction],
     outgoing: ChatMessage,
@@ -6561,6 +6714,9 @@ final class MessageCoordinator: ObservableObject {
       $0.kind == .callNativeTool || $0.kind == .callConnector
     }
     guard !nativeActions.isEmpty else { return false }
+    for action in nativeActions {
+      if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
+    }
     if var plan {
       let versionedById = Dictionary(versionedActions.map { ($0.id, $0) }) { _, latest in latest }
       plan.actions = plan.actions.map {
@@ -6641,6 +6797,9 @@ final class MessageCoordinator: ObservableObject {
           task.phase == .executing,
           let runtime = localNativeToolRuntime else {
       return
+    }
+    for action in actions {
+      if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return }
     }
     let selectedIds = Set(actions.map(\.id))
     task.pendingActions.removeAll { selectedIds.contains($0.id) }
@@ -6963,6 +7122,7 @@ final class MessageCoordinator: ObservableObject {
       task.pendingActions = [action]
     }
     task.pendingAction = action
+    if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
     task.risk = action.risk
     if action.risk == .blocked {
       markLocalNativeActionBlocked(
@@ -7049,6 +7209,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
+    if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
     guard let runtime = localNativeToolRuntime else { return false }
     let screen = currentAgentScreenContext
     let rollbackAction = AgentExecutionContinuity
@@ -7968,6 +8129,16 @@ final class MessageCoordinator: ObservableObject {
     modelDetail: String,
     displayContactId: String
   ) async throws {
+    var scopedTurns = turns
+    if outgoing.readOnlyAnalysis {
+      guard let index = turns.firstIndex(where: { $0.id == outgoing.id && $0.isMine &&
+        $0.conversationId == outgoing.conversationId && $0.turnId == outgoing.turnId }) else {
+        throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.screen_assistant.original_request_missing",
+          fallback: "The original read-only analysis request is unavailable."))
+      }
+      scopedTurns = Array(turns.prefix(through: index))
+      scopedTurns[index].readOnlyAnalysis = true
+    }
     let requestId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let destinationId = displayContactId.ifBlank(contact.id)
     var accumulated = ""
@@ -7977,7 +8148,7 @@ final class MessageCoordinator: ObservableObject {
     for try await event in cloudStreamEngine.streamConversation(
       contact: contact,
       store: store,
-      turns: turns,
+      turns: scopedTurns,
       images: images,
       requestId: requestId
     ) {
@@ -8891,6 +9062,7 @@ final class MessageCoordinator: ObservableObject {
         payload["attachments"] = attachmentDescriptors
       }
     }
+    outgoing.requestKind.apply(to: &payload)
     if payload["task_budget"] != nil {
       let estimatedBytes = Int64((try? GalaxySSILinkProtocol.jsonData(payload).count) ?? 0)
       let taskBudgetUsage = AgentTaskBudgetUsage(
@@ -10330,6 +10502,17 @@ final class MessageCoordinator: ObservableObject {
         .ifBlank(appPayload.string("source_message_id"))
         .ifBlank(appPayload.string("message_id"))
     )
+    if appPayload.string("type") == "text", taskIdentityStore.matchesRegistered(payload: appPayload),
+       let session = store.agentSession(id: responseConversationId), !session.privateMode, !session.trackingPaused {
+      for saved in AgentTeamExecutionHistoryStore.shared.recent(AgentTeamExecutionHistoryStore.maxSnapshots) {
+        if let updated = AgentSavedTeamReplyPolicy.apply(to: saved,
+          source: appPayload.string("source_message_id"), conversation: responseConversationId,
+          turn: responseTurnId, task: responseTaskId, contact: contactId, content: content,
+          success: !AgentRemoteOutcomePolicy.isFailure(remoteTaskStatus), now: AgentControlPlaneClock.nowMillis()) {
+          if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
+        }
+      }
+    }
     let incoming: ChatMessage
     let streamRemoteMessageId = "agent-stream-\(appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))))"
     let remoteMessageId = appPayload.string("message_id")

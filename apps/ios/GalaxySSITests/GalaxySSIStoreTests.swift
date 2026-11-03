@@ -1,6 +1,67 @@
 import XCTest
 import SwiftUI
+import SQLite3
 @testable import GalaxySSI
+
+final class AgentConversationActivityTests: XCTestCase {
+  func testLegacyTableUpgradeCanReopenWithoutLosingConversations() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("legacy.sqlite")
+    var connection: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(url.path, &connection), SQLITE_OK)
+    XCTAssertEqual(sqlite3_exec(connection,
+      "CREATE TABLE agent_conversations (conversation_id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, pinned INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, encrypted_payload BLOB NOT NULL)",
+      nil, nil, nil), SQLITE_OK)
+    sqlite3_close(connection)
+    let secrets = InMemorySecretStore()
+    let conversation = AgentConversation(id: "legacy", title: "Legacy", createdAt: 10, updatedAt: 90,
+      latestDialogueAt: nil)
+    do {
+      let database = AgentConversationDatabase(fileURL: url, secrets: secrets)
+      XCTAssertTrue(database.upsert(conversation))
+    }
+    let reopened = AgentConversationDatabase(fileURL: url, secrets: secrets)
+    XCTAssertEqual(reopened.read("legacy"), conversation)
+    XCTAssertEqual(reopened.page(status: nil, cursor: nil).items.map(\.id), ["legacy"])
+  }
+
+  func testMetadataChangesDoNotReorderDatabasePages() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentConversationDatabase(fileURL: directory.appendingPathComponent("history.sqlite"),
+      secrets: InMemorySecretStore())
+    for index in 1...3 {
+      let conversation = AgentConversation(id: "session-\(index)", title: "Session",
+        createdAt: 10, updatedAt: Int64(index * 1000), latestDialogueAt: Int64(index * 100))
+      XCTAssertTrue(database.upsert(conversation))
+    }
+    var oldest = try XCTUnwrap(database.read("session-1"))
+    oldest.title = "Restored title"
+    oldest.updatedAt = 99_000
+    XCTAssertTrue(database.upsert(oldest))
+    let first = database.page(status: nil, cursor: nil, pageSize: 2)
+    XCTAssertEqual(first.items.map(\.id), ["session-3", "session-2"])
+    let cursor = try XCTUnwrap(first.nextCursor)
+    XCTAssertEqual(cursor.updatedAt, 200)
+    let second = database.page(status: nil, cursor: cursor, pageSize: 2)
+    XCTAssertEqual(second.items.map(\.id), ["session-1"])
+    XCTAssertFalse(second.hasMore)
+  }
+
+  func testEmptyAndLegacyConversationActivityFallbacks() throws {
+    var empty = AgentConversation(id: "empty", title: "Empty", createdAt: 100, updatedAt: 900)
+    XCTAssertEqual(empty.dialogueActivityAt, 100)
+    empty.latestDialogueAt = nil
+    let legacy = try JSONDecoder().decode(AgentConversation.self, from: JSONEncoder().encode(empty))
+    XCTAssertNil(legacy.latestDialogueAt)
+    XCTAssertEqual(legacy.dialogueActivityAt, 900)
+    empty.latestDialogueAt = 300
+    XCTAssertEqual(empty.dialogueActivityAt, 300)
+  }
+}
 
 final class TestAgentActionExecutor: AgentActionExecutor {
   var callCount = 0
@@ -1038,6 +1099,38 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertTrue(store.hasIncomingDuplicate("Reply", from: "desktop-a", remoteMessageId: "remote-delete"))
     XCTAssertFalse(store.hasIncomingDuplicate("Reply", from: "desktop-b", remoteMessageId: "remote-delete"))
     XCTAssertFalse(store.deleteMessage(original.id, contactId: "desktop-a"))
+  }
+
+  func testScreenAssistantSettingMigratesOffAndRoundTripsWithoutLosingTextScale() throws {
+    let legacy = try JSONDecoder.galaxySSI.decode(AppDisplaySettings.self,
+      from: Data(#"{"text_scale":"large"}"#.utf8))
+    XCTAssertFalse(legacy.screenAssistantEnabled)
+    XCTAssertFalse(AppDisplaySettings.default.screenAssistantEnabled)
+    let enabled = AppDisplaySettings(textScale: .extraLarge, screenAssistantEnabled: true)
+    let encoded = try JSONEncoder.galaxySSI.encode(enabled)
+    XCTAssertEqual(try JSONDecoder.galaxySSI.decode(AppDisplaySettings.self, from: encoded), enabled)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    XCTAssertEqual(object["screen_assistant_enabled"] as? Bool, true)
+  }
+
+  func testScreenAssistantTogglePersistsAcrossStoreReopenAndDoesNotSubmitMessages() throws {
+    let suite = "ScreenAssistantSettingsTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let messages = store.agentSessionMessages(store.activeAgentConversationId)
+    store.updateDisplaySettings { $0.screenAssistantEnabled = true }
+    store.updateDisplaySettings { $0.textScale = .large }
+    XCTAssertTrue(store.displaySettings.screenAssistantEnabled)
+    XCTAssertEqual(store.agentSessionMessages(store.activeAgentConversationId), messages)
+    let reopened = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    XCTAssertTrue(reopened.displaySettings.screenAssistantEnabled)
+    XCTAssertEqual(reopened.displaySettings.textScale, .large)
+    reopened.updateDisplaySettings { $0.screenAssistantEnabled = false }
+    let disabled = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    XCTAssertFalse(disabled.displaySettings.screenAssistantEnabled)
+    XCTAssertEqual(disabled.displaySettings.textScale, .large)
   }
 
   func testAgentSafetySettingsDecodeAndroidPolicyAndEncodeStoredNames() throws {

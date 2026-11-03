@@ -34,6 +34,7 @@ struct GalaxySSIAgentComposerView: View {
   var onVoiceStart: () -> Void
   var onVoiceCancelled: () -> Void
   var onVoiceTranscript: (GalaxySSIVoiceTranscriptSubmission) -> Void
+  var voiceCancellationRequest: Int = 0
   var t: (String, String) -> String
 
   private var uiState: GalaxySSIAgentComposerUiState {
@@ -179,6 +180,11 @@ struct GalaxySSIAgentComposerView: View {
     .onChange(of: focusRequest) { _ in
       actionTrayPresented = false
       inputFocused = true
+    }
+    .onChange(of: voiceCancellationRequest) { _ in
+      voiceTranscriptionPending = false
+      onVoiceCancelled()
+      holdToTalk.cancelFromView()
     }
     .onChange(of: scenePhase) { phase in
       guard phase != .active,

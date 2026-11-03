@@ -1015,7 +1015,9 @@ final class GalaxySSIStore: ObservableObject {
     status: ChatDeliveryStatus = .queued,
     turnId: String = "",
     richOutputJson: String = "",
-    messageId: UUID = UUID()
+    messageId: UUID = UUID(),
+    requestKind: AgentRequestKind = .conversation,
+    readOnlyAnalysis: Bool = false
   ) -> ChatMessage {
     let conversationId = activeConversationId(for: contactId)
     let createdAt = Date()
@@ -1029,7 +1031,9 @@ final class GalaxySSIStore: ObservableObject {
       deliveryTrace: [DeliveryTraceEvent(stage: status.rawValue)],
       conversationId: conversationId,
       turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(messageId.uuidString),
-      richOutputJson: richOutputJson
+      richOutputJson: richOutputJson,
+      requestKind: requestKind,
+      readOnlyAnalysis: readOnlyAnalysis
     )
     messagesByContact[contactId, default: []].append(message)
     recordAgentConversationActivity(
@@ -1149,7 +1153,6 @@ final class GalaxySSIStore: ObservableObject {
       conversationId: resolvedConversationId
     )
     messagesByContact[contactId, default: []].append(message)
-    recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)
     save()
     return message
   }

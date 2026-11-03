@@ -48,11 +48,14 @@ internal object AgentReplySpeechPresentationPolicy {
     }
 
     fun speakableText(entry: AgentTranscriptEntry): String {
-        val blocks = AgentRichContentCodec.decode(entry.richOutputJson)
+        val blocks = AgentRichContentCodec.decode(CodexStyleResponsePolicy.filterAssistantRichOutput(entry.richOutputJson))
+            .ifEmpty { AgentRichContentCodec.fromText(entry.text) }
         ConversationScheduleCardPresentation.speechText(blocks)?.let { return it }
-        val plain = CodexStyleResponsePolicy.sanitizeAssistantText(entry.text)
-        if (plain.isNotBlank()) return plain
-        return blocks
+        // Match the displayed prose, not the raw envelope or a truncated animation program.
+        return prose(blocks).ifBlank { prose(AgentRichContentCodec.fromText(entry.text)) }
+    }
+
+    private fun prose(blocks: List<AgentRichBlock>): String = blocks
             .mapNotNull { block ->
                 when (block.type) {
                     AgentRichBlockType.TEXT,
@@ -62,10 +65,9 @@ internal object AgentReplySpeechPresentationPolicy {
                         row.getOrNull(1).orEmpty()
                     }
                     else -> null
-                }?.takeIf(String::isNotBlank)
+                }?.let(CodexStyleResponsePolicy::sanitizeAssistantText)?.takeIf(String::isNotBlank)
             }
             .joinToString("\n\n")
-    }
 
     private fun responseId(entry: AgentTranscriptEntry): String = sequenceOf(
         entry.turnId,

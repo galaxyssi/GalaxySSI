@@ -4,7 +4,7 @@ extension AgentHomeView {
   func sendAgentMessage(
     voiceAttachmentSnapshot: [GalaxySSIDraftAttachment]? = nil
   ) {
-    guard !screenAssistantStopping else { return }
+    guard !screenAssistantStopping, screenPageImportTask == nil else { return }
     coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = AgentVoiceAttachmentSubmissionPolicy.select(
@@ -48,6 +48,8 @@ extension AgentHomeView {
         to: contact,
         attachments: sensitiveAttachments,
         agentGoalOverride: agentGoal,
+        requestKind: assistantRunID == nil ? .conversation : .screenAnalysis,
+        readOnlyAnalysis: assistantRunID != nil,
         onOutgoing: { outgoing in
           guard let assistantRunID, screenAssistantRunID == assistantRunID else { return }
           screenAssistantOwnedTurns.append(outgoing)
@@ -71,7 +73,9 @@ extension AgentHomeView {
 
   func stopScreenAnalysis() {
     guard screenAssistantRunID != nil, !screenAssistantStopping else { return }
+    cancelScreenPagePDFImport()
     screenAssistantStopping = true
+    screenAssistantVoiceCancellationRequest &+= 1
     screenAssistantRunID = nil
     screenAssistantStartedAt = nil
     screenshotPickerPresented = false

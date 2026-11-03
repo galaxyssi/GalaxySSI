@@ -363,7 +363,7 @@ enum GalaxySSIConversationHubModels {
           title: agentDisplayTitle(conversation, language: LanguagePolicySettings.auto),
           subtitle: conversation.summary,
           preview: conversation.summary,
-          updatedAt: Date(timeIntervalSince1970: TimeInterval(conversation.updatedAt) / 1_000),
+          updatedAt: Date(timeIntervalSince1970: TimeInterval(conversation.dialogueActivityAt) / 1_000),
           pinned: conversation.pinned,
           archived: conversation.status == .archived,
           searchableMetadata: conversation.selectedModelOrAgent
