@@ -8,9 +8,9 @@ enum AgentPhoneRuntimePolicy {
     guard !normalized.isEmpty else { return false }
     guard !AgentCodeDiscussionPolicy.isInformational(normalized) else { return false }
 
-    let isDevelopmentTask = developmentTerms.contains { containsPolicyTerm(normalized, $0) } &&
+    let isDevelopmentTask = developmentTerms.contains { AgentCodeKeywordPolicy.contains(normalized, term: $0) } &&
       creationTerms.contains { containsPolicyTerm(normalized, $0) }
-    let isProjectReadTask = projectScopeTerms.contains { containsPolicyTerm(normalized, $0) } &&
+    let isProjectReadTask = projectScopeTerms.contains { AgentCodeKeywordPolicy.contains(normalized, term: $0) } &&
       projectReadTerms.contains { containsPolicyTerm(normalized, $0) }
     guard isDevelopmentTask || isProjectReadTask else { return false }
 
@@ -18,12 +18,12 @@ enum AgentPhoneRuntimePolicy {
       return true
     }
     if desktopTerms.contains(where: { containsPolicyTerm(normalized, $0) }) ||
-      projectScopeTerms.contains(where: { containsPolicyTerm(normalized, $0) }) {
+      projectScopeTerms.contains(where: { AgentCodeKeywordPolicy.contains(normalized, term: $0) }) {
       return false
     }
 
     let isSelfContained = selfContainedTerms.contains { containsPolicyTerm(normalized, $0) }
-    let isCodeArtifact = implicitPhoneCodeTerms.contains { containsPolicyTerm(normalized, $0) }
+    let isCodeArtifact = implicitPhoneCodeTerms.contains { AgentCodeKeywordPolicy.contains(normalized, term: $0) }
     return isSelfContained && isCodeArtifact && normalized.count <= maximumInteractiveGoalCharacters
   }
 
