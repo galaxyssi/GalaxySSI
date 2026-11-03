@@ -5,6 +5,8 @@ import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ViewConfiguration
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.widget.EditText
 import kotlin.math.abs
 
@@ -38,6 +40,16 @@ class ParagraphSelectingEditText @JvmOverloads constructor(
     attrs: AttributeSet? = null,
     defStyleAttr: Int = android.R.attr.editTextStyle
 ) : EditText(context, attrs, defStyleAttr) {
+    internal var imageContentReceiver: ComposerImageContentReceiver? = null
+
+    override fun onTextContextMenuItem(id: Int): Boolean =
+        imageContentReceiver?.paste(id) == true || super.onTextContextMenuItem(id)
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        val connection = super.onCreateInputConnection(outAttrs) ?: return null
+        return imageContentReceiver?.wrap(connection, outAttrs) ?: connection
+    }
+
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private var pendingAnchor = 0
     private var downX = 0f

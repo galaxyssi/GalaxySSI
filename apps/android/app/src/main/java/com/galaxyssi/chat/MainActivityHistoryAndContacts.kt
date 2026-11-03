@@ -291,7 +291,7 @@ internal fun MainActivity.deleteMessageAt(contactId: String, position: Int) {
     }
 }
 
-internal fun MainActivity.showMessageActions(position: Int) {
+internal fun MainActivity.showMessageActions(position: Int, selectedImage: PeerChatAttachment? = null) {
     val contact = selectedContact ?: return
     val message = currentMessages.getOrNull(position) ?: return
     val actions = PeerMessageActionPolicy.actionsFor(message)
@@ -304,6 +304,17 @@ internal fun MainActivity.showMessageActions(position: Int) {
         }.toTypedArray()) { dialog, which ->
             when (actions[which]) {
                 PeerMessageAction.COPY -> {
+                    val image = selectedImage ?: message.attachments.singleOrNull()?.takeIf {
+                        message.content.isBlank() && it.mimeType.startsWith("image/", ignoreCase = true)
+                    }
+                    if (image != null && image.mimeType.startsWith("image/", ignoreCase = true)) {
+                        ImageClipboard.copy(this) { app ->
+                            val uri = image.resolvedUri(app) ?: error("Image source is unavailable")
+                            ClipboardImageSource.fromUri(app, uri, image.name, image.mimeType)
+                        }
+                        dialog.dismiss()
+                        return@setItems
+                    }
                     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(
                         ClipData.newPlainText(

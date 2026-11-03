@@ -1190,6 +1190,7 @@
     <string name="agent_clarify_memory_content">What should I remember?</string>
     <string name="agent_clarify_automation_details">What should trigger the automation, and what should it do?</string>
     <string name="agent_attachment_rejected">Some attachments were skipped. You can add up to 10 files, 20 MB each.</string>
+    <string name="composer_clipboard_image_unavailable">Could not add the clipboard image. Copy it again or select the image file.</string>
     <string name="agent_attachment_hide_navigation">Hide navigation bar</string>
     <string name="agent_attachment_show_navigation">Show navigation bar</string>
     <string name="agent_attachment_camera_unavailable">Camera is unavailable</string>

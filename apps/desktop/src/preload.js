@@ -148,6 +148,7 @@ contextBridge.exposeInMainWorld("galaxyssi", {
   describeAttachments: (filePaths) => ipcRenderer.invoke("files:describe", filePaths),
   clipboardFilePath: (file) => webUtils.getPathForFile(file),
   stageClipboardAttachments: (items) => ipcRenderer.invoke("files:stage-clipboard", items),
+  pasteClipboardImage: () => ipcRenderer.invoke("files:paste-image"),
   releaseStagedAttachments: (filePaths) => ipcRenderer.invoke("files:release-staged", filePaths),
   openTaskArtifact: (taskId, relativePath) => ipcRenderer.invoke("task-artifact:open", taskId, relativePath),
   revealTaskWorkspace: (taskId) => ipcRenderer.invoke("task-workspace:reveal", taskId),

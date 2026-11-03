@@ -275,7 +275,8 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
         onMessageActions = { position -> showMessageActions(position) },
         onDeleteMessage = { messageId -> deleteMessageById(messageId) },
-        onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
+        onOpenAttachment = { attachment -> openPeerAttachment(attachment) },
+        onImageMessageActions = { position, attachment -> showMessageActions(position, attachment) })
     messageList.adapter = messageAdapter
     (messageList.layoutManager as? LinearLayoutManager)?.let { layout ->
         layout.stackFromEnd = ChatMessageViewportPolicy.stackFromEnd()

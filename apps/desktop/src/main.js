@@ -8,7 +8,7 @@ const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { preparePeerVoicePlayback } = require("./peer_voice_playback");
 const { transcribeComposerSpeech } = require("./composer_stt");
-const { buildTextContextMenuTemplate } = require("./text_context_menu");
+const { buildTextContextMenuTemplate, buildImageContextMenuItem } = require("./text_context_menu");
 const { createConversationUnreadIndicator } = require("./conversation_unread_indicator");
 const { WindowsTaskbarBadge } = require("./windows_taskbar_badge");
 
@@ -35,6 +35,7 @@ let mainWindow;
 const updateReminderNotification = require("./peer_reminder_notifications").createReminderNotifications({ Notification,
   getWindow: () => mainWindow, translate: (key, language) => loadLocale(String(language).startsWith("zh") ? "zh-CN" : "en")[key] || key });
 let peerContextTarget = null;
+let workspaceLocale = {};
 const windowsTaskbarBadge = process.platform === "win32" ? new WindowsTaskbarBadge() : null;
 const conversationUnreadIndicator = createConversationUnreadIndicator({ getWindow: () => mainWindow, nativeImage,
   setNativeOverlay: windowsTaskbarBadge ? (window, count) => windowsTaskbarBadge.update(window, count) : undefined });
@@ -146,11 +147,15 @@ function createWindow() {
   mainWindow.webContents.on("context-menu", (event, params) => {
     const peer = peerContextTarget;
     peerContextTarget = null;
+    const imageActions = {
+      copyImageLabel: workspaceLocale["Copy Image"] || "Copy Image",
+      copyImage: () => { if (!mainWindow.isDestroyed()) mainWindow.webContents.copyImageAt(params.x, params.y); }
+    };
     if (peer && Date.now() - peer.at < 1_000 && Math.abs(peer.x - params.x) <= 2 &&
         Math.abs(peer.y - params.y) <= 2 && !params.isEditable) {
       event.preventDefault();
       Menu.buildFromTemplate([
-        { label: peer.copyLabel, enabled: Boolean(params.selectionText || peer.copyText),
+        buildImageContextMenuItem(params, imageActions) || { label: peer.copyLabel, enabled: Boolean(params.selectionText || peer.copyText),
           click: () => clipboard.writeText(String(params.selectionText || peer.copyText)) },
         { label: peer.deleteLabel, click: async () => {
           try {
@@ -165,7 +170,7 @@ function createWindow() {
       ]).popup({ window: mainWindow });
       return;
     }
-    const template = buildTextContextMenuTemplate(params);
+    const template = buildTextContextMenuTemplate(params, imageActions);
     if (!template.length || mainWindow.isDestroyed()) return;
     event.preventDefault();
     Menu.buildFromTemplate(template).popup({ window: mainWindow });
@@ -562,6 +567,11 @@ async function runUiSmoke() {
       throw new Error(`Desktop peer image viewer did not render: ${JSON.stringify(peerImageViewerState)}`);
     }
     await captureSmokeScreenshot(peerImageViewerPath);
+    if (process.env.GALAXYSSI_CLIPBOARD_SMOKE === "1") {
+      const result = await require("./clipboard_smoke").verifyNativeClipboard(mainWindow, clipboard, nativeImage,
+        path.join(__dirname, "renderer", "galaxyssi-mark.png"), path.join(outDir, "desktop-native-image-paste.png"));
+      console.log(`[ui-smoke] clipboard ${JSON.stringify(result)}`);
+    }
     await mainWindow.webContents.executeJavaScript(`closePeerImageViewer(); newTask();`);
     const composerAttachmentState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
@@ -2839,6 +2849,15 @@ async function stageClipboardAttachments(items = []) {
   }
 }
 
+async function pasteNativeClipboardImage() {
+  const image = clipboard.readImage();
+  if (image.isEmpty()) return [];
+  const bytes = image.toPNG();
+  try {
+    return await stageClipboardAttachments([{ name: "pasted-image.png", mimeType: "image/png", bytes }]);
+  } finally { bytes.fill(0); }
+}
+
 function releaseComposerAttachments(filePaths = []) {
   const root = path.resolve(app.getPath("temp"), "GalaxySSI", "composer-attachments");
   for (const filePath of Array.isArray(filePaths) ? filePaths : []) {
@@ -3038,10 +3057,14 @@ ipcMain.handle("desktop-mcp:delete", (_event, connectionId) => deleteDesktopMcp(
 ipcMain.handle("files:choose", chooseAttachments);
 ipcMain.handle("files:describe", (_event, filePaths) => describeComposerAttachments(filePaths));
 ipcMain.handle("files:stage-clipboard", (_event, items) => stageClipboardAttachments(items));
+ipcMain.handle("files:paste-image", (event) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error("Clipboard request is not from the workspace");
+  return pasteNativeClipboardImage();
+});
 ipcMain.handle("files:release-staged", (_event, filePaths) => releaseComposerAttachments(filePaths));
 ipcMain.handle("task-artifact:open", (_event, taskId, relativePath) => openTaskArtifact(taskId, relativePath));
 ipcMain.handle("task-workspace:reveal", (_event, taskId) => revealTaskWorkspace(taskId));
-ipcMain.handle("i18n:load", (_event, language) => loadLocale(language));
+ipcMain.handle("i18n:load", (_event, language) => { workspaceLocale = loadLocale(language); return workspaceLocale; });
 ipcMain.handle("pairing:url", () => PAIRING_URL);
 ipcMain.handle("open:external", (_event, url) => shell.openExternal(url));
 ipcMain.handle("clipboard:write", (_event, text) => {

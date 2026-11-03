@@ -23,13 +23,21 @@ class ParagraphSelectionDeviceTest {
         val activity = instrumentation.startActivitySync(
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         ) as MainActivity
+        var originalDraft: AgentWindowDraft? = null
         try {
+            val deadline = SystemClock.elapsedRealtime() + 30_000L
+            while (activity.initialAgentHydrationPending || activity.conversationWindow.conversationId.isBlank()) {
+                check(SystemClock.elapsedRealtime() < deadline) { "Composer draft did not finish restoring" }
+                Thread.sleep(100)
+            }
             val text = "第一段内容\n第二段可以跨行选择\n第三段"
             instrumentation.runOnMainSync {
+                originalDraft = activity.conversationWindow.snapshot()
                 val agentInput = activity.findViewById<EditText>(R.id.agentGoalInput)
                 val messageInput = activity.findViewById<EditText>(R.id.messageInput)
                 assertTrue(agentInput is ParagraphSelectingEditText)
                 assertTrue(messageInput is ParagraphSelectingEditText)
+                agentInput.setTextClassifier(android.view.textclassifier.TextClassifier.NO_OP)
 
                 activity.enterAgentComposerTextMode()
                 agentInput.setText(text)
@@ -42,6 +50,7 @@ class ParagraphSelectionDeviceTest {
             var touchY = 0f
             instrumentation.runOnMainSync {
                 val input = activity.findViewById<EditText>(R.id.agentGoalInput)
+                assertEquals(text, input.text.toString())
                 val layout = requireNotNull(input.layout)
                 val targetOffset = 10
                 val line = layout.getLineForOffset(targetOffset)
@@ -83,7 +92,14 @@ class ParagraphSelectionDeviceTest {
                 assertEquals(15, input.selectionEnd)
             }
         } finally {
-            instrumentation.runOnMainSync { activity.finish() }
+            instrumentation.runOnMainSync {
+                originalDraft?.let { draft ->
+                    activity.agentGoalInput.setText(draft.text)
+                    activity.agentInputAttachments.clear(); activity.agentInputAttachments.addAll(draft.attachments)
+                    activity.conversationWindow.save()
+                }
+                activity.finish()
+            }
         }
     }
 

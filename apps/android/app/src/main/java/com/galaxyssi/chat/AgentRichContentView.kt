@@ -674,6 +674,9 @@ class AgentRichContentView(
                 )
                 clipToOutline = true
                 setOnClickListener { showImageFullscreen(block) }
+                setOnLongClickListener { ImageClipboard.showCopyMenu(activity, this) { app ->
+                    ClipboardImageSource.fromBlock(app, block)
+                }; true }
             }
             val loading = ProgressBar(activity).apply {
                 isIndeterminate = true
@@ -789,6 +792,9 @@ class AgentRichContentView(
                             )
                             clipToOutline = true
                             setOnClickListener { showImageFullscreen(itemBlock) }
+                            setOnLongClickListener { ImageClipboard.showCopyMenu(activity, this) { app ->
+                                ClipboardImageSource.fromBlock(app, itemBlock)
+                            }; true }
                             loadImage(itemBlock.uri, this) { success ->
                                 if (success) {
                                     applyImageThumbnailSize(
@@ -1720,6 +1726,9 @@ class AgentRichContentView(
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = displayTitle
             setBackgroundColor(Color.BLACK)
+            setOnLongClickListener { ImageClipboard.showCopyMenu(activity, this) { app ->
+                ClipboardImageSource.fromBlock(app, block)
+            }; true }
         }
         val viewport = GalaxySSIPinchZoomViewport(activity).apply {
             setBackgroundColor(Color.BLACK)
