@@ -618,7 +618,13 @@ final class AgentTeamExecutionRuntime {
       recovering = false
       lock.unlock()
     }
-    return store.snapshots().filter { !active.contains($0.supervisorRunId) && !$0.state.isTerminal }
+    let saved = store.snapshots()
+    for snapshot in saved where !active.contains(snapshot.supervisorRunId) && snapshot.state.deliverable &&
+      !snapshot.conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !snapshot.taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      _ = completionSink?.publish(snapshot)
+    }
+    return saved.filter { !active.contains($0.supervisorRunId) && !$0.state.isTerminal }
       .compactMap { store.markInterrupted(supervisorRunId: $0.supervisorRunId, nowMillis: nowMillis) }
   }
 

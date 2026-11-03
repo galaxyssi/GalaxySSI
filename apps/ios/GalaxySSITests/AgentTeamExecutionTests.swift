@@ -2,6 +2,31 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testRecoveryRepublishesSavedTerminalTeamWithoutStartingAnotherRun() {
+    let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: "saved-team", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead",
+      state: .succeeded, finalOutput: "Saved answer")
+    var unbound = snapshot
+    unbound.supervisorRunId = "unbound"
+    unbound.conversationId = ""
+    let store = SavedTeamRecoveryFixture([snapshot, unbound])
+    let responses = InMemoryAgentConnectorResponseStore()
+    let suite = "team-recovery-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let sink = AgentConnectorTeamCompletionSink(responseStore: responses,
+      historyStore: AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(), executionStore: store))
+    let runtime = AgentTeamExecutionRuntime(store: store, mailbox: InMemoryAgentTeamMailbox(), completionSink: sink)
+    XCTAssertTrue(runtime.recoverInterrupted().isEmpty)
+    XCTAssertTrue(runtime.recoverInterrupted().isEmpty)
+    XCTAssertEqual(responses.pending().count, 1)
+    XCTAssertEqual(responses.pending().first?.content, "Saved answer")
+    XCTAssertEqual(responses.pending().first?.conversationId, "conversation")
+    XCTAssertEqual(responses.pending().first?.taskId, "turn")
+    XCTAssertEqual(store.creates, 0)
+    runtime.close()
+  }
+
   func testAgentTeamProgressPolicyHidesBackgroundMembersUntilExpanded() {
     let snapshot = AgentTeamExecutionSnapshot(
       supervisorRunId: "progress-supervisor",
@@ -135,4 +160,26 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(response?.contactId, "agent-team:failed-team")
     XCTAssertEqual(response?.receivedAtMillis, 3_000)
   }
+}
+
+private final class SavedTeamRecoveryFixture: AgentTeamExecutionStore {
+  let saved: [AgentTeamExecutionSnapshot]
+  private(set) var creates = 0
+  init(_ saved: [AgentTeamExecutionSnapshot]) { self.saved = saved }
+  func create(definition: AgentTeamDefinition, request: AgentRunRequest) throws { creates += 1 }
+  func append(_ event: AgentSubagentEvent) async throws {}
+  func snapshot(supervisorRunId: String) -> AgentTeamExecutionSnapshot? {
+    saved.first { $0.supervisorRunId == supervisorRunId }
+  }
+  func snapshots() -> [AgentTeamExecutionSnapshot] { saved }
+  func markInterrupted(supervisorRunId: String, nowMillis: Int64) -> AgentTeamExecutionSnapshot? {
+    XCTFail("Terminal teams must not be interrupted")
+    return nil
+  }
+  func markNonTerminalInterrupted(nowMillis: Int64) -> [AgentTeamExecutionSnapshot] {
+    XCTFail("Recovery must inspect individual original teams")
+    return []
+  }
+  func remove(supervisorRunId: String) {}
+  func clear() {}
 }
