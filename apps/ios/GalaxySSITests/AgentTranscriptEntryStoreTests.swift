@@ -314,6 +314,57 @@ final class AgentConversationDatabaseTests: XCTestCase {
 }
 
 final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
+  func testNormalDesktopReplyDispositionRequiresExactCommittedScope() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopDisposition-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+      secrets: InMemorySecretStore())
+    var message = ChatMessage(contactId: "hermes", content: "Final answer", isMine: false,
+      conversationId: "conversation", turnId: "turn", remoteMessageId: "remote-final")
+    message.deliveryStatus = .delivered
+    XCTAssertTrue(database.upsert(message))
+    func commit(contact: String = "hermes", conversation: String = "conversation", turn: String = "turn",
+                remote: String = "remote-final") -> Bool {
+      database.commitDesktopReplyDisposition(contactId: contact, remoteMessageId: remote,
+        conversationId: conversation, turnId: turn)
+    }
+    XCTAssertFalse(commit(contact: "foreign"))
+    XCTAssertFalse(commit(conversation: "foreign"))
+    XCTAssertFalse(commit(turn: "foreign"))
+    XCTAssertFalse(commit(remote: "foreign"))
+    XCTAssertTrue(commit())
+    message.deliveryStatus = .read
+    XCTAssertTrue(database.upsert(message))
+    XCTAssertTrue(commit())
+    XCTAssertEqual(database.message(id: message.id)?.deliveryStatus, .read)
+    var partial = message
+    partial.id = UUID()
+    partial.remoteMessageId = "partial"
+    partial.deliveryStatus = .sent
+    XCTAssertTrue(database.upsert(partial))
+    XCTAssertFalse(commit(remote: "partial"))
+    XCTAssertNotNil(database.deleteMessage(id: message.id, contactId: "hermes"))
+    XCTAssertTrue(commit())
+    XCTAssertNil(database.message(id: message.id))
+    XCTAssertEqual(database.count, 1)
+  }
+
+  func testNormalDesktopReplyDispositionRejectsAmbiguousDuplicateRows() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopAmbiguousDisposition-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+      secrets: InMemorySecretStore())
+    var first = ChatMessage(contactId: "hermes", content: "Answer", isMine: false,
+      conversationId: "conversation", turnId: "turn", remoteMessageId: "duplicate")
+    first.deliveryStatus = .delivered
+    var second = first
+    second.id = UUID()
+    XCTAssertTrue(database.upsertAll([first, second]))
+    XCTAssertFalse(database.commitDesktopReplyDisposition(contactId: "hermes", remoteMessageId: "duplicate",
+      conversationId: "conversation", turnId: "turn"))
+    XCTAssertEqual(database.count, 2)
+  }
+
   func testDesktopReplySourceDiscoveryPagesAllOutgoingRowsAndScopesDeliveredTurns() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopSourcePages-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }

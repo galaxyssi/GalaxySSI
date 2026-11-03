@@ -3,6 +3,22 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testNormalDesktopReplyReceiptReadsSignedArchiveDigestWithUUIDSource() throws {
+    let source = UUID().uuidString
+    let digest = String(repeating: "a", count: 64)
+    let payload: [String: Any] = ["type": "text", "task_status": "completed", "message_id": "normal-final",
+      "client_route_id": "route", "conversation_id": "conversation", "task_id": source,
+      "turn_id": "turn", "contact_id": "agent", "source_message_id": source, "agent_id": "codex",
+      "execution_generation": 2, "result_recovery": ["sha256": digest]]
+    let receipt = try XCTUnwrap(AgentResultReceipt.fromPayload(payload, desktopId: "desktop"))
+    XCTAssertEqual(receipt.sourceMessageId, source)
+    XCTAssertEqual(receipt.resultSHA256, digest)
+    XCTAssertEqual(receipt.executionGeneration, 2)
+    var confirmation = receipt.payload
+    confirmation["type"] = "agent_task_result_receipt_confirmed"
+    XCTAssertEqual(AgentResultReceipt.confirmedPayload(confirmation, desktopId: "desktop"), receipt)
+  }
+
   func testLateStreamProbeRetainsRecoveredExecutionGeneration() throws {
     let update = try XCTUnwrap(AgentConnectorStreamUpdate(payload: ["type": "agent_task_event",
       "task_status": "running", "source_message_id": UUID().uuidString, "contact_id": "agent",
