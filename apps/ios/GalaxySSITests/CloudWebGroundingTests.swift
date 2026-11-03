@@ -302,6 +302,17 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertEqual(payload["protocol"], .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId))
     XCTAssertEqual(pack["protocol"], .string(AgentIOSWebEvidencePack.protocolId))
     XCTAssertEqual(pack["stats"]?.objectValue?["item_count"], .int(1))
+    provider.operations.removeAll()
+    for tool in ["web_cache", "web_watch"] {
+      let rejected = CloudWebGrounding.executeTool(provider: provider, name: tool,
+        arguments: [:], context: context, readOnlyAnalysis: true)
+      let rejection = try XCTUnwrap(decodeObject(rejected))
+      XCTAssertEqual(rejection["code"], .string("screen_analysis_read_only"))
+    }
+    XCTAssertTrue(provider.operations.isEmpty)
+    _ = CloudWebGrounding.executeTool(provider: provider, name: "web_search",
+      arguments: ["query": .string("GalaxySSI")], context: context, readOnlyAnalysis: true)
+    XCTAssertEqual(provider.operations, [.search])
   }
 
   func testEvidenceFallbackCollectsBoundedHttpsSources() {

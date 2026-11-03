@@ -314,6 +314,27 @@ final class AgentConversationDatabaseTests: XCTestCase {
 }
 
 final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
+  func testReadOnlyAnalysisFlagSurvivesEncryptedHistoryReopenAndLegacyDecoding() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ReadOnlyAnalysisHistory-" + UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("history.sqlite")
+    let secrets = InMemorySecretStore()
+    let message = ChatMessage(contactId: "hermes", content: "Analyze", isMine: true,
+      conversationId: "conversation", turnId: "turn", readOnlyAnalysis: true)
+    var database: GalaxySSIChatHistoryDatabase? = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    XCTAssertTrue(database?.upsert(message) ?? false)
+    database = nil
+    let reopened = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    XCTAssertEqual(reopened.message(id: message.id), message)
+    XCTAssertEqual(reopened.message(id: message.id)?.readOnlyAnalysis, true)
+    let encoded = try JSONEncoder().encode(message)
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    legacy.removeValue(forKey: "readOnlyAnalysis")
+    let restored = try JSONDecoder().decode(ChatMessage.self, from: JSONSerialization.data(withJSONObject: legacy))
+    XCTAssertFalse(restored.readOnlyAnalysis)
+  }
+
   func testEncryptedHistoryPagesWithoutDroppingMessages() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("GalaxySSIChatHistoryDatabaseTests-\(UUID().uuidString)", isDirectory: true)
