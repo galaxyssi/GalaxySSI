@@ -588,7 +588,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   }
 
   private func pumpPendingPublishes() {
-    guard connected, connection != nil else { return }
+    guard hasLiveTransport() else { return }
     pendingPacketPublishes.removeAll { pending in
       let invalid = pending.pathGate.map { !authorizes($0) } ?? false
       if invalid { finishPhysical(pending, acknowledged: false) }
@@ -899,12 +899,26 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
 
   private static func uptimeMillis() -> Int64 { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
 
+  private func hasLiveTransport() -> Bool {
+    guard connected else { return false }
+    guard let connection else {
+      recoverStalledTransport()
+      return false
+    }
+    guard case .ready = connection.state else {
+      handleTransportFailure(for: connection)
+      return false
+    }
+    return true
+  }
+
   private func scheduleConnectionMaintenance() {
     maintenanceWorkItem?.cancel()
     guard connected else { return }
     let generation = connectionGeneration
     let item = DispatchWorkItem { [weak self] in
       guard let self, self.connected, self.connectionGeneration == generation else { return }
+      guard self.hasLiveTransport() else { return }
       let now = Self.uptimeMillis()
       switch self.liveness.check(at: now) {
       case .reconnect:
@@ -1069,6 +1083,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   private func handleTransportFailure(for failedConnection: NWConnection) {
     guard connection === failedConnection else { return }
     connection = nil
+    failedConnection.cancel()
     inboundChunkAssembler.clear()
     receiveBuffer.removeAll()
     brokerAckWorkItem?.cancel()

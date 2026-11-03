@@ -2,10 +2,11 @@ import Foundation
 
 enum MqttBrokerAckTimeoutPolicy {
   static let defaultTimeoutSeconds: TimeInterval = 30
-  static let attachmentTimeoutSeconds: TimeInterval = 60
+  static let attachmentTimeoutSeconds: TimeInterval = 120
+  static let smallPacketBytes = 65_536
 
   static func timeoutSeconds(wirePayloadBytes: Int) -> TimeInterval {
-    wirePayloadBytes >= 96 * 1024 ? attachmentTimeoutSeconds : defaultTimeoutSeconds
+    wirePayloadBytes > smallPacketBytes ? attachmentTimeoutSeconds : defaultTimeoutSeconds
   }
 }
 

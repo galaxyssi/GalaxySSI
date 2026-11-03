@@ -347,6 +347,29 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     )
   }
 
+  func testBrokerAckTimeoutMatchesAndroidSmallPacketBoundary() {
+    XCTAssertEqual(MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: 65_536), 30)
+    XCTAssertEqual(MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: 65_537), 120)
+    XCTAssertEqual(MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: 96 * 1_024), 120)
+  }
+
+  func testLargePublicationHasTwoMinuteGraceWithoutExtendingOtherBroker() {
+    let largePath = MqttBrokerAckWatchdog(timeoutSeconds: 30)
+    let smallPath = MqttBrokerAckWatchdog(timeoutSeconds: 30)
+    largePath.onPublished(packetId: 1, now: 1,
+      timeoutSeconds: MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: 65_537))
+    smallPath.onPublished(packetId: 1, now: 1,
+      timeoutSeconds: MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: 65_536))
+
+    XCTAssertNil(largePath.oldestTimedOutPendingAge(now: 31))
+    XCTAssertEqual(smallPath.oldestTimedOutPendingAge(now: 31), 30)
+    XCTAssertNil(largePath.oldestTimedOutPendingAge(now: 120))
+    XCTAssertEqual(largePath.oldestTimedOutPendingAge(now: 121), 120)
+    largePath.onAcknowledged(packetId: 1)
+    XCTAssertNil(largePath.nextCheckDelay(now: 122))
+    XCTAssertEqual(smallPath.oldestTimedOutPendingAge(now: 122), 121)
+  }
+
   func testPeerSessionRecoveryRequestsAreRateLimitedPerContact() {
     let gate = GalaxySSIPeerSessionRecoveryGate()
 
