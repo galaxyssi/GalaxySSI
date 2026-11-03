@@ -2,6 +2,71 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentTaskRequirementAnalyzerTests: XCTestCase {
+  func testImageReviewPolicyPreservesUnknownAnswersAndOriginalImage() {
+    let prompt = CodexStyleResponsePolicy.promptText
+    XCTAssertTrue(prompt.contains("visible original answer, your computed answer, and your judgment"))
+    XCTAssertTrue(prompt.contains("unknown, not wrong"))
+    XCTAssertTrue(prompt.contains("Preserve the original image and legibility"))
+    XCTAssertTrue(prompt.contains("keep revisions separate"))
+  }
+
+  func testBusinessFieldNamesAndEmbeddedWordsDoNotRequestCodeExecution() {
+    let goals = [
+      "Read this sales record and calculate the total. Do not execute real operations. {\"code\":\"BIZ-001\",\"values\":[15,34,20]}",
+      "Read {'code': 'SALE-3', 'program': 'LOYALTY'} and return the identifier.",
+      "Compare barcode ABC with postcode XYZ; do not execute anything.",
+      "Read {\"code\"\n :1} and report the value.",
+      "\u{751f}\u{6210}\u{62a5}\u{8868}\u{ff0c}\u{6570}\u{636e}\u{662f}{\"\u{9879}\u{76ee}\":\"A\"}"
+    ]
+    for goal in goals {
+      let requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+      XCTAssertFalse(requirements.capabilities.contains(.code), goal)
+      XCTAssertFalse(requirements.capabilities.contains(.taskExecution), goal)
+      XCTAssertNotEqual(AgentTaskIntentClassifier.classify(goal: goal).intent, .code, goal)
+      XCTAssertFalse(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: goal), goal)
+    }
+  }
+
+  func testNegativeCodeDeliveryConstraintsDoNotStartPhoneDevelopment() {
+    let goals = [
+      "Create a simple DOCX report on this phone. Do not return code or a local path.",
+      "Generate a PPTX file, don't just give Python code.",
+      "\u{751f}\u{6210} XLSX \u{548c} PNG \u{9884}\u{89c8}\u{ff0c}\u{4e0d}\u{8981}\u{53ea}\u{8fd4}\u{56de}\u{4ee3}\u{7801}\u{3002}",
+      "\u{751f}\u{6210} DOCX\u{3002}\u{4e0d}\u{80fd}\u{53ea}\u{7ed9}\u{672c}\u{673a}\u{8def}\u{5f84}\u{3001}\u{4ee3}\u{7801}\u{6216}\u{5236}\u{4f5c}\u{65b9}\u{6cd5}\u{3002}"
+    ]
+    for goal in goals {
+      XCTAssertFalse(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.taskExecution), goal)
+      XCTAssertFalse(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.code), goal)
+      XCTAssertNotEqual(AgentTaskIntentClassifier.classify(goal: goal).intent, .code, goal)
+      XCTAssertFalse(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: goal), goal)
+    }
+  }
+
+  func testAffirmativeProgrammingBesideDataAndAfterConstraintsStillExecutes() {
+    for goal in [
+      "Write Python code to total {\"code\":\"BIZ-001\",\"values\":[15,34,20]}",
+      "Implement the parser for {\"code\":\"BIZ-001\"} in this repository.",
+      "Do not write a report; create and run Python code.",
+      "Create an Android project and run unit tests.",
+      "\u{4e0d}\u{8981}\u{8f93}\u{51fa}\u{4ee3}\u{7801}\u{3002}\u{8fd0}\u{884c}\u{4ee3}\u{7801}\u{6765}\u{9a8c}\u{8bc1}\u{7ed3}\u{679c}"
+    ] {
+      XCTAssertTrue(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.taskExecution), goal)
+      XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: goal).intent, .code, goal)
+    }
+    XCTAssertTrue(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: "Create and run a simple Python script on this phone."))
+  }
+
+  func testKeywordExclusionsDoNotHideLaterOccurrencesOrQuotedConcepts() {
+    XCTAssertFalse(AgentCodeKeywordPolicy.contains("barcode code_value postcode", term: "code"))
+    XCTAssertFalse(AgentCodeKeywordPolicy.contains("{\"code\"\n :1}", term: "code"))
+    XCTAssertTrue(AgentCodeKeywordPolicy.contains("explain 'code' to me", term: "code"))
+    XCTAssertTrue(AgentCodeKeywordPolicy.contains("{\"task\":\"write code\"}", term: "code"))
+    XCTAssertTrue(AgentCodeKeywordPolicy.contains("{\"code\":1} write code", term: "code"))
+    XCTAssertTrue(AgentCodeKeywordPolicy.contains("Do not write code\nRun code", term: "code"))
+    XCTAssertTrue(AgentCodeKeywordPolicy.contains("not only write code but also run tests", term: "code"))
+    XCTAssertFalse(AgentCodeKeywordPolicy.contains("code", term: ""))
+  }
+
   func testAgentTaskRequirementAnalyzerDetectsRestrictedChineseIdentityAndPaymentGoals() {
     let identity = AgentTaskRequirementAnalyzer.analyze(
       "\u{8bf7}\u{8bfb}\u{53d6}\u{6211}\u{7684}\u{8eab}\u{4efd}\u{8bc1}\u{5e76}\u{5b8c}\u{6210}\u{652f}\u{4ed8}"

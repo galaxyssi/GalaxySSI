@@ -24,6 +24,7 @@ enum AgentTaskIntentClassifier {
     goal: String,
     hasAttachments: Bool = false
   ) -> AgentTaskIntentClassification {
+    let codeText = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal).lowercased()
     let normalized = goal
       .lowercased()
       .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
@@ -32,7 +33,8 @@ enum AgentTaskIntentClassifier {
     var signals: [AgentTaskIntent: [String]] = [:]
 
     for rule in rules {
-      for term in rule.terms where normalized.contains(term) {
+      for term in rule.terms where rule.intent == .code
+        ? AgentCodeKeywordPolicy.contains(codeText, term: term) : normalized.contains(term) {
         scores[rule.intent, default: 0] += rule.weight
         signals[rule.intent, default: []].append(term)
       }
@@ -128,7 +130,7 @@ enum AgentTaskIntentClassifier {
       weight: 3,
       terms: [
         "build", "compile", "implement", "develop", "code", "program",
-        "fix bug", "repository", "pull request", "unit test", "apk",
+        "fix bug", "repository", "pull request", "unit test", "unit tests", "apk",
         "\u{7f16}\u{8bd1}", "\u{6784}\u{5efa}", "\u{5f00}\u{53d1}", "\u{5b9e}\u{73b0}",
         "\u{4ee3}\u{7801}", "\u{7a0b}\u{5e8f}", "\u{4fee}\u{590d} bug", "\u{9879}\u{76ee}",
         "\u{4ed3}\u{5e93}", "\u{5355}\u{5143}\u{6d4b}\u{8bd5}"

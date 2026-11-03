@@ -7,7 +7,7 @@ enum AgentTaskRequirementAnalyzer {
     let tokens = searchTokens(trustedGoal)
     // Web tools are disclosed to the selected model; the host must not infer web use from keywords.
     let live = false
-    let code = containsAny(normalized, codeTerms)
+    let code = codeTerms.contains { AgentCodeKeywordPolicy.contains(normalized, term: $0) }
     let codeExecution = code &&
       containsAny(normalized, codeExecutionTerms) &&
       !AgentCodeDiscussionPolicy.isInformational(trustedGoal)
@@ -99,7 +99,8 @@ enum AgentTaskRequirementAnalyzer {
   private static let codeTerms = [
     "code", "coding", "python", "program", "script", "debug", "repository", "compile", "build", "codex",
     "android project", "software project", "codebase", "apk", "bug", "pull request", "git repository",
-    "function", "unit test", "test case", "test scenario", "verify the program", "test the program", "implement", "api",
+    "function", "unit test", "unit tests", "test case", "test cases", "test scenario", "test scenarios",
+    "verify the program", "test the program", "implement", "api", "javascript", "typescript", "programming",
     "\u{4ee3}\u{7801}", "\u{7a0b}\u{5e8f}", "\u{811a}\u{672c}", "\u{51fd}\u{6570}", "\u{7f16}\u{7a0b}",
     "\u{5f00}\u{53d1}", "\u{5355}\u{5143}\u{6d4b}\u{8bd5}", "\u{6d4b}\u{8bd5}\u{7528}\u{4f8b}",
     "\u{6d4b}\u{8bd5}\u{573a}\u{666f}", "\u{8fd0}\u{884c}\u{9a8c}\u{8bc1}", "\u{7f16}\u{8bd1}",
