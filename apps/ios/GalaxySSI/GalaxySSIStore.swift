@@ -654,6 +654,14 @@ final class GalaxySSIStore: ObservableObject {
     AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: chatHistoryDatabase)
   }
 
+  func desktopReplySourcePage(before cursor: GalaxySSIChatHistoryCursor?) throws -> GalaxySSIChatHistoryPage {
+    try chatHistoryDatabase.desktopReplySources(before: cursor)
+  }
+
+  func deliveredDesktopReplyTurns(contactId: String, conversationId: String) throws -> Set<String> {
+    try chatHistoryDatabase.deliveredDesktopReplyTurns(contactId: contactId, conversationId: conversationId)
+  }
+
   @discardableResult
   func loadMessagePage(
     contactId: String,

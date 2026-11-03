@@ -3,6 +3,59 @@ import CoreGraphics
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDesktopReplyDiscoveryNeverGuessesForeignOrTeamSourceIdentity() {
+    let source = ChatMessage(contactId: "hermes", content: "Pending", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    var identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation",
+      taskId: source.id.uuidString, turnId: "turn")
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.eligible(source, identity: identity,
+      hasDeliveredReply: false, hasActiveTask: false))
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.eligible(source, identity: identity,
+      hasDeliveredReply: true, hasActiveTask: false))
+    XCTAssertTrue(AgentDesktopReplyDiscoveryPolicy.eligible(source, identity: identity,
+      hasDeliveredReply: true, hasActiveTask: true))
+    identity.taskId = UUID().uuidString
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.eligible(source, identity: identity,
+      hasDeliveredReply: false, hasActiveTask: true))
+    identity.taskId = source.id.uuidString
+    identity.conversationId = "foreign"
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.eligible(source, identity: identity,
+      hasDeliveredReply: false, hasActiveTask: true))
+    identity.conversationId = "conversation"
+    identity.turnId = "foreign"
+    XCTAssertFalse(AgentDesktopReplyDiscoveryPolicy.eligible(source, identity: identity,
+      hasDeliveredReply: false, hasActiveTask: true))
+  }
+
+  @MainActor
+  func testDesktopReplyDiscoveryCursorAndRetiredRequestsSurviveReopen() throws {
+    let suite = "DesktopReplyDiscoveryTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = DesktopReplyRecoveryTestJournal()
+    let secrets = InMemorySecretStore()
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    let original = recovery.discoveryProgress
+    let cursor = GalaxySSIChatHistoryCursor(createdAtMillis: 1_000, messageId: UUID().uuidString)
+    journal.rejectWrites = true
+    XCTAssertFalse(recovery.advanceDiscovery(expected: original, nextCursor: cursor, hasMore: true))
+    XCTAssertEqual(recovery.discoveryProgress, original)
+    journal.rejectWrites = false
+    XCTAssertTrue(recovery.advanceDiscovery(expected: original, nextCursor: cursor, hasMore: true))
+    XCTAssertFalse(recovery.advanceDiscovery(expected: original, nextCursor: nil, hasMore: false))
+    let binding = desktopReplyJournalBinding()
+    XCTAssertTrue(recovery.track(binding, now: 2_000))
+    XCTAssertTrue(recovery.retire(binding))
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(reopened.discoveryProgress.cursor, cursor)
+    XCTAssertFalse(reopened.discoveryProgress.completed)
+    XCTAssertTrue(reopened.track(binding, now: 3_000))
+    XCTAssertTrue(reopened.pending.isEmpty)
+    XCTAssertTrue(reopened.advanceDiscovery(expected: reopened.discoveryProgress, nextCursor: nil, hasMore: false))
+    let completed = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertTrue(completed.discoveryProgress.completed)
+  }
+
   @MainActor
   func testDesktopReplyJournalMigratesOnlyAfterCommitAndDoesNotResurrectRetiredLegacyState() throws {
     let suite = "DesktopReplyMigrationTests-\(UUID().uuidString)"

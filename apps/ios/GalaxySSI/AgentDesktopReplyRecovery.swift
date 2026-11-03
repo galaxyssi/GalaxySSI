@@ -7,6 +7,29 @@ protocol AgentDesktopReplyRecoveryPersisting: AnyObject {
   func writeDesktopReplyRecoveryState(_ data: Data) -> Bool
 }
 
+struct AgentDesktopReplyDiscoveryProgress: Codable, Equatable {
+  var cursor: GalaxySSIChatHistoryCursor? = nil
+  var completed = false
+}
+
+private struct AgentDesktopReplyRecoveryState: Codable {
+  var version = 2
+  var records: [String: AgentDesktopReplyRecoveryRecord]
+  var discovery = AgentDesktopReplyDiscoveryProgress()
+  var retiredDuringDiscovery: Set<String>? = nil
+}
+
+enum AgentDesktopReplyDiscoveryPolicy {
+  static func eligible(_ source: ChatMessage, identity: AgentTaskIdentity,
+                       hasDeliveredReply: Bool, hasActiveTask: Bool) -> Bool {
+    source.isMine && !source.isSystem && source.deliveryStatus != .failed &&
+      identity.isComplete && identity.taskId == source.id.uuidString &&
+      identity.conversationId == source.conversationId &&
+      identity.turnId == source.turnId.ifBlank(source.id.uuidString) &&
+      (!hasDeliveredReply || hasActiveTask)
+  }
+}
+
 struct AgentDesktopReplyBinding: Codable, Equatable {
   var desktopId: String
   var displayContactId: String
@@ -78,18 +101,25 @@ final class AgentDesktopReplyRecovery {
   private var records: [String: AgentDesktopReplyRecoveryRecord] = [:]
   private var queries: [String: Query] = [:]
   private var healthy = true
+  private var retiredDuringDiscovery: Set<String> = []
+  private(set) var discoveryProgress = AgentDesktopReplyDiscoveryProgress()
 
   init(defaults: UserDefaults, secrets: GalaxySSISecretStore, journal: AgentDesktopReplyRecoveryPersisting) {
     self.journal = journal
     do {
       if let data = try journal.loadDesktopReplyRecoveryState() {
-        records = try Self.decode(data)
+        let decoded = try Self.decode(data)
+        records = decoded.records
+        discoveryProgress = decoded.discovery
+        retiredDuringDiscovery = decoded.retiredDuringDiscovery ?? []
         // SQLite is authoritative after migration, including when the last pending request was retired.
         GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: Self.storageKey, secrets: secrets)
       } else if let legacy = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: Self.storageKey, secrets: secrets) {
         let decoded = try Self.decode(legacy)
         guard journal.writeDesktopReplyRecoveryState(legacy) else { healthy = false; return }
-        records = decoded
+        records = decoded.records
+        discoveryProgress = decoded.discovery
+        retiredDuringDiscovery = decoded.retiredDuringDiscovery ?? []
         GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: Self.storageKey, secrets: secrets)
       } else if defaults.data(forKey: Self.storageKey + ".encrypted.v1") != nil { healthy = false }
     } catch { healthy = false }
@@ -97,6 +127,13 @@ final class AgentDesktopReplyRecovery {
 
   var pending: [AgentDesktopReplyRecoveryRecord] {
     records.values.sorted { $0.lastProbeAt == $1.lastProbeAt ? $0.binding.key < $1.binding.key : $0.lastProbeAt < $1.lastProbeAt }
+  }
+
+  @discardableResult
+  func advanceDiscovery(expected: AgentDesktopReplyDiscoveryProgress,
+                        nextCursor: GalaxySSIChatHistoryCursor?, hasMore: Bool) -> Bool {
+    guard discoveryProgress == expected, !expected.completed, !hasMore || nextCursor != nil else { return false }
+    return save(records, discovery: AgentDesktopReplyDiscoveryProgress(cursor: nextCursor, completed: !hasMore))
   }
 
   func expectedBinding(_ response: [String: Any]) -> AgentDesktopReplyBinding? {
@@ -127,7 +164,7 @@ final class AgentDesktopReplyRecovery {
   @discardableResult
   func track(_ binding: AgentDesktopReplyBinding, now: Int64) -> Bool {
     guard healthy, binding.isValid, now > 0 else { return false }
-    if records[binding.key] != nil { return true }
+    if records[binding.key] != nil || retiredDuringDiscovery.contains(binding.key) { return true }
     var next = records
     next[binding.key] = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: now)
     return save(next)
@@ -137,7 +174,8 @@ final class AgentDesktopReplyRecovery {
   func retire(_ binding: AgentDesktopReplyBinding) -> Bool {
     var next = records
     next.removeValue(forKey: binding.key)
-    guard save(next) else { return false }
+    let retired = discoveryProgress.completed ? retiredDuringDiscovery : retiredDuringDiscovery.union([binding.key])
+    guard save(next, retired: retired) else { return false }
     queries = queries.filter { $0.value.binding != binding }
     return true
   }
@@ -195,16 +233,28 @@ final class AgentDesktopReplyRecovery {
     return number.int64Value
   }
 
-  private func save(_ next: [String: AgentDesktopReplyRecoveryRecord]) -> Bool {
-    guard healthy, let data = try? JSONEncoder().encode(next),
+  private func save(_ next: [String: AgentDesktopReplyRecoveryRecord],
+                    discovery: AgentDesktopReplyDiscoveryProgress? = nil, retired: Set<String>? = nil) -> Bool {
+    let progress = discovery ?? discoveryProgress
+    let retiredKeys = progress.completed ? [] : (retired ?? retiredDuringDiscovery)
+    let state = AgentDesktopReplyRecoveryState(records: next, discovery: progress, retiredDuringDiscovery: retiredKeys)
+    guard healthy, let data = try? JSONEncoder().encode(state),
           journal.writeDesktopReplyRecoveryState(data) else { return false }
     records = next
+    discoveryProgress = state.discovery
+    retiredDuringDiscovery = retiredKeys
     return true
   }
 
-  private static func decode(_ data: Data) throws -> [String: AgentDesktopReplyRecoveryRecord] {
-    let decoded = try JSONDecoder().decode([String: AgentDesktopReplyRecoveryRecord].self, from: data)
-    guard decoded.allSatisfy({ $0.key == $0.value.binding.key && $0.value.binding.isValid &&
+  private static func decode(_ data: Data) throws -> AgentDesktopReplyRecoveryState {
+    let decoded: AgentDesktopReplyRecoveryState
+    if let current = try? JSONDecoder().decode(AgentDesktopReplyRecoveryState.self, from: data) {
+      decoded = current
+    } else {
+      decoded = AgentDesktopReplyRecoveryState(records:
+        try JSONDecoder().decode([String: AgentDesktopReplyRecoveryRecord].self, from: data))
+    }
+    guard decoded.version == 2, decoded.records.allSatisfy({ $0.key == $0.value.binding.key && $0.value.binding.isValid &&
       $0.value.createdAt > 0 && ($0.value.resultManifest?.isValid ?? true) }) else {
       throw GalaxySSIError.invalidPayload("Invalid Desktop recovery journal")
     }

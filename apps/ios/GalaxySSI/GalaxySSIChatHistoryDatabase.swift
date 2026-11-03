@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 
-struct GalaxySSIChatHistoryCursor: Equatable {
+struct GalaxySSIChatHistoryCursor: Codable, Equatable {
   var createdAtMillis: Int64
   var messageId: String
 }
@@ -73,6 +73,65 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
       guard sqlite3_step(statement) == SQLITE_DONE, execute("COMMIT") else { return false }
       committed = true
       return true
+    }
+  }
+
+  func desktopReplySources(before cursor: GalaxySSIChatHistoryCursor?, pageSize: Int = 16) throws -> GalaxySSIChatHistoryPage {
+    try locked {
+      let limit = min(max(1, pageSize), Self.maximumPageSize)
+      let boundary = cursor == nil ? "" : " AND (created_at < ? OR (created_at = ? AND message_id < ?))"
+      guard let statement = prepare("""
+        SELECT message_id, encrypted_payload FROM chat_messages
+        WHERE is_mine = 1 AND is_system = 0\(boundary)
+        ORDER BY created_at DESC, message_id DESC LIMIT ?
+        """) else { throw MqttChunkStorageError.databaseFailure }
+      defer { sqlite3_finalize(statement) }
+      var parameter: Int32 = 1
+      if let cursor {
+        sqlite3_bind_int64(statement, 1, cursor.createdAtMillis)
+        sqlite3_bind_int64(statement, 2, cursor.createdAtMillis)
+        bind(cursor.messageId, at: 3, to: statement)
+        parameter = 4
+      }
+      sqlite3_bind_int(statement, parameter, Int32(limit + 1))
+      var rows: [ChatMessage] = []
+      while true {
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { break }
+        guard step == SQLITE_ROW, let id = sqlite3_column_text(statement, 0),
+              let message = decode(statement, id: String(cString: id), payloadColumn: 1),
+              message.isMine, !message.isSystem else { throw MqttChunkStorageError.databaseFailure }
+        rows.append(message)
+      }
+      let retained = Array(rows.prefix(limit))
+      let hasMore = rows.count > limit
+      let next = hasMore ? retained.last.map {
+        GalaxySSIChatHistoryCursor(createdAtMillis: Self.millis($0.createdAt), messageId: $0.id.uuidString)
+      } : nil
+      return GalaxySSIChatHistoryPage(messages: retained, nextCursor: next, hasMore: hasMore)
+    }
+  }
+
+  func deliveredDesktopReplyTurns(contactId: String, conversationId: String) throws -> Set<String> {
+    try locked {
+      guard let statement = prepare("""
+        SELECT message_id, encrypted_payload FROM chat_messages
+        WHERE contact_id = ? AND conversation_id = ? AND is_mine = 0 AND is_system = 0
+        """) else { throw MqttChunkStorageError.databaseFailure }
+      defer { sqlite3_finalize(statement) }
+      bind(contactId, at: 1, to: statement)
+      bind(conversationId, at: 2, to: statement)
+      var turns: Set<String> = []
+      while true {
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { break }
+        guard step == SQLITE_ROW, let id = sqlite3_column_text(statement, 0),
+              let message = decode(statement, id: String(cString: id), payloadColumn: 1),
+              message.contactId == contactId, message.conversationId == conversationId,
+              !message.isMine, !message.isSystem else { throw MqttChunkStorageError.databaseFailure }
+        if message.deliveryStatus == .delivered, !message.turnId.isBlank { turns.insert(message.turnId) }
+      }
+      return turns
     }
   }
 
@@ -492,6 +551,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
     _ = execute("CREATE TABLE IF NOT EXISTS chat_message_deletions (contact_id TEXT NOT NULL, message_id TEXT NOT NULL, remote_message_id TEXT NOT NULL, is_mine INTEGER NOT NULL, PRIMARY KEY(contact_id, message_id))")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_message_deletions_remote ON chat_message_deletions(contact_id, remote_message_id, is_mine)")
     _ = execute("CREATE TABLE IF NOT EXISTS desktop_reply_recovery (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), encrypted_payload BLOB NOT NULL)")
+    _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_outgoing_discovery ON chat_messages(created_at DESC, message_id DESC) WHERE is_mine = 1 AND is_system = 0")
   }
 
   private func encryptedPayload(_ message: ChatMessage) -> Data? {

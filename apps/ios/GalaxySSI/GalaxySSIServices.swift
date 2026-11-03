@@ -2239,7 +2239,10 @@ final class MessageCoordinator: ObservableObject {
       desktopReplyRecoverySweepInFlight = false
       if desktopReplyRecoverySweepRequested {
         desktopReplyRecoverySweepRequested = false
-        Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+        Task { @MainActor [weak self] in
+          await Task.yield()
+          await self?.sweepDesktopReplyRecovery()
+        }
       }
     }
     if desktopReplyRecoveryOwner != store.profile.identityFingerprint {
@@ -2248,6 +2251,7 @@ final class MessageCoordinator: ObservableObject {
       desktopReplyRecoveryOwner = store.profile.identityFingerprint
     }
     guard UIApplication.shared.applicationState == .active else { return }
+    if discoverLegacyDesktopReplies() { desktopReplyRecoverySweepRequested = true }
     let now = AgentControlPlaneClock.nowMillis()
     await sweepDesktopResultReceipts(now: now)
     var published = 0
@@ -2293,6 +2297,50 @@ final class MessageCoordinator: ObservableObject {
             let wire = try? linkWirePayload(payload, link: link) else { continue }
       published += 1
       _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    }
+  }
+
+  private func discoverLegacyDesktopReplies() -> Bool {
+    let progress = desktopReplyRecovery.discoveryProgress
+    guard !progress.completed else { return false }
+    do {
+      let page = try store.desktopReplySourcePage(before: progress.cursor)
+      var replyTurns: [String: [String: Set<String>]] = [:]
+      for source in page.messages where source.deliveryStatus != .failed {
+        let candidates = store.visibleContacts.compactMap { contact -> (GalaxySSIContact, AgentTaskIdentity)? in
+          guard contact.type.caseInsensitiveCompare("agent") == .orderedSame, contact.trustState == .verified,
+                contact.deliveryMode.isGalaxySSILinkFamily, !contact.connectorAgentId.isBlank,
+                let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: source.id.uuidString)
+          else { return nil }
+          return (contact, identity)
+        }
+        guard !candidates.isEmpty else { continue }
+        let turn = source.turnId.ifBlank(source.id.uuidString)
+        if replyTurns[source.contactId]?[source.conversationId] == nil {
+          replyTurns[source.contactId, default: [:]][source.conversationId] = try store.deliveredDesktopReplyTurns(
+            contactId: source.contactId, conversationId: source.conversationId)
+        }
+        let replied = replyTurns[source.contactId]?[source.conversationId]?.contains(turn) == true
+        let active = [turn, source.id.uuidString].compactMap { store.agentTask(id: $0) }.contains {
+          $0.sessionId == source.conversationId && AgentScreenAnalysisCancellationPolicy.activePhases.contains($0.phase)
+        }
+        for (contact, identity) in candidates where AgentDesktopReplyDiscoveryPolicy.eligible(source,
+          identity: identity, hasDeliveredReply: replied, hasActiveTask: active) {
+          let binding = AgentDesktopReplyBinding(desktopId: contact.desktopId, displayContactId: source.contactId,
+            sourceId: source.id, contactId: contact.id, agentId: contact.connectorAgentId, identity: identity)
+          guard binding.isValid, currentDesktopReplySource(binding) != nil else { continue }
+          let createdAt = (source.createdAt.timeIntervalSince1970 * 1_000).rounded()
+          guard createdAt.isFinite, createdAt > 0, createdAt < Double(Int64.max) else { continue }
+          guard desktopReplyRecovery.track(binding, now: Int64(createdAt)) else { return false }
+        }
+      }
+      guard desktopReplyRecovery.advanceDiscovery(expected: progress, nextCursor: page.nextCursor,
+        hasMore: page.hasMore) else { return false }
+      return page.hasMore
+    } catch {
+      lastError = localizedReply("galaxyssi.agent.desktop_discovery_failed",
+        fallback: "Pending Desktop requests could not be read from message history.")
+      return false
     }
   }
 
