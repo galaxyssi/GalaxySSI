@@ -70,15 +70,19 @@ struct AgentExecutionProfile: Codable, Equatable {
 
   static func forGoal(
     _ goal: String,
-    hasAttachments: Bool = false
+    hasAttachments: Bool = false,
+    executionMode: AgentTaskExecutionMode = .autoComplete
   ) -> AgentExecutionProfile {
-    let normalized = goal
+    let trustedGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
+    let mayDeliver = AgentTaskExecutionModePolicy.resolve(request: trustedGoal, configuredMode: executionMode).mode != .planOnly
+    let normalized = trustedGoal
       .lowercased()
       .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let install = normalized.containsAny(installTerms)
     let build = normalized.containsAny(buildTerms)
-    let artifactRequest = normalized.containsAny(artifactTerms)
+    let artifactRequest = artifactTerms.contains { AgentArtifactRequestPolicy.positiveTerm(trustedGoal, term: $0) } ||
+      AgentArtifactRequestPolicy.pdfRequested(trustedGoal)
     let research = normalized.containsAny(researchTerms)
     let intent = AgentTaskIntentClassifier.classify(
       goal: normalized,
@@ -118,9 +122,9 @@ struct AgentExecutionProfile: Codable, Equatable {
       taskKind: taskKind,
       reasoningEffort: complex.contains(taskKind) ? .medium : .low,
       noProgressTimeoutMillis: timeoutMillis,
-      requiresArtifact: artifactRequest || [.build, .install].contains(taskKind),
+      requiresArtifact: mayDeliver && (artifactRequest || [.build, .install].contains(taskKind)),
       targetPlatform: normalized.containsAny(androidTerms) ? "android" : "",
-      verifyInstallation: taskKind == .install,
+      verifyInstallation: mayDeliver && taskKind == .install,
       taskIntent: intent.intent,
       taskIntentConfidence: intent.confidence,
       taskIntentSignals: intent.matchedSignals
@@ -133,6 +137,11 @@ struct AgentExecutionProfile: Codable, Equatable {
     result += "Do not repeat an unchanged failing approach. "
     if requiresArtifact {
       result += "A single deliverable remains in its native format; package a directory or multi-file project as ZIP. "
+      result += "Office documents and their previews are separate deliverables; keep them individually accessible unless ZIP is requested. "
+      result += "When an export request also retains the original or editable format, deliver that current native source alongside the export and previews; keeping it only in the workspace is not delivery. "
+      result += "For explicit PDF-only or preview-only requests, do not attach an unrequested editable source. "
+      result += "Before finalizing, reconcile all requested formats against the actual files and final attachment links; report any missing deliverable instead of claiming complete delivery. "
+      result += "Render previews from the saved original, not by renaming extensions; text extraction alone is not visual verification. "
     }
     if verifyInstallation {
       result += "Only report installation or launch after the target runtime returns a verified execution receipt. "
@@ -169,6 +178,54 @@ struct AgentExecutionProfile: Codable, Equatable {
     "\u{5b89}\u{5353}", "\u{624b}\u{673a} app", "\u{624b}\u{673a}\u{4e0a}\u{73a9}",
     "\u{624b}\u{673a}\u{6e38}\u{620f}", "\u{5b89}\u{88c5}\u{5230}\u{624b}\u{673a}"
   ]
+}
+
+enum AgentArtifactRequestPolicy {
+  static func pdfRequested(_ text: String) -> Bool {
+    guard let expression = pdfRequest else { return false }
+    return expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).contains { match in
+      guard let range = Range(match.range, in: text) else { return false }
+      return !isNegated(String(text[..<range.lowerBound].suffix(80)))
+    }
+  }
+
+  static func positiveTerm(_ text: String, term: String) -> Bool {
+    let text = text.lowercased()
+    let term = term.lowercased()
+    guard !term.isEmpty else { return false }
+    var start = text.startIndex
+    while start < text.endIndex, let range = text.range(of: term, range: start..<text.endIndex) {
+      let before = text[..<range.lowerBound].last
+      let after = text[range.upperBound...].first
+      let embedded = (isWord(term.first) && isWord(before)) || (isWord(term.last) && isWord(after))
+      let quotedField = (before == "\"" || before == "'") && after == before &&
+        text[range.upperBound...].dropFirst().drop(while: { $0.isWhitespace }).first == ":"
+      if !embedded && !quotedField && !isNegated(String(text[..<range.lowerBound].suffix(80))) { return true }
+      start = range.upperBound
+    }
+    return false
+  }
+
+  private static func isWord(_ character: Character?) -> Bool {
+    guard let character, character.unicodeScalars.count == 1, let scalar = character.unicodeScalars.first else { return false }
+    return (97...122).contains(scalar.value) || (48...57).contains(scalar.value) || scalar.value == 95
+  }
+
+  private static func isNegated(_ prefix: String) -> Bool {
+    prefix.range(of: negativePrefix, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+
+  private static let pdfRequest = try? NSRegularExpression(pattern:
+    "(?:\\b(?:create|generate|export|produce|convert)\\b|\u{751f}\u{6210}|\u{5236}\u{4f5c}|\u{521b}\u{5efa}|\u{5bfc}\u{51fa}|\u{8f6c}\u{6362}|\u{8f6c}\u{6210})" +
+    "[^\u{3002}\u{ff01}\u{ff1f}.!?;\u{ff1b}\\n]{0,60}?(?<![a-z0-9_])pdf(?![a-z0-9_])", options: .caseInsensitive)
+  private static let negativePrefix =
+    "(?:(?:\u{4e0d}\u{8981}|\u{4e0d}\u{80fd}|\u{4e0d}\u{5fc5}|\u{65e0}\u{9700}|\u{4e0d}\u{7528}|\u{52ff})(?:\u{53ea})?" +
+    "(?:\u{7ed9}\u{51fa}|\u{63d0}\u{4f9b}|\u{8fd4}\u{56de}|\u{8f93}\u{51fa}|\u{5c55}\u{793a}|\u{663e}\u{793a}|\u{9644}\u{4e0a}|\u{5305}\u{542b}|" +
+    "\u{7ed9}|\u{5199}|\u{7f16}\u{5199}|\u{751f}\u{6210}|\u{6267}\u{884c}|\u{8fd0}\u{884c}|\u{5bfc}\u{51fa}|\u{8f6c}\u{6362})" +
+    "[^\u{3002}\u{ff01}\u{ff1f};\u{ff1b},\u{ff0c}\\n]{0,40}|" +
+    "(?:\u{4e0d}\u{8981}|\u{65e0}\u{9700}|\u{4e0d}\u{7528}|\u{4e0d}\u{9700}\u{8981})\\s*|" +
+    "\\b(?:do not|don't|never|no need to)\\s+(?:only\\s+|just\\s+)?" +
+    "(?:(?:give|return|provide|show|output|include|write|generate|run|execute|create|export|convert|produce)[^.!?;,\\n]{0,40})?)$"
 }
 
 private extension String {
