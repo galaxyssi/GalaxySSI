@@ -42,6 +42,7 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
   var generation: Int64 = 0
   var sequence: Int64 = -1
   var status = ""
+  var resultManifest: AgentDesktopResultManifest? = nil
 
   func expiryReason(now: Int64) -> String? {
     if terminalObservedAt > 0 {
@@ -93,6 +94,19 @@ final class AgentDesktopReplyRecovery {
     queries[response.string("request_id")]?.binding
   }
 
+  func record(for binding: AgentDesktopReplyBinding) -> AgentDesktopReplyRecoveryRecord? { records[binding.key] }
+
+  @discardableResult
+  func attachManifest(_ manifest: AgentDesktopResultManifest, to expected: AgentDesktopReplyRecoveryRecord) -> Bool {
+    guard manifest.isValid, var current = records[expected.binding.key],
+          current.generation == expected.generation,
+          current.resultManifest == nil || current.resultManifest == manifest else { return false }
+    current.resultManifest = manifest
+    var next = records
+    next[expected.binding.key] = current
+    return save(next)
+  }
+
   func acceptsFinal(_ payload: [String: Any], desktopId: String) -> Bool {
     guard let record = records.values.first(where: { $0.binding.desktopId == desktopId && $0.binding.matches(payload) }) else { return true }
     if record.generation == 0 { return true }
@@ -133,7 +147,7 @@ final class AgentDesktopReplyRecovery {
     queries[nonce] = Query(binding: binding, startedAt: now)
     return ["type": "agent_task_recovery_request", "request_id": nonce,
       "desktop_id": binding.desktopId, "client_route_id": binding.identity.clientRouteId,
-      "items": [binding.fields]]
+      "items": [binding.fields], "include_result_page": true]
   }
 
   func receive(_ payload: [String: Any], authenticatedDesktopId: String, now: Int64) -> AgentDesktopReplyRecoveryRecord? {
@@ -150,7 +164,7 @@ final class AgentDesktopReplyRecovery {
           let sequence = Self.integer(items[0]["status_sequence"], minimum: 0),
           generation > record.generation || (generation == record.generation && sequence >= record.sequence) else { return nil }
     if generation == record.generation, record.terminalObservedAt > 0, !Self.terminalStatuses.contains(status) { return nil }
-    if generation > record.generation { record.terminalObservedAt = 0 }
+    if generation > record.generation { record.terminalObservedAt = 0; record.resultManifest = nil }
     record.generation = generation
     record.sequence = sequence
     record.status = status
@@ -164,7 +178,7 @@ final class AgentDesktopReplyRecovery {
     return record
   }
 
-  private static func integer(_ value: Any?, minimum: Int64) -> Int64? {
+  static func integer(_ value: Any?, minimum: Int64) -> Int64? {
     guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
           number.doubleValue.isFinite, number.int64Value >= minimum,
           number.int64Value <= 9_007_199_254_740_991,

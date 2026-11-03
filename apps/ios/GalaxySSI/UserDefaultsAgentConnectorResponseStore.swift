@@ -67,7 +67,7 @@ struct AgentResultReceipt: Codable, Equatable {
   }
 
   private var isValid: Bool {
-    executionGeneration > 0 && (Int64(sourceMessageId) ?? 0) > 0 &&
+    executionGeneration > 0 && ((Int64(sourceMessageId) ?? 0) > 0 || UUID(uuidString: sourceMessageId) != nil) &&
       [desktopId, clientRouteId, conversationId, taskId, turnId, contactId, sourceMessageId, agentId]
         .allSatisfy { !$0.isBlank && $0.count <= 200 } &&
       resultSHA256.count == 64 &&
@@ -206,6 +206,15 @@ final class AgentResultReceiptJournal {
     transition(receipt.id, from: .pending, to: .confirmed, clearPayload: false)
   }
 
+  func isConfirmed(_ receipt: AgentResultReceipt) -> Bool {
+    locked {
+      guard let statement = prepare("SELECT 1 FROM result_receipts WHERE receipt_id = ? AND state = 1") else { return false }
+      defer { sqlite3_finalize(statement) }
+      bind(receipt.id, at: 1, to: statement)
+      return sqlite3_step(statement) == SQLITE_ROW
+    }
+  }
+
   @discardableResult
   func markCleaned(_ receipt: AgentResultReceipt) -> Bool {
     transition(receipt.id, from: .confirmed, to: .cleaned, clearPayload: true)
@@ -231,6 +240,11 @@ final class AgentResultReceiptJournal {
     let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? fileManager.temporaryDirectory
     return root.appendingPathComponent("GalaxySSI/AgentRecovery/result-receipts.sqlite3")
+  }
+
+  func destroyAllData() {
+    locked { _ = execute("DELETE FROM result_receipts") }
+    cipher.destroyEncryptionKey()
   }
 
   private func transition(
@@ -279,6 +293,7 @@ final class AgentResultReceiptJournal {
     sqlite3_busy_timeout(database, 5_000)
     _ = execute("PRAGMA journal_mode = WAL")
     _ = execute("PRAGMA synchronous = FULL")
+    _ = execute("PRAGMA fullfsync = ON")
     _ = execute("""
       CREATE TABLE IF NOT EXISTS result_receipts (
         receipt_id TEXT PRIMARY KEY NOT NULL,

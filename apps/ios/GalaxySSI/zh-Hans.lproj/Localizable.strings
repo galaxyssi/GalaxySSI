@@ -4861,6 +4861,7 @@
 "galaxyssi.screen_assistant.image_error" = "无法处理图片";
 "galaxyssi.screen_assistant.prompt" = "请分析这张截图，概括重要内容并给出下一步建议。";
 "galaxyssi.agent.desktop_result_unavailable" = "电脑端任务已结束，但结果未能送达。没有重新执行该任务。";
+"galaxyssi.agent.desktop_recovered_commit_failed" = "无法将恢复的电脑端结果写入消息记录，请检查本机存储后重试。";
 "galaxyssi.agent.desktop_status_unavailable" = "无法确认电脑端任务状态，请检查连接后再考虑重试。";
 "galaxyssi.screen_assistant.enable" = "悬浮屏幕助手";
 "galaxyssi.screen_assistant.enabled_ios" = "已开启，悬浮图标在 GalaxySSI 应用内显示。";

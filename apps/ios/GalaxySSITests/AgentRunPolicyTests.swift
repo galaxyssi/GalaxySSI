@@ -60,7 +60,7 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(defaults.object(forKey: AgentDesktopReplyRecovery.storageKey))
     let request = try XCTUnwrap(recovery.request(binding, online: true, now: 1_000))
     XCTAssertEqual(request["type"] as? String, "agent_task_recovery_request")
-    XCTAssertNil(request["include_result_page"])
+    XCTAssertEqual(request["include_result_page"] as? Bool, true)
     var item: [String: Any] = binding.fields
     item.merge(["status": "completed", "remote_run_id": "run", "execution_generation": 1,
       "status_sequence": 1]) { _, new in new }
