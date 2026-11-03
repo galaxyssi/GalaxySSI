@@ -811,6 +811,34 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     XCTAssertEqual(try plan.transferSteps[2].payload()["eager_chunks"] as? Bool, false)
   }
 
+  func testRecoveryAttachmentPublicationKeepsLargeTransfersReceiverDriven() throws {
+    let root = temporaryOutboundTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let requestId = String(repeating: "f", count: 32)
+    let scope = try AgentAttachmentTransferScope(contactId: "contact", desktopId: "desktop",
+      clientRouteId: try GalaxySSILinkProtocol.newRouteId(), conversationId: "conversation", taskId: "task", turnId: "turn",
+      clientMessageId: UUID().uuidString, attachmentRequestId: requestId)
+    let store = AgentOutboundAttachmentTransferStore(rootURL: root,
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore()))
+    let small = try XCTUnwrap(store.prepare(scope: scope,
+      attachments: [GalaxySSIDraftAttachment(id: "small", displayName: "small.bin", mimeType: "application/octet-stream", data: Data([1, 2, 3]))],
+      mediaProfile: AgentMediaNetworkPolicy.profile(for: .normal), preserveOriginalBytes: true).first)
+    let large = (0..<10).map { index -> AgentPreparedOutboundAttachment in
+      var attachment = small
+      attachment.attachmentId = "restored-\(index)"
+      attachment.sizeBytes = 16 * 1_024 * 1_024
+      attachment.chunkCount = 64
+      return attachment
+    }
+    let recovery = AgentAttachmentPublishOrder.initialSteps(large)
+    XCTAssertEqual(recovery.count, 10)
+    XCTAssertTrue(recovery.allSatisfy { $0.chunkIndex == nil && !$0.eagerChunks && $0.attachment.scope.attachmentRequestId == requestId })
+    let eager = AgentAttachmentPublishOrder.initialSteps([small])
+    XCTAssertEqual(eager.map(\.type), ["input_attachment_manifest", "input_attachment_chunk"])
+    XCTAssertTrue(eager.allSatisfy(\.eagerChunks))
+    XCTAssertEqual(try eager[0].payload()["attachment_request_id"] as? String, requestId)
+  }
+
   func testPeerImageTransferProgressUpdatesRichContentMetadata() throws {
     let block = AgentRichBlock(
       id: "image-1",

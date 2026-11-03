@@ -16,7 +16,7 @@ enum GalaxySSIChatHistoryError: Error, Equatable {
   case locallyDeleted
 }
 
-final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
+final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, GalaxySSILinkDeliveryPersisting {
   static let defaultPageSize = 100
   static let maximumPageSize = 500
 
@@ -36,6 +36,34 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
 
   deinit {
     if let database { sqlite3_close_v2(database) }
+  }
+
+  func loadLinkDeliveryState() throws -> Data? {
+    try locked {
+      guard let statement = prepare("SELECT encrypted_payload FROM link_delivery_state WHERE singleton = 1") else { throw MqttChunkStorageError.databaseFailure }
+      defer { sqlite3_finalize(statement) }
+      let step = sqlite3_step(statement)
+      if step == SQLITE_DONE { return nil }
+      guard step == SQLITE_ROW, let bytes = sqlite3_column_blob(statement, 0) else { throw MqttChunkStorageError.databaseFailure }
+      let count = Int(sqlite3_column_bytes(statement, 0))
+      guard count > 0 else { throw MqttChunkStorageError.databaseFailure }
+      return try cipher.decrypt(Data(bytes: bytes, count: count), expectedPurpose: "link-delivery-state-v1")
+    }
+  }
+
+  func writeLinkDeliveryState(_ data: Data) -> Bool {
+    locked {
+      guard let encrypted = try? cipher.encrypt(data, purpose: "link-delivery-state-v1"), encrypted.count <= Int(Int32.max),
+            execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard let statement = prepare("INSERT INTO link_delivery_state(singleton,encrypted_payload) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET encrypted_payload=excluded.encrypted_payload") else { return false }
+      defer { sqlite3_finalize(statement) }
+      encrypted.withUnsafeBytes { bytes in sqlite3_bind_blob(statement, 1, bytes.baseAddress, Int32(encrypted.count), Self.transient) }
+      guard sqlite3_step(statement) == SQLITE_DONE, execute("COMMIT") else { return false }
+      committed = true
+      return true
+    }
   }
 
   func loadDesktopReplyRecoveryState() throws -> Data? {
@@ -554,6 +582,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
     clear()
     locked { _ = execute("DELETE FROM chat_message_deletions") }
     locked { _ = execute("DELETE FROM desktop_reply_recovery") }
+    locked { _ = execute("DELETE FROM link_delivery_state") }
     cipher.destroyEncryptionKey()
   }
 
@@ -590,6 +619,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
     _ = execute("CREATE TABLE IF NOT EXISTS chat_message_deletions (contact_id TEXT NOT NULL, message_id TEXT NOT NULL, remote_message_id TEXT NOT NULL, is_mine INTEGER NOT NULL, PRIMARY KEY(contact_id, message_id))")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_message_deletions_remote ON chat_message_deletions(contact_id, remote_message_id, is_mine)")
     _ = execute("CREATE TABLE IF NOT EXISTS desktop_reply_recovery (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), encrypted_payload BLOB NOT NULL)")
+    _ = execute("CREATE TABLE IF NOT EXISTS link_delivery_state (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_outgoing_discovery ON chat_messages(created_at DESC, message_id DESC) WHERE is_mine = 1 AND is_system = 0")
   }
 

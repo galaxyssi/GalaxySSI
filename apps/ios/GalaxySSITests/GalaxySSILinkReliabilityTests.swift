@@ -3,6 +3,78 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testAttachmentControlQueueFailureRetainsControlAcrossReopen() throws {
+    let fixture = try ChunkFixture()
+    let suite = "attachment-control-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertTrue(store.stageAttachmentControl(messageId: "control", payload: "authenticated-private-control"))
+    let requests = ["result", "manifest", "chunk"].map { id in
+      LinkDeliveryEnqueueRequest(messageId: id, topic: "topic/up", wirePayload: "ciphertext-\(id)",
+        requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [], clientSourceMessageId: "source", contactId: "contact")
+    }
+    try fixture.execute("CREATE TRIGGER reject_control BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertFalse(store.commitAttachmentControl(requests, messageId: "control"))
+    XCTAssertTrue(try store.outboxMigrationSnapshot().isEmpty)
+    XCTAssertEqual(store.pendingIncoming().map(\.messageId), ["control"])
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertEqual(reopened.pendingIncoming().first?.payload, "authenticated-private-control")
+    XCTAssertTrue(try reopened.outboxMigrationSnapshot().isEmpty)
+    try fixture.execute("DROP TRIGGER reject_control")
+    XCTAssertTrue(reopened.commitAttachmentControl(requests, messageId: "control"))
+    let accepted = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertTrue(accepted.pendingIncoming().isEmpty)
+    XCTAssertEqual(try accepted.outboxMigrationSnapshot().map(\.messageId), ["result", "manifest", "chunk"])
+    XCTAssertEqual(accepted.stageIncoming(messageId: "control", payload: "duplicate"), .completed)
+    XCTAssertNil(try fixture.blob("SELECT encrypted_payload FROM link_delivery_state").range(of: Data("authenticated-private-control".utf8)))
+  }
+
+  func testAttachmentControlRejectsInvalidBatchAndConflictingWireIdentity() throws {
+    let fixture = try ChunkFixture()
+    let suite = "attachment-control-invalid-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    store.enqueue(messageId: "existing", topic: "topic/up", wirePayload: "original")
+    XCTAssertTrue(store.stageAttachmentControl(messageId: "control", payload: "authenticated"))
+    let conflict = LinkDeliveryEnqueueRequest(messageId: "existing", topic: "topic/up", wirePayload: "changed",
+      requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [], clientSourceMessageId: "source", contactId: "contact")
+    XCTAssertFalse(store.commitAttachmentControl([conflict], messageId: "control"))
+    XCTAssertEqual(try store.outboxMigrationSnapshot().first?.wirePayload, "original")
+    XCTAssertEqual(store.pendingIncoming().map(\.messageId), ["control"])
+    XCTAssertFalse(store.commitAttachmentControl([], messageId: "control"))
+    XCTAssertFalse(store.commitAttachmentControl([conflict, conflict], messageId: "control"))
+  }
+
+  func testLinkDeliveryMigrationCommitsBeforeDeletingLegacyAndRejectsCorruption() throws {
+    let fixture = try ChunkFixture()
+    let suite = "attachment-control-migration-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let legacy = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets)
+    legacy.enqueue(messageId: "old", topic: "topic/up", wirePayload: "old-wire")
+    let key = "galaxyssi-ios-link-delivery-v1"
+    let saved = try XCTUnwrap(defaults.data(forKey: key))
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    try fixture.execute("CREATE TRIGGER reject_migration BEFORE INSERT ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    let rejected = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertEqual(defaults.data(forKey: key), saved)
+    XCTAssertFalse(rejected.stageAttachmentControl(messageId: "new", payload: "control"))
+    try fixture.execute("DROP TRIGGER reject_migration")
+    let migrated = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertNil(defaults.data(forKey: key))
+    XCTAssertEqual(try migrated.outboxMigrationSnapshot().first?.messageId, "old")
+    defaults.set(saved, forKey: key)
+    try fixture.execute("UPDATE link_delivery_state SET encrypted_payload=X'00'")
+    let corrupt = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertFalse(corrupt.stageAttachmentControl(messageId: "new", payload: "control"))
+    XCTAssertThrowsError(try corrupt.outboxMigrationSnapshot())
+    XCTAssertEqual(defaults.data(forKey: key), saved)
+  }
+
   func testMigrationSnapshotIncludesBlockedNetworkAndFutureMessages() throws {
     let store = makeDeliveryStore()
     let future = Date(timeIntervalSince1970: 10_000)

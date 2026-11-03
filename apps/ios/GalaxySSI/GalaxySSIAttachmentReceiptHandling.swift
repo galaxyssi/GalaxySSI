@@ -139,7 +139,7 @@ final class GalaxySSITransportReceiptJournal {
 /// Handles the receipt side of the Agent attachment protocol independently
 /// from the main message and response coordinator.
 extension MessageCoordinator {
-  func handleInputAttachmentReceipt(_ payload: [String: Any], link: ServerLink?) {
+  func handleInputAttachmentReceipt(_ payload: [String: Any], link: ServerLink?, messageId: String = "") {
     let transferId = payload.string("transfer_id").lowercased()
     guard let link,
           let transfer = attachmentTransferStore.find(transferId),
@@ -178,13 +178,24 @@ extension MessageCoordinator {
       return
     }
     if payload.string("status") == "missing" {
+      var scoped = payload
+      scoped["status"] = "stored"
+      guard link.paired, transfer.matchesStoredReceipt(scoped),
+            stageAuthenticatedAttachmentControl(payload, link: link, messageId: messageId) else { return }
+      let key = "\(link.desktopId):\(messageId)"
+      guard attachmentChunkControlsInFlight.count < 8, attachmentChunkControlsInFlight.insert(key).inserted else { return }
+      let owner = store.profile.identityFingerprint
       Task { [weak self] in
         guard let self else { return }
+        defer { attachmentChunkControlsInFlight.remove(key) }
         if await blobOutgoingCoordinator.owns(transfer.transferId) {
+          guard store.profile.identityFingerprint == owner else { return }
           await blobOutgoingCoordinator.wake()
+          deliveryStore.completeIncoming(messageId: messageId)
           return
         }
-        resendMissingAttachmentChunks(payload, transfer: transfer, link: link)
+        guard store.profile.identityFingerprint == owner else { return }
+        resendMissingAttachmentChunks(payload, transfer: transfer, link: link, messageId: messageId)
       }
     }
   }
@@ -192,24 +203,29 @@ extension MessageCoordinator {
   private func resendMissingAttachmentChunks(
     _ payload: [String: Any],
     transfer: AgentPreparedOutboundAttachment,
-    link: ServerLink
+    link: ServerLink,
+    messageId: String
   ) {
     guard let requested = try? AgentAttachmentTransferProtocol.expandMissingRanges(
       payload["missing_ranges"],
       chunkCount: transfer.chunkCount
     ), !requested.isEmpty else { return }
-    for index in requested {
-      guard let chunkPayload = try? transfer.chunkPayload(index: index) else { continue }
-      try? enqueueLinkPayload(
-        chunkPayload,
-        link: link,
-        topic: link.routes.upTopic,
-        requiresValidatedNetwork: transfer.requiresValidatedNetwork,
-        clientSourceMessageId: transfer.scope.clientMessageId ?? "",
-        contactId: transfer.scope.contactId
-      )
+    guard attachmentTransferStore.find(transfer.transferId)?.sha256 == transfer.sha256,
+      store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
+      $0.routes.clientRouteId == transfer.scope.clientRouteId }) else { return }
+    do {
+      let requests = try requested.map { index -> LinkDeliveryEnqueueRequest in
+        let wire = try linkWirePayload(transfer.chunkPayload(index: index), link: link)
+        return LinkDeliveryEnqueueRequest(messageId: wire.messageId, topic: link.routes.upTopic, wirePayload: wire.wireText,
+          requiresValidatedNetwork: transfer.requiresValidatedNetwork, blockedByAttachmentTransferIds: [],
+          clientSourceMessageId: transfer.scope.clientMessageId ?? "", contactId: transfer.scope.contactId,
+          attachmentTransferId: transfer.transferId)
+      }
+      guard deliveryStore.commitAttachmentControl(requests, messageId: messageId) else { return }
+      scheduleOutboxFlush(after: 0)
+    } catch {
+      return
     }
-    scheduleOutboxFlush(after: 0)
   }
 
   private func completeStoredAttachment(
