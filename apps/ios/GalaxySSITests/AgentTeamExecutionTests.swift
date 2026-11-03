@@ -2,6 +2,91 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testObserverOwnershipHidesProgressAndKeepsFirstCommittedResult() throws {
+    let suite = "team-owner-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite3"))
+    var snapshot = durableTeamSnapshot("run")
+    let source = UUID().uuidString.lowercased()
+    snapshot.members[1].sourceMessageId = source
+    XCTAssertTrue(history.upsert(snapshot))
+    func consume(_ content: String, terminal: Bool, task: String? = nil) throws -> AgentTeamReplyDisposition {
+      try history.consumeOwnedReply(source: source, conversation: "conversation", turn: "turn", task: task ?? source,
+        contact: "review", content: content, richOutputJson: "{\"version\":1,\"blocks\":[]}",
+        terminal: terminal, success: true, now: 20)
+    }
+    XCTAssertEqual(try consume("delta", terminal: false), .observerProgress)
+    XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.members[1].status, .pending)
+    XCTAssertEqual(try consume("review result", terminal: true), .observerCommitted)
+    XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.members[0].status, .pending)
+    XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.state, .running)
+    XCTAssertEqual(try consume("replacement duplicate", terminal: true), .observerDuplicate)
+    XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.members[1].output, "review result")
+    XCTAssertEqual(try consume("foreign", terminal: true, task: "other"), .notOwned)
+    XCTAssertEqual(try history.consumeOwnedReply(source: "source-primary", conversation: "conversation", turn: "turn",
+      task: "source-primary", contact: "primary", content: "answer", richOutputJson: "", terminal: true,
+      success: true, now: 30), .primary)
+    history.remove(supervisorRunId: "run")
+    XCTAssertEqual(try consume("late", terminal: true), .retired)
+    history.clear()
+    XCTAssertEqual(try consume("late after clear", terminal: true), .retired)
+    AgentTeamExecutionHistoryStore.destroyPersistentStore(defaults: defaults, secrets: secrets, fileURL: root.appendingPathComponent("history.sqlite3"))
+    XCTAssertEqual(try consume("after full destroy", terminal: true), .notOwned)
+  }
+
+  func testObserverOwnershipRejectsAmbiguousAndForeignTaskScope() throws {
+    let suite = "team-owner-scope-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite3"))
+    let original = durableTeamSnapshot("run")
+    XCTAssertTrue(history.upsert(original))
+    for (conversation, turn, contact) in [("other", "turn", "review"), ("conversation", "other", "review"), ("conversation", "turn", "other")] {
+      XCTAssertEqual(try history.consumeOwnedReply(source: "source-review", conversation: conversation, turn: turn,
+        task: "source-review", contact: contact, content: "foreign", richOutputJson: "", terminal: true,
+        success: true, now: 20), .notOwned)
+    }
+    var duplicateOwner = original
+    duplicateOwner.supervisorRunId = "another-run"
+    XCTAssertTrue(history.upsert(duplicateOwner))
+    XCTAssertThrowsError(try history.consumeOwnedReply(source: "source-review", conversation: "conversation", turn: "turn",
+      task: "source-review", contact: "review", content: "ambiguous", richOutputJson: "", terminal: true,
+      success: true, now: 20))
+    XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.members[1].status, .pending)
+  }
+
+  func testObserverOwnershipSurvivesFinishedHistoryPruning() throws {
+    let suite = "team-owner-prune-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var old = durableTeamSnapshot("run")
+    old.state = .succeeded
+    XCTAssertTrue(history.upsert(old))
+    for index in 0..<201 {
+      var next = durableTeamSnapshot("new-\(index)")
+      next.state = .succeeded
+      next.updatedAtMillis = Int64(index + 100)
+      XCTAssertTrue(history.upsert(next))
+    }
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertNil(reopened.snapshot(supervisorRunId: "run"))
+    XCTAssertEqual(try reopened.consumeOwnedReply(source: "source-review", conversation: "conversation", turn: "turn",
+      task: "source-review", contact: "review", content: "late result", richOutputJson: "", terminal: true,
+      success: true, now: 1_000), .retired)
+  }
+
   func testTeamHistoryUpdatesLatestRosterAcrossInstancesAndPreservesRichReplies() throws {
     let suite = "team-history-atomic-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
@@ -85,8 +170,10 @@ extension GalaxySSIStoreTests {
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {
     AgentTeamExecutionSnapshot(supervisorRunId: run, teamId: "team", conversationId: "conversation",
       taskId: "turn", primaryAgentId: "primary", state: .running,
-      members: [AgentTeamMemberSnapshot(agentId: "primary", deliveryMode: .respond, sourceMessageId: "source-primary"),
-        AgentTeamMemberSnapshot(agentId: "review", deliveryMode: .observe, sourceMessageId: "source-review")],
+      members: [AgentTeamMemberSnapshot(agentId: "primary", deliveryMode: .respond,
+        sourceMessageId: run == "run" ? "source-primary" : "source-primary-\(run)"),
+        AgentTeamMemberSnapshot(agentId: "review", deliveryMode: .observe,
+          sourceMessageId: run == "run" ? "source-review" : "source-review-\(run)")],
       createdAtMillis: 1, updatedAtMillis: 1)
   }
 

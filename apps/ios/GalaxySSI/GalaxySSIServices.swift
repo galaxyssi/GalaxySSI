@@ -236,6 +236,8 @@ final class MessageCoordinator: ObservableObject {
   private var pendingArtifactDownloads: Set<String> = []
   private var pendingArtifactFetches: Set<String> = []
   private var attachmentRecoveryInFlight: Set<String> = []
+  private var volatileTeamReplyOwners: [String: AgentTeamReplyOwner] = [:]
+  private lazy var teamReplyOwnerProfile = store.profile.identityFingerprint
   private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
   private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
   private var liveConnectorMessageIds: [String: UUID] = [:]
@@ -6534,6 +6536,65 @@ final class MessageCoordinator: ObservableObject {
     reconcileSavedTeamParents()
   }
 
+  private func resetVolatileTeamReplyOwnersIfNeeded() {
+    if teamReplyOwnerProfile != store.profile.identityFingerprint {
+      volatileTeamReplyOwners.removeAll()
+      teamReplyOwnerProfile = store.profile.identityFingerprint
+    }
+  }
+
+  private func handleTeamObserverReply(_ payload: [String: Any], link: ServerLink?, messageId: String) -> Bool {
+    let partial = AgentConnectorStreamUpdate(payload: payload)
+    guard payload.string("type") == "text" || partial != nil,
+          let link, link.paired, payload.string("client_route_id") == link.routes.clientRouteId,
+          taskIdentityStore.matchesRegistered(payload: payload),
+          let contact = store.contact(id: payload.string("contact_id")), contact.trustState == .verified,
+          contact.desktopId == link.desktopId else { return false }
+    resetVolatileTeamReplyOwnersIfNeeded()
+    let source = payload.string("source_message_id").ifBlank(String(payload.int("source_message_id")))
+    guard UUID(uuidString: source) != nil else { return false }
+    let conversation = payload.string("conversation_id")
+    let turn = payload.string("turn_id")
+    let task = payload.string("task_id")
+    let status = AgentRemoteTaskStatusPolicy.normalize(payload.string("task_status"))
+    let terminal = AgentRemoteTaskStatusPolicy.isTerminal(status) || (partial == nil && status.isEmpty)
+    let session = store.agentSession(id: conversation)
+    let tracked = session.map { !$0.privateMode && !$0.trackingPaused } ?? false
+    let volatile = volatileTeamReplyOwners[source].flatMap { owner -> AgentTeamReplyOwner? in
+      owner.conversationId == conversation && owner.turnId == turn && owner.sourceMessageId == task &&
+        owner.contactId == contact.id ? owner : nil
+    }
+    let disposition: AgentTeamReplyDisposition
+    do {
+      if !tracked, volatile?.deliveryMode == .observe {
+        disposition = .observerProgress
+      } else {
+        let content = AgentRemoteOutcomePolicy.isFailure(status)
+          ? payload.string("error").ifBlank(payload.string("content")).ifBlank(payload.string("text")).ifBlank(status)
+          : payload.string("content").ifBlank(payload.string("text"))
+        disposition = try AgentTeamExecutionHistoryStore.shared.consumeOwnedReply(source: source,
+          conversation: conversation, turn: turn, task: task, contact: contact.id, content: content,
+          richOutputJson: payload.string("rich_output").ifBlank(payload.string("rich_output_json")),
+          terminal: terminal && tracked, success: !AgentRemoteOutcomePolicy.isFailure(status),
+          now: AgentControlPlaneClock.nowMillis())
+      }
+    } catch {
+      lastError = localizedReply("galaxyssi.team.reply_commit_failed", fallback: "The Agent team reply could not be saved. It will not be shown as a normal message.")
+      return true
+    }
+    switch disposition {
+    case .primary: return false
+    case .notOwned:
+      guard volatile?.deliveryMode == .observe else { return false }
+    case .observerCommitted: reconcileSavedTeamParents()
+    case .observerProgress, .observerDuplicate, .retired: break
+    }
+    if terminal { UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: source) }
+    else { UserDefaultsAgentGlobalRunSlotStore.shared.touch(sourceMessageId: source, nowMillis: AgentControlPlaneClock.nowMillis()) }
+    if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+    return true
+  }
+
   private func persistSynchronousTeamPrimary(member: AgentTeamMember, spec: AgentTeamDispatchSpec,
                                              outgoing: ChatMessage) {
     let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -9474,6 +9535,17 @@ final class MessageCoordinator: ObservableObject {
         payload["task_budget_usage"] = encodedUsage
       }
     }
+    if let teamContext {
+      resetVolatileTeamReplyOwnersIfNeeded()
+      let owner = AgentTeamReplyOwner(supervisorRunId: teamContext.supervisorRunId,
+        memberId: teamContext.member.memberId, conversationId: taskIdentity.conversationId,
+        turnId: taskIdentity.turnId, sourceMessageId: sourceMessageId, contactId: contact.id,
+        deliveryMode: teamContext.member.deliveryMode)
+      if let previous = volatileTeamReplyOwners[sourceMessageId], previous != owner {
+        throw GalaxySSIError.invalidPayload("Agent team reply source is already owned by another member")
+      }
+      volatileTeamReplyOwners[sourceMessageId] = owner
+    }
     let wire = try linkWirePayload(payload, link: link)
     if !peerChat {
       guard taskIdentityStore.register(
@@ -10686,6 +10758,7 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
+    if object.string("scheme") == "signal", handleTeamObserverReply(appPayload, link: link, messageId: messageId) { return }
     if let streamUpdate = AgentConnectorStreamUpdate(payload: appPayload) {
       applyAgentConnectorStreamUpdate(streamUpdate)
       if !messageId.isEmpty {

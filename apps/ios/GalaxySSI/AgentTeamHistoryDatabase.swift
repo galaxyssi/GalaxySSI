@@ -31,6 +31,13 @@ final class AgentTeamHistoryDatabase {
     try execute("CREATE INDEX IF NOT EXISTS team_history_recent ON team_history(namespace,updated_at,run_key)")
     try execute("CREATE INDEX IF NOT EXISTS team_history_pending ON team_history(namespace,conversation_key,finished,updated_at)")
     try execute("CREATE TABLE IF NOT EXISTS team_history_migrations(namespace TEXT PRIMARY KEY)")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS team_reply_owners (
+        namespace TEXT NOT NULL, binding_key TEXT NOT NULL, run_key TEXT NOT NULL,
+        member_key TEXT NOT NULL, encrypted_payload BLOB NOT NULL,
+        PRIMARY KEY(namespace,binding_key,run_key,member_key))
+      """)
+    try execute("CREATE TABLE IF NOT EXISTS team_reply_owner_backfill(namespace TEXT NOT NULL,conversation_key TEXT NOT NULL,PRIMARY KEY(namespace,conversation_key))")
     ready = true
   }
 
@@ -112,15 +119,96 @@ final class AgentTeamHistoryDatabase {
     bind(Self.digest(snapshot.conversationId), at: 5, to: statement)
     _ = encrypted.withUnsafeBytes { sqlite3_bind_blob(statement, 6, $0.baseAddress, Int32($0.count), Self.transient) }
     try finish(statement)
+    try recordReplyOwners(snapshot)
   }
 
-  func remove(runId: String? = nil) throws {
+  func remove(runId: String? = nil, preserveOwners: Bool = false) throws {
     let statement = try prepare("DELETE FROM team_history WHERE namespace=?" + (runId == nil ? "" : " AND run_key=?"))
     defer { sqlite3_finalize(statement) }
     bind(namespace, at: 1, to: statement)
     if let runId { bind(Self.digest(runId), at: 2, to: statement) }
     try finish(statement)
-    if runId == nil { try markInitialized() }
+    if runId == nil {
+      for table in preserveOwners ? [] : ["team_reply_owners", "team_reply_owner_backfill"] {
+        let clear = try prepare("DELETE FROM \(table) WHERE namespace=?")
+        defer { sqlite3_finalize(clear) }
+        bind(namespace, at: 1, to: clear)
+        try finish(clear)
+      }
+      try markInitialized()
+    }
+  }
+
+  func replyOwner(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyOwner? {
+    let marker = try prepare("SELECT 1 FROM team_reply_owner_backfill WHERE namespace=? AND conversation_key=?")
+    defer { sqlite3_finalize(marker) }
+    bind(namespace, at: 1, to: marker)
+    bind(Self.digest(conversation), at: 2, to: marker)
+    let status = sqlite3_step(marker)
+    if status == SQLITE_DONE {
+      for snapshot in try snapshots(conversation: conversation) { try recordReplyOwners(snapshot) }
+      let insert = try prepare("INSERT INTO team_reply_owner_backfill(namespace,conversation_key) VALUES(?,?)")
+      defer { sqlite3_finalize(insert) }
+      bind(namespace, at: 1, to: insert)
+      bind(Self.digest(conversation), at: 2, to: insert)
+      try finish(insert)
+    } else if status != SQLITE_ROW { throw Failure.unavailable }
+    let key = try replyKey(source: source, conversation: conversation, turn: turn, contact: contact)
+    let statement = try prepare("SELECT run_key,member_key,encrypted_payload FROM team_reply_owners WHERE namespace=? AND binding_key=? LIMIT 2")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(key, at: 2, to: statement)
+    let row = sqlite3_step(statement)
+    if row == SQLITE_DONE { return nil }
+    guard row == SQLITE_ROW, let run = sqlite3_column_text(statement, 0),
+          let member = sqlite3_column_text(statement, 1), let blob = sqlite3_column_blob(statement, 2) else { throw Failure.corrupt }
+    let runKey = String(cString: run)
+    let memberKey = String(cString: member)
+    let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 2)))
+    let owner = try JSONDecoder().decode(AgentTeamReplyOwner.self,
+      from: cipher.decrypt(data, purpose: ownerPurpose(key, runKey, memberKey)))
+    guard Self.digest(owner.supervisorRunId) == runKey, Self.digest(owner.memberId) == memberKey,
+          owner.sourceMessageId == source, owner.conversationId == conversation,
+          owner.turnId == turn, owner.contactId == contact, sqlite3_step(statement) == SQLITE_DONE else { throw Failure.corrupt }
+    return owner
+  }
+
+  private func recordReplyOwners(_ snapshot: AgentTeamExecutionSnapshot) throws {
+    guard !snapshot.conversationId.isBlank, !snapshot.taskId.isBlank else { return }
+    for member in snapshot.members where !member.sourceMessageId.isBlank && !member.agentId.isBlank {
+      let owner = AgentTeamReplyOwner(supervisorRunId: snapshot.supervisorRunId, memberId: member.memberId,
+        conversationId: snapshot.conversationId, turnId: snapshot.taskId, sourceMessageId: member.sourceMessageId,
+        contactId: member.agentId, deliveryMode: member.deliveryMode)
+      let key = try replyKey(source: owner.sourceMessageId, conversation: owner.conversationId, turn: owner.turnId, contact: owner.contactId)
+      let run = Self.digest(owner.supervisorRunId)
+      let memberKey = Self.digest(owner.memberId)
+      let existing = try prepare("SELECT encrypted_payload FROM team_reply_owners WHERE namespace=? AND binding_key=? AND run_key=? AND member_key=?")
+      defer { sqlite3_finalize(existing) }
+      for (index, value) in [namespace, key, run, memberKey].enumerated() { bind(value, at: Int32(index + 1), to: existing) }
+      let status = sqlite3_step(existing)
+      if status == SQLITE_ROW {
+        guard let blob = sqlite3_column_blob(existing, 0) else { throw Failure.corrupt }
+        let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(existing, 0)))
+        let prior = try JSONDecoder().decode(AgentTeamReplyOwner.self, from: cipher.decrypt(data, purpose: ownerPurpose(key, run, memberKey)))
+        guard prior == owner else { throw Failure.stale }
+        continue
+      }
+      guard status == SQLITE_DONE else { throw Failure.unavailable }
+      let encrypted = try cipher.encrypt(JSONEncoder().encode(owner), purpose: ownerPurpose(key, run, memberKey))
+      let insert = try prepare("INSERT INTO team_reply_owners(namespace,binding_key,run_key,member_key,encrypted_payload) VALUES(?,?,?,?,?)")
+      defer { sqlite3_finalize(insert) }
+      for (index, value) in [namespace, key, run, memberKey].enumerated() { bind(value, at: Int32(index + 1), to: insert) }
+      _ = encrypted.withUnsafeBytes { sqlite3_bind_blob(insert, 5, $0.baseAddress, Int32($0.count), Self.transient) }
+      try finish(insert)
+    }
+  }
+
+  private func replyKey(source: String, conversation: String, turn: String, contact: String) throws -> String {
+    let data = try JSONEncoder().encode([conversation, turn, source, contact])
+    return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+  private func ownerPurpose(_ key: String, _ run: String, _ member: String) -> String {
+    "team-reply-owner:\(namespace):\(key):\(run):\(member)"
   }
 
   func pruneFinished() throws {

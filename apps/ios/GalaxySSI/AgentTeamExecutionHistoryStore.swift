@@ -1,5 +1,19 @@
 import Foundation
 
+struct AgentTeamReplyOwner: Codable, Equatable {
+  var supervisorRunId: String
+  var memberId: String
+  var conversationId: String
+  var turnId: String
+  var sourceMessageId: String
+  var contactId: String
+  var deliveryMode: AgentDeliveryMode
+}
+
+enum AgentTeamReplyDisposition: Equatable {
+  case notOwned, primary, observerProgress, observerCommitted, observerDuplicate, retired
+}
+
 extension Notification.Name {
   static let galaxySSIAgentTeamExecutionHistoryDidUpdate = Notification.Name("galaxyssi.agentTeamExecutionHistoryDidUpdate")
 }
@@ -82,6 +96,31 @@ final class AgentTeamExecutionHistoryStore {
     return updated
   }
 
+  func consumeOwnedReply(source: String, conversation: String, turn: String, task: String,
+                         contact: String, content: String, richOutputJson: String,
+                         terminal: Bool, success: Bool, now: Int64) throws -> AgentTeamReplyDisposition {
+    guard !source.isBlank, task == source, !conversation.isBlank, !turn.isBlank, !contact.isBlank else { return .notOwned }
+    var changedRun: String?
+    let disposition = try access { database -> AgentTeamReplyDisposition in
+      guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact) else { return .notOwned }
+      guard let saved = try database.snapshots(runId: owner.supervisorRunId).first,
+            let member = saved.members.first(where: { $0.memberId == owner.memberId &&
+              $0.sourceMessageId == source && $0.agentId == contact }), saved.state != .cancelled else { return .retired }
+      if owner.deliveryMode == .respond { return .primary }
+      guard terminal else { return .observerProgress }
+      if (member.status.isTerminal && member.status != .interrupted) || saved.state.deliverable { return .observerDuplicate }
+      guard let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: source, conversation: conversation,
+        turn: turn, task: task, contact: contact, content: content, richOutputJson: richOutputJson,
+        success: success, now: now) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      try database.put(updated)
+      try database.pruneFinished()
+      changedRun = updated.supervisorRunId
+      return .observerCommitted
+    }
+    if let changedRun { notify(changedRun) }
+    return disposition
+  }
+
   func recent(_ limit: Int = AgentTeamExecutionHistoryStore.defaultRecentLimit) -> [AgentTeamExecutionSnapshot] {
     guard limit > 0, let saved = try? access({ try $0.snapshots(limit: limit) }) else { return [] }
     var combined = Dictionary(uniqueKeysWithValues: saved.map { ($0.supervisorRunId, $0) })
@@ -122,7 +161,7 @@ final class AgentTeamExecutionHistoryStore {
     defer { Self.processLock.unlock() }
     guard let database else { return }
     do {
-      try database.transaction { try database.remove() }
+      try database.transaction { try database.remove(preserveOwners: true) }
       GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: storageKey, secrets: secrets)
       executionStore.clear()
       notify(nil)
