@@ -231,13 +231,24 @@ extension AgentHomeView {
       GalaxySSIScreenAssistantBubble(
         restoreLabel: t("galaxyssi.screen_assistant.restore", "Restore screen assistant"),
         closeLabel: t("galaxyssi.screen_assistant.close", "Close screen assistant"),
-        pending: !waitingMessageIDs.isEmpty,
+        phase: screenAssistantBubblePhase,
+        statusLabel: screenAssistantBubbleStatusLabel,
         onRestore: { screenAssistantCollapsed = false },
         onClose: {
           screenAssistantCollapsed = false
           screenAssistantConversationID = ""
         }
       )
+    }
+  }
+
+  var screenAssistantBubbleStatusLabel: String {
+    switch screenAssistantBubblePhase {
+    case nil: return t("galaxyssi.screen_assistant.ready", "Ready")
+    case .completed?: return t("galaxyssi.screen_assistant.completed", "Completed")
+    case .observing?, .planning?, .executing?, .verifying?, .waitingResponse?:
+      return t("galaxyssi.screen_assistant.processing", "Processing")
+    default: return t("galaxyssi.screen_assistant.attention", "Needs attention")
     }
   }
 
@@ -281,7 +292,8 @@ struct GalaxySSIScreenAssistantBubble: View {
   @GestureState private var translation = CGSize.zero
   var restoreLabel: String
   var closeLabel: String
-  var pending: Bool
+  var phase: AgentPhase?
+  var statusLabel: String
   var onRestore: () -> Void
   var onClose: () -> Void
 
@@ -303,16 +315,22 @@ struct GalaxySSIScreenAssistantBubble: View {
             .frame(width: 19.488, height: 19.488)
         }
         .frame(width: Self.visibleDiameter, height: Self.visibleDiameter)
+        .frame(width: Self.touchDiameter, height: Self.touchDiameter)
         .overlay(alignment: .topTrailing) {
-          Circle().fill(pending ? Color.accentColor : Color.gray)
-            .frame(width: 8, height: 8)
+          if let rgb = Self.badgeRGB(for: phase) {
+            Circle().fill(Color(red: Double((rgb >> 16) & 255) / 255,
+              green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255))
+              .overlay(Circle().stroke(Color.white, lineWidth: 1))
+              .frame(width: 9.6, height: 9.6)
+              .padding(2)
+          }
         }
         .opacity(0.5)
-        .frame(width: Self.touchDiameter, height: Self.touchDiameter)
         .contentShape(Circle())
       }
       .buttonStyle(.plain)
       .accessibilityLabel(restoreLabel)
+      .accessibilityValue(statusLabel)
       .accessibilityIdentifier("ios.screen-assistant.bubble")
       .help(restoreLabel)
       .contextMenu {
@@ -334,6 +352,15 @@ struct GalaxySSIScreenAssistantBubble: View {
   static func center(x: Double, y: Double, in size: CGSize) -> CGPoint {
     clamp(CGPoint(x: (x.isFinite ? x : 0.9) * Double(size.width),
       y: (y.isFinite ? y : 0.7) * Double(size.height)), in: size)
+  }
+
+  static func badgeRGB(for phase: AgentPhase?) -> UInt32? {
+    guard let phase else { return nil }
+    switch phase {
+    case .completed: return 0x169F75
+    case .observing, .planning, .executing, .verifying, .waitingResponse: return 0xE2A430
+    case .waitingConfirmation, .paused, .blocked, .cancelled, .failed: return 0xD95353
+    }
   }
 
   static func clamp(_ point: CGPoint, in size: CGSize) -> CGPoint {

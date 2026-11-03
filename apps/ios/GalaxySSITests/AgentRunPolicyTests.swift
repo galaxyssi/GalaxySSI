@@ -7,6 +7,10 @@ extension GalaxySSIStoreTests {
   func testScreenAssistantBubbleKeepsItsTouchTargetInsideViewport() {
     XCTAssertEqual(GalaxySSIScreenAssistantBubble.visibleDiameter, 46.4, accuracy: 0.001)
     XCTAssertEqual(GalaxySSIScreenAssistantBubble.touchDiameter, 48)
+    XCTAssertNil(GalaxySSIScreenAssistantBubble.badgeRGB(for: nil))
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.badgeRGB(for: .executing), 0xE2A430)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.badgeRGB(for: .completed), 0x169F75)
+    XCTAssertEqual(GalaxySSIScreenAssistantBubble.badgeRGB(for: .failed), 0xD95353)
     let portrait = CGSize(width: 320, height: 600)
     XCTAssertEqual(GalaxySSIScreenAssistantBubble.clamp(CGPoint(x: -100, y: 1000), in: portrait),
       CGPoint(x: 24, y: 576))

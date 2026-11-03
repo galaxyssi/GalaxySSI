@@ -4831,6 +4831,10 @@
 "galaxyssi.screen_assistant.close" = "关闭屏幕助手";
 "galaxyssi.screen_assistant.collapse" = "收起屏幕助手";
 "galaxyssi.screen_assistant.restore" = "恢复屏幕助手";
+"galaxyssi.screen_assistant.ready" = "就绪";
+"galaxyssi.screen_assistant.completed" = "已完成";
+"galaxyssi.screen_assistant.processing" = "处理中";
+"galaxyssi.screen_assistant.attention" = "需要处理";
 "galaxyssi.screen_assistant.reset_crop" = "重置裁剪";
 "galaxyssi.screen_assistant.use_image" = "使用图片";
 "galaxyssi.screen_assistant.image_error" = "无法处理图片";

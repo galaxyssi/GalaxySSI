@@ -211,6 +211,17 @@ struct AgentHomeView: View {
     }?.id.uuidString
   }
 
+  var screenAssistantBubblePhase: AgentPhase? {
+    guard let startedAt = screenAssistantStartedAt,
+          let outgoing = transcriptMessages.last(where: { $0.isMine && !$0.isSystem && $0.createdAt >= startedAt }) else { return nil }
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    if let task = store.agentTask(id: turn), task.sessionId == screenAssistantConversationID { return task.phase }
+    if let reply = transcriptMessages.last(where: { !$0.isMine && !$0.isSystem && $0.turnId == outgoing.turnId }) {
+      return reply.deliveryStatus == .delivered ? .completed : (reply.deliveryStatus == .failed ? .failed : .executing)
+    }
+    return outgoing.deliveryStatus == .failed ? .failed : .waitingResponse
+  }
+
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
