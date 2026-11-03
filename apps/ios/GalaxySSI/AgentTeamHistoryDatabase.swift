@@ -1,0 +1,162 @@
+import CryptoKit
+import Foundation
+import SQLite3
+
+final class AgentTeamHistoryDatabase {
+  enum Failure: Error { case unavailable, corrupt, stale }
+  private let namespace: String
+  private let cipher: GalaxySSIAttachmentAtRestCipher
+  private var database: OpaquePointer?
+
+  init(fileURL: URL, storageKey: String, secrets: GalaxySSISecretStore) throws {
+    namespace = Self.digest(storageKey)
+    cipher = GalaxySSIAttachmentAtRestCipher(secrets: secrets, keyAccount: "agent.team.history.\(namespace).aes256.v1")
+    try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true,
+      attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+    var ready = false
+    defer { if !ready, let database { sqlite3_close_v2(database); self.database = nil } }
+    guard sqlite3_open_v2(fileURL.path, &database, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
+      throw Failure.unavailable
+    }
+    sqlite3_busy_timeout(database, 5_000)
+    try execute("PRAGMA journal_mode = WAL")
+    try execute("PRAGMA synchronous = FULL")
+    try execute("PRAGMA fullfsync = ON")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS team_history (
+        namespace TEXT NOT NULL, run_key TEXT NOT NULL, updated_at INTEGER NOT NULL,
+        finished INTEGER NOT NULL, conversation_key TEXT NOT NULL, encrypted_payload BLOB NOT NULL, PRIMARY KEY(namespace,run_key))
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS team_history_retention ON team_history(namespace,finished,updated_at,run_key)")
+    try execute("CREATE INDEX IF NOT EXISTS team_history_recent ON team_history(namespace,updated_at,run_key)")
+    try execute("CREATE INDEX IF NOT EXISTS team_history_pending ON team_history(namespace,conversation_key,finished,updated_at)")
+    try execute("CREATE TABLE IF NOT EXISTS team_history_migrations(namespace TEXT PRIMARY KEY)")
+    ready = true
+  }
+
+  deinit { if let database { sqlite3_close_v2(database) } }
+
+  func transaction<T>(_ operation: () throws -> T) throws -> T {
+    try execute("BEGIN IMMEDIATE TRANSACTION")
+    var committed = false
+    defer { if !committed { try? execute("ROLLBACK") } }
+    let result = try operation()
+    try execute("COMMIT")
+    committed = true
+    return result
+  }
+
+  func initialized() throws -> Bool {
+    let statement = try prepare("SELECT namespace FROM team_history_migrations WHERE namespace=?")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    switch sqlite3_step(statement) {
+    case SQLITE_ROW: return true
+    case SQLITE_DONE: return false
+    default: throw Failure.unavailable
+    }
+  }
+
+  func markInitialized() throws {
+    let statement = try prepare("INSERT OR IGNORE INTO team_history_migrations(namespace) VALUES(?)")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    try finish(statement)
+  }
+
+  func snapshots(runId: String? = nil, conversation: String? = nil, recoverableOnly: Bool = false, deliverableOnly: Bool = false,
+                 limit: Int? = nil) throws -> [AgentTeamExecutionSnapshot] {
+    var sql = "SELECT run_key,updated_at,finished,encrypted_payload,conversation_key FROM team_history WHERE namespace=?"
+    var values = [namespace]
+    if let runId { sql += " AND run_key=?"; values.append(Self.digest(runId)) }
+    if let conversation { sql += " AND conversation_key=?"; values.append(Self.digest(conversation)) }
+    if recoverableOnly { sql += " AND finished=0" }
+    if deliverableOnly { sql += " AND finished=1" }
+    sql += " ORDER BY updated_at DESC,run_key DESC"
+    if limit != nil { sql += " LIMIT ?" }
+    let statement = try prepare(sql)
+    defer { sqlite3_finalize(statement) }
+    for (offset, value) in values.enumerated() { bind(value, at: Int32(offset + 1), to: statement) }
+    if let limit { sqlite3_bind_int64(statement, Int32(values.count + 1), Int64(max(0, limit))) }
+    var result: [AgentTeamExecutionSnapshot] = []
+    while true {
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { return result }
+      guard status == SQLITE_ROW else { throw Failure.unavailable }
+      guard let key = sqlite3_column_text(statement, 0), let blob = sqlite3_column_blob(statement, 3),
+            let conversation = sqlite3_column_text(statement, 4) else { throw Failure.corrupt }
+      let runKey = String(cString: key)
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 3)))
+      let snapshot = try JSONDecoder().decode(AgentTeamExecutionSnapshot.self, from: cipher.decrypt(data, purpose: purpose(runKey)))
+      guard Self.digest(snapshot.supervisorRunId) == runKey,
+            snapshot.updatedAtMillis == sqlite3_column_int64(statement, 1),
+            Self.digest(snapshot.conversationId) == String(cString: conversation),
+            (snapshot.state.deliverable ? 1 : 0) == sqlite3_column_int(statement, 2) else { throw Failure.corrupt }
+      result.append(snapshot)
+    }
+  }
+
+  func put(_ snapshot: AgentTeamExecutionSnapshot) throws {
+    let key = Self.digest(snapshot.supervisorRunId)
+    let encrypted = try cipher.encrypt(JSONEncoder().encode(snapshot), purpose: purpose(key))
+    let statement = try prepare("""
+      INSERT INTO team_history(namespace,run_key,updated_at,finished,conversation_key,encrypted_payload) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(namespace,run_key) DO UPDATE SET updated_at=excluded.updated_at,
+        finished=excluded.finished,conversation_key=excluded.conversation_key,encrypted_payload=excluded.encrypted_payload
+      """)
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(key, at: 2, to: statement)
+    sqlite3_bind_int64(statement, 3, snapshot.updatedAtMillis)
+    sqlite3_bind_int(statement, 4, snapshot.state.deliverable ? 1 : 0)
+    bind(Self.digest(snapshot.conversationId), at: 5, to: statement)
+    _ = encrypted.withUnsafeBytes { sqlite3_bind_blob(statement, 6, $0.baseAddress, Int32($0.count), Self.transient) }
+    try finish(statement)
+  }
+
+  func remove(runId: String? = nil) throws {
+    let statement = try prepare("DELETE FROM team_history WHERE namespace=?" + (runId == nil ? "" : " AND run_key=?"))
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    if let runId { bind(Self.digest(runId), at: 2, to: statement) }
+    try finish(statement)
+    if runId == nil { try markInitialized() }
+  }
+
+  func pruneFinished() throws {
+    let statement = try prepare("""
+      DELETE FROM team_history WHERE namespace=? AND run_key IN
+        (SELECT run_key FROM team_history WHERE namespace=? AND finished=1
+         ORDER BY updated_at DESC,run_key DESC LIMIT -1 OFFSET 200)
+      """)
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(namespace, at: 2, to: statement)
+    try finish(statement)
+  }
+
+  private func prepare(_ sql: String) throws -> OpaquePointer {
+    guard let database else { throw Failure.unavailable }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else { throw Failure.unavailable }
+    return statement
+  }
+  private func execute(_ sql: String) throws {
+    guard let database, sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw Failure.unavailable }
+  }
+  private func finish(_ statement: OpaquePointer) throws {
+    guard sqlite3_step(statement) == SQLITE_DONE else { throw Failure.unavailable }
+  }
+  private func bind(_ value: String, at index: Int32, to statement: OpaquePointer) {
+    _ = value.withCString { sqlite3_bind_text(statement, index, $0, -1, Self.transient) }
+  }
+  private func purpose(_ key: String) -> String { "team-history:\(namespace):\(key)" }
+  private static func digest(_ value: String) -> String {
+    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+  private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+  static func defaultFileURL() -> URL {
+    let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+    return root.appendingPathComponent("GalaxySSI/AgentRecovery/team-history.sqlite3")
+  }
+}
