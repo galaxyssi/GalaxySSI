@@ -230,7 +230,9 @@ enum AgentSavedTeamReplyPolicy {
     result.members[index].errorMessage = success ? "" : String(content.prefix(AgentTeamMemberSnapshot.maxErrorCharacters))
     result.members[index].updatedAtMillis = now
     result.updatedAtMillis = max(saved.updatedAtMillis, now)
-    if result.members.allSatisfy({ $0.status.isTerminal }),
+    if result.members[index].memberId == saved.primaryMemberId && !success {
+      result.state = .failed
+    } else if result.members.allSatisfy({ $0.status.isTerminal }),
        let primary = result.members.first(where: { $0.memberId == saved.primaryMemberId }) {
       result.finalOutput = primary.output
       if primary.status == .succeeded && !primary.output.isEmpty {

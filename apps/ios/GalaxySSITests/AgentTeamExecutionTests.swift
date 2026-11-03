@@ -2,6 +2,29 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSavedTeamFailureDistinguishesObserverFromPrimary() throws {
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .running,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond, sourceMessageId: "primary"),
+        AgentTeamMemberSnapshot(agentId: "reviewer", sourceMessageId: "observer")
+      ])
+    let observerFailed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "observer",
+      conversation: "conversation", turn: "turn", task: "observer", contact: "reviewer",
+      content: "Unavailable", success: false, now: 10))
+    XCTAssertEqual(observerFailed.state, .running)
+    let primarySucceeded = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: observerFailed, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: "Answer", success: true, now: 20))
+    XCTAssertEqual(primarySucceeded.state, .completedWithFailures)
+    XCTAssertEqual(primarySucceeded.finalOutput, "Answer")
+    let primaryFailed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: "Dispatch failed", success: false, now: 10))
+    XCTAssertEqual(primaryFailed.state, .failed)
+    XCTAssertEqual(primaryFailed.members[1].status, .pending)
+  }
+
   func testSavedTeamReplyRequiresOriginalIdentityAndPreservesTerminalOutcome() throws {
     let saved = AgentTeamExecutionSnapshot(supervisorRunId: "team-run", teamId: "team",
       conversationId: "conversation", taskId: "turn", primaryAgentId: "agent", state: .running,

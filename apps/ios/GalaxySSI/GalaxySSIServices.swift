@@ -5538,6 +5538,7 @@ final class MessageCoordinator: ObservableObject {
 
     for member in ordered {
       guard let target = targetsById[member.agentId], target.status == .available else {
+        persistTeamMemberFailure("The selected Agent is unavailable", member: member, spec: spec, outgoing: outgoing)
         if member.deliveryMode == .respond {
           throw GalaxySSIError.invalidPayload("The selected primary Agent is unavailable")
         }
@@ -5653,6 +5654,8 @@ final class MessageCoordinator: ObservableObject {
         }
         if member.deliveryMode == .respond { primaryPublished = true }
       } catch {
+        if error is CancellationError { throw error }
+        persistTeamMemberFailure(error.localizedDescription, member: member, spec: spec, outgoing: outgoing)
         if member.deliveryMode == .respond {
           throw error
         }
@@ -5951,6 +5954,20 @@ final class MessageCoordinator: ObservableObject {
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
     return text
+  }
+
+  private func persistTeamMemberFailure(_ error: String, member: AgentTeamMember,
+                                        spec: AgentTeamDispatchSpec, outgoing: ChatMessage) {
+    guard let session = store.agentSession(id: outgoing.conversationId),
+          !session.privateMode, !session.trackingPaused,
+          let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
+          let binding = saved.members.first(where: { $0.memberId == member.memberId }),
+          let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+            conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+            task: binding.sourceMessageId, contact: member.agentId,
+            content: error.ifBlank("Agent team member failed"), success: false,
+            now: AgentControlPlaneClock.nowMillis()) else { return }
+    AgentTeamExecutionHistoryStore.shared.upsert(updated)
   }
 
   private func persistSynchronousTeamPrimary(member: AgentTeamMember, spec: AgentTeamDispatchSpec,
