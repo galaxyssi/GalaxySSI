@@ -1366,7 +1366,7 @@ internal fun MainActivity.submitAgentGoal(
     onTurnCreated?.invoke(turnId)
     AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)
     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
-    agentVoiceConversation?.onTurnSubmitted(voiceTraceId, turnId)
+    agentVoiceConversation?.onTurnSubmitted(voiceTraceId, turnId, displayGoal)
     AppVoiceControlBridge.bindTurn(voiceTraceId, conversation.id, turnId)
     AgentTurnMentionRegistry.put(turnId, requestedMembers)
     val preparedContext = if (initialAgentHydrationPending) {

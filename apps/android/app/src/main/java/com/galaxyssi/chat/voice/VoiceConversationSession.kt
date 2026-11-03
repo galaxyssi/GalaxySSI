@@ -16,6 +16,7 @@ class VoiceConversationSession {
     private val turns = linkedMapOf<String, Long>()
     private val turnTraces = linkedMapOf<String, String>()
     private val spokenTurns = mutableSetOf<String>()
+    private val acknowledgedTurns = mutableSetOf<String>()
     private val submittedTraces = mutableSetOf<String>()
     private var appControlTurnId = ""
     private var mediaSequence = 0L
@@ -35,6 +36,7 @@ class VoiceConversationSession {
         muted = false
         clearMediaPlayback()
         spokenTurns.clear()
+        acknowledgedTurns.clear()
         submittedTraces.clear()
         latestTurnId = ""
         latestTraceId = ""
@@ -122,6 +124,7 @@ class VoiceConversationSession {
         trim(turns)
         turnTraces.keys.retainAll(turns.keys)
         spokenTurns.retainAll(turns.keys)
+        acknowledgedTurns.retainAll(turns.keys)
     }
 
     fun acceptsTurn(conversationId: String, turnId: String): Boolean =
@@ -133,6 +136,11 @@ class VoiceConversationSession {
 
     fun claimSpeech(conversationId: String, turnId: String): Boolean =
         !muted && turnId == latestTurnId && acceptsTurn(conversationId, turnId) && spokenTurns.add(turnId)
+
+    fun claimAcknowledgement(traceId: String, turnId: String): Boolean =
+        acceptsTrace(traceId) && turnId == latestTurnId &&
+            acceptsTurn(conversationId, turnId) && turnTraces[turnId] == traceId &&
+            turnId !in spokenTurns && acknowledgedTurns.add(turnId)
 
     fun traceForTurn(turnId: String): String =
         turnTraces[turnId].orEmpty().takeIf { acceptsTurn(conversationId, turnId) }.orEmpty()

@@ -7,6 +7,16 @@ class AcousticBargeInPolicyTest {
     private val voice = VadDecision(0.95f, true, false, false, 0.1f, 5_000, -58f)
     private val silence = VadDecision(0.05f, false, false, false, 0.0001f, 3, -58f)
 
+    @Test fun referenceEchoDoesNotBecomeAnInterruptionEvenAfterPlaybackStops() {
+        val policy = AcousticBargeInPolicy()
+        repeat(30) { policy.accept(silence, 320) }
+        repeat(8) { policy.accept(voice, 320, outputPlaying = true) }
+        repeat(100) { assertFalse(policy.accept(voice, 320, outputPlaying = it < 50, playbackEcho = true).started) }
+        assertNull(policy.utteranceStartSample)
+        repeat(8) { assertFalse(policy.accept(voice, 320).started) }
+        assertTrue("Independent speech still has the original 180ms confirmation", policy.accept(voice, 320).started)
+    }
+
     @Test fun requiresActualEchoProtectionNotJustBuiltinMic() {
         assertFalse(AcousticBargeInPolicy.hasEchoProtection(PcmRecorderState(inputRoute = "built_in_mic")))
         assertTrue(AcousticBargeInPolicy.hasEchoProtection(PcmRecorderState(acousticEchoCancelerEnabled = true)))

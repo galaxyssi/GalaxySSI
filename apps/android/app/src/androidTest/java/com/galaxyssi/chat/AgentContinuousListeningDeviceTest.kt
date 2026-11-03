@@ -27,6 +27,87 @@ class AgentContinuousListeningDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private fun main(block: () -> Unit) = instrumentation.runOnMainSync(block)
 
+    @Test fun acceptedInputShowsAndSpeaksOneConfirmationThenTheActualReply() = withVoice { activity ->
+        val voice = activity.agentVoiceConversation!!
+        val trace = "input-ack-${UUID.randomUUID()}"
+        val turn = "$trace-turn"
+        val input = "查询深圳明天的天气，出门需不需要带雨伞"
+        val confirmation = activity.getString(R.string.voice_call_processing_input, input)
+        var playback = ""
+        main {
+            voice.registerTrace("voice_wakeup", trace)
+            voice.onTurnSubmitted(trace, turn, input)
+            assertEquals(confirmation, voice.panel.transcript.text.toString())
+            playback = activity.activeProgressiveSpeechSessionId
+            assertTrue(playback.isNotBlank())
+            repeat(10) { voice.onTurnSubmitted(trace, turn, input) }
+            assertEquals(playback, activity.activeProgressiveSpeechSessionId)
+        }
+        await("The configured TTS must play the input confirmation", 45_000L) { activity.voiceAssistantSpeaking }
+        await("Acknowledgement playback keeps echo-protected listening") {
+            voice.bargeIn.active && activity.voiceAudioHub().currentState().let {
+                it.phase == PcmRecorderPhase.RECORDING && it.acousticEchoCancelerEnabled
+            }
+        }
+        await("Acknowledgement must finish without becoming a new input", 45_000L) {
+            assertEquals(trace, voice.session.latestTraceId)
+            assertFalse(voice.bargeIn.collectingUtterance)
+            activity.activeProgressiveSpeechSessionId.isBlank() && !activity.voiceAssistantSpeaking
+        }
+        main {
+            assertEquals(activity.getString(R.string.voice_call_listening), voice.panel.status.text)
+            assertEquals(confirmation, voice.panel.transcript.text.toString())
+            voice.onTurnSubmitted(trace, turn, input)
+            assertTrue("Completed confirmation is not replayed", activity.activeProgressiveSpeechSessionId.isBlank())
+            assertFalse("Confirmation is not a persisted answer", activity.agentTranscriptStore.page().entries.any {
+                it.text == confirmation || it.turnId == turn
+            })
+            voice.onEntries(listOf(AgentTranscriptEntry(
+                id = "$trace-final", role = AgentTranscriptRole.ASSISTANT,
+                text = "这是测试回复。识别后的确认提示和正式回复分别播放，不会重复发送问题。",
+                timestampMillis = System.currentTimeMillis(), conversationId = voice.session.conversationId,
+                turnId = turn, dedupeKey = AgentFinalResponseIdentity.dedupeKey(turn)
+            )))
+            assertEquals("", voice.panel.transcript.text.toString())
+            assertTrue(activity.activeProgressiveSpeechSessionId.isNotBlank())
+            assertNotEquals(playback, activity.activeProgressiveSpeechSessionId)
+        }
+        await("Actual reply must still play", 45_000L) { activity.voiceAssistantSpeaking }
+        await("Actual reply ends without echo input", 60_000L) {
+            assertEquals(trace, voice.session.latestTraceId)
+            assertFalse(voice.bargeIn.collectingUtterance)
+            activity.activeProgressiveSpeechSessionId.isBlank() && !activity.voiceAssistantSpeaking
+        }
+        // SCO buffering can return the last spoken samples after MediaPlayer completes.
+        repeat(30) {
+            SystemClock.sleep(40)
+            main {
+                assertEquals("Delayed playback tail is not a new user turn", trace, voice.session.latestTraceId)
+                assertFalse(voice.bargeIn.collectingUtterance)
+            }
+        }
+        val diagnostics = com.galaxyssi.chat.voice.metrics.VoiceLatencyTelemetry.exportContentFreeDiagnostics(activity)
+        try {
+            val events = org.json.JSONObject(diagnostics.readText()).getJSONArray("events")
+            val turnEvents = (0 until events.length()).map(events::getJSONObject)
+                .filter { it.optString("trace_id") == trace }
+            for (prefix in listOf("voice_input_ack", "voice_reply")) {
+                assertTrue("$prefix really started, not just entered synthesis", turnEvents.any {
+                    it.optString("event") == "${prefix}_playback_started"
+                })
+                assertTrue("$prefix completed successfully", turnEvents.any {
+                    it.optString("event") == "${prefix}_playback_finished" &&
+                        it.getJSONObject("attributes").optString("success") == "true"
+                })
+            }
+        } finally { diagnostics.delete() }
+        main {
+            assertFalse(voice.session.muted)
+            assertEquals(activity.getString(R.string.voice_call_listening), voice.panel.status.text)
+            assertEquals("", voice.panel.transcript.text.toString())
+        }
+    }
+
     @Test fun noiseOnlyManualSendDoesNotTranscribeOrModifyTheDraft() = withVoice { activity ->
         main { activity.agentVoiceConversation!!.end() }
         await("Release voice session") { !activity.isVoiceCaptureActive() }

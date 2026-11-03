@@ -12,7 +12,9 @@ internal data class AcousticBargeInStatistics(
     val monitoredMs: Long,
     val maxRms: Float,
     val maxProbability: Float,
-    val maxCandidateMs: Long
+    val maxCandidateMs: Long,
+    val maxEchoCorrelation: Float = 0f,
+    val echoRejectedFrames: Long = 0L
 )
 
 /** AEC precedes this gate. The gate alone cannot distinguish speech from speaker echo. */
@@ -42,7 +44,7 @@ internal class AcousticBargeInPolicy(
     }
 
     @Synchronized
-    fun accept(vad: VadDecision, sampleCount: Int, outputPlaying: Boolean = false): AcousticBargeInUpdate {
+    fun accept(vad: VadDecision, sampleCount: Int, outputPlaying: Boolean = false, playbackEcho: Boolean = false): AcousticBargeInUpdate {
         if (terminal || sampleCount <= 0) return AcousticBargeInUpdate()
         val frameStart = samples
         samples += sampleCount
@@ -59,9 +61,14 @@ internal class AcousticBargeInPolicy(
         val rmsFloor = if (outputPlaying || !vad.noiseFloorDb.isFinite()) minimumRms else
             (10.0.pow(vad.noiseFloorDb.coerceIn(-90f, -20f) / 20.0) * 1.5).toFloat()
                 .coerceIn(minOf(0.001f, minimumRms), minimumRms)
-        val voice = vad.isSpeech && vad.probability >= minimumProbability && vad.rms >= rmsFloor
+        val voice = !playbackEcho && vad.isSpeech && vad.probability >= minimumProbability && vad.rms >= rmsFloor
         val startedAt = utteranceStartSample
         if (startedAt == null) {
+            if (playbackEcho) {
+                candidateSample = null
+                candidateSamples = 0L
+                candidateGapSamples = 0L
+            }
             if (milliseconds(samples) < settlingMs) return AcousticBargeInUpdate()
             if (voice) {
                 if (candidateSample == null) candidateSample = frameStart
