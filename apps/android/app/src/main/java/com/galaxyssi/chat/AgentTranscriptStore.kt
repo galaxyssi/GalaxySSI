@@ -233,6 +233,9 @@ object AgentTranscriptPresentationPolicy {
     ): Boolean = !completed && executionCancellable && taskId.isNotBlank()
 
     fun processClockStopsFor(status: AgentWorkspaceStatus): Boolean = status in setOf(
+        AgentWorkspaceStatus.BLOCKED,
+        AgentWorkspaceStatus.PAUSED,
+        AgentWorkspaceStatus.WAITING_CONFIRMATION,
         AgentWorkspaceStatus.COMPLETED,
         AgentWorkspaceStatus.FAILED,
         AgentWorkspaceStatus.CANCELLED

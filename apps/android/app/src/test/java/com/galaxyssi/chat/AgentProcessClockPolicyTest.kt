@@ -14,17 +14,30 @@ class AgentProcessClockPolicyTest {
         assertEquals(8000L, clock.elapsed(10000))
     }
 
-    @Test fun recoverableWaitsDoNotEndTheProcessClock() {
+    @Test fun inactiveWaitsFreezeTheClockWithoutChangingTaskRecoverability() {
         for (status in listOf(AgentWorkspaceStatus.WAITING_CONFIRMATION, AgentWorkspaceStatus.PAUSED,
-            AgentWorkspaceStatus.BLOCKED, AgentWorkspaceStatus.WAITING_RESPONSE)) {
-            assertFalse(status.name, AgentTranscriptPresentationPolicy.processClockStopsFor(status))
+            AgentWorkspaceStatus.BLOCKED)) {
+            assertTrue(status.name, AgentTranscriptPresentationPolicy.processClockStopsFor(status))
+            assertFalse(status.name, status.isTerminal)
+            assertFalse(AgentProcessClockPolicy.isRunning(AgentProcessClockPolicy.phase(status, AgentPhase.EXECUTING)))
         }
         for (status in listOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.FAILED, AgentWorkspaceStatus.CANCELLED)) {
             assertTrue(status.name, AgentTranscriptPresentationPolicy.processClockStopsFor(status))
         }
         assertTrue(AgentProcessClockPolicy.isRunning(AgentPhase.WAITING_RESPONSE))
-        assertTrue(AgentProcessClockPolicy.isRunning(AgentPhase.BLOCKED))
+        assertFalse(AgentTranscriptPresentationPolicy.processClockStopsFor(AgentWorkspaceStatus.WAITING_RESPONSE))
+        assertFalse(AgentProcessClockPolicy.isRunning(AgentPhase.BLOCKED))
         assertFalse(AgentProcessClockPolicy.isRunning(AgentPhase.COMPLETED))
+    }
+
+    @Test fun blockedClockSurvivesReloadAndOnlyANewerRecoveryRestartsIt() {
+        val blocked = AgentProcessCompletionLookup(3000, 100, AgentWorkspaceStatus.BLOCKED, 1000, "c", 8)
+        val repeated = blocked.copy(completedAtMillis = 7000, revision = 9)
+        assertEquals(3000L, AgentProcessClockPolicy.merge(blocked, repeated).completedAtMillis)
+        val stale = blocked.copy(status = AgentWorkspaceStatus.RUNNING, completedAtMillis = null, revision = 7)
+        assertEquals(blocked, AgentProcessClockPolicy.merge(blocked, stale))
+        val recovery = stale.copy(revision = 10)
+        assertNull(AgentProcessClockPolicy.merge(blocked, recovery).completedAtMillis)
     }
 
     private val process = AgentTranscriptEntry("p", AgentTranscriptRole.PROCESS, "Working", 1000,

@@ -41,7 +41,7 @@ internal fun MainActivity.agentProcessCompletionTimestamp(
             ?.let { return it.coerceAtLeast(entry.timestampMillis) }
     } else {
         if (cached == null) return null
-        if (cached.status != null && !cached.status.isTerminal) return null
+        if (cached.status != null && !AgentTranscriptPresentationPolicy.processClockStopsFor(cached.status)) return null
         cached.completedAtMillis?.let { return it.coerceAtLeast(entry.timestampMillis) }
     }
     return AgentProcessClockPolicy.finalReplyTimestamp(entry, entries.filterNot(::isAgentApprovalEntry))
@@ -57,7 +57,9 @@ internal fun MainActivity.scheduleAgentProcessCompletionLookup(entry: AgentTrans
             val startedAt = agentTranscriptStore.firstTimestampForTurn(entry.conversationId, workspaceId)
                 ?: workspace?.createdAtMillis?.takeIf { it > 0L }
             AgentProcessCompletionLookup(
-                completedAtMillis = workspace?.takeIf { it.status.isTerminal }?.updatedAtMillis?.takeIf { it > 0L },
+                completedAtMillis = workspace?.takeIf {
+                    AgentTranscriptPresentationPolicy.processClockStopsFor(it.status)
+                }?.updatedAtMillis?.takeIf { it > 0L },
                 checkedAtElapsedRealtime = SystemClock.elapsedRealtime(),
                 status = workspace?.status,
                 startedAtMillis = startedAt,

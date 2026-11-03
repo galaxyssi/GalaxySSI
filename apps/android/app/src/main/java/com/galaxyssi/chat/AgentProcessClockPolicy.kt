@@ -37,7 +37,8 @@ internal object AgentProcessClockPolicy {
     }
 
     fun isRunning(phase: AgentPhase?): Boolean = phase != null && phase !in setOf(
-        AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED
+        AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED,
+        AgentPhase.BLOCKED, AgentPhase.PAUSED, AgentPhase.WAITING_CONFIRMATION
     )
 
     fun sameTurn(process: AgentTranscriptEntry, candidate: AgentTranscriptEntry): Boolean =
