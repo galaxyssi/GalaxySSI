@@ -42,19 +42,23 @@ enum AppTextScaleMode: String, Codable, CaseIterable, Identifiable {
 
 struct AppDisplaySettings: Codable, Equatable {
   var textScale: AppTextScaleMode
+  var screenAssistantEnabled: Bool
 
   static let `default` = AppDisplaySettings()
 
-  init(textScale: AppTextScaleMode = .comfortable) {
+  init(textScale: AppTextScaleMode = .comfortable, screenAssistantEnabled: Bool = false) {
     self.textScale = textScale
+    self.screenAssistantEnabled = screenAssistantEnabled
   }
 
   enum CodingKeys: String, CodingKey {
     case textScale = "text_scale"
+    case screenAssistantEnabled = "screen_assistant_enabled"
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.init(textScale: AppTextScaleMode.fromWireValue(try container.decodeIfPresent(String.self, forKey: .textScale)))
+    self.init(textScale: AppTextScaleMode.fromWireValue(try container.decodeIfPresent(String.self, forKey: .textScale)),
+      screenAssistantEnabled: try container.decodeIfPresent(Bool.self, forKey: .screenAssistantEnabled) ?? false)
   }
 }

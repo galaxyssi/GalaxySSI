@@ -4842,3 +4842,7 @@
 "galaxyssi.screen_assistant.use_image" = "使用图片";
 "galaxyssi.screen_assistant.image_error" = "无法处理图片";
 "galaxyssi.screen_assistant.prompt" = "请分析这张截图，概括重要内容并给出下一步建议。";
+"galaxyssi.screen_assistant.enable" = "悬浮屏幕助手";
+"galaxyssi.screen_assistant.enabled_ios" = "已开启，悬浮图标在 GalaxySSI 应用内显示。";
+"galaxyssi.screen_assistant.disabled" = "已关闭";
+"galaxyssi.screen_assistant.privacy_ios" = "仅在你选择内容并发送后，才向所选 Agent 提供内容。开启此开关不会截屏或启动任务。iOS 不允许此图标悬浮在其他应用之上。";

@@ -1028,6 +1028,38 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(store.displaySettings.textScale, .large)
   }
 
+  func testScreenAssistantSettingMigratesOffAndRoundTripsWithoutLosingTextScale() throws {
+    let legacy = try JSONDecoder.galaxySSI.decode(AppDisplaySettings.self,
+      from: Data(#"{"text_scale":"large"}"#.utf8))
+    XCTAssertFalse(legacy.screenAssistantEnabled)
+    XCTAssertFalse(AppDisplaySettings.default.screenAssistantEnabled)
+    let enabled = AppDisplaySettings(textScale: .extraLarge, screenAssistantEnabled: true)
+    let encoded = try JSONEncoder.galaxySSI.encode(enabled)
+    XCTAssertEqual(try JSONDecoder.galaxySSI.decode(AppDisplaySettings.self, from: encoded), enabled)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    XCTAssertEqual(object["screen_assistant_enabled"] as? Bool, true)
+  }
+
+  func testScreenAssistantTogglePersistsAcrossStoreReopenAndDoesNotSubmitMessages() throws {
+    let suite = "ScreenAssistantSettingsTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let messages = store.agentSessionMessages(store.activeAgentConversationId)
+    store.updateDisplaySettings { $0.screenAssistantEnabled = true }
+    store.updateDisplaySettings { $0.textScale = .large }
+    XCTAssertTrue(store.displaySettings.screenAssistantEnabled)
+    XCTAssertEqual(store.agentSessionMessages(store.activeAgentConversationId), messages)
+    let reopened = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    XCTAssertTrue(reopened.displaySettings.screenAssistantEnabled)
+    XCTAssertEqual(reopened.displaySettings.textScale, .large)
+    reopened.updateDisplaySettings { $0.screenAssistantEnabled = false }
+    let disabled = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    XCTAssertFalse(disabled.displaySettings.screenAssistantEnabled)
+    XCTAssertEqual(disabled.displaySettings.textScale, .large)
+  }
+
   func testAgentSafetySettingsDecodeAndroidPolicyAndEncodeStoredNames() throws {
     let settings = try JSONDecoder.galaxySSI.decode(
       AgentSafetySettings.self,

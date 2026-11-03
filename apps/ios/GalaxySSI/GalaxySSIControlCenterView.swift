@@ -122,6 +122,12 @@ struct GalaxySSIControlCenterView: View {
           destination: GalaxySSIVoiceControlCenterView()
         )
         homeRow(
+          title: t("galaxyssi.screen_assistant.title", "Screen assistant"),
+          systemImage: "viewfinder",
+          tint: .galaxySSIAccent,
+          destination: GalaxySSIScreenAssistantSettingsView()
+        )
+        homeRow(
           title: t("my_agent_memory", "Memory & knowledge"),
           systemImage: "brain.head.profile",
           tint: .galaxySSIAccent,

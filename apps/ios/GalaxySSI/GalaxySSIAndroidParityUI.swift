@@ -241,7 +241,6 @@ struct AgentHomeView: View {
           }
         }
         .frame(maxHeight: .infinity)
-        .overlay { screenAssistantRestoreControl }
         agentComposer
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
@@ -470,6 +469,7 @@ struct AgentHomeView: View {
       )
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .overlay { screenAssistantRestoreControl }
     .alert(item: $pendingVoiceRiskConfirmation) { confirmation in
       Alert(
         title: Text(t("galaxyssi.voice.risk_confirmation_title", "Confirm voice command")),
@@ -497,6 +497,35 @@ struct AgentHomeView: View {
         runtimeArtifactError = error.localizedDescription
       }
     }
+  }
+
+  var screenAssistantLauncherVisible: Bool {
+    store.displaySettings.screenAssistantEnabled && scenePhase == .active &&
+      !screenshotPickerPresented && !cameraPickerPresented && !photoPickerPresented &&
+      !fileImporterPresented && !scanShortcutActive
+  }
+
+  func restoreScreenAssistantPresentation() {
+    agentSettingsShortcutActive = false
+    recentTasksShortcutActive = false
+    agentSessionsShortcutActive = false
+    agentPermissionsShortcutActive = false
+    agentModelSelectionShortcutActive = false
+    agentNativeToolsShortcutActive = false
+    agentMemoryShortcutActive = false
+    agentKnowledgeShortcutActive = false
+    agentScreenContextShortcutActive = false
+    agentInsightsShortcutActive = false
+    conversationHubShortcutActive = false
+    contactsShortcutActive = false
+    discoverShortcutActive = false
+    if screenAssistantConversationID.isEmpty {
+      screenAssistantConversationID = store.activeAgentConversationId
+      screenAssistantCompact = true
+    } else if screenAssistantConversationID != store.activeAgentConversationId {
+      _ = store.switchAgentSession(screenAssistantConversationID)
+    }
+    screenAssistantCollapsed = false
   }
 
   private func presentPendingPhonePublicPageExport() {

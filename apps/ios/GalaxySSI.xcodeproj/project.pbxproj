@@ -234,6 +234,7 @@
     A10000000000000000001350 /* AgentIOSWebIntelligenceSourceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001350 /* AgentIOSWebIntelligenceSourceCatalog.swift */; };
     A10000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift */; };
     A10000000000000000001080 /* GalaxySSITextSizeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001080 /* GalaxySSITextSizeSettingsView.swift */; };
+    F1CC32690000000000000001 /* GalaxySSIScreenAssistantSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32690000000000000002 /* GalaxySSIScreenAssistantSettingsView.swift */; };
     A10000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift */; };
     A10000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift */; };
     A10000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift */; };
@@ -1290,6 +1291,7 @@
     A20000000000000000001350 /* AgentIOSWebIntelligenceSourceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebIntelligenceSourceCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIWebIntelligenceSourcesView.swift; sourceTree = "<group>"; };
     A20000000000000000001080 /* GalaxySSITextSizeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSITextSizeSettingsView.swift; sourceTree = "<group>"; };
+    F1CC32690000000000000002 /* GalaxySSIScreenAssistantSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIScreenAssistantSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPrivacyControlCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGeneralControlCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIVoiceControlCenterView.swift; sourceTree = "<group>"; };
@@ -2881,6 +2883,7 @@
         A20000000000000000001350 /* AgentIOSWebIntelligenceSourceCatalog.swift */,
         A20000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift */,
         A20000000000000000001080 /* GalaxySSITextSizeSettingsView.swift */,
+        F1CC32690000000000000002 /* GalaxySSIScreenAssistantSettingsView.swift */,
         A20000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift */,
         A20000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift */,
         A20000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift */,
@@ -4077,6 +4080,7 @@
         A10000000000000000001350 /* AgentIOSWebIntelligenceSourceCatalog.swift in Sources */,
         A10000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift in Sources */,
         A10000000000000000001080 /* GalaxySSITextSizeSettingsView.swift in Sources */,
+        F1CC32690000000000000001 /* GalaxySSIScreenAssistantSettingsView.swift in Sources */,
         A10000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift in Sources */,
         A10000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift in Sources */,
         A10000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift in Sources */,
