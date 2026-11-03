@@ -31,8 +31,10 @@ internal object CollaborationCandidateVerificationState {
         listOf(saved, incoming).forEach { source -> repeat(source.length()) { index ->
             val request = JSONObject(source.getJSONObject(index).toString())
             val target = request.optJSONObject("target")
+            val retryKey = if (request.has(CollaborationCandidateReviewRetry.REQUEST))
+                ":retry:${request.optJSONObject(CollaborationCandidateReviewRetry.REQUEST)?.optString("node_id").orEmpty()}" else ""
             val key = target?.optString("object_id")?.takeIf(String::isNotBlank)
-                ?.let { "object:$it:${target.opt("revision")}:${target.opt("sha256")}" } ?: "request:$request"
+                ?.let { "object:$it:${target.opt("revision")}:${target.opt("sha256")}$retryKey" } ?: "request:$request"
             pending[key] = request
         } }
         return pending.values.toList()
@@ -66,6 +68,14 @@ internal object CollaborationCandidateVerificationState {
             if (phase in setOf("repair", "recheck")) require(cycle.has("review")) { "Candidate repair/recheck is missing its exact review basis" }
             if (phase == "done") text(cycle, "result") else {
                 require(cycle.has("node_id") && !cycle.has("result")) { "Active candidate checkpoint lacks a dispatch or contains a terminal result" }
+            }
+            if (cycle.has(CollaborationCandidateReviewRetry.ELIGIBLE)) {
+                require(cycle.get(CollaborationCandidateReviewRetry.ELIGIBLE) is Boolean && phase == "done") {
+                    "Only settled candidate cycles can carry host review reassignment eligibility"
+                }
+                require(cycle.getString(CollaborationCandidateReviewRetry.PHASE) in setOf("validate", "repair", "recheck"))
+                if (cycle.getBoolean(CollaborationCandidateReviewRetry.ELIGIBLE)) require(cycle.has("node_id") &&
+                    cycle.getString(CollaborationCandidateReviewRetry.PHASE) != "repair") { "A repair cannot become a retryable review" }
             }
         }
     }

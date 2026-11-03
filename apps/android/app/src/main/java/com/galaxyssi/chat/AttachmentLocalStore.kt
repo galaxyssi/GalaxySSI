@@ -84,7 +84,7 @@ internal object LocalAttachmentUris {
     private const val AUTHORITY_SUFFIX = ".local-attachments"
     private const val PATH_FILE = "file"
     private val roots = setOf("peer-incoming-attachments-v2", "peer-message-attachments-v2",
-        "agent-link-outgoing-attachments-v2", "agent-rich-output-v2", "desktop-artifacts-v2")
+        "agent-link-outgoing-attachments-v2", "agent-rich-output-v2", "desktop-artifacts-v2", "composer-attachments-v1")
 
     fun forFile(context: Context, file: File, name: String = file.name, mimeType: String = ""): Uri {
         val root = context.filesDir.canonicalFile

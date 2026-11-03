@@ -149,6 +149,44 @@ class CollaborationCandidateRuntimeIntegrationTest {
             candidateWorkspace = { error("No candidate enrollment or pending checkpoint") }))
     }
 
+    @Test fun completedUnpublishedReviewReplacementSurvivesStoreRestoreAndExecutesOnce() = runBlocking {
+        withTimeout(15_000) {
+            val fixture = CandidateRuntimeFixture(Rows(), Rows())
+            val store = InMemoryAgentTeamExecutionStore().apply { candidateWorkspace = { fixture.workspace } }
+            val staged = CandidateReviewReassignmentFixture.seed(store, fixture)
+            val reopened = InMemoryAgentTeamExecutionStore().apply { candidateWorkspace = { fixture.workspace } }
+            reopened.create(staged.definition, staged.request)
+            store.records().single().events.forEach { reopened.append(it) }
+            reopened.markInterrupted(fixture.access.runId, 100)
+            val checkpoint = requireNotNull(reopened.resumeCheckpoint(fixture.access.runId))
+            val replacement = CandidateReviewReassignmentFixture.replacement(staged)
+            val old = JSONObject(replacement.context.getValue(CollaborationCandidateEvolution.TASK))
+                .getJSONObject("review_reassignment").getString("node_id")
+            assertTrue(old in checkpoint.completed)
+            val calls = CopyOnWriteArrayList<String>()
+            AgentTeamExecutionRuntime(reopened, AgentSubagentLimits(maxConcurrency = 3)).use { runtime ->
+                runtime.resume(checkpoint) { execution ->
+                    val member = execution.member
+                    assertFalse(member.memberId in checkpoint.completed)
+                    calls += member.memberId
+                    AgentSubagentOutput(when {
+                        member.context.containsKey(CollaborationCandidateEvolution.TASK) -> fixture.execute(member)
+                        CollaborationLiveGraph.planner(member) -> fixture.expansion()
+                        member.memberId == "slow" -> "Unrelated result"
+                        else -> fixture.assessment()
+                    })
+                }.await()
+            }
+            assertEquals(1, calls.count { it == replacement.memberId })
+            assertEquals(calls.size, calls.distinct().size)
+            assertFalse(calls.contains(old))
+            val access = fixture.access.copy(round = 5)
+            assertEquals(1, fixture.workspace.publicationRevisions(access, replacement.memberId).size)
+            assertTrue(fixture.workspace.publicationRevisions(access, old).isEmpty())
+            assertEquals("continue", reopened.snapshot(fixture.access.runId)!!.goalDisposition)
+        }
+    }
+
     private suspend fun complete(store: AgentTeamExecutionStore, id: String, output: String, sequence: Long) {
         store.append(AgentSubagentEvent(sequence, "candidate-run", id, AgentSubagentEventKinds.CHILD_SUCCEEDED,
             childStatus = AgentSubagentStatus.SUCCEEDED, result = AgentSubagentChildResult("candidate-run", id, "candidate-run", 1,

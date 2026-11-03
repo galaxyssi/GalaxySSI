@@ -86,7 +86,8 @@ fun AgentRuntimeExecutionReceipt.toEvidenceMap(): AgentNativeJsonObject = linked
         linkedMapOf(
             "relative_path" to artifact["relative_path"],
             "size_bytes" to artifact["size_bytes"],
-            "sha256" to artifact["sha256"]
+            "sha256" to artifact["sha256"],
+            "openability" to artifact["openability"]
         )
     },
     "error" to error,
@@ -406,13 +407,15 @@ class AgentRuntimeWorkspaceManager private constructor(
     private val root: File,
     private val projectRoot: File,
     private val checkpointRoot: File,
-    private val directExecution: Boolean
+    private val directExecution: Boolean,
+    private val artifactInspector: AgentArtifactOpenability = AgentArtifactOpenability()
 ) {
     constructor(context: Context) : this(
         File(context.applicationContext.filesDir, "agent-runtime/workspaces"),
         File(context.applicationContext.filesDir, "agent-native-workspaces"),
         File(context.applicationContext.filesDir, "agent-runtime/checkpoints"),
-        true
+        true,
+        AgentArtifactOpenability(context.applicationContext)
     )
 
     internal constructor(
@@ -815,10 +818,12 @@ class AgentRuntimeWorkspaceManager private constructor(
             check(bytes <= request.resourceLimits.maxArtifactBytes) { "Runtime artifact exceeds its size limit" }
             totalBytes += bytes
             check(totalBytes <= request.resourceLimits.diskBytes) { "Runtime artifacts exceed the workspace quota" }
+            val hash = sha256File(artifact)
             mapOf(
                 "relative_path" to relative,
                 "size_bytes" to bytes,
-                "sha256" to sha256File(artifact),
+                "sha256" to hash,
+                "openability" to artifactInspector.inspect(artifact, hash, request.resourceLimits.diskBytes),
                 "host_path" to artifact.absolutePath,
                 "artifact_kind" to "file"
             )
@@ -926,10 +931,12 @@ class AgentRuntimeWorkspaceManager private constructor(
             temporary.delete()
             throw error
         }
+        val hash = sha256File(archive)
         return mapOf(
             "relative_path" to archive.name,
             "size_bytes" to archive.length(),
-            "sha256" to sha256File(archive),
+            "sha256" to hash,
+            "openability" to artifactInspector.inspect(archive, hash, request.resourceLimits.diskBytes),
             "host_path" to archive.absolutePath,
             "artifact_kind" to "project_archive",
             "file_count" to fileCount,
@@ -1158,6 +1165,7 @@ class AgentRuntimeWorkspaceManager private constructor(
     private fun cleanupRuntimeFiles(directory: File) {
         listOf(
             RUNTIME_CONTROL_DIRECTORY,
+            REBRANDED_CONTROL_DIRECTORY,
             RUNTIME_INPUT_DIRECTORY,
             RUNTIME_TOOL_DIRECTORY.substringBefore('/')
         ).forEach { relative ->
@@ -1172,6 +1180,7 @@ class AgentRuntimeWorkspaceManager private constructor(
         if (!parent.isDirectory || !exclude.canWrite() && exclude.exists()) return
         val entries = listOf(
             "/$RUNTIME_CONTROL_DIRECTORY/",
+            "/$REBRANDED_CONTROL_DIRECTORY/",
             "/$RUNTIME_INPUT_DIRECTORY/",
             "/${RUNTIME_TOOL_DIRECTORY.substringBefore('/')}/"
         )
@@ -1241,6 +1250,7 @@ class AgentRuntimeWorkspaceManager private constructor(
         path in RUNTIME_CONTROL_FILES || path == ".tmp" || path.startsWith(".tmp/") ||
             path == RUNTIME_TOOL_DIRECTORY || path.startsWith("$RUNTIME_TOOL_DIRECTORY/") ||
             path == RUNTIME_CONTROL_DIRECTORY || path.startsWith("$RUNTIME_CONTROL_DIRECTORY/") ||
+            path == REBRANDED_CONTROL_DIRECTORY || path.startsWith("$REBRANDED_CONTROL_DIRECTORY/") ||
             path == RUNTIME_INPUT_DIRECTORY || path.startsWith("$RUNTIME_INPUT_DIRECTORY/")
 
     private fun writeExecutable(file: File, source: String) {
@@ -1286,7 +1296,8 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val MAX_CHECKPOINT_BYTES_PER_WORKSPACE = 1024L * 1024L * 1024L
         private const val MAX_WORKSPACE_STATUS_BYTES = 2L * 1024L * 1024L * 1024L
         private const val RUNTIME_TOOL_DIRECTORY = ".galaxyssi-tools/bin"
-        private const val RUNTIME_CONTROL_DIRECTORY = ".galaxyssi-runtime"
+        private const val RUNTIME_CONTROL_DIRECTORY = AgentRuntimeGuestAbi.CONTROL_DIRECTORY
+        private const val REBRANDED_CONTROL_DIRECTORY = ".galaxyssi-runtime"
         private const val RUNTIME_INPUT_DIRECTORY = ".galaxyssi-inputs"
         private const val WORKSPACE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
         internal const val CLEANUP_INTERVAL_MILLIS = 6L * 60L * 60L * 1_000L

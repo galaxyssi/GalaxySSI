@@ -5,9 +5,37 @@ import java.util.Locale
 internal enum class AgentInteractiveProgressStepState {
     PENDING,
     ACTIVE,
+    WAITING,
+    PAUSED,
+    STOPPED,
+    NOT_EXECUTED,
+    RECORDED,
     COMPLETED,
     SUPERSEDED,
     FAILED
+}
+
+internal enum class AgentInteractiveProgressStatus {
+    RUNNING, WAITING_RESPONSE, WAITING_CONFIRMATION, PAUSED, BLOCKED,
+    FAILED, CANCELLED, COMPLETED, UNKNOWN;
+
+    val animating: Boolean
+        get() = this == RUNNING || this == WAITING_RESPONSE
+
+    companion object {
+        fun from(phase: AgentPhase?, completed: Boolean): AgentInteractiveProgressStatus = when (phase) {
+            AgentPhase.OBSERVING, AgentPhase.PLANNING, AgentPhase.EXECUTING,
+            AgentPhase.VERIFYING -> RUNNING
+            AgentPhase.WAITING_RESPONSE -> WAITING_RESPONSE
+            AgentPhase.WAITING_CONFIRMATION -> WAITING_CONFIRMATION
+            AgentPhase.PAUSED -> PAUSED
+            AgentPhase.BLOCKED -> BLOCKED
+            AgentPhase.FAILED -> FAILED
+            AgentPhase.CANCELLED -> CANCELLED
+            AgentPhase.COMPLETED -> COMPLETED
+            null -> if (completed) COMPLETED else UNKNOWN
+        }
+    }
 }
 
 internal data class AgentInteractiveProgressStep(
@@ -32,10 +60,13 @@ internal data class AgentInteractiveProgressPresentation(
     val totalSteps: Int,
     val completedSteps: Int,
     val planRevision: Int,
-    val running: Boolean,
+    val status: AgentInteractiveProgressStatus,
     val agentLabel: String,
     val recentActivity: List<String>
 ) {
+    val running: Boolean
+        get() = status.animating
+
     val counter: String
         get() = "$currentStep/$totalSteps"
 
@@ -49,7 +80,7 @@ internal data class AgentInteractiveProgressPresentation(
             totalSteps = 0,
             completedSteps = 0,
             planRevision = 1,
-            running = false,
+            status = AgentInteractiveProgressStatus.UNKNOWN,
             agentLabel = "",
             recentActivity = emptyList()
         )
@@ -62,7 +93,8 @@ internal object AgentInteractiveProgressPolicy {
         plan: AgentPlan?,
         phase: AgentPhase?,
         processTexts: List<String>,
-        completed: Boolean
+        completed: Boolean,
+        fallbackPhase: AgentPhase? = null
     ): AgentInteractiveProgressPresentation {
         val declaredPlan = processTexts.singleOrNull()
             ?.let(::splitPlanText)
@@ -92,7 +124,11 @@ internal object AgentInteractiveProgressPolicy {
         val visibleDescriptions = plannedDescriptions
         if (visibleDescriptions.isEmpty()) return AgentInteractiveProgressPresentation.HIDDEN
 
-        val terminal = completed || phase in TERMINAL_PHASES
+        // An owned runtime phase takes precedence over an older completion hint.
+        val resolvedPhase = phase ?: fallbackPhase?.takeUnless {
+            completed && AgentInteractiveProgressStatus.from(it, false).animating
+        }
+        val status = AgentInteractiveProgressStatus.from(resolvedPhase, completed)
         val checkpointRevisions = plan?.checkpoints.orEmpty()
             .associate { checkpoint -> checkpoint.actionId to checkpoint.planRevision }
         val steps = when {
@@ -109,7 +145,7 @@ internal object AgentInteractiveProgressPolicy {
                     val superseded = revision < (plan?.revision ?: revision)
                     AgentInteractiveProgressStep(
                         text = action.description.trim(),
-                        state = action.status.toProgressStepState(superseded),
+                        state = action.status.toProgressStepState(superseded, status),
                         actionId = action.id,
                         planRevision = revision
                     )
@@ -121,8 +157,7 @@ internal object AgentInteractiveProgressPolicy {
                     state = narrationStepState(
                         index = index,
                         lastIndex = visibleDescriptions.lastIndex,
-                        terminal = terminal,
-                        failed = phase in FAILED_PHASES,
+                        status = status,
                         declaredPlan = declaredPlan != null
                     ),
                     planRevision = 1
@@ -145,7 +180,7 @@ internal object AgentInteractiveProgressPolicy {
         val currentBatchSteps = currentBatch.steps
 
         val activeIndex = currentBatchSteps.indexOfFirst { step ->
-            step.state == AgentInteractiveProgressStepState.ACTIVE
+            step.state in CURRENT_STEP_STATES
         }
         val failedIndex = currentBatchSteps.indexOfFirst { step ->
             step.state == AgentInteractiveProgressStepState.FAILED
@@ -159,22 +194,19 @@ internal object AgentInteractiveProgressPolicy {
             pendingIndex >= 0 -> pendingIndex
             else -> currentBatchSteps.lastIndex
         }
-        val activeAction = planActions.firstOrNull { action ->
-            action.status in ACTIVE_ACTION_STATUSES
-        }
-        val nextAction = planActions.firstOrNull { action ->
-            action.status in PENDING_ACTION_STATUSES
-        }
-        val summary = activeAction?.description
+        val activeAction = currentBatchSteps.firstOrNull { it.state in CURRENT_STEP_STATES }
+            ?.takeIf { status.animating }
+        val nextAction = currentBatchSteps.firstOrNull { it.state == AgentInteractiveProgressStepState.PENDING }
+        val summary = activeAction?.text
             .orEmpty()
             .ifBlank {
-                if (declaredPlan != null && !terminal) {
+                if (declaredPlan != null && status.animating) {
                     currentBatchSteps[currentIndex].text
                 } else {
                     narration.lastOrNull().orEmpty()
                 }
             }
-            .ifBlank { nextAction?.description.orEmpty() }
+            .ifBlank { nextAction?.text.orEmpty() }
             .ifBlank { currentBatchSteps[currentIndex].text }
         val agentLabel = plan?.route?.targetTitle
             .orEmpty()
@@ -190,7 +222,7 @@ internal object AgentInteractiveProgressPolicy {
                 step.state == AgentInteractiveProgressStepState.COMPLETED
             },
             planRevision = plan?.revision?.coerceAtLeast(1) ?: currentBatch.planRevision,
-            running = !terminal,
+            status = status,
             agentLabel = agentLabel,
             recentActivity = narration.takeLast(2)
         )
@@ -230,11 +262,26 @@ internal object AgentInteractiveProgressPolicy {
         .lowercase(Locale.ROOT)
 
     private fun AgentActionStatus.toProgressStepState(
-        superseded: Boolean
+        superseded: Boolean,
+        status: AgentInteractiveProgressStatus
     ): AgentInteractiveProgressStepState = when (this) {
         AgentActionStatus.COMPLETED -> AgentInteractiveProgressStepState.COMPLETED
         AgentActionStatus.RUNNING,
-        AgentActionStatus.WAITING_RESPONSE -> AgentInteractiveProgressStepState.ACTIVE
+        AgentActionStatus.WAITING_RESPONSE -> if (superseded) {
+            AgentInteractiveProgressStepState.SUPERSEDED
+        } else when (status) {
+            AgentInteractiveProgressStatus.RUNNING -> if (this == AgentActionStatus.WAITING_RESPONSE) {
+                AgentInteractiveProgressStepState.WAITING
+            } else AgentInteractiveProgressStepState.ACTIVE
+            AgentInteractiveProgressStatus.WAITING_RESPONSE,
+            AgentInteractiveProgressStatus.WAITING_CONFIRMATION,
+            AgentInteractiveProgressStatus.BLOCKED -> AgentInteractiveProgressStepState.WAITING
+            AgentInteractiveProgressStatus.PAUSED -> AgentInteractiveProgressStepState.PAUSED
+            AgentInteractiveProgressStatus.FAILED,
+            AgentInteractiveProgressStatus.CANCELLED -> AgentInteractiveProgressStepState.STOPPED
+            AgentInteractiveProgressStatus.COMPLETED,
+            AgentInteractiveProgressStatus.UNKNOWN -> AgentInteractiveProgressStepState.RECORDED
+        }
         AgentActionStatus.FAILED,
         AgentActionStatus.BLOCKED,
         AgentActionStatus.ROLLED_BACK -> if (superseded) {
@@ -243,7 +290,9 @@ internal object AgentInteractiveProgressPolicy {
             AgentInteractiveProgressStepState.FAILED
         }
         AgentActionStatus.PROPOSED,
-        AgentActionStatus.PENDING_CONFIRMATION -> AgentInteractiveProgressStepState.PENDING
+        AgentActionStatus.PENDING_CONFIRMATION -> if (status in FINISHED_STATUSES) {
+            AgentInteractiveProgressStepState.NOT_EXECUTED
+        } else AgentInteractiveProgressStepState.PENDING
     }
 
     private fun AgentAction.planRevisionOrNull(
@@ -257,17 +306,12 @@ internal object AgentInteractiveProgressPolicy {
     private fun narrationStepState(
         index: Int,
         lastIndex: Int,
-        terminal: Boolean,
-        failed: Boolean,
+        status: AgentInteractiveProgressStatus,
         declaredPlan: Boolean
     ): AgentInteractiveProgressStepState = when {
-        terminal && failed && index == lastIndex -> AgentInteractiveProgressStepState.FAILED
-        terminal -> AgentInteractiveProgressStepState.COMPLETED
-        declaredPlan && index == 0 -> AgentInteractiveProgressStepState.ACTIVE
-        declaredPlan -> AgentInteractiveProgressStepState.PENDING
-        index < lastIndex -> AgentInteractiveProgressStepState.COMPLETED
-        index == lastIndex -> AgentInteractiveProgressStepState.ACTIVE
-        else -> AgentInteractiveProgressStepState.PENDING
+        declaredPlan && index > 0 -> AgentActionStatus.PROPOSED.toProgressStepState(false, status)
+        !declaredPlan && index < lastIndex -> AgentInteractiveProgressStepState.RECORDED
+        else -> AgentActionStatus.RUNNING.toProgressStepState(false, status)
     }
 
     private val PLAN_LINE_PREFIX = Regex(
@@ -285,23 +329,15 @@ internal object AgentInteractiveProgressPolicy {
         AgentTaskIntent.FILE,
         AgentTaskIntent.AUTOMATION
     )
-    private val ACTIVE_ACTION_STATUSES = setOf(
-        AgentActionStatus.RUNNING,
-        AgentActionStatus.WAITING_RESPONSE
+    private val CURRENT_STEP_STATES = setOf(
+        AgentInteractiveProgressStepState.ACTIVE,
+        AgentInteractiveProgressStepState.WAITING,
+        AgentInteractiveProgressStepState.PAUSED,
+        AgentInteractiveProgressStepState.STOPPED
     )
-    private val PENDING_ACTION_STATUSES = setOf(
-        AgentActionStatus.PROPOSED,
-        AgentActionStatus.PENDING_CONFIRMATION
-    )
-    private val TERMINAL_PHASES = setOf(
-        AgentPhase.COMPLETED,
-        AgentPhase.FAILED,
-        AgentPhase.CANCELLED,
-        AgentPhase.BLOCKED
-    )
-    private val FAILED_PHASES = setOf(
-        AgentPhase.FAILED,
-        AgentPhase.CANCELLED,
-        AgentPhase.BLOCKED
+    private val FINISHED_STATUSES = setOf(
+        AgentInteractiveProgressStatus.COMPLETED,
+        AgentInteractiveProgressStatus.CANCELLED,
+        AgentInteractiveProgressStatus.FAILED
     )
 }

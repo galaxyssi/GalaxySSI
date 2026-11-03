@@ -5,7 +5,8 @@ internal enum class GlobalConnectorResponseScope(private val prefix: String) {
     COGNITION("global-cognition:"),
     ACTION("global-run:"),
     REVIEW("global-replan:"),
-    RESEARCH("global-research:");
+    RESEARCH("global-research:"),
+    PUBLIC_ATTENTION("public-attention:");
 
     fun conversation(ownerId: String): String {
         require(ownerId.isNotBlank())
@@ -17,6 +18,9 @@ internal enum class GlobalConnectorResponseScope(private val prefix: String) {
             (turnId == null || response.turnId.isEmpty() || response.turnId == turnId)
 
     companion object {
+        fun research(task: GlobalResearchTask): GlobalConnectorResponseScope =
+            if (ProactiveAttentionPolicy.isAttention(task)) PUBLIC_ATTENTION else RESEARCH
+
         fun consume(
             response: AgentConnectorResponse,
             cognition: () -> Boolean,
@@ -33,7 +37,7 @@ internal enum class GlobalConnectorResponseScope(private val prefix: String) {
             return when (scope) {
                 COGNITION -> cognition()
                 ACTION, REVIEW -> autonomous()
-                RESEARCH -> research()
+                RESEARCH, PUBLIC_ATTENTION -> research()
                 null -> false
             }
         }

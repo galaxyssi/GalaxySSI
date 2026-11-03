@@ -36,7 +36,7 @@ internal class SecureStore(private val context: Context) {
             JSONObject(String(cipher.doFinal(bytes, 12, bytes.size - 12), Charsets.UTF_8))
         } catch (_: Exception) {
             // Never silently replace unreadable encrypted data.
-            throw IllegalStateException("无法解密本机记录；请检查设备密钥或应用数据")
+            throw IllegalStateException(context.getString(R.string.glasses_copy_cannot_decrypt_local_records_check_the_device_key))
         }
     }
 

@@ -198,8 +198,17 @@ protocols and unpinned external codec libraries are disabled; media must enter t
 through a host-mediated GalaxySSI tool:
 
 ```bash
-npm run runtime:build-ffmpeg -- release/ffmpeg-8.1.2-arm64-v8a.img
+npm run runtime:build-ffmpeg -- release/ffmpeg-8.1.2+png.1-arm64-v8a.img
 ```
+
+The `+png.1` package revision retains upstream FFmpeg 8.1.2 and statically links pinned
+zlib 1.3.2. PNG encoding/decoding is enabled explicitly because disabling automatic dependency
+detection otherwise omits it. The Linux builder requires `qemu-aarch64` (`qemu-user` on Ubuntu)
+and runs the actual ARM64 binaries through PNG generation, PNG-to-JPEG, and JPEG-to-PNG smoke
+tests before packaging. The new image must be signed, published and installed; an App-only
+update does not repair an already installed FFmpeg executable. Do not reuse an old cached image
+or signing manifest. Embedded-pack upgrades compare the archive hash as well as the upstream
+version, so a changed build with the same upstream version is installed again.
 
 ### Sign the image
 
@@ -209,7 +218,7 @@ passphrase-supported PEM private key:
 ```bash
 npm run runtime:build-pack -- \
   --config release/ffmpeg.img.config.json \
-  --output release/ffmpeg-8.1.2-arm64-v8a.sarpack \
+  --output release/ffmpeg-8.1.2+png.1-arm64-v8a.sarpack \
   --certificate /secure/runtime-signing-cert.pem \
   --key /secure/runtime-signing-key.pem
 ```

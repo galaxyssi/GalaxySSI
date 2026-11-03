@@ -9,6 +9,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSystemToolPlannerTest {
+    @Test fun attachmentsRemainPhoneOwnedWithoutCommandOrPathKeywords() {
+        for (goal in listOf("Show it", "Here is the result I want", "Please identify this", "Render the revision")) {
+            assertTrue(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, hasAttachments = true))
+        }
+        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution("hello"))
+    }
+
     @Test
     fun selectedCodexReasonsWhilePhoneLinuxExecutesTheRequestedCommand() {
         val screen = ScreenContext(foregroundApp = "com.galaxyssi.chat", pageTitle = "GalaxySSI")
@@ -55,7 +62,8 @@ class AgentSystemToolPlannerTest {
         assertEquals(AgentTaskExecutionMode.PLAN_ONLY.wireValue, supervisor.parameters[INTERNAL_TASK_EXECUTION_MODE])
         assertTrue(supervisor.parameters.getValue("prompt").contains(goal))
         assertTrue(supervisor.parameters.getValue("prompt").contains(AgentOnDeviceRuntimeTools.EXECUTE))
-        assertTrue(supervisor.parameters.getValue("prompt").contains("Reasoning provider is independent; execution_location=phone"))
+        assertTrue(supervisor.parameters.getValue("prompt").contains("\"execution_location\":\"phone\""))
+        assertTrue(supervisor.parameters.getValue("prompt").contains("Do not execute commands or write files on Desktop"))
     }
 
     @Test
@@ -123,7 +131,7 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun selectedReasoningProviderDoesNotTurnOrdinaryConversationIntoPhoneExecution() {
+    fun selectedReasoningProviderKeepsPhoneOwnershipEvenForOrdinaryConversation() {
         val screen = ScreenContext(foregroundApp = "com.galaxyssi.chat", pageTitle = "GalaxySSI")
         val request = request("hello", screen, emptyList())
         val directConnector = AgentAction(
@@ -137,7 +145,7 @@ class AgentSystemToolPlannerTest {
             requiresConfirmation = false
         )
 
-        assertFalse(
+        assertTrue(
             AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
                 goal = request.goal,
                 conversationContext = request.conversationContext,
@@ -335,7 +343,10 @@ class AgentSystemToolPlannerTest {
 
         val materialized = plan.materializeToolInput(reviewer, allowOutputHandoff = true)
 
-        assertTrue(materialized.parameters.getValue("prompt").contains(output))
+        val prompt = materialized.parameters.getValue("prompt")
+        assertTrue(prompt.contains("\"branch\":\"main\""))
+        assertTrue(prompt.contains("\"head_commit\":\"abc123\""))
+        assertTrue(prompt.contains("\"clean\":true"))
         assertFalse(materialized.parameters.getValue("prompt").contains("Phone project operation completed"))
     }
 
@@ -1301,7 +1312,7 @@ class AgentSystemToolPlannerTest {
     }
 
     @Test
-    fun multiplePhoneOperationsBypassWholeGoalShortcutButStillPlanPerSegment() {
+    fun compoundMutationCannotBePartiallyExecutedWithoutReasoningProvider() {
         val nativeTools = listOf(
             nativeDescriptor(AgentHardwareNativeTools.FLASHLIGHT_SET, "Request flashlight state", AgentNativeToolRisk.MEDIUM),
             nativeDescriptor(AgentHardwareNativeTools.BATTERY_STATUS, "Read battery status", AgentNativeToolRisk.LOW)
@@ -1311,7 +1322,9 @@ class AgentSystemToolPlannerTest {
         val planner = RuleBasedAgentPlanner()
 
         assertEquals(null, planner.deterministicLocalAction(request))
-        assertEquals(2, planner.actionsFor(request).size)
+        val action = planner.actionsFor(request).single()
+        assertEquals(AgentActionKind.CALL_CONNECTOR, action.kind)
+        assertEquals(UNAVAILABLE_REASONING_CONNECTOR_ID, action.parameters["connector_id"])
     }
 
     @Test
@@ -1445,12 +1458,8 @@ class AgentSystemToolPlannerTest {
         assertEquals("open-installed-app", openWeChat.id)
         assertEquals(AgentActionKind.OPEN_APP, openWeChat.kind)
         assertEquals("android-local", openWeChat.parameters["execution_scope"])
-        val missingPhoneApp = requireNotNull(
-            planner.deterministicLocalAction(request("\u6253\u5f00\u4e0d\u5b58\u5728\u7684\u5e94\u7528", screen, nativeTools))
-        )
-        assertEquals("open-installed-app-unavailable", missingPhoneApp.id)
-        assertEquals(AgentActionKind.OPEN_APP, missingPhoneApp.kind)
-        assertEquals("", missingPhoneApp.parameters["package"])
+        assertEquals(null,
+            planner.deterministicLocalAction(request("\u6253\u5f00\u4e0d\u5b58\u5728\u7684\u5e94\u7528", screen, nativeTools)))
         assertEquals(
             null,
             planner.deterministicLocalAction(request("\u5728\u7535\u8111\u4e0a\u6253\u5f00\u5fae\u4fe1", screen, nativeTools))

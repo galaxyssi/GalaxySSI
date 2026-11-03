@@ -36,7 +36,7 @@ from desktop_surfaces import (
     DesktopSurfaceSessionRegistry,
     StaticDesktopSurfaceProvider,
 )
-from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
+from desktop_screenshot_encoding import MAX_SCREENSHOT_BYTES, encode_desktop_screenshot
 from pairing_access import (
     DESKTOP_CONTROL,
     DESKTOP_EXECUTOR,
@@ -66,7 +66,6 @@ OFFER_TTL_SECONDS = 10 * 60
 ACTION_TTL_MILLIS = 30_000
 DESKTOP_SESSION_TTL_SECONDS = 30 * 60
 MAX_CLOCK_SKEW_MILLIS = 30_000
-MAX_SCREENSHOT_BYTES = MAX_IMAGE_TRANSPORT_BYTES
 MIN_SCREENSHOT_STREAM_FPS = 1
 MAX_SCREENSHOT_STREAM_FPS = 3
 MAX_AUDIT_EVENTS = 1_000
@@ -251,6 +250,7 @@ class DesktopControlManager:
         handle_registry: ToolHandleRegistry | None = None,
         perception_service: DesktopPerceptionService | None = None,
         surface_provider: DesktopSurfaceProvider | None = None,
+        focus_provider: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.state_path = Path(state_path or DATA_DIR / "desktop_control.json")
         self.now = now
@@ -275,6 +275,8 @@ class DesktopControlManager:
             now=now,
         )
         self._input = input_controller or WindowsInputController()
+        from desktop_input_focus import DesktopInputFocusReader
+        self._input_focus = focus_provider or DesktopInputFocusReader().read
         self._identity_provider = identity_provider
         self._receipt_signer = receipt_signer
         self._handles = handle_registry or tool_handle_registry()
@@ -731,6 +733,9 @@ class DesktopControlManager:
         ) = self._validate_request(payload, paired_client)
         stream_fps = self._screenshot_stream_fps(tool_id, arguments)
         stream_frame = stream_fps is not None
+        interactive_input = arguments.get("interactive_input") is True
+        if interactive_input and tool_id not in {CLICK_XY, TYPE_TEXT, HOTKEY, SCROLL}:
+            raise DesktopControlError("invalid_input", "Interactive input is not supported by this tool")
         transient_action = stream_frame or tool_id in {
             PERCEIVE,
             SURFACE_LIST,
@@ -783,7 +788,7 @@ class DesktopControlManager:
                 self._save_locked()
 
         started_at = int(self.now() * 1_000)
-        if on_running and not stream_frame:
+        if on_running and not stream_frame and not interactive_input:
             on_running({
                 "type": "desktop_executor_event",
                 "task_id": str(payload.get("task_id") or ""),
@@ -809,6 +814,12 @@ class DesktopControlManager:
                 )
                 if self.settings().get("require_unlocked") and self._input.is_locked():
                     raise DesktopControlError("desktop_locked", "Desktop must be unlocked before remote control")
+                if interactive_input and tool_id in {TYPE_TEXT, HOTKEY}:
+                    expected_focus = str(arguments.get("input_target_id") or "")
+                    if expected_focus:
+                        current_focus = self._input_focus()
+                        if not current_focus.get("editable") or current_focus.get("target_id") != expected_focus:
+                            raise DesktopControlError("input_focus_changed", "The remote input field changed; select it again")
                 screenshot = None
                 output: dict[str, Any] = {}
                 if tool_id == SURFACE_LIST:
@@ -972,20 +983,18 @@ class DesktopControlManager:
                     button = str(arguments.get("button") or "left").lower()
                     if button not in {"left", "right"}:
                         raise DesktopControlError("invalid_input", "button must be left or right")
-                    self._input.click(
-                        x,
-                        y,
-                        button,
-                        source_width=coordinate_width,
-                        source_height=coordinate_height,
-                        target_bounds=self._surface_catalog(
-                            desktop_session_id,
-                        )["target"]["bounds"],
-                    )
+                    clicks = self._bounded_int(arguments.get("clicks", 1), "clicks", 1, 2)
+                    if button == "right" and clicks != 1:
+                        raise DesktopControlError("invalid_input", "Right click must be a single click")
+                    target_bounds = self._surface_catalog(desktop_session_id)["target"]["bounds"]
+                    for click_index in range(clicks):
+                        if click_index:
+                            time.sleep(0.06)
+                        self._input.click(x, y, button, source_width=coordinate_width,
+                                          source_height=coordinate_height, target_bounds=target_bounds)
                     output = {"x": x, "y": y, "button": button}
-                    screenshot, _catalog = self._capture_surface(
-                        desktop_session_id,
-                    )
+                    if not interactive_input:
+                        screenshot, _catalog = self._capture_surface(desktop_session_id)
                 elif tool_id == TYPE_TEXT:
                     text = _bounded_text(arguments.get("text"), "text", 4_096)
                     if not text:
@@ -993,9 +1002,8 @@ class DesktopControlManager:
                     self._activate_selected_window(desktop_session_id)
                     self._input.type_text(text)
                     output = {"characters": len(text)}
-                    screenshot, _catalog = self._capture_surface(
-                        desktop_session_id,
-                    )
+                    if not interactive_input:
+                        screenshot, _catalog = self._capture_surface(desktop_session_id)
                 elif tool_id == HOTKEY:
                     keys = arguments.get("keys")
                     if not isinstance(keys, list) or not 1 <= len(keys) <= 4:
@@ -1004,9 +1012,8 @@ class DesktopControlManager:
                     self._activate_selected_window(desktop_session_id)
                     self._input.hotkey(normalized)
                     output = {"keys": normalized}
-                    screenshot, _catalog = self._capture_surface(
-                        desktop_session_id,
-                    )
+                    if not interactive_input:
+                        screenshot, _catalog = self._capture_surface(desktop_session_id)
                 elif tool_id == SCROLL:
                     delta = self._bounded_int(arguments.get("delta"), "delta", -2_400, 2_400)
                     if delta == 0:
@@ -1014,9 +1021,8 @@ class DesktopControlManager:
                     self._activate_selected_window(desktop_session_id)
                     self._input.scroll(delta)
                     output = {"delta": delta}
-                    screenshot, _catalog = self._capture_surface(
-                        desktop_session_id,
-                    )
+                    if not interactive_input:
+                        screenshot, _catalog = self._capture_surface(desktop_session_id)
                 elif tool_id == WINDOW_SWITCH:
                     direction = str(arguments.get("direction") or "next").lower()
                     if direction not in {"next", "previous"}:
@@ -1106,6 +1112,14 @@ class DesktopControlManager:
                     )
                 else:
                     raise DesktopControlError("invalid_tool", "Desktop control tool is not supported")
+
+                if interactive_input:
+                    from desktop_input_focus import focus_for_surface
+                    output["interactive_input"] = True
+                    output["input_focus"] = focus_for_surface(
+                        self._input_focus(),
+                        self._surface_catalog(desktop_session_id)["target"]["bounds"],
+                    )
 
             completed_at = int(self.now() * 1_000)
             receipt = self._seal_receipt({
@@ -2090,35 +2104,9 @@ class WindowsInputController:
 
     def type_text(self, text: str) -> None:
         self._require_windows()
-
-        class KeyInput(ctypes.Structure):
-            _fields_ = [
-                ("wVk", ctypes.c_ushort),
-                ("wScan", ctypes.c_ushort),
-                ("dwFlags", ctypes.c_ulong),
-                ("time", ctypes.c_ulong),
-                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
-            ]
-
-        class InputUnion(ctypes.Union):
-            _fields_ = [("ki", KeyInput)]
-
-        class Input(ctypes.Structure):
-            _anonymous_ = ("union",)
-            _fields_ = [("type", ctypes.c_ulong), ("union", InputUnion)]
-
-        extra = ctypes.c_ulong(0)
-        events: list[Input] = []
-        encoded = text.encode("utf-16-le")
-        for index in range(0, len(encoded), 2):
-            code_unit = int.from_bytes(encoded[index:index + 2], "little")
-            events.append(Input(type=1, ki=KeyInput(0, code_unit, 0x0004, 0, ctypes.pointer(extra))))
-            events.append(Input(type=1, ki=KeyInput(0, code_unit, 0x0004 | 0x0002, 0, ctypes.pointer(extra))))
-        if events:
-            array_type = Input * len(events)
-            sent = ctypes.windll.user32.SendInput(len(events), array_type(*events), ctypes.sizeof(Input))
-            if sent != len(events):
-                raise DesktopControlError("input_execution_failed", "Windows did not accept the full text input")
+        from desktop_unicode_input import send_unicode
+        if text and not send_unicode(text):
+            raise DesktopControlError("input_execution_failed", "Windows did not accept the full text input")
 
 
 def capture_desktop_screenshot(
@@ -2147,11 +2135,11 @@ def capture_desktop_screenshot(
         raise DesktopControlError("screen_capture_failed", str(exc) or "Windows screen capture failed") from exc
     original_width, original_height = source.size
     try:
-        transport = compress_pil_image(source, MAX_SCREENSHOT_BYTES)
+        transport = encode_desktop_screenshot(source)
     finally:
         source.close()
     if transport is None:
-        raise DesktopControlError("screenshot_too_large", "Desktop screenshot could not fit the encrypted transport limit")
+        raise DesktopControlError("screenshot_too_large", "Single-pass Desktop screenshot exceeds the 100 KB limit")
     return {
         "image_mime": transport.mime_type,
         "image_base64": base64.b64encode(transport.data).decode("ascii"),

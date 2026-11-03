@@ -7,7 +7,7 @@ import org.json.JSONObject
 /** Local deterministic fixture shared by JVM and encrypted-device runtime tests; no providers or physical tools. */
 internal class CandidateRuntimeFixture(rows: CollaborationWorkspaceRows, evidenceRows: CollaborationWorkspaceRows) {
     val ledger = CollaborationEvidenceLedger(evidenceRows)
-    val workspace = CollaborationResearchWorkspace(rows, evidence = ledger::references)
+    val workspace = CollaborationResearchWorkspace(rows, evidence = ledger::references, evidenceReadCoverage = ledger::requireReadCoverage)
     val access = CollaborationWorkspaceAccess("candidate-fixture", "candidate-run", "candidate-turn", 4, "final", "lead")
     val criterion = JSONObject().put("id", "accuracy").put("requirement", "Documented accuracy")
         .put("verification", "documentary").put("status", "open").put("evidence_kind", "observed").put("evidence", JSONArray())
@@ -62,6 +62,20 @@ internal class CandidateRuntimeFixture(rows: CollaborationWorkspaceRows, evidenc
         val who = access.copy(nodeId = member.memberId, personId = task.getString("member"), dependencyNodes = member.dependsOnAgentIds)
         workspace.replayCandidateTask(who, task)?.let { return it.toString() }
         CollaborationCandidateEvolution.checkTask(workspace, who, task)
+        workspace.enrollPublication(who, if (task.getString("operation") == "review")
+            CollaborationResearchStage.VERIFY else CollaborationResearchStage.REVISE, task)
+        val raw = draft(member, outcome)
+        val result = workspace.publish(who, raw, candidateTask = task)
+        check(result.optString("status") == "recorded") { result.toString() }
+        return raw
+    }
+
+    fun draft(member: AgentTeamMember, outcome: String = "supported"): String {
+        val task = JSONObject(member.context.getValue(CollaborationCandidateEvolution.TASK))
+        val target = task.getJSONObject("target")
+        val who = access.copy(nodeId = member.memberId, personId = task.getString("member"), dependencyNodes = member.dependsOnAgentIds)
+        if (task.getString("operation") == "review") check(requireNotNull(ledger.readPage(who, source.getString("evidence_id"),
+            source.getString("sha256"))).next == null)
         val item = if (task.getString("operation") == "review") JSONObject()
             .put("id", "review-${member.memberId}").put("kind", "candidate_event").put("title", "Independent documentary check")
             .put("observations", JSONArray().put(source)).put("body", JSONObject().put("candidate_event", JSONObject()
@@ -73,10 +87,7 @@ internal class CandidateRuntimeFixture(rows: CollaborationWorkspaceRows, evidenc
                 getJSONObject("body").put("content", "Revised original with documented correction")
                 getJSONObject("body").getJSONObject("candidate").put("operation", "revise").put("basis", task.getJSONObject("basis"))
             }
-        val raw = raw(listOf(item))
-        val result = workspace.publish(who, raw, candidateTask = task)
-        check(result.optString("status") == "recorded") { result.toString() }
-        return raw
+        return raw(listOf(item))
     }
 
     fun assessment() = JSONObject().put("format", CollaborationGoalLoop.FORMAT).put("summary", "Documentary routes settled; goal still needs acceptance")

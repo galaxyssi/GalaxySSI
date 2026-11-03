@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 /** Preserve verified forecast dates and units if the final model request fails. */
 internal object WatchWeatherEvidence {
-    fun fallback(raw: String, chinese: Boolean): String? = runCatching {
+    fun fallback(raw: String, rainLabel: String, summary: String): String? = runCatching {
         val output = JSONObject(raw)
         if (output.optString("status") != "completed") return null
         val item = output.getJSONObject("evidence_pack").getJSONArray("items").getJSONObject(0)
@@ -26,14 +26,13 @@ internal object WatchWeatherEvidence {
             val rain = metric("precipitation_probability_max")
             dates.getString(i) + ": " + listOfNotNull(
                 if (low != null && high != null) "$low–$high" else low ?: high,
-                rain?.let { if (chinese) "降雨概率 $it" else "Rain probability $it" }
+                rain?.let { "$rainLabel $it" }
             ).joinToString(" · ")
         }
         val url = item.getString("url")
         if (!url.startsWith("https://api.open-meteo.com/")) return null
         val place = weather.getJSONObject("location").getString("name")
         "$place (${weather.getString("timezone")})\n\n" + lines.joinToString("\n") +
-            "\n\n[Open-Meteo]($url)\n" + if (chinese)
-                "已获取以上当地日期的模型预报；文字分析暂未完成。" else "Forecast retrieved for these local dates; the model summary could not finish."
+            "\n\n[Open-Meteo]($url)\n" + summary
     }.getOrNull()
 }

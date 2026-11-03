@@ -255,6 +255,7 @@ const state = {
   taskBudget: loadTaskBudget(),
   recoveryDiagnostics: {},
   attachments: [],
+  composerPasteEpoch: 0,
   attachmentDetails: new Map(),
   renderingSignature: "",
   polling: false,
@@ -264,7 +265,7 @@ const state = {
   expandedTaskOutputs: new Map(),
   emptyConversationIntent: false,
   toastTimer: 0,
-  speechRecognition: null,
+  composerVoice: null,
   peerVoiceRecorder: null,
   peerVoiceStream: null,
   peerVoiceChunks: [],
@@ -1029,6 +1030,7 @@ function renderPeerConversation(force = false) {
 }
 
 function openPeerConversation(routeId) {
+  state.composerVoice?.cancel();
   if (state.activePeerRouteId !== routeId) {
     closePeerImageViewer();
     resetPeerImagePreviews();
@@ -1057,6 +1059,8 @@ async function refreshPeerMessages() {
 }
 
 function clearPeerRuntimePlaintext() {
+  state.composerPasteEpoch++;
+  state.composerVoice?.cancel();
   closePeerImageViewer();
   resetPeerImagePreviews();
   clearPeerVoicePlayback();
@@ -1532,6 +1536,7 @@ async function connectTaskStream() {
       if (payload.type === "desktop_tasks_snapshot" && Array.isArray(payload.tasks)) {
         state.tasks = payload.tasks;
         state.peerMessages = Array.isArray(payload.peer_messages) ? payload.peer_messages : [];
+        window.GalaxySSIPeerReminders?.restore(payload.peer_reminders);
         observeConversationUnread("tasks", state.tasks);
         observeConversationUnread("messages", state.peerMessages);
         selectActiveEvolutionTask();
@@ -1539,6 +1544,8 @@ async function connectTaskStream() {
         renderConversation();
       } else if (payload.type === "desktop_task_update") {
         mergeTaskUpdate(payload.task);
+      } else if (payload.type === "desktop_peer_reminder") {
+        window.GalaxySSIPeerReminders?.receive(payload.reminder);
       } else if (payload.type === "desktop_peer_message" && payload.message?.message_id) {
         observeConversationUnread("messages", [payload.message], false);
         const index = state.peerMessages.findIndex((item) => item.message_id === payload.message.message_id);
@@ -1570,7 +1577,7 @@ async function connectTaskStream() {
 function updateSendState() {
   const ready = Boolean(elements.prompt.value.trim() || state.attachments.length);
   elements.send.classList.toggle("ready", ready);
-  elements.send.disabled = !ready || state.peerSendPending;
+  elements.send.disabled = !ready || state.peerSendPending || Boolean(!state.activePeerRouteId && state.composerVoice?.busy);
   elements.prompt.style.height = "35px";
   elements.prompt.style.height = `${Math.min(104, Math.max(35, elements.prompt.scrollHeight))}px`;
 }
@@ -1614,6 +1621,7 @@ function releaseStagedAttachments(paths) {
 }
 
 async function addAttachmentPaths(paths, knownDetails = []) {
+  const owner = { peer: state.activePeerRouteId, conversation: state.currentConversationId, epoch: state.composerPasteEpoch };
   const incoming = Array.isArray(paths) ? paths : [];
   const combined = [...state.attachments, ...incoming];
   state.attachments = Array.from(new Set(combined)).slice(0, 12);
@@ -1625,7 +1633,8 @@ async function addAttachmentPaths(paths, knownDetails = []) {
   const missing = state.attachments.filter((path) => !state.attachmentDetails.has(path));
   if (!missing.length) return;
   const details = await window.galaxyssi.describeAttachments(missing);
-  rememberAttachmentDetails(details);
+  if (owner.peer !== state.activePeerRouteId || owner.conversation !== state.currentConversationId || owner.epoch !== state.composerPasteEpoch) return;
+  rememberAttachmentDetails(details.filter((item) => state.attachments.includes(item.path)));
   renderAttachmentTray();
 }
 
@@ -1639,9 +1648,11 @@ async function addAttachments() {
 }
 
 async function pasteAttachments(event) {
-  const clipboardFiles = Array.from(event.clipboardData?.files || []).slice(0, 12);
-  if (!clipboardFiles.length) return;
+  const plan = window.GalaxySSIComposerClipboard.plan(event.clipboardData);
+  const clipboardFiles = plan.files;
+  if (!clipboardFiles.length && !plan.nativeImage) return;
   event.preventDefault();
+  const owner = { peer: state.activePeerRouteId, conversation: state.currentConversationId, epoch: state.composerPasteEpoch };
   try {
     const directPaths = [];
     const buffered = [];
@@ -1659,7 +1670,11 @@ async function pasteAttachments(event) {
     }
     const staged = buffered.length
       ? await window.galaxyssi.stageClipboardAttachments(buffered)
-      : [];
+      : plan.nativeImage ? await window.galaxyssi.pasteClipboardImage() : [];
+    if (owner.peer !== state.activePeerRouteId || owner.conversation !== state.currentConversationId || owner.epoch !== state.composerPasteEpoch) {
+      if (staged.length) releaseStagedAttachments(staged.map((item) => item.path));
+      return;
+    }
     await addAttachmentPaths(
       [...directPaths, ...staged.map((item) => item.path)],
       staged
@@ -1690,6 +1705,7 @@ function mergePeerDelivery(previous, incoming) {
 }
 
 async function sendTask() {
+  if (!state.activePeerRouteId && state.composerVoice?.busy) return;
   const prompt = elements.prompt.value.trim();
   if (!prompt && !state.attachments.length) return;
   if (state.activePeerRouteId) {
@@ -1782,6 +1798,7 @@ async function sendTask() {
 }
 
 function newTask(agentId = "auto", name = "Agent") {
+  state.composerVoice?.cancel();
   closePeerImageViewer();
   resetPeerImagePreviews();
   state.activePeerRouteId = "";
@@ -4922,34 +4939,33 @@ function finishPeerVoiceHold(sendRequested) {
   if (state.peerVoiceRecorder?.state === "recording") state.peerVoiceRecorder.stop();
 }
 
-function startVoiceInput() {
-  if (state.activePeerRouteId) return;
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) {
-    showToast(t("Voice input is not available on this desktop."));
-    return;
-  }
-  if (state.speechRecognition) {
-    state.speechRecognition.stop();
-    return;
-  }
-  const recognition = new Recognition();
-  state.speechRecognition = recognition;
-  recognition.lang = resolveLanguagePolicy(
-    state.agentConfig?.language_policy?.asr_language || "auto"
-  );
-  recognition.interimResults = true;
-  $("#voiceButton").classList.add("active");
-  recognition.onresult = (event) => {
-    elements.prompt.value = Array.from(event.results).map((result) => result[0].transcript).join("");
-    updateSendState();
-  };
-  recognition.onerror = (event) => showToast(`${t("Voice input failed")}: ${event.error}`);
-  recognition.onend = () => {
-    state.speechRecognition = null;
-    $("#voiceButton").classList.remove("active");
-  };
-  recognition.start();
+function setupComposerVoice() {
+  state.composerVoice = window.galaxyssiComposerVoice.createCapture({
+    getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
+    Recorder: MediaRecorder,
+    transcribe: (payload) => window.galaxyssi.transcribeSpeech(payload),
+    context: () => `${state.activePeerRouteId}:${state.currentConversationId}`,
+    language: () => state.agentConfig?.language_policy?.asr_language || "auto",
+    onText: (text) => {
+      elements.prompt.value = window.galaxyssiComposerVoice.appendTranscript(elements.prompt.value, text);
+      updateSendState();
+      elements.prompt.focus();
+    },
+    onError: (message) => showToast(t(message)),
+    onState: ({ phase, cancelPending, elapsed }) => {
+      const overlay = $("#peerVoiceHoldOverlay");
+      overlay.hidden = phase === "idle";
+      overlay.classList.toggle("cancel-pending", cancelPending);
+      $("#voiceButton").classList.toggle("active", phase !== "idle");
+      $("#voiceButton").setAttribute("aria-pressed", String(phase !== "idle"));
+      $("#peerVoiceHoldTimer").textContent = window.galaxyssiPeerHoldToTalk.formatElapsed(elapsed);
+      $("#peerVoiceHoldHint").textContent = t(phase === "transcribing" ? "Recognizing speech locally..."
+        : cancelPending ? "Release to cancel" : "Release to transcribe · Swipe up to cancel");
+      updateSendState();
+    }
+  });
+  window.addEventListener("blur", () => state.composerVoice?.cancel());
+  window.addEventListener("beforeunload", () => state.composerVoice?.cancel());
 }
 
 function clearTaskSpeechPlayback() {
@@ -5121,39 +5137,41 @@ function bindEvents() {
   });
   $("#attachButton").addEventListener("click", addAttachments);
   const voiceButton = $("#voiceButton");
-  voiceButton.addEventListener("click", (event) => {
-    if (state.activePeerRouteId) {
-      event.preventDefault();
-      return;
-    }
-    startVoiceInput();
-  });
+  setupComposerVoice();
+  voiceButton.addEventListener("click", (event) => event.preventDefault());
   voiceButton.addEventListener("pointerdown", (event) => {
-    if (!state.activePeerRouteId || event.button !== 0 || !event.isPrimary) return;
+    if (event.button !== 0 || !event.isPrimary) return;
     event.preventDefault();
     voiceButton.setPointerCapture(event.pointerId);
-    beginPeerVoiceHold(event.pointerId, event.clientY);
+    if (state.activePeerRouteId) beginPeerVoiceHold(event.pointerId, event.clientY);
+    else state.composerVoice.begin(event.pointerId, event.clientY);
   });
   voiceButton.addEventListener("pointermove", (event) => {
     if (event.pointerId === state.peerVoicePointerId) updatePeerVoiceHoldPointer(event.clientY);
+    state.composerVoice.move(event.pointerId, event.clientY);
   });
   voiceButton.addEventListener("pointerup", (event) => {
+    state.composerVoice.finish(true, event.pointerId);
     if (event.pointerId !== state.peerVoicePointerId) return;
     event.preventDefault();
     finishPeerVoiceHold(true);
   });
   voiceButton.addEventListener("pointercancel", (event) => {
+    state.composerVoice.finish(false, event.pointerId);
     if (event.pointerId === state.peerVoicePointerId) finishPeerVoiceHold(false);
   });
   voiceButton.addEventListener("keydown", (event) => {
-    if (!state.activePeerRouteId || event.repeat || ![" ", "Enter"].includes(event.key)) return;
+    if (event.key === "Escape") { state.composerVoice.cancel(); finishPeerVoiceHold(false); return; }
+    if (event.repeat || ![" ", "Enter"].includes(event.key)) return;
     event.preventDefault();
-    beginPeerVoiceHold();
+    if (state.activePeerRouteId) beginPeerVoiceHold();
+    else state.composerVoice.begin();
   });
   voiceButton.addEventListener("keyup", (event) => {
-    if (!state.activePeerRouteId || ![" ", "Enter"].includes(event.key)) return;
+    if (![" ", "Enter"].includes(event.key)) return;
     event.preventDefault();
-    finishPeerVoiceHold(true);
+    if (state.activePeerRouteId) finishPeerVoiceHold(true);
+    else state.composerVoice.finish(true);
   });
   $("#agentPickerButton").addEventListener("click", () => openPanel("agents"));
   $("#sendButton").addEventListener("click", sendTask);
@@ -5232,6 +5250,7 @@ function bindEvents() {
     }
     const item = event.target.closest("[data-conversation-id]");
     if (!item) return;
+    state.composerVoice?.cancel();
     state.activePeerRouteId = "";
     document.querySelector("#agentApp").classList.remove("peer-mode");
     state.currentConversationId = item.dataset.conversationId;

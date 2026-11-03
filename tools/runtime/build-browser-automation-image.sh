@@ -2,6 +2,7 @@
 set -euo pipefail
 
 playwright_version="1.61.0"
+runtime_version="1.61.1"
 playwright_image="mcr.microsoft.com/playwright:v${playwright_version}-noble"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +54,17 @@ browser_roots=("${chromium_roots[@]}" "${headless_roots[@]}" "${ffmpeg_roots[@]}
 cp -aL "${browser_roots[@]}" /out/lib/ms-playwright/
 [[ ! -d /etc/fonts ]] || cp -aL /etc/fonts /out/lib/fontconfig
 [[ ! -d /usr/share/fonts ]] || cp -aL /usr/share/fonts /out/share/fonts
+sed -i 's#<dir>/usr/share/fonts</dir>#<dir prefix="relative">../../share/fonts</dir><dir>/usr/share/fonts</dir>#' /out/lib/fontconfig/fonts.conf
 
+# NSS loads these modules with dlopen, so executable ldd output alone misses HTTPS dependencies.
+nss_modules=()
+for module in libsoftokn3.so libfreeblpriv3.so libnssckbi.so; do
+  library="$(find /usr/lib /lib -name "$module" -type f -print -quit)"
+  [[ -n "$library" ]] || { echo "Missing Chromium TLS module: $module" >&2; exit 2; }
+  nss_modules+=("$library")
+done
+{
+printf '%s\n' "${nss_modules[@]}"
 while IFS= read -r binary; do
   ldd_output="$(ldd "$binary" 2>/dev/null || true)"
   [[ -n "$ldd_output" ]] || continue
@@ -61,7 +72,8 @@ while IFS= read -r binary; do
     /=> \/[^ ]+/ { print $3 }
     /^\/[[:graph:]]+/ { print $1 }
   ' <<<"$ldd_output"
-done < <(find "${browser_roots[@]}" -type f -perm /111 -print) | sort -u | while IFS= read -r library; do
+done < <(find "${browser_roots[@]}" -type f -perm /111 -print; printf '%s\n' "${nss_modules[@]}")
+} | sort -u | while IFS= read -r library; do
   [[ -f "$library" ]] || continue
   case "$(basename "$library")" in
     ld-linux-*|libc.so.*) continue ;;
@@ -123,7 +135,7 @@ printf '%s\n' \
 
 node "$repository_root/tools/runtime/build-runtime-image.mjs" \
   --pack-id browser-automation \
-  --version "$playwright_version" \
+  --version "$runtime_version" \
   --source "$source_root" \
   --output "$output" \
   --license "Apache-2.0 AND BSD-3-Clause AND LGPL-2.1-or-later" \

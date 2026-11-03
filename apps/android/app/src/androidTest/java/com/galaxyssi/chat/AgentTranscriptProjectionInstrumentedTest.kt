@@ -24,6 +24,35 @@ class AgentTranscriptProjectionInstrumentedTest {
         assertEquals(1000L, store.conversation(id)?.updatedAt)
     }
 
+    @Test fun restoringACompletedTaskCannotPublishItIntoAnotherSelectedConversation() = withConversation { store, id, turn ->
+        val other = store.createConversation(privateMode = true)
+        try {
+            val completed = state(AgentPhase.COMPLETED, "Answer for the original conversation", "owned-$turn")
+            context.persistAgentTranscript(completed, id, turn, store)
+            context.persistAgentTranscript(completed, other.id, "", store)
+            assertEquals(1, store.list(id).count { it.role == AgentTranscriptRole.ASSISTANT })
+            assertTrue(store.list(other.id).isEmpty())
+            assertEquals(id, store.conversationIdForTurn(turn))
+            assertEquals(id, store.conversationIdForTask(completed.sessionId))
+        } finally { store.deleteConversation(other.id) }
+    }
+
+    @Test fun legacyCrossConversationCopiesAreExcludedFromPagesAndModelContext() = withConversation { store, id, turn ->
+        val group = store.createConversation(privateMode = true)
+        val ownTurn = "group-${UUID.randomUUID()}"
+        try {
+            store.append(AgentTranscriptRole.USER, "Group question", conversationId = group.id, turnId = ownTurn)
+            store.append(AgentTranscriptRole.ASSISTANT, "Foreign answer", "legacy-copy-$turn",
+                conversationId = group.id, turnId = turn, taskId = "foreign-$turn")
+            assertEquals(id, store.conversationIdForTurn(turn))
+            assertFalse(store.list(group.id).any { it.turnId == turn })
+            assertFalse(store.page(group.id, pageSize = 1).entries.any { it.turnId == turn })
+            assertTrue(store.page(group.id, pageSize = 1).entries.any { it.turnId == ownTurn })
+            assertFalse(store.context(group.id).turns.any { it.turnId == turn })
+            assertTrue(store.list(id).any { it.turnId == turn && it.role == AgentTranscriptRole.USER })
+        } finally { store.deleteConversation(group.id) }
+    }
+
     @Test fun repeatedModelAndRecoveryProjectionDoNotChangeMessageActivity() = withConversation { store, id, turn ->
         store.upsert(AgentTranscriptRole.ASSISTANT, "Saved answer", "assistant-final:$turn", 2000L, id, turn)
         val before = requireNotNull(store.conversation(id))

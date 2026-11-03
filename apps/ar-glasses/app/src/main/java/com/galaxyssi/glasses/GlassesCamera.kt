@@ -68,15 +68,15 @@ internal class GlassesCamera(
                 provider = cameraProvider
                 imageCapture = photo
                 videoCapture = video
-                report("相机已就绪 · 说拍照或开始录像")
-            }.onFailure { report("无法启动相机：${it.message}") }
+                report(activity.getString(R.string.glasses_copy_camera_ready_say_take_photo_or_start_video))
+            }.onFailure { report(activity.getString(R.string.glasses_copy_cannot_start_camera, it.message)) }
         }, ContextCompat.getMainExecutor(activity))
     }
 
     fun takePhoto() {
-        if (scanning) { report("请先完成配网码扫描"); return }
-        if (isRecording) { report("请先停止录像再拍照"); return }
-        val capture = imageCapture ?: run { report("相机尚未就绪"); return }
+        if (scanning) { report(activity.getString(R.string.glasses_copy_finish_scanning_the_wi_fi_code_first)); return }
+        if (isRecording) { report(activity.getString(R.string.glasses_copy_stop_recording_before_taking_a_photo)); return }
+        val capture = imageCapture ?: run { report(activity.getString(R.string.glasses_copy_camera_not_ready)); return }
         val name = "GalaxySSI_${stamp()}.jpg"
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
@@ -87,15 +87,15 @@ internal class GlassesCamera(
             activity.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values
         ).build()
         capture.takePicture(output, ContextCompat.getMainExecutor(activity), object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(result: ImageCapture.OutputFileResults) { if (!closed) report("已拍照：$name") }
-            override fun onError(error: ImageCaptureException) { if (!closed) report("拍照失败：${error.message}") }
+            override fun onImageSaved(result: ImageCapture.OutputFileResults) { if (!closed) report(activity.getString(R.string.glasses_copy_photo_saved, name)) }
+            override fun onError(error: ImageCaptureException) { if (!closed) report(activity.getString(R.string.glasses_copy_photo_failed, error.message)) }
         })
     }
 
     fun startVideo() {
-        if (scanning) { report("请先完成配网码扫描"); return }
-        if (recording != null || startingRecording) { report("正在录像"); return }
-        val capture = videoCapture ?: run { report("相机尚未就绪"); return }
+        if (scanning) { report(activity.getString(R.string.glasses_copy_finish_scanning_the_wi_fi_code_first)); return }
+        if (recording != null || startingRecording) { report(activity.getString(R.string.glasses_copy_recording)); return }
+        val capture = videoCapture ?: run { report(activity.getString(R.string.glasses_copy_camera_not_ready)); return }
         val name = "GalaxySSI_${stamp()}.mp4"
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
@@ -110,31 +110,31 @@ internal class GlassesCamera(
             // Do not call withAudioEnabled(): the microphone stays with offline speech recognition.
             recording = capture.output.prepareRecording(activity, output).start(ContextCompat.getMainExecutor(activity)) { event ->
                 when (event) {
-                    is VideoRecordEvent.Start -> { startingRecording = false; report("正在录像 · 说停止录像") }
+                    is VideoRecordEvent.Start -> { startingRecording = false; report(activity.getString(R.string.glasses_copy_recording_say_stop_video)) }
                     is VideoRecordEvent.Finalize -> {
                         startingRecording = false
                         recording = null
-                        if (event.hasError()) report("录像失败：${event.error}")
-                        else if (!closed) report("录像已保存：$name")
+                        if (event.hasError()) report(activity.getString(R.string.glasses_copy_recording_failed, event.error))
+                        else if (!closed) report(activity.getString(R.string.glasses_copy_video_saved, name))
                     }
                 }
             }
         } catch (error: Exception) {
             startingRecording = false
-            report("无法开始录像：${error.message}")
+            report(activity.getString(R.string.glasses_copy_cannot_start_recording, error.message))
         }
     }
 
     fun stopVideo() {
-        val current = recording ?: run { report("当前没有录像"); return }
+        val current = recording ?: run { report(activity.getString(R.string.glasses_copy_no_recording_in_progress)); return }
         current.stop()
-        report("正在保存录像…")
+        report(activity.getString(R.string.glasses_copy_saving_video))
     }
 
     fun scanWifi() {
-        if (isRecording) { report("请先停止录像再扫描配网码"); return }
-        val cameraProvider = provider ?: run { report("相机尚未就绪"); return }
-        if (scanning) { report("正在扫描配网码"); return }
+        if (isRecording) { report(activity.getString(R.string.glasses_copy_stop_recording_before_scanning_the_wi_fi_code)); return }
+        val cameraProvider = provider ?: run { report(activity.getString(R.string.glasses_copy_camera_not_ready)); return }
+        if (scanning) { report(activity.getString(R.string.glasses_copy_scanning_wi_fi_code)); return }
         scanning = true
         val analyzer = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
@@ -158,8 +158,8 @@ internal class GlassesCamera(
             cameraProvider.unbindAll()
             cameraProvider.bindToLifecycle(activity, CameraSelector.DEFAULT_BACK_CAMERA,
                 Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }, analyzer)
-            report("请看向手机上的 GalaxySSI 配网二维码")
-        }.onFailure { scanning = false; analyzer.clearAnalyzer(); report("无法扫描配网码：${it.message}"); open() }
+            report(activity.getString(R.string.glasses_copy_look_at_the_galaxyssi_wi_fi_qr_code))
+        }.onFailure { scanning = false; analyzer.clearAnalyzer(); report(activity.getString(R.string.glasses_copy_cannot_scan_wi_fi_code, it.message)); open() }
     }
 
     private fun stopWifiScan() {

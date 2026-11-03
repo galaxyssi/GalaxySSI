@@ -420,11 +420,15 @@ fun AgentAction.ensurePlanRevision(revision: Int): AgentAction =
 fun AgentAction.supersededByPlanRevision(
     sourceRevision: Int,
     nextRevision: Int
-): AgentAction = ensurePlanRevision(sourceRevision).copy(
-    status = AgentActionStatus.ROLLED_BACK,
-    result = result.ifBlank { "Adjusted by plan revision $nextRevision" },
-    evidence = evidence.ifBlank { "superseded_by_plan_revision:$nextRevision" }
-)
+): AgentAction {
+    val versioned = ensurePlanRevision(sourceRevision)
+    return versioned.copy(
+        status = AgentActionStatus.ROLLED_BACK,
+        parameters = versioned.parameters + (SUPERSEDED_SOURCE_STATUS_PARAMETER to status.name),
+        result = result.ifBlank { "Adjusted by plan revision $nextRevision" },
+        evidence = evidence.ifBlank { "superseded_by_plan_revision:$nextRevision" }
+    )
+}
 
 private fun AgentAction.markInterruptedRecoveryScheduled(): AgentAction =
     if (evidence == AGENT_INTERRUPTED_EXECUTION_EVIDENCE) {
@@ -437,6 +441,7 @@ internal const val AGENT_INTERRUPTED_EXECUTION_EVIDENCE = "interrupted_unverifie
 internal const val AGENT_INTERRUPTED_RECOVERY_SCHEDULED_EVIDENCE = "interrupted_recovery_scheduled"
 internal const val AGENT_CONNECTOR_DELIVERY_FAILED_EVIDENCE_PREFIX = "connector_delivery_failed:"
 internal const val PLAN_REVISION_PARAMETER = "plan_revision"
+internal const val SUPERSEDED_SOURCE_STATUS_PARAMETER = "superseded_source_status"
 
 private val REVISION_OPEN_ACTION_STATUSES = setOf(
     AgentActionStatus.PROPOSED,

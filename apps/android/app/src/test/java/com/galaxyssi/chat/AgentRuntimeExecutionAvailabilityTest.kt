@@ -31,6 +31,24 @@ class AgentRuntimeExecutionAvailabilityTest {
         assertEquals("Install the linux-base runtime pack", availability.reason)
     }
 
+    @Test
+    fun idleStatusDistinguishesCurrentBridgeFromOnDemandExecution() {
+        val output = AgentOnDeviceRuntimeTools.runtimeStatusOutput(
+            status(AgentOnDeviceRuntimeBackend.QEMU_TCG, false, "Guest bridge is disconnected"))
+        assertEquals(false, output["backend_ready"])
+        assertEquals("available", output["execution_tool_availability"])
+        assertEquals("on_demand", output["execution_startup"])
+        assertEquals("Guest bridge is disconnected", output["reason"])
+    }
+
+    @Test
+    fun missingPrerequisitesAreNotAdvertisedAsLazyStartup() {
+        val output = AgentOnDeviceRuntimeTools.runtimeStatusOutput(
+            status(AgentOnDeviceRuntimeBackend.NONE, false, "Install the linux-base runtime pack"))
+        assertEquals("requires_setup", output["execution_tool_availability"])
+        assertEquals("requires_setup", output["execution_startup"])
+    }
+
     private fun status(
         backend: AgentOnDeviceRuntimeBackend,
         backendReady: Boolean,

@@ -40,6 +40,18 @@ internal class CollaborationGoalAcceptance(
 ) {
     constructor(context: Context) : this(CollaborationResearchWorkspace(context), CollaborationEvidenceLedger(context))
 
+    fun deliverInterim(access: CollaborationWorkspaceAccess, raw: String, criteria: String,
+                       deliver: (JSONObject, JSONObject) -> JSONObject): JSONObject {
+        val scope = access.copy(dependencyNodes = access.dependencyNodes.toSet())
+        val assessment = requireNotNull(CollaborationGoalLoop.decode(raw)) { "Invalid interim assessment" }
+        val criterion = CollaborationInterimDelivery.criterion(assessment, JSONArray(criteria))
+        val ref = criterion.getJSONObject("delivery")
+        val snapshot = workspace.acceptanceReviewSnapshot(scope, setOf(CollaborationAcceptanceReviewSnapshot.Binding.of(
+            ref, CollaborationReviewContract.KIND, criterion.getString("id"), criterion.getString("requirement"))))
+        validateCriterion(scope, criterion, snapshot, contentOnly = true)
+        return workspace.withAcceptanceFence(snapshot) { deliver(ref, currentRevision(scope, ref)) }
+    }
+
     fun evaluate(access: CollaborationWorkspaceAccess, raw: String, criteria: String, goal: String,
                  now: Long = System.currentTimeMillis()): CollaborationAcceptanceReceipt {
         val scope = access.copy(dependencyNodes = access.dependencyNodes.toSet())
@@ -50,8 +62,9 @@ internal class CollaborationGoalAcceptance(
             scope.runId, scope.turnId, scope.nodeId, failure == null,
             if (failure != null) failure.message?.take(1200) ?: "Acceptance validation failed" else
                 "Host source-ID coverage and independent review integrity checked; " +
-                    "any computational qualification is limited to the exact-integer fixture. " +
-                    "semantic support is a reviewer judgment, not objective scientific truth and not empirical validation", now)
+                    "computational qualification covers only the selected validator's preserved inputs and operations. " +
+                    "semantic support is a reviewer judgment, not objective scientific truth and not empirical validation; " +
+                    "source classification is not a compliance audit or a user/device delivery receipt", now)
         return runCatching {
             val assessment = requireNotNull(CollaborationGoalLoop.decode(raw)) { "Invalid goal assessment" }
             require(!CollaborationCandidateEvolution.requested(assessment)) { "Candidate cycle work remains requested" }
@@ -73,18 +86,26 @@ internal class CollaborationGoalAcceptance(
                 assessment.getJSONArray("blockers").length() == 0 && (assessment.optJSONArray("recruit")?.length() ?: 0) == 0) {
                 "Unfinished assignments or blockers remain"
             }
-            val coverage = requireNotNull(assessment.optJSONObject(CollaborationSemanticGoalCoverage.FIELD)) {
+            val coverage = CollaborationGoalCoverageManifest.resolve(requireNotNull(assessment.optJSONObject(CollaborationSemanticGoalCoverage.FIELD)) {
                 "Publish an explicit original-goal requirement mapping and a separate independent semantic coverage review; supply goal_coverage references"
+            }, current, goal) { ref -> currentRevision(scope, ref) }
+            val targets = coverage.parts.mapTo(linkedSetOf()) { part ->
+                CollaborationAcceptanceReviewSnapshot.Binding.of(part.mapping, CollaborationSemanticGoalCoverage.REVIEW)
             }
-            val targets = linkedSetOf(CollaborationAcceptanceReviewSnapshot.Binding.of(coverage.getJSONObject("mapping"),
-                CollaborationSemanticGoalCoverage.REVIEW))
             repeat(current.length()) { index ->
                 val criterion = current.getJSONObject(index)
                 targets.add(CollaborationAcceptanceReviewSnapshot.Binding.of(criterion.getJSONObject("delivery"),
                     CollaborationReviewContract.KIND, criterion.getString("id"), criterion.getString("requirement")))
             }
             val snapshot = workspace.acceptanceReviewSnapshot(scope, targets)
-            validateCoverage(scope, assessment, current, goal, snapshot)
+            CollaborationFinalDelivery.content(assessment) { ref -> currentRevision(scope, ref) }?.let { text ->
+                require(assessment.getString("summary") == text) {
+                    "final_delivery must project the complete saved content unchanged before acceptance"
+                }
+            }
+            // Resolution precedes the review snapshot; recheck directories inside its mutation fence.
+            coverage.manifests.forEach { currentRevision(scope, it) }
+            validateCoverage(scope, coverage.parts, current, goal, snapshot)
             repeat(current.length()) {
                 val criterion = current.getJSONObject(it)
                 require(criterion.optString("verification") != "computational" || criterion.getString("id") in priorIds) {
@@ -96,34 +117,34 @@ internal class CollaborationGoalAcceptance(
         }.getOrElse { receipt(it) }
     }
 
-    private fun validateCoverage(access: CollaborationWorkspaceAccess, assessment: JSONObject, criteria: JSONArray, goal: String,
+    private fun validateCoverage(access: CollaborationWorkspaceAccess, parts: List<CollaborationSemanticGoalCoverage.ReferencePair>, criteria: JSONArray, goal: String,
                                  snapshot: CollaborationAcceptanceReviewSnapshot) {
-        val refs = requireNotNull(assessment.optJSONObject(CollaborationSemanticGoalCoverage.FIELD)) {
-            "Publish an explicit original-goal requirement mapping and a separate independent semantic coverage review; supply goal_coverage references"
+        val validation = CollaborationSemanticGoalCoverage.Validation(criteria, goal)
+        val covered = parts.map { part ->
+            val mapping = currentRevision(access, part.mapping)
+            val review = currentRevision(access, part.review)
+            require(mapping.getString("kind") == "artifact" && review.getString("kind") == CollaborationReviewContract.KIND) {
+                "Coverage needs a saved mapping artifact and a typed independent review"
+            }
+            require(access.personId.isNotBlank() && review.getString("person_id") != access.personId) {
+                "The evaluating coordinator cannot independently certify coverage of its own criteria"
+            }
+            CollaborationReviewContract.validate(review.getString("kind"), review.getJSONObject("body"))
+            val check = review.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.REVIEW)
+            validateIndependentReview(access, part.mapping, mapping, review, check, "Original-goal coverage")
+            val body = mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING)
+            validateCurrentReviews(snapshot, part.mapping, CollaborationSemanticGoalCoverage.REVIEW, "Original-goal coverage") { settled ->
+                validation.part(body, settled)
+            }
+            validation.part(body, check)
         }
-        val mappingRef = refs.getJSONObject("mapping")
-        val mapping = currentRevision(access, mappingRef)
-        val review = currentRevision(access, refs.getJSONObject("review"))
-        require(mapping.getString("kind") == "artifact" && review.getString("kind") == CollaborationReviewContract.KIND) {
-            "Coverage needs a saved mapping artifact and a typed independent review"
-        }
-        require(access.personId.isNotBlank() && review.getString("person_id") != access.personId) {
-            "The evaluating coordinator cannot independently certify coverage of its own criteria"
-        }
-        CollaborationReviewContract.validate(review.getString("kind"), review.getJSONObject("body"))
-        val check = review.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.REVIEW)
-        validateIndependentReview(access, mappingRef, mapping, review, check, "Original-goal coverage")
-        CollaborationSemanticGoalCoverage.validate(mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING),
-            check, criteria, goal)
-        validateCurrentReviews(snapshot, mappingRef, CollaborationSemanticGoalCoverage.REVIEW, "Original-goal coverage") { settled ->
-            CollaborationSemanticGoalCoverage.validate(mapping.getJSONObject("body").getJSONObject(CollaborationSemanticGoalCoverage.MAPPING),
-                settled, criteria, goal)
-        }
+        validation.complete(covered)
     }
 
-    private fun validateCriterion(access: CollaborationWorkspaceAccess, criterion: JSONObject, snapshot: CollaborationAcceptanceReviewSnapshot) {
+    private fun validateCriterion(access: CollaborationWorkspaceAccess, criterion: JSONObject, snapshot: CollaborationAcceptanceReviewSnapshot,
+                                  contentOnly: Boolean = false) {
         val id = criterion.getString("id")
-        require(criterion.getString("status") == "met") { "$id: criterion remains open" }
+        require(contentOnly || criterion.getString("status") == "met") { "$id: criterion remains open" }
         val deliveryRef = criterion.getJSONObject("delivery")
         val reviewRef = criterion.getJSONObject("review")
         val delivery = currentRevision(access, deliveryRef)
@@ -131,17 +152,31 @@ internal class CollaborationGoalAcceptance(
         require(delivery.getString("kind") in setOf("artifact", "proposal", "decision") &&
             delivery.getJSONObject("body").opt("content") is String &&
             delivery.getJSONObject("body").optString("content").isNotBlank()) { "$id: no substantive saved delivery" }
-        CollaborationQualifiedValidation.validate(criterion, delivery.getJSONObject("body"))
+        if (!contentOnly) CollaborationQualifiedValidation.validate(criterion, delivery.getJSONObject("body"), CollaborationValidationEvidence(
+            delivery, review, exact = { ref, kind ->
+                CollaborationReviewContract.validateReference(ref)
+                val saved = requireNotNull(workspace.read(access, ref.getString("object_id"), ref.getInt("revision"))) {
+                    "Executable verification record is missing or isolated"
+                }
+                require(saved.getString("kind") == kind && CollaborationResearchCandidates.same(saved, ref) &&
+                    workspace.isCurrent(access, ref.getString("object_id"), ref.getInt("revision"))) {
+                    "Executable verification record kind, version or digest changed"
+                }
+                saved
+            }, original = { ref -> ledger.read(access, ref.getString("evidence_id"), ref.getString("sha256")) },
+            requireReadCoverage = { ledger.requireReadCoverage(access, it) },
+            contributors = { workspace.contributorIds(access, it) }))
         CollaborationReviewContract.validate(CollaborationReviewContract.KIND, review.getJSONObject("body"))
         val check = review.getJSONObject("body").getJSONObject("acceptance_review")
         validateIndependentReview(access, deliveryRef, delivery, review, check, id)
         require(check.getString("criterion_id") == id && check.getString("requirement") == criterion.getString("requirement")) {
             "$id: review addresses a different requirement"
         }
-        require(check.getString("verdict") == "supported" && check.getJSONArray("unresolved").length() == 0) {
+        val readiness = if (contentOnly) CollaborationInterimDelivery.readiness(check) else check
+        require(readiness.getString("verdict") == "supported" && readiness.getJSONArray("unresolved").length() == 0) {
             "$id: review is negative, incomplete or has unresolved objections"
         }
-        validateCurrentReviews(snapshot, deliveryRef, CollaborationReviewContract.KIND, id, criterion.getString("requirement"))
+        validateCurrentReviews(snapshot, deliveryRef, CollaborationReviewContract.KIND, id, criterion.getString("requirement"), contentOnly)
         val reviewedObservations = mutableListOf<JSONObject>()
         listOf(delivery, review).forEach { revision ->
             val refs = revision.getJSONArray("host_observations")
@@ -150,13 +185,18 @@ internal class CollaborationGoalAcceptance(
                 val observation = requireNotNull(ledger.read(access, ref.getString("evidence_id"), ref.getString("sha256"))) {
                     "$id: a cited observation is missing, corrupt or inaccessible"
                 }
-                require(observation.getString("status") == "returned" && observation.getString("observation_kind") == "tool_output_recorded") {
+                require((observation.getString("status") == "returned" || contentOnly && observation.getString("status") == "failed") &&
+                    observation.getString("observation_kind") == "tool_output_recorded") {
                     "$id: failed tools and member assessments are not supporting observations"
                 }
-                if (revision === review) reviewedObservations += observation
+                if (revision === review) {
+                    CollaborationEvidenceReadCoverage.requireComplete(ref, review, observation)
+                    reviewedObservations += observation
+                }
             }
         }
-        CollaborationEvidenceRequirements.validate(criterion, reviewedObservations)
+        // Interim content can precede post-delivery evidence, but never satisfies the original goal contract.
+        if (!contentOnly) CollaborationEvidenceRequirements.validate(criterion, reviewedObservations)
     }
 
     private fun validateIndependentReview(access: CollaborationWorkspaceAccess, deliveryRef: JSONObject, delivery: JSONObject,
@@ -179,10 +219,12 @@ internal class CollaborationGoalAcceptance(
     }
 
     private fun validateCurrentReviews(snapshot: CollaborationAcceptanceReviewSnapshot, target: JSONObject,
-                                       field: String, id: String, requirement: String = "", validateSupported: (JSONObject) -> Unit = {}) {
+                                       field: String, id: String, requirement: String = "", contentOnly: Boolean = false,
+                                       validateSupported: (JSONObject) -> Unit = {}) {
         val reviews = snapshot.reviews(CollaborationAcceptanceReviewSnapshot.Binding.of(target, field, id, requirement))
         reviews.forEach { revision ->
-            val check = revision.getJSONObject("body").getJSONObject(field)
+            val original = revision.getJSONObject("body").getJSONObject(field)
+            val check = if (contentOnly) CollaborationInterimDelivery.readiness(original) else original
             require(check.getString("verdict") == "supported" && check.getJSONArray("unresolved").length() == 0) {
                 "$id: a current typed review retains dissent or untested requirements; its author must resolve it in a new revision of that review"
             }

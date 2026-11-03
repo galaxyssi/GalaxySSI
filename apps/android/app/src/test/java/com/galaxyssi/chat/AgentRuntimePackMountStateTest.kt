@@ -11,6 +11,59 @@ import org.junit.Test
 
 class AgentRuntimePackMountStateTest {
     @Test
+    fun maintenanceRefusesAnActiveExecutionWithoutInvokingItsBlock() {
+        val gate = AgentRuntimePackActivationGate()
+        val maintenanceCalls = AtomicInteger()
+        gate.withExecution(needsRecycle = { false }, recycle = {}) {
+            assertEquals(null, gate.tryWithMaintenance { maintenanceCalls.incrementAndGet() })
+        }
+        assertEquals(0, maintenanceCalls.get())
+        assertEquals(1, gate.tryWithMaintenance { maintenanceCalls.incrementAndGet() })
+    }
+
+    @Test
+    fun newExecutionsCannotEnterWhileMaintenanceIsRunning() {
+        val gate = AgentRuntimePackActivationGate()
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val executionAttempted = CountDownLatch(1)
+        val executionEntered = CountDownLatch(1)
+        val maintenance = Thread {
+            gate.tryWithMaintenance {
+                started.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+        }
+        val execution = Thread {
+            executionAttempted.countDown()
+            gate.withExecution(needsRecycle = { false }, recycle = {}) { executionEntered.countDown() }
+        }
+        maintenance.start()
+        try {
+            assertTrue(started.await(2, TimeUnit.SECONDS))
+            execution.start()
+            assertTrue(executionAttempted.await(2, TimeUnit.SECONDS))
+            assertFalse(executionEntered.await(100, TimeUnit.MILLISECONDS))
+        } finally {
+            release.countDown()
+            maintenance.join(2_000)
+            execution.join(2_000)
+        }
+        assertEquals(0L, executionEntered.count)
+        assertFalse(maintenance.isAlive)
+        assertFalse(execution.isAlive)
+    }
+
+    @Test
+    fun maintenanceExceptionDoesNotLeakTheGate() {
+        val gate = AgentRuntimePackActivationGate()
+        org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+            gate.tryWithMaintenance<Int> { error("Controlled failure") }
+        }
+        assertEquals(7, gate.withExecution(needsRecycle = { false }, recycle = {}) { 7 })
+    }
+
+    @Test
     fun stableExecutionEvaluatesMountStateOnce() {
         val gate = AgentRuntimePackActivationGate()
         val checks = AtomicInteger()

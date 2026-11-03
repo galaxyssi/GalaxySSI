@@ -85,6 +85,29 @@ class AgentRunKernelContractTest {
         assertEquals(AgentRunKernelContract.canonical(original), normalized)
     }
 
+    @Test fun replayUsesJsonNumericValuesInsteadOfJvmWidths() {
+        val original = event().copy(payload = mapOf("revision" to 301L, "ratio" to 1.0))
+        AgentRunKernelContract.requireIdempotentReplay(original,
+            original.copy(payload = mapOf("ratio" to 1, "revision" to 301)))
+    }
+
+    @Test fun replayOfNestedJsonSurvivesEncryptedStorageRepresentation() {
+        val original = event().copy(payload = mapOf("items" to listOf(
+            mapOf("count" to 301L, "active" to true, "optional" to null), listOf(2L, "2"))))
+        val restored = requireNotNull(org.json.JSONObject(original.toJson().toString()).toRunEvent())
+        AgentRunKernelContract.requireIdempotentReplay(restored, original)
+    }
+
+    @Test fun replayStillRejectsChangedNumbersTypesAndOrder() {
+        val original = event().copy(payload = mapOf("values" to listOf(9_007_199_254_740_993L, 2L)))
+        for (values in listOf(listOf(9_007_199_254_740_992L, 2L), listOf("9007199254740993", 2),
+            listOf(2L, 9_007_199_254_740_993L))) {
+            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+                AgentRunKernelContract.requireIdempotentReplay(original, original.copy(payload = mapOf("values" to values)))
+            }
+        }
+    }
+
     private fun event() = AgentRunControlEvent(
         eventId = "event-1",
         conversationId = "conversation-1",

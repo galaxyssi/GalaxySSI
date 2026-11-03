@@ -7,6 +7,33 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentExecutionLoopTimelineTest {
+    @Test fun permissionWaitDoesNotCloseTheLedgerBeforePauseAndCancel() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("permission-task", AgentExecutionLoopBudget())
+        val blocked = loop.transition(AgentExecutionLoopPhase.BLOCKED)
+        val wait = AgentExecutionLoopTimelinePolicy.project(blocked, permissionWait = true)
+        assertEquals(AgentRunControlEventType.TOOL_PERMISSION_REQUIRED, wait.controlEventType)
+        val waiting = AgentRunEventStore.reduce(AgentRunControlState.RUNNING, wait.controlEventType)
+        assertEquals(AgentRunControlState.WAITING_FOR_USER, waiting)
+        val paused = AgentExecutionLoopTimelinePolicy.project(loop.pause())
+        assertEquals(AgentRunControlState.PAUSED, AgentRunEventStore.reduce(waiting, paused.controlEventType))
+        val cancelled = AgentExecutionLoopTimelinePolicy.project(loop.transition(AgentExecutionLoopPhase.CANCELLED))
+        assertEquals(AgentRunControlState.CANCELLED, AgentRunEventStore.reduce(
+            AgentRunControlState.PAUSED, cancelled.controlEventType))
+        assertEquals(AgentRunControlEventType.RUN_FAILED,
+            AgentExecutionLoopTimelinePolicy.project(blocked).controlEventType)
+    }
+
+    @Test fun eventIdsAreStableAndIsolatedAcrossRunsTurnsAndRevisions() {
+        val key = AgentExecutionLoopTimelinePolicy.eventKey("run", "turn", 1)
+        assertEquals(key, AgentExecutionLoopTimelinePolicy.eventKey("run", "turn", 1))
+        assertFalse(key == AgentExecutionLoopTimelinePolicy.eventKey("other-run", "turn", 1))
+        assertFalse(key == AgentExecutionLoopTimelinePolicy.eventKey("run", "other-turn", 1))
+        assertFalse(key == AgentExecutionLoopTimelinePolicy.eventKey("run", "turn", 2))
+        assertFalse(AgentExecutionLoopTimelinePolicy.eventKey("run:part", "turn", 1) ==
+            AgentExecutionLoopTimelinePolicy.eventKey("run", "part:turn", 1))
+    }
+
     @Test
     fun canonicalPhasesMapToStructuredRunEvents() {
         val loop = AgentExecutionLoop.create { 1_000L }

@@ -9,6 +9,8 @@ import org.json.JSONObject
 internal object AgentRuntimePackMountState {
     private val gate = AgentRuntimePackActivationGate()
 
+    fun <T : Any> tryWithMaintenance(block: () -> T): T? = gate.tryWithMaintenance(block)
+
     fun <T> withStableGuest(
         context: Context,
         statuses: () -> List<AgentRuntimePackStatus>,
@@ -75,6 +77,10 @@ internal class AgentRuntimePackActivationGate {
     private val lock = ReentrantLock(true)
     private val idle = lock.newCondition()
     private var activeExecutions = 0
+
+    fun <T : Any> tryWithMaintenance(block: () -> T): T? = lock.withLock {
+        if (activeExecutions != 0) null else block()
+    }
 
     fun <T> withExecution(
         needsRecycle: () -> Boolean,

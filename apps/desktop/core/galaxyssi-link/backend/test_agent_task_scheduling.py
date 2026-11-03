@@ -9,6 +9,10 @@ from agent_task_manager import AgentTaskManager
 from agent_work_pool import AgentWorkPool
 
 
+# These are synchronization watchdogs, not production latency assertions.
+WAIT_TIMEOUT = 15
+
+
 class TaskSchedulingTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -31,13 +35,13 @@ class TaskSchedulingTest(unittest.TestCase):
         started = threading.Event()
         self.addCleanup(self.manager.cancel, task.task_id)
         self.manager.schedule_external(task.task_id, started.set, lambda _: None)
-        self.assertTrue(started.wait(2))
+        self.assertTrue(started.wait(WAIT_TIMEOUT), self.manager.scheduling_status())
         later = Mock(return_value="later")
         self.create("later", later)
         self.assertEqual((1, 1), (self.pool.snapshot()["active"], self.pool.snapshot()["pending"]))
         later.assert_not_called()
         self.manager.update(task.task_id, "completed", result="async reply")
-        self.assertTrue(self.pool.wait_idle(3))
+        self.assertTrue(self.pool.wait_idle(WAIT_TIMEOUT))
         later.assert_called_once()
 
     def test_async_queue_cancel_never_calls_provider(self):
@@ -47,7 +51,7 @@ class TaskSchedulingTest(unittest.TestCase):
         self.manager.schedule_external(task.task_id, starter, lambda _: None)
         self.manager.cancel(task.task_id)
         release.set()
-        self.assertTrue(self.pool.wait_idle(3))
+        self.assertTrue(self.pool.wait_idle(WAIT_TIMEOUT))
         starter.assert_not_called()
 
     def test_control_instruction_can_run_while_regular_slots_are_full(self):
@@ -56,25 +60,26 @@ class TaskSchedulingTest(unittest.TestCase):
         started = threading.Event()
         self.addCleanup(self.manager.cancel, task.task_id)
         self.manager.schedule_external(task.task_id, started.set, lambda _: None, interactive=True)
-        self.assertTrue(started.wait(2))
+        self.assertTrue(started.wait(WAIT_TIMEOUT), self.manager.scheduling_status())
         self.assertEqual(1, self.manager.scheduling_status()["control"]["active"])
         self.manager.update(task.task_id, "completed")
-        self.assertTrue(self.manager._control_work_pool.wait_idle(3))
+        self.assertTrue(self.manager._control_work_pool.wait_idle(WAIT_TIMEOUT))
         release.set()
 
     def test_async_start_failure_is_persisted_and_releases_slot(self):
         task = self.external("async-failed")
         self.manager.schedule_external(task.task_id, Mock(side_effect=ValueError("cannot start")), lambda _: None)
-        self.assertTrue(self.pool.wait_idle(3))
+        self.assertTrue(self.pool.wait_idle(WAIT_TIMEOUT))
         self.assertEqual(("failed", "cannot start"), (task.status, task.error))
 
     def test_pausing_async_execution_releases_slot_without_completing_it(self):
         task = self.external("async-paused")
         started = threading.Event()
+        self.addCleanup(self.manager.cancel, task.task_id)
         self.manager.schedule_external(task.task_id, started.set, lambda _: None)
-        self.assertTrue(started.wait(2))
+        self.assertTrue(started.wait(WAIT_TIMEOUT), self.manager.scheduling_status())
         self.manager.pause(task.task_id)
-        self.assertTrue(self.pool.wait_idle(3))
+        self.assertTrue(self.pool.wait_idle(WAIT_TIMEOUT))
         self.assertEqual("paused", task.status)
 
     def create(self, task, runner=lambda _: "done", app="phone", conversation="session"):
@@ -89,11 +94,12 @@ class TaskSchedulingTest(unittest.TestCase):
         self.addCleanup(release.set)
         def run(_):
             started.set()
-            if not release.wait(10):
-                raise TimeoutError("Test did not release worker")
+            # Cleanup releases this even when an assertion fails. Never free a slot
+            # merely because a loaded CI runner took longer to set up the scenario.
+            release.wait()
             return "blocker done"
         task = self.create("blocker", run)
-        self.assertTrue(started.wait(2))
+        self.assertTrue(started.wait(WAIT_TIMEOUT), self.manager.scheduling_status())
         return task, release
 
     def test_cancelled_queued_task_never_runs(self):
@@ -104,7 +110,7 @@ class TaskSchedulingTest(unittest.TestCase):
         self.manager.cancel(task.task_id)
         self.assertEqual(0, self.pool.snapshot()["pending"])
         release.set()
-        self.assertTrue(self.pool.wait_idle(3))
+        self.assertTrue(self.pool.wait_idle(WAIT_TIMEOUT))
         called.assert_not_called()
         self.assertEqual("cancelled", self.manager._store.get(task.task_id)["status"])
 
@@ -118,7 +124,7 @@ class TaskSchedulingTest(unittest.TestCase):
         self.manager.continue_task(task.task_id, new, lambda _: None)
         self.assertEqual(2, task.execution_generation)
         release.set()
-        self.assertTrue(self.pool.wait_idle(3))
+        self.assertTrue(self.pool.wait_idle(WAIT_TIMEOUT))
         old.assert_not_called()
         new.assert_called_once()
         self.assertEqual(("completed", "new"), (task.status, task.result))
@@ -142,7 +148,7 @@ class TaskSchedulingTest(unittest.TestCase):
         tasks = [self.create(f"{app}-{i}", lambda t: seen.append(t.task_id) or t.client_route_id,
                              app=app, conversation="same") for app in "abc" for i in range(2)]
         release.set()
-        self.assertTrue(self.pool.wait_idle(5))
+        self.assertTrue(self.pool.wait_idle(WAIT_TIMEOUT))
         self.assertEqual([f"{app}-{i}" for i in range(2) for app in "abc"], seen)
         for task in tasks:
             self.assertEqual(task.client_route_id, task.result)
@@ -152,15 +158,16 @@ class TaskSchedulingTest(unittest.TestCase):
         pending = self.create("restore")
         self.pool.cancel(self.manager._execution_key(pending, 1))
         release.set()
-        self.assertTrue(self.pool.wait_idle(3))
+        self.assertTrue(self.pool.wait_idle(WAIT_TIMEOUT))
         restored_pool = AgentWorkPool(max_workers=1)
         self.addCleanup(restored_pool.close)
         restored = AgentTaskManager(state_path=self.path, work_pool=restored_pool)
+        self.addCleanup(restored._control_work_pool.close)
         task = restored.get(pending.task_id)
         self.assertEqual(("recovering", 2), (task.status, task.execution_generation))
         self.assertFalse(restored._finish(task, "completed", None, result="stale", generation=1))
         restored.resume(task.task_id, lambda _: "recovered", lambda _: None)
-        self.assertTrue(restored_pool.wait_idle(3))
+        self.assertTrue(restored_pool.wait_idle(WAIT_TIMEOUT))
         self.assertEqual("recovered", task.result)
         self.assertEqual(2, restored._store.get(task.task_id)["execution_generation"])
 
@@ -198,7 +205,7 @@ class TaskSchedulingTest(unittest.TestCase):
             starts.append(persisted["execution_checkpoint"]["dispatch_generation"])
             restored.update(task.task_id, "completed", result="once")
         restored.schedule_external(task.task_id, start, lambda _: None)
-        self.assertTrue(restored._work_pool.wait_idle(3))
+        self.assertTrue(restored._work_pool.wait_idle(WAIT_TIMEOUT))
         self.assertEqual([6], starts)
 
     def test_ambiguous_dispatch_still_consumes_recovery_budget(self):

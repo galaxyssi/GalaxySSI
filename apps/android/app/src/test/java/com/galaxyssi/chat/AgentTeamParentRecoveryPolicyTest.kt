@@ -5,6 +5,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentTeamParentRecoveryPolicyTest {
+    @Test fun restoreOnlyAuditedSystemPauseNotUserPauseOrAnotherRun() {
+        val original = AgentSessionSnapshot("session", AgentPhase.PAUSED, "Test", ScreenContext("", pageTitle = ""),
+            null, listOf(AgentAuditEntry(AgentAuditEvent.TASK_PAUSED,
+                "Saved Agent team unavailable; awaiting original outcome", 1)),
+            AgentActionResult("dispatch", false, "Awaiting original outcome", metadata = metadata + ("team_state" to "interrupted")),
+            updatedAtMillis = 1)
+        fun restored(session: AgentSessionSnapshot) = AgentTeamParentRecoveryPolicy.restorePauseMarker(session)
+            .lastActionResult!!.metadata[AgentTeamParentRecoveryPolicy.PAUSED] == "true"
+        assertTrue(restored(original))
+        assertFalse(restored(original.copy(auditTrail = listOf(AgentAuditEntry(AgentAuditEvent.TASK_PAUSED, "User paused", 2)))))
+        assertFalse(restored(original.copy(auditTrail = original.auditTrail + AgentAuditEntry(AgentAuditEvent.TASK_CANCELLED, "Stopped", 3))))
+        assertFalse(restored(original.copy(lastActionResult = original.lastActionResult!!.copy(
+            metadata = original.lastActionResult.metadata + ("team_run_id" to "other")))))
+    }
     private val runId = "original-team-run"
     private val source = AgentTeamDispatchIds.sourceMessageId(runId)
     private val metadata = mapOf(

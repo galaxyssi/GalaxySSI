@@ -174,6 +174,13 @@ class CollaborationLiveCandidateDeviceTest {
                             assertTrue(EncryptedAgentTeamExecutionStore(database).snapshot(run)!!.members.any { it.memberId == member.memberId })
                         }
                         val output = real.execute(execution) // Preserve every provider's actual output unchanged.
+                        workspace.publicationCheckpoint(CollaborationWorkspaceAccess.from(execution))?.let { checkpoint ->
+                            synchronized(audit) {
+                                val attempts = audit.optJSONObject("publication_attempts") ?: JSONObject().also { audit.put("publication_attempts", it) }
+                                attempts.put(member.memberId, JSONObject().put("sequence", checkpoint.getLong("sequence"))
+                                    .put("status", checkpoint.getJSONObject("receipt").getString("status")))
+                            }
+                        }
                         if (member.memberId == "producer" || task != null) {
                             val artifact = requireNotNull(CollaborationResearchArtifact.decode(output.content))
                             val receipt = artifact.getJSONObject("workspace_receipt")

@@ -35,15 +35,15 @@ internal class BilingualSpeech(
     fun start() {
         if (!running.compareAndSet(false, true)) return
         check(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            "麦克风权限尚未授予"
+            context.getString(R.string.glasses_copy_microphone_permission_has_not_been_granted)
         }
         val minimum = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        require(minimum > 0) { "设备不支持 16 kHz 麦克风录音" }
+        require(minimum > 0) { context.getString(R.string.glasses_copy_device_does_not_support_16_khz_microphone_recording) }
         val capture = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(8192, minimum * 2))
         if (capture.state != AudioRecord.STATE_INITIALIZED) {
             capture.release(); running.set(false)
-            error("麦克风初始化失败")
+            error(context.getString(R.string.glasses_copy_microphone_initialization_failed))
         }
         audio = capture
         try { capture.startRecording() } catch (error: Exception) {
@@ -64,7 +64,7 @@ internal class BilingualSpeech(
             while (running.get()) {
                 val size = capture.read(buffer, 0, buffer.size)
                 if (size <= 0) {
-                    if (size < 0 || ++badReads >= 10) error("麦克风读取中断（$size）")
+                    if (size < 0 || ++badReads >= 10) error(context.getString(R.string.glasses_copy_microphone_read_interrupted, size))
                     continue
                 }
                 badReads = 0
@@ -112,7 +112,7 @@ internal class BilingualSpeech(
                 }
             }
         } catch (error: Exception) {
-            main.post { if (running.get()) onError(error.message ?: "语音识别失败") }
+            main.post { if (running.get()) onError(error.message ?: context.getString(R.string.glasses_copy_speech_recognition_failed_2)) }
         } finally {
             wake?.close(); capture.release()
             if (audio === capture) audio = null

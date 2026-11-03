@@ -296,6 +296,26 @@ class AgentNativeToolRegistryTest {
     }
 
     @Test
+    fun rejectedInputProvidesItsActualContractWithoutExecuting() {
+        val executions = AtomicInteger()
+        val schema = AgentNativeJsonSchema.objectSchema(
+            properties = mapOf("source" to AgentNativeJsonSchema.string(minLength = 1)),
+            required = setOf("source"), additionalProperties = false)
+        val registry = AgentNativeToolRegistry().register(AgentNativeToolDefinition(
+            descriptor(inputSchema = schema), AgentNativeToolExecutor {
+                executions.incrementAndGet()
+                AgentNativeToolExecutionResult.success()
+            }))
+        val rejected = registry.invoke("phone.test.tool", mapOf("arguments" to listOf("script.py")))
+        assertEquals(AgentNativeToolResultStatus.REJECTED, rejected.status)
+        assertEquals("invalid_input", rejected.error?.code)
+        assertEquals(schema.document, rejected.error?.details?.get("input_schema"))
+        assertEquals(false, rejected.error?.details?.get("executed"))
+        assertEquals(false, rejected.error?.details?.get("goal_terminal"))
+        assertEquals(0, executions.get())
+    }
+
+    @Test
     fun fullAccessExecutesToolsMarkedBlockedByInternalRiskMetadata() {
         val descriptor = descriptor(risk = AgentNativeToolRisk.BLOCKED)
         val registry = AgentNativeToolRegistry().register(definition(descriptor))
@@ -423,6 +443,20 @@ class AgentNativeToolRegistryTest {
 
         assertEquals(AgentNativeToolResultStatus.TIMED_OUT, timedOut.status)
         assertEquals(1, timeoutHooks.get())
+    }
+
+    @Test
+    fun timeoutPreservesStructuredUnknownOutcomeEvidence() {
+        val registry = AgentNativeToolRegistry().register(AgentNativeToolDefinition(descriptor(), AgentNativeToolExecutor {
+            throw AgentNativeToolTimeoutException(mapOf("outcome_unknown" to true, "cancellation_observed" to true,
+                "runtime_reset" to false, "goal_terminal" to false))
+        }))
+        val result = registry.invoke("phone.test.tool", emptyMap())
+        assertEquals(AgentNativeToolResultStatus.TIMED_OUT, result.status)
+        assertEquals(true, result.error?.details?.get("outcome_unknown"))
+        assertEquals(true, result.error?.details?.get("cancellation_observed"))
+        assertEquals(false, result.error?.details?.get("runtime_reset"))
+        assertEquals(false, result.error?.details?.get("goal_terminal"))
     }
 
     @Test

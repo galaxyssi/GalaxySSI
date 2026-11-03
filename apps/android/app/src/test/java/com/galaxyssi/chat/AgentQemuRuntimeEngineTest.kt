@@ -77,10 +77,12 @@ class AgentQemuRuntimeEngineTest {
         assertTrue(command.contains("server=on,wait=on"))
         assertFalse(command.contains("server=on,wait=off"))
         assertTrue(command.contains("readonly=on"))
-        assertTrue(command.contains("mount_tag=galaxyssi_workspaces"))
+        assertTrue(command.contains("mount_tag=signalasi_workspaces"))
+        assertTrue(command.contains("name=org.signalasi.runtime"))
         assertTrue(command.contains("id=galaxyssi_system"))
         assertTrue(command.contains("serial=${AgentRuntimePersistentDisk.SERIAL}"))
-        assertTrue(command.contains("name=opt/com.galaxyssi/runtime-session,file=${sessionFile.absolutePath}"))
+        assertTrue(command.contains("name=opt/com.signalasi/runtime-session,file=${sessionFile.absolutePath}"))
+        assertTrue(command.contains("name=opt/com.signalasi/runtime-config,file=${configFile.absolutePath}"))
         assertFalse(command.contains("Wlpa"))
         assertFalse(command.contains("5a5a5a"))
         assertTrue(command.indexOf("ffmpeg.img") < command.indexOf("python.img"))
@@ -95,6 +97,9 @@ class AgentQemuRuntimeEngineTest {
         )
         assertEquals("full_access", guestConfig.getString("execution_mode"))
         assertEquals("root", guestConfig.getString("execution_principal"))
+        assertEquals("org.signalasi.runtime", guestConfig.getString("api_channel"))
+        assertEquals("signalasi_workspaces", guestConfig.getString("workspace_mount_tag"))
+        assertEquals("/var/lib/signalasi", guestConfig.getJSONObject("system_disk").getString("mount_path"))
         assertEquals(
             listOf("1.1.1.1", "223.5.5.5"),
             List(guestConfig.getJSONArray("dns_servers").length()) { index ->

@@ -7,6 +7,18 @@ internal object AgentSupervisedProjectPromptCodec {
         schemaShape(document, depth = 0)
             .take(maximumCharacters.coerceAtLeast(MINIMUM_SCHEMA_CHARACTERS))
 
+    /** Reserve a complete host-rendered receipt before compacting older context. */
+    fun preserveLatestObservation(prompt: String, maximumCharacters: Int, latestObservation: String): String {
+        val limit = maximumCharacters.coerceAtLeast(MINIMUM_PROMPT_CHARACTERS)
+        if (latestObservation.isEmpty() || prompt.length <= limit) return preserveToolInventory(prompt, limit)
+        require(prompt.endsWith(latestObservation)) { "Latest observation must be the host-rendered ledger suffix" }
+        require(latestObservation.length <= limit - MINIMUM_PROMPT_CHARACTERS) {
+            "Latest observation exceeds the reserved prompt evidence budget"
+        }
+        val earlier = prompt.removeSuffix(latestObservation)
+        return preserveToolInventory(earlier, limit - latestObservation.length) + latestObservation
+    }
+
     fun preserveToolInventory(prompt: String, maximumCharacters: Int): String {
         val limit = maximumCharacters.coerceAtLeast(MINIMUM_PROMPT_CHARACTERS)
         if (prompt.length <= limit) return prompt
@@ -35,10 +47,17 @@ internal object AgentSupervisedProjectPromptCodec {
         dynamic: String,
         limit: Int
     ): String {
-        val dynamicReserve = minOf(
-            dynamic.length,
-            MINIMUM_DYNAMIC_CONTEXT_CHARACTERS.coerceAtMost(limit / 3)
-        )
+        val contextAt = dynamic.indexOf(AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_HEADER)
+        val contextEnd = dynamic.indexOf(AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_FOOTER,
+            startIndex = contextAt.coerceAtLeast(0))
+        val conversationSize = if (contextAt >= 0 && contextEnd >= contextAt) {
+            contextEnd + AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_FOOTER.length - contextAt
+        } else 0
+        val dynamicReserve = minOf(dynamic.length,
+            maxOf(MINIMUM_DYNAMIC_CONTEXT_CHARACTERS, conversationSize + MINIMUM_REQUIRED_DYNAMIC_CHARACTERS + MINIMUM_EVIDENCE_CHARACTERS + 16))
+        require(dynamicReserve + tools.length <= limit) {
+            "Conversation handoff and tool inventory exceed prompt capacity; refusing to truncate dialogue JSON"
+        }
         val stableBudget = (limit - dynamicReserve).coerceAtLeast(tools.length)
         val stable = if (contract.length + tools.length <= stableBudget) {
             contract + tools

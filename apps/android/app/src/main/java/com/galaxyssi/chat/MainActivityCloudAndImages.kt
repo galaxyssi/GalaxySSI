@@ -790,8 +790,9 @@ internal fun MainActivity.sendImageForChatContact(contact: Contact, uri: Uri) {
     addMessage(msg)
 }
 
-internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>) {
-    val attachments = uris.distinct().take(12).mapNotNull { uri ->
+internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>, content: String = "",
+                                            attachmentsOverride: List<AgentInputAttachment>? = null) {
+    val attachments = attachmentsOverride ?: uris.distinct().take(12).mapNotNull { uri ->
         runCatching {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -800,7 +801,7 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>)
     if (attachments.isEmpty()) return
     val message = ChatMessage(
         id = newMessageId(),
-        content = "",
+        content = content,
         isMine = true,
         contact = CONTACT_ME,
         deliveryStatus = getString(R.string.delivery_status_sending),
@@ -816,7 +817,7 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>)
             )
         }
     )
-    addMessage(message)
+    addMessage(message, outgoingContact = contact)
     val topic = AppStore.outgoingTopicForContact(this, contact.id)
     if (topic == null) {
         updateMessageStatus(message.id, contact.id, getString(R.string.delivery_status_failed))
@@ -824,7 +825,7 @@ internal fun MainActivity.sendPeerAttachments(contact: Contact, uris: List<Uri>)
     }
     outboundMessageExecutor.execute {
         val result = GalaxySSIMqttClient.publishPeerMessageResult(
-            content = "",
+            content = content,
             contactId = contact.id,
             topicOverride = topic,
             clientMessageId = message.id,
@@ -875,7 +876,7 @@ internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
         return
     }
     if (attachment.mimeType.startsWith("image/")) {
-        showAgentImagePreview(source, attachment.name) { savePeerAttachment(attachment) }
+        showAgentImagePreview(source, attachment.name, attachment.mimeType, attachment.sizeBytes)
         return
     }
     if (attachment.mimeType.startsWith("audio/")) {

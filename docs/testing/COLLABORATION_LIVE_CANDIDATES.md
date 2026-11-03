@@ -116,6 +116,12 @@ remain separate acceptance work.
 
 ## Related Coverage
 
+- [Real-provider acceptance, 2026-10-03](COLLABORATION_REAL_MODEL_ACCEPTANCE_20261003.md):
+  a new clean candidate challenge/repair/recheck pass on Android 1.4.32 and
+  Desktop 1.4.5, followed by a separate multipart host-acceptance pass. Earlier
+  failed samples above remain failures; the report documents exact scope and
+  outstanding status, latency and resilience work.
+
 - `CollaborationLiveEvidenceDeviceTest`: real provider evidence transfer plus host
   documentary acceptance and semantic coverage.
 - `CollaborationCandidateRuntimeDeviceTest`: deterministic encrypted-device graph

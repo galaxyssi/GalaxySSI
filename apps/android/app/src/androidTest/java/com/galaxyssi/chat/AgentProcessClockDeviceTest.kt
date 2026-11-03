@@ -11,18 +11,58 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AgentProcessClockDeviceTest {
-    @Test fun deliveredReplyTimeWinsOverALateRuntimeProjection() {
+    @Test fun blockedWorkspaceDisplaysFrozenStatusAndStillAllowsAuthoritativeRecovery() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var row: View
+            lateinit var process: AgentTranscriptEntry
+            var blockedText = ""
+            scenario.onActivity { activity ->
+                process = AgentTranscriptEntry("blocked-clock", AgentTranscriptRole.PROCESS, "Preview failed",
+                    System.currentTimeMillis() - 5000, conversationId = "blocked-clock", taskId = "blocked-task",
+                    turnId = "blocked-turn")
+                activity.renderedAgentTranscriptSourceEntries = listOf(process)
+                activity.agentProcessCompletionLookups[process.turnId] = AgentProcessCompletionLookup(
+                    process.timestampMillis + 4000, android.os.SystemClock.elapsedRealtime(), AgentWorkspaceStatus.BLOCKED,
+                    process.timestampMillis, process.conversationId, 8)
+                assertFalse(activity.agentProcessIsRunning(process))
+                assertEquals(process.timestampMillis + 4000,
+                    activity.agentProcessCompletionTimestamp(process, listOf(process)))
+                row = activity.agentProcessTranscriptRow(process)
+                activity.findViewById<ViewGroup>(android.R.id.content).addView(row)
+                blockedText = activity.getString(R.string.agent_trace_blocked, activity.agentProcessedDuration(4000), "").trimEnd()
+                assertEquals(blockedText, status(row).text.toString())
+            }
+            Thread.sleep(1300)
+            scenario.onActivity { activity ->
+                assertEquals(blockedText, status(row).text.toString())
+                activity.agentProcessCompletionLookups[process.turnId] = AgentProcessCompletionLookup(
+                    null, android.os.SystemClock.elapsedRealtime(), AgentWorkspaceStatus.WAITING_RESPONSE,
+                    process.timestampMillis, process.conversationId, 9)
+                assertTrue(activity.agentProcessIsRunning(process))
+                assertNull(activity.agentProcessCompletionTimestamp(process, listOf(process)))
+                (row.parent as ViewGroup).removeView(row)
+                activity.agentProcessCompletionLookups.remove(process.turnId)
+            }
+        }
+    }
+
+    @Test fun authoritativeCompletionWinsOverAnInterimReply() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val process = AgentTranscriptEntry("clock-projection", AgentTranscriptRole.PROCESS, "Working",
-                    1000L, conversationId = "clock-test", turnId = "clock-turn", taskId = "clock-task")
+                    1000L, conversationId = "clock-test", taskId = "clock-task")
                 activity.rememberAgentExecutionPresentation(process.taskId, AgentExecutionPresentation(
                     executorId = "test", executorLabel = "Test", locationKind = AgentExecutionLocationKind.CLOUD,
                     locationLabelHint = "Test", currentStep = "Done", phase = AgentPhase.COMPLETED,
                     cancellable = false, startedAtMillis = 1000L, completedAtMillis = 9000L))
                 val final = process.copy(id = "final-clock", role = AgentTranscriptRole.ASSISTANT,
                     text = "Done", timestampMillis = 3000L)
-                assertEquals(3000L, activity.agentProcessCompletionTimestamp(process, listOf(process, final)))
+                assertEquals(9000L, activity.agentProcessCompletionTimestamp(process, listOf(process, final)))
+                activity.rememberAgentExecutionPresentation(process.taskId, AgentExecutionPresentation(
+                    executorId = "test", executorLabel = "Test", locationKind = AgentExecutionLocationKind.CLOUD,
+                    locationLabelHint = "Test", currentStep = "Recovering", phase = AgentPhase.WAITING_RESPONSE,
+                    cancellable = true, startedAtMillis = 1000L))
+                assertNull(activity.agentProcessCompletionTimestamp(process, listOf(process, final)))
                 activity.agentExecutionPresentations.remove(process.taskId)
             }
         }
@@ -35,7 +75,7 @@ class AgentProcessClockDeviceTest {
             var completedText = ""
             scenario.onActivity { activity ->
                 process = AgentTranscriptEntry("clock-test", AgentTranscriptRole.PROCESS, "Working",
-                    System.currentTimeMillis() - 5000, conversationId = "clock-test", turnId = "clock-turn", taskId = "clock-task")
+                    System.currentTimeMillis() - 5000, conversationId = "clock-test", taskId = "clock-task")
                 activity.renderedAgentTranscriptSourceEntries = listOf(process)
                 val executing = AgentExecutionPresentation(
                     executorId = "test", executorLabel = "Test", locationKind = AgentExecutionLocationKind.CLOUD,

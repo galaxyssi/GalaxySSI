@@ -286,6 +286,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val agentExecutionPresentations =
         ConcurrentHashMap<String, AgentExecutionPresentation>()
     internal var pendingDirectSystemAction: PendingDirectSystemAction? = null
+    internal var pendingAgentRuntimePermission: Pair<MobileNativeAgent, AgentRuntimePermissionContinuation>? = null
+    internal val offeredAgentRuntimePermissions = mutableSetOf<String>()
     internal lateinit var agentScreenSearchInput: EditText
     internal lateinit var agentScreenDetailList: LinearLayout
     internal lateinit var agentActionQueueList: LinearLayout
@@ -295,11 +297,11 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal lateinit var agentAuditTrailList: LinearLayout
     internal lateinit var agentRecentTaskList: LinearLayout
     internal lateinit var agentGoalInput: EditText
-    internal lateinit var agentInsightBar: LinearLayout
-    internal lateinit var agentInsightText: TextView
+    internal lateinit var agentChatShortcuts: com.galaxyssi.chat.ui.AgentChatShortcutBar
     internal lateinit var agentComposerRow: LinearLayout
     internal lateinit var agentPrimaryActionSlot: FrameLayout
     internal var agentVoiceConversation: AgentVoiceConversation? = null
+    internal var contactReminderComposer: ContactReminderComposer? = null
     internal var voicePlaybackEpoch = 0L
     internal lateinit var agentActionTray: LinearLayout
     internal lateinit var agentRecordingCenter: View
@@ -317,6 +319,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var agentComposerTextMode = false
     internal var agentComposerKeyboardObserved = false
     internal var agentComposerKeyboardClosedAt = 0L
+    internal val mainPageBackPressGate = MainPageBackPressGate()
     internal lateinit var discoverPage: LinearLayout
     internal lateinit var mePage: View
     internal lateinit var featurePage: LinearLayout
@@ -405,6 +408,12 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val globalProactiveDeliveryListener = GlobalProactiveDeliveryListener {
         handler.post(::refreshGlobalAgentCognition)
     }
+    private val screenAssistantConnectionListener: () -> Unit = {
+        if (!isFinishing && !isDestroyed && featurePage.isShown &&
+            controlCenterDestination?.route == ControlCenterRoute.SCREEN_ASSISTANT) {
+            renderCurrentControlCenterDestination()
+        }
+    }
     internal val historyExecutor = Executors.newSingleThreadExecutor()
     internal val agentTranscriptContentExecutor = Executors.newSingleThreadExecutor()
     internal val agentRegistryHeartbeatExecutor = Executors.newSingleThreadExecutor()
@@ -412,6 +421,9 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val outboundMessageExecutor = Executors.newSingleThreadExecutor()
     internal val agentRoutingExecutor = Executors.newSingleThreadExecutor()
     internal val agentRuntimeRecoveryExecutor = Executors.newSingleThreadExecutor()
+    internal val agentLiveReplyExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "galaxyssi-live-replies")
+    }
     internal val agentRouteSelectionExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskPersistenceExecutor = AgentWindowTaskPersistence.executor
     internal val agentEvalExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -420,6 +432,9 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val agentTaskLivenessExecutor = Executors.newSingleThreadExecutor()
     internal val agentTaskEventExecutor = Executors.newSingleThreadExecutor()
     internal val navigationContentExecutor = Executors.newFixedThreadPool(2)
+    internal val foregroundAgentReload = AgentForegroundReload<AgentUiState>(
+        navigationContentExecutor, java.util.concurrent.Executor { handler.post(it) }
+    )
     internal val navigationContentGate = NavigationContentGate()
     internal val cloudExecutor = Executors.newCachedThreadPool()
     internal val activeCloudStreams = ConcurrentHashMap<String, ActiveCloudStream>()
@@ -431,6 +446,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val historyForwardPageCursors = mutableMapOf<String, Long?>()
     internal val historyHasNewer = mutableMapOf<String, Boolean>()
     internal val historyLoadsInFlight = mutableSetOf<String>()
+    internal val peerChatViewport = ChatMessageViewportState()
+    internal var peerChatBottomAlignmentScheduled = false
     internal val historySaveRunnable = Runnable { enqueuePendingChatHistorySave() }
     internal lateinit var mobileNativeAgent: MobileNativeAgent
     internal lateinit var agentTranscriptStore: AgentTranscriptStore
@@ -513,18 +530,14 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             val recoveryKey = "runtime-restore:${AgentConnectorResponseCodec.identity(response)}"
             if (!agentConnectorResponsesInFlight.add(recoveryKey)) return true
             return runCatching {
-                agentRuntimeRecoveryExecutor.execute {
+                val ownsLiveReply = activeAgentTasks.containsKey(response.sourceMessageId) ||
+                    pendingDirectConnectorRuns.containsKey(response.sourceMessageId)
+                val executor = if (ownsLiveReply) agentLiveReplyExecutor else agentRuntimeRecoveryExecutor
+                executor.execute {
                     try {
                         if (!AgentConnectorResponseStore.isCurrentExecution(this@MainActivity, response)) return@execute
-                        runtimeForConnectorResponse(
-                            sourceMessageId = response.sourceMessageId,
-                            contactId = response.contactId,
-                            conversationId = response.conversationId,
-                            turnId = response.turnId,
-                            taskId = response.taskId,
-                            restorePersisted = true
-                        )
                         if (isFinishing || isDestroyed) return@execute
+                        // The consumer checks ownership and restores only if necessary.
                         consumeAgentConnectorResponse(response)
                     } finally { agentConnectorResponsesInFlight.remove(recoveryKey) }
                 }
@@ -670,6 +683,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal val voiceSecondPassCoordinator = VoiceSecondPassCoordinator()
     internal val remoteWhisperNodeClient = RemoteWhisperNodeClient(GalaxySSILinkRemoteWhisperTransport)
     internal var voiceRiskConfirmationDialog: AlertDialog? = null
+    internal var deviceOperationAccessDialog: AlertDialog? = null
+    internal val offeredDeviceOperationAccessIds = mutableSetOf<String>()
     internal var voiceRiskConfirmationCancellation: (() -> Unit)? = null
     internal var voiceCoordinatorObserverId = ""
     internal var recordingVoiceCoordinatorSessionId = ""
@@ -731,7 +746,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal var agentVoiceListening = false
     internal var voiceAssistantListening = false
     internal var voiceAssistantAwake = false
-    internal var voiceAssistantSpeaking = false
+    @Volatile internal var voiceAssistantSpeaking = false
     internal var voiceAssistantRecordingCommand = false
     internal var voiceCommandSpeechDetected = false
     internal var voiceCommandLastVoiceAt = 0L
@@ -829,8 +844,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     internal fun isAgentActionTrayInitialized(): Boolean = ::agentActionTray.isInitialized
     internal fun isAgentGoalInputInitialized(): Boolean = ::agentGoalInput.isInitialized
     internal fun isAgentHandoffStoreInitialized(): Boolean = ::agentHandoffStore.isInitialized
-    internal fun isAgentInsightBarInitialized(): Boolean = ::agentInsightBar.isInitialized
-    internal fun isAgentInsightTextInitialized(): Boolean = ::agentInsightText.isInitialized
+    internal fun isAgentChatShortcutsInitialized(): Boolean = ::agentChatShortcuts.isInitialized
     internal fun isAgentMcpRegistryInitialized(): Boolean = ::agentMcpRegistry.isInitialized
     internal fun isAgentOutputLayoutInitialized(): Boolean = ::agentOutputLayout.isInitialized
     internal fun isAgentRunEventStoreInitialized(): Boolean = ::agentRunEventStore.isInitialized
@@ -871,6 +885,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         applyDeviceProfileWindowPolicy()
         configureSystemBars()
         setContentView(R.layout.activity_main)
+        restoreComposerAttachmentState(savedInstanceState)
         val startupConnectingView = findViewById<ConnectingStartupView>(R.id.startupConnectingView)
         traceStartup("content_view")
         AppStore.ensureInitialized(this)
@@ -888,12 +903,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             }
         }
         traceStartup("app_store")
-        mobileNativeAgent = MobileNativeAgent(
-            this,
-            actionExecutor = directAgentActionExecutor,
-            sessionStore = SharedPreferencesAgentSessionStore(this, "window:${conversationWindow.key}"),
-            nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
-        )
+        mobileNativeAgent = newWindowAgentRuntime()
         navigationContentExecutor.execute {
             runCatching { mobileNativeAgent.nativeToolCatalog() }
                 .onFailure { Log.w("GalaxySSILatency", "native_tool_catalog_prewarm_failed", it) }
@@ -1049,8 +1059,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         agentAuditTrailList = findViewById(R.id.agentAuditTrailList)
         agentRecentTaskList = findViewById(R.id.agentRecentTaskList)
         agentGoalInput = findViewById(R.id.agentGoalInput)
-        agentInsightBar = findViewById(R.id.agentInsightBar)
-        agentInsightText = findViewById(R.id.agentInsightText)
+        agentChatShortcuts = findViewById(R.id.agentChatShortcuts)
         agentComposerRow = findViewById(R.id.agentComposerRow)
         agentPrimaryActionSlot = findViewById(R.id.agentPrimaryActionSlot)
         agentActionTray = findViewById(R.id.agentAttachmentActionTray)
@@ -1111,6 +1120,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         traceStartup("agent_page")
         configureMessages()
         configureInput()
+        configureComposerImagePaste()
         configureWakePage()
         traceStartup("chat_pages")
         configureSettingsControlCenter()
@@ -1162,9 +1172,16 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             intent.removeExtra("galaxyssi_agent_conversation_id")
             openLatestGlobalInsightWhenDelivered = true
             conversationWindow.beforeSelection()
-            requestedGlobalInsightConversationId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::switchConversation)
+            val explicitConversation = requestedGlobalInsightConversationId.takeIf(String::isNotBlank)
+            if (explicitConversation != null && agentTranscriptStore.switchConversation(explicitConversation)) {
+                conversationWindow.selected(explicitConversation)
+                resetAgentTranscriptRendering(explicitConversation)
+                openLatestGlobalInsightWhenDelivered = false
+                requestedGlobalInsightConversationId = ""
+            }
             showMainTab(PAGE_AGENT)
             renderAgentState(mobileNativeAgent.reloadSession())
+            refreshAgentTranscriptWindow()
             refreshGlobalAgentCognition()
         }
         intent?.getStringExtra("galaxyssi_open_contact_id")
@@ -1183,9 +1200,11 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onDestroy() {
+        foregroundAgentReload.invalidate()
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         if (::conversationWindow.isInitialized) conversationWindow.destroy()
-        agentVoiceConversation?.end()
+        agentVoiceConversation?.release()
+        contactReminderComposer?.destroy()
         initialAgentHydrationReady.countDown()
         if (::voiceInteractionCoordinator.isInitialized && voiceCoordinatorObserverId.isNotBlank()) {
             voiceInteractionCoordinator.removeObserver(voiceCoordinatorObserverId)
@@ -1223,6 +1242,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         voiceRiskConfirmationCancellation = null
         voiceRiskConfirmationDialog?.dismiss()
         voiceRiskConfirmationDialog = null
+        deviceOperationAccessDialog?.dismiss()
+        deviceOperationAccessDialog = null
         voiceSecondPassCoordinator.cancelForInteractiveVoice()
         remoteWhisperNodeClient.cancelAll()
         activeCloudStreams.values.forEach { stream ->
@@ -1258,6 +1279,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         outboundMessageExecutor.shutdown()
         agentRoutingExecutor.shutdown()
         agentRuntimeRecoveryExecutor.shutdown()
+        agentLiveReplyExecutor.shutdown()
         agentRouteSelectionExecutor.shutdown()
         agentEvalExecutor.shutdown()
         agentTaskLivenessExecutor.shutdown()
@@ -1266,11 +1288,13 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         agentTranscriptContentExecutor.shutdown()
         historyExecutor.shutdown()
         cloudExecutor.shutdown()
+        AppVoiceControlBridge.release(this)
         super.onDestroy()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) mainPageBackPressGate.reset()
         if (hasFocus && ::conversationWindow.isInitialized && ::agentSessionTitle.isInitialized) {
             selectedContact?.id?.takeIf { isContactChatVisible(it) }?.let(::markContactRead)
             refreshReplyUnreadDot()
@@ -1309,9 +1333,11 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             chatPage.visibility == View.VISIBLE
         }
         AppForegroundTracker.onActivityForeground(this, resumedConversationId)
-        ScreenAssistantSettings.reconcileSystemAccess(this)
+        ScreenAssistantConnection.addListener(screenAssistantConnectionListener)
         GalaxySSIAccessibilityService.refreshScreenAssistant()
         GalaxySSIAccessibilityService.retryPendingScreenAssistant()
+        resumePendingDeviceOperation()
+        continueVisibleAgentPermissionGate()
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         AndroidAgentRecoveryWake.request(this)
         AgentConnectorStreamBus.addListener(agentConnectorStreamListener)
@@ -1326,27 +1352,11 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         prepareHighAccuracyAsrIfSelected()
         traceResume("listeners")
         val initialResume = !completedInitialResume
-        val reloadedAgentState = if (!initialResume) {
-            mobileNativeAgent.reloadSession()
-        } else {
-            completedInitialResume = true
-            null
-        }
+        completedInitialResume = true
+        if (!initialResume || restoredRuntimePlaintext) requestForegroundAgentReload()
         traceResume("agent_session")
         if (!initialResume) requestAgentRegistrySnapshotSync()
         traceResume("registry")
-        val restoredAgentState = reloadedAgentState?.let { state ->
-            if (state.runningTaskCount == 0 && ScreenPerceptionState.hasRecentVisualCapture()) {
-                mobileNativeAgent.observeCurrentScreen()
-            } else {
-                state
-            }
-        }
-        if (activeMainTab == PAGE_AGENT && !initialAgentHydrationPending && restoredAgentState != null) {
-            renderAgentState(restoredAgentState)
-        } else if (restoredRuntimePlaintext && activeMainTab == PAGE_AGENT && !initialAgentHydrationPending) {
-            renderAgentState(mobileNativeAgent.reloadSession())
-        }
         traceResume("agent_render")
         if (featurePage.visibility == View.VISIBLE && controlCenterDestination != null) {
             renderCurrentControlCenterDestination()
@@ -1368,6 +1378,9 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
 
 
     override fun onPause() {
+        ScreenAssistantConnection.removeListener(screenAssistantConnectionListener)
+        mainPageBackPressGate.reset()
+        foregroundAgentReload.invalidate()
         if (::conversationWindow.isInitialized) conversationWindow.pause()
         agentVoiceConversation?.onForeground(false)
         AppForegroundTracker.onActivityBackground(this)
@@ -1401,11 +1414,12 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onStop() {
-        clearRuntimePlaintextForBackground()
+        if (agentVoiceConversation?.hasExternalForegroundHost() != true) clearRuntimePlaintextForBackground()
         super.onStop()
     }
 
     override fun onTrimMemory(level: Int) {
+        RuntimeSensitiveCaches.clearAll()
         KnowledgeSemanticSearch.clearRuntime()
         AgentEncryptedPreferenceCache.clearAll()
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
@@ -1446,41 +1460,62 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         goal: String, attachments: List<AgentInputAttachment>,
         ready: (String, List<AgentInputAttachment>, () -> Boolean) -> Unit) = ready(goal, attachments) { false }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        // Completed interactions reset the pair; a system back gesture cancels its touch stream.
+        if (event.actionMasked == MotionEvent.ACTION_UP) mainPageBackPressGate.reset()
+        return super.dispatchTouchEvent(event)
+    }
+
     override fun onBackPressed() {
+        if (navigateBackWithinApp()) {
+            mainPageBackPressGate.reset()
+            return
+        }
+        if (mainPage.visibility == View.VISIBLE && activeMainTab == PAGE_AGENT) {
+            if (mainPageBackPressGate.shouldBackground(SystemClock.elapsedRealtime())) {
+                moveTaskToBack(true)
+            }
+            return
+        }
+        mainPageBackPressGate.reset()
+        super.onBackPressed()
+    }
+
+    private fun navigateBackWithinApp(): Boolean {
         if (SystemClock.elapsedRealtime() - agentComposerKeyboardClosedAt < 700L) {
             agentComposerKeyboardClosedAt = 0L
-            return
+            return true
         }
         if (SystemClock.elapsedRealtime() - chatComposerKeyboardClosedAt < 700L) {
             chatComposerKeyboardClosedAt = 0L
-            return
+            return true
         }
         if (::agentActionTray.isInitialized && agentActionTrayExpanded) {
             setAgentActionTrayExpanded(false)
-            return
+            return true
         }
-        if (collapseChatActionTrayOnBack()) return
+        if (collapseChatActionTrayOnBack()) return true
         if (::agentGoalInput.isInitialized && agentComposerTextMode) {
             exitAgentComposerTextMode(hideKeyboard = true)
-            return
+            return true
         }
         if (::messageInput.isInitialized && chatComposerTextMode) {
             exitChatComposerTextMode(hideKeyboard = true)
-            return
+            return true
         }
         if (featurePage.visibility == View.VISIBLE) {
             performFeatureBack()
-            return
+            return true
         }
         if (chatPage.visibility == View.VISIBLE) {
             returnFromContactChatToConversationHub()
-            return
+            return true
         }
         if (mainPage.visibility == View.VISIBLE && activeMainTab != PAGE_AGENT) {
             showMainTab(if (activeMainTab == PAGE_SETTINGS) PAGE_AGENT else PAGE_SETTINGS)
-            return
+            return true
         }
-        super.onBackPressed()
+        return false
     }
 
     override fun onConnectionChanged(connected: Boolean) {
@@ -1616,6 +1651,14 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             }
         }
         logDeliveryFailure(sourceMessageId, contactId, reason)
+    }
+
+    override fun onDesktopControlChanged(desktopId: String, streamFrame: Boolean) {
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                refreshActiveDesktopControlPage(desktopId, streamFrame)
+            }
+        }
     }
 
     override fun onMessage(payload: String) {
@@ -1917,8 +1960,15 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         fileServerBaseUrl = "http://$ip:$port"
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        saveComposerAttachmentState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (handleDesktopRemoteControlResult(requestCode, resultCode, data)) return
+        if (handleComposerAttachmentResult(requestCode, resultCode, data)) return
         if (requestCode == REQUEST_VOICE_SCREEN_CAPTURE) {
             // A recreated activity must not adopt an ended call's projection permission.
             agentVoiceConversation?.onScreenCapturePermission(resultCode, data)
@@ -1936,10 +1986,12 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         if (requestCode == REQUEST_AGENT_CAMERA) {
             val uri = pendingAgentCameraUri
             pendingAgentCameraUri = null
-            if (resultCode == RESULT_OK && uri != null) {
-                addAgentInputUris(listOf(uri))
-            } else if (uri != null) {
-                contentResolver.delete(uri, null, null)
+            if (uri != null) {
+                val captured = PrivateCameraStorage.finish(this, uri, accepted = resultCode == RESULT_OK)
+                if (captured != null) previewPickedAttachments(listOf(captured), camera = true)
+                else if (resultCode == RESULT_OK) {
+                    Toast.makeText(this, R.string.agent_attachment_camera_unavailable, Toast.LENGTH_SHORT).show()
+                }
             }
             return
         }
@@ -1957,7 +2009,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                 }
-                addAgentInputUris(uris)
+                previewPickedAttachments(uris)
             }
             return
         }
@@ -2031,10 +2083,10 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             return
         }
         val contact = selectedContact
-        if (contact != null && (
+        if (hasPendingPeerAttachmentPicker() || (contact != null && (
                 AppStore.isDesktopDeviceContact(this, contact.id) ||
                     AppStore.isPersonContact(this, contact.id)
-            )
+            ))
         ) {
             val uris = buildList {
                 data?.clipData?.let { clips ->
@@ -2042,7 +2094,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                 }
                 data?.data?.let { if (it !in this) add(it) }
             }
-            sendPeerAttachments(contact, uris)
+            previewPickedAttachments(uris)
         } else {
             sendImage(data?.data ?: return)
         }
@@ -2090,6 +2142,8 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             val granted = grantResults.count { it == PackageManager.PERMISSION_GRANTED }
             val pending = pendingDirectSystemAction
             pendingDirectSystemAction = null
+            val modelPending = pendingAgentRuntimePermission
+            pendingAgentRuntimePermission = null
             if (pending != null) {
                 if (grantResults.isNotEmpty() && granted == grantResults.size) {
                     executeDirectSystemAction(pending.action, pending.conversationId, pending.turnId)
@@ -2102,6 +2156,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
                     )
                 }
             }
+            if (modelPending != null) continueAgentPermissionGate(modelPending.first, modelPending.second)
             Toast.makeText(
                 this,
                 getString(R.string.agent_native_permissions_result, granted, grantResults.size),

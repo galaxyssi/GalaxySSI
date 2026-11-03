@@ -32,6 +32,14 @@ function fixture(packId = 'python-uv') {
     writeFileSync(path, '#!/bin/sh\nexit 0\n', 'utf8');
     chmodSync(path, 0o755);
   }
+  if (packId === 'browser-automation') {
+    mkdirSync(join(source, 'lib/runtime-libs'), { recursive: true });
+    for (const name of ['libsoftokn3.so', 'libfreeblpriv3.so', 'libnssckbi.so']) {
+      const path = join(source, 'lib/runtime-libs', name);
+      writeFileSync(path, 'fixture shared library');
+      chmodSync(path, 0o644);
+    }
+  }
   return { root, source };
 }
 
@@ -45,6 +53,16 @@ test('runtime image validation requires every pack entrypoint', () => {
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('browser image must include NSS modules loaded dynamically for HTTPS', () => {
+  for (const name of ['libsoftokn3.so', 'libfreeblpriv3.so', 'libnssckbi.so']) {
+    const { root, source } = fixture('browser-automation');
+    try {
+      rmSync(join(source, 'lib/runtime-libs', name));
+      assert.throws(() => validateRuntimeImageSource('browser-automation', '1.61.0', source), /entrypoint/);
+    } finally { rmSync(root, { recursive: true, force: true }); }
   }
 });
 
@@ -98,7 +116,7 @@ test('runtime image builder emits a matching descriptor and signing config', () 
       license: 'GPL-2.0-or-later',
       platform: 'win32',
       squashfsBuilder: (stagedRoot, stagedImage) => {
-        descriptor = JSON.parse(readFileSync(join(stagedRoot, 'galaxyssi-pack.json'), 'utf8'));
+        descriptor = JSON.parse(readFileSync(join(stagedRoot, 'signalasi-pack.json'), 'utf8'));
         copyFileSync(join(stagedRoot, 'bin', 'ffmpeg'), stagedImage);
       },
     });

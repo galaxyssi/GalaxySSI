@@ -30,6 +30,7 @@ from acp.schema import (
     NewSessionResponse,
     PermissionOption,
     PlanEntry,
+    PromptCapabilities,
     PromptResponse,
     ToolCallStart,
     ToolCallUpdate,
@@ -53,7 +54,8 @@ class FakeAgent:
         self.log("initialize", protocol_version=protocol_version)
         return InitializeResponse(
             protocol_version=protocol_version,
-            agent_capabilities=AgentCapabilities(load_session=True),
+            agent_capabilities=AgentCapabilities(load_session=True,
+                prompt_capabilities=PromptCapabilities(image=os.environ.get("FAKE_ACP_IMAGES") == "1")),
         )
 
     async def authenticate(self, **_kwargs):
@@ -70,7 +72,8 @@ class FakeAgent:
 
     async def prompt(self, prompt, session_id, **_kwargs):
         text = "".join(getattr(item, "text", "") for item in prompt)
-        self.log("prompt", session_id=session_id, text=text)
+        self.log("prompt", session_id=session_id, text=text,
+                 image_count=sum(getattr(item, "type", "") == "image" for item in prompt))
         await self.client.session_update(
             session_id=session_id,
             update=acp.update_agent_thought_text("Inspecting the request."),
@@ -219,6 +222,8 @@ class AcpRuntimeTest(unittest.TestCase):
         profile: str = "desktop_executor",
         events: list | None = None,
         run_id: str | None = None,
+        image_paths: list[str] | None = None,
+        image_source_turns: dict[str, str] | None = None,
     ) -> str | None:
         sink = None
         if events is not None:
@@ -235,6 +240,8 @@ class AcpRuntimeTest(unittest.TestCase):
             access_profile=profile,
             timeout_seconds=10,
             event_sink=sink,
+            image_paths=image_paths,
+            image_source_turns=image_source_turns,
         )
 
     def logs(self) -> list[dict]:
@@ -253,6 +260,40 @@ class AcpRuntimeTest(unittest.TestCase):
         self.assertIn("reasoning", {item["kind"] for item in events})
         self.assertIn("plan", {item["kind"] for item in events})
         self.assertIn("tool", {item["kind"] for item in events})
+
+    def test_native_images_reach_acp_subprocess(self) -> None:
+        from PIL import Image
+        from unittest.mock import patch
+        path = self.root / "source.png"
+        with Image.new("RGB", (60, 40), "red") as image:
+            image.save(path)
+        with patch.dict(os.environ, {"FAKE_ACP_IMAGES": "1"}):
+            result = self.execute("inspect", image_paths=[str(path)])
+        self.assertTrue(result.startswith("reply:inspect"))
+        prompt = next(event for event in self.logs() if event["kind"] == "prompt")
+        self.assertEqual(2, prompt["image_count"])
+        self.assertIn("SAME image", prompt["text"])
+
+    def test_unsupported_acp_image_falls_back_before_any_prompt(self) -> None:
+        self.assertIsNone(self.execute("inspect", image_paths=["not-read-before-capability-check.png"]))
+        self.assertFalse(any(event["kind"] == "prompt" for event in self.logs()))
+        self.assertEqual("reply:hello", self.execute("hello"))
+
+    def test_historical_images_reach_acp_subprocess_with_source_turn(self) -> None:
+        from PIL import Image
+        from unittest.mock import patch
+        path = self.root / "prior.png"
+        with Image.new("RGB", (60, 40), "red") as image:
+            image.save(path)
+        with patch.dict(os.environ, {"FAKE_ACP_IMAGES": "1"}):
+            result = self.execute("Translate narrative", image_paths=[str(path)],
+                                  image_source_turns={str(path): "previous-turn"})
+        self.assertTrue(result.startswith("reply:Translate narrative"))
+        prompt = next(event for event in self.logs() if event["kind"] == "prompt")
+        self.assertEqual(1, prompt["image_count"])
+        self.assertIn("previous-turn", prompt["text"])
+        self.assertIn("not a new upload", prompt["text"])
+        self.assertNotIn("SAME image", prompt["text"])
 
     def test_reuses_session_for_same_phone_conversation(self) -> None:
         self.execute("first")

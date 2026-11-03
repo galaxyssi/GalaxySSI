@@ -6,6 +6,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationGoalContractPagingTest {
+    @Test fun boundGoalSnapshotCannotSilentlyChangePinnedMilestoneAccess() {
+        val host = Host()
+        val pinned = host.peer.copy(pinnedReads = setOf("workspace:" + "a".repeat(64) + ":1:" + "b".repeat(64)))
+        host.allowed += pinned
+        val store = host.store()
+        val descriptor = ok(store.publish(pinned, "Check the published version", "[]"))
+        ok(store.bind(pinned, descriptor.getString("snapshot_id")))
+        ok(host.store().read(pinned, descriptor.getString("snapshot_id"), ""))
+        rejected(host.store().read(host.peer, descriptor.getString("snapshot_id"), ""), "binding_corrupt")
+    }
+
     private class Rows : CollaborationGoalContractRows {
         val data = linkedMapOf<String, String>()
         var rejectCommit = false

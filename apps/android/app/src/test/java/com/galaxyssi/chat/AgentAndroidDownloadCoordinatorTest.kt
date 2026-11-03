@@ -15,7 +15,7 @@ class AgentAndroidDownloadCoordinatorTest {
 
         assertTrue(fileName.startsWith("article-"))
         assertTrue(fileName.endsWith(".html"))
-        assertEquals("Download/GalaxySSI/$fileName", AgentAndroidDownloadPolicy.relativePath(fileName))
+        assertEquals("app_private/$fileName", AgentAndroidDownloadPolicy.relativePath(fileName))
     }
 
     @Test
@@ -47,7 +47,8 @@ class AgentAndroidDownloadCoordinatorTest {
     @Test
     fun `download copy follows configured language`() {
         assertTrue(AgentAndroidDownloadPolicy.startedMessage(true).startsWith("\u5df2\u5f00\u59cb\u4e0b\u8f7d"))
-        assertTrue(AgentAndroidDownloadPolicy.completedMessage(true, "article.html").contains("Download/GalaxySSI"))
+        assertFalse(AgentAndroidDownloadPolicy.completedMessage(true, "article.html").contains("Download/GalaxySSI"))
+        assertTrue(AgentAndroidDownloadPolicy.completedMessage(false, "article.html").contains("private storage"))
         assertTrue(AgentAndroidDownloadPolicy.startedMessage(false).startsWith("Download started"))
         assertTrue(AgentAndroidDownloadPolicy.failedMessage(false, "article.html").startsWith("Download failed"))
     }
@@ -58,15 +59,15 @@ class AgentAndroidDownloadCoordinatorTest {
             id = "android-download:42",
             type = AgentRichBlockType.FILE,
             title = "article.html",
-            text = "Download/GalaxySSI/article.html",
-            uri = "content://downloads/my_downloads/42",
+            text = "",
+            uri = "content://com.galaxyssi.chat.local-attachments/file/fixture",
             mimeType = "text/html",
-            metadata = mapOf("saved_to_downloads" to "true")
+            metadata = mapOf("saved_to_downloads" to "false", "storage" to "app_private")
         )))
         val block = AgentRichContentCodec.decode(encoded).single()
 
         assertEquals(AgentRichBlockType.FILE, block.type)
-        assertEquals("content://downloads/my_downloads/42", block.uri)
-        assertEquals("true", block.metadata["saved_to_downloads"])
+        assertEquals("content://com.galaxyssi.chat.local-attachments/file/fixture", block.uri)
+        assertEquals("false", block.metadata["saved_to_downloads"])
     }
 }

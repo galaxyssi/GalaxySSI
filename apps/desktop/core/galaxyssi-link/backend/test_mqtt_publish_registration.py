@@ -113,7 +113,7 @@ class PublishRegistrationTest(unittest.TestCase):
 
         for name, result in (("list_clients", [peer]), ("get_client", peer),
                              ("outbound_inflight_count", 0), ("fail_exhausted_outbound", []),
-                             ("pending_outbound", [pending]), ("mark_outbound_sending", None),
+                             ("pending_outbound", [pending]), ("mark_outbound_batch_sending", None),
                              ("_topics_for_client", SimpleNamespace(send="test/topic"))):
             self.stack.enter_context(patch.object(bridge, name, return_value=result))
         self.stack.enter_context(patch.object(bridge, "_publish_mqtt_wire_payload", side_effect=publish))

@@ -3,12 +3,57 @@ package com.galaxyssi.chat
 internal object AgentTeamParentRecoveryPolicy {
     const val PAUSED = "team_recovery_paused"
 
+    /** Older generic resume/watchdog results lost the receiver identity, but the waiting action retains it. */
+    fun restoreWaitingIdentity(session: AgentSessionSnapshot): AgentSessionSnapshot {
+        val result = session.lastActionResult ?: return session
+        if (session.phase !in setOf(AgentPhase.WAITING_RESPONSE, AgentPhase.PAUSED) || userStopped(session.auditTrail) ||
+            result.metadata["team_run_id"].orEmpty().isNotBlank() ||
+            (result.actionId !in setOf("agent-resumed", "agent-interrupted") &&
+                result.metadata["failure_kind"] != "liveness_assessment_required")) return session
+        val action = session.currentPlan?.actions?.singleOrNull {
+            it.kind == AgentActionKind.CALL_CONNECTOR && it.status == AgentActionStatus.WAITING_RESPONSE &&
+                it.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty().isNotBlank()
+        } ?: return session
+        val spec = AgentTeamDispatchSpecCodec.decode(action.parameters.getValue(AGENT_TEAM_SPEC_PARAMETER)) ?: return session
+        val run = spec.supervisorRunId.takeIf(String::isNotBlank) ?: return session
+        val turn = action.parameters[INTERNAL_TURN_ID].orEmpty()
+        if (turn.isBlank() || action.parameters[INTERNAL_CONVERSATION_ID].isNullOrBlank() ||
+            session.executionLoopSnapshot?.taskId != turn) return session
+        return session.copy(phase = AgentPhase.WAITING_RESPONSE,
+            lastActionResult = AgentActionResult(action.id, false, "Awaiting the original team result", mapOf(
+                "resource_location" to "distributed", "team_run_id" to run, "team_id" to spec.definition.teamId,
+                "source_message_id" to AgentTeamDispatchIds.sourceMessageId(run).toString(),
+                "contact_id" to AgentTeamDispatchIds.responseContactId(spec.definition.teamId), "team_state" to "interrupted")),
+            executionLoopSnapshot = session.executionLoopSnapshot?.copy(
+                phase = AgentExecutionLoopPhase.WAITING_RESPONSE, lastActionId = action.id))
+    }
+
+    fun restorePauseMarker(session: AgentSessionSnapshot): AgentSessionSnapshot {
+        val result = session.lastActionResult ?: return session
+        val metadata = result.metadata
+        val run = metadata["team_run_id"].orEmpty()
+        if (session.phase != AgentPhase.PAUSED || result.success || metadata[PAUSED] != null ||
+            metadata["team_state"] != "interrupted" || metadata["resource_location"] != "distributed" ||
+            run.isBlank() || metadata["source_message_id"]?.toLongOrNull() != AgentTeamDispatchIds.sourceMessageId(run)) return session
+        val lastControl = session.auditTrail.lastOrNull { it.event in setOf(
+            AgentAuditEvent.TASK_PAUSED, AgentAuditEvent.TASK_RESUMED, AgentAuditEvent.TASK_CANCELLED) }
+        if (lastControl?.event != AgentAuditEvent.TASK_PAUSED ||
+            lastControl.detail != "Saved Agent team unavailable; awaiting original outcome") return session
+        return session.copy(lastActionResult = result.copy(metadata = metadata + (PAUSED to "true")))
+    }
+
     fun shouldPause(team: AgentTeamExecutionSnapshot?, conversation: String, turn: String): Boolean =
         team == null || team.state == AgentTeamExecutionState.INTERRUPTED ||
             team.conversationId != conversation || team.taskId != turn
 
+    fun userStopped(audit: List<AgentAuditEntry>): Boolean = audit.lastOrNull {
+        it.event in setOf(AgentAuditEvent.TASK_PAUSED, AgentAuditEvent.TASK_RESUMED, AgentAuditEvent.TASK_CANCELLED)
+    }?.let { it.event == AgentAuditEvent.TASK_CANCELLED || it.event == AgentAuditEvent.TASK_PAUSED &&
+        it.detail != "Saved Agent team unavailable; awaiting original outcome" } == true
+
     fun isTeamWait(phase: AgentPhase, metadata: Map<String, String>): Boolean =
-        phase == AgentPhase.WAITING_RESPONSE && metadata["resource_location"] == "distributed" &&
+        (phase == AgentPhase.WAITING_RESPONSE || acceptsLateResult(phase, metadata,
+            metadata["source_message_id"]?.toLongOrNull() ?: 0L)) && metadata["resource_location"] == "distributed" &&
             metadata["team_run_id"].orEmpty().isNotBlank() &&
             metadata["source_message_id"]?.toLongOrNull()?.let { it > 0L } == true
 
@@ -24,24 +69,32 @@ internal object AgentTeamParentRecoveryPolicy {
 internal fun MobileNativeAgent.reconcileSavedAgentTeam(): AgentUiState? = synchronized(this) {
     val pending = lastActionResult ?: return@synchronized null
     if (!AgentTeamParentRecoveryPolicy.isTeamWait(phase, pending.metadata)) return@synchronized null
+    if (AgentTeamParentRecoveryPolicy.userStopped(auditTrail)) return@synchronized null
     val action = currentPlan?.actions?.firstOrNull { it.id == pending.actionId &&
         it.kind == AgentActionKind.CALL_CONNECTOR && it.parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty().isNotBlank() }
         ?: return@synchronized null
     val runId = pending.metadata.getValue("team_run_id")
     val team = GlobalSuperAgentRuntime.get(appContext).agentTeamSnapshot(runId)
-    if (team?.state == AgentTeamExecutionState.CANCELLED) return@synchronized cancelCurrentTask()
     val conversation = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
         .ifBlank { activeConversationContext.conversationId }
     val turn = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { activeConversationTurnId }
+    val sameTask = team?.conversationId == conversation && team.taskId == turn
+    if (sameTask && team?.state == AgentTeamExecutionState.CANCELLED) return@synchronized cancelCurrentTask()
+    // A durable user pause/stop is authoritative. Transport recovery never resumes it.
+    if (sameTask && team?.paused == true) return@synchronized snapshot()
     if (AgentTeamParentRecoveryPolicy.shouldPause(team, conversation, turn)) {
-        phase = AgentPhase.PAUSED
+        phase = AgentPhase.WAITING_RESPONSE
         lastActionResult = pending.copy(success = false,
-            message = appContext.getString(R.string.agent_team_recovery_paused),
-            metadata = pending.metadata + mapOf(AgentTeamParentRecoveryPolicy.PAUSED to "true",
+            message = appContext.getString(R.string.collaboration_connection_reconciling),
+            metadata = (pending.metadata - AgentTeamParentRecoveryPolicy.PAUSED) + mapOf(
                 "team_state" to (team?.state?.name?.lowercase() ?: "missing")))
-        recordAudit(AgentAuditEvent.TASK_PAUSED, "Saved Agent team unavailable; awaiting original outcome")
         saveTaskRecord()
         return@synchronized reconcileExecutionLoop(snapshot())
+    }
+    if (phase == AgentPhase.PAUSED) {
+        phase = AgentPhase.WAITING_RESPONSE
+        lastActionResult = pending.copy(metadata = pending.metadata - AgentTeamParentRecoveryPolicy.PAUSED)
+        saveTaskRecord()
     }
     if (team == null || !team.state.isTerminal) return@synchronized snapshot()
     val success = team.finalOutput.isNotBlank() && team.state in setOf(

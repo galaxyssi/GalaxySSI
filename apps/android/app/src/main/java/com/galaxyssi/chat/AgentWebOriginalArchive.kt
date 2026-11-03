@@ -29,7 +29,8 @@ internal object AgentWebOriginalArchive {
         }
         if (!File(directory, "metadata.json").isFile) {
             val metadata = JSONObject().put("url", source.url).put("name",
-                prepared.attachment.displayName.removeSuffix(".html") + "-原貌.html")
+                context.getString(R.string.agent_web_original_archive_filename,
+                    prepared.attachment.displayName.removeSuffix(".html")))
             AgentPhonePublicHtmlAttachment.writePlaintextHtml(File(directory, "metadata.json"), metadata.toString())
         }
         WorkManager.getInstance(context).enqueueUniqueWork("original-page-$id", ExistingWorkPolicy.KEEP,
@@ -53,7 +54,8 @@ class AgentWebOriginalArchiveWorker(context: Context, parameters: WorkerParamete
                 policy = AgentWebPolicy(maxDownloadBytes = 8L * 1024 * 1024, maxTimeoutMillis = 15_000))
             val deadline = android.os.SystemClock.elapsedRealtime() + 120_000
             var remaining = 24L * 1024 * 1024
-            val built = AgentWebOriginalDocument.build(meta.getString("url"), File(directory, "source.html").readBytes()) { url ->
+            val built = AgentWebOriginalDocument.build(meta.getString("url"), File(directory, "source.html").readBytes(),
+                notice = { missing, address -> applicationContext.getString(R.string.agent_web_original_archive_notice, missing, address) }) { url ->
                 check(!isStopped)
                 val time = deadline - android.os.SystemClock.elapsedRealtime()
                 if (time <= 0 || remaining <= 0) null else {

@@ -271,22 +271,8 @@ internal fun MainActivity.renderControlCenterGeneralPage() {
 
 internal fun MainActivity.showScreenAssistantSettingsPage() {
     val available = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
-    val enabled = ScreenAssistantSettings.enabled(this)
-    showControlCenterFeature(getString(R.string.screen_assistant_title), ControlCenterPageSpec(
-        sections = listOf(ControlCenterSectionSpec("", listOf(
-            ControlCenterRowSpec(
-                actionId = "screen_assistant.toggle",
-                title = getString(R.string.screen_assistant_enable),
-                subtitle = getString(if (enabled) R.string.screen_assistant_enabled_summary
-                    else R.string.screen_assistant_disabled_summary),
-                iconRes = R.drawable.ic_agent_screen,
-                switchValue = enabled,
-                showChevron = false,
-                enabled = available
-            )
-        ))),
-        footer = getString(R.string.screen_assistant_privacy_note)
-    ))
+    showControlCenterFeature(getString(R.string.screen_assistant_title),
+        screenAssistantSettingsSpec(this, ScreenAssistantSettings.accessState(this), available))
 }
 
 internal fun MainActivity.showTextSizeSettingsPage() {

@@ -1,0 +1,22 @@
+Microsoft Edge TTS Sec-MS-GEC v2
+
+MicrosoftEdgeTtsGec.kt is a Kotlin adaptation of edge-tts src/edge_tts/drm.py.
+Upstream: https://github.com/rany2/edge-tts
+Reference revision: b2ffbdd9f43f28f03cc939b5de0f3964aa62d60e
+Copyright (c) rany <rany@riseup.net> and edge-tts contributors.
+Kotlin adaptation Copyright (c) 2026 GalaxySSI contributors.
+
+This adapted file is licensed under GNU LGPL version 3, not the repository's
+default Apache license. The accompanying LGPL-3.0.txt and GPL-3.0.txt apply.
+Changes: Android/JVM implementation, integer arithmetic, compact SHA rounds,
+and time-window/known-answer regression coverage.
+
+Corresponding source and Android build instructions:
+https://github.com/galaxyssi/GalaxySSI
+apps/android/app/src/main/java/com/galaxyssi/chat/MicrosoftEdgeTtsGec.kt
+apps/android/gradlew.bat :app:assembleDebug
+
+The public source and Gradle build allow rebuilding and installing an APK
+with a modified implementation; no vendor signing key is needed for a
+separate debug installation. GalaxySSI imposes no restriction on modifying
+or reverse engineering this component for debugging those modifications.

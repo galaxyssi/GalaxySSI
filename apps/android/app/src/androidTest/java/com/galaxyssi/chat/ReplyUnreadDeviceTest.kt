@@ -1,8 +1,7 @@
 package com.galaxyssi.chat
 
 import android.content.Context
-import android.text.Spanned
-import android.text.style.ImageSpan
+import android.view.View
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -12,16 +11,15 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ReplyUnreadDeviceTest {
-    @Test fun contactUnreadIsAdjacentToTitleAndOpeningListDoesNotClearIt() {
+    @Test fun contactUnreadAppearsOnShortcutAndOpeningListDoesNotClearIt() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val id = "unread-device-test"
                 try {
-                    activity.summaries[id] = ContactSummary(unreadCount = 1)
+                    activity.summaries[id] = ContactSummary(lastAt = 1L, unreadCount = 1)
                     activity.refreshReplyUnreadDot()
-                    val text = activity.agentSessionTitle.text as Spanned
-                    assertEquals(1, text.getSpans(0, text.length, ImageSpan::class.java).size)
-                    assertEquals(0, text.getSpanStart(text.getSpans(0, text.length, ImageSpan::class.java).single()))
+                    assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.agentSessionsUnreadDot).visibility)
+                    assertFalse(activity.agentSessionTitle.text.contains('\uFFFC'))
                     activity.showAgentSessionsPage()
                     assertEquals(1, activity.summaries[id]?.unreadCount)
                 } finally {
@@ -38,7 +36,9 @@ class ReplyUnreadDeviceTest {
         val id = "unread-device-test-agent"
         val entry = AgentTranscriptEntry("test-reply", AgentTranscriptRole.ASSISTANT,
             "Test", 1L, "test-final", id)
+        val database = AgentTranscriptEntryDatabase.shared(context)
         try {
+            assertTrue(database.insert(entry))
             AgentReplyUnreadStore.record(context, entry)
             AgentReplyUnreadStore.read(context, "different", listOf(entry))
             val prefs = context.getSharedPreferences("agent_reply_unread", Context.MODE_PRIVATE)
@@ -49,6 +49,7 @@ class ReplyUnreadDeviceTest {
             assertFalse(prefs.contains(id))
         } finally {
             AgentReplyUnreadStore.remove(context, id)
+            database.deleteById(entry.id)
         }
     }
 }

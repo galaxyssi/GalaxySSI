@@ -20,7 +20,7 @@ class CollaborationScopedRecallDeviceTest {
             val access = CollaborationWorkspaceAccess(group, "run", "turn", 1, "author-node", "author")
             val reviewer = access.copy(nodeId = "review-node", personId = "reviewer", dependencyNodes = setOf("author-node"))
             val ledger = CollaborationEvidenceLedger(context)
-            val original = JSONObject().put("text", "original:" + "x".repeat(12_000)).toString()
+            val original = JSONObject().put("text", "original:\u8bc1\u636e\n\"quoted\"\\\uD83D\uDE00" + "x".repeat(12_000)).toString()
             val ref = ledger.record(access, "command", "commandExecution", "{}", original, 1, 2,
                 CollaborationEvidenceOrigin.DESKTOP_CODEX_TOOL)
             ledger.bind(902, reviewer)
@@ -43,11 +43,28 @@ class CollaborationScopedRecallDeviceTest {
                 first.getJSONObject("galaxyssi_evidence_receipt").getString("evidence_id"))
             assertEquals("desktop_codex_tool", first.getJSONObject("source_reference").getString("origin"))
             assertTrue(first.getString("content").contains("original:"))
+            assertFalse(first.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getBoolean("complete"))
             val second = JSONObject(session.execute(CollaborationCloudRecall.NAME, JSONObject(input.toString())
                 .put("offset", first.getInt("next_offset"))))
-            val reconstructed = JSONObject(first.getString("content") + second.getString("content"))
+            val exactContent = first.getString("content") + second.getString("content")
+            val reconstructed = JSONObject(exactContent)
+            val contentHash = MqttImmutableContent.sha256(exactContent)
+            listOf(first, second).forEach { page ->
+                val coverage = page.getJSONObject(CollaborationEvidenceReadCoverage.FIELD)
+                assertEquals(contentHash, coverage.getString("content_utf8_sha256"))
+                assertEquals(AgentNativeJsonCodec.sha256(exactContent), coverage.getString("content_sha256"))
+                assertNotEquals(contentHash, coverage.getString("content_sha256"))
+                assertEquals("galaxyssi_json_string_utf8_v1", coverage.getString("content_sha256_encoding"))
+                assertEquals("complete_evidence_content", coverage.getString("content_digest_scope"))
+                assertEquals("utf16_code_units", coverage.getString("offset_unit"))
+                assertTrue(page.getString("citation_guidance").contains("content_utf8_sha256"))
+            }
             assertEquals(first.getJSONObject("source_reference").toString(), second.getJSONObject("source_reference").toString())
             assertEquals(original, reconstructed.getString("output_json"))
+            assertTrue(second.getJSONObject(CollaborationEvidenceReadCoverage.FIELD).getBoolean("complete"))
+            val restored = CollaborationEvidenceLedger(context).references(reviewer, org.json.JSONArray().put(ref)).getJSONObject(0)
+            CollaborationEvidenceReadCoverage.requireComplete(restored, CollaborationEvidenceReadCoverage.identity(reviewer),
+                ledger.read(reviewer, ref.getString("evidence_id"))!!)
             val hidden = JSONObject(CollaborationCloudRecall.execute(context,
                 access.copy(nodeId = "independent-node", personId = "independent"), input))
             assertEquals("failed", hidden.getString("status"))
@@ -60,14 +77,28 @@ class CollaborationScopedRecallDeviceTest {
                 JSONObject(input.toString()).put("source_message_id", 902))).getString("status"))
             assertEquals("failed", JSONObject(CollaborationCloudRecall.execute(context, reviewer,
                 JSONObject(input.toString()).put("offset", -1))).getString("status"))
+            assertEquals("failed", JSONObject(CollaborationCloudRecall.execute(context, reviewer,
+                JSONObject(input.toString()).put("offset", Int.MAX_VALUE))).getString("status"))
+            val nativeReader = reviewer.copy(nodeId = "native-review-node", personId = "independent")
+            ledger.bind(903, nativeReader)
             val registry = AgentPhoneNativeToolCatalog.defaultRegistry(context, { ScreenContext(foregroundApp = "", pageTitle = "") })
                 .subset { it.id == CollaborationRecallNativeTool.ID }
             val native = registry.invoke(CollaborationRecallNativeTool.ID,
                 mapOf("mode" to "evidence", "evidence_id" to ref.getString("evidence_id"), "sha256" to ref.getString("sha256")),
-                AgentNativeToolInvocationContext(conversationId = group, turnId = "turn", collaborationSourceMessageId = 902))
+                AgentNativeToolInvocationContext(conversationId = group, turnId = "turn", collaborationSourceMessageId = 903))
             assertTrue(native.toJson(), native.isSuccess)
             assertTrue(native.output["content"].toString().contains("original:"))
             assertEquals(ref.getString("evidence_id"), (native.output["source_reference"] as Map<*, *>)["evidence_id"])
+            assertFalse((native.output[CollaborationEvidenceReadCoverage.FIELD] as Map<*, *>)["complete"] as Boolean)
+            val nativeSecond = registry.invoke(CollaborationRecallNativeTool.ID,
+                mapOf("mode" to "evidence", "evidence_id" to ref.getString("evidence_id"), "sha256" to ref.getString("sha256"),
+                    "offset" to native.output["next_offset"]),
+                AgentNativeToolInvocationContext(conversationId = group, turnId = "turn", collaborationSourceMessageId = 903))
+            assertTrue(nativeSecond.toJson(), nativeSecond.isSuccess)
+            assertTrue((nativeSecond.output[CollaborationEvidenceReadCoverage.FIELD] as Map<*, *>)["complete"] as Boolean)
+            assertEquals(exactContent, native.output["content"].toString() + nativeSecond.output["content"].toString())
+            assertEquals(contentHash, (nativeSecond.output[CollaborationEvidenceReadCoverage.FIELD] as Map<*, *>)["content_utf8_sha256"])
+            assertTrue(native.output["citation_guidance"].toString().contains("content_utf8_sha256"))
             groups.update(group) { it.copy(members = it.members.filterNot { member -> member.id == "reviewer" }) }
             assertEquals("failed", JSONObject(CollaborationCloudRecall.execute(context, reviewer, input)).getString("status"))
         } finally { groups.remove(group) }

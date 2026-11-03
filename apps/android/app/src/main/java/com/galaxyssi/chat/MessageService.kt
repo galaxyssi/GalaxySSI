@@ -56,7 +56,11 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
         GalaxySSIMqttClient.addListener(this)
         GalaxySSIMqttClient.connect(this)
         registerNetworkRecoveryCallback()
+        ProactiveAttentionPush.start(this)
+        ContactReminders.restore(this)
         thread(name = "galaxyssi-runtime-bootstrap") {
+            runCatching { AgentProactiveTaskScheduler.restoreAll(this@MessageService, conversationOnly = true) }
+                .onFailure { Log.w("GalaxySSISchedule", "Could not restore schedules", it) }
             runCatching { AgentStartupRecovery.enqueue(this@MessageService).result.get() }
                 .onFailure { Log.w("GalaxySSILongTask", "Could not enqueue startup recovery", it) }
             runCatching { AgentEmbeddedRuntimeBootstrap.ensureInstalled(this@MessageService) }
@@ -125,6 +129,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
     }
 
     override fun onDestroy() {
+        ProactiveAttentionPush.stop()
         unregisterNetworkRecoveryCallback()
         GalaxySSIMqttClient.removeListener(this)
         proactiveTaskExecutor.shutdownNow()
@@ -220,15 +225,18 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 GalaxySSIMqttClient.connectAfterNetworkAvailable(this@MessageService)
+                ProactiveAttentionPush.refresh(networkChanged = true)
             }
 
             override fun onLost(network: Network) {
                 GalaxySSIMqttClient.waitForNetwork(this@MessageService)
+                ProactiveAttentionPush.refresh(networkChanged = true)
             }
 
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
                 if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
                     GalaxySSIMqttClient.connectAfterNetworkAvailable(this@MessageService)
+                    ProactiveAttentionPush.refresh()
                 }
             }
         }
@@ -452,9 +460,7 @@ class MessageService : Service(), GalaxySSIMqttClient.Listener {
                 R.string.agent_schedule_approval_required,
                 state.pendingAction?.description.orEmpty().ifBlank { workflow.goal }
             )
-            state.phase == AgentPhase.BLOCKED -> state.plan?.safetyReview?.reason
-                ?.ifBlank { getString(R.string.agent_status_blocked) }
-                ?: getString(R.string.agent_status_blocked)
+            state.phase == AgentPhase.BLOCKED -> AgentBlockedStatePolicy.reason(state, getString(R.string.agent_status_blocked))
             state.phase == AgentPhase.WAITING_RESPONSE -> getString(R.string.agent_status_waiting_response)
             state.lastActionResult != null -> state.lastActionResult.message
             else -> getString(R.string.agent_schedule_started)

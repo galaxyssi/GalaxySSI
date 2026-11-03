@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="attention_news_excerpts">要点摘录</string>
+    <string name="attention_news_image">原文图片</string>
+    <string name="attention_news_read_more">继续阅读</string>
+    <string name="attention_news_collected">收录 %1$s</string>
+</resources>

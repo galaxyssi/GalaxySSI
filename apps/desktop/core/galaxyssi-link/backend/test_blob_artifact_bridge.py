@@ -23,6 +23,7 @@ class BlobArtifactBridgeTests(PairConfigurationFixture):
         self.bridge.outbound_status = Mock(return_value=None)
         for route, peer in self.peers.items():
             peer["client_route_id"] = route
+            peer["link_secret"] = "a" * 64
         peer = self.peers[self.routes[0]]
         self.body = artifact_job(desktop_id="desktop", size_bytes=3, original_size_bytes=3,
                                  sha256=adapter.sha256(b"abc"))
@@ -280,7 +281,8 @@ class BlobArtifactBridgeTests(PairConfigurationFixture):
             stack.enter_context(patch.object(link_delivery, "DB_PATH", self.root / "delivery.sqlite3"))
             stack.enter_context(patch.object(mqtt_bridge, "desktop_id", self.bridge.desktop_id))
             stack.enter_context(patch.object(mqtt_bridge, "_topics_for_client", return_value=Mock(send="isolated-test-topic")))
-            encrypt = stack.enter_context(patch.object(mqtt_bridge, "encrypt_signal_payload", return_value={"body": "ciphertext"}))
+            encrypt = stack.enter_context(patch.object(mqtt_bridge, "encrypt_signal_payload", return_value={
+                "scheme": "signal", "from": self.bridge.desktop_id(), "to": self.body["source_id"], "body": "ciphertext"}))
             stack.enter_context(patch.object(mqtt_bridge, "transport_timing", Mock()))
             self.assertTrue(runtime.publish_offer(self.body, offer))
             envelope = encrypt.call_args.args[0]

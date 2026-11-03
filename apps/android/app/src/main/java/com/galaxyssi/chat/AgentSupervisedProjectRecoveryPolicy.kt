@@ -19,8 +19,14 @@ internal object AgentSupervisedProjectRecoveryPolicy {
         }
 
     fun hasUnknownOutcome(action: AgentAction): Boolean =
-        runCatching { JSONObject(action.evidence).optString(OUTCOME_STATE_METADATA) }
-            .getOrDefault("") == UNKNOWN_OUTCOME
+        runCatching {
+            val raw = JSONObject(action.evidence)
+            val output = raw.optJSONObject("output") ?: raw
+            raw.optString(OUTCOME_STATE_METADATA) == UNKNOWN_OUTCOME ||
+                output.optString(OUTCOME_STATE_METADATA) == UNKNOWN_OUTCOME ||
+                output.opt("state_verified") == false || output.opt("delivery_verified") == false ||
+                output.optJSONObject("metadata")?.optString("goal_status") in setOf("unknown", "dispatched")
+        }.getOrDefault(false)
 
     private fun AgentAction.isVerifiedPhoneToolProgress(): Boolean =
         kind == AgentActionKind.CALL_NATIVE_TOOL &&

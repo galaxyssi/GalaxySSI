@@ -133,7 +133,7 @@ class AgentDurableModelLoopTest {
         AgentModelToolLoop(adapter(), registry(), journal = journal).run(initial)
         val restored = AgentModelToolLoop(AgentModelAdapter { error("No model request") }, registry(), journal = journal)
             .run(initial.copy(messages = listOf(AgentModelMessage.user("A fresh screen snapshot"))))
-        assertEquals(initial.messages.first(), restored.messages.first())
+        assertEquals(initial.messages.first(), restored.messages.first { it.role == AgentModelMessageRole.USER })
     }
 
     @Test fun scopeFieldsAndLoopRevisionHaveSeparateRecordsAndEffectKeys() = runBlocking {

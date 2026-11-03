@@ -12,7 +12,7 @@ import logging
 import secrets
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 
 import paho.mqtt.client as mqtt
@@ -30,6 +30,9 @@ class PublishInfo:
     mid: int
     rc: int = mqtt.MQTT_ERR_SUCCESS
     _done: threading.Event = field(default_factory=threading.Event)
+    reason_code: str = "accepted"
+    broker_id: str = ""
+    generation: int = 0
 
     def is_published(self):
         return self._done.is_set() and self.rc == mqtt.MQTT_ERR_SUCCESS
@@ -96,7 +99,7 @@ class MqttPoolClient:
         self.start()
         try:
             while not self._closed.wait(0.25):
-                self._pool.refresh_subscriptions()
+                self._pool.repair()
                 self._tick()
         finally:
             self.disconnect()
@@ -234,6 +237,8 @@ class MqttPoolClient:
         publication = publication or self._classify(topic, encoded)
         if publication is None or size > CATALOG["limits"]["encoded_packet_bytes"]:
             info.rc = mqtt.MQTT_ERR_NO_CONN
+            info.reason_code = ("encoded_packet_too_large" if size > CATALOG["limits"]["encoded_packet_bytes"]
+                                else "publication_unclassified")
             return info
         now = time.monotonic()
         if publication.bootstrap:
@@ -248,17 +253,20 @@ class MqttPoolClient:
             plans = [(item.broker_id, item.generation) for item in self.policy.plan(
                 publication.peer, publication.message_id, publication.traffic, size,
                 set(publication.receive_topics), now=now, ingress=publication.preferred_broker,
-                attempted=publication.attempted_brokers)
+                attempted=publication.attempted_brokers, authorized_paths=publication.authorized_paths)
                 if item.delay == 0]
             if publication.authorized_paths is not None:
                 plans = [item for item in plans if item in publication.authorized_paths]
         # This token represents one physical packet. Full durable message hedges
         # and chunk scheduling must be integrated above this adapter.
+        info.reason_code = "no_admitted_path"
         for broker, generation in plans:
             attempt_id = secrets.token_hex(16)
             attempt = Attempt(publication.peer, publication.message_id, publication.content_hash,
                               broker, generation, size, publication.traffic, now)
-            if not self.policy.reserve(attempt_id, attempt):
+            refusal = self.policy.reserve_reason(attempt_id, attempt)
+            if refusal:
+                info.reason_code = "attempt_" + refusal
                 continue
             try:
                 if publication.on_path is not None:
@@ -272,7 +280,12 @@ class MqttPoolClient:
                 self.policy.track_chunk(publication.peer, publication.chunk, broker, generation, size, now)
             receipt = self._pool.publish(broker, generation, topic, encoded, attempt_id=attempt_id)
             if receipt is not None:
+                info.broker_id, info.generation = broker, generation
+                # A synchronous acknowledgement may already have failed this token.
+                if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                    info.reason_code = "accepted"
                 return info
+            info.reason_code = "physical_publish_rejected"
             if publication.chunk is not None:
                 self.policy.discard_chunk(publication.peer, publication.chunk)
             with self._lock:
@@ -280,6 +293,37 @@ class MqttPoolClient:
             self.policy.discard_attempt(attempt_id)
         info.rc = mqtt.MQTT_ERR_NO_CONN if not plans else mqtt.MQTT_ERR_QUEUE_SIZE
         return info
+
+    def publish_transient_control(self, topic, payload, *, publication):
+        """Race bounded query copies; return an admitted token, not a peer receipt."""
+        if publication is None:
+            raise ValueError("Transient control requires an authenticated publication")
+        encoded = payload.encode("utf-8") if isinstance(payload, str) else bytes(payload)
+        size = publish_packet_bytes(topic, len(encoded))
+        if (publication.traffic != Traffic.CONTROL or publication.bootstrap
+                or publication.authorized_paths is None or size > self.policy.limits.small_packet_bytes):
+            return self.publish(topic, encoded, publication=publication)
+        paths = tuple(dict.fromkeys((item.broker_id, item.generation) for item in self.policy.plan(
+            publication.peer, publication.message_id, publication.traffic, size, set(publication.receive_topics),
+            now=time.monotonic(), attempted=publication.attempted_brokers, authorized_paths=publication.authorized_paths)
+            if item.delay == 0 and (item.broker_id, item.generation) in publication.authorized_paths))
+        if not paths:
+            return self.publish(topic, encoded, publication=publication)
+        results = []
+        authorization_error = None
+        for path in paths:
+            try:
+                # The normal publisher reserves global capacity and rechecks the pair
+                # immediately before each copy; no queue or second retry owner is added.
+                results.append(self.publish(topic, encoded, publication=replace(publication, authorized_paths=(path,))))
+            except ValueError as error:
+                authorization_error = error
+        accepted = next((item for item in results if item.rc == mqtt.MQTT_ERR_SUCCESS), None)
+        if accepted is not None:
+            return accepted
+        if authorization_error is not None:
+            raise authorization_error
+        return results[-1]
 
     def publish_delivery(self, topic, delivery):
         with self._lock:
@@ -301,6 +345,7 @@ class MqttPoolClient:
         if receipt.broker_acked:
             self.policy.broker_ack(receipt.attempt_id, broker, generation)
         info.rc = mqtt.MQTT_ERR_SUCCESS if receipt.broker_acked else mqtt.MQTT_ERR_NO_CONN
+        info.reason_code = "accepted" if receipt.broker_acked else "broker_ack_failed"
         # Business receipt tracking is owned by the durable message dispatcher,
         # not by this Paho compatibility token.
         self.policy.discard_attempt(receipt.attempt_id)
@@ -308,7 +353,10 @@ class MqttPoolClient:
         self._call(self.on_publish, self, None, info.mid, 0 if receipt.broker_acked else 128, None)
 
     def repair_subscriptions(self):
-        self._pool.refresh_subscriptions()
+        self._pool.repair()
+
+    def repair_path(self, broker, generation, reason):
+        return self._pool.repair_path(broker, generation, reason)
 
     def disconnect(self):
         self._closed.set()

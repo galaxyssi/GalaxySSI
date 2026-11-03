@@ -30,7 +30,8 @@ data class HighAccuracyAsrResult(
     val inferenceMs: Long,
     val modelProfileId: String,
     val complete: Boolean = true,
-    val termination: AsrTranscriptTermination = AsrTranscriptTermination.UNKNOWN
+    val termination: AsrTranscriptTermination = AsrTranscriptTermination.UNKNOWN,
+    val audioInputComplete: Boolean = true
 )
 
 class HighAccuracyLocalAsrController internal constructor(
@@ -224,7 +225,12 @@ class HighAccuracyLocalAsrTurn internal constructor(
     private val onPartial: (AsrEvent.Partial) -> Unit,
     private val onReleased: (HighAccuracyLocalAsrTurn) -> Unit
 ) : AutoCloseable {
-    private data class PendingFrame(val pcm16: ByteBuffer, val sampleCount: Int)
+    private data class PendingFrame(val pcm16: ByteBuffer, val sampleCount: Int) {
+        fun clear() {
+            pcm16.clear()
+            while (pcm16.hasRemaining()) pcm16.put(0)
+        }
+    }
 
     private val started = AtomicBoolean(false)
     private val released = AtomicBoolean(false)
@@ -238,6 +244,7 @@ class HighAccuracyLocalAsrTurn internal constructor(
     private var accumulatedDurationMs = 0L
     private var accumulatedInferenceMs = 0L
     private var transcriptComplete = true
+    private var audioInputComplete = true
     private var transcriptTermination = AsrTranscriptTermination.UNKNOWN
     private var restartPending = false
     private var stopAfterListening = false
@@ -425,7 +432,10 @@ class HighAccuracyLocalAsrTurn internal constructor(
         ).coerceAtMost(config.maxSegmentMs)
         val maxPendingSamples = config.inputSampleRateHz * bufferDurationMs.toInt() / 1_000
         while (pendingSamples > maxPendingSamples && pending.isNotEmpty()) {
-            pendingSamples -= pending.removeFirst().sampleCount
+            val dropped = pending.removeFirst()
+            pendingSamples -= dropped.sampleCount
+            dropped.clear()
+            audioInputComplete = false
         }
     }
 
@@ -437,6 +447,7 @@ class HighAccuracyLocalAsrTurn internal constructor(
             }
             pending.removeFirst()
             pendingSamples -= frame.sampleCount
+            frame.clear()
         }
         pendingSamples = 0
         return true
@@ -449,8 +460,9 @@ class HighAccuracyLocalAsrTurn internal constructor(
                 durationMs = accumulatedDurationMs,
                 inferenceMs = accumulatedInferenceMs,
                 modelProfileId = modelProfileId,
-                complete = transcriptComplete,
-                termination = transcriptTermination
+                complete = transcriptComplete && audioInputComplete,
+                termination = transcriptTermination,
+                audioInputComplete = audioInputComplete
             ))
         }
     }
@@ -459,6 +471,7 @@ class HighAccuracyLocalAsrTurn internal constructor(
         if (!released.compareAndSet(false, true)) return
         if (cancelEngine) engine.cancel()
         synchronized(pushLock) {
+            pending.forEach(PendingFrame::clear)
             pending.clear()
             pendingSamples = 0
             assembler.reset()

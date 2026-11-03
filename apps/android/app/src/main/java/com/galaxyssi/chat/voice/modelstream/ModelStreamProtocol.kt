@@ -30,7 +30,8 @@ data class ModelStreamRequest(
     val bodyJson: String,
     val transport: ModelStreamTransport = ModelStreamTransport.SSE,
     val connectTimeoutMs: Long = 20_000L,
-    val readTimeoutMs: Long = 300_000L
+    val readTimeoutMs: Long = 300_000L,
+    val auditSink: ModelCallAuditSink? = null
 ) {
     init {
         require(requestId.isNotBlank())

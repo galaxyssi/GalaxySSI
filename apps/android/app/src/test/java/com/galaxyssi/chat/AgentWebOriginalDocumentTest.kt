@@ -7,7 +7,16 @@ import org.junit.Test
 class AgentWebOriginalDocumentTest {
     private val url = "https://example.com/article"
     private fun build(html: String, load: (String) -> OriginalPageAsset? = { null }) =
-        AgentWebOriginalDocument.build(url, html.toByteArray(), load)
+        AgentWebOriginalDocument.build(url, html.toByteArray(), load = load)
+
+    @Test fun localizedNoticeUsesActualMissingImageCountAndEscapesSourceText() {
+        val sourceUrl = "https://example.com/article?q=<script>"
+        val result = AgentWebOriginalDocument.build(sourceUrl, "<img src='/missing.png'>".toByteArray(),
+            notice = { count, address -> "未保存图片：$count；来源：$address" }, load = { null })
+        val document = Jsoup.parse(result.html)
+        assertEquals("未保存图片：1；来源：$sourceUrl", document.body().select("p").last()!!.text())
+        assertTrue(document.select("script").isEmpty())
+    }
 
     @Test fun preservesInterleavedParagraphImagesAndTable() {
         val result = build("<article><p>First</p><img src='/a.png'><p>Second</p><table><tr><td>Value</td></tr></table><img src='/b.png'><p>Last</p></article>") {

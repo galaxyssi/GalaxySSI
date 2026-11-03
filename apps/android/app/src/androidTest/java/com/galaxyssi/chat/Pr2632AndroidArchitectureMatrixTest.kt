@@ -268,7 +268,7 @@ class Pr2632AndroidArchitectureMatrixTest {
             val mode = AndroidCognitionWorkMode.entries[index % AndroidCognitionWorkMode.entries.size]
             val plan = AndroidCognitionSchedulePolicy.workPlan(mode)
             when (mode) {
-                AndroidCognitionWorkMode.EVENT -> check(
+                AndroidCognitionWorkMode.EVENT, AndroidCognitionWorkMode.ATTENTION -> check(
                     plan.eventLimit == 12 && !plan.runBatchCognition && !plan.projectKnowledge
                 )
                 AndroidCognitionWorkMode.SCHEDULED -> check(

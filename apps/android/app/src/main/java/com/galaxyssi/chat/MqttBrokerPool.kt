@@ -55,6 +55,9 @@ internal class MqttBrokerPool(
         var retryScheduled = false
         var failures = 0
         var connectedAt = 0L
+        var connectStartedAt = 0L
+        var subscriptionWaitAt: Long? = null
+        var lastDemandAt: Long? = null
         var lastError = ""
         val activeTopics = mutableSetOf<String>()
         val pendingTopics = mutableMapOf<String, Long>()
@@ -66,6 +69,10 @@ internal class MqttBrokerPool(
     private val executor = ScheduledThreadPoolExecutor(3) { runnable ->
         Thread(runnable, "galaxyssi-mqtt-connection").apply { isDaemon = true }
     }.apply { removeOnCancelPolicy = true }
+    private val maintenance = ScheduledThreadPoolExecutor(1) { runnable ->
+        Thread(runnable, "galaxyssi-mqtt-health").apply { isDaemon = true }
+    }.apply { removeOnCancelPolicy = true }
+    private val recoveryScheduled = AtomicBoolean()
     private val started = AtomicBoolean()
     private val closed = AtomicBoolean()
     private val networkPresent = AtomicBoolean(true)
@@ -78,12 +85,44 @@ internal class MqttBrokerPool(
 
     fun start() {
         check(!closed.get()) { "Broker pool is closed" }
-        if (!started.compareAndSet(false, true)) return
+        if (!started.compareAndSet(false, true)) { ensureConnected(); return }
         paths.values.shuffled().forEach { path -> executor.execute { connect(path) } }
-        executor.scheduleWithFixedDelay({
-            refreshSubscriptions()
-            repairStalledPublishes()
-        }, 10, 10, TimeUnit.SECONDS)
+        maintenance.scheduleWithFixedDelay({ runCatching { repair() } }, 2, 2, TimeUnit.SECONDS)
+    }
+
+    fun ensureConnected() {
+        if (closed.get() || !started.get() || !recoveryScheduled.compareAndSet(false, true)) return
+        runCatching { maintenance.execute {
+            try {
+                repair()
+                paths.values.forEach { path ->
+                    val wake = synchronized(path.lock) {
+                        if (path.connected || path.connecting || !networkPresent.get() ||
+                            path.lastDemandAt?.let { now() - it < 3_000 } == true) false
+                        else { path.lastDemandAt = now(); true }
+                    }
+                    if (wake && !closed.get()) executor.execute { connect(path) }
+                }
+            } finally { recoveryScheduled.set(false) }
+        } }.onFailure { recoveryScheduled.set(false) }
+    }
+
+    fun repair() {
+        if (closed.get()) return
+        paths.values.forEach { path ->
+            val stalled = synchronized(path.lock) {
+                val reason = when {
+                    path.connecting && now() - path.connectStartedAt >= 20_000 -> "connect_timeout"
+                    path.connected && path.client?.isConnected != true -> "socket_disconnected"
+                    path.connected && path.subscriptionWaitAt?.let { now() - it >= 20_000 } == true -> "subscription_timeout"
+                    else -> null
+                }
+                reason?.let { Triple(path.client, path.generation, it) }
+            }
+            stalled?.let { lost(path, it.first, it.second, it.third) }
+        }
+        repairStalledPublishes()
+        refreshSubscriptions()
     }
 
     private fun connect(path: Path) {
@@ -91,6 +130,7 @@ internal class MqttBrokerPool(
             path.retryScheduled = false
             if (closed.get() || !networkPresent.get() || path.connected || path.connecting) return
             path.connecting = true
+            path.connectStartedAt = now()
             ++path.generation
         }
         emit { listener.onState(ingress(path, generation), "connecting", "") }
@@ -98,8 +138,8 @@ internal class MqttBrokerPool(
         try {
             client = clientFactory(path.brokerId, MqttBrokerCatalog.brokers.getValue(path.brokerId))
             synchronized(path.lock) {
-                if (closed.get() || !networkPresent.get() || path.generation != generation) {
-                    client.close()
+                if (closed.get() || !networkPresent.get() || path.generation != generation || !path.connecting) {
+                    executorCleanup(client)
                     return
                 }
                 path.client = client
@@ -116,11 +156,11 @@ internal class MqttBrokerPool(
             client.connect(options, null, object : IMqttActionListener {
                 override fun onSuccess(asyncActionToken: IMqttToken?) = Unit
                 override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                    lost(path, client, generation, exception?.javaClass?.simpleName ?: "connect_failed")
+                    lost(path, client, generation, failureReason(exception, "connect_failed"))
                 }
             })
         } catch (error: Exception) {
-            lost(path, client, generation, error.javaClass.simpleName)
+            lost(path, client, generation, failureReason(error, "connect_failed"))
         }
     }
 
@@ -142,7 +182,7 @@ internal class MqttBrokerPool(
                 subscribePath(path)
             }
             override fun connectionLost(cause: Throwable?) {
-                lost(path, client, generation, cause?.javaClass?.simpleName ?: "connection_lost")
+                lost(path, client, generation, failureReason(cause, "connection_lost"))
             }
             override fun messageArrived(topic: String?, message: MqttMessage?) {
                 val payload = message?.payload ?: return
@@ -166,6 +206,7 @@ internal class MqttBrokerPool(
             path.connected = false
             path.activeTopics.clear()
             path.pendingTopics.clear()
+            path.subscriptionWaitAt = null
             path.lastError = reason
             pending = path.publications.values.toList()
             path.publications.clear()
@@ -196,8 +237,13 @@ internal class MqttBrokerPool(
     private fun disposeClient(client: IMqttAsyncClient) {
         // Paho interprets a zero completion timeout as an unbounded wait.
         runCatching { client.disconnectForcibly(0, 500) }
-        runCatching { client.close() }
+        runCatching { if (client is MqttAsyncClient) client.close(true) else client.close() }
     }
+
+    private fun failureReason(error: Throwable?, fallback: String): String =
+        generateSequence(error) { it.cause }.take(4).joinToString("/") {
+            it.javaClass.simpleName + ((it as? org.eclipse.paho.client.mqttv3.MqttException)?.let { e -> ":${e.reasonCode}" } ?: "")
+        }.ifBlank { fallback }
 
     fun subscribe(topics: Map<String, Int>) {
         require(topics.all { (topic, qos) -> topic.isNotEmpty() && topic.length <= 512 &&
@@ -225,6 +271,8 @@ internal class MqttBrokerPool(
             generation = path.generation
             path.pendingTopics.entries.removeAll { now() - it.value > 10_000 }
             missing = (expected.keys - path.activeTopics - path.pendingTopics.keys).sorted()
+            if (path.activeTopics.containsAll(expected.keys)) path.subscriptionWaitAt = null
+            else if (path.subscriptionWaitAt == null) path.subscriptionWaitAt = now()
         }
         missing.chunked(128).forEach { batch ->
             val topics = synchronized(path.lock) {
@@ -244,6 +292,7 @@ internal class MqttBrokerPool(
                     active = topics.filterIndexed { index, topic -> succeeded &&
                         grants.getOrNull(index)?.let { it in 0..1 } == true && topic in stillDesired }.toSet()
                     path.activeTopics.addAll(active)
+                    if (path.activeTopics.containsAll(stillDesired)) path.subscriptionWaitAt = null
                 }
                 emit { listener.onSubscribed(ingress(path, generation), active, active.size == topics.size) }
             }
@@ -328,8 +377,9 @@ internal class MqttBrokerPool(
     }
 
     fun networkAvailable() {
-        if (closed.get() || networkPresent.getAndSet(true)) return
-        paths.values.forEach { path -> executor.execute { connect(path) } }
+        if (closed.get()) return
+        networkPresent.set(true)
+        ensureConnected()
     }
 
     fun networkUnavailable() {
@@ -358,5 +408,6 @@ internal class MqttBrokerPool(
             lost(path, current.first, current.second, "closed")
         }
         executor.shutdownNow()
+        maintenance.shutdownNow()
     }
 }

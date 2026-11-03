@@ -82,6 +82,64 @@ class DurableCampaignTests(unittest.TestCase):
         self.assertEqual([task_id], self.starts)
         self.assertEqual([task_id], self.created)
 
+    def test_real_ci_gate_waits_across_reopen_then_unlocks_dependency_without_reexecution(self):
+        from evolution_v2.campaign_outcomes import published_outcome
+        from test_evolution_v2.test_ci_snapshot import URL, commit_snapshot
+        campaign = self.create([row(), row("b", ["a"])])
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        task = self.tasks[self.created[0]]
+        task.status, task.pull_request_url = "published", URL
+        snapshot = {**commit_snapshot(conclusion="skipped"), "url": URL, "state": "closed",
+                    "merged": True, "merge_commit_sha": "b" * 40, "base_ref": "main",
+                    "base_repository": "galaxyssi/GalaxySSI"}
+        ci_manager = SimpleNamespace(ci_watches=SimpleNamespace(get=lambda key: {"url": URL, "snapshot": snapshot}))
+        def wire():
+            self.manager.durable.published_outcome = lambda member: published_outcome(ci_manager, member)
+        wire()
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        self.manager = self.build_manager()
+        wire()
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        states = {node.node_id: node.status for node in self.manager.get(campaign.campaign_id).nodes}
+        self.assertEqual({"a": "awaiting_ci", "b": "pending"}, states)
+        self.assertEqual([task.task_id], self.starts)
+        snapshot.update(commit_snapshot())
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        states = {node.node_id: node.status for node in self.manager.get(campaign.campaign_id).nodes}
+        self.assertEqual({"a": "completed", "b": "running"}, states)
+        self.assertEqual(1, self.starts.count(task.task_id))
+        self.assertEqual(2, len(self.created))
+
+    def test_stale_completed_parent_defers_child_creation_until_evidence_recovers(self):
+        campaign = self.create([row(), row("b", ["a"])])
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        parent = self.tasks[self.created[0]]
+        parent.status, parent.pull_request_url = "published", "https://github.com/owner/project/pull/7"
+        outcome = {"stage": "completed", "pull_request_url": parent.pull_request_url,
+                   "integration_commit": "a" * 40}
+        self.manager.durable.published_outcome = lambda _: dict(outcome)
+        self.manager.tick(campaign.campaign_id)
+        outcome.update(stage="awaiting_ci", error="Current verification is unavailable")
+        observed = self.manager.tick(campaign.campaign_id, start_ready=True)
+        self.assertEqual("awaiting_dependency_verification", observed.nodes[1].status)
+        reserved = observed.nodes[1].task_id
+        self.assertEqual([parent.task_id], self.created)
+        self.assertEqual([parent.task_id], self.starts)
+        self.manager = self.build_manager()
+        self.manager.durable.published_outcome = lambda _: dict(outcome)
+        self.manager.tick(campaign.campaign_id, start_ready=True)
+        self.assertEqual([parent.task_id], self.created)
+        self.manager.control(campaign.campaign_id, "pause", "pause-unverified")
+        outcome.update(stage="completed", error="")
+        self.manager.tick(campaign.campaign_id)
+        self.assertEqual([parent.task_id], self.created)
+        self.manager.control(campaign.campaign_id, "resume", "resume-verified")
+        observed = self.manager.tick(campaign.campaign_id, start_ready=True)
+        self.assertEqual(reserved, observed.nodes[1].task_id)
+        self.assertEqual("running", observed.nodes[1].status)
+        self.assertEqual([parent.task_id, reserved], self.created)
+        self.assertEqual([parent.task_id, reserved], self.starts)
+
     def test_paused_failed_publication_does_not_resume_automatically(self):
         campaign = self.create()
         self.manager.tick(campaign.campaign_id, start_ready=True)

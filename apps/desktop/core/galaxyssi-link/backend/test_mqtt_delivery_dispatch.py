@@ -68,6 +68,13 @@ class DeliveryDispatchTest(unittest.TestCase):
         self.assertFalse(self.client.policy.pending("peer", "message"))
         self.assertEqual(0, self.client.delivery.diagnostics()["messages"])
 
+    def test_large_message_ranks_only_authorized_surviving_paths(self):
+        self.authorized.side_effect = lambda broker, generation: broker == "hivemq" and generation == 1
+        info = self.send(self.delivery(size_bound=100_000))
+        self.assertTrue(info.is_published())
+        self.assertEqual(1, len(self.pool.sent))
+        self.assertEqual("hivemq", self.frame().attempt.broker_id)
+
     def test_critical_control_races_all_paths_and_keeps_physical_slots_until_puback(self):
         self.pool.auto_ack = False
         info = self.send(self.delivery(traffic="control"))

@@ -9,16 +9,16 @@ import unittest
 
 from evolution_v2.campaign_outcomes import published_outcome, verify_dependency_source
 from evolution_v2.legacy import EvolutionCommandRunner, EvolutionError
-from test_evolution_v2.test_ci_snapshot import URL
+from test_evolution_v2.test_ci_snapshot import URL, commit_snapshot
 
 
 class PublishedOutcomeTests(unittest.TestCase):
     def setUp(self):
         self.task = SimpleNamespace(task_id="task", pull_request_url=URL)
-        self.snapshot = {"url": URL, "head_sha": "a" * 40, "state": "closed", "merged": True,
+        self.snapshot = {**commit_snapshot(), "url": URL, "head_sha": "a" * 40, "state": "closed", "merged": True,
                          "passed": True, "merge_commit_sha": "b" * 40, "base_ref": "main",
                          "repository": "galaxyssi/GalaxySSI", "base_repository": "galaxyssi/GalaxySSI",
-                         "fingerprint": "checks", "failed": 0, "pending": 0}
+                         "failed": 0, "pending": 0}
         self.watch = {"url": URL, "status": "merged", "snapshot": self.snapshot}
         self.manager = SimpleNamespace(ci_watches=SimpleNamespace(get=lambda key: self.watch))
 
@@ -28,11 +28,24 @@ class PublishedOutcomeTests(unittest.TestCase):
         self.assertEqual("b" * 40, result["integration_commit"])
         self.assertEqual("a" * 40, result["head_sha"])
 
+    def test_skipped_neutral_or_missing_checks_cannot_complete_dependency(self):
+        for conclusion in ("skipped", "neutral"):
+            self.snapshot.update(commit_snapshot(conclusion=conclusion))
+            result = published_outcome(self.manager, self.task)
+            self.assertEqual("awaiting_ci", result["stage"])
+            self.assertIn("skipped/neutral", result["error"])
+        self.snapshot.update(commit_snapshot(), checks=[])
+        self.assertEqual("awaiting_ci", published_outcome(self.manager, self.task)["stage"])
+
     def test_no_observation_or_wrong_pr_never_completes(self):
         for watch in (None, {}, {"url": URL + "1"}, {"url": URL, "snapshot": {"url": URL + "1"}}):
             with self.subTest(watch=watch):
                 self.watch = watch
                 self.assertEqual("awaiting_ci", published_outcome(self.manager, self.task)["stage"])
+
+    def test_ci_from_another_repository_cannot_be_attached_to_a_published_url(self):
+        self.snapshot.update(commit_snapshot(repository="other/repo"), base_repository="other/repo")
+        self.assertEqual("awaiting_ci", published_outcome(self.manager, self.task)["stage"])
 
     def test_observation_error_cannot_reuse_stale_green(self):
         self.watch.update(status="observation_error", error="Network disconnected")
@@ -95,6 +108,12 @@ class DependencySourceTests(unittest.TestCase):
             campaigns=SimpleNamespace(durable=durable),
             v2_store=SimpleNamespace(get_task_metadata=lambda key: self.metadata))
         self.task = SimpleNamespace(task_id="child")
+        self.snapshot = {**commit_snapshot(), "url": URL, "state": "closed", "merged": True,
+                         "merge_commit_sha": self.integrated, "base_ref": "main",
+                         "base_repository": "galaxyssi/GalaxySSI"}
+        self.watch = {"url": URL, "snapshot": self.snapshot}
+        self.manager.require = lambda key: SimpleNamespace(task_id=key, pull_request_url=URL)
+        self.manager.ci_watches = SimpleNamespace(get=lambda key: self.watch)
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True,
@@ -127,6 +146,21 @@ class DependencySourceTests(unittest.TestCase):
                     verify_dependency_source(self.manager, self.task, self.latest)
                 self.node.clear()
                 self.node.update(original)
+
+    def test_retained_completed_dependency_cannot_bypass_reopened_skipped_ci(self):
+        self.snapshot.update(commit_snapshot(conclusion="skipped"))
+        with self.assertRaises(EvolutionError) as error:
+            verify_dependency_source(self.manager, self.task, self.latest)
+        self.assertEqual("campaign_dependency_unverified", error.exception.code)
+        self.snapshot.update(commit_snapshot())
+        verify_dependency_source(self.manager, self.task, self.latest)
+
+    def test_newer_verified_integration_must_be_in_the_child_source(self):
+        self.snapshot["merge_commit_sha"] = self.latest
+        with self.assertRaises(EvolutionError) as error:
+            verify_dependency_source(self.manager, self.task, self.integrated)
+        self.assertEqual("campaign_dependency_not_in_source", error.exception.code)
+        verify_dependency_source(self.manager, self.task, self.latest)
 
     def test_manual_task_and_ci_repair_keep_their_existing_source_policy(self):
         self.metadata.campaign_id = ""

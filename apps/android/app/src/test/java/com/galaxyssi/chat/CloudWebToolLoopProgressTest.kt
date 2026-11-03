@@ -9,7 +9,151 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CloudWebToolLoopProgressTest {
+    @Test fun selectedGoalPagesEndAtTheirSectionWithoutInventingAnotherFullPage() {
+        val whole = goalPages("Retain the original goal. ".repeat(500)).first()
+        val original = JSONObject(whole.output)
+        val section = "goal"
+        val arguments = JSONObject().put("mode", "goal_contract").put("section", section)
+        val selected = JSONObject(whole.output).put("section_sha256", CollaborationGoalContractSections.key(section))
+            .put("section_first_page", 0).put("section_last_page", 0).put("next_cursor", JSONObject.NULL)
+        val progress = CloudWebToolLoopProgress()
+        assertFalse(recordPage(progress, GoalPage(arguments, selected.toString())))
+        // The same immutable page through another selector is not new evidence.
+        assertFalse(recordPage(progress, whole))
+        assertFalse(progress.observeEvidenceBatch(listOf(original.toString())))
+        assertTrue(progress.observeEvidenceBatch(listOf(original.toString())))
+    }
+
+    @Test fun selectedGoalPageMustMatchRequestedSectionAndRange() {
+        val whole = goalPages("Retain the original goal. ".repeat(500)).first()
+        val args = JSONObject().put("mode", "goal_contract").put("section", "goal")
+        for (mutation in listOf<(JSONObject) -> Unit>(
+            { it.put("section_sha256", "b".repeat(64)) },
+            { it.put("section_first_page", 1) },
+            { it.put("section_last_page", it.getInt("page_count")) },
+            { it.put("section_last_page", 0) }
+        )) {
+            val page = JSONObject(whole.output).put("section_sha256", CollaborationGoalContractSections.key("goal"))
+                .put("section_first_page", 0).put("section_last_page", 1)
+            mutation(page)
+            val progress = CloudWebToolLoopProgress()
+            assertFalse(progress.observeEvidenceBatch(emptyList()))
+            assertFalse(progress.observeEvidenceBatch(emptyList()))
+            assertTrue(recordPage(progress, GoalPage(args, page.toString())))
+        }
+    }
+    private fun methodPage(offset: Int, hash: String = "b".repeat(64)): GoalPage {
+        val end = minOf(40_000, offset + 8000)
+        return GoalPage(JSONObject().put("mode", "method_history").put("record_id", "a".repeat(64)).put("offset", offset),
+            JSONObject().put("status", "returned").put("trust", "host_execution_observation_not_method_effectiveness")
+                .put("record_id", "a".repeat(64)).put("record_sha256", hash).put("total_characters", 40_000)
+                .put("content", "x".repeat(end - offset)).put("next_offset", if (end < 40_000) end else JSONObject.NULL).toString())
+    }
+
+    @Test fun longMethodHistoryCanBeReadWithoutBeingMistakenForStagnantSearch() {
+        val progress = CloudWebToolLoopProgress()
+        for (offset in 0 until 40_000 step 8000) assertFalse(recordPage(progress, methodPage(offset)))
+        assertStagnant(progress, methodPage(0).output)
+    }
+
+    @Test fun methodHistoryCannotForgeProgressWithRepeatsChangedOriginalsOrUnexecutedPages() {
+        assertStagnant(CloudWebToolLoopProgress(), methodPage(0).output)
+        val progress = CloudWebToolLoopProgress()
+        assertFalse(recordPage(progress, methodPage(0)))
+        val changed = methodPage(8000, "c".repeat(64))
+        assertTrue(progress.record(CollaborationCloudRecall.NAME, changed.arguments, changed.output))
+        assertStagnant(progress, changed.output)
+        val invalid = JSONObject(methodPage(16000).output).put("status", "failed").toString()
+        val other = CloudWebToolLoopProgress()
+        assertTrue(other.record(CollaborationCloudRecall.NAME, methodPage(16000).arguments, invalid))
+        assertStagnant(other, invalid)
+    }
+
+    @Test fun methodHistoryDirectoriesOnlyCountNewRecords() {
+        val arguments = JSONObject().put("mode", "method_history").put("object_id", "d".repeat(64)).put("revision", 1).put("sha256", "e".repeat(64))
+        val output = JSONObject().put("status", "returned").put("trust", "host_execution_observation_not_method_effectiveness")
+            .put("method", JSONObject(arguments.toString())).put("records", JSONArray().put(JSONObject().put("record_id", "a".repeat(64)))).toString()
+        val progress = CloudWebToolLoopProgress()
+        assertFalse(recordPage(progress, GoalPage(arguments, output)))
+        assertStagnant(progress, output)
+    }
+
     private data class GoalPage(val arguments: JSONObject, val output: String)
+
+    private fun rulePage(topic: String, offset: Int = 0, explicitTopic: Boolean = true): GoalPage {
+        val reference = CollaborationEvolutionProtocol.rules(topic).toString()
+        val start = offset.coerceAtMost(reference.length)
+        val end = minOf(reference.length, start + 8_000)
+        val arguments = JSONObject().put("mode", "evolution_rules").put("offset", offset)
+        if (explicitTopic) arguments.put("topic", topic)
+        val output = JSONObject().put("status", "returned").put("topic", topic)
+            .put("trust", "host_schema_not_execution_authority").put("content", reference.substring(start, end))
+            .put("total_characters", reference.length).put("next_offset", if (end < reference.length) end else JSONObject.NULL)
+        return GoalPage(arguments, output.toString())
+    }
+
+    @Test fun completeRulePaginationDoesNotForcePrematureSynthesis() {
+        val progress = CloudWebToolLoopProgress()
+        val length = CollaborationEvolutionProtocol.rules().toString().length
+        assertTrue(length > 24_000)
+        for (offset in 0 until length step 8_000) assertFalse(recordPage(progress, rulePage("all", offset)))
+        assertFalse(progress.finalizationRequested)
+        assertStagnant(progress, rulePage("all").output)
+    }
+
+    @Test fun repeatedAndOverlappingRulesCannotManufactureReadingProgress() {
+        val progress = CloudWebToolLoopProgress()
+        val page = rulePage("all")
+        assertFalse(recordPage(progress, page))
+        val alias = rulePage("all", explicitTopic = false)
+        assertTrue(progress.record(CollaborationCloudRecall.NAME, alias.arguments, alias.output))
+        assertStagnant(progress, alias.output)
+        assertFalse(recordPage(progress, rulePage("all", 4_000)))
+        val overlap = rulePage("all", 2_000)
+        assertTrue(progress.record(CollaborationCloudRecall.NAME, overlap.arguments, overlap.output))
+        assertStagnant(progress, overlap.output)
+        val eof = rulePage("all", Int.MAX_VALUE)
+        assertTrue(progress.record(CollaborationCloudRecall.NAME, eof.arguments, eof.output))
+        assertTrue(progress.observeEvidenceBatch(listOf(eof.output)))
+    }
+
+    @Test fun topicsRemainDistinctAndCheckpointReplaysDoNotBecomeNewKnowledge() {
+        val pages = listOf(rulePage("catalog"), rulePage("foundation"), rulePage("workflows"), rulePage("tools"))
+        val live = CloudWebToolLoopProgress()
+        pages.forEach { assertFalse(recordPage(live, it)) }
+        assertEquals(pages.last().output, live.cached(CollaborationCloudRecall.NAME, pages.last().arguments))
+        assertNull(live.cached(CollaborationCloudRecall.NAME, rulePage("retention").arguments))
+        val restored = CloudWebToolLoopProgress()
+        pages.forEach { assertTrue(restored.record(CollaborationCloudRecall.NAME, it.arguments, it.output)) }
+        assertFalse(restored.observeEvidenceBatch(pages.map { it.output }))
+        assertStagnant(restored, pages.first().output)
+    }
+
+    @Test fun ruleProgressRequiresAuthenticExecutionAndExactHostSchema() {
+        val page = rulePage("workflows")
+        assertStagnant(CloudWebToolLoopProgress(), page.output)
+        val mutations: List<(JSONObject) -> Unit> = listOf(
+            { it.put("status", "failed") }, { it.put("topic", "tools") }, { it.put("content", "New rules") },
+            { it.put("total_characters", 1) }, { it.put("next_offset", 1) },
+            { it.remove("next_offset") }, { it.remove("trust") }, { it.put("error", "denied") })
+        mutations.forEach { change ->
+            val progress = CloudWebToolLoopProgress()
+            val changed = JSONObject(page.output).also(change).toString()
+            assertTrue(progress.record(CollaborationCloudRecall.NAME, page.arguments, changed))
+            assertStagnant(progress, changed)
+        }
+        val invalidArguments = listOf(JSONObject(page.arguments.toString()).put("mode", "workspace"),
+            JSONObject(page.arguments.toString()).put("topic", 1), JSONObject(page.arguments.toString()).put("offset", -1),
+            JSONObject(page.arguments.toString()).put("offset", "0"), JSONObject(page.arguments.toString()).put("group_id", "other"))
+        invalidArguments.forEach { arguments ->
+            val progress = CloudWebToolLoopProgress()
+            assertTrue(progress.record(CollaborationCloudRecall.NAME, arguments, page.output))
+            assertStagnant(progress, page.output)
+        }
+        val wrongTool = CloudWebToolLoopProgress()
+        assertTrue(wrongTool.record("web_fetch", page.arguments, page.output))
+        assertStagnant(wrongTool, page.output)
+    }
 
     private fun goalPages(goal: String = "g".repeat(20_000), person: String = "person-a",
                           criteria: String = "[]"): List<GoalPage> {

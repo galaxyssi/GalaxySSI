@@ -166,7 +166,7 @@ internal fun MobileNativeAgent.buildReplannedPlan(plan: AgentPlan, reason: Strin
     }
     val plannerHistory = plan.historyForReplan().filter(scope::owns)
     val durableHistory = plan.historyForNextRevision(revision)
-    val proposal = selectedPlanner.plan(
+    val proposal = try { selectedPlanner.plan(
         AgentRequest(
             goal = currentGoal,
             screen = currentScreen,
@@ -179,7 +179,10 @@ internal fun MobileNativeAgent.buildReplannedPlan(plan: AgentPlan, reason: Strin
             executionTurnId = scope.turnId,
             planningRevision = revision
         )
-    )
+    ) } catch (wait: AgentModelLoopEventWaitException) {
+        waitForModelToolEvent(wait)
+        return null
+    }
     if (!proposal.plannerProfile.startsWith("guarded-model:") &&
         !proposal.plannerProfile.startsWith("specialized-adapter:") &&
         proposal.plannerProfile != PHONE_DEVELOPMENT_PLANNER_PROFILE) return null
@@ -217,6 +220,9 @@ internal fun MobileNativeAgent.buildReplannedPlan(plan: AgentPlan, reason: Strin
 
 @Synchronized
 internal fun MobileNativeAgent.assessLivenessWithModel(reason: String): AgentUiState {
+    if (AgentTeamParentRecoveryPolicy.isTeamWait(phase, lastActionResult?.metadata.orEmpty())) {
+        return reconcileSavedAgentTeam() ?: snapshot()
+    }
     if (phase in setOf(
             AgentPhase.COMPLETED,
             AgentPhase.FAILED,

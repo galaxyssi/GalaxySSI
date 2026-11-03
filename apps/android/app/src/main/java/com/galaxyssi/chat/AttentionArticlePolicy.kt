@@ -1,0 +1,135 @@
+package com.galaxyssi.chat
+
+import org.jsoup.Jsoup
+
+internal data class AttentionChineseArticle(val title: String, val body: String, val provider: String,
+    val document: AttentionArticleDocument? = null)
+
+/** Publication requires an extracted body, not a feed description or an HTTP success alone. */
+internal object AttentionArticlePolicy {
+    const val REVISION = 2
+    fun visible(message: GlobalProactiveMessage): Boolean =
+        !ProactiveAttentionPolicy.isAttention(message) && !message.id.startsWith("attention-feed:") ||
+            message.newsArticleKey.isNotBlank() && message.newsArticleRevision >= REVISION
+
+    fun extract(page: AgentWebIntelligenceFetched): AgentPublicArticle = extractStructured(page).article
+
+    fun extractStructured(page: AgentWebIntelligenceFetched): AttentionArticleSource {
+        require(page.contentType.contains("html", true)) { "article_not_html" }
+        val fallback = AgentDynamicWebFallbackPolicy.reason(page)
+        // A noscript warning about optional sharing controls does not invalidate a complete static article.
+        require(fallback == null || fallback == "javascript_required") { "article_challenge_or_script_shell" }
+        val html = AgentWebTextDecoder.decode(page.body, page.contentType, page.url)
+        val document = Jsoup.parse(html, page.url)
+        require(document.select("[itemprop=isAccessibleForFree][content=false]").isEmpty() &&
+            !Regex("\"isAccessibleForFree\"\\s*:\\s*(false|\"false\")", RegexOption.IGNORE_CASE).containsMatchIn(html)) {
+            "article_paywall"
+        }
+        val source = requireNotNull(AttentionArticleExtractor.structured(page.url, document)) { "article_body_missing" }
+        val article = source.article
+        require(article.content.length in 200 until AgentWebIntelligenceService.MAX_CONTENT_CHARS) { "article_body_missing_or_truncated" }
+        val lower = article.content.take(1500).lowercase()
+        require(listOf("verify you are human", "enable javascript", "javascript is required", "access denied", "sign in to continue",
+            "subscribe to continue reading").none(lower::contains)) { "article_access_gate" }
+        return source
+    }
+
+    fun chinese(text: String): Boolean {
+        if (text.any { it in '\u3040'..'\u30ff' || it in '\uac00'..'\ud7af' }) return false
+        val han = text.count { it in '\u3400'..'\u9fff' }
+        val latin = Regex("[A-Za-z][A-Za-z0-9_./+#-]*").findAll(text).count()
+        val other = text.count { it.isLetter() && it !in '\u3400'..'\u9fff' && it !in 'a'..'z' && it !in 'A'..'Z' }
+        // Model names, gene names and API identifiers count as words, not dozens of foreign letters.
+        return han >= 2 && han.toDouble() / (han + latin + other) >= .5
+    }
+
+    fun parts(text: String, limit: Int = 1200): List<String> {
+        require(limit >= 32)
+        return text.split(Regex("\n\\s*\n")).flatMap { paragraph ->
+            val parts = mutableListOf<String>()
+            var remaining = paragraph.trim()
+            while (remaining.length > limit) {
+                var end = remaining.take(limit).indexOfLast { it.isWhitespace() || it in ".!?;\u3002\uff01\uff1f\uff1b" } + 1
+                if (end < limit / 2) end = limit
+                if (Character.isHighSurrogate(remaining[end - 1])) end--
+                parts += remaining.substring(0, end).trim()
+                remaining = remaining.substring(end).trim()
+            }
+            if (remaining.isNotEmpty()) parts += remaining
+            parts
+        }
+    }
+
+    fun validateTranslation(source: String, translated: String) {
+        require(translated.isNotBlank() && !Regex("<[A-Za-z/!][^>]*>").containsMatchIn(translated) &&
+            !translated.contains("```")) { "article_translation_invalid" }
+        require(chinese(translated) || translated == source.trim() &&
+            (!source.any(Char::isLetter) || AttentionTranslationRecovery.technicalLabel(source))) {
+            "article_translation_not_chinese"
+        }
+        val translatedNumbers = AttentionArticleNumbers.values(translated)
+        require(AttentionArticleNumbers.values(source).all { (number, count) -> (translatedNumbers[number] ?: 0) >= count }) {
+            "article_translation_numbers_changed"
+        }
+    }
+
+    fun translationChunks(text: String): List<String> {
+        val chunks = mutableListOf<String>()
+        var chunk = ""
+        for (part in parts(text)) {
+            if (chunk.isNotEmpty() && chunk.length + part.length > 1200) {
+                chunks += chunk
+                chunk = ""
+            }
+            chunk += (if (chunk.isEmpty()) "" else "\n\n") + part
+        }
+        if (chunk.isNotEmpty()) {
+            // Keep short bylines and numeric tails in linguistic context, not as isolated requests.
+            if (chunks.isNotEmpty() && chunk.length < 120) chunks[chunks.lastIndex] += "\n\n$chunk"
+            else chunks += chunk
+        }
+        return chunks
+    }
+
+}
+
+internal class AttentionArticleTranslation(private val progress: AttentionTranslationProgress? = null,
+    private val translate: suspend (String) -> String) {
+    suspend fun run(title: String, document: AttentionArticleDocument): AttentionChineseArticle {
+        require(document.body.length >= 200) { "article_body_missing" }
+        var translatedAny = false
+        suspend fun convert(text: String): String {
+            if (text.isBlank() || !text.any(Char::isLetter) || AttentionArticlePolicy.chinese(text)) return text
+            val result = AttentionTranslationRecovery.convert(text, progress, translate)
+            translatedAny = translatedAny || result != text
+            return result
+        }
+        val chineseTitle = convert(title)
+        val blocks = document.blocks.map { block ->
+            val text = if (block.kind in setOf("code", "attribution")) block.text else convert(block.text)
+            block.copy(text = text, emphasis = block.emphasis.filter(text::contains))
+        }
+        val translated = AttentionArticleDocument(blocks)
+        val prose = translated.blocks.filter { it.kind !in setOf("code", "attribution") }.joinToString("\n") { it.text }
+        require(AttentionArticlePolicy.chinese(prose)) { "article_translation_not_chinese" }
+        return AttentionChineseArticle(chineseTitle, translated.body,
+            if (translatedAny) AttentionMlKitTranslator.PROVIDER else "", translated)
+    }
+
+    suspend fun run(title: String, body: String): AttentionChineseArticle {
+        require(body.length >= 200) { "article_body_missing" }
+        var translatedAny = false
+        suspend fun convert(text: String): String {
+            if (!text.any(Char::isLetter) || AttentionArticlePolicy.chinese(text)) return text
+            val result = AttentionTranslationRecovery.convert(text, progress, translate)
+            translatedAny = translatedAny || result != text
+            return result
+        }
+        val chineseTitle = convert(title)
+        val paragraphs = AttentionArticlePolicy.translationChunks(body).map { convert(it) }
+        val translated = paragraphs.joinToString("\n\n")
+        require(AttentionArticlePolicy.chinese(translated)) { "article_translation_not_chinese" }
+        return AttentionChineseArticle(chineseTitle, translated,
+            if (translatedAny) AttentionMlKitTranslator.PROVIDER else "")
+    }
+}

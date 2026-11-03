@@ -15,6 +15,7 @@ class EncryptedAgentModelLoopJournal internal constructor(context: Context, priv
     private fun exists(runId: String) = store.containsIdempotencyKey(runId, "$runId:committed") ||
         store.containsIdempotencyKey(runId, "$runId:chunk:0")
     override fun hasRecords(scope: AgentModelLoopScope) = checked { exists(run(scope, "initial")) }
+    internal fun hasOperation(scope: AgentModelLoopScope, operation: String) = checked { exists(run(scope, operation)) }
 
     override suspend fun <T> withLease(scope: AgentModelLoopScope, block: suspend (AgentModelLoopRecords) -> T): T {
         check(directory.isDirectory || directory.mkdirs()) { "Cannot create model loop lease directory" }

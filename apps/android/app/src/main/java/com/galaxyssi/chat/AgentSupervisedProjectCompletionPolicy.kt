@@ -11,13 +11,19 @@ internal data class AgentVerifiedProjectCompletion(
 internal object AgentSupervisedProjectCompletionPolicy {
     const val MODEL_TERMINAL_OUTCOME_PARAMETER = "model_terminal_outcome"
 
-    fun missingEvidence(requirements: AgentCompletionRequirements?, history: List<AgentAction>): List<String> {
+    fun missingEvidence(
+        requirements: AgentCompletionRequirements?, history: List<AgentAction>,
+        finalAnswer: String? = null, requireResults: Boolean = false
+    ): List<String> {
         if (requirements == null) return listOf("model-declared completion_requirements (publication and phone_linux)")
         val completedTools = history.asSequence()
             .filter(::hasVerifiedCompletionReceipt)
             .map(::toolId)
             .toSet()
         return buildList {
+            addAll(AgentGoalResultEvidence.missing(requirements, finalAnswer, requireResults))
+            addAll(AgentArtifactCompletionEvidence.missing(requirements.artifacts, history))
+            addAll(AgentObservedOutcomeEvidence.missing(requirements.outcomes, history))
             if (requirements.phoneLinux && AgentOnDeviceRuntimeTools.EXECUTE !in completedTools) {
                 add("a successful galaxyssi.runtime.execute receipt from the phone Linux guest")
             }
@@ -41,10 +47,13 @@ internal object AgentSupervisedProjectCompletionPolicy {
         history: List<AgentAction>,
         completedAction: AgentAction,
         result: AgentActionResult,
-        requirements: AgentCompletionRequirements? = null
+        requirements: AgentCompletionRequirements? = null,
+        descriptorFor: (String) -> AgentNativeToolDescriptor? = { null }
     ): AgentVerifiedProjectCompletion? {
-        if (!result.success || result.metadata["awaiting_response"] == "true") return null
+        if (!AgentGoalEvidence.permitsSuccess(result) || result.metadata["awaiting_response"] == "true") return null
         if (completedAction.kind != AgentActionKind.CALL_NATIVE_TOOL) return null
+        // A publication receipt cannot replace the model's answers to additional requested results.
+        if (!requirements?.results.isNullOrEmpty()) return null
         if (completedAction.parameters[MODEL_TERMINAL_OUTCOME_PARAMETER] != "true") return null
         val toolId = completedAction.parameters["tool_id"].orEmpty().ifBlank { completedAction.target }
         if (result.metadata["native_tool_id"] != toolId ||
@@ -53,7 +62,11 @@ internal object AgentSupervisedProjectCompletionPolicy {
         ) {
             return null
         }
-        if (missingEvidence(requirements, history).isNotEmpty()) return null
+        val scope = AgentPlanContinuationScope(completedAction.parameters[INTERNAL_CONVERSATION_ID].orEmpty(),
+            completedAction.parameters[INTERNAL_TURN_ID].orEmpty())
+        val scopedHistory = AgentProjectHistoryRetentionPolicy.latestSnapshots(history.filter(scope::owns))
+        if (missingEvidence(requirements, scopedHistory).isNotEmpty()) return null
+        if (AgentPendingOutcomeEvidence.unresolved(requirements, scopedHistory, descriptorFor).isNotEmpty()) return null
         val outputText = result.metadata["native_tool_output"].orEmpty()
         val output = runCatching { JSONObject(outputText) }.getOrNull() ?: return null
         val chinese = goal.any { character -> character in '\u3400'..'\u9fff' }

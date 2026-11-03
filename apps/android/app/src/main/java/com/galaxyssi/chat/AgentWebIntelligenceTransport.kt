@@ -69,14 +69,14 @@ class AgentBoundedWebIntelligenceFetcher(
         val resource = web.fetch(
             url = url,
             maxBytes = maxBytes,
-            timeoutMillis = timeoutMillis,
+            timeoutMillis = minOf(timeoutMillis, web.policy.maxTimeoutMillis),
             cancellationToken = cancellationToken,
             checkpoint = checkpoint,
             headers = headers
         )
         return AgentWebIntelligenceFetched(
             url = resource.finalUrl,
-            contentType = resource.contentType,
+            contentType = resource.selectedHeaders["content-type"] ?: resource.contentType,
             body = resource.body,
             durationMillis = System.currentTimeMillis() - started
         )

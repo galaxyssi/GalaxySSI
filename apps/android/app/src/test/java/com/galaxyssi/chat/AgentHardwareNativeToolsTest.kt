@@ -6,6 +6,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentHardwareNativeToolsTest {
+    @Test fun actualStatusDescriptorsAdmitOnePlanAndKeepExecutionSerial() {
+        val definitions = AgentHardwareNativeTools.definitions(FakeHardwarePlatform())
+        val tools = definitions.map { it.descriptor }.associateBy { it.id }
+        val screen = ScreenContext("Test", pageTitle = "Test")
+        val request = AgentRequest("Read phone battery and storage", screen, emptyList(), memories = emptyList(),
+            runtimeContext = AgentRuntimeContextBuilder.build(sessionId = "hardware-plan", goal = "Read phone battery and storage",
+                screen = screen, permissionMode = PermissionMode.AUTO_LOW_RISK, highRiskGuard = true, memoryCapture = false,
+                callableTargets = emptyList(), memories = emptyList(), nativeTools = tools.values.toList()))
+        val source = """{"execution_location":"phone","actions":[
+            {"ref":"battery","kind":"CALL_NATIVE_TOOL","target":"Battery","parameters":{"tool_id":"galaxyssi.hardware.battery.status","arguments":{}}},
+            {"ref":"storage","kind":"CALL_NATIVE_TOOL","target":"Storage","parameters":{"tool_id":"galaxyssi.hardware.storage.status","arguments":{}}}]}"""
+        var plan = requireNotNull(AgentModelPlanParser.parse(request, source,
+            AgentSupervisedProjectLoop.plannerSettings(AgentModelPlannerSettings())))
+        assertTrue(AgentSupervisedProjectObservationBatchPolicy.accepts(plan.actions, "", tools::get))
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(
+            AgentExecutionSiteDecision(AgentRequestedExecutionSite.PHONE), plan.actions, phoneControl = true))
+        for (tool in listOf(AgentHardwareNativeTools.BATTERY_STATUS, AgentHardwareNativeTools.STORAGE_STATUS)) {
+            assertEquals(AgentNativeToolConcurrency.SERIAL, tools.getValue(tool).concurrency)
+            val batch = AgentPlanExecutionBatchPolicy.select(plan, descriptorFor = tools::get)
+            assertFalse(batch.parallel)
+            assertEquals(tool, batch.actions.single().parameters["tool_id"])
+            assertFalse(AgentSupervisedProjectLoop.needsRunnableReviewer(plan))
+            plan = plan.copy(actions = plan.actions.map { action ->
+                if (action.id == batch.actions.single().id) action.copy(status = AgentActionStatus.COMPLETED) else action
+            })
+        }
+        assertTrue(AgentSupervisedProjectLoop.needsRunnableReviewer(plan))
+    }
+
     @Test
     fun definitionsExposeStableBoundedPolicyCompleteTools() {
         val platform = FakeHardwarePlatform()

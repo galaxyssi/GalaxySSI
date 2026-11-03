@@ -91,10 +91,25 @@ object AgentRunKernelContract {
                 first.agentId == replay.agentId &&
                 first.deviceId == replay.deviceId &&
                 first.type == replay.type &&
-                first.payload == replay.payload
+                sameJsonValue(first.payload, replay.payload)
         ) {
             "Run event idempotency key was reused with different content: ${first.idempotencyKey}"
         }
+    }
+
+    // JSON storage does not retain JVM numeric widths (for example Long -> Int).
+    private fun sameJsonValue(first: Any?, replay: Any?): Boolean = when {
+        first is Number && replay is Number -> runCatching {
+            java.math.BigDecimal(first.toString()).compareTo(java.math.BigDecimal(replay.toString())) == 0
+        }.getOrDefault(false)
+        first is Map<*, *> && replay is Map<*, *> -> first.keys == replay.keys &&
+            first.all { (key, value) -> sameJsonValue(value, replay[key]) }
+        (first is Iterable<*> || first is Array<*>) && (replay is Iterable<*> || replay is Array<*>) -> {
+            val left = if (first is Array<*>) first.toList() else (first as Iterable<*>).toList()
+            val right = if (replay is Array<*>) replay.toList() else (replay as Iterable<*>).toList()
+            left.size == right.size && left.indices.all { sameJsonValue(left[it], right[it]) }
+        }
+        else -> first == replay
     }
 
     private fun AgentRunControlEvent.rootIdentityFields() = listOf(

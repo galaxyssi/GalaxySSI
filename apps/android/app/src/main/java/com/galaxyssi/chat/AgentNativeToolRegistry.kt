@@ -487,6 +487,8 @@ data class AgentNativeToolDescriptor(
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         private val ID_PATTERN = Regex("[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*")
         private val VERSION_PATTERN = Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?")
+
+        internal fun isValidId(value: String): Boolean = ID_PATTERN.matches(value)
     }
 }
 
@@ -566,7 +568,8 @@ class AgentNativeToolCancellationSource {
 }
 
 class AgentNativeToolCancelledException : RuntimeException("Native tool invocation was cancelled")
-class AgentNativeToolTimeoutException : RuntimeException("Native tool invocation exceeded its deadline")
+class AgentNativeToolTimeoutException(val details: AgentNativeJsonObject = emptyMap()) :
+    RuntimeException("Native tool invocation exceeded its deadline")
 
 class AgentNativeToolInvocation internal constructor(
     val descriptor: AgentNativeToolDescriptor,
@@ -576,8 +579,16 @@ class AgentNativeToolInvocation internal constructor(
     private val hardDeadlineEpochMillis: Long?,
     val cancellationToken: AgentNativeToolCancellationToken,
     private val clock: AgentNativeClock,
+    private val descriptorResolver: (String) -> AgentNativeToolDescriptor? = { null },
+    private val descriptorCatalogResolver: () -> List<AgentNativeToolDescriptor> = { emptyList() },
+    private val historyReader: ((AgentNativeToolInvocationContext, AgentNativeJsonObject) -> AgentNativeToolExecutionResult)? = null,
     private val progressReporter: (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Unit
 ) {
+    internal fun describeTool(id: String): AgentNativeToolDescriptor? = descriptorResolver(id)
+    internal fun discoverTools(): List<AgentNativeToolDescriptor> = descriptorCatalogResolver()
+    internal fun readModelHistory(): AgentNativeToolExecutionResult = historyReader?.invoke(context, input)
+        ?: AgentModelHistoryTools.failure("model_history_not_bound", "History requires the original active model loop.")
+
     private val rollingDeadlineEpochMillis = AtomicLong(initialDeadlineEpochMillis)
 
     val deadlineEpochMillis: Long
@@ -800,7 +811,8 @@ class AgentNativeToolInvocationHooks(
     val onProgress: (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Unit = { _, _ -> },
     val onCancelled: (AgentNativeToolInvocation) -> Unit = {},
     val onTimeout: (AgentNativeToolInvocation) -> Unit = {},
-    val onFinished: (AgentNativeToolResult) -> Unit = {}
+    val onFinished: (AgentNativeToolResult) -> Unit = {},
+    val historyReader: ((AgentNativeToolInvocationContext, AgentNativeJsonObject) -> AgentNativeToolExecutionResult)? = null
 )
 
 class AgentNativeToolDefinition(
@@ -810,6 +822,7 @@ class AgentNativeToolDefinition(
     val validator: AgentNativeToolValidator = AgentNativeJsonSchemaValidator,
     val executorId: String = "galaxyssi.phone_native",
     val provenanceMetadata: Map<String, String> = emptyMap(),
+    val effectRecoveryProvider: AgentNativeEffectRecoveryProvider? = null,
     val availabilityProvider: AgentNativeToolAvailabilityProvider =
         AgentNativeToolAvailabilityProvider { descriptor.availability }
 ) {
@@ -927,6 +940,10 @@ class AgentNativeToolRegistry(
         return definition.descriptor.copy(availability = availability)
     }
 
+    @Synchronized
+    private fun discoveryDescriptors(): List<AgentNativeToolDescriptor> =
+        definitions.values.map(::resolvedDescriptor).sortedBy { it.id }
+
     private data class DescriptorSnapshot(
         val createdAtMillis: Long,
         val descriptors: List<AgentNativeToolDescriptor>
@@ -958,7 +975,12 @@ class AgentNativeToolRegistry(
     }
 
     @Synchronized
-    internal fun availableCatalog(): AgentNativeToolCatalogView {
+    internal fun availableCatalog(refresh: Boolean = false): AgentNativeToolCatalogView {
+        if (refresh) {
+            descriptorSnapshot = null
+            catalogSnapshot = null
+            availableCatalogSnapshot = null
+        }
         val now = clock.nowEpochMillis().coerceAtLeast(0L)
         availableCatalogSnapshot?.takeIf { snapshot ->
             now >= snapshot.createdAtMillis &&
@@ -976,6 +998,20 @@ class AgentNativeToolRegistry(
                 view = view
             )
         }
+    }
+
+    /** Durable bindings cover the registered view, not a momentary setup/readiness observation. */
+    @Synchronized
+    internal fun registeredContractCatalog(): AgentNativeToolCatalogView {
+        val descriptors = definitions.values.map { it.descriptor }.sortedBy { it.id }
+        val json = AgentNativeJsonCodec.stringify(linkedMapOf(
+            "contract_version" to CONTRACT_VERSION,
+            "binding_kind" to "registered_contracts_v1",
+            "tools" to descriptors.map {
+                (it.catalogValue() - "availability") + mapOf("effect" to it.effect?.name,
+                    "requires_effect_claim" to it.requiresEffectClaim)
+            }))
+        return AgentNativeToolCatalogView(descriptors, AgentNativeToolCatalogManifest(json, json.sha256Utf8()))
     }
 
     private fun manifestFor(descriptors: List<AgentNativeToolDescriptor>): AgentNativeToolCatalogManifest {
@@ -1034,6 +1070,9 @@ class AgentNativeToolRegistry(
             hardDeadlineEpochMillis = context.deadlineEpochMillis,
             cancellationToken = hooks.cancellationToken,
             clock = clock,
+            descriptorResolver = { id -> lookup(id)?.let(::resolvedDescriptor) },
+            descriptorCatalogResolver = ::discoveryDescriptors,
+            historyReader = hooks.historyReader,
             progressReporter = { activeInvocation, progress ->
                 runHook { hooks.onProgress(activeInvocation, progress) }
             }
@@ -1042,6 +1081,7 @@ class AgentNativeToolRegistry(
         val cancellationNotified = AtomicBoolean(false)
         val timeoutNotified = AtomicBoolean(false)
         var claimedEffect: AgentNativeToolReplayKey? = null
+        var claimedRecoveryQuery: AgentNativeEffectRecoveryQuery? = null
         runHook { hooks.onStarted(invocation) }
         val cancellationRegistration = hooks.cancellationToken.invokeOnCancellation {
             if (!completed.get() && cancellationNotified.compareAndSet(false, true)) {
@@ -1060,12 +1100,18 @@ class AgentNativeToolRegistry(
             originalInvocationId: String? = null
         ): AgentNativeToolResult {
             val finishedAt = clock.nowEpochMillis()
+            val observedError = if (error?.details?.get("outcome_unknown") == true && claimedRecoveryQuery != null)
+                error.copy(details = error.details + mapOf("recovery_query" to claimedRecoveryQuery!!.toJsonValue(),
+                    "verification_required" to true)) else error
             val result = AgentNativeToolResult(
                 status = status,
                 output = output,
                 message = message,
-                metadata = metadata,
-                error = error,
+                metadata = (metadata - AgentRecoveryObservationEvidence.QUERY_KEY) + claimedRecoveryQuery?.let {
+                    mapOf(AgentRecoveryObservationEvidence.QUERY_KEY to it.toJsonValue())
+                }.orEmpty() + if (replayed) metadata.filterKeys { it == AgentRecoveryObservationEvidence.QUERY_KEY }
+                    else emptyMap(),
+                error = observedError,
                 verification = verification,
                 receipt = AgentNativeToolReceipt(
                     invocationId = context.invocationId,
@@ -1114,7 +1160,10 @@ class AgentNativeToolRegistry(
                     "This effect was already started and has no durable outcome. Observe its existing execution " +
                         "or reconcile the external state before deciding the next action; it was not executed again.",
                     retryable = false, details = mapOf("original_invocation_id" to observation.invocationId,
-                        "effect_key" to effectiveKey, "input_sha256" to observation.inputSha256)))
+                        "effect_key" to effectiveKey, "input_sha256" to observation.inputSha256,
+                        "outcome_unknown" to true, "executed_again" to false, "goal_terminal" to false) +
+                        (observation.recoveryQuery?.let { mapOf("recovery_query" to it.toJsonValue(),
+                            "verification_required" to true) } ?: emptyMap())))
             return finish(status = cached.status, output = cached.output, message = cached.message,
                 metadata = cached.metadata, error = cached.error, verification = cached.verification,
                 replayed = true, originalInvocationId = cached.receipt.originalInvocationId ?: cached.receipt.invocationId)
@@ -1145,7 +1194,9 @@ class AgentNativeToolRegistry(
                         code = "tool_unavailable",
                         message = availability.reason.ifBlank { "Native tool is not currently available" },
                         retryable = availability.status == AgentNativeToolAvailabilityStatus.REQUIRES_SETUP,
-                        details = mapOf("availability" to availability.status.wireValue)
+                        details = mapOf("availability" to availability.status.wireValue,
+                            "tool_id" to descriptor.id, "tool_version" to descriptor.version,
+                            "executed" to false, "goal_terminal" to false)
                     )
                 )
             }
@@ -1157,7 +1208,11 @@ class AgentNativeToolRegistry(
                     error = AgentNativeToolError(
                         code = "invalid_input",
                         message = "Native tool input does not satisfy its JSON schema",
-                        details = validationDetails(inputValidation)
+                        details = validationDetails(inputValidation) + mapOf(
+                            "input_schema" to descriptor.inputSchema.document,
+                            "executed" to false,
+                            "goal_terminal" to false
+                        )
                     )
                 )
             }
@@ -1177,13 +1232,33 @@ class AgentNativeToolRegistry(
             }
 
             if (replayKey != null && descriptor.requiresEffectClaim) {
-                val claim = replayStore.claim(replayKey, digestOrEmpty(input), context.invocationId)
+                val query = try {
+                    definition.effectRecoveryProvider?.queryFor(invocation)?.also { candidate ->
+                        val target = requireNotNull(lookup(candidate.toolId)) { "Recovery observation tool is not registered" }
+                        require(target.descriptor.version == candidate.toolVersion &&
+                            !target.descriptor.requiresEffectClaim) {
+                            "Recovery query must use a matching read-only tool contract"
+                        }
+                        require(target.validator.validate(target.descriptor.inputSchema, candidate.arguments).isValid) {
+                            "Recovery query does not satisfy the observation tool schema"
+                        }
+                    }
+                } catch (error: Exception) {
+                    if (error is AgentNativeToolCancelledException || error is java.util.concurrent.CancellationException ||
+                        error is InterruptedException) throw error
+                    return finish(AgentNativeToolResultStatus.REJECTED, error = AgentNativeToolError(
+                        "effect_recovery_query_invalid", "The tool adapter did not provide a valid read-only recovery query.",
+                        details = mapOf("executed" to false, "goal_terminal" to false)))
+                }
+                val claim = if (query == null) replayStore.claim(replayKey, digestOrEmpty(input), context.invocationId)
+                    else replayStore.claimWithRecovery(replayKey, digestOrEmpty(input), context.invocationId, query)
                 if (claim.inputSha256 != digestOrEmpty(input)) {
                     return finish(AgentNativeToolResultStatus.REJECTED, error = AgentNativeToolError(
                         "idempotency_key_conflict", "The effect key was already claimed with different input"))
                 }
                 if (claim.acquired) {
                     claimedEffect = replayKey
+                    claimedRecoveryQuery = claim.recoveryQuery
                 } else {
                     return observedOutcome(claim)
                 }
@@ -1266,11 +1341,12 @@ class AgentNativeToolRegistry(
                 status = AgentNativeToolResultStatus.CANCELLED,
                 error = AgentNativeToolError("cancelled", "Native tool invocation was cancelled", retryable = true)
             )
-        } catch (_: AgentNativeToolTimeoutException) {
+        } catch (error: AgentNativeToolTimeoutException) {
             if (timeoutNotified.compareAndSet(false, true)) runHook { hooks.onTimeout(invocation) }
             return finish(
                 status = AgentNativeToolResultStatus.TIMED_OUT,
-                error = AgentNativeToolError("timeout", "Native tool invocation exceeded its deadline", retryable = true)
+                error = AgentNativeToolError("timeout", "Native tool invocation exceeded its deadline", retryable = true,
+                    details = error.details)
             )
         } catch (error: Throwable) {
             return finish(
@@ -1415,7 +1491,10 @@ object AgentNativeToolAgentActionAdapter {
         risk = invocation.descriptor.risk.toLegacyRisk(),
         status = AgentActionStatus.RUNNING,
         description = description,
-        parameters = parameters,
+        parameters = if (kind == AgentActionKind.SET_ALARM) parameters + mapOf(
+            INTERNAL_CONVERSATION_ID to invocation.context.conversationId,
+            INTERNAL_TURN_ID to invocation.context.turnId
+        ) else parameters,
         requiresConfirmation = false
     )
 
@@ -1433,8 +1512,9 @@ object AgentNativeToolAgentActionAdapter {
                 output = output,
                 message = result.message,
                 error = AgentNativeToolError(
-                    code = "agent_action_failed",
-                    message = result.message.ifBlank { "Legacy AgentAction execution failed" }
+                    code = result.metadata["error_code"] ?: result.metadata["goal_status"] ?: "agent_action_failed",
+                    message = result.message.ifBlank { "Legacy AgentAction execution failed" },
+                    details = result.metadata
                 )
             )
         }

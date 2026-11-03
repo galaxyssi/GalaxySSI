@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="agent_latency_user_complete">User send to completed reply display</string>
     <string name="agent_latency_model_request">Local model request</string>
     <string name="agent_latency_model_client_lock">Local model caller lock wait</string>
     <string name="agent_latency_model_worker_lock">Local model worker lock wait</string>

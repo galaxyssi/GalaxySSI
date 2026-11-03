@@ -130,7 +130,28 @@ class MqttPoolTransportTest {
         Thread.sleep(50)
         assertEquals(clients, rig.clients.values.sumOf { it.size })
         rig.transport.networkAvailable("cellular-test")
-        rig.await { rig.transport.readyPathGenerations(setOf("inbox")).values.toSet() == setOf(2L) }
+        val restored = mapOf("emqx" to 2L, "hivemq" to 2L, "mosquitto" to 2L)
+        rig.await { rig.transport.readyPathGenerations(setOf("inbox")) == restored }
+        assertEquals(6, rig.clients.values.sumOf { it.size })
+    }
+
+    @Test fun networkReturnTracksEachBrokerUntilItsSubscriptionIsAcknowledged() {
+        rig.start()
+        rig.autoSuback = false
+        rig.transport.networkUnavailable()
+        rig.transport.networkAvailable("cellular-test")
+        rig.await {
+            rig.clients.values.all { clients -> clients.size == 2 && clients.last().subscriptions.isNotEmpty() }
+        }
+        assertTrue(rig.transport.readyPathGenerations(setOf("inbox")).isEmpty())
+
+        val restored = linkedMapOf<String, Long>()
+        for (broker in listOf("emqx", "hivemq", "mosquitto")) {
+            rig.client(broker).grant(setOf("inbox"))
+            restored[broker] = 2L
+            rig.await { rig.transport.readyPathGenerations(setOf("inbox")) == restored }
+            assertTrue(rig.publish(broker).isComplete)
+        }
         assertEquals(6, rig.clients.values.sumOf { it.size })
     }
 }

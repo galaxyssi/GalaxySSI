@@ -9,6 +9,7 @@ import itertools
 import logging
 import random
 import secrets
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
@@ -65,6 +66,9 @@ class _Path:
     failure_notified: bool = False
     subscribing: bool = False
     publishing: set[int] = field(default_factory=set)
+    connect_started: float = 0.0
+    subscription_wait: float | None = None
+    retiring: bool = False
     lock: threading.RLock = field(default_factory=threading.RLock)
 
 
@@ -119,7 +123,7 @@ class BrokerPool:
                 worker.start()
 
     def _current(self, path: _Path, client, generation: int) -> bool:
-        return not self._stop.is_set() and path.client is client and path.generation == generation
+        return not self._stop.is_set() and not path.retiring and path.client is client and path.generation == generation
 
     def _run(self, path: _Path) -> None:
         failures = 0
@@ -130,6 +134,8 @@ class BrokerPool:
                 path.last_error = ""
                 path.failure_notified = False
                 path.connecting = True
+                path.connect_started = time.monotonic()
+                path.retiring = False
             client = None
             connected_at = 0.0
             try:
@@ -144,7 +150,7 @@ class BrokerPool:
                 client.connect(endpoint["host"], endpoint["tls_port"],
                                keepalive=CATALOG["timing"]["keepalive_seconds"])
                 connected_at = time.monotonic()
-                if not self._stop.is_set():
+                if self._current(path, client, generation):
                     client.loop_forever(retry_first_connection=False)
             except Exception as error:
                 with path.lock:
@@ -248,6 +254,7 @@ class BrokerPool:
             path.pending_topics.clear()
             path.subscriptions.clear()
             path.subscription_started.clear()
+            path.subscription_wait = None
             path.early_subacks.clear()
             path.early_pubacks.clear()
             path.publishing.clear()
@@ -273,12 +280,57 @@ class BrokerPool:
         for path in self._paths.values():
             self._subscribe_path(path)
 
+    def repair(self) -> None:
+        if self._stop.is_set():
+            return
+        now = time.monotonic()
+        for path in self._paths.values():
+            with path.lock:
+                reason = ("connect_timeout" if path.connecting and now - path.connect_started >= 20.0
+                          else "subscription_timeout" if path.connected and path.subscription_wait is not None
+                          and now - path.subscription_wait >= 20.0 else "")
+                generation = path.generation
+            if reason:
+                self.repair_path(path.broker_id, generation, reason)
+        self.refresh_subscriptions()
+
+    def repair_path(self, broker: str, generation: int, reason: str) -> bool:
+        path = self._paths.get(broker)
+        if path is None or self._stop.is_set():
+            return False
+        with path.lock:
+            client = path.client
+            if path.generation != generation or path.retiring or client is None:
+                return False
+            path.retiring = True
+        self._lost(path, client, generation, reason)
+        # Closing only the fenced socket releases its worker, including a stuck
+        # loopback probe. Other brokers and their subscriptions stay intact.
+        try:
+            active_socket = client.socket()
+            if active_socket is not None:
+                try:
+                    active_socket.shutdown(socket.SHUT_RDWR)
+                finally:
+                    active_socket.close()
+        except (OSError, AttributeError):
+            pass
+        try:
+            client.disconnect()
+        except Exception:
+            pass
+        return True
+
     def _subscribe_path(self, path: _Path) -> None:
         with self._lock:
             desired = dict(self._desired)
         with path.lock:
-            if not path.connected or self._stop.is_set():
+            if not path.connected or path.subscribing or self._stop.is_set():
                 return
+            if set(desired) <= path.active_topics:
+                path.subscription_wait = None
+            elif path.subscription_wait is None:
+                path.subscription_wait = time.monotonic()
             expired = [mid for mid, started in path.subscription_started.items()
                        if time.monotonic() - started > 10.0]
             for mid in expired:
@@ -290,15 +342,18 @@ class BrokerPool:
             topics = tuple(missing[offset:offset + 128])
             early = None
             with path.lock:
-                if not self._current(path, client, generation) or not path.connected:
+                if not self._current(path, client, generation) or not path.connected or path.subscribing:
                     return
                 topics = tuple(topic for topic in topics if topic not in path.pending_topics)
                 if not topics:
                     continue
                 path.pending_topics.update(topics)
                 path.subscribing = True
-                try:
-                    rc, mid = client.subscribe([(topic, desired[topic]) for topic in topics])
+            try:
+                rc, mid = client.subscribe([(topic, desired[topic]) for topic in topics])
+                with path.lock:
+                    if not self._current(path, client, generation):
+                        return
                     if rc != mqtt.MQTT_ERR_SUCCESS:
                         path.pending_topics.difference_update(topics)
                         return
@@ -308,11 +363,14 @@ class BrokerPool:
                     if early is not None:
                         path.subscriptions.pop(int(mid), None)
                         path.subscription_started.pop(int(mid), None)
-                except Exception:
+            except Exception:
+                with path.lock:
                     path.pending_topics.difference_update(topics)
-                    return
-                finally:
-                    path.subscribing = False
+                return
+            finally:
+                with path.lock:
+                    if path.client is client and path.generation == generation:
+                        path.subscribing = False
             if early is not None:
                 self._apply_suback(path, client, generation, topics, early)
 
@@ -326,6 +384,8 @@ class BrokerPool:
             active = {topic for index, topic in enumerate(topics)
                       if index < len(accepted) and accepted[index] and topic in desired}
             path.active_topics.update(active)
+            if desired <= path.active_topics:
+                path.subscription_wait = None
         self._emit(self._on_subscribed, Ingress(path.broker_id, generation, time.monotonic()),
                    frozenset(active), len(active) == len(topics))
 

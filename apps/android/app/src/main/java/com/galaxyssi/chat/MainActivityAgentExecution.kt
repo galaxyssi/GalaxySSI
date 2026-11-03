@@ -332,7 +332,8 @@ internal fun MainActivity.bindAgentExecutionLoop(
     runtime.bindExecutionLoopEventSink(AgentExecutionLoopEventSink { event ->
         if (cleanTurnId.isBlank()) return@AgentExecutionLoopEventSink
         if (taskContext != null) {
-            taskContext.persistExecutionLoop(event)
+            com.galaxyssi.chat.metrics.AgentLatencyTelemetry.runtime(this)
+                .measure(cleanTurnId, "reply_workspace", { "completed" }) { taskContext.persistExecutionLoop(event) }
         } else {
             if (!event.phase.isTerminal) {
                 supervisor?.cancellationSource(cleanTurnId)?.throwIfCancellationRequested()
@@ -347,7 +348,10 @@ internal fun MainActivity.bindAgentExecutionLoop(
                 )
             }
         }
-        recordAgentExecutionLoopEvent(runtime, cleanTurnId, event)
+        com.galaxyssi.chat.metrics.AgentLatencyTelemetry.runtime(this)
+            .measure(cleanTurnId, "reply_timeline", { "completed" }) {
+                recordAgentExecutionLoopEvent(runtime, cleanTurnId, event)
+            }
     })
 }
 
@@ -356,18 +360,17 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
     turnId: String,
     event: AgentExecutionLoopEvent
 ) {
-    val persistedRunId = runCatching {
-        EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty()
-    }.getOrDefault("")
-    val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank { persistedRunId }
-    val run = agentRunRecorder.run(runId) ?: return
-    val projection = AgentExecutionLoopTimelinePolicy.project(event)
-    val revisionRecorded = agentRunEventStore.events(run.runId).any { recorded ->
-        AgentExecutionLoopTimelinePolicy.isSameRevision(
-            recorded,
-            event.snapshot.revision
-        )
+    val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank {
+        runCatching { EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty() }.getOrDefault("")
     }
+    val run = agentRunRecorder.run(runId) ?: return
+    val state = runtime.snapshot()
+    val projection = AgentExecutionLoopTimelinePolicy.project(event,
+        permissionWait = AgentRuntimePermissionContinuation.waiting(state) != null,
+        outcomeWait = AgentOutcomeCompletion.isBlocked(state.phase, state.lastActionResult))
+    val revisionRecorded = agentRunEventStore.containsLoopRevision(
+        run.runId, turnId, event.snapshot.revision, event.snapshot.updatedAtMillis
+    )
     if (!revisionRecorded) {
         appendRunControlEvent(
             run = run,
@@ -378,11 +381,12 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
             payload = projection.payload,
             stepId = projection.stepId,
             toolCallId = projection.toolCallId,
-            timestampMillis = event.snapshot.updatedAtMillis
+            timestampMillis = event.snapshot.updatedAtMillis,
+            eventId = AgentExecutionLoopTimelinePolicy.eventKey(run.runId, turnId, event.snapshot.revision)
         )
     }
     val label = projection.label ?: return
-    if (runtime.snapshot().plan?.isSupervisedProjectPlan() == true && label in setOf(
+    if (state.plan?.isSupervisedProjectPlan() == true && label in setOf(
             AgentExecutionLoopTimelineLabel.ACT,
             AgentExecutionLoopTimelineLabel.OBSERVE,
             AgentExecutionLoopTimelineLabel.VERIFY,
@@ -392,7 +396,6 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
     ) {
         return
     }
-    val state = runtime.snapshot()
     agentTranscriptStore.append(
         AgentTranscriptRole.PROCESS,
         agentExecutionLoopTimelineText(label),
@@ -412,7 +415,8 @@ internal fun MainActivity.recordAgentExecutionLoopEvent(
 internal fun MainActivity.finalizeAgentExecutionLoop(
     runtime: MobileNativeAgent, turnId: String, state: AgentUiState
 ): AgentUiState = finalizeAgentExecution(runtime, turnId, state, ::recordAgentRunFromState).also {
-    if (it.phase in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) {
+    if (it.phase in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED) &&
+        !AgentBlockedStatePolicy.retainsRun(it)) {
         PhoneAssistantTaskControl.finish(turnId)
     }
 }
@@ -689,7 +693,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 scheduleConnectorTimeouts(runtime, sourceId, conversationId, turnId)
             }
             renderAgentState(state, conversationId, turnId)
-            requestMissingAgentNativePermissions(state)
+            requestMissingAgentNativePermissions(state, runtime, conversationId, turnId)
             consumePendingAgentConnectorResponses()
             outcome.exceptionOrNull()?.takeUnless { state.phase == AgentPhase.CANCELLED }?.let { error ->
                 provisionalAgentTasks.remove(runtime)
@@ -700,7 +704,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             AgentPhase.WAITING_CONFIRMATION -> waitForConfirmation(state.pendingAction?.description.orEmpty())
             AgentPhase.WAITING_RESPONSE -> waitForResponse(state.lastActionResult?.message.orEmpty())
             AgentPhase.PAUSED -> pause(state.lastActionResult?.message.orEmpty())
-            AgentPhase.BLOCKED -> blockTask(state.plan?.safetyReview?.reason.orEmpty())
+            AgentPhase.BLOCKED -> blockTask(AgentBlockedStatePolicy.reason(state))
             AgentPhase.FAILED -> error(state.lastActionResult?.message.orEmpty().ifBlank { "Agent task failed" })
             AgentPhase.CANCELLED -> cancellationSource.cancel("Agent task cancelled")
             else -> Unit
@@ -869,7 +873,7 @@ internal fun MainActivity.executeDirectSystemAction(
             .firstOrNull { it.id == toolId }
             ?.requiredPermissions
             .orEmpty()
-            .filter { it.required && checkSelfPermission(it.id) != PackageManager.PERMISSION_GRANTED }
+            .filter { it.required && supportedAgentRuntimePermission(it.id) && checkSelfPermission(it.id) != PackageManager.PERMISSION_GRANTED }
             .map { it.id }
             .distinct()
     } else {
@@ -877,7 +881,7 @@ internal fun MainActivity.executeDirectSystemAction(
     }
     if (missingPermissions.isNotEmpty()) {
         pendingDirectSystemAction = PendingDirectSystemAction(contextualAction, conversationId, turnId)
-        requestPermissions(missingPermissions.toTypedArray(), REQUEST_AGENT_NATIVE_PERMISSIONS)
+        if (pendingAgentRuntimePermission == null) requestPermissions(missingPermissions.toTypedArray(), REQUEST_AGENT_NATIVE_PERMISSIONS)
         return
     }
     val screen = mobileNativeAgent.snapshot().currentScreen
@@ -903,7 +907,9 @@ internal fun MainActivity.executeDirectSystemAction(
             val result = outcome.getOrElse { error ->
                 AgentActionResult(contextualAction.id, false, error.message ?: "Agent operation failed")
             }
+            if (recoverDeviceOperation(contextualAction, conversationId, turnId, result)) return@runOnUiThread
             appendDirectSystemResult(contextualAction, conversationId, turnId, result)
+            offerDeviceOperationAccess(result, conversationId)
             if (result.metadata["awaiting_response"] != "true") {
                 recordDirectAgentRun(turnId, contextualAction, result)
             }
@@ -1097,51 +1103,9 @@ internal fun Context.persistAgentWorkspaceSnapshot(
     required: Boolean = false
 ) {
     val persisted = runCatching {
-        val actions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
-            .distinctBy(AgentAction::id)
+        val actions = AgentWorkspaceToolCallProjection.actions(state.plan)
         val result = state.lastActionResult
-        val toolCalls = actions
-            .filter { it.kind == AgentActionKind.CALL_NATIVE_TOOL || it.kind == AgentActionKind.CALL_CONNECTOR }
-            .map { action ->
-                val isLast = result?.actionId == action.id
-                AgentToolCallRecord(
-                    id = if (isLast) result?.metadata?.get("invocation_id").orEmpty()
-                        .ifBlank { action.id } else action.id,
-                    toolName = action.parameters["tool_id"].orEmpty()
-                        .ifBlank { action.parameters["connector_id"].orEmpty() }
-                        .ifBlank { action.kind.name.lowercase(Locale.ROOT) },
-                    status = when (action.status) {
-                        AgentActionStatus.PROPOSED,
-                        AgentActionStatus.PENDING_CONFIRMATION -> AgentToolCallStatus.PENDING
-                        AgentActionStatus.RUNNING,
-                        AgentActionStatus.WAITING_RESPONSE -> AgentToolCallStatus.RUNNING
-                        AgentActionStatus.COMPLETED -> AgentToolCallStatus.SUCCEEDED
-                        AgentActionStatus.FAILED,
-                        AgentActionStatus.BLOCKED,
-                        AgentActionStatus.ROLLED_BACK -> AgentToolCallStatus.FAILED
-                    },
-                    argumentsJson = action.parameters["input_json"].orEmpty()
-                        .ifBlank { JSONObject(action.parameters).toString() },
-                    resultJson = if (isLast) {
-                        result?.metadata?.get("native_tool_output").orEmpty()
-                            .ifBlank { JSONObject(result?.metadata.orEmpty()).put("message", result?.message.orEmpty()).toString() }
-                    } else {
-                        JSONObject().put("message", action.result).toString()
-                    },
-                    errorMessage = if (action.status in setOf(
-                            AgentActionStatus.FAILED,
-                            AgentActionStatus.BLOCKED,
-                            AgentActionStatus.ROLLED_BACK
-                        )
-                    ) action.result else "",
-                    startedAtMillis = if (isLast) {
-                        result?.metadata?.get("started_at_millis")?.toLongOrNull() ?: 0L
-                    } else 0L,
-                    completedAtMillis = if (isLast) {
-                        result?.metadata?.get("completed_at_millis")?.toLongOrNull() ?: 0L
-                    } else 0L
-                )
-            }
+        val toolCalls = AgentWorkspaceToolCallProjection.records(actions, result)
         val pendingScope = state.pendingAction?.let(AgentConfirmationPolicy::consentKey).orEmpty()
         val grantIds = if (pendingScope.isBlank()) emptyList() else {
             EncryptedAgentPermissionGrantStore(this).list(includeInactive = false)
@@ -1178,9 +1142,11 @@ internal fun Context.persistAgentWorkspaceSnapshot(
                 status = state.phase.toWorkspaceStatus(),
                 planSnapshot = planJson,
                 resultJson = resultJson,
-                errorMessage = if (state.phase in setOf(AgentPhase.FAILED, AgentPhase.BLOCKED)) {
-                    result?.message.orEmpty()
-                } else "",
+                errorMessage = when (state.phase) {
+                    AgentPhase.BLOCKED -> AgentBlockedStatePolicy.reason(state)
+                    AgentPhase.FAILED -> result?.message.orEmpty()
+                    else -> ""
+                },
                 toolCalls = toolCalls,
                 artifacts = runtimeArtifactsFromResult(result?.metadata?.get("native_tool_output").orEmpty()),
                 permissionGrantIds = grantIds,
@@ -1229,7 +1195,9 @@ internal fun Context.persistAgentWorkspaceSnapshot(
 
 internal fun MainActivity.recordAgentRunFromState(turnId: String, state: AgentUiState) {
     if (state.phase !in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) return
-    AgentExecutionRunRecorder(this, mobileNativeAgent, agentRunIdsByTurn.remove(turnId).orEmpty())
+    val runId = if (AgentBlockedStatePolicy.retainsRun(state)) agentRunIdsByTurn[turnId]
+        else agentRunIdsByTurn.remove(turnId)
+    AgentExecutionRunRecorder(this, mobileNativeAgent, runId.orEmpty())
         .recordAgentRunFromState(turnId, state)
 }
 
@@ -1283,54 +1251,7 @@ private fun MainActivity.recordModelToolLoopEventPersisted(
             timestampMillis = event.occurredAtEpochMillis
         )
     }
-    val textType = projection.text ?: return
-    val toolTitle = modelToolTimelineTitle(projection.toolId)
-    val text = when (textType) {
-        AgentModelToolTimelineText.MODEL_REASONING -> getString(
-            R.string.agent_model_loop_reasoning_format,
-            event.round
-        )
-        AgentModelToolTimelineText.MODEL_SELECTED_TOOLS -> getString(
-            R.string.agent_model_loop_selected_tools_format,
-            projection.count
-        )
-        AgentModelToolTimelineText.MODEL_PREPARED_STEP ->
-            getString(R.string.agent_model_loop_prepared_step)
-        AgentModelToolTimelineText.TOOL_RUNNING -> getString(
-            R.string.agent_loop_action_format,
-            toolTitle
-        )
-        AgentModelToolTimelineText.TOOL_PROGRESS -> if (projection.detail.isBlank()) {
-            getString(R.string.agent_loop_action_format, toolTitle)
-        } else {
-            getString(
-                R.string.agent_model_loop_tool_progress_format,
-                toolTitle,
-                projection.detail
-            )
-        }
-        AgentModelToolTimelineText.TOOL_SUCCEEDED -> getString(
-            R.string.agent_loop_observation_format,
-            toolTitle
-        )
-        AgentModelToolTimelineText.TOOL_FAILED -> getString(
-            R.string.agent_loop_observation_failed_format,
-            toolTitle,
-            projection.detail.ifBlank { getString(R.string.agent_model_loop_unknown_failure) }
-        )
-        AgentModelToolTimelineText.TOOL_RETRYING -> getString(
-            R.string.agent_model_loop_retrying_format,
-            toolTitle
-        )
-        AgentModelToolTimelineText.TOOL_WAITING -> getString(
-            R.string.agent_model_loop_waiting_format,
-            toolTitle
-        )
-        AgentModelToolTimelineText.MODEL_LOOP_STOPPED -> getString(
-            R.string.agent_model_loop_stopped_format,
-            projection.detail.ifBlank { getString(R.string.agent_model_loop_unknown_failure) }
-        )
-    }
+    val text = modelToolTimelineText(projection, event.round, modelToolTimelineTitle(projection.toolId)) ?: return
     val changed = agentTranscriptStore.upsert(
         role = AgentTranscriptRole.PROCESS,
         text = text,
@@ -1540,11 +1461,13 @@ internal fun Context.appendRunControlEvent(
     payload: AgentNativeJsonObject = emptyMap(),
     stepId: String = "",
     toolCallId: String = "",
-    timestampMillis: Long = System.currentTimeMillis()
+    timestampMillis: Long = System.currentTimeMillis(),
+    eventId: String = UUID.randomUUID().toString()
 ) {
     val profile = AppStore.profile(this)
     AgentRunEventStore(this).appendNext(
         AgentRunControlEvent(
+            eventId = eventId,
             conversationId = run.conversationId,
             messageId = messageId,
             taskId = taskId,
@@ -1651,37 +1574,6 @@ internal fun MainActivity.appendDirectSystemResult(
     refreshAgentTranscriptWindow(conversationId)
 }
 
-internal fun MainActivity.requestMissingAgentNativePermissions(state: AgentUiState): Boolean {
-    val runtimePermissions = setOf(
-        android.Manifest.permission.READ_PHONE_STATE,
-        android.Manifest.permission.READ_SMS,
-        android.Manifest.permission.SEND_SMS,
-        android.Manifest.permission.READ_CONTACTS,
-        android.Manifest.permission.WRITE_CONTACTS,
-        android.Manifest.permission.READ_CALENDAR,
-        android.Manifest.permission.WRITE_CALENDAR,
-        android.Manifest.permission.ACCESS_FINE_LOCATION,
-        android.Manifest.permission.ACCESS_COARSE_LOCATION,
-        android.Manifest.permission.BLUETOOTH_CONNECT,
-        android.Manifest.permission.BLUETOOTH_SCAN,
-        android.Manifest.permission.CAMERA,
-        android.Manifest.permission.RECORD_AUDIO
-    )
-    val missing = state.plan?.requiredPermissions.orEmpty()
-        .asSequence()
-        .filterNot { it.granted }
-        .map { it.id }
-        .filter { it in runtimePermissions }
-        .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-        .distinct()
-        .toList()
-    if (missing.isNotEmpty()) {
-        requestPermissions(missing.toTypedArray(), REQUEST_AGENT_NATIVE_PERMISSIONS)
-        return true
-    }
-    return false
-}
-
 internal fun MainActivity.refreshAgentConversationHeader(
     conversation: AgentConversation = agentTranscriptStore.activeConversation()
 ) {
@@ -1776,22 +1668,28 @@ internal fun MainActivity.refreshGlobalAgentCognition() {
         return
     }
     thread(name = "galaxyssi-global-agent-cognition") {
-        runCatching { globalSuperAgentRuntime.processPending() }
-        runCatching { globalSuperAgentRuntime.processLongHorizonCycle() }
-        runCatching { globalSuperAgentRuntime.processProactiveDiscoveryCycle() }
-        runCatching { globalSuperAgentRuntime.executeCognitionCycle() }
-        runCatching { globalSuperAgentRuntime.executeAutonomousCycle() }
-        runCatching { globalSuperAgentRuntime.executeResearchCycle() }
-        runCatching { globalSuperAgentRuntime.processPending() }
-        runCatching { globalSuperAgentRuntime.processLongHorizonCycle() }
-        runCatching { globalSuperAgentRuntime.processProactiveDiscoveryCycle() }
-        runCatching { globalSuperAgentRuntime.scheduleNextWake() }
-        val delivered = runCatching {
-            globalSuperAgentRuntime.deliverPending(agentTranscriptStore)
-        }.getOrDefault(emptyList())
+        val delivered = if (globalSuperAgentRuntime.settings().enabled) {
+            runCatching { globalSuperAgentRuntime.processPending() }
+            runCatching { globalSuperAgentRuntime.processLongHorizonCycle() }
+            runCatching { globalSuperAgentRuntime.processProactiveDiscoveryCycle() }
+            runCatching { globalSuperAgentRuntime.executeCognitionCycle() }
+            runCatching { globalSuperAgentRuntime.executeAutonomousCycle() }
+            runCatching { globalSuperAgentRuntime.executeResearchCycle() }
+            runCatching { globalSuperAgentRuntime.processPending() }
+            runCatching { globalSuperAgentRuntime.processLongHorizonCycle() }
+            runCatching { globalSuperAgentRuntime.processProactiveDiscoveryCycle() }
+            runCatching { globalSuperAgentRuntime.scheduleNextWake() }
+            runCatching { globalSuperAgentRuntime.deliverPending(agentTranscriptStore) }.getOrDefault(emptyList())
+        } else emptyList()
         if (delivered.isNotEmpty()) {
             runCatching {
-                globalSuperAgentRuntime.markNotified(delivered.map(GlobalProactiveMessage::id).toSet())
+                val attention = delivered.filter { it.sourceEventId.startsWith("research:${ProactiveAttentionPolicy.TASK_PREFIX}") }
+                globalSuperAgentRuntime.markNotified((delivered - attention.toSet()).map(GlobalProactiveMessage::id).toSet())
+                globalSuperAgentRuntime.notificationCandidateForDelivered(attention)?.let { candidate ->
+                    if (AndroidCognitionNotificationCenter.notify(this, candidate)) {
+                        globalSuperAgentRuntime.markNotified(candidate.messageIds)
+                    }
+                }
             }
         }
         runOnUiThread {

@@ -12,6 +12,7 @@ from evolution_v2.campaign_outcomes import published_outcome
 from evolution_v2.ci_snapshot import CiObservationError
 from evolution_v2.integration_verification import accepted_integration, verify_integration
 from evolution_v2.legacy import EvolutionCommandRunner
+from test_evolution_v2.test_ci_snapshot import commit_snapshot
 
 
 class IntegrationVerificationTests(unittest.TestCase):
@@ -48,8 +49,7 @@ class IntegrationVerificationTests(unittest.TestCase):
         self.metadata = SimpleNamespace(source_commit=self.source)
         self.manager = SimpleNamespace(require=lambda key: self.task, source_root=self.root, runner=EvolutionCommandRunner(),
             github=self.github, v2_store=SimpleNamespace(get_task_metadata=lambda key: self.metadata))
-        self.ci = {"repository": "owner/project", "head_sha": self.integrated, "passed": True,
-                   "failed": 0, "pending": 0, "fingerprint": "green", "checks": [{"outcome": "passed"}]}
+        self.ci = commit_snapshot(self.integrated, repository="owner/project")
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True,
@@ -87,7 +87,7 @@ class IntegrationVerificationTests(unittest.TestCase):
         # The fixture's previous base fix is part of this new candidate; retain it too.
         (self.root / "independent-fix.txt").write_text("Fix inherited CI failure\n")
         self.integrated = self.commit("Retain all candidate bytes")
-        self.ci["head_sha"] = self.integrated
+        self.ci = commit_snapshot(self.integrated, repository="owner/project")
         runner = self.manager.runner
         with patch.object(runner, "run", wraps=runner.run) as calls:
             result, _ = self.verify()
@@ -130,6 +130,30 @@ class IntegrationVerificationTests(unittest.TestCase):
             with self.subTest(ci=ci):
                 self.ci = ci
                 self.assertFalse(self.verify()[0]["passed"])
+
+    def test_skipped_neutral_or_rebound_ci_cannot_accept_real_git_integration(self):
+        for conclusion in ("skipped", "neutral"):
+            with self.subTest(conclusion=conclusion):
+                self.ci = commit_snapshot(self.integrated, conclusion, "owner/project")
+                self.assertTrue(self.ci["passed"])
+                result, _ = self.verify()
+                self.assertFalse(result["passed"])
+                self.assertIn("skipped/neutral", result["reason"])
+        for sha, repository in ((self.head, "owner/project"), (self.integrated, "other/repository")):
+            self.ci = commit_snapshot(sha, repository=repository)
+            self.assertFalse(self.verify()[0]["passed"])
+
+    def test_restored_passed_proof_cannot_hide_skipped_or_neutral_checks(self):
+        proof, _ = self.verify()
+        for conclusion in ("skipped", "neutral"):
+            ci = commit_snapshot(self.integrated, conclusion, "owner/project")
+            self.assertIsNone(accepted_integration({**proof, "ci": ci}, self.snapshot, "task"))
+
+    def test_matching_forged_repository_fields_cannot_rebind_the_pr_url(self):
+        proof, _ = self.verify()
+        changed = {"repository": "other/repo", "base_repository": "other/repo", "head_repository": "other/repo"}
+        self.assertIsNone(accepted_integration({**proof, **changed,
+            "ci": commit_snapshot(self.integrated, repository="other/repo")}, {**self.snapshot, **changed}, "task"))
 
     def test_candidate_and_repository_identity_must_match(self):
         for change in ({"head_sha": "a" * 40}, {"base_ref": "other"}, {"merged": False},

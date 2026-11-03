@@ -17,7 +17,7 @@ class CollaborationCandidateEvolutionTest {
         val rows = Rows()
         val evidenceRows = Rows()
         val ledger = CollaborationEvidenceLedger(evidenceRows)
-        val workspace = CollaborationResearchWorkspace(rows, evidence = ledger::references)
+        val workspace = CollaborationResearchWorkspace(rows, evidence = ledger::references, evidenceReadCoverage = ledger::requireReadCoverage)
         val access = CollaborationWorkspaceAccess("group", "run", "turn", 20, "lead", "lead")
         val people = setOf("lead", "author", "editor", "reviewer")
         val criterion = JSONObject().put("id", "accuracy").put("requirement", "Documented accuracy").put("verification", "documentary")
@@ -31,6 +31,8 @@ class CollaborationCandidateEvolutionTest {
                 .put("rationale", "Alternative worth checking").put("criteria", JSONArray().put(criterion.getString("requirement")))))
         fun request(ref: JSONObject = target) = JSONObject().put("target", ref).put("criterion_id", "accuracy")
             .put("editor", "editor").put("reviewer", "reviewer")
+        fun retry(plan: CollaborationCandidateEvolution.Plan, reviewer: String = "lead") = request().put("reviewer", reviewer)
+            .put("retry_review", JSONObject().put("node_id", node(plan)).put("reason", "Read the original and publish the missing exact review"))
         fun plan(state: String = "[]", requests: JSONArray = JSONArray().put(request()), successes: Set<String> = emptySet(),
                  members: Set<String> = people) = CollaborationCandidateEvolution.plan(workspace, access, members,
             JSONArray().put(criterion), requests, state, successes) { "dispatch:$it" }
@@ -54,6 +56,9 @@ class CollaborationCandidateEvolutionTest {
             return publish(access.copy(nodeId = node(plan), personId = task.getString("member"), round = ++executionRound), item, task)
         }
         fun publish(who: CollaborationWorkspaceAccess, item: JSONObject, task: JSONObject? = null): JSONObject {
+            if (item.optString("kind") == "candidate_event" &&
+                item.getJSONObject("body").getJSONObject("candidate_event").optString("operation") == "review")
+                assertNull(ledger.readPage(who, source.getString("evidence_id"), source.getString("sha256"))!!.next)
             val result = workspace.publish(who, raw(item), candidateTask = task)
             assertEquals(result.toString(), "recorded", result.getString("status"))
             return result.getJSONArray("revisions").getJSONObject(0)
@@ -175,7 +180,7 @@ class CollaborationCandidateEvolutionTest {
         assertFalse(CollaborationCandidateEvolution.pending(settled.request.context.getValue(CollaborationCandidateEvolution.STATE).toString()))
         assertTrue(settled.definition.members.none { it.context[CollaborationCandidateEvolution.TASK] != null })
         assertEquals(blocked.toString(), settled.request.context[CollaborationGoalLoop.PREVIOUS])
-        assertTrue(settled.request.context[CollaborationCandidateEvolution.FEEDBACK].toString().contains("No successful exact workspace publication"))
+        assertTrue(settled.request.context[CollaborationCandidateEvolution.FEEDBACK].toString().contains("Completed review has no committed publication"))
         assertNull(CollaborationGoalLoop.advance(f.complete(settled, blocked), settled.definition.primaryMemberId, 300_000, false,
             candidateWorkspace = { error("No feasible cycle remains") }))
     }
@@ -458,7 +463,11 @@ class CollaborationCandidateEvolutionTest {
             .put("id", "delivery").put("kind", "artifact").put("title", "Delivery").put("body", JSONObject().put("content", "Document"))
             .put("parents", JSONArray().put(f.target)).put("observations", JSONArray().put(f.source)))
         fun assessment(reviewer: String, id: String): JSONObject {
-            val review = f.publish(f.access.copy(nodeId = id, personId = reviewer, round = 2), JSONObject().put("id", id)
+            val reader = f.access.copy(nodeId = id, personId = reviewer, round = 2)
+            var offset: Int? = 0
+            while (offset != null) offset = requireNotNull(f.ledger.readPage(reader, f.source.getString("evidence_id"),
+                f.source.getString("sha256"), offset)).next
+            val review = f.publish(reader, JSONObject().put("id", id)
                 .put("kind", "acceptance_review").put("title", "Review").put("parents", JSONArray().put(delivery))
                 .put("observations", JSONArray().put(f.source)).put("body", JSONObject().put("acceptance_review", JSONObject()
                     .put("criterion_id", "accuracy").put("requirement", "Documented accuracy").put("target", delivery)
@@ -558,7 +567,160 @@ class CollaborationCandidateEvolutionTest {
         val stopped = f.plan(first.state, JSONArray(), setOf(f.node(first)))
         assertTrue(stopped.work.isEmpty())
         assertFalse(CollaborationCandidateEvolution.pending(stopped.state))
-        assertTrue(stopped.feedback.contains("No successful exact workspace publication"))
+        assertTrue(stopped.feedback.contains("Completed review has no committed publication"))
+    }
+
+    @Test fun completedUnpublishedReviewCanBeExplicitlyReassignedWithoutChangingItsTarget() {
+        val f = Fixture(); val first = f.plan()
+        val settled = f.plan(first.state, JSONArray(), setOf(f.node(first)))
+        assertTrue(JSONObject(CollaborationCandidateEvolution.summary(settled.state)).getJSONArray("recent_cycles")
+            .getJSONObject(0).getBoolean("retryable_review"))
+        assertTrue(f.plan(settled.state).work.isEmpty())
+        val retry = f.retry(first)
+        f.workspace.enrollPublication(f.access.copy(nodeId = f.node(first), personId = "reviewer", round = 1),
+            CollaborationResearchStage.VERIFY, f.task(first))
+        val next = f.plan(settled.state, JSONArray().put(retry))
+        assertFalse(next.feedback, next.error)
+        assertEquals("lead", f.task(next).getString("member"))
+        assertEquals(f.task(first).getJSONObject("target").toString(), f.task(next).getJSONObject("target").toString())
+        assertNotEquals(f.node(first), f.node(next))
+        val saved = CollaborationCandidateVerificationState.read(next.state).getJSONObject(0)
+        assertEquals(f.node(first), saved.getJSONArray("prior_settlements").getJSONObject(0).getString("node_id"))
+        assertEquals(retry.getJSONObject("retry_review").toString(), f.task(next).getJSONObject("review_reassignment").toString())
+        f.workspace.enrollPublication(f.access.copy(nodeId = f.node(next), personId = "lead", round = 2),
+            CollaborationResearchStage.VERIFY, f.task(next))
+        f.execute(next)
+        val done = f.plan(next.state, JSONArray(), setOf(f.node(next)))
+        assertFalse(CollaborationCandidateEvolution.pending(done.state))
+        assertTrue(done.feedback.contains("not host verified"))
+        assertTrue(f.workspace.isCurrent(f.access, f.target.getString("object_id"), 1))
+    }
+
+    @Test fun sameVersionReassignmentsKeepUniqueAttemptsAndConsumedRequestsDoNotLoop() {
+        val f = Fixture(); var active = f.plan()
+        val ids = linkedSetOf(f.node(active))
+        val requests = mutableListOf<JSONObject>()
+        repeat(12) { index ->
+            val settled = f.plan(active.state, JSONArray(), setOf(f.node(active)))
+            val retry = f.retry(active)
+            requests += retry
+            active = f.plan(settled.state, JSONArray().put(retry))
+            assertTrue(ids.add(f.node(active)))
+            val replay = f.plan(active.state, JSONArray(requests), setOf(f.node(active)))
+            assertTrue(replay.work.isEmpty())
+            assertFalse(CollaborationCandidateEvolution.pending(replay.state))
+            assertEquals(index + 1, CollaborationCandidateVerificationState.read(active.state).getJSONObject(0)
+                .getJSONArray("prior_settlements").length())
+        }
+        assertEquals(13, ids.size)
+    }
+
+    @Test fun reassignedRefutationStillAdvancesRepairAndFreshReviewWithoutReclaimingTheOldDispatch() {
+        val f = Fixture(); val first = f.plan()
+        f.workspace.enrollPublication(f.access.copy(nodeId = f.node(first), personId = "reviewer", round = 1),
+            CollaborationResearchStage.VERIFY, f.task(first))
+        val settled = f.plan(first.state, JSONArray(), setOf(f.node(first)))
+        val replacement = f.plan(settled.state, JSONArray().put(f.retry(first)))
+        f.workspace.enrollPublication(f.access.copy(nodeId = f.node(replacement), personId = "lead", round = 2),
+            CollaborationResearchStage.VERIFY, f.task(replacement))
+        f.execute(replacement, "refuted")
+        val repair = f.plan(replacement.state, JSONArray(), setOf(f.node(replacement)))
+        assertEquals("revise", f.task(repair).getString("operation"))
+        assertFalse(f.task(repair).has("review_reassignment"))
+        f.execute(repair)
+        val review = f.plan(repair.state, JSONArray(), setOf(f.node(repair)))
+        assertEquals("review", f.task(review).getString("operation"))
+        assertFalse(f.task(review).has("review_reassignment"))
+        f.execute(review)
+        assertFalse(CollaborationCandidateEvolution.pending(f.plan(review.state, JSONArray(), setOf(f.node(review))).state))
+        assertThrows(IllegalArgumentException::class.java) {
+            f.workspace.requirePublicationActive(f.access.copy(nodeId = f.node(first), personId = "reviewer", round = 1))
+        }
+    }
+
+    @Test fun retryRequiresTheExactCompletedAttemptAndAnIndependentAuthorizedMember() {
+        val invalid = listOf<(JSONObject) -> Unit>(
+            { it.getJSONObject("retry_review").put("node_id", "other") },
+            { it.getJSONObject("retry_review").put("reason", " ") },
+            { it.getJSONObject("retry_review").put("extra", true) },
+            { it.put("reviewer", "unknown") }, { it.put("reviewer", "author") },
+            { it.put("reviewer", "editor") }, { it.put("criterion_id", "invented") },
+            { it.getJSONObject("target").put("sha256", "0".repeat(64)) })
+        invalid.forEach { change ->
+            val f = Fixture(); val first = f.plan()
+            val settled = f.plan(first.state, JSONArray(), setOf(f.node(first)))
+            val retry = JSONObject(f.retry(first).toString()).also(change)
+            val next = f.plan(settled.state, JSONArray().put(retry))
+            assertTrue(next.feedback, next.work.isEmpty())
+            assertEquals(1, CollaborationCandidateVerificationState.checkpoint(next.state).pendingRequests.length())
+            assertEquals(f.node(first), f.node(next))
+        }
+    }
+
+    @Test fun uncertainOrFailedWorkAndCompletedPublicationsCannotBecomeRetryable() {
+        val f = Fixture(); val first = f.plan()
+        val failed = f.plan(first.state, JSONArray())
+        assertFalse(CollaborationCandidateVerificationState.read(failed.state).getJSONObject(0).getBoolean("retryable_review"))
+        assertTrue(f.plan(failed.state, JSONArray().put(f.retry(first))).work.isEmpty())
+        listOf("supported", "refuted", "not_tested").forEach { outcome ->
+            val published = Fixture(); val review = published.plan(); published.execute(review, outcome)
+            val settled = published.plan(review.state, JSONArray(), setOf(published.node(review)))
+            val retried = published.plan(settled.state, JSONArray().put(published.retry(review)))
+            assertTrue(retried.work.isEmpty())
+        }
+    }
+
+    @Test fun repairCompletionWithoutPublicationCannotBeReassignedAsAReview() {
+        val f = Fixture(); val first = f.plan(); f.execute(first, "refuted")
+        val repair = f.plan(first.state, JSONArray(), setOf(f.node(first)))
+        val stopped = f.plan(repair.state, JSONArray(), setOf(f.node(repair)))
+        val state = CollaborationCandidateVerificationState.read(stopped.state).getJSONObject(0)
+        assertEquals("repair", state.getString("settled_phase"))
+        assertFalse(state.getBoolean("retryable_review"))
+        assertTrue(f.plan(stopped.state, JSONArray().put(f.retry(repair))).work.isEmpty())
+        state.put("retryable_review", true)
+        assertTrue(f.plan(JSONArray().put(state).toString(), JSONArray()).error)
+    }
+
+    @Test fun lateOriginalPublicationPreventsReassignmentAndAlreadyAdmittedDuplicatePublication() {
+        listOf(false, true).forEach { alreadyAdmitted ->
+            val f = Fixture(); val first = f.plan()
+            val stopped = f.plan(first.state, JSONArray(), setOf(f.node(first)))
+            val next = if (alreadyAdmitted) f.plan(stopped.state, JSONArray().put(f.retry(first))) else null
+            f.execute(first)
+            if (next == null) {
+                val held = f.plan(stopped.state, JSONArray().put(f.retry(first)))
+                assertTrue(held.work.isEmpty())
+                assertTrue(held.feedback.contains("committed publication"))
+            } else {
+                val task = f.task(next)
+                val who = f.access.copy(nodeId = f.node(next), personId = "lead")
+                assertTrue(runCatching { CollaborationCandidateEvolution.checkTask(f.workspace, who, task) }.isFailure)
+                assertEquals("rejected", f.workspace.publish(who, raw(f.review(task)), candidateTask = task).getString("status"))
+                assertTrue(f.workspace.publicationRevisions(f.access, f.node(next)).isEmpty())
+            }
+        }
+    }
+
+    @Test fun actualGoalLoopReassignsOnlyAfterHostCompletionWithoutAnAcceptedPublication() {
+        val f = Fixture()
+        val first = requireNotNull(CollaborationGoalLoop.advance(f.record(), "lead", 100_000, true, candidateWorkspace = { f.workspace }))
+        val old = first.definition.members.single { it.context.containsKey(CollaborationCandidateEvolution.TASK) }
+        val settled = requireNotNull(CollaborationGoalLoop.advance(f.complete(first, child = old.memberId),
+            first.definition.primaryMemberId, 200_000, true, candidateWorkspace = { f.workspace }))
+        val originalState = settled.request.context.getValue(CollaborationCandidateEvolution.STATE).toString()
+        assertTrue(CollaborationCandidateVerificationState.read(originalState).getJSONObject(0).getBoolean("retryable_review"))
+        val retry = f.request().put("reviewer", "lead").put("retry_review", JSONObject()
+            .put("node_id", old.memberId).put("reason", "Return the original-source review, not a status message"))
+        val next = requireNotNull(CollaborationGoalLoop.advance(f.complete(settled, f.assessment(JSONArray().put(retry))),
+            settled.definition.primaryMemberId, 300_000, true, candidateWorkspace = { f.workspace }))
+        val replacement = next.definition.members.single { it.context.containsKey(CollaborationCandidateEvolution.TASK) }
+        assertNotEquals(old.memberId, replacement.memberId)
+        assertEquals("lead", JSONObject(replacement.context.getValue(CollaborationCandidateEvolution.TASK)).getString("member"))
+        assertEquals(first.request.context[CollaborationGoalLoop.CRITERIA], next.request.context[CollaborationGoalLoop.CRITERIA])
+        assertEquals(old.memberId, CollaborationCandidateVerificationState.read(next.request.context.getValue(
+            CollaborationCandidateEvolution.STATE).toString()).getJSONObject(0).getJSONArray("prior_settlements")
+            .getJSONObject(0).getString("node_id"))
     }
 
     @Test fun incompleteDoneCheckpointCannotClearPendingVerification() {
@@ -633,6 +795,7 @@ class CollaborationCandidateEvolutionTest {
         val f = Fixture(); val first = f.plan(); val task = f.task(first)
         val who = f.access.copy(nodeId = f.node(first), personId = "reviewer")
         val input = raw(f.review(task))
+        assertNull(f.ledger.readPage(who, f.source.getString("evidence_id"), f.source.getString("sha256"))!!.next)
         val before = f.rows.values.toMap()
         f.rows.fail = true
         assertTrue(runCatching { f.workspace.publish(who, input, candidateTask = task) }.isFailure)

@@ -22,6 +22,7 @@ internal class ModelStreamTimings(
     private val spans = linkedMapOf<String, Long>()
     private var connects = 0L
     private var acquired = false
+    private var requestAttempts = 0L
 
     @Synchronized fun mark(name: String) { marks.putIfAbsent(name, now()) }
     @Synchronized private fun begin(name: String) { marks["${name}_start"] = now() }
@@ -40,7 +41,11 @@ internal class ModelStreamTimings(
     override fun secureConnectStart(call: Call) = begin("tls_ms")
     override fun secureConnectEnd(call: Call, handshake: Handshake?) = end("tls_ms")
     override fun connectionAcquired(call: Call, connection: Connection) { synchronized(this) { acquired = true } }
-    override fun requestHeadersStart(call: Call) = mark("request_write_start")
+    override fun requestHeadersStart(call: Call) {
+        synchronized(this) { requestAttempts++ }
+        mark("request_write_start")
+    }
+    @Synchronized fun requestAttempts(): Long = requestAttempts
     override fun requestBodyEnd(call: Call, byteCount: Long) = mark("request_write_end")
     override fun responseHeadersEnd(call: Call, response: Response) = mark("response_headers")
 

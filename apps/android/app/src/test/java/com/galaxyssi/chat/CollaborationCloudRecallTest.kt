@@ -25,10 +25,29 @@ class CollaborationCloudRecallTest {
             assertTrue(function.getString("description").contains("only records this recall"))
             val schema = function.getJSONObject(if (provider == ModelStreamProvider.ANTHROPIC) "input_schema" else "parameters")
             val properties = schema.getJSONObject("properties")
-            assertEquals(setOf("mode", "cursor", "object_id", "revision", "evidence_id", "sha256", "offset"),
+            assertEquals(setOf("mode", "cursor", "section", "query", "object_id", "revision", "evidence_id", "sha256", "offset", "record_id", "topic", "case_filter", "work_id", "inputs", "view"),
                 properties.keys().asSequence().toSet())
-            assertEquals(listOf("evidence", "workspace", "goal_contract"), properties.getJSONObject("mode").getJSONArray("enum").let {
+            assertEquals(listOf("evidence", "workspace", "goal_contract", "archive", "evolution", "capabilities", "method_history", "evolution_rules", "problems", "numeric_cases", "team_updates", "peer_updates", "workflow_check", "source_access"), properties.getJSONObject("mode").getJSONArray("enum").let {
                 (0 until it.length()).map(it::getString) })
+            assertEquals("string", properties.getJSONObject("query").getString("type"))
+            assertEquals("object", properties.getJSONObject("inputs").getString("type"))
+            assertEquals("evaluations", properties.getJSONObject("view").getJSONArray("enum").getString(0))
+            assertTrue(function.getString("description").contains("view=evaluations"))
+            assertTrue(function.getString("description").contains("mode=workflow_check"))
+            assertEquals("string", properties.getJSONObject("section").getString("type"))
+            assertEquals("string", properties.getJSONObject("work_id").getString("type"))
+            assertTrue(function.getString("description").contains("complete current work contract"))
+            assertTrue(function.getString("description").contains("context:<exact section name>"))
+            assertEquals("string", properties.getJSONObject("topic").getString("type"))
+            assertEquals("string", properties.getJSONObject("case_filter").getString("type"))
+            assertEquals(CollaborationNumericFeedback.filters, properties.getJSONObject("case_filter").getJSONArray("enum").let {
+                (0 until it.length()).map(it::getString) })
+            assertEquals(CollaborationEvolutionProtocol.topicIds(), properties.getJSONObject("topic").getJSONArray("enum").let {
+                (0 until it.length()).map(it::getString) })
+            assertTrue(function.getString("description").contains("topic=catalog"))
+            assertTrue(function.getString("description").contains("same topic"))
+            assertTrue(function.getString("description").contains("mode=capabilities"))
+            assertTrue(function.getString("description").contains("mode=numeric_cases"))
             assertFalse(properties.has("group_id"))
             assertFalse(properties.has("source_message_id"))
             assertFalse(properties.has("person_id"))

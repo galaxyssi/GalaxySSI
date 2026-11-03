@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="schedule_title">定时任务</string>
+    <string name="schedule_new">新建定时任务</string>
+    <string name="schedule_edit">修改</string>
+    <string name="schedule_pause">暂停</string>
+    <string name="schedule_resume">继续</string>
+    <string name="schedule_delete">删除</string>
+    <string name="schedule_paused">已暂停</string>
+    <string name="schedule_next">下次：%1$s</string>
+    <string name="schedule_empty">暂无定时任务</string>
+    <string name="schedule_prompt">做什么</string>
+    <string name="schedule_time">什么时候</string>
+    <string name="schedule_time_hint">每隔1分钟 / 每天早上9点 / 每周五18:00</string>
+    <string name="schedule_time_invalid">请输入重复时间，例如每隔1分钟、每天早上9点或每周五18:00。</string>
+    <string name="schedule_saved">已安排，现在先执行一次，之后按设定时间重复，直到你暂停。</string>
+    <string name="schedule_updated">已更新，现在按新内容执行，之后按设定时间重复。</string>
+    <string name="schedule_stopped">已暂停，不会再启动后续定时执行。</string>
+    <string name="schedule_resumed">已继续定时任务。</string>
+    <string name="schedule_choose">选择定时任务</string>
+    <string name="schedule_not_found">这个定时任务已不存在。</string>
+    <string name="schedule_failed">未能保存任务：%1$s</string>
+    <string name="schedule_result">由定时任务发送 · %1$s\n\n%2$s</string>
+    <string name="schedule_failed_result">由定时任务发送 · %1$s\n\n本次执行失败：%2$s</string>
+    <string name="schedule_empty_result">未收到可确认的执行结果。</string>
+    <string name="schedule_agent_unavailable">当前会话的 Agent 暂不可用，请检查连接或选择可用的 Agent。</string>
+    <string name="schedule_execution_note">沿用当前会话的 Agent。手机休眠或断网时，执行可能延后。</string>
+    <string name="schedule_delete_confirm">删除这个定时任务？会话消息会保留。</string>
+    <string name="schedule_open_list">管理定时任务</string>
+    <string name="schedule_pending">已安排，等待下次执行</string>
+    <string name="schedule_retrying">正在重试</string>
+    <string name="schedule_unverified">执行未确认</string>
+    <string name="schedule_unverified_result">由定时任务发送 · %1$s\n\n执行未确认：%2$s</string>
+    <string name="schedule_local_opened">已在本机确认：%1$s</string>
+    <string name="schedule_local_unverified">已向本机发送打开请求，但未能确认目标页面。可能受到 Android 后台启动限制，请解锁手机并检查页面。</string>
+    <string name="schedule_status_unavailable">暂时无法读取任务状态</string>
+    <string name="schedule_local_configuration_unverified">已发送时钟设置请求，但尚未核实闹钟或计时器是否保存，请检查时钟应用。</string>
+    <string name="schedule_last_execution">上次执行：%1$s</string>
+</resources>

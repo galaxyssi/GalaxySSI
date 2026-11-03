@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_web_original_archive_filename">%1$s-原貌.html</string>
+    <string name="agent_web_original_archive_notice">GalaxySSI 网页静态备份 · 保留抓取时图文顺序；脚本及交互不运行，未加载内容不保证完整。未保存图片：%1$d；部分字体和装饰可能缺失。来源：%2$s</string>
+</resources>

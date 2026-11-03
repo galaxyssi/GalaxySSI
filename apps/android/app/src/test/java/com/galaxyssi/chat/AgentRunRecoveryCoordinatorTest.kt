@@ -9,6 +9,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRunRecoveryCoordinatorTest {
+    @Test fun legacyOperationCheckpointsAreNotExecutableRecoveryTasks(): Unit = runBlocking {
+        val id = AgentDeviceOperationCheckpoint.runId("conversation-1")
+        val event = AgentRunControlEvent(conversationId = "conversation-1", messageId = "", taskId = id,
+            runId = id, agentId = "phone-operation", deviceId = "local", sequence = 1,
+            type = AgentRunControlEventType.CHECKPOINT_SAVED,
+            payload = mapOf("snapshot_kind" to "device_operation", "operation_id" to "operation"))
+        val store = RecoveryRunControlStore(event)
+        val result = AgentRunRecoveryCoordinator(store, InMemoryAgentWorkspaceStore(),
+            { error("Observation snapshots must not resolve executable runs") },
+            { _, _ -> error("Must not resolve an executor") }, { error("Must not invoke any adapter") }).recover()
+        assertTrue(result.isEmpty())
+        assertTrue(store.appended.isEmpty())
+    }
+
     @Test fun durableDeliveryFailurePreventsRemoteRecoveryAndReplay(): Unit = runBlocking {
         val store = RecoveryRunControlStore(runEvent(AgentRunControlEventType.RUN_STARTED, 1))
         val workspaces = InMemoryAgentWorkspaceStore().apply { upsert(workspace()) }

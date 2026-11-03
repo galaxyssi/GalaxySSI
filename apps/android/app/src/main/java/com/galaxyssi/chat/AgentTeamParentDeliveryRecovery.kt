@@ -23,26 +23,27 @@ internal object AgentTeamParentDeliveryPolicy {
 
 /** Repairs only the old remote-silence misclassification of an exact, journal-owned team parent. */
 internal class AgentTeamParentDeliveryRecovery(private val context: Context) {
-    fun stop(team: AgentTeamExecutionSnapshot) {
+    fun stop(team: AgentTeamExecutionSnapshot, reason: String = context.getString(R.string.collaboration_cancelled)) {
         val store = EncryptedAgentWorkspaceStore(context)
         val workspace = store.find(team.taskId) ?: return
         if (workspace.conversationId != team.conversationId || workspace.status.isTerminal) return
-        store.upsert(workspace.copy(status = AgentWorkspaceStatus.CANCELLED, cancellationRequested = true),
+        store.upsert(workspace.copy(status = AgentWorkspaceStatus.CANCELLED, cancellationRequested = true, errorMessage = reason),
             expectedRevision = workspace.revision)
         val delivery = AgentPendingDelivery(AgentTeamDispatchIds.sourceMessageId(team.supervisorRunId),
             team.conversationId, team.taskId, team.taskId, AgentTeamDispatchIds.responseContactId(team.teamId))
-        AgentTerminalDeliveryStore.mark(context, delivery, context.getString(R.string.collaboration_cancelled))
+        AgentTerminalDeliveryStore.mark(context, delivery, reason)
         AgentPendingDeliveryStore.remove(context, delivery.sourceMessageId)
     }
 
     fun canResume(team: AgentTeamExecutionSnapshot): Boolean {
+        if (AgentTeamDurableControl(context).get(team.supervisorRunId) != AgentTeamUserControl.RUN) return false
         val workspace = EncryptedAgentWorkspaceStore(context).find(team.taskId) ?: return false
         if (workspace.conversationId != team.conversationId || workspace.cancellationRequested ||
             workspace.status == AgentWorkspaceStatus.CANCELLED) return false
         if (workspace.status == AgentWorkspaceStatus.FAILED) return prepare(team)
         val session = SharedPreferencesAgentSessionStore(context, "task:${team.taskId}").load() ?: return false
         val metadata = session.lastActionResult?.metadata.orEmpty()
-        if (metadata["team_run_id"] != team.supervisorRunId) return false
+        if (metadata["team_run_id"] != team.supervisorRunId) return AgentTeamClearedParentRecovery(context).restore(team)
         return session.phase == AgentPhase.WAITING_RESPONSE || AgentTeamParentRecoveryPolicy.acceptsLateResult(
             session.phase, metadata, AgentTeamDispatchIds.sourceMessageId(team.supervisorRunId))
     }
@@ -90,7 +91,7 @@ internal class AgentTeamParentDeliveryRecovery(private val context: Context) {
         val key = AgentFinalResponseIdentity.dedupeKey(team.taskId)
         return AgentTranscriptStore(context).workspacePreviews(workspace).any {
             it.role == AgentTranscriptRole.ASSISTANT && it.turnId == team.taskId && it.dedupeKey == key &&
-                it.text.isNotBlank()
+                (it.text.isNotBlank() || AgentRichContentCodec.normalize(it.richOutputJson).isNotBlank())
         }
     }
 }

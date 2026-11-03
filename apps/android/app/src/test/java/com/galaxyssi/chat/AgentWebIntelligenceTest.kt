@@ -16,6 +16,37 @@ import java.util.concurrent.atomic.AtomicLong
 
 class AgentWebIntelligenceTest {
     @Test
+    fun adaptiveSearchTriesAnotherSourceAfterAnUnrelatedPage() {
+        val calls = AtomicInteger()
+        val fetcher = object : AgentWebIntelligenceFetcher {
+            override fun fetch(url: String, maxBytes: Long, timeoutMillis: Long,
+                cancellationToken: AgentNativeToolCancellationToken, checkpoint: () -> Unit
+            ): AgentWebIntelligenceFetched {
+                val title = if (calls.incrementAndGet() == 1) "Office document guide" else "Compact earbud dimensions"
+                return response(url, "text/html", """<li class="b_algo"><h2><a href="https://example.test/product">$title</a></h2></li>""")
+            }
+        }
+        val result = AgentWebIntelligenceSearchCoordinator(fetcher).search(
+            query = "compact earbud dimensions", engineFanout = 1, timeoutMillis = 2_000)
+        assertTrue(calls.get() > 1)
+        assertTrue(result.receipts.any { it.errorCode == "search_query_mismatch" })
+        assertTrue(result.results.any { it.title == "Compact earbud dimensions" })
+        assertFalse(result.results.any { it.title == "Office document guide" })
+    }
+
+    @Test
+    fun explicitSourceMismatchIsReportedWithoutDiscardingPossiblyParaphrasedEvidence() {
+        val fetcher = FixedFetcher(response("https://www.bing.com/search", "text/html",
+            """<li class="b_algo"><h2><a href="https://example.test/product">Miniature in-ear listening device</a></h2></li>"""))
+        val result = AgentWebIntelligenceSearchCoordinator(fetcher).search(
+            query = "compact earbud dimensions", requestedEngines = listOf("bing"), engineFanout = 1)
+        assertEquals(1, fetcher.calls)
+        assertEquals(1, result.results.size)
+        assertEquals("partial", result.status)
+        assertEquals("search_query_mismatch", result.receipts.single().errorCode)
+    }
+
+    @Test
     fun catalogExceedsEighteenSourcesAndCoversDistinctVerticals() {
         val entries = AgentWebIntelligenceEngineCatalog.entries
 
@@ -165,14 +196,19 @@ class AgentWebIntelligenceTest {
     }
 
     @Test
-    fun nativeCatalogExposesAllTenOperationsAsLowRiskTools() {
+    fun nativeCatalogExposesAllElevenOperationsAsLowRiskTools() {
         val service = AgentWebIntelligenceService(
             fetcher = FixedFetcher(),
             store = AgentInMemoryWebIntelligenceStore()
         )
         val definitions = AgentWebIntelligenceNativeTools.definitions(service)
 
-        assertEquals(10, definitions.size)
+        assertEquals(11, definitions.size)
+        definitions.filter { it.descriptor.id in AgentWebIntelligenceNativeTools.directSearchToolIds }.forEach {
+            assertFalse(it.descriptor.requiresEffectClaim)
+            assertTrue(AgentPhoneDevelopmentPolicy.isPhoneDevelopmentTool(it.descriptor.id))
+            assertTrue(PhoneAssistantToolPolicy.allowsRemotePhoneTool(it.descriptor.id))
+        }
         assertEquals(AgentWebIntelligenceNativeTools.toolIds, definitions.map { it.descriptor.id }.toSet())
         definitions.forEach {
             assertEquals(AgentNativeToolRisk.LOW, it.descriptor.risk)

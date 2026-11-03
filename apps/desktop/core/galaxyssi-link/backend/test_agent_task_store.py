@@ -2,6 +2,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agent_task_manager import AgentTaskManager, delivery_trace_metrics
 from agent_task_store import AgentTaskStore
@@ -40,6 +41,38 @@ def _record(index: int, conversation_id: str = "conversation-main") -> dict:
 
 
 class AgentTaskStoreTests(unittest.TestCase):
+    def test_recent_conversation_filter_preserves_global_window_and_decodes_only_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AgentTaskStore(Path(directory) / "tasks.sqlite3")
+            for index in range(8):
+                record = _record(index, "target" if index % 2 == 0 else "other")
+                record["updated_at"] = 1  # Exercise the task-ID tie breaker too.
+                store.upsert(record)
+            for limit in (1, 4, 8):
+                expected = [row for row in store.list_recent(limit) if row["conversation_id"] == "target"]
+                with patch.object(store, "_decode", wraps=store._decode) as decode:
+                    self.assertEqual(expected, store.list_recent(limit, conversation_id="target"))
+                self.assertEqual(len(expected), decode.call_count)
+            self.assertEqual([], store.list_recent(8, conversation_id=""))
+            self.assertEqual([], store.list_recent(8, conversation_id="missing"))
+
+    def test_manager_conversation_filter_preserves_artifacts_and_output_previews(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tasks.sqlite3"
+            store = AgentTaskStore(path)
+            for index in range(8):
+                record = _record(index, "target" if index % 2 == 0 else "other")
+                record["result"] = "large-output" * 2_000
+                record["output_files"] = [{"name": f"artifact-{index}.txt"}]
+                store.upsert(record)
+            manager = AgentTaskManager(state_path=path)
+            expected = [row for row in manager.list(limit=4) if row["conversation_id"] == "target"]
+            with patch.object(manager, "_public_with_output_preview", wraps=manager._public_with_output_preview) as preview:
+                self.assertEqual(expected, manager.list(limit=4, conversation_id="target"))
+            self.assertEqual(2, preview.call_count)
+            self.assertTrue(all(row["result_chunked"] for row in expected))
+            self.assertTrue(all(row["output_files"] for row in expected))
+
     def test_partial_result_is_persistent_and_sequence_deduplicated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "tasks.sqlite3"

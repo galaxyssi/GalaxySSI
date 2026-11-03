@@ -128,6 +128,16 @@ val buildNativeMemory = tasks.register<Exec>("buildNativeMemory") {
 }
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeMemory) }
 
+val stageInteractiveBrowserHelpers = tasks.register<Sync>("stageInteractiveBrowserHelpers") {
+    from(rootProject.file("../../tools/runtime")) {
+        include("browser-session-engine.cjs", "browser-session-cli.cjs", "browser-user-control.cjs", "browser-service-supervisor.cjs",
+            "browser-operation-receipts.cjs", "browser-runtime-readiness.cjs")
+        into("interactive-browser")
+    }
+    into(layout.buildDirectory.dir("generated/interactive-browser-assets"))
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(stageInteractiveBrowserHelpers) }
+
 tasks.matching { task ->
     task.name.startsWith("merge") && task.name.endsWith("NativeLibs")
 }.configureEach {
@@ -153,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1108
-        versionName = "1.4.23"
+        versionCode = 1425
+        versionName = "0.1.7.12"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -195,6 +205,7 @@ android {
             jniLibs.srcDir(qnnCompatJniRoot)
             jniLibs.srcDir(nativeMemoryJniRoot)
             assets.srcDir(runtimeAssetRoot)
+            assets.srcDir(layout.buildDirectory.dir("generated/interactive-browser-assets"))
             assets.srcDir(rootProject.file("../desktop/core/galaxyssi-link/backend/research_contract"))
         }
     }
@@ -290,12 +301,14 @@ android.sourceSets.getByName("androidTest").assets.srcDir("src/testFixtures/door
 
 dependencies {
     implementation(project(":llama-runtime"))
+    implementation(project(":collaboration-core"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("androidx.recyclerview:recyclerview:1.1.0")
-    implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
+    implementation(project(path = ":paho-runtime", configuration = "packagedRuntime"))
     implementation("org.signal:libsignal-android:0.86.5")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
     implementation("com.google.crypto.tink:tink-android:1.23.0")
     implementation("org.commonmark:commonmark:0.24.0")
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r")
@@ -312,12 +325,16 @@ dependencies {
     implementation("com.qualcomm.qti:qnn-litert-delegate:2.47.0")
     implementation("com.qualcomm.qti:geniex-android:0.3.18")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.sqlite:sqlite-bundled:2.6.2")
     implementation("com.github.jelmerk:hnswlib-core:1.2.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    implementation("com.vanniktech:android-image-cropper:4.7.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:translate:17.0.3")
+    implementation("com.google.mlkit:language-id:17.0.6")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { evaluateScenario, validateManifest } from "../../benchmark/agent-benchmark-lib.mjs";
+import { assignedSummary } from "./assigned-outcomes.mjs";
 
 export const UNKNOWN = "UNKNOWN";
 export const ARMS = ["A", "B"];
@@ -239,6 +240,7 @@ function summary(values) {
   const known = values.filter((v) => typeof v === "number" && Number.isFinite(v));
   return {
     expected_count: values.length, known_count: known.length, unknown_count: values.length - known.length,
+    mean_basis: "available_observations_only",
     mean: known.length ? known.reduce((a, b) => a + b, 0) / known.length : UNKNOWN,
     min: known.length ? Math.min(...known) : UNKNOWN, max: known.length ? Math.max(...known) : UNKNOWN
   };
@@ -258,6 +260,7 @@ export function compare(plan, corpus, input, expectedKind) {
     const eligible = a.eligible && b.eligible;
     return {
       pair_id: pairId, scenario_id: a.scenario_id, repetition: a.repetition, eligible,
+      slot_A: a.slot_id, slot_B: b.slot_id,
       exclusion_reasons: [...a.exclusion_reasons.map((r) => `A:${r}`), ...b.exclusion_reasons.map((r) => `B:${r}`)],
       delta_B_minus_A: Object.fromEntries(METRICS.map((metric) => [metric, eligible ? b.metrics[metric] - a.metrics[metric] : UNKNOWN]))
     };
@@ -270,6 +273,9 @@ export function compare(plan, corpus, input, expectedKind) {
     conclusion: input.evidence_kind === "fixture" ? "FIXTURE_ONLY_NO_CAPABILITY_CLAIM" :
       eligibleCount === pairs.length ? "DESCRIPTIVE_ONLY_NO_SUPERIORITY_CLAIM" : "INCOMPLETE_NO_SUPERIORITY_CLAIM",
     expected_pairs: pairs.length, eligible_pairs: eligibleCount, excluded_pairs: pairs.length - eligibleCount,
+    analysis_version: 2,
+    all_assigned: assignedSummary(records, pairs),
+    eligible_pair_analysis: "diagnostic_only_post_assignment_selection",
     arms: Object.fromEntries(ARMS.map((arm) => {
       const rows = records.filter((r) => r.arm_label === arm);
       return [arm, {
@@ -285,6 +291,7 @@ export function compare(plan, corpus, input, expectedKind) {
       const taskPairs = pairs.filter((p) => p.scenario_id === scenario.id);
       return { scenario_id: scenario.id, category: scenario.category,
         eligible_pairs: taskPairs.filter((p) => p.eligible).length, expected_pairs: taskPairs.length,
+        all_assigned: assignedSummary(records.filter((r) => r.scenario_id === scenario.id), taskPairs),
         paired_delta_B_minus_A: pairedStats(taskPairs) };
     }),
     records, pairs
@@ -347,7 +354,7 @@ export function accountingTemplate(plan) {
 export function renderMarkdown(report) {
   const fmt = (v) => typeof v === "number" ? Number(v.toFixed(3)) : v;
   const lines = ["# Equal-Budget Paired Evaluation", "", `Evidence: **${report.evidence_kind.toUpperCase()}**`,
-    `Conclusion: **${report.conclusion}**`, "", `Eligible pairs: ${report.eligible_pairs}/${report.expected_pairs}. Excluded: ${report.excluded_pairs}.`,
+    `Conclusion: **${report.conclusion}**`, "", `Diagnostic eligible pairs: ${report.eligible_pairs}/${report.expected_pairs}. Excluded from this diagnostic: ${report.excluded_pairs}.`,
     `Plan SHA-256: ${report.plan_sha256}`, `Input SHA-256: ${report.input_sha256}`,
     "", "Labels A/B are blinded. The private key is not loaded by the reporting command.",
     "All scheduled trials, including failures and missing trials, remain in report.json.",
@@ -360,7 +367,23 @@ export function renderMarkdown(report) {
     const row = report.arms[arm];
     lines.push(`| ${arm} | ${row.scheduled} | ${row.observed} | ${row.passed} | ${row.failed} | ${row.unknown_quality} |`);
   }
-  lines.push("", "## Paired Differences", "", "B minus A, eligible pairs only. Do not interpret excluded or missing pairs as ties.",
+  lines.push("", "## All Assigned Budget Constrained Completion", "",
+    "Every scheduled slot stays in the denominator. Verified noncompletion and verified budget excess score zero.",
+    "Missing, unfinished, unverified or potentially successful but unaccounted results remain UNKNOWN.",
+    "Bounds allow each unknown outcome to range from zero to one; they are NOT confidence intervals.",
+    "A point estimate is shown only when all assigned outcomes are known. No missing-at-random assumption is made.",
+    "", "| Arm | Assigned | Success | Policy failure | Unknown | Mean | Lower bound | Upper bound |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+  for (const arm of ARMS) {
+    const row = report.all_assigned.arms[arm];
+    lines.push(`| ${arm} | ${row.scheduled} | ${row.verified_successes} | ${row.verified_policy_failures} | ${row.unknown} | ${fmt(row.mean)} | ${fmt(row.lower)} | ${fmt(row.upper)} |`);
+  }
+  const assignedDelta = report.all_assigned.paired_delta_B_minus_A;
+  lines.push("", `B minus A over all ${assignedDelta.scheduled} scheduled pairs: mean ${fmt(assignedDelta.mean)}; bounds [${fmt(assignedDelta.lower)}, ${fmt(assignedDelta.upper)}].`,
+    "This observed policy endpoint does not estimate a counterfactual budget-compliant outcome for an over-budget trial.",
+    "A snapshot does not close collection. Missing rows are not proof of unattempted goals after budget exhaustion.",
+    "", "## Diagnostic Eligible Pair Differences", "", "B minus A, eligible pairs only. Post-assignment selection may bias these diagnostics; do not use them as an all-assigned treatment effect.",
+    "Do not interpret excluded or missing pairs as ties.",
     "", "| Metric | Pairs | Mean | Min | Max |", "| --- | ---: | ---: | ---: | ---: |");
   for (const metric of METRICS) {
     const row = report.paired_delta_B_minus_A[metric];

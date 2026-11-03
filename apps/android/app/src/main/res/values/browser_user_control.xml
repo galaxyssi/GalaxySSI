@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_user_control_title">Browser</string>
+    <string name="browser_user_control_waiting">Your task is waiting for your browser interaction.</string>
+    <string name="browser_user_control_back">Back</string>
+    <string name="browser_user_control_input">Enter text</string>
+    <string name="browser_user_control_show_input">Show input</string>
+    <string name="browser_user_control_refresh">Refresh</string>
+    <string name="browser_user_control_done">Return control to agent</string>
+    <string name="browser_user_control_error">Browser operation failed: %1$s</string>
+</resources>

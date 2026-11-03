@@ -6,6 +6,12 @@ import com.galaxyssi.chat.voice.VoiceConversationSession
 internal class AgentVoiceReplySpeech(private val session: VoiceConversationSession) {
     val controller = AgentReplySpeechController(sessionPrefix = "voice-call")
 
+    fun acknowledge(traceId: String, turnId: String, text: String): AgentReplySpeechCommand {
+        if (text.isBlank() || !session.claimAcknowledgement(traceId, turnId)) return AgentReplySpeechCommand()
+        // A transient confirmation is not a transcript entry and must not claim the answer's speech.
+        return controller.toggle(AgentReplySpeechTarget("voice-ack:$turnId", "", text, complete = true))
+    }
+
     fun observe(entries: List<AgentTranscriptEntry>): AgentReplySpeechCommand {
         if (!session.active || session.muted || session.latestTurnId.isBlank()) return controller.stop()
         val target = entries.asReversed().asSequence()
@@ -15,8 +21,9 @@ internal class AgentVoiceReplySpeech(private val session: VoiceConversationSessi
         if (target.text.isBlank()) {
             // A canonical visual-only final closes prior speech or completes silently.
             if (controller.isEnabled(target)) return controller.observe(target)
-            return AgentReplySpeechCommand(completedWithoutPlayback =
-                session.claimSpeech(session.conversationId, session.latestTurnId))
+            return if (session.claimSpeech(session.conversationId, session.latestTurnId)) {
+                controller.stop().copy(completedWithoutPlayback = true)
+            } else AgentReplySpeechCommand()
         }
         return when {
             session.claimSpeech(session.conversationId, session.latestTurnId) -> controller.toggle(target)

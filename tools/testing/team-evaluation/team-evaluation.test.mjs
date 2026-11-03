@@ -347,7 +347,7 @@ test("CLI requires explicit adapters, produces auditable local files, and never 
   assert.equal(emptyReport.eligible_pairs, 0);
   assert.equal(emptyReport.arms.A.observed + emptyReport.arms.B.observed, 0);
   assert.equal(emptyReport.conclusion, "INCOMPLETE_NO_SUPERIORITY_CLAIM");
-  for (const name of ["run.mjs", "lib.mjs", "fixture.mjs"]) {
+  for (const name of ["run.mjs", "lib.mjs", "fixture.mjs", "assigned-outcomes.mjs"]) {
     const source = fs.readFileSync(path.join(here, name), "utf8");
     assert.doesNotMatch(source, /child_process|\beval\s*\(|new Function|\bfetch\s*\(/);
   }
@@ -546,4 +546,205 @@ test("a rehashed plan with all pairs in the same arm order is still rejected", (
   const { plan_sha256, ...body } = plan;
   plan.plan_sha256 = digest(body);
   assert.throws(() => validatePlan(plan, corpus), /Unbalanced/);
+});
+
+function policyData() {
+  const data = makeActual();
+  for (const run of data.input.runs) {
+    run.result.status = "completed";
+    run.result.response = JSON.stringify(corpus.scenarios.find((s) => s.id === run.result.scenario_id).answers);
+  }
+  return data;
+}
+const policyReport = ({ plan, input }) => compare(plan, corpus, input, "actual");
+const policyRow = (report, run) => report.all_assigned.outcomes.find((row) => row.slot_id === run.slot_id);
+
+test("all-assigned completion uses every scheduled slot and matches complete known pairs", () => {
+  const data = policyData();
+  const report = policyReport(data);
+  assert.equal(report.analysis_version, 2);
+  for (const arm of ["A", "B"]) {
+    assert.deepEqual(report.all_assigned.arms[arm], { scheduled: 18, known: 18, unknown: 0,
+      mean: 1, lower: 1, upper: 1, verified_successes: 18, verified_policy_failures: 0 });
+  }
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.mean, 0);
+  assert.equal(report.all_assigned.outcomes.length, 36);
+  assert.equal(report.all_assigned.pairs.length, 18);
+  assert.equal(report.eligible_pair_analysis, "diagnostic_only_post_assignment_selection");
+  assert.equal(report.arms.A.metrics_all_scheduled.quality.mean_basis, "available_observations_only");
+});
+
+test("budget excess stays a policy failure even when eligible-only comparisons hide it", () => {
+  const data = policyData();
+  const slot = data.plan.slots.find((s) => s.arm_label === "B");
+  const run = data.input.runs.find((r) => r.slot_id === slot.slot_id);
+  run.accounting.wall_time_ms = observed(data.plan.budget.max_wall_time_ms + 1);
+  const report = policyReport(data);
+  assert.equal(rowFor(report, run).metrics.quality, 1);
+  assert.equal(report.eligible_pairs, 17);
+  assert.equal(report.paired_delta_B_minus_A.quality.mean, 0);
+  assert.equal(policyRow(report, run).value, 0);
+  assert.equal(policyRow(report, run).reason, "completed_outside_assigned_budget");
+  assert.equal(report.all_assigned.arms.B.mean, 17 / 18);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.mean, -1 / 18);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.scheduled, 18);
+});
+
+test("each measured budget excess is a policy failure and exact caps remain inclusive", () => {
+  for (const metric of ["wall_time_ms", "total_tokens", "cost_micros", "rework_count", "intervention_count"]) {
+    const data = policyData();
+    const run = data.input.runs[0];
+    const target = ["total_tokens", "cost_micros"].includes(metric) ? run.accounting.ledger.calls[0] : run.accounting;
+    target[metric] = observed(data.plan.budget[`max_${metric}`]);
+    assert.equal(policyRow(policyReport(data), run).value, 1);
+    target[metric].value += 1;
+    assert.equal(policyRow(policyReport(data), run).value, 0);
+    delete target[metric];
+    assert.equal(policyRow(policyReport(data), run).value, UNKNOWN);
+  }
+});
+
+test("unknown cost does not erase a verified terminal failure or fabricate a free trial", () => {
+  for (const status of ["failed", "timeout", "cancelled", "interrupted", "partial"]) {
+    const data = policyData();
+    const run = data.input.runs[0];
+    run.result.status = status;
+    run.accounting = {};
+    run.budget.enforced = false;
+    const report = policyReport(data);
+    assert.equal(rowFor(report, run).eligible, false);
+    assert.equal(rowFor(report, run).metrics.cost_micros, UNKNOWN);
+    assert.equal(policyRow(report, run).value, 0);
+    assert.equal(policyRow(report, run).reason, "verified_noncompletion");
+  }
+});
+
+test("verified rubric noncompletion remains zero with unknown resources", () => {
+  const data = policyData();
+  const run = data.input.runs[0];
+  const answer = JSON.parse(run.result.response);
+  answer[Object.keys(answer)[0]] = "incorrect";
+  run.result.response = JSON.stringify(answer);
+  run.accounting.ledger.complete = false;
+  const report = policyReport(data);
+  assert.ok(rowFor(report, run).metrics.quality > 0);
+  assert.equal(policyRow(report, run).value, 0);
+});
+
+test("potential successes with incomplete budgets have bounds not a complete-case mean", () => {
+  const data = policyData();
+  const slot = data.plan.slots.find((s) => s.arm_label === "B");
+  const run = data.input.runs.find((r) => r.slot_id === slot.slot_id);
+  run.accounting.ledger.calls[0].cost_micros.complete = false;
+  const report = policyReport(data);
+  assert.equal(policyRow(report, run).value, UNKNOWN);
+  assert.equal(report.all_assigned.arms.B.mean, UNKNOWN);
+  assert.equal(report.all_assigned.arms.B.lower, 17 / 18);
+  assert.equal(report.all_assigned.arms.B.upper, 1);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.mean, UNKNOWN);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.lower, -1 / 18);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.upper, 0);
+});
+
+test("known excess is conclusive policy noncompletion even if another resource is unknown", () => {
+  const data = policyData();
+  const run = data.input.runs[0];
+  run.accounting.wall_time_ms = observed(data.plan.budget.max_wall_time_ms + 1);
+  run.accounting.ledger.complete = false;
+  assert.equal(policyRow(policyReport(data), run).value, 0);
+});
+
+test("missing and nonterminal slots remain unknown even at an apparently exhausted cap", () => {
+  const data = policyData();
+  const missing = data.input.runs.shift();
+  const running = data.input.runs[0];
+  running.result.status = "running";
+  running.accounting.wall_time_ms = observed(data.plan.budget.max_wall_time_ms + 1);
+  const report = policyReport(data);
+  for (const run of [missing, running]) assert.equal(policyRow(report, run).value, UNKNOWN);
+  assert.equal(report.all_assigned.outcomes.length, data.plan.slots.length);
+  assert.equal(report.all_assigned.paired_delta_B_minus_A.mean, UNKNOWN);
+});
+
+test("absent observations produce full zero-to-one arm bounds and minus-one-to-one difference bounds", () => {
+  const data = policyData();
+  data.input.runs = [];
+  const report = policyReport(data);
+  assert.deepEqual(report.all_assigned.paired_delta_B_minus_A,
+    { scheduled: 18, known: 0, unknown: 18, mean: UNKNOWN, lower: -1, upper: 1 });
+  for (const arm of ["A", "B"]) {
+    assert.equal(report.all_assigned.arms[arm].mean, UNKNOWN);
+    assert.equal(report.all_assigned.arms[arm].lower, 0);
+    assert.equal(report.all_assigned.arms[arm].upper, 1);
+    assert.equal(report.all_assigned.arms[arm].verified_policy_failures, 0);
+  }
+});
+
+test("invalid identity, controls, or capture cannot convert an untrusted failure into a known zero", () => {
+  for (const mutate of [
+    (r) => { r.result.run_id = "wrong"; },
+    (r) => { r.result.scenario_id = "wrong"; },
+    (r) => { r.capture.complete = false; },
+    (r) => { r.capture.assignment_verified = false; },
+    (r) => { r.capture.order = 0; },
+    (r) => { r.capture.request_sha256 = "wrong"; },
+    (r) => { r.controls.model_policy = "other"; },
+    (r) => { r.budget.limits.max_total_tokens += 1; }
+  ]) {
+    const data = policyData();
+    const run = data.input.runs[0];
+    run.result.status = "failed";
+    mutate(run);
+    assert.equal(policyRow(policyReport(data), run).value, UNKNOWN);
+  }
+});
+
+test("unverified budget enforcement never certifies a policy success", () => {
+  const data = policyData();
+  const run = data.input.runs[0];
+  run.budget.enforced = false;
+  assert.equal(policyRow(policyReport(data), run).value, UNKNOWN);
+});
+
+test("all-assigned task slices preserve denominators and do not mutate the audit input", () => {
+  const data = policyData();
+  data.input.runs[0].accounting.ledger.complete = false;
+  const original = structuredClone(data);
+  const report = policyReport(data);
+  assert.deepEqual(data, original);
+  for (const task of report.by_task) {
+    assert.equal(task.all_assigned.arms.A.scheduled, 3);
+    assert.equal(task.all_assigned.arms.B.scheduled, 3);
+    assert.equal(task.all_assigned.paired_delta_B_minus_A.scheduled, 3);
+  }
+  assert.equal(report.by_task.reduce((sum, task) => sum + task.all_assigned.arms.A.unknown + task.all_assigned.arms.B.unknown, 0), 1);
+});
+
+test("all-assigned markdown presents bounds before explicitly diagnostic selected-pair means", () => {
+  const data = policyData();
+  data.input.runs = [];
+  const markdown = renderMarkdown(policyReport(data));
+  assert.match(markdown, /NOT confidence intervals/);
+  assert.match(markdown, /Post-assignment selection may bias/);
+  assert.match(markdown, /A snapshot does not close collection/);
+  assert.ok(markdown.indexOf("## All Assigned") < markdown.indexOf("## Diagnostic Eligible"));
+  assert.match(markdown, /bounds \[-1, 1\]/);
+});
+
+test("missing-outcome bounds contain every possible binary completion of a partial report", () => {
+  const data = policyData();
+  const uncertain = data.input.runs.slice(0, 3);
+  for (const run of uncertain) run.accounting.ledger.complete = false;
+  const partial = policyReport(data).all_assigned.paired_delta_B_minus_A;
+  const deltas = [];
+  for (let mask = 0; mask < 8; mask += 1) {
+    const completed = structuredClone(data);
+    for (let i = 0; i < 3; i += 1) {
+      completed.input.runs[i].accounting.ledger.complete = true;
+      completed.input.runs[i].result.status = (mask & (1 << i)) ? "completed" : "failed";
+    }
+    deltas.push(policyReport(completed).all_assigned.paired_delta_B_minus_A.mean);
+  }
+  assert.equal(partial.lower, Math.min(...deltas));
+  assert.equal(partial.upper, Math.max(...deltas));
 });

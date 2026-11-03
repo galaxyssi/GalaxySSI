@@ -2,6 +2,11 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
+import com.galaxyssi.chat.voice.audio.PlaybackEchoReference
 import com.galaxyssi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.galaxyssi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.galaxyssi.chat.voice.metrics.VoiceTraceEvents
@@ -12,7 +17,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import java.io.ByteArrayOutputStream
-import java.io.File
+import java.io.IOException
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -29,6 +34,8 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class MicrosoftEdgeTts(private val context: Context) {
+    internal val echoReference = PlaybackEchoReference()
+    private val referenceCleanup = Handler(Looper.getMainLooper())
     private data class PrefetchRequest(
         val sessionId: String,
         val key: String,
@@ -72,6 +79,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         onPlaybackStarted: () -> Unit = {},
         recordCompletion: Boolean = true,
         communicationPlayback: Boolean = false,
+        mediaPlayback: Boolean = false,
         onDone: (Boolean, String?) -> Unit
     ) {
         if (text.isBlank()) {
@@ -84,9 +92,10 @@ class MicrosoftEdgeTts(private val context: Context) {
             val result = runCatching {
                 val audio = awaitPrefetchedAudio(prefetchKey, text, voice, generation)
                     ?: synthesizeCurrent(text, voice, traceId, generation)
+                if (BuildConfig.DEBUG) Log.i("GalaxySSIVoice", "Edge TTS audio ready voice=$voice bytes=${audio.size} protocol=2")
                 try {
                     ensureCurrent(generation)
-                    playAudio(audio, traceId, generation, onPlaybackStarted, communicationPlayback)
+                    playAudio(audio, traceId, generation, onPlaybackStarted, communicationPlayback, mediaPlayback)
                     ensureCurrent(generation)
                 } finally {
                     audio.fill(0)
@@ -104,6 +113,11 @@ class MicrosoftEdgeTts(private val context: Context) {
                 }
                 onDone(true, null)
             } else {
+                if (!cancelled && BuildConfig.DEBUG) {
+                    val failure = result.exceptionOrNull()
+                    val status = (failure as? MicrosoftEdgeTtsHandshakeException)?.statusCode
+                    Log.w("GalaxySSIVoice", "Edge TTS failed voice=$voice type=${failure?.javaClass?.simpleName} http=$status")
+                }
                 if (recordCompletion && !cancelled) {
                     trace(
                         traceId,
@@ -190,6 +204,7 @@ class MicrosoftEdgeTts(private val context: Context) {
 
     fun shutdown() {
         stop()
+        echoReference.clear()
         prefetchExecutor.shutdownNow()
         client.dispatcher.executorService.shutdown()
     }
@@ -346,52 +361,69 @@ class MicrosoftEdgeTts(private val context: Context) {
         traceId: String,
         generation: Long,
         onPlaybackStarted: () -> Unit,
-        communicationPlayback: Boolean
+        communicationPlayback: Boolean,
+        mediaPlayback: Boolean
     ) {
         ensureCurrent(generation)
-        val file = File(context.cacheDir, "galaxyssi_tts_${System.currentTimeMillis()}.mp3")
-        file.writeBytes(audio)
+        val source = SpeechAudioDataSource(audio)
         val latch = CountDownLatch(1)
+        val failure = AtomicReference<IOException?>(null)
         val mp = MediaPlayer()
-        mp.setAudioAttributes(com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(communicationPlayback))
-        synchronized(playbackLock) {
+        var reference: FloatArray? = null
+        var referenceId: Long? = null
+        try {
+            if (communicationPlayback) {
+                val preparedAt = SystemClock.elapsedRealtime()
+                val prepared = runCatching {
+                    val pcm = LocalWhisperAsr.decodeAudioBytesToPcm16(audio.copyOf(), "mp3")
+                    try { PlaybackEchoReference.prepare(pcm) } finally { pcm.fill(0) }
+                }
+                reference = prepared.getOrNull()
+                trace(traceId, "tts_echo_reference_prepared", mapOf(
+                    "success" to prepared.isSuccess.toString(),
+                    "duration_ms" to (SystemClock.elapsedRealtime() - preparedAt).toString(),
+                    "error_code" to prepared.exceptionOrNull()?.javaClass?.simpleName.orEmpty()
+                ))
+            }
+            mp.setAudioAttributes(if (mediaPlayback) android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()
+                else com.galaxyssi.chat.voice.audio.VoiceCommunicationAudioSession.playbackAttributes(communicationPlayback))
+            synchronized(playbackLock) {
+                ensureCurrent(generation)
+                player = mp
+                activePlaybackLatch = latch
+            }
+            mp.setDataSource(source)
+            mp.setOnCompletionListener { latch.countDown() }
+            mp.setOnErrorListener { _, what, extra ->
+                failure.set(IOException("speech_playback_failed:$what:$extra"))
+                latch.countDown()
+                true
+            }
+            mp.prepare()
             ensureCurrent(generation)
-            player = mp
-            activePlaybackLatch = latch
-        }
-        mp.setDataSource(file.absolutePath)
-        mp.setOnCompletionListener {
-            it.release()
+            mp.start()
+            reference?.let {
+                referenceId = echoReference.start(it, SystemClock.elapsedRealtime())
+                reference = null
+            }
+            runCatching(onPlaybackStarted)
+            trace(traceId, VoiceTraceEvents.TTS_PLAYBACK_STARTED, mapOf("tts_provider" to "microsoft_edge"), once = true)
+            check(latch.await(90, TimeUnit.SECONDS)) { "speech_playback_timeout" }
+            ensureCurrent(generation)
+            failure.get()?.let { throw it }
+        } finally {
+            reference?.fill(0f)
+            referenceId?.let { echoReference.finish(it, SystemClock.elapsedRealtime()) }
+            referenceCleanup.postDelayed({ echoReference.prune(SystemClock.elapsedRealtime()) }, 1_100L)
             synchronized(playbackLock) {
-                if (player === it) player = null
+                if (player === mp) player = null
                 if (activePlaybackLatch === latch) activePlaybackLatch = null
             }
-            file.delete()
-            latch.countDown()
+            runCatching { mp.release() }
+            source.close()
         }
-        mp.setOnErrorListener { mediaPlayer, _, _ ->
-            mediaPlayer.release()
-            synchronized(playbackLock) {
-                if (player === mediaPlayer) player = null
-                if (activePlaybackLatch === latch) activePlaybackLatch = null
-            }
-            file.delete()
-            latch.countDown()
-            true
-        }
-        mp.prepare()
-        ensureCurrent(generation)
-        mp.start()
-        runCatching(onPlaybackStarted)
-        trace(
-            traceId,
-            VoiceTraceEvents.TTS_PLAYBACK_STARTED,
-            mapOf("tts_provider" to "microsoft_edge"),
-            once = true
-        )
-        latch.await(90, TimeUnit.SECONDS)
-        file.delete()
-        ensureCurrent(generation)
     }
 
     private fun beginRequest(): Long {

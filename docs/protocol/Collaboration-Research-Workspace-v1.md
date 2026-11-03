@@ -61,6 +61,36 @@ The criterion must already preserve documentary verification and required origin
 
 A refuted exact review can append `revise`, then `review` of the new version, under existing runtime capacity and pause/stop controls. These transitions do not need another coordinator model call. A different candidate can proceed concurrently. Publication must contain the single assigned exact revision/review; after a committed publication and process loss, the worker replays the host receipt instead of reexecuting. Unknown/in-flight dispatches wait for authoritative reconciliation. Terminal errors retain feedback for coordinator replanning; they are never converted to successful verification.
 
+A host-completed documentary review with no committed publication may be settled as
+`retryable_review`. The coordinator can explicitly enroll the same exact candidate
+version with `retry_review: {node_id: "old completed dispatch", reason: "specific
+publication correction"}` and an authorized independent reviewer. This appends new
+work; it does not replace the original dispatch, change the source/criterion
+contract or rerun an experiment. The old outcome is retained in
+`prior_settlements`. Consumed retry requests are idempotent, while a newer pending
+attempt cannot be overwritten by replaying an older request for the same version.
+
+This exception requires an actual host success result, not a progress message or
+an inference from elapsed time. Failed, cancelled, skipped, unknown and in-flight
+executions are ineligible, as are repairs and already published reviews. Admission
+still respects pause/stop, capacity and scoped producer dependencies. A late old
+publication prevents new admission, execution and publication through the existing
+workspace transaction checks. At replacement worker enrollment, the host atomically
+stores its publication contract and an immutable retirement record for the old
+dispatch. Both records bind the exact group/run/turn, node, person and contract.
+If the old publication commits first, replacement enrollment fails; if retirement
+commits first, late old output cannot create workspace revisions, even when the
+caller omits candidate metadata. The late raw output is retained in the old
+publication journal with a non-repairable retirement receipt. Repeated identical
+delivery does not add another attempt. Reopening a retired repair session or
+replaying its candidate work fails closed. Subsequent repair/recheck work keeps
+its own identity; the predecessor remains retired across process recreation.
+No fixed retry count is added; an explicit useful
+correction is required, not extra votes until a preferred answer wins. This is not
+automatic offline owner replacement or remote side-effect cancellation. See the
+[reassignment tests](../testing/COLLABORATION_REVIEW_REASSIGNMENT.md) and
+[publication retirement tests](../testing/COLLABORATION_PUBLICATION_RETIREMENT.md).
+
 These checks enforce documentary lineage, scope and execution integrity. They do not rank scientific merit, certify a physical experiment, or make a majority vote true. Pending cycles prevent goal acceptance; settled cycles do not by themselves allow acceptance. Computational/physical candidate evaluators and real-provider repair reliability need separate acceptance.
 
 ## Host-observed tool evidence
@@ -99,9 +129,19 @@ Criteria that depend on a specific kind of original tool evidence can preserve `
 
 The Android host evaluates these records at the managed member-completion boundary and places a typed acceptance receipt outside the model response text. The receipt binds the assessment, preserved criteria, original goal, root run, turn and coordinator node. It is persisted with the child result and recovered with the execution checkpoint. Text that imitates the receipt is ignored. Truncated or changed output cannot reuse it. Snapshot rendering uses the stored receipt and does not rescan workspace/evidence storage.
 
-This check establishes documentary delivery and independent review of a precise version. It does not certify scientific truth or the relevance/correctness of every sentence. Computational and physical criteria require qualified execution/experimental adapters and cannot yet pass through this documentary validator. They remain open for actual execution/resource work; they must not be relabeled as documentary or satisfied by simulation. Semantic coverage of the original goal, real file/source checks and domain-specific validation remain explicit follow-up requirements.
+This check establishes documentary delivery and independent review of a precise version. It does not certify scientific truth or the relevance/correctness of every sentence. Computational and physical criteria require qualified execution/experimental adapters, not this documentary validator alone. They remain open for actual execution/resource work; they must not be relabeled as documentary or satisfied by simulation. Semantic correctness and domain-specific validation remain explicit limitations; the source-coverage contract below checks completeness and review integrity rather than semantic truth.
 
 An unverified completion returns repair feedback to the coordinator and follows the existing goal-continuation/checkpoint rules rather than publishing a successful final delivery. This does not add a step limit or override pause/stop, permissions or resource-blocker handling. Previously completed records without this gate are retained as `unverified_history`, not retroactively certified and not automatically restarted by upgrade. Every newly created goal, new execution event and continued batch enables the gate.
+
+### Multipart original-goal coverage
+
+Formal completion also requires an exact saved goal mapping and an independent `body.semantic_coverage_review`. Each mapping binds host `goal_sha256`, the full `criteria_sha256` and host source IDs; it cannot substitute a summary, rewritten source text or model-counted offsets. Source slices are mechanical reference units, not a host claim to have interpreted every requirement. Each review names the exact mapping version and explicitly assesses every assigned source ID and criterion association. The evaluating coordinator and mapping contributors cannot certify their own coverage.
+
+Android 1.4.27 accepts either `goal_coverage: {mapping, review}` or `goal_coverage: {parts: [{mapping, review}, ...]}`. Parts can be authored and independently reviewed by different members. All parts bind the same original goal and criteria; their union must cover every source ID exactly once and every criterion at least once. Each part's review is checked independently, including unselected dissent, current versions and contributor ancestry. No fixed total part count is introduced.
+
+Large collections can be saved as `kind=artifact`, `body.semantic_goal_manifest`, with format `galaxyssi.semantic-goal-manifest.v1`, full host goal/criteria hashes, and either `parts` or `manifests` containing exact child references. Each referenced mapping, review or child directory must also appear in `parents`. Completion then references only `goal_coverage: {manifest: exact root reference}`. Empty/mixed directories, repeated branches, cycles, duplicate mappings, stale revisions and foreign-run material fail. Resolution is iterative; all directory versions are rechecked within the same mutation-fenced acceptance operation as their reviews. See [multipart coverage validation](../testing/COLLABORATION_MULTIPART_GOAL_COVERAGE.md).
+
+Original tool observations cited by a selected review retain the separate [host read-coverage contract](../testing/COLLABORATION_EVIDENCE_READ_COVERAGE.md). Full pages served to a scoped member before publication are not proof of provider receipt, comprehension, scientific correctness or successful experimentation.
 
 ## Retrieval and removal
 

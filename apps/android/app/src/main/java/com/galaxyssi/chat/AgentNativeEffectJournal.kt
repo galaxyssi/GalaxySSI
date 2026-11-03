@@ -19,11 +19,21 @@ class EncryptedAgentNativeToolReplayStore internal constructor(
     }
 
     override fun claim(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String): AgentNativeEffectClaim {
+        return claimInternal(key, inputSha256, invocationId, null)
+    }
+
+    override fun claimWithRecovery(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String,
+        recoveryQuery: AgentNativeEffectRecoveryQuery): AgentNativeEffectClaim =
+        claimInternal(key, inputSha256, invocationId, recoveryQuery)
+
+    private fun claimInternal(key: AgentNativeToolReplayKey, inputSha256: String, invocationId: String,
+        recoveryQuery: AgentNativeEffectRecoveryQuery?): AgentNativeEffectClaim {
         migrate()
         requireBoundLegacy(key)
         val acquired = store.appendInitialIfAbsent(event(key, "claim", AgentRunControlEventType.RUN_STARTED,
-            mapOf("input_sha256" to inputSha256, "owner" to invocationId)))
-        return if (acquired) AgentNativeEffectClaim(true, invocationId, inputSha256)
+            mapOf("input_sha256" to inputSha256, "owner" to invocationId) +
+                if (recoveryQuery == null) emptyMap() else mapOf("recovery_query" to recoveryQuery.toJsonValue())))
+        return if (acquired) AgentNativeEffectClaim(true, invocationId, inputSha256, recoveryQuery = recoveryQuery)
         else requireNotNull(read(key)) { "Native effect claim disappeared" }
     }
 
@@ -85,7 +95,9 @@ class EncryptedAgentNativeToolReplayStore internal constructor(
         }
         val owner = last.payload["owner"] as? String ?: error("Native effect owner is missing")
         val input = last.payload["input_sha256"] as? String ?: error("Native effect input digest is missing")
-        if (last.type == AgentRunControlEventType.RUN_STARTED) return AgentNativeEffectClaim(false, owner, input)
+        if (last.type == AgentRunControlEventType.RUN_STARTED) return AgentNativeEffectClaim(false, owner, input,
+            recoveryQuery = if (last.payload.containsKey("recovery_query"))
+                AgentNativeEffectRecoveryQuery.fromJsonValue(last.payload["recovery_query"]) else null)
         check(last.type == AgentRunControlEventType.RUN_COMPLETED) { "Incomplete native effect result" }
         val count = (last.payload["chunks"] as? Number)?.toInt() ?: error("Native effect chunk count is missing")
         check(count > 0) { "Native effect has no result chunks" }

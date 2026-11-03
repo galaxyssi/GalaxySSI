@@ -768,6 +768,10 @@ internal fun MainActivity.globalTopicRelationLabel(kind: GlobalTopicRelationKind
 })
 
 internal fun MainActivity.showGlobalInsightsDialog() {
+    startActivity(android.content.Intent(this, ProactiveAttentionActivity::class.java))
+}
+
+internal fun MainActivity.showLegacyGlobalInsightsDialog() {
     val runtime = if (isGlobalSuperAgentRuntimeInitialized()) {
         globalSuperAgentRuntime
     } else GlobalSuperAgentRuntime.get(this)
@@ -946,31 +950,31 @@ internal fun MainActivity.openAgentConversation(conversationId: String) {
     refreshAgentConversationHeader()
     refreshAgentTranscriptWindow(destination)
     refreshGlobalInsightIndicator()
+    offerPendingDeviceOperationAccess(destination)
+    continueVisibleAgentPermissionGate()
 }
 
-internal fun MainActivity.refreshGlobalInsightIndicator(countOverride: Int? = null) {
-    if (!isAgentInsightBarInitialized() || !isAgentInsightTextInitialized()) return
-    val runtime = if (isGlobalSuperAgentRuntimeInitialized()) {
-        globalSuperAgentRuntime
-    } else return
-    if (countOverride == null) {
-        if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
-        navigationContentExecutor.execute {
-            val count = runCatching(runtime::newProactiveInsightCount).getOrNull()
-            handler.post {
-                globalInsightCountRefreshInProgress.set(false)
-                if (count != null && !isFinishing && !isDestroyed) {
-                    refreshGlobalInsightIndicator(count)
-                }
+internal fun MainActivity.refreshGlobalInsightIndicator() {
+    if (!isAgentChatShortcutsInitialized()) return
+    if (!isGlobalSuperAgentRuntimeInitialized()) return
+    if (!globalInsightCountRefreshInProgress.compareAndSet(false, true)) return
+    navigationContentExecutor.execute {
+        val counts = runCatching { GlobalAgentRepository(applicationContext).proactiveInboxCounts() }.getOrNull()
+        handler.post {
+            globalInsightCountRefreshInProgress.set(false)
+            if (counts != null && !isFinishing && !isDestroyed) {
+                renderGlobalInsightIndicator(counts)
             }
         }
-        return
     }
-    val count = countOverride
-    agentInsightBar.visibility = if (count > 0) View.VISIBLE else View.GONE
-    if (count > 0) {
-        agentInsightText.text = resources.getQuantityString(R.plurals.agent_global_new_insights, count, count)
-    }
+}
+
+internal fun MainActivity.renderGlobalInsightIndicator(items: List<GlobalProactiveInboxItem>) {
+    renderGlobalInsightIndicator(ProactiveInboxCounts(items.size, GlobalProactiveInboxPolicy.newCount(items)))
+}
+
+internal fun MainActivity.renderGlobalInsightIndicator(counts: ProactiveInboxCounts) {
+    agentChatShortcuts.showFeedUnread(counts.unread)
 }
 
 internal fun MainActivity.showGlobalLearningDialog() {

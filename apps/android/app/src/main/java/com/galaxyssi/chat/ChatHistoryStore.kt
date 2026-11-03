@@ -56,6 +56,10 @@ object ChatHistoryStore {
     )
 
     @Synchronized
+    internal fun viewportPage(context: Context, contactId: String, anchorSequence: Long?, pageSize: Int):
+        ChatHistoryViewportPage = database(context).viewportPage(contactId, anchorSequence, pageSize)
+
+    @Synchronized
     internal fun contactSummaries(context: Context): List<ChatHistoryContactSummary> =
         database(context).readContactSummaries()
 

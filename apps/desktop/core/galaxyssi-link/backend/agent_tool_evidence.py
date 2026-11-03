@@ -83,13 +83,17 @@ class AgentToolEvidence:
                 CREATE TABLE IF NOT EXISTS agent_tool_evidence (
                     scope TEXT NOT NULL, evidence_id TEXT NOT NULL, sequence INTEGER NOT NULL,
                     task_id TEXT NOT NULL REFERENCES agent_tasks(task_id) ON DELETE CASCADE,
-                    digest TEXT NOT NULL, descriptor TEXT NOT NULL,
+                    digest TEXT NOT NULL, descriptor TEXT NOT NULL, phone_import INTEGER NOT NULL DEFAULT 1,
                     PRIMARY KEY(scope,evidence_id), UNIQUE(scope,sequence));
                 CREATE TABLE IF NOT EXISTS agent_tool_evidence_pages (
                     scope TEXT NOT NULL, evidence_id TEXT NOT NULL, page INTEGER NOT NULL, body TEXT NOT NULL,
                     PRIMARY KEY(scope,evidence_id,page),
                     FOREIGN KEY(scope,evidence_id) REFERENCES agent_tool_evidence(scope,evidence_id) ON DELETE CASCADE);
             """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(agent_tool_evidence)")}
+            if "phone_import" not in columns:
+                db.execute("ALTER TABLE agent_tool_evidence ADD COLUMN phone_import INTEGER NOT NULL DEFAULT 1")
+            db.execute("CREATE INDEX IF NOT EXISTS tool_evidence_phone_import ON agent_tool_evidence(scope,phone_import,sequence)")
             self._initialized = True
 
     def _scope(self, fields: dict, generation: int) -> str:
@@ -150,11 +154,13 @@ class AgentToolEvidence:
                     descriptor = {"evidence_id": evidence_id, "sha256": digest, "sequence": sequence,
                                   "total_bytes": len(body), "page_count": (len(body) + PAGE_BYTES - 1) // PAGE_BYTES,
                                   "item_type": item["type"], "outcome": observation_outcome(item), "trust": TRUST,
-                                  "coverage": "provider_payload_as_received", "recorded_at": int(time.time() * 1000)}
+                                  "coverage": "provider_payload_as_received", "recorded_at": int(time.time() * 1000),
+                                  "phone_import": not (item["type"] == "dynamicToolCall" and item.get("tool") == "collaboration_recall")}
                     encrypted = encrypt_text(self.path, canonical(descriptor).decode(),
                                              purpose=self._purpose(scope, evidence_id, "meta"))
-                    db.execute("INSERT INTO agent_tool_evidence VALUES(?,?,?,?,?,?)",
-                               (scope, evidence_id, sequence, fields["task_id"], digest, encrypted))
+                    db.execute("INSERT INTO agent_tool_evidence(scope,evidence_id,sequence,task_id,digest,descriptor,phone_import) "
+                               "VALUES(?,?,?,?,?,?,?)", (scope, evidence_id, sequence, fields["task_id"], digest, encrypted,
+                                                         int(descriptor["phone_import"])))
                     for page in range(descriptor["page_count"]):
                         chunk = base64.b64encode(body[page * PAGE_BYTES:(page + 1) * PAGE_BYTES]).decode()
                         encrypted = encrypt_text(self.path, chunk, purpose=self._purpose(scope, evidence_id, page))
@@ -169,7 +175,7 @@ class AgentToolEvidence:
             raise EvidenceConflict("Evidence index integrity check failed")
         return result
 
-    def query(self, request: dict, *, client_route_id: str) -> dict | None:
+    def query(self, request: dict, *, client_route_id: str, phone_import: bool = False) -> dict | None:
         fields = {key: request.get(key) for key in IDENTITY_FIELDS}
         generation, nonce = request.get("execution_generation"), request.get("request_id")
         mode = request.get("mode", "index")
@@ -180,7 +186,10 @@ class AgentToolEvidence:
             return None
         cursor, page, evidence_id, digest = (request.get("after_sequence", 0), request.get("page_index"),
                                              request.get("evidence_id"), request.get("sha256"))
+        inline_budget = request.get("inline_page_bytes", 0)
         if mode == "index" and (type(cursor) is not int or not 0 <= cursor <= 2**53 - 1):
+            return None
+        if type(inline_budget) is not int or not 0 <= inline_budget <= PAGE_BYTES:
             return None
         if mode == "page" and (type(page) is not int or not 0 <= page <= 2**31 - 1 or any(
                 not isinstance(value, str) or not re.fullmatch("[a-f0-9]{64}", value) for value in (evidence_id, digest))):
@@ -193,31 +202,51 @@ class AgentToolEvidence:
             try:
                 with db:
                     db.execute("BEGIN")
-                    if self._current(db, fields, generation) is None:
+                    task = self._current(db, fields, generation)
+                    if task is None:
                         return response
                     if mode == "index":
-                        rows = db.execute("SELECT evidence_id,digest,descriptor,sequence FROM agent_tool_evidence "
-                                          "WHERE scope=? AND sequence>? ORDER BY sequence LIMIT ?",
+                        # Keep full originals in the Desktop archive; do not send phone-owned recall bodies back to the phone.
+                        selection = " AND phone_import=1" if phone_import else ""
+                        rows = db.execute("SELECT evidence_id,digest,descriptor,sequence,phone_import FROM agent_tool_evidence "
+                                          "WHERE scope=? AND sequence>?" + selection + " ORDER BY sequence LIMIT ?",
                                           (scope, cursor, INDEX_PAGE_SIZE + 1)).fetchall()
                         entries = [self._descriptor(row[2], scope, row[0], row[1]) for row in rows[:INDEX_PAGE_SIZE]]
-                        if any(entry["sequence"] != row[3] for entry, row in zip(entries, rows)):
+                        if any(entry["sequence"] != row[3] or entry.get("phone_import", True) != bool(row[4])
+                               for entry, row in zip(entries, rows)):
                             raise EvidenceConflict("Evidence sequence integrity check failed")
+                        inline = []
+                        remaining = inline_budget
+                        for entry in entries:
+                            if entry["page_count"] == 1 and entry["total_bytes"] <= remaining:
+                                body = self._page(db, scope, entry, 0)
+                                if body is not None:
+                                    inline.append(body)
+                                    remaining -= entry["total_bytes"]
                         return {**response, "status": "ready", "entries": entries,
                                 "next_sequence": entries[-1]["sequence"] if entries else cursor,
                                 "has_more": len(rows) > INDEX_PAGE_SIZE,
+                                "archive_final": task.get("status") in {"completed", "failed", "cancelled", "timed_out"},
+                                "inline_pages": inline,
+                                "projection": "external_execution_observations" if phone_import else "all_observations",
                                 "coverage": "observed_completed_items_only", "provider_history_complete": False}
                     row = db.execute("SELECT digest,descriptor FROM agent_tool_evidence WHERE scope=? AND evidence_id=?",
                                      (scope, evidence_id)).fetchone()
                     if row is None or row[0] != digest:
                         return response
                     descriptor = self._descriptor(row[1], scope, evidence_id, digest)
-                    chunk = db.execute("SELECT body FROM agent_tool_evidence_pages WHERE scope=? AND evidence_id=? AND page=?",
-                                       (scope, evidence_id, page)).fetchone()
-                    if chunk is None or page >= descriptor["page_count"]:
-                        return response
-                    encoded = decrypt_text(self.path, chunk[0], purpose=self._purpose(scope, evidence_id, page))
-                    raw = base64.b64decode(encoded, validate=True)
-                    return {**response, **descriptor, "status": "ready", "page_index": page,
-                            "page_sha256": hashlib.sha256(raw).hexdigest(), "data_b64": encoded}
+                    body = self._page(db, scope, descriptor, page)
+                    return {**response, **body} if body is not None else response
             finally:
                 db.close()
+
+    def _page(self, db, scope, descriptor, page):
+        evidence_id = descriptor["evidence_id"]
+        chunk = db.execute("SELECT body FROM agent_tool_evidence_pages WHERE scope=? AND evidence_id=? AND page=?",
+                           (scope, evidence_id, page)).fetchone()
+        if chunk is None or page >= descriptor["page_count"]:
+            return None
+        encoded = decrypt_text(self.path, chunk[0], purpose=self._purpose(scope, evidence_id, page))
+        raw = base64.b64decode(encoded, validate=True)
+        return {**descriptor, "status": "ready", "page_index": page,
+                "page_sha256": hashlib.sha256(raw).hexdigest(), "data_b64": encoded}

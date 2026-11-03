@@ -3,6 +3,7 @@
     <string name="voice_call_start">Start voice conversation</string>
     <string name="voice_call_listening">Listening</string>
     <string name="voice_call_processing">Working</string>
+    <string name="voice_call_processing_input">Processing \"%1$s\"</string>
     <string name="voice_call_task_failed">Task not completed</string>
     <string name="voice_call_speaking">Speaking</string>
     <string name="voice_call_muted">Microphone paused</string>

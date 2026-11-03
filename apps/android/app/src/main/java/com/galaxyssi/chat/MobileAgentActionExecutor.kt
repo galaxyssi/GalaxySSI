@@ -401,16 +401,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             return AgentActionResult(action.id, false, "Notification reply target or text is missing")
         }
         val result = GalaxySSINotificationListenerService.reply(notificationKey, replyText)
-        return AgentActionResult(
-            actionId = action.id,
-            success = result.success,
-            message = result.message,
-            metadata = mapOf(
-                "notification_key_hash" to notificationKey.hashCode().toString(),
-                "notification_package" to action.parameters["notification_package"].orEmpty(),
-                "reply_length" to replyText.length.toString()
-            )
-        )
+        return AgentGoalEvidence.notificationReply(action, result,
+            zh = context.resources.configuration.locales[0].language == "zh")
     }
 
     internal fun ensureAgentNotificationChannel() {
@@ -472,14 +464,19 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
     }
 
     internal fun setAlarm(action: AgentAction): AgentActionResult {
-        val timerSeconds = action.parameters["timer_seconds"]?.toIntOrNull()
+        if (action.parameters.containsKey("timer_seconds") || action.parameters.containsKey("timer_operation")) {
+            return AgentTimerExecutor(context).execute(action)
+        }
         val hour = action.parameters["hour"]?.toIntOrNull()
         val minute = action.parameters["minute"]?.toIntOrNull()
+        if ((action.parameters.containsKey("hour") || action.parameters.containsKey("minute")) &&
+            (hour == null || minute == null || hour !in 0..23 || minute !in 0..59)) {
+            return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.FAILED, context.getString(R.string.device_operation_alarm_invalid))
+        }
+        if (hour == null && action.id != "open-timer" && action.description != "Open alarm app") {
+            return AgentGoalEvidence.result(action, AgentGoalEvidenceStatus.FAILED, context.getString(R.string.device_operation_time_missing))
+        }
         val intent = when {
-            timerSeconds != null -> Intent(AlarmClock.ACTION_SET_TIMER)
-                .putExtra(AlarmClock.EXTRA_LENGTH, timerSeconds)
-                .putExtra(AlarmClock.EXTRA_MESSAGE, "GalaxySSI")
-                .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
             action.id == "open-timer" -> Intent(AlarmClock.ACTION_SHOW_TIMERS)
             hour != null && minute != null -> Intent(AlarmClock.ACTION_SET_ALARM)
                 .putExtra(AlarmClock.EXTRA_HOUR, hour)
@@ -491,21 +488,13 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             actionId = action.id,
             intent = intent,
             successMessage = when {
-                timerSeconds != null -> "Timer handoff started"
                 action.id == "open-timer" -> "Opened timer app"
                 hour != null && minute != null -> "Alarm handoff started"
                 else -> "Opened alarm app"
             }
         )
-        if (result.success && timerSeconds != null) {
-            runCatching {
-                context.startActivity(
-                    Intent(AlarmClock.ACTION_SHOW_TIMERS)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
-        }
-        return result
+        return if (result.success && hour != null && minute != null) result.copy(metadata = result.metadata +
+            mapOf("goal_status" to "dispatched", "business_success_verified" to "false")) else result
     }
 
     internal fun launchIntent(actionId: String, intent: Intent, successMessage: String): AgentActionResult {
@@ -537,7 +526,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 ?: return AgentActionResult(action.id, false, "Agent team plan is invalid")
             return dispatchAgentTeam(action, spec)
         }
-        val prompt = action.managedTeamAssignmentPrompt() ?: if (action.parameters["connector_task_mode"] in setOf(
+        val basePrompt = action.managedTeamAssignmentPrompt() ?: if (action.parameters["connector_task_mode"] in setOf(
                 PHONE_DEVELOPMENT_CONNECTOR_MODE,
                 PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
             )
@@ -554,6 +543,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             }
         }
         val effectiveTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
+        val researchConversation = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        val recoveryScope = AgentResearchCheckpoint.scope(researchConversation, effectiveTurnId)
+        val handoff = if (recoveryScope.isNotBlank() &&
+            AgentConnectorFallbackAction.forDispatch(action).parameters[AgentResearchCheckpoint.RECOVERY] == recoveryScope)
+            AgentResearchTraceStore.recoveryHandoff(context, researchConversation, effectiveTurnId) else ""
+        val prompt = AgentResearchCheckpoint.append(basePrompt, handoff)
         val preparedAction = (if (action.parameters[INTERNAL_TURN_ID].isNullOrBlank()) {
             action.copy(parameters = action.parameters + (INTERNAL_TURN_ID to effectiveTurnId))
         } else {
@@ -612,7 +607,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val attemptedIds = AgentConnectorFallbackTrail.parse(
             preparedAction.parameters[AgentConnectorFallbackAction.ATTEMPTED_PARAMETER].orEmpty()
         ).toMutableSet()
-        val registrations = AppStoreAgentConnectorRegistry(context).registrations()
+        val connectorRegistry = AppStoreAgentConnectorRegistry(context)
+        val targets = connectorRegistry.availableTargets()
+        val registrations = connectorRegistry.registrations(targets)
             .associateBy(AgentRegistration::agentId)
         val globalRunSlots = AgentGlobalRunSlotStore(context)
         var lastFailure = AgentActionResult(action.id, false, "No callable resource is available")
@@ -626,8 +623,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
             }
             val startedAt = System.currentTimeMillis()
-            val routedAction = preparedAction.copy(
-                parameters = preparedAction.parameters + mapOf(
+            val invocation = AgentInvocationBinding.bind(context, preparedAction,
+                preparedAction.parameters[INTERNAL_CONVERSATION_ID].orEmpty(), connectorId, targets.map { it.id })
+            val routedAction = invocation.copy(
+                parameters = invocation.parameters + mapOf(
                     "connector_id" to connectorId,
                     AgentConnectorFallbackAction.ATTEMPTED_PARAMETER to AgentConnectorFallbackTrail.encode(attemptedIds),
                     "routing_fallback_ids" to connectorIds.drop(index + 1).joinToString(",")
@@ -657,15 +656,17 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 return@forEachIndexed
             }
             val result = try {
+                fun withHistory(input: String) = AgentConversationProjection.replace(
+                    context, routedAction, input, targets.firstOrNull { it.id == connectorId })
                 when {
                     connectorId == "local-llm" ->
-                        dispatchLocalModelTask(routedAction, inlineEvidencePrompt)
+                        dispatchLocalModelTask(routedAction, withHistory(inlineEvidencePrompt))
                     connectorAliases("cloud-models").any { it == connectorId } ->
-                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt)
+                        dispatchCloudModelTask(routedAction, withHistory(inlineEvidencePrompt))
                     selectedAdapterType == "cloud-model-api" ->
-                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
+                        dispatchCloudModelTask(routedAction, withHistory(inlineEvidencePrompt), connectorId)
                     AppStore.isCloudApiContact(context, connectorId) ->
-                        dispatchCloudModelTask(routedAction, inlineEvidencePrompt, connectorId)
+                        dispatchCloudModelTask(routedAction, withHistory(inlineEvidencePrompt), connectorId)
                     else -> {
                         val contactSnapshot = AgentConnectorContactSnapshot.from(AppStore.contacts(context))
                         val hasKnownContact = contactSnapshot.matchingContactIds(connectorId).isNotEmpty()
@@ -688,13 +689,15 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                                 )
                             )
                         } else {
+                            val contactAction = AgentInvocationBinding.bind(context, routedAction,
+                                routedAction.parameters[INTERNAL_CONVERSATION_ID].orEmpty(), contactId)
                             dispatchContactTask(
-                                routedAction,
+                                contactAction,
                                 contactId,
                                 if (AppStore.usesPcConnectorTunnel(context, contactId)) {
-                                    attachmentPrompt
+                                    withHistory(attachmentPrompt)
                                 } else {
-                                    inlineEvidencePrompt
+                                    withHistory(inlineEvidencePrompt)
                                 }
                             )
                         }
@@ -789,24 +792,40 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val observed = observationContextStore.peek(contactId, conversationId)
         val requestPrompt = promptWithObservedContext(prompt, observed)
         val startedAt = System.currentTimeMillis()
-        LOCAL_MODEL_EXECUTOR.execute {
-            val appContext = context.applicationContext
-            val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
-            val boundConversationId = conversationId.ifBlank { "local-$messageId" }
-            val taskId = action.parameters["_galaxyssi_task_id"].orEmpty().ifBlank { turnId }
-            val result = runCatching {
-                LocalModelWebToolRunner.run(
-                    context = appContext,
-                    prompt = promptWithLocalModelContext(action, requestPrompt),
-                    preferredProfileId = action.parameters["manual_model_id"].orEmpty(),
-                    hasAttachments = action.id.startsWith("attachment-") ||
-                        action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true",
-                    sessionId = taskId,
-                    conversationId = boundConversationId,
-                    turnId = turnId,
-                    taskId = taskId,
-                    collaborationSourceMessageId = collaborationSource
-                )
+        val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
+        val taskId = action.parameters["_galaxyssi_task_id"].orEmpty().ifBlank { turnId }
+        val appContext = context.applicationContext
+        val boundConversationId = conversationId.ifBlank { "local-$messageId" }
+        val dispatchIdentity = AgentLocalDispatchIdentity(messageId, contactId, boundConversationId, turnId, taskId, action.id)
+        AgentManagedDispatchIntent.persist(appContext, action, messageId, contactId, conversationId, turnId, taskId)
+        val browserDispatch = if (managedTeamAction)
+            AgentLocalBrowserDispatchStore(appContext).registerManagedIfOwned(dispatchIdentity, profile.displayName,
+                startedAt, observed.mapTo(linkedSetOf()) { it.id }) else if (!persistDedicatedHistory)
+            AgentLocalBrowserDispatchStore(appContext).registerIfOwned(dispatchIdentity, profile.displayName,
+                startedAt, observed.mapTo(linkedSetOf()) { it.id }) else null
+        browserDispatch?.let { AgentLocalBrowserDispatchStore(appContext).checkpoint(it) }
+        val lease = AgentLocalDispatchRegistry.register(dispatchIdentity, AgentTaskRuntime.cancellationToken(turnId))
+        lease.enqueue(LOCAL_MODEL_EXECUTOR, request = { token ->
+            LocalModelWebToolRunner.run(
+                context = appContext,
+                prompt = promptWithLocalModelContext(action, requestPrompt),
+                preferredProfileId = action.parameters["manual_model_id"].orEmpty(),
+                hasAttachments = action.id.startsWith("attachment-") ||
+                    action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true",
+                sessionId = taskId,
+                conversationId = boundConversationId,
+                turnId = turnId,
+                taskId = taskId,
+                collaborationSourceMessageId = collaborationSource,
+                cancellationToken = token,
+                progressIdentity = dispatchIdentity,
+                managedTeam = managedTeamAction,
+                browserDispatch = browserDispatch
+            )
+        }, completed = { result ->
+            if (browserDispatch != null) {
+                AgentLocalBrowserDelivery.settle(appContext, browserDispatch, result)
+                return@enqueue
             }
             val completion = result.getOrNull()
             val inference = completion?.inference
@@ -851,7 +870,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     success = succeeded
                 )
             )
-        }
+        }, cancelled = {
+            browserDispatch?.let { AgentLocalBrowserDispatchStore(appContext).transition(it, "cancelled") }
+            AgentLocalCancellationDelivery.settled(appContext, dispatchIdentity, persistDedicatedHistory, managedTeamAction)
+        })
         return AgentActionResult(
             actionId = action.id,
             success = true,
@@ -901,6 +923,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val existing = runtime.agentTeamSnapshot(spec.supervisorRunId)
         if (existing == null) {
             val requestContext = linkedMapOf<String, Any?>(
+                "connector_task_mode" to action.parameters["connector_task_mode"].orEmpty(),
+                INTERNAL_TASK_EXECUTION_MODE to action.parameters[INTERNAL_TASK_EXECUTION_MODE].orEmpty(),
+                INTERNAL_CONVERSATION_HAS_ATTACHMENTS to action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS].orEmpty(),
                 INTERNAL_CONVERSATION_CONTEXT to action.parameters[INTERNAL_CONVERSATION_CONTEXT].orEmpty(),
                 INTERNAL_MEMORY_CONTEXT to action.parameters[INTERNAL_MEMORY_CONTEXT].orEmpty(),
                 INTERNAL_CLOUD_KNOWLEDGE_CONTEXT to action.parameters[INTERNAL_CLOUD_KNOWLEDGE_CONTEXT].orEmpty(),
@@ -1142,6 +1167,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             turnId = clientTurnId
         )
         traceDispatchStage("identity_ready")
+        AgentManagedDispatchIntent.persist(context, action, messageId, contactId, clientConversationId, clientTurnId, remoteTaskId)
         val voiceAgentRun = if (
             messageId > 0L && VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(context)
         ) {
@@ -1184,11 +1210,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val pendingDelivery = if (!managedTeamAction && conversationId.isNotBlank() && turnId.isNotBlank()) {
             AgentPendingDelivery(messageId, clientConversationId, clientTurnId, remoteTaskId, contactId)
         } else null
+        var dispatch = MqttPublishResult.FAILED
         val published = AgentConnectorDispatchBinding.publish(
             delivery = pendingDelivery,
             register = { AgentPendingDeliveryStore.put(context, it) },
             retire = { AgentPendingDeliveryStore.remove(context, it) }
-        ) { GalaxySSIMqttClient.publishUserMessage(
+        ) { dispatch = GalaxySSIMqttClient.publishUserMessageResult(
             content = outboundPrompt,
             contactId = contactId,
             topicOverride = topic,
@@ -1203,6 +1230,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             ),
             connectorTaskMode = action.parameters["connector_task_mode"].orEmpty(),
             executionPolicyPrompt = action.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER].orEmpty(),
+            resultContract = CollaborationResultContract.forAction(action),
             requestKind = action.parameters["request_kind"].orEmpty(),
             agentModelId = action.parameters["agent_model_id"].orEmpty(),
             agentReasoningEffort = AgentModelReasoningEffort.fromWireValue(
@@ -1211,7 +1239,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             agentInstanceId = action.parameters["agent_instance_id"].orEmpty(),
             teamId = action.parameters["team_id"].orEmpty(),
             agentTeamMessage = action.parameters["agent_team_message"].toBoolean()
-        ) }
+        )
+            dispatch.accepted
+        }
         if (!published) {
             voiceAgentRun?.snapshot?.runId?.let { runId ->
                 VoiceAgentRunBridge.get(context).markDispatchFailed(
@@ -1224,7 +1254,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         if (persistDedicatedHistory) {
             trace.put(
                 JSONObject()
-                    .put("stage", if (published) "mqtt_published" else "publish_failed")
+                    .put("stage", when (dispatch) {
+                        MqttPublishResult.PUBLISHED -> "mqtt_published"
+                        MqttPublishResult.QUEUED -> "mqtt_queued"
+                        MqttPublishResult.FAILED -> "publish_failed"
+                    })
                     .put("at", System.currentTimeMillis())
                     .put("detail", topic)
             )
@@ -1237,7 +1271,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         contactId = contactId,
                         content = historyPrompt,
                         deliveryStatus = appContext.getString(
-                            if (published) R.string.delivery_status_sent else R.string.delivery_status_failed
+                            when (dispatch) {
+                                MqttPublishResult.PUBLISHED -> R.string.delivery_status_sent
+                                MqttPublishResult.QUEUED -> R.string.delivery_status_queued
+                                MqttPublishResult.FAILED -> R.string.delivery_status_failed
+                            }
                         ),
                         deliveryTrace = trace
                     )
@@ -1249,7 +1287,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         return AgentActionResult(
             actionId = action.id,
             success = published,
-            message = if (published) "Waiting for ${action.target} response" else "Could not send task to ${action.target}",
+            message = when (dispatch) {
+                MqttPublishResult.QUEUED -> "Task queued locally; waiting for a verified connection to ${action.target}"
+                MqttPublishResult.PUBLISHED -> "Waiting for ${action.target} response"
+                MqttPublishResult.FAILED -> "Could not send task to ${action.target}"
+            },
             metadata = if (published) {
                 mapOf(
                     "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(Locale.ROOT),
@@ -1404,6 +1446,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             connectorTaskId, action.id)
         val dispatchIdentity = AgentCloudDispatchIdentity(messageId, contactId, conversationId,
             connectorTurnId, connectorTaskId, action.id)
+        AgentManagedDispatchIntent.persist(context, action, messageId, contactId, conversationId, connectorTurnId, connectorTaskId)
+        if (!managedTeamAction) {
+            // Admission must exist before a fast provider can publish its response.
+            AgentPendingDeliveryStore.put(context, AgentPendingDelivery(messageId, conversationId,
+                connectorTurnId, connectorTaskId, contactId))
+        }
         val dispatchLease = AgentCloudDispatchRegistry.register(dispatchIdentity)
         val cancellationRegistration = AgentTaskRuntime.cancellationToken(connectorTurnId)
             .invokeOnCancellation { dispatchLease.cancel() }
@@ -1437,6 +1485,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             var successfulModel: JSONObject? = null
             var successfulContactId = ""
             var lastError: Throwable? = cloudImages.exceptionOrNull()
+            var publicationAssistanceRequested = false
             cloudImages.getOrNull()?.forEach { image ->
                 Log.i(
                     "GalaxySSILatency",
@@ -1458,7 +1507,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 id == contactId || id !in previouslyAttempted
             }
             var streamAttemptOrdinal = 0
-            for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
+            candidateLoop@ for ((candidateIndex, candidate) in cloudCandidates.withIndex()) {
                 dispatchLease.checkActive()
                 if (successfulModel != null) break
                 val candidateId = candidate.optString("id").ifBlank { candidate.optString("galaxyssi_id") }
@@ -1502,6 +1551,13 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 )
                 runCatching {
                     dispatchLease.runRequest {
+                        val collaborationEvidence = if (managedTeamAction) CollaborationEvidenceLedger(appContext).let { ledger ->
+                            ledger.binding(messageId, conversationId, connectorTurnId)?.let { access ->
+                                CollaborationCloudEvidence(ledger, access)
+                            }
+                        } else null
+                        if (action.parameters[CollaborationTrialPolicy.REQUIRED_PARAMETER] == "true" && collaborationEvidence == null)
+                            throw com.galaxyssi.chat.voice.modelstream.ModelCallAdmissionDenied("trial_binding_missing")
                         CloudConversationStreamEngine.streamConversation(
                             context = appContext,
                             contact = model,
@@ -1517,18 +1573,14 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             images = cloudImages.getOrThrow(),
                             connectTimeoutMillis = attemptProfile.connectTimeoutMillis,
                             readTimeoutMillis = attemptProfile.readTimeoutMillis,
-                            allowExternalTools = action.parameters["connector_task_mode"] !=
-                                PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE,
+                            allowExternalTools = !supervisedProject || !managedTeamAction,
                             systemPromptOverride = supervisedEnvelope?.systemPrompt
                                 ?: if (PhoneAssistantTaskControl.isReadOnlyRequest(connectorTurnId, action))
                                     CodexStyleResponsePolicy.prompt(appContext) + "\n" + CodexStyleResponsePolicy.SCREEN_ANALYSIS_PROMPT
                                 else "",
                             citationPreviewEnabled = !managedTeamAction,
-                            collaborationEvidence = if (managedTeamAction) CollaborationEvidenceLedger(appContext).let { ledger ->
-                                ledger.binding(messageId, conversationId, connectorTurnId)?.let { access ->
-                                    CollaborationCloudEvidence(ledger, access)
-                                }
-                            } else null,
+                            collaborationEvidence = collaborationEvidence,
+                            supervisedControl = supervisedProject && !managedTeamAction,
                             recoveryScope = if (conversationId.isNotBlank() && connectorTurnId.isNotBlank())
                                 AgentModelLoopScope(candidateId, conversationId, connectorTurnId, connectorTaskId,
                                     connectorTurnId, "cloud-research:${model.optString("cloud_model")}", action.id)
@@ -1658,10 +1710,23 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     lastError = streamError ?: IllegalStateException(
                         if (!streamCompleted) {
                             "Model stream ended before completion"
+                        } else if (response.isBlank()) {
+                            "Model response contained no usable text"
                         } else {
                             "Model response did not satisfy the live-data route"
                         }
                     )
+                    if (providerError?.code == CollaborationPublicationAssistanceException.CODE) {
+                        publicationAssistanceRequested = true
+                        attempts.finish(elapsedMillis)
+                        break@candidateLoop
+                    }
+                    if (providerError?.code == com.galaxyssi.chat.voice.modelstream.ModelCallAdmissionDenied.CODE ||
+                        lastError is com.galaxyssi.chat.voice.modelstream.ModelCallAdmissionDenied) {
+                        // A host experiment limit is not a provider outage or permission to change models.
+                        attempts.finish(elapsedMillis)
+                        break@candidateLoop
+                    }
                     val providerFailure = providerError?.let(AgentProviderFailurePolicy::classify)
                         ?: AgentProviderFailurePolicy.classify(lastError?.message.orEmpty())
                     attempts.finish(elapsedMillis, providerFailure, providerError?.httpStatus)
@@ -1711,7 +1776,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             val reply = successfulReply.ifBlank {
                 appContext.getString(
                     R.string.cloud_request_failed,
-                    lastError?.message?.take(220) ?: appContext.getString(R.string.cloud_unknown_error)
+                    lastError?.message?.let { if (publicationAssistanceRequested) it else it.take(220) }
+                        ?: appContext.getString(R.string.cloud_unknown_error)
                 )
             }
             AgentConnectorResponseBus.publish(
@@ -1965,6 +2031,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
 
     internal fun replySatisfiesRoute(action: AgentAction, reply: String): Boolean {
         if (reply.isBlank()) return false
+        if (action.isSupervisedProjectConnector()) return true
         if (action.parameters["routing_requires_live_data"] != "true") return true
         val normalized = reply.lowercase(Locale.US)
         return LIVE_DATA_REFUSAL_TERMS.none(normalized::contains)
@@ -2042,7 +2109,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         private const val AGENT_NOTIFICATION_CHANNEL_ID = "galaxyssi_agent_actions"
         private const val AGENT_NOTIFICATION_ID_BASE = 42000
         private const val MAX_KNOWLEDGE_PROMPT_CHARACTERS = 14_000
-        private val LOCAL_MODEL_EXECUTOR = Executors.newSingleThreadExecutor { task ->
+        internal val LOCAL_MODEL_EXECUTOR = Executors.newSingleThreadExecutor { task ->
             Thread(task, "GalaxySSI-LocalModel").apply { isDaemon = true }
         }
         private const val RICH_RESPONSE_CONTRACT =

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cognition_recovery_stopped">后台目标停滞：连续失败 %1$d 次，已停止自动重试。原因：%2$s。数据已保留，处理原因后可在全局智能体设置中点击“立即处理”继续。</string>
+    <string name="cognition_recovery_memory_integrity">记忆替代关系不一致</string>
+    <string name="cognition_recovery_processing_failed">后台处理失败（%1$s）</string>
+</resources>

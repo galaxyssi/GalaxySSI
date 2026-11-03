@@ -29,6 +29,7 @@ object AgentPhoneNativeToolCatalog {
     const val WORKSPACE_APPLY_EXACT_PATCH_BATCH = "galaxyssi.workspace.files.patch.exact.batch"
     const val WORKSPACE_DIFF_SUMMARY = "galaxyssi.workspace.file.diff.summary"
     const val WORKSPACE_SHA256 = "galaxyssi.workspace.file.sha256"
+    const val WORKSPACE_EXPORT = "galaxyssi.workspace.file.export"
     const val WORKSPACE_ZIP_CREATE = "galaxyssi.workspace.zip.create"
     const val WORKSPACE_ZIP_LIST = "galaxyssi.workspace.zip.list"
     const val WORKSPACE_ZIP_EXTRACT = "galaxyssi.workspace.zip.extract"
@@ -112,6 +113,7 @@ object AgentPhoneNativeToolCatalog {
         WORKSPACE_APPLY_EXACT_PATCH_BATCH,
         WORKSPACE_DIFF_SUMMARY,
         WORKSPACE_SHA256,
+        WORKSPACE_EXPORT,
         WORKSPACE_ZIP_CREATE,
         WORKSPACE_ZIP_LIST,
         WORKSPACE_ZIP_EXTRACT
@@ -130,15 +132,19 @@ object AgentPhoneNativeToolCatalog {
             addAll(AgentAndroidSystemNativeTools.toolIds)
             add(DoorAccessNativeTool.ID)
             add(CollaborationRecallNativeTool.ID)
+            add(AgentConversationRecallTool.ID)
             addAll(AgentSystemEvidenceNativeTools.toolIds)
             addAll(AgentPhoneUiNativeTools.toolIds)
             addAll(AgentMcpNativeTools.toolIds)
             addAll(AgentMobileProjectArchiveTools.toolIds)
             addAll(AgentMobileProjectNativeTools.toolIds)
             addAll(AgentOnDeviceRuntimeTools.toolIds)
+            addAll(AgentInteractiveBrowserTools.toolIds)
             addAll(AgentLinuxSoftwareNativeTools.toolIds)
             addAll(AgentSelfEvolutionNativeTools.toolIds)
             addAll(AgentDesktopRemoteNativeTools.toolIds)
+            addAll(AgentToolInspectionTools.toolIds)
+            addAll(AgentAppControlTools.toolIds)
         }
     }
 
@@ -154,7 +160,8 @@ object AgentPhoneNativeToolCatalog {
         )
         val registry = createRegistry(
             workspaceFileTools = AgentWorkspaceFileTools(
-                context.filesDir.toPath().resolve("agent-native-workspaces")
+                context.filesDir.toPath().resolve("agent-native-workspaces"),
+                artifactInspector = AgentArtifactOpenability(context.applicationContext)::inspect
             ),
             actionExecutor = actionExecutor,
             screenProvider = screenProvider,
@@ -165,6 +172,8 @@ object AgentPhoneNativeToolCatalog {
             observationRecorder = CollaborationNativeEvidence(context.applicationContext)
         )
         return registry.registerAll(
+            AgentAppControlTools.definitions(AndroidAppControlPlatform(context.applicationContext))
+        ).registerAll(
             AgentWebMediaNativeTools.definitions(webMediaServices)
         ).registerAll(
             AgentWebIntelligenceNativeTools.androidDefinitions(
@@ -188,6 +197,8 @@ object AgentPhoneNativeToolCatalog {
         ).registerAll(
             CollaborationRecallNativeTool.definitions(context.applicationContext)
         ).registerAll(
+            AgentConversationRecallTool.definitions(context.applicationContext)
+        ).registerAll(
             AgentSystemEvidenceNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentPhoneUiNativeTools.definitions(context.applicationContext)
@@ -200,12 +211,14 @@ object AgentPhoneNativeToolCatalog {
         ).registerAll(
             AgentOnDeviceRuntimeTools.definitions(context.applicationContext)
         ).registerAll(
+            AgentInteractiveBrowserTools.definitions(context.applicationContext)
+        ).registerAll(
             AgentLinuxSoftwareNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentSelfEvolutionNativeTools.definitions(context.applicationContext)
         ).registerAll(
             AgentDesktopRemoteNativeTools.definitions(context.applicationContext)
-        )
+        ).registerAll(listOf(AgentToolInspectionTools.definition(), AgentToolDiscoveryTools.definition()))
     }
 
     fun createDefault(
@@ -247,6 +260,18 @@ object AgentPhoneNativeToolCatalog {
         )
 
     private fun workspaceDefinitions(tools: AgentWorkspaceFileTools): List<AgentNativeToolDefinition> = listOf(
+        workspaceDefinition(
+            id = WORKSPACE_EXPORT,
+            title = "Export workspace file",
+            description = "Export an existing phone workspace file as a stable downloadable artifact with host-owned SHA-256 and openability evidence. Works without Linux or shell execution. Small UTF-8 files include the exact exported content in openability.details.text when text_complete=true; review that content instead of separately reading it again. Larger files omit text and set text_complete=false: inspect them with bounded read/search tools. Use after write/edit to deliver text, CSV, PDF, Office or image files. Export each requested file individually; a directory is not accepted. Openability does not prove semantic correctness; review actual contents before completion.",
+            risk = AgentNativeToolRisk.MEDIUM,
+            consentId = WORKSPACE_WRITE_CONSENT,
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT,
+            inputSchema = workspacePathInputSchema(),
+            outputSchema = workspaceExportSchema(),
+            execute = { input -> tools.exportArtifact(input.string("workspace_id"), input.string("path")) },
+            encode = { it }
+        ),
         workspaceDefinition(
             id = WORKSPACE_INITIALIZE,
             title = "Initialize app-private workspace",
@@ -855,7 +880,7 @@ object AgentPhoneNativeToolCatalog {
             description = description,
             location = AgentNativeToolLocation.APPLICATION,
             inputSchema = inputSchema,
-            outputSchema = outputSchema,
+            outputSchema = workspaceOutputSchema(outputSchema),
             risk = risk,
             capabilities = setOf("workspace.app_private", "workspace.file.bounded"),
             requiredPermissions = listOf(
@@ -885,11 +910,13 @@ object AgentPhoneNativeToolCatalog {
             invocation.checkpoint()
             when (val result = execute(invocation.input)) {
                 is AgentWorkspaceFileResult.Success -> AgentNativeToolExecutionResult.success(
-                    output = encode(result.value),
+                    output = encode(result.value) + ("workspace_id" to invocation.input.string("workspace_id")),
                     message = "Workspace operation completed",
                     metadata = mapOf("storage_scope" to "app_private")
                 )
-                is AgentWorkspaceFileResult.Failure -> workspaceFailure(result.error)
+                is AgentWorkspaceFileResult.Failure -> workspaceFailure(result.error).let { failure ->
+                    failure.copy(output = failure.output + ("workspace_id" to invocation.input.string("workspace_id")))
+                }
             }
         },
         executorId = FILE_EXECUTOR_ID,
@@ -900,6 +927,16 @@ object AgentPhoneNativeToolCatalog {
             "result_policy" to "bounded-v1"
         )
     )
+
+    private fun workspaceOutputSchema(schema: AgentNativeJsonSchema): AgentNativeJsonSchema {
+        val properties = (schema.document["properties"] as? Map<*, *>).orEmpty()
+            .entries.associate { it.key.toString() to it.value }
+        val required = (schema.document["required"] as? List<*>).orEmpty().filterIsInstance<String>()
+        return AgentNativeJsonSchema(schema.document + mapOf(
+            "properties" to (properties + ("workspace_id" to workspaceIdSchema().document)),
+            "required" to (required + "workspace_id").distinct()
+        ))
+    }
 
     private class DeferredWorkspaceDefinition(
         private val create: (AgentWorkspaceFileTools) -> AgentNativeToolDefinition
@@ -1240,7 +1277,7 @@ object AgentPhoneNativeToolCatalog {
         AgentActionKind.LOCK_SCREEN -> "Requests the Android accessibility lock-screen global action."
         AgentActionKind.OPEN_APP -> "Hands an explicit bounded app or intent request to Android."
         AgentActionKind.OPEN_URL -> "Hands a bounded URL to an Android activity."
-        AgentActionKind.SET_ALARM -> "Hands a bounded alarm or timer request to Android."
+        AgentActionKind.SET_ALARM -> "Control this conversation's phone timer: start/pause/resume/cancel/replace/inspect. timer_seconds is required for a new timer or replacement. Omit operation_id for a new timer; Android generates it. Reuse only an observed timer ID, never invent one. Never recreate an unverified timer. Receipt metadata.operation_id identifies the timer; metadata.timer_state and metadata.business_success_verified distinguish observed completion from dispatch. Alarm handoffs are unverified."
         AgentActionKind.REPLY_NOTIFICATION -> "Replies to one reply-capable notification through the existing listener service."
         else -> error("Unsupported phone-native action kind: $kind")
     }
@@ -1308,9 +1345,12 @@ object AgentPhoneNativeToolCatalog {
             }
             AgentActionKind.SET_ALARM -> {
                 properties = mapOf(
-                    "timer_seconds" to coordinate,
-                    "hour" to coordinate,
-                    "minute" to coordinate
+                    "timer_seconds" to AgentNativeJsonSchema.integer(1, Int.MAX_VALUE.toLong()),
+                    "timer_operation" to AgentNativeJsonSchema.string(enumValues = listOf("start", "pause", "resume", "cancel", "replace", "inspect")),
+                    "operation_id" to AgentNativeJsonSchema.string(maxLength = 128,
+                        description = "Optional Android-generated timer ID from a previous receipt. Omit when starting a new timer or inspecting this conversation's timer without a known ID. Never invent an ID or use the plan, action or generic goal ID."),
+                    "hour" to AgentNativeJsonSchema.integer(0, 23),
+                    "minute" to AgentNativeJsonSchema.integer(0, 59)
                 )
                 required = emptySet()
             }
@@ -1367,6 +1407,29 @@ object AgentPhoneNativeToolCatalog {
             "last_modified_epoch_ms" to AgentNativeJsonSchema.integer(minimum = 0)
         ),
         required = setOf("path", "type", "size_bytes", "last_modified_epoch_ms")
+    )
+
+    private fun workspaceExportSchema() = objectSchema(
+        properties = mapOf("artifacts" to AgentNativeJsonSchema.array(objectSchema(
+            properties = mapOf(
+                "relative_path" to outputPathSchema(),
+                "host_path" to AgentNativeJsonSchema.string(),
+                "size_bytes" to AgentNativeJsonSchema.integer(minimum = 0),
+                "sha256" to sha256Schema(),
+                "artifact_kind" to AgentNativeJsonSchema.string(enumValues = listOf("file")),
+                "openability" to AgentNativeJsonSchema.objectSchema(properties = mapOf(
+                    "status" to AgentNativeJsonSchema.string(enumValues = listOf("verified", "unverified")),
+                    "scope" to AgentNativeJsonSchema.string(),
+                    "sha256" to sha256Schema(),
+                    "details" to AgentNativeJsonSchema.objectSchema(properties = mapOf(
+                        "characters_read" to AgentNativeJsonSchema.integer(minimum = 0),
+                        "text_complete" to AgentNativeJsonSchema.boolean(),
+                        "text" to AgentNativeJsonSchema.string(maxLength = AgentArtifactOpenability.MAX_REVIEW_TEXT_CHARACTERS)
+                    ))
+                ), required = setOf("status", "scope"))
+            ), required = setOf("relative_path", "host_path", "size_bytes", "sha256", "artifact_kind", "openability")
+        ), minItems = 1, maxItems = 1)),
+        required = setOf("artifacts")
     )
 
     private fun mutationSchema() = objectSchema(

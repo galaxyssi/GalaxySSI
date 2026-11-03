@@ -39,7 +39,9 @@ class AgentControlPlaneActionExecutor private constructor(
             ?: return provider.executeDelegate(action, screen)
         val conversationId = action.parameters[CONVERSATION_ID_KEY].orEmpty()
         val turnId = action.parameters[TURN_ID_KEY].orEmpty()
-        val runId = stableRunId(conversationId, turnId, action.id, agentId)
+        val attemptKey = AgentConnectorFallbackAction.effectAttemptKey(action)
+        val runId = stableRunId(conversationId, turnId, attemptKey, agentId)
+        val explicitIdempotencyKey = action.parameters["idempotency_key"].orEmpty()
         val request = AgentRunRequest(
             conversationId = conversationId,
             messageId = turnId.ifBlank { action.id },
@@ -55,7 +57,11 @@ class AgentControlPlaneActionExecutor private constructor(
                 "action_target" to action.target,
                 "risk" to action.risk.name.lowercase(Locale.ROOT)
             ),
-            idempotencyKey = action.parameters["idempotency_key"].orEmpty().ifBlank { runId }
+            idempotencyKey = when {
+                explicitIdempotencyKey.isBlank() -> runId
+                attemptKey != action.id -> "$explicitIdempotencyKey/$runId"
+                else -> explicitIdempotencyKey
+            }
         )
         provider.prepare(agentId, request, action, screen)
         val dispatchStartedAtMillis = System.currentTimeMillis()
@@ -374,7 +380,7 @@ private class ActionExecutorAgentTransport(
         val item = prepared.remove(request.runId)
             ?: throw IllegalStateException("No prepared connector action for Run ${request.runId}")
         emit(request, item.registration, AgentRunControlEventType.AGENT_CONNECTED, 1L)
-        val result = delegate.execute(item.action, item.screen)
+        val result = delegate.execute(AgentManagedDispatchIntent.bind(item.action, request, agentId), item.screen)
         results[request.runId] = result
         val awaitingResponse = result.metadata["awaiting_response"] == "true"
         val sourceMessageId = result.metadata["source_message_id"]?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
@@ -437,6 +443,7 @@ private class ActionExecutorAgentTransport(
                 "success" to result.success,
                 "source_message_id" to result.metadata["source_message_id"].orEmpty(),
                 "result" to result.message,
+                "rich_output" to result.metadata["rich_output"].orEmpty(),
                 "error" to if (result.success) "" else result.message
             )
         )

@@ -14,7 +14,12 @@ data class GlobalProactiveInboxItem(
     val createdAtMillis: Long,
     val deliveredAtMillis: Long,
     val viewedAtMillis: Long,
-    val feedbackKind: GlobalAgentFeedbackKind?
+    val feedbackKind: GlobalAgentFeedbackKind?,
+    val translatedTitle: String = "",
+    val titleTranslationStatus: AttentionTitleStatus = AttentionTitleStatus.PENDING,
+    val titleTranslationProvider: String = "",
+    val newsArticleKey: String = "",
+    val newsSummary: AttentionNewsSummary? = null
 ) {
     val isNew: Boolean
         get() = viewedAtMillis <= 0L && feedbackKind == null
@@ -24,7 +29,7 @@ object GlobalProactiveInboxPolicy {
     fun project(
         messages: List<GlobalProactiveMessage>,
         feedback: List<GlobalAgentFeedback>,
-        limit: Int = 50
+        limit: Int = Int.MAX_VALUE
     ): List<GlobalProactiveInboxItem> {
         if (limit <= 0) return emptyList()
         val feedbackByMessage = feedback
@@ -32,6 +37,7 @@ object GlobalProactiveInboxPolicy {
             .mapValues { (_, values) -> values.maxByOrNull(GlobalAgentFeedback::createdAtMillis)?.kind }
         return messages.asSequence()
             .filter { it.status == GlobalProactiveMessageStatus.DELIVERED }
+            .filter(AttentionArticlePolicy::visible)
             .groupBy(::inboxKey)
             .values
             .mapNotNull { group -> projectGroup(group, feedbackByMessage) }
@@ -41,7 +47,7 @@ object GlobalProactiveInboxPolicy {
                     .thenByDescending { it.deliveredAtMillis }
                     .thenByDescending { it.createdAtMillis }
             )
-            .take(limit.coerceIn(1, 100))
+            .take(limit)
             .toList()
     }
 
@@ -101,11 +107,13 @@ object GlobalProactiveInboxPolicy {
             viewedAtMillis = ordered.map(GlobalProactiveMessage::viewedAtMillis).takeIf { values ->
                 values.all { it > 0L }
             }?.maxOrNull() ?: 0L,
-            feedbackKind = kinds.singleOrNull()
+            feedbackKind = kinds.singleOrNull(),
+            newsArticleKey = primary.newsArticleKey,
+            titleTranslationProvider = primary.newsTranslationProvider
         )
     }
 
-    private fun inboxKey(message: GlobalProactiveMessage): String = if (
+    internal fun inboxKey(message: GlobalProactiveMessage): String = if (
         message.target == GlobalProactiveTarget.GLOBAL_DIGEST && message.deliveryGroupId.isNotBlank()
     ) {
         "global-agent-digest:${message.deliveryGroupId}"

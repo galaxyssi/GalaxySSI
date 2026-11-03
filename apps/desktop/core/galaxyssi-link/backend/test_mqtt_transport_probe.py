@@ -1,7 +1,7 @@
 import socket
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import mqtt_bridge
 import link_protocol
@@ -114,6 +114,22 @@ class MqttTransportProbeIntegrationTests(unittest.TestCase):
         mqtt_bridge._clear_transport_reconnect()
         self.topic_patch.stop()
         self.state_patch.stop()
+
+    def test_pool_probe_timeout_rebuilds_only_its_path_and_clears_old_probe(self):
+        client = Mock(spec=mqtt_bridge.MqttPoolClient)
+        client.is_connected.return_value = True
+        self.state.connected(100.0)
+        self.assertTrue(self.state.begin("pending", 100.0))
+        self.state.bind_path("pending", "hivemq", 7)
+        with patch.object(mqtt_bridge.time, "monotonic", return_value=111.0):
+            mqtt_bridge._request_transport_reconnect(client, reason="probe_timeout")
+        client.repair_path.assert_called_once_with("hivemq", 7, "probe_timeout")
+        client.repair_subscriptions.assert_called_once_with()
+        client.disconnect.assert_not_called()
+        self.assertFalse(self.state.stalled(111.5)[0])
+        self.assertIsNone(self.state.pending_path())
+        self.assertFalse(self.state.should_publish(112.9))
+        self.assertTrue(self.state.should_publish(113.0))
 
     def test_published_probe_is_consumed_without_route_dispatch(self):
         mqttc = _ProbeMqtt()

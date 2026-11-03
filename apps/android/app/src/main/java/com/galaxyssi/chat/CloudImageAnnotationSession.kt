@@ -29,6 +29,9 @@ internal class CloudImageAnnotationSession(
 
     fun installCollaborationTools(prepared: PreparedCloudConversationStream) {
         if (collaborationEvidence != null) CollaborationCloudRecall.install(prepared)
+        if (collaborationEvidence != null && CollaborationResearchWorkspace(context)
+                .publicationCapability(collaborationEvidence.access).getBoolean("publish_allowed"))
+            CollaborationMilestoneTool.install(prepared)
     }
 
     fun execute(
@@ -43,6 +46,10 @@ internal class CloudImageAnnotationSession(
         token: AgentNativeToolCancellationToken,
         checkpoint: () -> Unit
     ): String {
+        if (name == CollaborationMilestoneTool.NAME && collaborationEvidence != null) {
+            checkpoint()
+            return CollaborationMilestoneTool.execute(context, collaborationEvidence.access, arguments)
+        }
         if (name == CollaborationCloudRecall.NAME && collaborationEvidence != null) {
             checkpoint()
             return CollaborationCloudRecall.execute(context, collaborationEvidence.access, arguments)

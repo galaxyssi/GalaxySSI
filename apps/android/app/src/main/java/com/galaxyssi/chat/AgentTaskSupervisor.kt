@@ -1086,6 +1086,7 @@ class AgentTaskSupervisor(
         }
         return appendEventCandidate(current, eventKind, message, payloadJson).copy(
             status = status,
+            errorMessage = if (status == AgentWorkspaceStatus.FAILED && message.isNotBlank()) message else current.errorMessage,
             cancellationRequested = cancellationRequested
         )
     }
@@ -1111,11 +1112,11 @@ class AgentTaskSupervisor(
             )
         }
         return withEvent.copy(
+            cancellationRequested = current.cancellationRequested || nextStatus == AgentWorkspaceStatus.CANCELLED,
             currentPlanSnapshot = snapshot.planSnapshot.ifBlank { current.currentPlanSnapshot },
             resultJson = snapshot.resultJson.ifBlank { current.resultJson },
             errorMessage = snapshot.errorMessage.ifBlank { current.errorMessage },
-            toolCalls = (current.toolCalls + snapshot.toolCalls)
-                .distinctBy(AgentToolCallRecord::id)
+            toolCalls = AgentWorkspaceToolCallProjection.merge(current.toolCalls, snapshot.toolCalls)
                 .takeLast(AgentWorkspaceLimits.MAX_TOOL_CALLS),
             artifacts = (current.artifacts + snapshot.artifacts)
                 .distinctBy(AgentArtifactReference::id)
