@@ -4,15 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ControlCenterHomeGroupingTest {
-    @Test fun homeHasTwoGroupsAndElevenUniqueDestinations() {
+    @Test fun homeHasTwoGroupsAndTwelveUniqueDestinations() {
         assertEquals(listOf(ControlCenterHomeGroup.COMMON, ControlCenterHomeGroup.SETTINGS),
             ControlCenterHomeGrouping.orderedGroups)
         val routes = ControlCenterHomeGrouping.orderedGroups.flatMap(ControlCenterHomeGrouping::routes)
-        assertEquals(11, routes.size)
+        assertEquals(12, routes.size)
         assertEquals(routes.size, routes.distinct().size)
         assertEquals(listOf(ControlCenterRoute.MODEL_HUB, ControlCenterRoute.DEVICE_HUB,
             ControlCenterRoute.VOICE, ControlCenterRoute.SCREEN_ASSISTANT,
-            ControlCenterRoute.MEMORY_HUB, ControlCenterRoute.PROACTIVE_HUB, ControlCenterRoute.SCHEDULED_TASKS,
+            ControlCenterRoute.MEMORY_HUB, ControlCenterRoute.PROACTIVE_HUB, ControlCenterRoute.HEALTH_CENTER, ControlCenterRoute.SCHEDULED_TASKS,
             ControlCenterRoute.SKILLS_HUB, ControlCenterRoute.SAFETY_HUB, ControlCenterRoute.GENERAL,
             ControlCenterRoute.ADVANCED), routes)
         routes.forEach { assertNotNull(ControlCenterHomeGrouping.groupFor(it)); assertTrue(it.isAvailable) }
