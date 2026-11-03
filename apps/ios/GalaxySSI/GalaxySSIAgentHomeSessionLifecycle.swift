@@ -17,6 +17,7 @@ extension AgentHomeView {
   }
 
   func resetAgentSessionPresentation() {
+    cancelScreenPagePDFImport()
     agentScreenContextCapturedAtMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     draft = ""
     attachments.wipeSensitive()
@@ -51,6 +52,7 @@ extension AgentHomeView {
   }
 
   func clearAgentRuntimePlaintextPresentation() {
+    cancelScreenPagePDFImport()
     draft.removeAll(keepingCapacity: false)
     attachments.wipeSensitive()
     voiceAttachmentSnapshot.wipeSensitive()

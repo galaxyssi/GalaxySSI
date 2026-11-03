@@ -9,7 +9,7 @@ extension AgentHomeView {
       return
     }
     Task { @MainActor in
-      _ = await coordinator.send(message.content, to: contact)
+      _ = await coordinator.send(message.content, to: contact, requestKind: message.requestKind)
       retryingAgentMessageIDs.remove(message.id)
     }
   }

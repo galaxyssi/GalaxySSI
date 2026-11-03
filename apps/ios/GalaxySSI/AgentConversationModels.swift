@@ -720,6 +720,12 @@ struct AgentConversation: Codable, Equatable, Identifiable {
   var mergedAtMillis: Int64
   var contextCompactedThroughMillis: Int64
   var contextCompactedThroughEntryId: String
+  var latestDialogueAt: Int64?
+
+  var dialogueActivityAt: Int64 {
+    guard let latestDialogueAt else { return updatedAt }
+    return latestDialogueAt > 0 ? latestDialogueAt : createdAt
+  }
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -743,6 +749,7 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     case mergedAtMillis = "merged_at_millis"
     case contextCompactedThroughMillis = "context_compacted_through_millis"
     case contextCompactedThroughEntryId = "context_compacted_through_entry_id"
+    case latestDialogueAt = "latest_dialogue_at"
   }
 
   init(
@@ -766,7 +773,8 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     mergedIntoConversationId: String = "",
     mergedAtMillis: Int64 = 0,
     contextCompactedThroughMillis: Int64 = 0,
-    contextCompactedThroughEntryId: String = ""
+    contextCompactedThroughEntryId: String = "",
+    latestDialogueAt: Int64? = 0
   ) {
     self.id = id
     self.title = title
@@ -789,6 +797,7 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     self.mergedAtMillis = max(mergedAtMillis, 0)
     self.contextCompactedThroughMillis = max(contextCompactedThroughMillis, 0)
     self.contextCompactedThroughEntryId = contextCompactedThroughEntryId
+    self.latestDialogueAt = latestDialogueAt.map { max(0, $0) }
   }
 
   init(from decoder: Decoder) throws {
@@ -814,7 +823,8 @@ struct AgentConversation: Codable, Equatable, Identifiable {
       mergedIntoConversationId: try container.decodeIfPresent(String.self, forKey: .mergedIntoConversationId) ?? "",
       mergedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .mergedAtMillis) ?? 0,
       contextCompactedThroughMillis: try container.decodeIfPresent(Int64.self, forKey: .contextCompactedThroughMillis) ?? 0,
-      contextCompactedThroughEntryId: try container.decodeIfPresent(String.self, forKey: .contextCompactedThroughEntryId) ?? ""
+      contextCompactedThroughEntryId: try container.decodeIfPresent(String.self, forKey: .contextCompactedThroughEntryId) ?? "",
+      latestDialogueAt: try container.decodeIfPresent(Int64.self, forKey: .latestDialogueAt)
     )
   }
 }

@@ -1191,7 +1191,7 @@ struct ConversationView: View {
       return
     }
     Task { @MainActor in
-      _ = await coordinator.send(message.content, to: contact)
+      _ = await coordinator.send(message.content, to: contact, requestKind: message.requestKind)
       retryingMessageIDs.remove(message.id)
     }
   }

@@ -300,6 +300,8 @@ struct GalaxySSIScreenAssistantBubble: View {
   @SceneStorage("galaxyssi.screenAssistant.bubble.x") private var positionX = 0.9
   @SceneStorage("galaxyssi.screenAssistant.bubble.y") private var positionY = 0.7
   @GestureState private var translation = CGSize.zero
+  @State private var menuPresented = false
+  @State private var screenCaptured = UIScreen.main.isCaptured
   var restoreLabel: String
   var closeLabel: String
   var stopLabel: String
@@ -310,11 +312,43 @@ struct GalaxySSIScreenAssistantBubble: View {
   var onStop: (() -> Void)? = nil
 
   var body: some View {
+    Group {
+      if !screenCaptured { bubbleLayer }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
+      screenCaptured = UIScreen.main.isCaptured
+      if screenCaptured { menuPresented = false }
+    }
+  }
+
+  private var bubbleLayer: some View {
     GeometryReader { geometry in
       let anchor = Self.center(x: positionX, y: positionY, in: geometry.size)
       let current = Self.clamp(CGPoint(x: anchor.x + translation.width,
         y: anchor.y + translation.height), in: geometry.size)
-      Button(action: onRestore) {
+      ZStack(alignment: .topLeading) {
+        if menuPresented {
+          Color.clear.contentShape(Rectangle())
+            .onTapGesture { menuPresented = false }
+          let rect = Self.menuRect(near: current, in: geometry.size, rows: onStop == nil ? 2 : 3)
+          ScrollView {
+            VStack(spacing: 0) {
+              menuAction(restoreLabel, symbol: "arrow.up.left.and.arrow.down.right", action: onRestore)
+              if let onStop { menuAction(stopLabel, symbol: "stop.circle", action: onStop) }
+              menuAction(closeLabel, symbol: "xmark", action: onClose)
+            }
+          }
+          .frame(width: rect.width, height: rect.height)
+          .background(Color.galaxySSISurface)
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+          .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.galaxySSITextSecondary.opacity(0.2)))
+          .position(x: rect.midX, y: rect.midY)
+          .accessibilityIdentifier("ios.screen-assistant.menu")
+        }
+      Button {
+        menuPresented = false
+        onRestore()
+      } label: {
         ZStack {
           Circle().fill(Color(red: 85 / 255, green: 89 / 255, blue: 94 / 255))
             .overlay(Circle().stroke(Color(red: 133 / 255, green: 137 / 255, blue: 141 / 255), lineWidth: 0.696))
@@ -345,13 +379,9 @@ struct GalaxySSIScreenAssistantBubble: View {
       .accessibilityValue(statusLabel)
       .accessibilityIdentifier("ios.screen-assistant.bubble")
       .help(restoreLabel)
-      .contextMenu {
-        Button(action: onRestore) { Label(restoreLabel, systemImage: "arrow.up.left.and.arrow.down.right") }
-        if let onStop {
-          Button(role: .destructive, action: onStop) { Label(stopLabel, systemImage: "stop.circle") }
-        }
-        Button(action: onClose) { Label(closeLabel, systemImage: "xmark") }
-      }
+      .onLongPressGesture { menuPresented.toggle() }
+      .accessibilityAction(named: Text(closeLabel)) { menuPresented = false; onClose() }
+      .accessibilityAction(named: Text(stopLabel)) { menuPresented = false; onStop?() }
       .highPriorityGesture(DragGesture(minimumDistance: 4)
         .updating($translation) { value, state, _ in state = value.translation }
         .onEnded { value in
@@ -361,7 +391,56 @@ struct GalaxySSIScreenAssistantBubble: View {
           positionY = Double(end.y / max(geometry.size.height, 1))
         })
       .position(current)
+      .zIndex(1)
+      }
+      .onChange(of: geometry.size) { _ in menuPresented = false }
     }
+  }
+
+  private func menuAction(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+    Button {
+      menuPresented = false
+      action()
+    } label: {
+      Label(title, systemImage: symbol)
+        .font(.system(size: 14))
+        .foregroundColor(.galaxySSITextPrimary)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .padding(.horizontal, 12)
+    }
+    .buttonStyle(.plain)
+  }
+
+  static func menuRect(near point: CGPoint, in size: CGSize, rows: Int) -> CGRect {
+    guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return .zero }
+    let center = clamp(point, in: size)
+    let half = touchDiameter / 2
+    let gap: CGFloat = 8
+    let width = min(CGFloat(235), size.width)
+    var height = min(CGFloat(max(1, rows)) * 48, size.height)
+    let left = center.x - half - gap - width
+    let right = center.x + half + gap
+    let x: CGFloat
+    let y: CGFloat
+    if left >= 0 {
+      x = left
+      y = min(max(0, center.y - height / 2), size.height - height)
+    } else if right + width <= size.width {
+      x = right
+      y = min(max(0, center.y - height / 2), size.height - height)
+    } else {
+      x = min(max(0, center.x - width / 2), size.width - width)
+      let above = max(0, center.y - half - gap)
+      let below = max(0, size.height - center.y - half - gap)
+      if above >= height || above >= below {
+        height = min(height, above)
+        y = above - height
+      } else {
+        height = min(height, below)
+        y = size.height - below
+      }
+    }
+    return CGRect(x: x, y: y, width: width, height: height)
   }
 
   static func center(x: Double, y: Double, in size: CGSize) -> CGPoint {

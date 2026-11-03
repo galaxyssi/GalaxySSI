@@ -1,5 +1,35 @@
 import Foundation
 
+enum AgentScreenAnalysisCancellationPolicy {
+  static let activePhases: Set<AgentPhase> = [.observing, .planning, .waitingConfirmation,
+    .executing, .verifying, .waitingResponse, .paused]
+
+  static func activePhase(for original: ChatMessage, localTasks: [AgentTaskRecord],
+                          remoteTasks: [AgentRemoteTaskStatusSnapshot]) -> AgentPhase? {
+    guard original.isMine else { return nil }
+    let turn = original.turnId.ifBlank(original.id.uuidString)
+    if let local = localTasks.first(where: {
+      $0.sessionId == original.conversationId &&
+        ($0.taskId == turn || $0.taskId == original.id.uuidString) && activePhases.contains($0.phase)
+    }) { return local.phase }
+    return remoteTasks.filter {
+      $0.conversationId == original.conversationId && $0.turnId == turn &&
+        !AgentRemoteTaskStatusPolicy.isTerminal($0.status)
+    }.max { $0.updatedAtMillis < $1.updatedAtMillis }.map { AgentRemoteTaskStatusPolicy.phase($0.status) }
+  }
+
+  static func shouldCancel(_ original: ChatMessage, messages: [ChatMessage],
+                           localTasks: [AgentTaskRecord], remoteTasks: [AgentRemoteTaskStatusSnapshot]) -> Bool {
+    guard original.isMine else { return false }
+    if activePhase(for: original, localTasks: localTasks, remoteTasks: remoteTasks) != nil { return true }
+    let turn = original.turnId.ifBlank(original.id.uuidString)
+    return !messages.contains {
+      !$0.isMine && !$0.isSystem && $0.contactId == original.contactId && $0.conversationId == original.conversationId &&
+        $0.turnId.ifBlank($0.id.uuidString) == turn && $0.deliveryStatus == .delivered
+    }
+  }
+}
+
 enum AgentScreenAnalysisReplyPolicy {
   static func isStopped(_ payload: [String: Any], messages: [ChatMessage]) -> Bool {
     guard ["text", "agent_task_event"].contains(payload.string("type")),

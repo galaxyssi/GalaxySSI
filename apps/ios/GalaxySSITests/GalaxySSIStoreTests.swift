@@ -1,6 +1,67 @@
 import XCTest
 import SwiftUI
+import SQLite3
 @testable import GalaxySSI
+
+final class AgentConversationActivityTests: XCTestCase {
+  func testLegacyTableUpgradeCanReopenWithoutLosingConversations() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("legacy.sqlite")
+    var connection: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(url.path, &connection), SQLITE_OK)
+    XCTAssertEqual(sqlite3_exec(connection,
+      "CREATE TABLE agent_conversations (conversation_id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, pinned INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, encrypted_payload BLOB NOT NULL)",
+      nil, nil, nil), SQLITE_OK)
+    sqlite3_close(connection)
+    let secrets = InMemorySecretStore()
+    let conversation = AgentConversation(id: "legacy", title: "Legacy", createdAt: 10, updatedAt: 90,
+      latestDialogueAt: nil)
+    do {
+      let database = AgentConversationDatabase(fileURL: url, secrets: secrets)
+      XCTAssertTrue(database.upsert(conversation))
+    }
+    let reopened = AgentConversationDatabase(fileURL: url, secrets: secrets)
+    XCTAssertEqual(reopened.read("legacy"), conversation)
+    XCTAssertEqual(reopened.page(status: nil, cursor: nil).items.map(\.id), ["legacy"])
+  }
+
+  func testMetadataChangesDoNotReorderDatabasePages() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentConversationDatabase(fileURL: directory.appendingPathComponent("history.sqlite"),
+      secrets: InMemorySecretStore())
+    for index in 1...3 {
+      let conversation = AgentConversation(id: "session-\(index)", title: "Session",
+        createdAt: 10, updatedAt: Int64(index * 1000), latestDialogueAt: Int64(index * 100))
+      XCTAssertTrue(database.upsert(conversation))
+    }
+    var oldest = try XCTUnwrap(database.read("session-1"))
+    oldest.title = "Restored title"
+    oldest.updatedAt = 99_000
+    XCTAssertTrue(database.upsert(oldest))
+    let first = database.page(status: nil, cursor: nil, pageSize: 2)
+    XCTAssertEqual(first.items.map(\.id), ["session-3", "session-2"])
+    let cursor = try XCTUnwrap(first.nextCursor)
+    XCTAssertEqual(cursor.updatedAt, 200)
+    let second = database.page(status: nil, cursor: cursor, pageSize: 2)
+    XCTAssertEqual(second.items.map(\.id), ["session-1"])
+    XCTAssertFalse(second.hasMore)
+  }
+
+  func testEmptyAndLegacyConversationActivityFallbacks() throws {
+    var empty = AgentConversation(id: "empty", title: "Empty", createdAt: 100, updatedAt: 900)
+    XCTAssertEqual(empty.dialogueActivityAt, 100)
+    empty.latestDialogueAt = nil
+    let legacy = try JSONDecoder().decode(AgentConversation.self, from: JSONEncoder().encode(empty))
+    XCTAssertNil(legacy.latestDialogueAt)
+    XCTAssertEqual(legacy.dialogueActivityAt, 900)
+    empty.latestDialogueAt = 300
+    XCTAssertEqual(empty.dialogueActivityAt, 300)
+  }
+}
 
 final class TestAgentActionExecutor: AgentActionExecutor {
   var callCount = 0

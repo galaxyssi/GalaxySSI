@@ -116,9 +116,13 @@ enum AgentIOSLocalModelWebToolRunner {
     turnID: String,
     taskID: String,
     baseSystemPrompt: String,
-    registry: AgentNativeToolRegistry
+    registry: AgentNativeToolRegistry,
+    readOnlyAnalysis: Bool = false
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
-    let webRegistry = try registry.subset { AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) }
+    let webRegistry = try registry.subset {
+      AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
+        (!readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0))
+    }
     let catalog = webRegistry.descriptors()
     guard !catalog.isEmpty else { throw AgentIOSLocalModelWebToolError.unavailable }
     let session = AgentIOSLocalModelWebToolSession(

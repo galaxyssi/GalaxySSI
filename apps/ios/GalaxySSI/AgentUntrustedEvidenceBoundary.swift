@@ -10,6 +10,7 @@ enum AgentUntrustedEvidenceBoundary {
   static let contractVersion = "galaxyssi.untrusted-evidence/1.0"
   static let metadataKey = "_galaxyssi_trust_boundary"
   static let policyMarker = "GalaxySSI untrusted evidence policy"
+  static let textMarker = "GALAXYSSI_UNTRUSTED_EVIDENCE"
 
   static let systemPolicy = """
 \(policyMarker) (\(contractVersion)):
@@ -80,11 +81,11 @@ enum AgentUntrustedEvidenceBoundary {
     content: String
   ) -> String {
     let envelope = markJson(sourceType: sourceType, sourceId: sourceId, content: .string(content))
-    return "GALAXYSSI_UNTRUSTED_EVIDENCE\n" + AgentMcpJSONCodec.stringify(.object(envelope))
+    return textMarker + "\n" + AgentMcpJSONCodec.stringify(.object(envelope))
   }
 
   static func trustedInstructionPrefix(_ text: String) -> String {
-    var prefix = text.components(separatedBy: "GALAXYSSI_UNTRUSTED_EVIDENCE").first ?? text
+    var prefix = text.components(separatedBy: textMarker).first ?? text
     prefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
     if prefix.hasSuffix("Attached input:") {
       prefix.removeLast("Attached input:".count)

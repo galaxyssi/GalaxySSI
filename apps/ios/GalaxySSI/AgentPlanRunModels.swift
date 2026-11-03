@@ -120,6 +120,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var verification: String
   var outputFiles: [String]
   var executionLog: [String]
+  var teamRecoveryRunId: String? = nil
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
 
@@ -221,6 +222,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case verification
     case outputFiles = "output_files"
     case executionLog = "execution_log"
+    case teamRecoveryRunId = "team_recovery_run_id"
     case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
   }
@@ -260,6 +262,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
     )
+    teamRecoveryRunId = try container.decodeIfPresent(String.self, forKey: .teamRecoveryRunId)
   }
 }
 

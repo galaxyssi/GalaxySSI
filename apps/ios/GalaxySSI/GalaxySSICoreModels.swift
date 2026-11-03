@@ -709,6 +709,26 @@ struct DeliveryTraceEvent: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentRequestKind: String, Codable {
+  case conversation = ""
+  case screenAnalysis = "screen_analysis"
+
+  func apply(to payload: inout [String: Any]) {
+    payload["request_kind"] = self == .screenAnalysis ? rawValue : nil
+  }
+
+  static func forTask(_ task: AgentTaskRecord, messages: [ChatMessage]) -> AgentRequestKind? {
+    originalMessage(for: task, messages: messages)?.requestKind
+  }
+
+  static func originalMessage(for task: AgentTaskRecord, messages: [ChatMessage]) -> ChatMessage? {
+    messages.first {
+      $0.isMine && $0.conversationId == task.sessionId &&
+        ($0.turnId == task.taskId || $0.id.uuidString == task.taskId)
+    }
+  }
+}
+
 struct ChatMessage: Codable, Identifiable, Equatable {
   var id: UUID
   var contactId: String
@@ -725,6 +745,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
   var sourceConversationId: String
   var sourceConversationTitle: String
   var voiceTranscript: String
+  var requestKind: AgentRequestKind
+  var readOnlyAnalysis: Bool
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -742,6 +764,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     case sourceConversationId
     case sourceConversationTitle
     case voiceTranscript
+    case requestKind
+    case readOnlyAnalysis
   }
 
   init(
@@ -759,7 +783,9 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     richOutputJson: String = "",
     sourceConversationId: String = "",
     sourceConversationTitle: String = "",
-    voiceTranscript: String = ""
+    voiceTranscript: String = "",
+    requestKind: AgentRequestKind = .conversation,
+    readOnlyAnalysis: Bool = false
   ) {
     self.id = id
     self.contactId = contactId
@@ -776,6 +802,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     self.sourceConversationId = sourceConversationId
     self.sourceConversationTitle = sourceConversationTitle
     self.voiceTranscript = voiceTranscript
+    self.requestKind = requestKind
+    self.readOnlyAnalysis = readOnlyAnalysis
   }
 
   init(from decoder: Decoder) throws {
@@ -795,6 +823,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     sourceConversationId = try container.decodeIfPresent(String.self, forKey: .sourceConversationId) ?? ""
     sourceConversationTitle = try container.decodeIfPresent(String.self, forKey: .sourceConversationTitle) ?? ""
     voiceTranscript = try container.decodeIfPresent(String.self, forKey: .voiceTranscript) ?? ""
+    requestKind = try container.decodeIfPresent(AgentRequestKind.self, forKey: .requestKind) ?? .conversation
+    readOnlyAnalysis = try container.decodeIfPresent(Bool.self, forKey: .readOnlyAnalysis) ?? false
   }
 
   func encode(to encoder: Encoder) throws {
@@ -814,6 +844,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     try container.encode(sourceConversationId, forKey: .sourceConversationId)
     try container.encode(sourceConversationTitle, forKey: .sourceConversationTitle)
     try container.encode(voiceTranscript, forKey: .voiceTranscript)
+    try container.encode(requestKind, forKey: .requestKind)
+    try container.encode(readOnlyAnalysis, forKey: .readOnlyAnalysis)
   }
 }
 
