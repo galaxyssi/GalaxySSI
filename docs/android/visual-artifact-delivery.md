@@ -87,9 +87,54 @@ the phone execution path, repaired tool-argument and resource-dependency plans,
 then reached a cold Linux capability probe. No MP4 was exported or claimed as
 verified. This is an outstanding live-video acceptance gap, not a passing test.
 
-The phone remained keyguard-locked during this run. Android on-screen canvas
-motion and preview background/re-entry are also not claimed as passed; the
-corresponding instrumentation acceptance tests remain available.
+### Unlocked S26U Follow-Up
+
+After the user unlocked S26U, `AgentHtmlArtifactDeviceTest` completed with four
+passed tests and one optional existing-runtime-artifact inspection skipped.
+The executed tests verified:
+
+- Private attachment persistence, byte preservation and hash validation.
+- Visible, changing canvas pixels on Android, including the preserved original
+  DeepSeek program rather than a replacement animation.
+- Pause, replay and renderer recreation after hiding and showing the fixture
+  preview. This is not a full device-reboot or App background-lifecycle test.
+- Rejection of invalid hashes and external attachment URIs.
+
+A fresh real-provider run with `expected_visual_delivery=html` did not complete
+within the harness's 180-second deadline. The task later delivered an animation;
+the App displayed approximately 5 minutes 14 seconds. Opening that exact saved
+conversation showed the animation directly in the chat, not an HTML source block.
+Two phone screenshots showed 13,578 changed samples in a 41,160-sample region of
+the visible animation. This confirms late-result display and motion, but does
+not turn the timed-out automated test into a pass. Manual pause/replay checks of
+that later result were inconclusive because the chat scroll position changed;
+the fixture pause/replay tests above are the accepted evidence for those controls.
+
+The harness's active-workspace-only cleanup did not prevent that later cloud
+reply. Future live tests must cancel their exact fixture turn even when it is
+absent from the supervisor's active-workspace map. No user's existing task was
+resubmitted, stopped or deleted during this follow-up.
+
+Outstanding acceptance remains: reliable real-provider completion within the
+test window, full App background-lifecycle recovery, and actual MP4 generation.
+No application or Desktop runtime code changed during this follow-up; the
+tested binary version remains `0.1.7.13`.
+
+### CI Scope
+
+The full Android CI run for PR #3657 reported 7,764 tests, five failures and six
+skips. The five failures were already present in the preceding PR #3652 run
+(7,756 tests, the same five failures and six skips):
+
+- `AgentPhoneNativeToolCatalogTest.exposesCompleteDefaultIdsWithoutBuildingAndroidExecutors`
+- `AgentProcessStatePolicyTest.anAttemptCompletionCannotCompleteTheWholeTurn`
+- `AgentTaskIntentTest.imageUnderstandingDoesNotBecomeAProjectExecutionTask`
+- `AgentTaskIntentTest.phoneContextInAdviceDoesNotStartPhoneExecution`
+- `AgentUntrustedEvidenceBoundaryTest.routingReadsTheUserInstructionButNotAttachmentMetadata`
+
+See the [PR #3657 Android job](https://github.com/galaxyssi/GalaxySSI/actions/runs/41596645177/job/125785465410)
+and the [preceding Android job](https://github.com/galaxyssi/GalaxySSI/actions/runs/41469472833/job/125358945867).
+Selected tests and device checks passing must not be described as a green full CI.
 
 The real-provider test can require `expected_visual_delivery=html` or `video`.
 HTML acceptance checks private delivery and changing canvas pixels; MP4 acceptance
