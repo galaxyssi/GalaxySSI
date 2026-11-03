@@ -77,19 +77,19 @@ class ProactiveAttentionHeaderDeviceTest {
     @Test fun menuUsesOneBareCheckAndDispatchesEachAction() {
         instrumentation.runOnMainSync {
             val context = instrumentation.targetContext
-            for (selected in listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED)) {
+            for (selected in listOf(AttentionFeedFilter.CURATED, AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED)) {
                 val actions = mutableListOf<AttentionFeedFilter>()
                 var settings = 0
                 val menu = ProactiveAttentionFeedMenu(context, selected, { actions += it }, { settings++ }, {})
                 val all = views(menu.content)
                 assertFalse("No checkbox or radio-button frames", all.any { it is CompoundButton })
                 val checks = all.filter { it.tag?.toString()?.startsWith("attention-menu-check:") == true }
-                assertEquals(4, checks.size)
+                assertEquals(5, checks.size)
                 assertEquals(listOf("attention-menu-check:${selected.name}"), checks.filter { it.visibility == View.VISIBLE }.map { it.tag })
                 val rows = all.filter { it.tag?.toString()?.startsWith("attention-menu:") == true }
                 assertEquals(listOf("attention-menu:${selected.name}"), rows.filter { it.isSelected }.map { it.tag })
                 rows.forEach { it.performClick() }
-                assertEquals(listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED), actions)
+                assertEquals(listOf(AttentionFeedFilter.CURATED, AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED), actions)
                 assertEquals(1, settings)
             }
         }

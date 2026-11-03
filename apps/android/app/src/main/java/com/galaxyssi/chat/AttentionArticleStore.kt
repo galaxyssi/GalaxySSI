@@ -28,6 +28,9 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         buildList { while (c.moveToNext()) add(c.getString(0)) }
     }
 
+    internal fun curate(items: List<GlobalProactiveInboxItem>, enabled: Set<String>, now: Long): List<GlobalProactiveInboxItem> =
+        AttentionNewsCurationStore.decorate(db, items, enabled, now)
+
     fun enqueue(article: AttentionFeedArticle, topicTitle: String) {
         db.beginTransaction()
         try {

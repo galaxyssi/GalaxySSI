@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="attention_menu_curated">Highlights</string>
     <string name="attention_knowledge_label">Science explainer</string>
     <string name="attention_article_body">Chinese article</string>
     <string name="attention_article_policy">Only articles with a retrieved body and completed Chinese translation are shown. Public news is stored unencrypted.</string>
