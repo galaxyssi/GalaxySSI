@@ -2,6 +2,73 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testObserverGenerationAndSequenceFloorsSurviveReopen() throws {
+    let suite = "team-owner-generation-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var snapshot = durableTeamSnapshot("run")
+    let source = UUID().uuidString.lowercased()
+    snapshot.members[1].sourceMessageId = source
+    XCTAssertTrue(history.upsert(snapshot))
+    XCTAssertEqual(try history.consumeOwnedReply(source: source, conversation: "conversation", turn: "turn", task: source,
+      contact: "review", content: "partial", richOutputJson: "", terminal: false, success: true, now: 10,
+      observation: AgentTeamReplyObservation(generation: 2, sequence: 10)), .observerProgress)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    for observation in [AgentTeamReplyObservation(generation: 1, sequence: 999),
+      AgentTeamReplyObservation(generation: 2, sequence: 9), AgentTeamReplyObservation(generation: 2),
+      AgentTeamReplyObservation(), AgentTeamReplyObservation(payload: ["execution_generation": true, "status_sequence": 20])] {
+      XCTAssertEqual(try reopened.consumeOwnedReply(source: source, conversation: "conversation", turn: "turn", task: source,
+        contact: "review", content: "stale", richOutputJson: "", terminal: true, success: true, now: 20,
+        observation: observation), .observerStale)
+    }
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].status, .pending)
+    XCTAssertEqual(try reopened.consumeOwnedReply(source: source, conversation: "conversation", turn: "turn", task: source,
+      contact: "review", content: "current", richOutputJson: "", terminal: true, success: true, now: 30,
+      observation: AgentTeamReplyObservation(generation: 2, sequence: 11)), .observerCommitted)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].output, "current")
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[0].status, .pending)
+  }
+
+  func testObserverNewGenerationResetsSequenceAndRejectedUpdateDoesNotAdvanceFloor() throws {
+    let suite = "team-owner-generation-reset-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite3"))
+    XCTAssertTrue(history.upsert(durableTeamSnapshot("run")))
+    func consume(_ generation: Int64, _ sequence: Int64, terminal: Bool, content: String, success: Bool = true) throws -> AgentTeamReplyDisposition {
+      try history.consumeOwnedReply(source: "source-review", conversation: "conversation", turn: "turn", task: "source-review",
+        contact: "review", content: content, richOutputJson: "", terminal: terminal, success: success, now: 20,
+        observation: AgentTeamReplyObservation(generation: generation, sequence: sequence))
+    }
+    XCTAssertEqual(try consume(1, 100, terminal: false, content: "partial"), .observerProgress)
+    XCTAssertEqual(try consume(2, 1, terminal: false, content: "new attempt"), .observerProgress)
+    XCTAssertThrowsError(try consume(3, 100, terminal: true, content: "", success: false))
+    XCTAssertEqual(try consume(1, 200, terminal: true, content: "old"), .observerStale)
+    XCTAssertEqual(try consume(2, 2, terminal: true, content: "current"), .observerCommitted)
+  }
+
+  func testObserverObservationRejectsMalformedAndUnsafeNumbers() {
+    let invalidValues: [Any] = [true, -1, 1.5, Double.infinity, "not-an-integer", "9223372036854775808"]
+    for value in invalidValues {
+      XCTAssertFalse(AgentTeamReplyObservation(payload: ["execution_generation": value]).valid)
+    }
+    XCTAssertFalse(AgentTeamReplyObservation(payload: ["status_sequence": true]).valid)
+    XCTAssertFalse(AgentTeamReplyObservation(payload: ["status_sequence": 9_007_199_254_740_992.0]).valid)
+    let observation = AgentTeamReplyObservation(payload: ["execution_generation": "2", "status_seq": "3"])
+    XCTAssertTrue(observation.valid)
+    XCTAssertEqual(observation.generation, 2)
+    XCTAssertEqual(observation.sequence, 3)
+    XCTAssertTrue(AgentTeamReplyObservation().valid)
+  }
+
   func testObserverOwnershipHidesProgressAndKeepsFirstCommittedResult() throws {
     let suite = "team-owner-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

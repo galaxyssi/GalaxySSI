@@ -1,4 +1,33 @@
 import Foundation
+import CoreFoundation
+
+struct AgentTeamReplyObservation: Equatable {
+  let generation: Int64?
+  let sequence: Int64?
+  private(set) var valid: Bool
+
+  init(generation: Int64? = nil, sequence: Int64? = nil) {
+    self.generation = generation
+    self.sequence = sequence
+    valid = (generation.map { AgentRemoteOutcomePolicy.validGeneration($0) } ?? true) &&
+      (sequence.map { (0...9_007_199_254_740_991).contains($0) } ?? true)
+  }
+
+  init(payload: [String: Any]) {
+    let rawGeneration = payload["execution_generation"]
+    let rawSequence = payload["status_sequence"] ?? payload["status_seq"]
+    self.init(generation: Self.integer(rawGeneration), sequence: Self.integer(rawSequence))
+    valid = valid && (rawGeneration == nil || generation != nil) && (rawSequence == nil || sequence != nil)
+  }
+
+  private static func integer(_ value: Any?) -> Int64? {
+    if let text = value as? String { return Int64(text) }
+    guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+          number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 9_007_199_254_740_991,
+          Double(number.int64Value) == number.doubleValue else { return nil }
+    return number.int64Value
+  }
+}
 
 struct AgentTeamReplyOwner: Codable, Equatable {
   var supervisorRunId: String
@@ -8,10 +37,33 @@ struct AgentTeamReplyOwner: Codable, Equatable {
   var sourceMessageId: String
   var contactId: String
   var deliveryMode: AgentDeliveryMode
+  var observedGeneration: Int64? = nil
+  var observedSequence: Int64? = nil
+
+  func accepts(_ observation: AgentTeamReplyObservation) -> Bool {
+    guard observation.valid else { return false }
+    if let observedGeneration {
+      guard let generation = observation.generation, generation >= observedGeneration else { return false }
+      if generation > observedGeneration { return true }
+    } else if observation.generation != nil { return true }
+    if let observedSequence {
+      guard let sequence = observation.sequence, sequence >= observedSequence else { return false }
+    }
+    return true
+  }
+
+  func advancing(_ observation: AgentTeamReplyObservation) -> AgentTeamReplyOwner {
+    var result = self
+    if let generation = observation.generation, generation != observedGeneration {
+      result.observedGeneration = generation
+      result.observedSequence = observation.sequence
+    } else if let sequence = observation.sequence { result.observedSequence = sequence }
+    return result
+  }
 }
 
 enum AgentTeamReplyDisposition: Equatable {
-  case notOwned, primary, observerProgress, observerCommitted, observerDuplicate, retired
+  case notOwned, primary, observerProgress, observerCommitted, observerDuplicate, observerStale, retired
 }
 
 extension Notification.Name {
@@ -98,7 +150,9 @@ final class AgentTeamExecutionHistoryStore {
 
   func consumeOwnedReply(source: String, conversation: String, turn: String, task: String,
                          contact: String, content: String, richOutputJson: String,
-                         terminal: Bool, success: Bool, now: Int64) throws -> AgentTeamReplyDisposition {
+                         terminal: Bool, success: Bool, now: Int64,
+                         observation: AgentTeamReplyObservation = AgentTeamReplyObservation(),
+                         persistObservation: Bool = true) throws -> AgentTeamReplyDisposition {
     guard !source.isBlank, task == source, !conversation.isBlank, !turn.isBlank, !contact.isBlank else { return .notOwned }
     var changedRun: String?
     let disposition = try access { database -> AgentTeamReplyDisposition in
@@ -107,8 +161,13 @@ final class AgentTeamExecutionHistoryStore {
             let member = saved.members.first(where: { $0.memberId == owner.memberId &&
               $0.sourceMessageId == source && $0.agentId == contact }), saved.state != .cancelled else { return .retired }
       if owner.deliveryMode == .respond { return .primary }
-      guard terminal else { return .observerProgress }
+      guard owner.accepts(observation) else { return .observerStale }
       if (member.status.isTerminal && member.status != .interrupted) || saved.state.deliverable { return .observerDuplicate }
+      if persistObservation {
+        let advanced = owner.advancing(observation)
+        if advanced != owner { try database.updateReplyOwner(advanced) }
+      }
+      guard terminal else { return .observerProgress }
       guard let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: source, conversation: conversation,
         turn: turn, task: task, contact: contact, content: content, richOutputJson: richOutputJson,
         success: success, now: now) else { throw AgentTeamHistoryDatabase.Failure.stale }
