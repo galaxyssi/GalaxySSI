@@ -428,6 +428,37 @@ final class MessageCoordinator: ObservableObject {
     for var task in store.recentAgentTasks(limit: 500) where task.phase == .executing {
       guard var plan = task.activePlan else { continue }
       let outgoing = localOutgoingMessage(for: task)
+      let teamSpecs = plan.actions.filter { $0.kind == .callConnector }.compactMap {
+        AgentTeamDispatchSpecCodec.decode($0.parameters[agentTeamSpecParameter] ?? "")
+      }
+      if teamSpecs.count == 1, let spec = teamSpecs.first, let outgoing,
+         task.taskId == outgoing.turnId.ifBlank(outgoing.id.uuidString),
+         task.sessionId == outgoing.conversationId {
+        let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId)
+        let matches = saved.map { savedTeam in
+          savedTeam.teamId == spec.definition.teamId && savedTeam.conversationId == outgoing.conversationId &&
+            savedTeam.taskId == task.taskId && savedTeam.primaryMemberId == spec.definition.primaryMemberId &&
+            savedTeam.members.count == spec.definition.members.count &&
+            spec.definition.members.allSatisfy { expected in
+              savedTeam.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
+            }
+        } ?? false
+        let canWait = matches && saved?.state != .interrupted
+        let cancelled = matches && saved?.state == .cancelled
+        task.phase = cancelled ? .cancelled : (canWait ? .waitingResponse : .paused)
+        task.blocked = !canWait && !cancelled
+        task.verification = GalaxySSILocalization.string(
+          cancelled ? "galaxyssi.team.recovery.cancelled" : (canWait ? "galaxyssi.team.recovery.waiting" : "galaxyssi.team.recovery.missing"),
+          fallback: cancelled ? "The original Agent team was cancelled" : (canWait
+            ? "Awaiting validation of the original Agent team outcome"
+            : "The original Agent team is unavailable; waiting without redispatch"),
+          language: store.languagePolicy.interfaceLanguage)
+        task.executionLog.append("Agent team recovery: retained original team " + spec.supervisorRunId)
+        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+        store.upsertAgentTask(task)
+        recoveredTaskCount += 1
+        continue
+      }
       var recoveredActions: [AgentAction] = []
       var foundJournaledNode = false
       var journalRecoveryFailed = false

@@ -4824,3 +4824,6 @@
 "galaxyssi.conversation_status.blocked" = "受阻";
 "galaxyssi.conversation_status.failed" = "失败";
 "galaxyssi.conversation_status.cancelled" = "已取消";
+"galaxyssi.team.recovery.cancelled" = "原智能体团队已取消";
+"galaxyssi.team.recovery.waiting" = "正在等待原智能体团队结果的验证";
+"galaxyssi.team.recovery.missing" = "原智能体团队不可用，正在等待，不会重新派发";
