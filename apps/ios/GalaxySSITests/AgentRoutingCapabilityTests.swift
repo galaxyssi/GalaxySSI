@@ -1839,4 +1839,79 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(inherited.reasoningEffort, .xhigh)
   }
 
+  func testScreenshotAnalysisDoesNotRequireNavigationOrDeviceControl() {
+    let chinese = "\u{8bf7}\u{5206}\u{6790}\u{8fd9}\u{5f20}\u{5c4f}\u{5e55}\u{622a}\u{56fe}"
+    let goals = [chinese, "Explain what is visible in this screen image",
+      "Describe the device, light and scene visible in this photo",
+      chinese + "\n\n" + AgentDirectVisionPolicy.instructionForMimeTypes(["image/jpeg"])]
+    for goal in goals {
+      let requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+      XCTAssertFalse(requirements.capabilities.contains(.appNavigation), goal)
+      XCTAssertFalse(requirements.capabilities.contains(.deviceControl), goal)
+    }
+  }
+
+  func testReplyIdentityRegistrationReportsValidationAndReadableBinding() throws {
+    let suite = "ReplyIdentityRegistration.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AgentTaskIdentityStore(defaults: defaults)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: "task", turnId: "turn")
+    XCTAssertFalse(store.register(contactId: "", sourceMessageId: "source", identity: identity))
+    XCTAssertFalse(store.register(contactId: "agent", sourceMessageId: " ", identity: identity))
+    XCTAssertFalse(store.register(contactId: "agent", sourceMessageId: Int64(0), identity: identity))
+    var invalid = identity
+    invalid.turnId = ""
+    XCTAssertFalse(store.register(contactId: "agent", sourceMessageId: "source", identity: invalid))
+    XCTAssertNil(store.identity(contactId: "agent", sourceMessageId: "source"))
+    XCTAssertTrue(store.register(contactId: "agent", sourceMessageId: "source", identity: identity))
+    XCTAssertEqual(AgentTaskIdentityStore(defaults: defaults).identity(contactId: "agent", sourceMessageId: "source"), identity)
+    XCTAssertFalse(store.register(contactId: "agent", sourceMessageId: "source", identity: invalid))
+    XCTAssertEqual(store.identity(contactId: "agent", sourceMessageId: "source"), identity)
+    XCTAssertTrue(store.register(contactId: "agent", sourceMessageId: Int64(7), identity: identity))
+    XCTAssertEqual(store.identity(contactId: "agent", sourceMessageId: "7"), identity)
+  }
+
+  func testAssistantConversationAutoDoesNotChangeHomeDefaultOrForgetTarget() throws {
+    let suite = "ScreenAssistantModelSelection.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), AgentModelSelection())
+    AgentModelSelectionSettings.selectManual(for: "home", targetId: "desktop:codex",
+      modelId: "gpt-6-sol", displayName: "Codex", reasoningEffort: .high, defaults: defaults)
+    let home = AgentModelSelectionSettings.defaultSelection(defaults: defaults)
+    AgentModelSelectionSettings.inheritDefault(for: "screen", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), home)
+    AgentModelSelectionSettings.selectManual(for: "screen", targetId: "desktop:codex",
+      modelId: "gpt-6-luna", displayName: "Codex", reasoningEffort: .low,
+      rememberAsDefault: false, defaults: defaults)
+    AgentModelSelectionSettings.selectAutomaticForConversation(for: "screen", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), AgentModelSelection())
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), home)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "home", defaults: defaults), home)
+    let remembered = try XCTUnwrap(AgentModelSelectionSettings.configurationForTarget(
+      conversationId: "screen", targetId: "desktop:codex", defaults: defaults))
+    XCTAssertEqual(remembered.modelId, "gpt-6-luna")
+    XCTAssertEqual(remembered.reasoningEffort, .low)
+    AgentModelSelectionSettings.inheritDefault(for: "next", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "next", defaults: defaults), home)
+    AgentModelSelectionSettings.inheritDefault(for: "screen", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), AgentModelSelection())
+    AgentModelSelectionSettings.selectAutomatic(for: "home", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), AgentModelSelection())
+  }
+
+  func testScreenshotRoutingStillRecognizesActualControlCommands() {
+    for goal in ["tap the button on the screen", "swipe to the next page", "open app settings",
+      "\u{70b9}\u{51fb}\u{5c4f}\u{5e55}\u{4e0a}\u{7684}\u{6309}\u{94ae}"] {
+      XCTAssertTrue(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.appNavigation), goal)
+    }
+    for goal in ["activate scene movie night", "dim the living room lights", "switch the device off",
+      "\u{5f00}\u{706f}", "\u{63a7}\u{5236}\u{8bbe}\u{5907}\u{6253}\u{5f00}\u{7a7a}\u{8c03}"] {
+      XCTAssertTrue(AgentTaskRequirementAnalyzer.analyze(goal).capabilities.contains(.deviceControl), goal)
+    }
+    XCTAssertFalse(AgentTaskRequirementAnalyzer.analyze("Describe the control panel in this device photo")
+      .capabilities.contains(.appNavigation))
+  }
+
 }

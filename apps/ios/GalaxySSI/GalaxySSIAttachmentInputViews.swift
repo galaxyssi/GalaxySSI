@@ -1,4 +1,5 @@
 import PhotosUI
+import ImageIO
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -144,12 +145,16 @@ struct GalaxySSIAttachmentMenuDivider: View {
 }
 
 struct PhotoLibraryPickerView: UIViewControllerRepresentable {
+  var selectionLimit = GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount
+  var dismissOnSelection = true
+  var onFailure: () -> Void = {}
+  var onCancel: () -> Void = {}
   var onAttachment: (GalaxySSIDraftAttachment) -> Void
 
   func makeUIViewController(context: Context) -> PHPickerViewController {
     var configuration = PHPickerConfiguration(photoLibrary: .shared())
     configuration.filter = .images
-    configuration.selectionLimit = GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount
+    configuration.selectionLimit = max(1, min(selectionLimit, GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount))
     let controller = PHPickerViewController(configuration: configuration)
     controller.delegate = context.coordinator
     return controller
@@ -158,36 +163,209 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
   func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(onAttachment: onAttachment)
+    Coordinator(dismissOnSelection: dismissOnSelection, onFailure: onFailure, onCancel: onCancel,
+      onAttachment: onAttachment)
+  }
+
+  static func dismantleUIViewController(_ controller: PHPickerViewController, coordinator: Coordinator) {
+    coordinator.invalidateEmbeddedPicker()
   }
 
   final class Coordinator: NSObject, PHPickerViewControllerDelegate {
     private let onAttachment: (GalaxySSIDraftAttachment) -> Void
+    private let dismissOnSelection: Bool
+    private let onFailure: () -> Void
+    private let onCancel: () -> Void
+    private var acceptingResults = true
 
-    init(onAttachment: @escaping (GalaxySSIDraftAttachment) -> Void) {
+    init(dismissOnSelection: Bool, onFailure: @escaping () -> Void, onCancel: @escaping () -> Void,
+         onAttachment: @escaping (GalaxySSIDraftAttachment) -> Void) {
+      self.dismissOnSelection = dismissOnSelection
+      self.onFailure = onFailure
+      self.onCancel = onCancel
       self.onAttachment = onAttachment
     }
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-      picker.dismiss(animated: true)
+      if results.isEmpty {
+        acceptingResults = false
+        onCancel()
+        if dismissOnSelection { picker.dismiss(animated: true) }
+        return
+      }
+      if dismissOnSelection { picker.dismiss(animated: true) }
       results.forEach { result in
         let provider = result.itemProvider
         let typeIdentifier = provider.registeredTypeIdentifiers.first { identifier in
           UTType(identifier)?.conforms(to: .image) == true
         } ?? UTType.image.identifier
         provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
-          guard let data else { return }
+          guard let data, !data.isEmpty, data.count <= 64 * 1024 * 1024 else {
+            DispatchQueue.main.async { if self.acceptingResults { self.onFailure() } }
+            return
+          }
           let name = provider.suggestedName.map { "\($0).jpg" } ?? "photo.jpg"
           let attachment = GalaxySSIAttachmentPayloadBuilder.makePhotoAttachment(
             data: data,
             suggestedName: name
           )
           DispatchQueue.main.async {
-            self.onAttachment(attachment)
+            if self.acceptingResults { self.onAttachment(attachment) }
           }
         }
       }
     }
+
+    func invalidateEmbeddedPicker() {
+      // Ordinary pickers finish loading after their automatic dismissal.
+      if !dismissOnSelection { acceptingResults = false }
+    }
+  }
+}
+
+extension AgentHomeView {
+  var screenAssistantControls: some View {
+    HStack(spacing: 12) {
+      Label(t("galaxyssi.screen_assistant.title", "Screen assistant"), systemImage: "viewfinder")
+        .font(.subheadline.weight(.semibold))
+        .lineLimit(1)
+      Spacer(minLength: 0)
+      Button {
+        screenAssistantCompact.toggle()
+      } label: {
+        Image(systemName: screenAssistantCompact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
+          .frame(width: 44, height: 44)
+      }
+      .accessibilityLabel(screenAssistantCompact
+        ? t("galaxyssi.screen_assistant.expand", "Expand result")
+        : t("galaxyssi.screen_assistant.compact", "Compact result"))
+      .accessibilityIdentifier("ios.screen-assistant.resize")
+      Button {
+        screenAssistantConversationID = ""
+      } label: {
+        Image(systemName: "xmark").frame(width: 44, height: 44)
+      }
+      .accessibilityLabel(t("galaxyssi.screen_assistant.close", "Close screen assistant"))
+      .accessibilityIdentifier("ios.screen-assistant.close")
+    }
+    .buttonStyle(.plain)
+    .padding(.leading, 16)
+    .padding(.trailing, 4)
+    .foregroundColor(.galaxySSITextPrimary)
+    .background(Color.galaxySSIPageBackground)
+  }
+}
+
+struct GalaxySSIScreenshotInputView: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State private var attachment: GalaxySSIDraftAttachment?
+  @State private var preview: UIImage?
+  @State private var selection: CGRect?
+  @State private var failed = false
+  @State private var acceptingResults = false
+  var onAttachment: (GalaxySSIDraftAttachment) -> Void
+
+  var body: some View {
+    NavigationView {
+      Group {
+        if let preview {
+          GeometryReader { geometry in
+            let scale = min(geometry.size.width / preview.size.width, geometry.size.height / preview.size.height)
+            let size = CGSize(width: preview.size.width * scale, height: preview.size.height * scale)
+            Image(uiImage: preview).resizable().frame(width: size.width, height: size.height)
+              .overlay {
+                if let selection {
+                  Rectangle().fill(Color.black.opacity(0.12))
+                    .overlay(Rectangle().stroke(Color.accentColor, lineWidth: 2))
+                    .frame(width: selection.width * size.width, height: selection.height * size.height)
+                    .position(x: selection.midX * size.width, y: selection.midY * size.height)
+                }
+              }
+              .contentShape(Rectangle())
+              .gesture(DragGesture(minimumDistance: 4).onChanged { value in
+                selection = Self.cropSelection(from: value.startLocation, to: value.location, size: size)
+              })
+              .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+          }
+          .padding(12)
+        } else {
+          PhotoLibraryPickerView(selectionLimit: 1, dismissOnSelection: false,
+            onFailure: { if acceptingResults { failed = true } }, onCancel: close) { selected in
+            guard acceptingResults else { return }
+            guard selected.data.count <= 64 * 1024 * 1024,
+                  let source = CGImageSourceCreateWithData(selected.data as CFData, nil),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 4096
+                  ] as CFDictionary) else { failed = true; return }
+            attachment = selected
+            preview = UIImage(cgImage: image)
+          }
+        }
+      }
+      .navigationTitle(t("galaxyssi.screen_assistant.analyze", "Analyze screenshot"))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("galaxyssi.common.cancel", "Cancel"), action: close)
+        }
+        ToolbarItemGroup(placement: .confirmationAction) {
+          if preview != nil {
+            Button { selection = nil } label: { Image(systemName: "arrow.counterclockwise") }
+              .accessibilityLabel(t("galaxyssi.screen_assistant.reset_crop", "Reset crop"))
+            Button(action: confirm) { Image(systemName: "checkmark") }
+              .accessibilityLabel(t("galaxyssi.screen_assistant.use_image", "Use image"))
+          }
+        }
+      }
+      .alert(t("galaxyssi.screen_assistant.image_error", "Image could not be prepared"), isPresented: $failed) {
+        Button(t("galaxyssi.common.done", "Done"), role: .cancel) {}
+      }
+    }
+    .navigationViewStyle(.stack)
+    .onAppear { acceptingResults = true }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in close() }
+    .onDisappear { acceptingResults = false; attachment = nil; preview = nil; selection = nil }
+  }
+
+  private func close() {
+    acceptingResults = false
+    attachment = nil
+    preview = nil
+    selection = nil
+    dismiss()
+  }
+
+  static func cropSelection(from start: CGPoint, to end: CGPoint, size: CGSize) -> CGRect? {
+    guard size.width > 0, size.height > 0 else { return nil }
+    let x1 = min(max(start.x / size.width, 0), 1)
+    let x2 = min(max(end.x / size.width, 0), 1)
+    let y1 = min(max(start.y / size.height, 0), 1)
+    let y2 = min(max(end.y / size.height, 0), 1)
+    guard abs(x2 - x1) * size.width >= 4, abs(y2 - y1) * size.height >= 4 else { return nil }
+    return CGRect(x: min(x1, x2), y: min(y1, y2), width: abs(x2 - x1), height: abs(y2 - y1))
+  }
+
+  private func confirm() {
+    guard acceptingResults, let attachment else { return }
+    if let selection, let source = preview?.cgImage {
+      let rect = CGRect(x: selection.minX * CGFloat(source.width), y: selection.minY * CGFloat(source.height),
+        width: selection.width * CGFloat(source.width), height: selection.height * CGFloat(source.height)).integral
+      guard let cropped = source.cropping(to: rect), let data = UIImage(cgImage: cropped).pngData() else {
+        failed = true; return
+      }
+      onAttachment(GalaxySSIAttachmentPayloadBuilder.makePhotoAttachment(data: data,
+        suggestedName: "screenshot-crop.png", sourceDescription: "screenshot-crop"))
+    } else {
+      onAttachment(attachment)
+    }
+    close()
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: language)
   }
 }
 

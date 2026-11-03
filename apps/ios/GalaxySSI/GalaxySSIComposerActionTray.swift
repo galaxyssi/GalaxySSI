@@ -7,6 +7,7 @@ enum GalaxySSIComposerTrayActionID: String, CaseIterable, Identifiable {
   case scan
   case camera
   case file
+  case screenshot
 
   var id: String { rawValue }
 }
@@ -27,7 +28,7 @@ struct GalaxySSIComposerTrayAction: Identifiable {
       return Color(red: 77 / 255, green: 111 / 255, blue: 245 / 255)
     case .camera:
       return Color(red: 230 / 255, green: 135 / 255, blue: 43 / 255)
-    case .file:
+    case .file, .screenshot:
       return Color(red: 24 / 255, green: 167 / 255, blue: 189 / 255)
     }
   }
@@ -353,7 +354,7 @@ private struct GalaxySSIParagraphSelectingTextView: UIViewRepresentable {
 }
 
 enum GalaxySSIPeerComposerActionPolicy {
-  static let actionIDs = GalaxySSIComposerTrayActionID.allCases
+  static let actionIDs: [GalaxySSIComposerTrayActionID] = [.newSession, .sessions, .scan, .camera, .file]
 
   static func consumesBackAction(actionTrayPresented: Bool) -> Bool {
     actionTrayPresented
