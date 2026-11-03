@@ -69,14 +69,17 @@ class AttentionArticleWorker(context: Context, params: WorkerParameters) : Corou
                 val jobs = (0 until parallelism).mapNotNull { store.claim(topics, System.currentTimeMillis()) }
                 if (jobs.isEmpty()) break
                 attempted += jobs.size
+                val progressBefore = jobs.associate { it.key to store.progressCount(it.key) }
                 // Only downloads overlap. DOM extraction and the reused translator stay bounded.
                 val prepared = coroutineScope { jobs.map { job -> async(Dispatchers.IO) {
                     try {
-                        val article = if (job.state == "ready") null else {
+                        val article = if (job.state == "ready") null else store.extracted(job.key, System.currentTimeMillis()) ?: run {
                             val page = fetcher.fetch(job.url, 10 * 1024 * 1024L, 20_000L,
                                 AgentDynamicArticleRequestPolicy.headers(job.url), AgentNativeToolCancellationToken.NONE,
                                 { coroutine.ensureActive() })
-                            try { extraction.withLock { AttentionArticlePolicy.extractStructured(page) } } finally { page.body.fill(0) }
+                            try { extraction.withLock { AttentionArticlePolicy.extractStructured(page).also {
+                                store.checkpoint(job.key, it, System.currentTimeMillis())
+                            } } } finally { page.body.fill(0) }
                         }
                         kotlin.Result.success(article)
                     } catch (cancelled: CancellationException) { throw cancelled
@@ -87,7 +90,7 @@ class AttentionArticleWorker(context: Context, params: WorkerParameters) : Corou
                         val article = prepared[index].getOrThrow()
                         if (article != null) {
                             val title = if (job.knowledge) article.article.title else job.title.ifBlank { article.article.title }
-                            val translated = translator.translate(title, article)
+                            val translated = translator.translate(title, article, store.translationProgress(job.key))
                             coroutine.ensureActive()
                             store.ready(job.key, translated)
                         }
@@ -100,6 +103,8 @@ class AttentionArticleWorker(context: Context, params: WorkerParameters) : Corou
                     } catch (timeout: TimeoutCancellationException) {
                         coroutine.ensureActive()
                         store.failed(job, "article_translation_timeout", System.currentTimeMillis())
+                        if (store.progressCount(job.key) > progressBefore.getValue(job.key))
+                            store.continueTranslation(job.key, System.currentTimeMillis())
                     } catch (cancelled: CancellationException) { throw cancelled
                     } catch (failure: Exception) {
                         val reason = if (failure is AgentWebMediaException) failure.code else
@@ -110,11 +115,14 @@ class AttentionArticleWorker(context: Context, params: WorkerParameters) : Corou
                 }
             }
         }
+        coroutine.ensureActive()
         ProactiveAttentionFeedDelivery.published(context, published)
-        val next = store.nextAt(topics)
+        if (published == 0 && (attempted > 0 || migrating)) GlobalProactiveDeliveryBus.signalReady()
+        if (android.os.SystemClock.elapsedRealtime() - started < 110_000L)
+            AttentionSourceDiscovery.probe(context, store, topics)
+        val next = listOfNotNull(store.nextAt(topics), store.nextSourceProbe(topics)).minOrNull()
         if (migrating || next != null) AttentionArticleScheduler.request(context,
             if (migrating) load.spacingMillis else ((next ?: 0) - System.currentTimeMillis()).coerceAtLeast(load.spacingMillis))
-        GlobalProactiveDeliveryBus.signalReady()
         android.util.Log.i("GalaxySSIAttention", "article_batch attempted=$attempted published=$published migrating=$migrating " +
             "elapsed_ms=${android.os.SystemClock.elapsedRealtime() - started}")
         Result.success()

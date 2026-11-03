@@ -132,6 +132,10 @@ class ProactiveAttentionFeedStore(context: Context) {
         } ?: JSONObject()
     }
 
+    internal fun sourceDiscovered(topicId: String, now: Long) = synchronized(LOCK) {
+        database.writeString("topic:$topicId", topicState(topicId).put("source_revision", SOURCE_REVISION).put("next", now).toString())
+    }
+
     fun cachedFeed(url: String, now: Long): String? = synchronized(LOCK) {
         val key = "feed:" + ProactiveAttentionFeedPolicy.urlKey(url)
         val cached = runCatching { JSONObject(database.readString(key, "{}")) }.getOrElse {

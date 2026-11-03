@@ -19,16 +19,22 @@ internal class AttentionArticleTranslator(private val context: Context) : AutoCl
         translation(body).run(title, body)
     }
 
-    suspend fun translate(title: String, source: AttentionArticleSource): AttentionChineseArticle = withTimeout(90_000L) {
-        translation(source.article.content).run(title, source.document)
+    suspend fun translate(title: String, source: AttentionArticleSource, progress: AttentionTranslationProgress? = null): AttentionChineseArticle = withTimeout(90_000L) {
+        translation(source.article.content, progress).run(title, source.document)
     }
 
-    private suspend fun translation(body: String): AttentionArticleTranslation {
+    private suspend fun translation(body: String, progress: AttentionTranslationProgress? = null): AttentionArticleTranslation {
         val bodyLanguage = TranslateLanguage.fromLanguageTag(identifier.identifyLanguage(body.take(4000)).await())
-        return AttentionArticleTranslation { text ->
+        return AttentionArticleTranslation(progress) { text ->
             withTimeout(15_000L) piece@{
                 // A short author/model name cannot reliably identify its language. Keep the article context.
-                val language = (if (text.length < 160) bodyLanguage else
+                // Dominant Chinese detection must not echo Japanese/Korean quotations unchanged.
+                val scriptLanguage = when {
+                    text.any { it in '\u3040'..'\u30ff' } -> TranslateLanguage.JAPANESE
+                    text.any { it in '\uac00'..'\ud7af' } -> TranslateLanguage.KOREAN
+                    else -> null
+                }
+                val language = scriptLanguage ?: (if (text.length < 160) bodyLanguage else
                     TranslateLanguage.fromLanguageTag(identifier.identifyLanguage(text).await()) ?: bodyLanguage)
                     ?: error("article_language_unknown")
                 if (language == TranslateLanguage.CHINESE) return@piece text

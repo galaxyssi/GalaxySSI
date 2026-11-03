@@ -23,6 +23,21 @@ class AttentionFeedCollectionDeviceTest {
     private fun feed(url: String, time: Long = now) = "<rss><channel><item><title>New AI model</title>" +
         "<link>$url</link><pubDate>${java.time.Instant.ofEpochMilli(time)}</pubDate></item></channel></rss>"
 
+    @Test fun learnedPublisherSharesTheFourEndpointBudgetAndPreservesTheBaseCursor() = isolated { context ->
+        configure(context, listOf(topic))
+        val articles = AttentionArticleStore(context)
+        val endpoint = "https://publisher.example/feed.xml"
+        articles.learnFeeds("https://publisher.example/story", listOf(endpoint), setOf(topic.id), now)
+        val requests = mutableListOf<String>()
+        ProactiveAttentionFeedCollector(context) { url -> requests += url; feed("https://publisher.example/story-" + requests.size) }.collect(now)
+        assertEquals(4, requests.size)
+        assertEquals(endpoint, requests.last())
+        assertEquals(3, ProactiveAttentionFeedStore(context).topicState(topic.id).optInt("cursor"))
+        assertNull(articles.dueLearnedFeed(topic.id, now + 1000))
+        assertEquals(endpoint, articles.dueLearnedFeed(topic.id, now + ProactiveAttentionFeedPolicy.MIN_INTERVAL))
+        assertTrue(GlobalAgentRepository(context).proactiveMessages().isEmpty())
+    }
+
     @Test fun successfulFirstSourceDoesNotSuppressOthersAndContinuationSurvivesReopen() = isolated { context ->
         configure(context, listOf(topic))
         val urls = AttentionFeedCollectionPlan.endpoints(topic)
@@ -39,6 +54,23 @@ class AttentionFeedCollectionDeviceTest {
         assertEquals(urls.size, ProactiveAttentionFeedStore(context).articleRecordsAfter("", 100).size)
         assertEquals(urls.size, ProactiveAttentionFeedStore(context).topicState(topic.id).optInt("new_items"))
         assertTrue(GlobalAgentRepository(context).proactiveMessages().isEmpty())
+    }
+
+    @Test fun learnedFeedDoesNotCreateAnotherKnownPublisherAlias() = isolated { context ->
+        configure(context, listOf(topic))
+        val store = ProactiveAttentionFeedStore(context)
+        val url = "https://www.publisher.org/story"
+        val key = ProactiveAttentionFeedPolicy.urlKey(url)
+        store.ingest(AttentionFeedArticle(key, topic.id, "New AI model", "", url, "Publisher", now, now), topic)
+        val endpoint = "https://publisher.org/feed.xml"
+        val articles = AttentionArticleStore(context)
+        articles.learnFeeds(url, listOf(endpoint), setOf(topic.id), now)
+        ProactiveAttentionFeedCollector(context) { request ->
+            if (request == endpoint) feed("https://publisher.org/story") else "<rss><channel></channel></rss>"
+        }.collect(now)
+        assertEquals(listOf(key), store.articleRecordsAfter("", 10).map { it.getString("key") })
+        assertNotNull(articles.metadata(key))
+        assertNull(articles.metadata(ProactiveAttentionFeedPolicy.urlKey("https://publisher.org/story")))
     }
 
     @Test fun failuresBackOffPerSourceWithoutSuppressingHealthyPublishers() = isolated { context ->

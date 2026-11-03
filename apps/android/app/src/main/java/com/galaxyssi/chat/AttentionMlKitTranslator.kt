@@ -62,6 +62,7 @@ class AttentionTranslationModelWorker(context: Context, params: WorkerParameters
                     DownloadConditions.Builder().requireWifi().build()).await()
             }
             android.util.Log.i("GalaxySSIAttention", "title_translation_model_ready provider=mlkit")
+            AttentionArticleStore(applicationContext).translationModelReady()
             // The timer survives an inference worker that is still finishing its current batch.
             ProactiveAttentionTitleScheduler.request(applicationContext, 1_000L)
             AttentionArticleScheduler.request(applicationContext, 1_000L)

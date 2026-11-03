@@ -8,6 +8,12 @@ import org.jsoup.nodes.Element
 internal object AttentionEducationArticleBody {
     fun select(url: String, document: Document): Element? {
         val uri = runCatching { URI(url) }.getOrNull() ?: return null
+        // An arXiv abstract page has navigation, version history and download tools outside its abstract.
+        // Preserve the actual abstract, not those controls or a claim to have read the full paper.
+        if (uri.host == "arxiv.org" && uri.path.startsWith("/abs/")) return document.selectFirst("blockquote.abstract")?.clone()?.apply {
+            select(".descriptor").remove()
+            tagName("article"); prependElement("h2").text("Abstract")
+        }
         if (AttentionOpenTextbooks.isArticle(url)) return document.selectFirst("#main-content [data-type=page]")?.apply {
             // Image zoom controls wrap the actual figure; discard the control, not its image.
             select("button.image-button-wrapper").filter { it.select("img").isNotEmpty() }
@@ -25,4 +31,7 @@ internal object AttentionEducationArticleBody {
         }
         return body
     }
+
+    fun title(url: String, document: Document): String? = if (runCatching { URI(url).host == "arxiv.org" && URI(url).path.startsWith("/abs/") }.getOrDefault(false))
+        document.selectFirst("h1.title")?.clone()?.apply { select(".descriptor").remove() }?.text()?.takeIf(String::isNotBlank) else null
 }

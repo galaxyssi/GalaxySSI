@@ -61,8 +61,14 @@ class ProactiveAttentionFeedCollector(
         val endpoints = AttentionFeedCollectionPlan.endpoints(topic)
         val searches = ProactiveAttentionFeedPolicy.endpoints(topic).toSet()
         val knowledge = AttentionKnowledgeSources.endpoints(topic.id).toSet()
+        val articles = AttentionArticleStore(context)
+        val learned = articles.dueLearnedFeed(topic.id, now)?.takeIf { url ->
+            val retry = store.sourceRetryAt(url)
+            if (retry > now) { articles.deferLearnedFeed(url, retry, now); false } else true
+        }
         val cursor = store.topicState(topic.id).optInt("cursor").coerceIn(0, endpoints.lastIndex.coerceAtLeast(0))
-        val batch = AttentionFeedCollectionPlan.batch(endpoints, cursor)
+        val base = AttentionFeedCollectionPlan.batch(endpoints, cursor).take(if (learned == null) 4 else 3)
+        val batch = base + listOfNotNull(learned)
         fun load(url: String, allowPage: Boolean = false): String {
             store.cachedFeed(url, now)?.let { return it }
             check(store.sourceRetryAt(url) <= now) { "news_source_retry_deferred" }
@@ -82,6 +88,7 @@ class ProactiveAttentionFeedCollector(
         for (endpoint in batch) {
             if (store.sourceRetryAt(endpoint) > now) continue
             if (endpoint in knowledge && store.knowledgeRetryAt(topic.id, endpoint) > now) continue
+            if (endpoint == learned) articles.deferLearnedFeed(endpoint, now + 5 * 60_000L, now)
             val items = try {
                 val xml = load(endpoint, allowPage = endpoint in explicit || endpoint in knowledge)
                 if (endpoint in knowledge) {
@@ -111,11 +118,17 @@ class ProactiveAttentionFeedCollector(
                     " code=" + code + " detail=" + failure.message.orEmpty().take(180))
                 continue
             }
-            items.forEach { if (store.ingest(it, topic)) created++ }
+            if (endpoint == learned) {
+                val memberships = articles.learnedFeedTopics(endpoint)
+                items.map(articles::knownPublisherArticle).forEach { article -> topics.filter { it.id in memberships && ProactiveAttentionFeedSources.matches(article, it) }.forEach { scope ->
+                    if (store.ingest(article.copy(topicId = scope.id), scope)) created++
+                } }
+                articles.deferLearnedFeed(endpoint, now + ProactiveAttentionFeedPolicy.MIN_INTERVAL, now)
+            } else items.forEach { if (store.ingest(it, topic)) created++ }
             if (endpoint in knowledge && ProactiveAttentionPolicy.shouldCollect(
                     ProactiveAttentionStore(context).preferences(), topic.id)) store.knowledgeScanned(topic.id, endpoint, now)
         }
-        val nextCursor = (cursor + batch.size).takeIf { it < endpoints.size } ?: 0
+        val nextCursor = (cursor + base.size).takeIf { it < endpoints.size } ?: 0
         val error = failures.joinToString("; ")
         store.recordBatch(topic.id, nextCursor, created, error, now)
         return AttentionFeedCycle(created, topics.minOf { store.topicState(it.id).optLong("next") }.coerceAtLeast(now + 1_000L),
