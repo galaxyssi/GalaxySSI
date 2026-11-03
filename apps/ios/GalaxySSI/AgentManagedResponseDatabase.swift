@@ -86,6 +86,14 @@ final class AgentManagedResponseDatabase {
     try select(clause: " AND owner_key=?", strings: [Self.digest(owner)]).first
   }
 
+  func pendingPage(after: String, limit: Int) throws -> (records: [AgentManagedResponseRecord], next: String?) {
+    let size = min(32, max(1, limit))
+    let records = try select(clause: " AND state='PENDING' AND owner_key>? ORDER BY owner_key LIMIT ?",
+      strings: [after], numbers: [Int64(size + 1)])
+    let retained = Array(records.prefix(size))
+    return (retained, records.count > size ? retained.last.map { Self.digest($0.ownerRunId) } : nil)
+  }
+
   func matching(_ response: AgentConnectorResponse) throws -> AgentManagedResponseRecord? {
     let records = try select(clause: " AND source_id=? AND generation=?",
       numbers: [response.sourceMessageId, response.executionGeneration]).filter { $0.correlates(response) }

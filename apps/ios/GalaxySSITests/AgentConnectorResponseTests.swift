@@ -3,6 +3,78 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testManagedRecoveryPagesDoNotRepeatOrIncludeCompletedChildren() throws {
+    let suite = "ManagedRecoveryPaging.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let ledger = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 },
+      fileURL: root.appendingPathComponent("managed.sqlite3"), secrets: InMemorySecretStore())
+    for id in 1...35 { try ledger.register(managedSQLiteRecord(Int64(id))) }
+    XCTAssertNotNil(ledger.complete(AgentConnectorResponse(sourceMessageId: 1, contactId: "codex", content: "done",
+      conversationId: "conversation", turnId: "turn", taskId: "task-1", receivedAtMillis: 9_000)))
+    var cursor = ""
+    var found: [Int64] = []
+    for _ in 0..<4 {
+      let page = try ledger.pendingRecoveryPage(after: cursor)
+      XCTAssertLessThanOrEqual(page.records.count, 16)
+      found += page.records.map(\.sourceMessageId)
+      guard let next = page.next else { break }
+      XCTAssertNotEqual(next, cursor)
+      cursor = next
+    }
+    XCTAssertEqual(Set(found), Set((2...35).map { Int64($0) }))
+    XCTAssertEqual(found.count, 34)
+  }
+
+  @MainActor
+  func testManagedArchivedResultKeepsNumericScopeAndCommitsWithoutOrdinaryDelivery() throws {
+    let suite = "ManagedArchive.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let ledger = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 },
+      fileURL: root.appendingPathComponent("managed.sqlite3"), secrets: secrets)
+    let child = managedSQLiteRecord(73)
+    try ledger.register(child)
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.managed(record: child, desktopId: "desktop", agentId: "codex",
+      identity: AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: "task-73", turnId: "turn")))
+    let engine = AgentDesktopResultRecovery(pages: AgentResultPageCheckpointStore(fileURL: root.appendingPathComponent("pages.sqlite3"), secrets: secrets),
+      receipts: AgentResultReceiptJournal(fileURL: root.appendingPathComponent("receipts.sqlite3"), secrets: secrets))
+    var record = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: 1_000)
+    record.generation = 1
+    record.sequence = 2
+    record.status = "completed"
+    var body: [String: Any] = binding.fields
+    body.merge(["type": "text", "content": "recovered child", "task_status": "completed",
+      "execution_generation": 1, "status_sequence": 2]) { _, new in new }
+    let data = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+    let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let request = try XCTUnwrap(engine.request(record, now: 1_000))
+    var page: [String: Any] = binding.fields
+    page.merge(["type": "agent_task_result_page", "status": "ready", "request_id": request["request_id"]!,
+      "execution_generation": 1, "page_index": 0, "page_count": 1, "total_bytes": data.count,
+      "sha256": digest, "page_sha256": digest, "data_b64": data.base64EncodedString()]) { _, new in new }
+    record.resultManifest = try XCTUnwrap(engine.receive(page, record: record, now: 2_000))
+    let restored = try XCTUnwrap(engine.assembled(record))
+    let response = try XCTUnwrap(AgentConnectorResponse.fromPayload(restored, nowMillis: 9_000))
+    let sink = InMemoryAgentConnectorResponseStore()
+    let bus = AgentConnectorResponseBus(registry: AgentManagedConnectorResponseRegistry(), managedLedger: ledger,
+      store: sink, terminalStore: InMemoryAgentTerminalDeliveryStore(), nowMillis: { 10_000 })
+    var notifications = 0
+    let token = bus.addListener { _ in notifications += 1 }
+    defer { bus.removeListener(token) }
+    XCTAssertTrue(bus.publish(response))
+    XCTAssertEqual(ledger.completedUnapplied().first?.response?.content, "recovered child")
+    XCTAssertEqual(notifications, 0)
+    XCTAssertTrue(sink.pending().isEmpty)
+    let receipt = try XCTUnwrap(engine.receipt(record))
+    XCTAssertEqual(receipt.sourceMessageId, "73")
+    XCTAssertTrue(engine.receipts.insert(receipt))
+    XCTAssertFalse(engine.cleanup(receipt))
+  }
+
   func testManagedSQLiteLedgerSharesWritesAcrossInstancesAndPreservesPendingBeyond512() throws {
     let suite = "ManagedLedger.shared.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

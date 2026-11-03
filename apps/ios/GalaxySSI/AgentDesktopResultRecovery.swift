@@ -17,7 +17,7 @@ extension AgentDesktopReplyBinding {
   func checkpointIdentity(generation: Int64) -> AgentResultCheckpointIdentity {
     AgentResultCheckpointIdentity(desktopId: desktopId, clientRouteId: identity.clientRouteId,
       conversationId: identity.conversationId, taskId: identity.taskId, turnId: identity.turnId,
-      contactId: contactId, sourceMessageId: sourceId.uuidString, agentId: agentId, executionGeneration: generation)
+      contactId: contactId, sourceMessageId: sourceIdentity, agentId: agentId, executionGeneration: generation)
   }
 }
 
@@ -152,7 +152,7 @@ final class AgentDesktopResultRecovery {
     let binding = record.binding
     return AgentResultReceipt(desktopId: binding.desktopId, clientRouteId: binding.identity.clientRouteId,
       conversationId: binding.identity.conversationId, taskId: binding.identity.taskId, turnId: binding.identity.turnId,
-      contactId: binding.contactId, sourceMessageId: binding.sourceId.uuidString, agentId: binding.agentId,
+      contactId: binding.contactId, sourceMessageId: binding.sourceIdentity, agentId: binding.agentId,
       executionGeneration: record.generation, resultSHA256: manifest.digest)
   }
 
