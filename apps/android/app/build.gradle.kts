@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1432
-        versionName = "0.1.7.19"
+        versionCode = 1433
+        versionName = "0.1.7.20"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -230,6 +230,7 @@ android {
         }
         getByName("release") {
             isDebuggable = false
+            proguardFiles("health-reader-rules.pro")
             buildConfigField("boolean", "SENSITIVE_DIAGNOSTICS_ENABLED", "false")
         }
     }
@@ -254,6 +255,7 @@ android {
             )
         }
         resources {
+            merges += setOf("META-INF/LICENSE", "META-INF/NOTICE", "META-INF/LICENSE.txt", "META-INF/NOTICE.txt")
             // Eclipse Collections core/API carry byte-identical copies; retain each license in the APK.
             pickFirsts += setOf("LICENSE-EPL-1.0.txt", "LICENSE-EDL-1.0.txt")
             excludes += setOf(
@@ -314,6 +316,8 @@ dependencies {
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r")
     implementation("org.jsoup:jsoup:1.23.1")
     implementation("com.univocity:univocity-parsers:2.9.1")
+    implementation("org.dhatim:fastexcel-reader:0.20.2")
+    implementation("javax.xml.stream:stax-api:1.0-2")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("xyz.rementia:openwakeword:0.1.3") {
         exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")

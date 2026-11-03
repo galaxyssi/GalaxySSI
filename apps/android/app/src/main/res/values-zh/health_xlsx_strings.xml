@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_xlsx_sheet">工作表</string>
+    <string name="health_xlsx_choose_sheet">选择工作表</string>
+    <string name="health_xlsx_header_row">列名所在行</string>
+    <string name="health_xlsx_epoch">Excel 日期基准：%1$d</string>
+    <string name="health_xlsx_selection_notice">请选择工作表，以及含有唯一列名的行。预览过程中不会保存测量记录。</string>
+    <string name="health_xlsx_load_sheet">读取所选工作表</string>
+    <string name="health_xlsx_reading">正在读取工作表 · 已暂存 %1$d 行</string>
+    <string name="health_xlsx_date_format">Excel 日期序号</string>
+    <string name="health_xlsx_date_only">仅有日期时的测量时间</string>
+    <string name="health_xlsx_time_required">请明确选择，不默认补为零点</string>
+    <string name="health_xlsx_clear_time">清除时间</string>
+    <string name="health_xlsx_allow_cache">允许使用文件保存的公式结果；它们未重新计算，可能已过期。</string>
+    <string name="health_xlsx_formula_ack">此行含有公式。请核对文件保存的结果，并明确允许使用公式缓存后再保存。</string>
+    <string name="health_xlsx_no_cache">公式没有保存的结果。请先在表格应用中重新计算并另存副本，再导入。</string>
+    <string name="health_xlsx_cell_error">所选单元格含有表格错误，请检查原件；不会编造数值。</string>
+    <string name="health_xlsx_cell_type_error">此工作表使用了本机读取器尚未支持的单元格表示，例如 ISO 类型日期单元格。原件已保留，可导入将日期存为文本的 XLSX 或 CSV 副本。</string>
+    <string name="health_xlsx_formula_detail">%1$s · 公式：=%2$s\n文件保存的结果：%3$s · 未重新计算</string>
+    <string name="health_xlsx_hidden">隐藏</string>
+    <string name="health_xlsx_change_notice">更换工作表或列名行会清除尚未保存的预览与列映射。已确认的记录和原始文件不会改变。</string>
+    <string name="health_xlsx_source_row">%1$s · 工作表第 %2$d 行</string>
+    <string name="health_xlsx_format_error">无法读取此标准 XLSX 工作簿。加密或旧格式文件需先另存解锁后的 XLSX 副本，原件已保留。</string>
+    <string name="health_xlsx_package_error">工作簿结构、单元格位置或校验值无效。原件已保留，请另存修复后的副本再试。</string>
+    <string name="health_xlsx_xml_error">工作簿 XML 无效，或含有不支持的文档声明；不会加载外部内容。</string>
+    <string name="health_xlsx_macro_error">请选择不含宏的 XLSX 副本。不会执行宏，原件已保留。</string>
+    <string name="health_xlsx_expansion_error">工作簿超过本机处理范围：解压合计 64 MiB、单个元数据部分 4 MiB，或 ZIP 项目超过 10,000 个。请拆分副本后再试。</string>
+    <string name="health_xlsx_header_error">请选择含有唯一、非空文本列名的工作表与列名行。最多 256 个工作表或列，最大行号 1,048,576；原件已保留。</string>
+</resources>

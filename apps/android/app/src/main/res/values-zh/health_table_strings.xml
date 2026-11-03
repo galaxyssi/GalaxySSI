@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="health_table_title">核对表格数据</string>
+    <string name="health_table_interpreted_time">解释后的时间：%1$s · %2$s</string>
+    <string name="health_table_import_done">导入已完成</string>
+    <string name="health_table_import_undone">导入已撤销</string>
     <string name="health_table_queue_ready">表格已保存，待匹配列与核对记录</string>
     <string name="health_table_file_summary">%1$s · %2$d 行</string>
     <string name="health_table_mapping">匹配表格列</string>

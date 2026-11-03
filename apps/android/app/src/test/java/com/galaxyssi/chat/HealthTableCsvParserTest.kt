@@ -57,7 +57,8 @@ class HealthTableCsvParserTest {
         assertEquals("table_row", (runCatching { parse("$header\n$row") }.exceptionOrNull() as HealthImportFailure).code)
     }
     @Test fun unsupportedTypeIsNotMisreportedAsCsv() {
-        assertNull(HealthTableParser.format("table.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        assertEquals("xlsx", HealthTableParser.format("table.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        assertNull(HealthTableParser.format("table.xls", "application/vnd.ms-excel"))
         assertEquals("csv", HealthTableParser.format("TABLE.CSV", "application/octet-stream"))
         assertEquals("json", HealthTableParser.format("data", "application/json"))
     }

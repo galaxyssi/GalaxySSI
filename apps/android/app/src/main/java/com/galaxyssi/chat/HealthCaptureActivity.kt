@@ -161,7 +161,14 @@ class HealthCaptureActivity : Activity() {
                         CaptureSnapshot(job = job, original = original, page = scanned, saved = saved,
                             suggestions = visible, hasMore = suggestions.size > offset + visible.size)
                     }
-                    else -> CaptureSnapshot(jobs = originals.jobs(taskCursor), pendingPhoto = cameraToken.isNotBlank() && HealthCaptureFiles.file(applicationContext, cameraToken).let { it.isFile && it.length() > 0 })
+                    else -> {
+                        val jobs = originals.jobs(taskCursor)
+                        val structured = jobs.filter { it.state == HealthImportState.TABLE_REVIEW }
+                        val batches = if (structured.isEmpty()) emptyMap() else HealthTableStore(applicationContext).use { tables ->
+                            structured.mapNotNull { job -> tables.batch(job.id)?.let { job.id to it } }.toMap()
+                        }
+                        CaptureSnapshot(jobs = jobs, tableJobs = batches, pendingPhoto = cameraToken.isNotBlank() && HealthCaptureFiles.file(applicationContext, cameraToken).let { it.isFile && it.length() > 0 })
+                    }
                 }
             }
             main.post {
@@ -181,7 +188,7 @@ class HealthCaptureActivity : Activity() {
             else -> ""
         }
         if (key.isNotBlank() && key == renderedKey && body.childCount > 0) {
-            if (screen == "capture") data.jobs.forEach { taskViews[it.id]?.bind(it, jobState(it)) }
+            if (screen == "capture") data.jobs.forEach { taskViews[it.id]?.bind(it, jobState(it, data.tableJobs[it.id])) }
             else {
                 availableReviewPages = data.job?.nextPage ?: 0
                 nextReviewPage?.visibility = if (page < availableReviewPages) View.VISIBLE else View.GONE
@@ -201,11 +208,11 @@ class HealthCaptureActivity : Activity() {
             "library" -> renderLibrary(content, data.files)
             "original" -> renderOriginal(content, data.original, data.available, data.saved, data.recordsNext)
             "review" -> renderReview(content, data)
-            else -> renderCapture(content, data.jobs, data.pendingPhoto)
+            else -> renderCapture(content, data.jobs, data.pendingPhoto, data.tableJobs)
         }
         if (previousScroll > 0) (body.getChildAt(0) as? ScrollView)?.let { scroll -> scroll.post { if (active) scroll.scrollTo(0, previousScroll) } }
     }
-    private fun renderCapture(content: LinearLayout, jobs: List<HealthImportJob>, pendingPhoto: Boolean) {
+    private fun renderCapture(content: LinearLayout, jobs: List<HealthImportJob>, pendingPhoto: Boolean, batches: Map<String, HealthTableBatch>) {
         content.addView(ui.text(getString(R.string.health_capture_heading), 23f, bold = true))
         ui.add(content, ui.line().apply {
             listOf("report" to R.string.health_capture_report, "device" to R.string.health_capture_device).forEach { (value, label) ->
@@ -239,7 +246,7 @@ class HealthCaptureActivity : Activity() {
                 } else open("review", value.id) }, { open("original", it.originalId) }, { value ->
                     startActivity(Intent(this, HealthCameraActivity::class.java).putExtra("capture_batch", value.captureBatch))
                 })
-            view.bind(job, jobState(job)); taskViews[job.id] = view; ui.add(content, view, 12)
+            view.bind(job, jobState(job, batches[job.id])); taskViews[job.id] = view; ui.add(content, view, 12)
         }
         if (jobPages.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { jobPages.removeAt(jobPages.lastIndex); generation++; refresh() }, 16)
         if (jobs.size == 30) ui.add(content, ui.command(R.string.health_next_page) { jobs.last().let { jobPages += it.createdAt to it.id }; generation++; refresh() }, 16)
@@ -448,7 +455,8 @@ class HealthCaptureActivity : Activity() {
             .putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(listOf(item)))
             .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id), CROP)
     }
-    private fun jobState(job: HealthImportJob): String = when {
+    private fun jobState(job: HealthImportJob, table: HealthTableBatch? = null): String = when {
+        job.state == HealthImportState.TABLE_REVIEW && table != null -> healthTableTaskLabel(this, table)
         job.captureBatch.isNotBlank() && !job.captureSubmitted && job.state == HealthImportState.RECOGNIZING -> getString(R.string.health_photo_inspecting)
         job.state == HealthImportState.RECOGNIZING && HealthTableParser.format(job.name, job.mime) != null -> getString(R.string.health_import_preparing)
         else -> when (job.state) {
@@ -484,11 +492,11 @@ class HealthCaptureActivity : Activity() {
         "table_csv" -> R.string.health_table_csv_error
         "table_cell" -> R.string.health_table_cell_error
         "table_row" -> R.string.health_table_row_error
-        else -> R.string.health_import_failed
+        else -> if (code.startsWith("xlsx_")) healthXlsxErrorResource(code) else R.string.health_import_failed
     }
     private data class CaptureSnapshot(val jobs: List<HealthImportJob> = emptyList(), val files: List<HealthOriginal> = emptyList(),
         val job: HealthImportJob? = null, val original: HealthOriginal? = null, val page: HealthOcrPage? = null, val saved: List<HealthObservation> = emptyList(),
         val suggestions: List<HealthDraft> = emptyList(), val hasMore: Boolean = false, val available: Boolean = true, val pendingPhoto: Boolean = false,
-        val recordsNext: HealthPageCursor? = null)
+        val recordsNext: HealthPageCursor? = null, val tableJobs: Map<String, HealthTableBatch> = emptyMap())
     companion object { private const val PICK = 81; private const val CAMERA = 82; private const val EXPORT = 83; private const val CROP = 84; private const val CAMERA_PERMISSION = 85; private const val NATIVE_CAMERA = 86 }
 }

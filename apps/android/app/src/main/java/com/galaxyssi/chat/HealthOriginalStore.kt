@@ -224,6 +224,7 @@ internal class HealthOriginalStore(
         catch (failure: Throwable) { channel.close(); throw failure }
     }
     fun input(original: HealthOriginal): InputStream = java.nio.channels.Channels.newInputStream(openChannel(original))
+    internal fun readChannel(original: HealthOriginal): SeekableByteChannel = openChannel(original)
     fun copyVerified(original: HealthOriginal, output: OutputStream, checkCancelled: () -> Unit = {}): Long {
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
