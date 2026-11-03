@@ -2,6 +2,48 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentTaskRequirementAnalyzerTests: XCTestCase {
+  func testBusinessWarehouseAndProjectOfficeDocumentsDoNotRequestSoftwareDevelopment() {
+    let goals = [
+      "\u{8bf7}\u{5236}\u{4f5c}\u{4ed3}\u{5e93}\u{76d8}\u{70b9}\u{4f5c}\u{4e1a}\u{89c4}\u{8303}\u{3002}\u{751f}\u{6210}\u{53ef}\u{7f16}\u{8f91}\u{7684} DOCX\u{ff0c}\u{5305}\u{542b}\u{4e09}\u{4e2a}\u{7ae0}\u{8282}\u{548c}\u{539f}\u{59cb}\u{6570}\u{636e}\u{8868}\u{3002}\u{4e0d}\u{80fd}\u{53ea}\u{7ed9}\u{672c}\u{673a}\u{8def}\u{5f84}\u{3001}\u{4ee3}\u{7801}\u{6216}\u{5236}\u{4f5c}\u{65b9}\u{6cd5}\u{3002}",
+      "\u{751f}\u{6210}\u{4ed3}\u{5e93}\u{5e93}\u{5b58} XLSX\u{ff0c}\u{6838}\u{7b97}\u{6570}\u{91cf}\u{548c}\u{91d1}\u{989d}\u{ff0c}\u{9879}\u{76ee}\u{5305}\u{62ec}\u{7532}\u{548c}\u{4e59}\u{3002}",
+      "\u{521b}\u{5efa}\u{9879}\u{76ee}\u{8fdb}\u{5ea6} PPTX\u{ff0c}\u{8d1f}\u{8d23}\u{4eba}\u{5f85}\u{786e}\u{8ba4}\u{3002}",
+      "Create a project status DOCX with three chapters. Do not return code.",
+      "Export a project status Word document.",
+      "Update the project progress PowerPoint presentation."
+    ]
+    for goal in goals {
+      let requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+      XCTAssertFalse(requirements.capabilities.contains(.taskExecution), goal)
+      XCTAssertFalse(requirements.capabilities.contains(.code), goal)
+      XCTAssertFalse(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: goal), goal)
+      XCTAssertNotEqual(AgentTaskIntentClassifier.classify(goal: goal).intent, .code, goal)
+    }
+  }
+
+  func testOfficeDeliverableKeepsExplicitSoftwareWorkAndNegatedDocumentRequests() {
+    let goals = [
+      "\u{514b}\u{9686}\u{4ed3}\u{5e93}\u{5e76}\u{751f}\u{6210} DOCX \u{4ee3}\u{7801}\u{5ba1}\u{67e5}\u{62a5}\u{544a}",
+      "\u{7f16}\u{8bd1}\u{8fd9}\u{4e2a}\u{9879}\u{76ee}\u{ff0c}\u{7136}\u{540e}\u{751f}\u{6210} DOCX \u{6d4b}\u{8bd5}\u{62a5}\u{544a}",
+      "Write a Python script to generate an XLSX file",
+      "Clone the project and create a DOCX report",
+      "\u{751f}\u{6210} DOCX\u{ff0c}\u{4e0d}\u{80fd}\u{53ea}\u{7ed9}\u{4ee3}\u{7801}\u{3002}\u{7f16}\u{5199}\u{5e76}\u{8fd0}\u{884c} Python \u{811a}\u{672c}\u{3002}",
+      "\u{4e0d}\u{8981}\u{751f}\u{6210} DOCX\u{ff0c}\u{521b}\u{5efa}\u{9879}\u{76ee}",
+      "Do not create a DOCX. Create a project."
+    ]
+    for goal in goals {
+      let text = goal.lowercased()
+      let softwareSignals = ["project", "python", "\u{4ed3}\u{5e93}", "\u{9879}\u{76ee}", "\u{811a}\u{672c}"]
+      XCTAssertTrue(softwareSignals.contains { AgentCodeKeywordPolicy.contains(text, term: $0) }, goal)
+    }
+    // iOS keeps existing repository work on its selected Desktop, not the phone sandbox.
+    XCTAssertFalse(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: "Clone the project and create a DOCX report"))
+    XCTAssertTrue(AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: "Write a simple Python script to generate an XLSX file on this phone"))
+    XCTAssertTrue(AgentCodeKeywordPolicy.contains("do not create a docx. create a project.", term: "project"))
+    XCTAssertTrue(AgentCodeKeywordPolicy.contains("create a project and clone the repository. export a docx report.", term: "project"))
+    XCTAssertFalse(AgentCodeKeywordPolicy.contains("create a project status docx. do not return code.", term: "project"))
+    XCTAssertTrue(AgentCodeKeywordPolicy.contains("create a project using word_count as its name", term: "project"))
+  }
+
   func testImageReviewPolicyPreservesUnknownAnswersAndOriginalImage() {
     let prompt = CodexStyleResponsePolicy.promptText
     XCTAssertTrue(prompt.contains("visible original answer, your computed answer, and your judgment"))
