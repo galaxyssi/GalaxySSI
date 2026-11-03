@@ -239,6 +239,25 @@ isolated from the user's archive. The tablet's active keyguard still prevents
 visible-page acceptance; no camera hardware was opened. Full-repository CI is
 not claimed green while the parent branch retains its five Agent test failures.
 
+## Increment 6: Native Metric Catalog And Reported Results
+
+The catalog increment implements a native 27-metric daily/laboratory
+directory, bilingual alias/unit search, category filters and 30-row all-record
+pages. Exact numbers, comparisons, ranges and qualitative labels share explicit
+typed semantics rather than forcing every laboratory result into a positive
+scalar. Reported notation and optional report reference intervals remain in
+encrypted revisioned records; no default clinical thresholds or diagnoses are
+introduced. Details and pending acceptance are recorded in the
+[catalog test contract](../testing/android-health-metric-catalog.md).
+
+Version 0.1.7.21 / 1434 is cover-installed on Tab Active3. The final build passes
+171 focused JVM tests and 119 non-visual health device regressions. Before the
+final styling change, the unlocked candidate also passed three new native
+catalog UI tests. The tablet locked again before final styled-page acceptance;
+that screenshot and complete return/paging interactions remain explicitly open.
+No synthetic measurements are stored in the user's health profile, and no
+hardware camera capture is claimed.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
@@ -248,7 +267,8 @@ version and focused validation before claiming completion:
    detection, and original-library thumbnail/filter/batch-selection modes.
 2. XLSX ISO-typed date interoperability and unlocked structured-import UI
    acceptance; keep existing numeric-date/formula provenance checks intact.
-3. Metric catalog, time-window/source filters and true, gap-aware trend charts.
+3. Time-window/source filters and true, gap-aware trend charts using only eligible
+   exact values; full native catalog acceptance and further metric definitions.
 4. Original-file library, export configuration, save/share and verified backup
    restore with transactional merge and attachment integrity checks.
 5. Personal profile, scoped health permissions, explicit erase and reminder

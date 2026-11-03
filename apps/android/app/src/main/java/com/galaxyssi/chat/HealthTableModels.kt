@@ -19,20 +19,21 @@ internal data class HealthTableMapping(
     val metric: HealthMetric = HealthMetric.BLOOD_PRESSURE,
     val columns: Map<String, String> = emptyMap(), val timeColumn: String = "", val unitColumn: String = "",
     val unit: String = "", val noteColumn: String = "", val date: HealthTableDate = HealthTableDate.ISO,
-    val zone: String = ZoneId.systemDefault().id, val allowFormulaCache: Boolean = false, val dateOnlyTime: String = ""
+    val zone: String = ZoneId.systemDefault().id, val allowFormulaCache: Boolean = false, val dateOnlyTime: String = "", val referenceColumn: String = ""
 ) {
     fun json() = JSONObject().put("metric", metric.name).put("columns", JSONObject(columns)).put("time", timeColumn)
         .put("unit_column", unitColumn).put("unit", unit).put("note", noteColumn).put("date", date.name).put("zone", zone)
         .put("formula_cache", allowFormulaCache).put("date_only_time", dateOnlyTime)
+        .put("reference_column", referenceColumn)
     fun valid(headers: List<String>): Boolean = timeColumn in headers && metric.requiredFields.all { columns[it] in headers } &&
         columns.keys.all { it in metric.fields } && columns.values.filter(String::isNotBlank).let { it.size == it.distinct().size } &&
-        (unitColumn in headers || unitColumn.isBlank() && unit in metric.units) &&
-        (noteColumn.isBlank() || noteColumn in headers) && runCatching { ZoneId.of(zone) }.isSuccess
+        (unitColumn in headers || unitColumn.isBlank() && unit in metric.selectableUnits) &&
+        (noteColumn.isBlank() || noteColumn in headers) && (referenceColumn.isBlank() || referenceColumn in headers) && runCatching { ZoneId.of(zone) }.isSuccess
     companion object {
         fun from(j: JSONObject) = HealthTableMapping(HealthMetric.valueOf(j.getString("metric")), j.getJSONObject("columns").let { c ->
             c.keys().asSequence().associateWith(c::getString)
         }, j.getString("time"), j.getString("unit_column"), j.getString("unit"), j.getString("note"),
-            HealthTableDate.valueOf(j.getString("date")), j.getString("zone"), j.optBoolean("formula_cache"), j.optString("date_only_time"))
+            HealthTableDate.valueOf(j.getString("date")), j.getString("zone"), j.optBoolean("formula_cache"), j.optString("date_only_time"), j.optString("reference_column"))
     }
 }
 internal data class HealthTableRow(val number: Long, val cells: Map<String, String>, val issue: String = "", val sourceRow: Long = number,
@@ -90,8 +91,12 @@ internal object HealthTablePolicy {
         "unit" to listOf("unit", "units", "\u5355\u4f4d"), "note" to listOf("note", "notes", "\u5907\u6ce8")
     )
     fun suggest(headers: List<String>, metric: HealthMetric): HealthTableMapping {
-        fun match(field: String) = headers.filter { header -> aliases[field].orEmpty().any { name(it) == name(header) } }.singleOrNull().orEmpty()
-        return HealthTableMapping(metric, metric.fields.associateWith(::match), match("time"), match("unit"), noteColumn = match("note"))
+        fun match(field: String): String {
+            val names = aliases[field].orEmpty() + if (metric.fields.size == 1 && field == metric.fields.first()) HealthMetricCatalog.aliases(metric) else emptyList()
+            return headers.filter { header -> names.any { name(it) == name(header) } }.singleOrNull().orEmpty()
+        }
+        val reference = headers.filter { name(it) in listOf("reference", "referencerange", "referenceinterval", "\u53c2\u8003\u8303\u56f4", "\u53c2\u8003\u533a\u95f4") }.singleOrNull().orEmpty()
+        return HealthTableMapping(metric, metric.fields.associateWith(::match), match("time"), match("unit"), noteColumn = match("note"), referenceColumn = reference)
     }
     fun measuredAt(raw: String, mapping: HealthTableMapping): Long? = runCatching {
         require(mapping.date != HealthTableDate.EXCEL)
@@ -111,7 +116,7 @@ internal object HealthTablePolicy {
         if (row.issue.isNotBlank()) return error(HealthTableRowState.INVALID, row.issue)
         val m = batch.mapping
         if (!m.valid(batch.headers)) return error(HealthTableRowState.INVALID, "mapping")
-        val selected = (m.columns.values + listOf(m.timeColumn, m.unitColumn, m.noteColumn)).filter(String::isNotBlank).toSet()
+        val selected = (m.columns.values + listOf(m.timeColumn, m.unitColumn, m.noteColumn, m.referenceColumn)).filter(String::isNotBlank).toSet()
         if (row.errors.any { it in selected }) return error(HealthTableRowState.INVALID, "excel_error")
         val formulas = row.formulas.filterKeys { it in selected }
         if (formulas.isNotEmpty() && !m.allowFormulaCache) return error(HealthTableRowState.INVALID, "formula_ack")
@@ -130,12 +135,15 @@ internal object HealthTablePolicy {
         }.getOrNull()
         if (time == null) return error(HealthTableRowState.INVALID, "time")
         val rawUnit = if (m.unitColumn.isBlank()) m.unit else row.cells[m.unitColumn].orEmpty().trim()
-        if (rawUnit.isBlank()) return error(HealthTableRowState.MISSING, "unit")
-        val unit = m.metric.units.singleOrNull { it.equals(rawUnit, true) } ?: return error(HealthTableRowState.INVALID, "unit")
+        val results = values.values.filter(String::isNotBlank).map { HealthResult.parse(it, m.metric.form) ?: return error(HealthTableRowState.INVALID, "number") }
+        val unitlessLabel = results.isNotEmpty() && results.all { it.kind == HealthResultKind.QUALITATIVE }
+        if (rawUnit.isBlank() && !unitlessLabel) return error(HealthTableRowState.MISSING, "unit")
+        val unit = if (rawUnit.isBlank() && unitlessLabel) "" else m.metric.units.singleOrNull { it.equals(rawUnit, true) } ?: return error(HealthTableRowState.INVALID, "unit")
         val sheet = batch.sheets.singleOrNull { it.index == batch.sheetIndex }?.name.orEmpty()
         val source = (listOf("Row ${row.sourceRow}", "${m.timeColumn}: ${row.cells[m.timeColumn]}") +
             m.metric.fields.mapNotNull { field -> m.columns[field]?.takeIf(String::isNotBlank)?.let { "$it: ${row.cells[it].orEmpty()}" } } +
-            listOf("Unit: $rawUnit") + if (batch.format == "xlsx") listOf("Sheet: $sheet", "Excel epoch: ${if (batch.date1904) 1904 else 1900}",
+            listOf("Unit: $rawUnit") + (if (m.referenceColumn.isBlank()) emptyList() else listOf("Reference [${m.referenceColumn}]: ${row.cells[m.referenceColumn].orEmpty()}")) +
+            if (batch.format == "xlsx") listOf("Sheet: $sheet", "Excel epoch: ${if (batch.date1904) 1904 else 1900}",
                 "Interpreted time: ${java.time.Instant.ofEpochMilli(time)}; zone: ${m.zone}") +
                 (if (m.dateOnlyTime.isBlank()) emptyList() else listOf("Confirmed date-only time: ${m.dateOnlyTime}")) +
                 formulas.map { (column, formula) -> "${row.addresses[column].orEmpty()} $column: =$formula; cached=${row.cells[column].orEmpty()} (not recalculated)" }
@@ -143,7 +151,8 @@ internal object HealthTablePolicy {
         if (source.length > 8000) return error(HealthTableRowState.INVALID, "cell_size")
         val evidence = HealthEvidence(batch.originalId, batch.id, "table-row-${row.sourceRow}", batch.sha256, if (batch.format == "xlsx") batch.sheetIndex + 1 else 1, source,
             confirmed = true, kind = "table", tableRow = row.sourceRow, tableSheet = sheet)
-        val draft = HealthDraft(m.metric, values, unit, time, note = row.cells[m.noteColumn].orEmpty(), evidence = evidence)
+        val draft = HealthDraft(m.metric, values, unit, time, note = row.cells[m.noteColumn].orEmpty(), evidence = evidence,
+            reference = row.cells[m.referenceColumn].orEmpty())
         val validation = HealthObservationPolicy.validate(draft, now)
         return if (validation == null) HealthTableEvaluation(draft, HealthTableRowState.VALID, "")
             else error(if (validation.issue == HealthValidationIssue.MISSING_VALUE) HealthTableRowState.MISSING else HealthTableRowState.INVALID,

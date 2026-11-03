@@ -55,22 +55,54 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         "SELECT id,revision,payload,metric,measured_at FROM observations WHERE id=? AND deleted=0", arrayOf(id)
     ).use { if (it.moveToFirst()) decode(it) else null }
 
-    fun page(after: HealthPageCursor? = null, metric: HealthMetric? = null, limit: Int = PAGE_SIZE, originalId: String? = null): HealthRecordPage {
+    fun page(after: HealthPageCursor? = null, metric: HealthMetric? = null, limit: Int = PAGE_SIZE, originalId: String? = null,
+             metrics: Set<HealthMetric>? = null): HealthRecordPage {
         require(limit in 1..PAGE_SIZE)
+        if (metrics != null && metrics.isEmpty()) return HealthRecordPage(emptyList(), null)
+        if (metric != null && metrics != null && metric !in metrics) return HealthRecordPage(emptyList(), null)
+        if (metric == null && metrics != null && metrics.size > 1 && metrics.size < HealthMetric.entries.size)
+            return catalogPage(after, metrics, limit, originalId)
         val args = mutableListOf<String>()
         val conditions = mutableListOf("deleted=0")
-        if (metric != null) { conditions += "metric=?"; args += metric.name }
+        val selectedMetric = metric ?: metrics?.singleOrNull()
+        if (selectedMetric != null) { conditions += "metric=?"; args += selectedMetric.name }
         if (originalId != null) { conditions += "original_id=?"; args += originalId }
         if (after != null) { conditions += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(after.measuredAt.toString(), after.measuredAt.toString(), after.id) }
         val records = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE " +
             conditions.joinToString(" AND ") + " ORDER BY measured_at DESC,id DESC LIMIT ${limit + 1}", args.toTypedArray()).use {
             buildList { while (it.moveToNext()) add(decode(it).also { record ->
                 if (originalId != null) check(record.draft.evidence?.originalId == originalId) { "Health original index mismatch" }
+                if (metrics != null) check(record.draft.metric in metrics) { "Health catalog index mismatch" }
             }) }
         }
         val visible = records.take(limit)
         val next = if (records.size > limit) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null
         return HealthRecordPage(visible, next)
+    }
+
+    /** Bound each indexed metric stream before merging IDs; decrypt at most one page plus lookahead. */
+    private fun catalogPage(after: HealthPageCursor?, metrics: Set<HealthMetric>, limit: Int, originalId: String?): HealthRecordPage {
+        val args = arrayListOf<String>()
+        val streams = metrics.sortedBy { it.ordinal }.map { metric ->
+            val conditions = mutableListOf("metric=?", "deleted=0"); args += metric.name
+            if (originalId != null) { conditions += "original_id=?"; args += originalId }
+            if (after != null) {
+                conditions += "(measured_at<? OR (measured_at=? AND id<?))"
+                args += listOf(after.measuredAt.toString(), after.measuredAt.toString(), after.id)
+            }
+            "SELECT id,measured_at FROM (SELECT id,measured_at FROM observations WHERE ${conditions.joinToString(" AND ")} " +
+                "ORDER BY measured_at DESC,id DESC LIMIT ${limit + 1})"
+        }
+        val candidateIds = "SELECT id FROM (${streams.joinToString(" UNION ALL ")}) ORDER BY measured_at DESC,id DESC LIMIT ${limit + 1}"
+        val records = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE id IN ($candidateIds) " +
+            "ORDER BY measured_at DESC,id DESC LIMIT ${limit + 1}", args.toTypedArray()).use { cursor -> buildList {
+                while (cursor.moveToNext()) add(decode(cursor).also { record ->
+                    check(record.draft.metric in metrics) { "Health catalog index mismatch" }
+                    if (originalId != null) check(record.draft.evidence?.originalId == originalId) { "Health original index mismatch" }
+                })
+            } }
+        val visible = records.take(limit)
+        return HealthRecordPage(visible, if (records.size > limit) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
 
     @Synchronized fun save(draft: HealthDraft): HealthSaveResult {

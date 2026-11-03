@@ -17,10 +17,10 @@ acceptance, and no global completion claim follows from the first imports.
 | h05 Record Center | Native capture/file queue, encrypted drafts, edit/delete and recovery foundations | Changes must invalidate affected analyses once analysis exists; full multi-format UI matrix |
 | h06 Capture | Native Camera2, ordered multi-page drafts, EXIF orientation, quality hints, retake/crop/manual fallback | Authorized hardware focus/light/rotation/photo matrix, automatic paper boundaries, unlocked UI acceptance |
 | h07 Recognition review | Local image/PDF OCR, source text/boxes/hash, explicit ownership/unit/time confirmation and partial saves | Source-region overlay, broader field semantics, complete correction UI acceptance |
-| h08 Manual measurements | Six numeric metrics, BP components, conditions, units, timestamps, revisions, duplicates and soft deletion | Full late-entry/edit/undo UI matrix; connect later analysis invalidation |
+| h08 Manual measurements | 27 metric definitions, BP components, exact/bounded/range/qualitative results, report reference text, conditions, units, timestamps, revisions, duplicates and soft deletion | Full late-entry/edit/undo UI matrix; connect later analysis invalidation |
 | h09 File queue | Encrypted originals, durable jobs, typed failures, retry/cancel, separate table/OCR routes | Final multi-format/process-death UI matrix and encrypted-PDF workflow; unsupported XLSX ISO-typed cells remain explicit errors |
 | h10 Table mapping | CSV/JSON mapping, counts, 30-row preview, transactional save/undo; XLSX worksheet/header/serial-date/cache increment | Unlocked mapping/rotation/background tests; XLSX ISO-typed date interoperability; broad qualitative metric support |
-| h11 Catalog | Six supported numeric metrics and conservative bilingual import aliases | Complete daily/laboratory catalog, search, hints, qualitative/range/comparator observations |
+| h11 Catalog | Native 27-metric daily/laboratory catalog, bilingual names/aliases/unit search, categories and 30-row records; typed qualitative/range/comparator observations; three candidate native UI tests passed | Final styled-page screenshot, row-to-list/back and all-record navigation acceptance; broader/custom metric definitions and explicit custom qualitative value-type selection remain open, not a universal-test claim |
 | h12 Trends | Paged records, source/condition/time detail and revision history | Real gap-aware charts, source/time/aggregation filters, valid-day coverage and point-to-record navigation |
 | h13 Health AI | No automatic exposure of health records to a Provider | Explicit data-range consent, computed facts/citations, unavailable/stale analysis, necessary-field-only requests |
 | h14 Reminder detail | No synthetic medical alert data installed | Versioned rule/snapshot/baseline coverage, complete/later/disable, deduplication and cooldown |
@@ -50,9 +50,10 @@ acceptance, and no global completion claim follows from the first imports.
   transactions. Open pull requests and pending checks are not merged-release proof.
 - Isolated JVM/device store tests prove the assertions they execute, not every
   screen, production record or platform/peripheral/provider capability.
-- Tab Active3 has repeatedly reported an active keyguard. No lock-screen bypass
-  or actual camera capture is authorized by that state. Visible-page acceptance
-  must run after unlock; hardware capture still needs the separate authorization.
+- After the user unlocked Tab Active3, eight existing native entry/manual/import/
+  photo-draft UI tests passed on 0.1.7.20 and its empty draft screenshot was
+  inspected. This does not prove the new catalog or XLSX mapping UI. No keyguard
+  bypass was performed; hardware capture still needs separate authorization.
 - Failing prototype/build/device attempts are retained in ignored build logs.
   Later passing focused tests must not be described as full repository CI success.
 - Every independent functional increment needs its own English PR and a version

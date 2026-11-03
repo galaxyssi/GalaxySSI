@@ -42,7 +42,9 @@ class HealthCenterActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = getColor(R.color.surface_bg)
         window.navigationBarColor = getColor(R.color.page_bg)
+        if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         reviewKey = savedInstanceState?.getString("review").orEmpty().ifBlank { intent.getStringExtra("review_draft").orEmpty() }
+        intent.getStringExtra("health_metric")?.let { name -> HealthMetric.entries.firstOrNull { it.name == name }?.let { selected = it } }
         if (reviewKey.isNotBlank()) {
             require(reviewKey.matches(Regex("ocr:[0-9a-f-]{36}:[1-9][0-9]*:[a-zA-Z0-9_-]{1,80}")))
             route = "review"
@@ -50,6 +52,8 @@ class HealthCenterActivity : Activity() {
             route = "functions"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_manual", false)) {
             route = "manual"
+        } else if (savedInstanceState == null && intent.getBooleanExtra("health_metric_records", false)) {
+            route = "metric_records"
         } else if (savedInstanceState == null && !intent.getStringExtra("health_record").isNullOrBlank()) {
             recordId = intent.getStringExtra("health_record").orEmpty()
             require(runCatching { java.util.UUID.fromString(recordId).toString() == recordId }.getOrDefault(false))
@@ -108,6 +112,9 @@ class HealthCenterActivity : Activity() {
     internal fun open(destination: String, metric: HealthMetric = selected, id: String = "") {
         if (saving) return
         saveDraft()
+        if (destination in listOf("records", "metric_records") && (route != destination || selected != metric)) {
+            pageAfter = null; nextPage = null; pageHistory.clear()
+        }
         if (route != destination || selected != metric || recordId != id) backStack.addLast(Triple(route, selected, recordId))
         route = destination; selected = metric; recordId = id
         render()
@@ -154,6 +161,7 @@ class HealthCenterActivity : Activity() {
             "manual" -> R.string.health_manual
             "review" -> R.string.health_review_title
             "records" -> R.string.health_records
+            "metric_records" -> selected.titleResource()
             "detail" -> selected.titleResource()
             "history" -> R.string.health_revision_history
             "functions" -> R.string.health_functions
@@ -161,7 +169,7 @@ class HealthCenterActivity : Activity() {
         })
         when (route) {
             "manual", "review" -> renderManual()
-            "records" -> renderRecords()
+            "records", "metric_records" -> renderRecords()
             "detail" -> renderDetail()
             "history" -> renderHistory()
             "functions" -> renderFunctions()
@@ -178,7 +186,9 @@ class HealthCenterActivity : Activity() {
         val content = scrolling()
         val loading = ui.text(getString(R.string.health_loading), 14f, muted = true)
         content.addView(loading)
-        query({ store -> store.count() to HealthMetric.entries.associateWith { metric ->
+        val overviewMetrics = listOf(HealthMetric.BLOOD_PRESSURE, HealthMetric.GLUCOSE, HealthMetric.WEIGHT, HealthMetric.HEART_RATE,
+            HealthMetric.SLEEP_DURATION, HealthMetric.STEPS)
+        query({ store -> store.count() to overviewMetrics.associateWith { metric ->
             store.page(metric = metric, limit = 1).records.firstOrNull()
         } }) { (count, latest) ->
             content.removeAllViews()
@@ -203,8 +213,8 @@ class HealthCenterActivity : Activity() {
                 ui.add(content, ui.text(getString(R.string.health_record_count, count), 14f, muted = true), 6)
                 ui.add(content, ui.command(R.string.health_add_measurement) { open("manual") }, 18)
                 ui.add(content, ui.row(getString(R.string.health_photo_record), getString(R.string.health_photo_description)) { openCapture() }, 10)
-                ui.add(content, ui.row(getString(R.string.health_key_metrics), getString(R.string.health_all_records)) { open("records") }, 20)
-                HealthMetric.entries.chunked(2).forEach { metrics ->
+                ui.add(content, ui.row(getString(R.string.health_key_metrics), getString(R.string.health_catalog_title)) { openCatalog() }, 20)
+                overviewMetrics.chunked(2).forEach { metrics ->
                     val line = ui.line().apply { gravity = Gravity.TOP }
                     metrics.forEachIndexed { index, metric ->
                         val record = latest[metric]
@@ -240,26 +250,25 @@ class HealthCenterActivity : Activity() {
                 })
                 addView(ui.row(getString(R.string.health_manual), getString(R.string.health_measurement_context)) { open("manual") })
                 addView(ui.row(getString(R.string.health_records), getString(R.string.health_record_sources)) { open("records") })
+                addView(ui.row(getString(R.string.health_catalog_title)) { openCatalog() })
             }, 14)
         }
     }
     private fun recordRow(record: HealthObservation) = ui.card().apply {
         addView(ui.text(getString(record.draft.metric.titleResource()), 14f, muted = true))
-        ui.add(this, ui.text(value(record), 25f, bold = true), 6)
+        ui.add(this, ui.text(value(record), if (value(record).length > 24) 18f else 25f, bold = true), 6)
         ui.add(this, ui.text("${date(record.draft.measuredAt)} \u00b7 ${source(record)}", 12f, muted = true), 8)
         setOnClickListener { open("detail", record.draft.metric, record.id) }; isFocusable = true
     }
     internal fun value(record: HealthObservation): String {
-        val draft = record.draft
-        val values = if (draft.metric == HealthMetric.BLOOD_PRESSURE) "${draft.values["systolic"]}/${draft.values["diastolic"]}"
-        else draft.values[draft.metric.requiredFields.first()].orEmpty()
-        return "$values ${draft.unit}"
+        return healthDisplayValue(record.draft)
     }
     private fun renderRecords() {
         val content = scrolling()
         nextPage = null
         val after = pageAfter
-        query({ it.page(after) }) { page ->
+        val metric = selected.takeIf { route == "metric_records" }
+        query({ it.page(after, metric) }) { page ->
             nextPage = page.next
             page.records.forEach { ui.add(content, recordRow(it), 10) }
             if (content.childCount == 0) content.addView(ui.text(getString(R.string.health_no_records), 15f, muted = true))
@@ -269,6 +278,7 @@ class HealthCenterActivity : Activity() {
             if (nextPage != null) ui.add(content, ui.command(R.string.health_next_page) {
                 pageHistory += pageAfter; pageAfter = nextPage; render()
             }, 16)
+            if (metric != null) ui.add(content, ui.command(R.string.health_add_measurement) { open("manual", metric) }, 16)
         }
     }
     private fun renderDetail() {
@@ -296,6 +306,10 @@ class HealthCenterActivity : Activity() {
                     record.draft.values["pulse"]?.let { addView(ui.text("${getString(R.string.health_pulse)}: $it bpm")) }
                 }
                 if (record.draft.note.isNotBlank()) ui.add(this, ui.text(record.draft.note), 12)
+                if (record.draft.reference.isNotBlank()) {
+                    ui.add(this, ui.text(getString(R.string.health_report_reference), 13f, muted = true), 12)
+                    addView(ui.text(record.draft.reference))
+                }
                 ui.add(this, ui.text(getString(R.string.health_revision, record.revision), 12f, muted = true), 12)
             }, 16)
             ui.add(content, ui.row(getString(R.string.common_edit)) { open("manual", record.draft.metric, record.id) }, 14)
@@ -376,6 +390,7 @@ class HealthCenterActivity : Activity() {
         }
     }
     private fun openCapture() { startActivity(android.content.Intent(this, HealthCaptureActivity::class.java)) }
+    private fun openCatalog() { startActivity(android.content.Intent(this, HealthCatalogActivity::class.java)) }
     private fun source(record: HealthObservation) = getString(when (record.source) {
         "ocr" -> R.string.health_source_ocr; "table" -> R.string.health_source_table; else -> R.string.health_source_manual
     })

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_catalog_title">Measurements and Reports</string>
+    <string name="health_catalog_search">Search names, aliases or units</string>
+    <string name="health_catalog_daily">Daily</string>
+    <string name="health_catalog_laboratory">Laboratory</string>
+    <string name="health_catalog_all_groups">All categories</string>
+    <string name="health_catalog_no_match">No matching measurements</string>
+    <string name="health_result_label">Result</string>
+    <string name="health_unit_not_applicable">No unit · qualitative result</string>
+    <string name="health_report_reference">Reference interval from report · optional</string>
+    <string name="health_invalid_result">Check %1$s: preserve the reported value, bound, range or qualitative result.</string>
+    <string name="health_invalid_qualitative">Check %1$s: enter the qualitative result reported by the laboratory.</string>
+    <string name="health_invalid_count">Check %1$s: enter a nonnegative whole number without separators.</string>
+    <string name="health_invalid_nonnegative">Check %1$s: enter zero or a positive number.</string>
+    <string name="health_metric_resting_heart_rate">Resting heart rate</string>
+    <string name="health_metric_sleep">Sleep duration</string>
+    <string name="health_metric_steps">Step count</string>
+    <string name="health_metric_temperature">Body temperature</string>
+    <string name="health_metric_spo2">Oxygen saturation</string>
+    <string name="health_metric_height">Height</string>
+    <string name="health_metric_waist">Waist circumference</string>
+    <string name="health_metric_body_fat">Body fat percentage</string>
+    <string name="health_metric_ldl">LDL cholesterol</string>
+    <string name="health_metric_hdl">HDL cholesterol</string>
+    <string name="health_metric_triglycerides">Triglycerides</string>
+    <string name="health_metric_hba1c">Glycated hemoglobin · HbA1c</string>
+    <string name="health_metric_wbc">White blood cell count</string>
+    <string name="health_metric_platelets">Platelet count</string>
+    <string name="health_metric_alt">Alanine aminotransferase · ALT</string>
+    <string name="health_metric_ast">Aspartate aminotransferase · AST</string>
+    <string name="health_metric_creatinine">Creatinine</string>
+    <string name="health_metric_uric_acid">Uric acid</string>
+    <string name="health_metric_crp">C-reactive protein · CRP</string>
+    <string name="health_metric_tsh">Thyroid stimulating hormone · TSH</string>
+    <string name="health_metric_urine_protein">Urine protein · qualitative</string>
+    <string name="health_group_cardiovascular">Cardiovascular</string>
+    <string name="health_group_metabolic">Metabolic</string>
+    <string name="health_group_sleep">Sleep</string>
+    <string name="health_group_activity">Activity</string>
+    <string name="health_group_body">Body measurements</string>
+    <string name="health_group_blood">Blood tests</string>
+    <string name="health_group_liver">Liver tests</string>
+    <string name="health_group_kidney">Kidney tests</string>
+    <string name="health_group_thyroid">Thyroid tests</string>
+    <string name="health_group_urine">Urine tests</string>
+</resources>
