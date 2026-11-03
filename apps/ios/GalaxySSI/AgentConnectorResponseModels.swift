@@ -275,16 +275,22 @@ final class AgentResultPageCheckpointStore {
     return (0..<max(pageCount, 0)).filter { !restored.contains($0) }
   }
 
-  func clear(identity: AgentResultCheckpointIdentity, resultSHA256: String) {
+  @discardableResult
+  func clear(identity: AgentResultCheckpointIdentity, resultSHA256: String) -> Bool {
     locked {
       guard let statement = prepare(
         "DELETE FROM result_page_checkpoints WHERE identity_key = ? AND result_sha256 = ?"
-      ) else { return }
+      ) else { return false }
       defer { sqlite3_finalize(statement) }
       bind(identityKey(identity), at: 1, to: statement)
       bind(resultSHA256, at: 2, to: statement)
-      _ = sqlite3_step(statement)
+      return sqlite3_step(statement) == SQLITE_DONE
     }
+  }
+
+  func destroyAllData() {
+    locked { _ = execute("DELETE FROM result_page_checkpoints") }
+    cipher.destroyEncryptionKey()
   }
 
   static func defaultFileURL(fileManager: FileManager = .default) -> URL {
@@ -327,6 +333,7 @@ final class AgentResultPageCheckpointStore {
     sqlite3_busy_timeout(database, 5_000)
     _ = execute("PRAGMA journal_mode = WAL")
     _ = execute("PRAGMA synchronous = FULL")
+    _ = execute("PRAGMA fullfsync = ON")
     _ = execute("""
       CREATE TABLE IF NOT EXISTS result_page_checkpoints (
         identity_key TEXT NOT NULL, page_index INTEGER NOT NULL, page_count INTEGER NOT NULL,

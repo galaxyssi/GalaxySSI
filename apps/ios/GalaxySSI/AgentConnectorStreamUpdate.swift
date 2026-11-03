@@ -64,6 +64,7 @@ struct AgentConnectorStreamUpdate: Equatable {
   let taskId: String
   let content: String
   let sequence: Int64
+  let executionGeneration: Int64
 
   init?(payload: [String: Any]) {
     guard payload.string("type") == "agent_task_event",
@@ -94,6 +95,8 @@ struct AgentConnectorStreamUpdate: Equatable {
     taskId = payload.string("task_id")
     content = String(text.prefix(Self.maximumContentCharacters))
     sequence = max(0, Int64(partial.int("sequence")))
+    let generation = Int64(payload.string("execution_generation")) ?? Int64(payload.int("execution_generation"))
+    executionGeneration = AgentRemoteOutcomePolicy.validGeneration(generation) ? generation : 1
   }
 
   var streamKey: String {

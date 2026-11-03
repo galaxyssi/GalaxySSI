@@ -19,6 +19,7 @@
     F12662000000000000000002 /* AgentRichSelectableParagraphs.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */; };
     F1CC32700000000000000001 /* GalaxySSIPeerTextSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32700000000000000002 /* GalaxySSIPeerTextSelectionView.swift */; };
     F1CC32700000000000000003 /* AgentDesktopReplyRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32700000000000000004 /* AgentDesktopReplyRecovery.swift */; };
+    F1CC32700000000000000005 /* AgentDesktopResultRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32700000000000000006 /* AgentDesktopResultRecovery.swift */; };
     F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */; };
     F12665000000000000000001 /* CloudModelRequestRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */; };
     F12665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift */; };
@@ -1140,6 +1141,7 @@
     F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichSelectableParagraphs.swift; sourceTree = "<group>"; };
     F1CC32700000000000000002 /* GalaxySSIPeerTextSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerTextSelectionView.swift; sourceTree = "<group>"; };
     F1CC32700000000000000004 /* AgentDesktopReplyRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopReplyRecovery.swift; sourceTree = "<group>"; };
+    F1CC32700000000000000006 /* AgentDesktopResultRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopResultRecovery.swift; sourceTree = "<group>"; };
     F22662000000000000000003 /* AgentRichSelectableParagraphsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichSelectableParagraphsTests.swift; sourceTree = "<group>"; };
     F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelRequestRoutingPolicy.swift; sourceTree = "<group>"; };
     F22665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelRequestRoutingPolicyTests.swift; sourceTree = "<group>"; };
@@ -2737,6 +2739,7 @@
         F22662000000000000000002 /* AgentRichSelectableParagraphs.swift */,
         F1CC32700000000000000002 /* GalaxySSIPeerTextSelectionView.swift */,
         F1CC32700000000000000004 /* AgentDesktopReplyRecovery.swift */,
+        F1CC32700000000000000006 /* AgentDesktopResultRecovery.swift */,
         F22665000000000000000001 /* CloudModelRequestRoutingPolicy.swift */,
         A20000000000000000001860 /* GalaxySSIAgentHomeVoiceActions.swift */,
         A20000000000000000001870 /* GalaxySSIAgentHomeInputBridges.swift */,
@@ -3938,6 +3941,7 @@
         F12662000000000000000002 /* AgentRichSelectableParagraphs.swift in Sources */,
         F1CC32700000000000000001 /* GalaxySSIPeerTextSelectionView.swift in Sources */,
         F1CC32700000000000000003 /* AgentDesktopReplyRecovery.swift in Sources */,
+        F1CC32700000000000000005 /* AgentDesktopResultRecovery.swift in Sources */,
         F12665000000000000000001 /* CloudModelRequestRoutingPolicy.swift in Sources */,
         A10000000000000000001860 /* GalaxySSIAgentHomeVoiceActions.swift in Sources */,
         A10000000000000000001870 /* GalaxySSIAgentHomeInputBridges.swift in Sources */,

@@ -31,8 +31,11 @@ final class MessageCoordinator: ObservableObject {
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
   private lazy var desktopReplyRecovery = AgentDesktopReplyRecovery(defaults: store.defaults, secrets: store.secrets)
+  private lazy var desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
   private var desktopReplyRecoveryTask: Task<Void, Never>?
+  private var desktopReplyRecoverySweepInFlight = false
+  private var desktopReplyRecoverySweepRequested = false
   let transportReceiptJournal = GalaxySSITransportReceiptJournal()
   var transportReceiptDrainTask: Task<Void, Never>?
   private let blobRelayConfigurationStore = AgentBlobRelayConfigurationStore()
@@ -2230,18 +2233,34 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func sweepDesktopReplyRecovery() async {
+    guard !desktopReplyRecoverySweepInFlight else { desktopReplyRecoverySweepRequested = true; return }
+    desktopReplyRecoverySweepInFlight = true
+    defer {
+      desktopReplyRecoverySweepInFlight = false
+      if desktopReplyRecoverySweepRequested {
+        desktopReplyRecoverySweepRequested = false
+        Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+      }
+    }
     if desktopReplyRecoveryOwner != store.profile.identityFingerprint {
       desktopReplyRecovery = AgentDesktopReplyRecovery(defaults: store.defaults, secrets: store.secrets)
+      desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
       desktopReplyRecoveryOwner = store.profile.identityFingerprint
     }
     guard UIApplication.shared.applicationState == .active else { return }
     let now = AgentControlPlaneClock.nowMillis()
+    await sweepDesktopResultReceipts(now: now)
     var published = 0
-    for record in desktopReplyRecovery.pending {
-      guard !Task.isCancelled else { return }
+    for candidate in desktopReplyRecovery.pending {
+      guard !Task.isCancelled, desktopReplyRecoveryOwner == store.profile.identityFingerprint else { return }
+      guard let record = desktopReplyRecovery.record(for: candidate.binding) else { continue }
       let binding = record.binding
       guard let source = currentDesktopReplySource(binding) else {
         _ = desktopReplyRecovery.retire(binding)
+        continue
+      }
+      if let payload = desktopResultRecovery.assembled(record) {
+        persistRecoveredDesktopResult(payload, record: record)
         continue
       }
       if let reason = record.expiryReason(now: now) {
@@ -2266,12 +2285,91 @@ final class MessageCoordinator: ObservableObject {
       }
       let online = mqttClient.relationshipSubscriptionsReady
       if online && published >= 8 { continue }
-      guard let payload = desktopReplyRecovery.request(binding, online: online, now: now),
+      let observationRequest = desktopReplyRecovery.request(binding, online: online, now: now)
+      let payload = observationRequest ?? (online ? desktopResultRecovery.request(record, now: now) : nil)
+      guard let payload,
             let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
               $0.routes.clientRouteId == binding.identity.clientRouteId }),
             let wire = try? linkWirePayload(payload, link: link) else { continue }
       published += 1
       _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    }
+  }
+
+  private func sweepDesktopResultReceipts(now: Int64) async {
+    for work in desktopResultRecovery.receipts.due(nowMillis: now) {
+      guard !Task.isCancelled else { return }
+      if work.state == .confirmed { _ = desktopResultRecovery.cleanup(work.receipt); continue }
+      let receipt = work.receipt
+      guard mqttClient.relationshipSubscriptionsReady,
+            !GalaxySSITransportPrivacyPolicy.isLocalOnly(["conversation_id": receipt.conversationId]),
+            let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == receipt.desktopId &&
+              $0.routes.clientRouteId == receipt.clientRouteId }),
+            taskIdentityStore.matchesRegistered(payload: receipt.payload),
+            desktopResultRecovery.receipts.claim(work, nowMillis: now),
+            let wire = try? linkWirePayload(receipt.payload, link: link) else { continue }
+      _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    }
+  }
+
+  private func persistRecoveredDesktopResult(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord) {
+    let binding = record.binding
+    guard currentDesktopReplySource(binding) != nil, let receipt = desktopResultRecovery.receipt(record) else { return }
+    let content = payload.string("content").ifBlank(payload.string("text"))
+      .ifBlank(payload.string("terminal_reason")).ifBlank(payload.string("error"))
+    let rich = richContentMaterializer.materialize(AgentRichContentCodec.normalize(
+      payload.string("rich_output").ifBlank(payload.string("rich_output_json"))))
+    guard !content.isBlank || !rich.isBlank else { return }
+    let remoteId = payload.string("message_id")
+    let known = store.hasIncomingDuplicate(content, from: binding.displayContactId,
+      remoteMessageId: remoteId, turnId: binding.identity.turnId)
+    let pending = store.messages(for: binding.displayContactId).last {
+      !$0.isMine && $0.conversationId == binding.identity.conversationId &&
+        $0.turnId == binding.identity.turnId && $0.remoteMessageId == "agent-stream-\(binding.sourceId.uuidString)"
+    }
+    do {
+      let incoming = try store.persistTransportIncoming(content, from: binding.displayContactId,
+        remoteMessageId: remoteId, conversationId: binding.identity.conversationId,
+        turnId: binding.identity.turnId, richOutputJson: rich, replacing: pending, tracePrefix: "desktop_result")
+      finishPendingAgentReply(turnId: binding.identity.turnId)
+      UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceId.uuidString)
+      if !known || pending != nil {
+        onIncomingMessage?(incoming)
+        hydrateBlobArtifactPresentation(message: incoming, contactId: incoming.contactId,
+          sourceMessageId: binding.sourceId.uuidString)
+        if AgentRuntimeNotificationPolicy.shouldNotify(payload: payload,
+          applicationIsActive: UIApplication.shared.applicationState == .active) {
+          NotificationService.notify(title: store.contact(id: incoming.contactId)?.displayName ?? "GalaxySSI",
+            body: notificationPreview(content: content, payload: payload), userInfo: notificationUserInfo(for: incoming.contactId))
+        }
+      }
+    } catch GalaxySSIChatHistoryError.locallyDeleted {
+      // A durable user deletion is also a valid local disposition; never recreate or notify it.
+      finishPendingAgentReply(turnId: binding.identity.turnId)
+    } catch { lastError = "Recovered Desktop result could not be committed to message history"; return }
+    let streamKey = AgentConnectorStreamUpdate.streamKey(sourceMessageId: binding.sourceId.uuidString,
+      turnId: binding.identity.turnId)
+    liveConnectorMessageIds.removeValue(forKey: streamKey)
+    liveConnectorSequenceByKey.removeValue(forKey: streamKey)
+    connectorResponseBus.markTerminal(AgentTerminalDelivery(sourceMessageId: 0,
+      conversationId: binding.identity.conversationId, turnId: binding.identity.turnId,
+      taskId: binding.identity.taskId, contactId: binding.contactId, reason: record.status,
+      executionGeneration: record.generation, isFailure: AgentRemoteOutcomePolicy.isFailure(record.status)))
+    UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceId.uuidString)
+    for var task in store.agentTasks(forSession: binding.identity.conversationId, limit: 500)
+      where (task.taskId == binding.identity.taskId || task.taskId == binding.identity.turnId) &&
+        task.planContext == nil && task.pendingAction == nil && task.pendingActions.isEmpty &&
+        ![AgentPhase.completed, .cancelled].contains(task.phase) {
+      task.phase = AgentRemoteTaskStatusPolicy.phase(record.status)
+      task.result = content
+      task.verification = "Recovered authenticated Desktop result"
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      store.upsertAgentTask(task)
+    }
+    guard desktopResultRecovery.receipts.insert(receipt) else { return }
+    if desktopReplyRecovery.retire(binding) {
+      agentHomeDisplayContactIdsByTurnId.removeValue(forKey: binding.identity.turnId)
+      desktopReplyRecoverySweepRequested = true
     }
   }
 
@@ -10165,8 +10263,34 @@ final class MessageCoordinator: ObservableObject {
       if object.string("scheme") == "signal", let link, link.paired,
          appPayload.string("client_route_id") == link.routes.clientRouteId,
          let expected = desktopReplyRecovery.expectedBinding(appPayload), currentDesktopReplySource(expected) != nil {
-        _ = desktopReplyRecovery.receive(appPayload, authenticatedDesktopId: link.desktopId,
-          now: AgentControlPlaneClock.nowMillis())
+        if let record = desktopReplyRecovery.receive(appPayload, authenticatedDesktopId: link.desktopId,
+          now: AgentControlPlaneClock.nowMillis()) {
+          if let item = (appPayload["items"] as? [[String: Any]])?.first, let page = item.dictionary("result_page"),
+             let manifest = desktopResultRecovery.receiveInline(page, record: record,
+               queryNonce: appPayload.string("request_id")) { _ = desktopReplyRecovery.attachManifest(manifest, to: record) }
+          Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+        }
+      }
+      return
+    }
+    if appPayload.string("type") == "agent_task_result_page" {
+      if object.string("scheme") == "signal", let link, link.paired,
+         appPayload.string("client_route_id") == link.routes.clientRouteId,
+         let expected = desktopResultRecovery.expectedBinding(appPayload), expected.desktopId == link.desktopId,
+         currentDesktopReplySource(expected) != nil, let record = desktopReplyRecovery.record(for: expected),
+         let manifest = desktopResultRecovery.receive(appPayload, record: record, now: AgentControlPlaneClock.nowMillis()),
+         desktopReplyRecovery.attachManifest(manifest, to: record) {
+        Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+      }
+      return
+    }
+    if appPayload.string("type") == "agent_task_result_receipt_confirmed" {
+      if object.string("scheme") == "signal", let link, link.paired,
+         appPayload.string("client_route_id") == link.routes.clientRouteId,
+         taskIdentityStore.matchesRegistered(payload: appPayload),
+         let receipt = AgentResultReceipt.confirmedPayload(appPayload, desktopId: link.desktopId),
+         desktopResultRecovery.receipts.confirm(receipt) {
+        Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
       }
       return
     }
@@ -10861,7 +10985,8 @@ final class MessageCoordinator: ObservableObject {
       conversationId: update.conversationId,
       turnId: update.turnId,
       taskId: update.taskId,
-      receivedAtMillis: Int64(Date().timeIntervalSince1970 * 1_000)
+      receivedAtMillis: Int64(Date().timeIntervalSince1970 * 1_000),
+      executionGeneration: update.executionGeneration
     )
     if connectorResponseBus.isTerminal(terminalProbe) {
       return

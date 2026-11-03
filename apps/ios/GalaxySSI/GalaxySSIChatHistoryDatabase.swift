@@ -119,7 +119,8 @@ final class GalaxySSIChatHistoryDatabase {
   }
 
   // Commit before the transport inbox is consumed. Deduplicate on disk, not in the paged UI cache.
-  func persistTransportIncoming(_ message: ChatMessage, replacing pendingID: UUID? = nil) throws -> ChatMessage {
+  func persistTransportIncoming(_ message: ChatMessage, replacing pendingID: UUID? = nil,
+                                allowAgentStreamReplacement: Bool = false) throws -> ChatMessage {
     guard !message.isMine, !message.isSystem, !message.contactId.isBlank,
           !message.remoteMessageId.isBlank, pendingID == nil || pendingID == message.id else {
       throw MqttRouteError.invalidPayload
@@ -153,11 +154,13 @@ final class GalaxySSIChatHistoryDatabase {
           throw MqttRouteError.invalidPayload
         }
         if saved.id == pendingID, saved.remoteMessageId != message.remoteMessageId {
-          guard saved.remoteMessageId.hasPrefix("pending-peer:") else { throw MqttRouteError.invalidPayload }
+          guard saved.remoteMessageId.hasPrefix("pending-peer:") ||
+            (allowAgentStreamReplacement && saved.remoteMessageId.hasPrefix("agent-stream-")) else { throw MqttRouteError.invalidPayload }
           continue
         }
         guard saved.remoteMessageId == message.remoteMessageId, saved.content == message.content,
-              saved.turnId == message.turnId, replay == nil else { throw MqttRouteError.invalidPayload }
+              saved.turnId == message.turnId, saved.conversationId == message.conversationId,
+              replay == nil else { throw MqttRouteError.invalidPayload }
         replay = saved
       }
       let saved = replay ?? message

@@ -948,6 +948,7 @@ final class GalaxySSIStore: ObservableObject {
     agentReplyUnreadStore.clear()
     agentConversationDatabase.destroyAllData()
     chatHistoryDatabase.destroyAllData()
+    AgentDesktopResultRecovery(ownerId: profile.identityFingerprint, secrets: secrets).destroyAllData()
     UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     GalaxySSIEncryptedUserDefaultsStore.destroy(
       defaults: defaults, key: GalaxySSIPairingDeliveryStore.storageKey, secrets: secrets
@@ -1109,7 +1110,8 @@ final class GalaxySSIStore: ObservableObject {
   func persistTransportIncoming(
     _ content: String, from contactId: String, remoteMessageId: String,
     conversationId: String, turnId: String, richOutputJson: String,
-    replacing pending: ChatMessage? = nil
+    replacing pending: ChatMessage? = nil,
+    tracePrefix: String = "phone_contact"
   ) throws -> ChatMessage {
     guard pending == nil || (pending?.contactId == contactId && pending?.isMine == false) else {
       throw MqttRouteError.invalidPayload
@@ -1121,9 +1123,10 @@ final class GalaxySSIStore: ObservableObject {
     message.turnId = turnId
     message.richOutputJson = richOutputJson
     message.deliveryStatus = .delivered
-    message.deliveryTrace.append(DeliveryTraceEvent(stage: "phone_contact_received"))
-    message.deliveryTrace.append(DeliveryTraceEvent(stage: "phone_contact_decrypted", detail: "Signal"))
-    let saved = try chatHistoryDatabase.persistTransportIncoming(message, replacing: pending?.id)
+    message.deliveryTrace.append(DeliveryTraceEvent(stage: tracePrefix + "_received"))
+    message.deliveryTrace.append(DeliveryTraceEvent(stage: tracePrefix + "_decrypted", detail: "Signal"))
+    let saved = try chatHistoryDatabase.persistTransportIncoming(message, replacing: pending?.id,
+      allowAgentStreamReplacement: tracePrefix == "desktop_result")
     if !runtimePlaintextCleared {
       var cached = messagesByContact[contactId] ?? []
       if let index = cached.firstIndex(where: { $0.id == saved.id }) { cached[index] = saved }

@@ -1,7 +1,91 @@
 import XCTest
+import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testLateStreamProbeRetainsRecoveredExecutionGeneration() throws {
+    let update = try XCTUnwrap(AgentConnectorStreamUpdate(payload: ["type": "agent_task_event",
+      "task_status": "running", "source_message_id": UUID().uuidString, "contact_id": "agent",
+      "conversation_id": "conversation", "turn_id": "turn", "task_id": "task",
+      "execution_generation": 2, "partial_result": ["text": "Late partial", "sequence": 10]]))
+    XCTAssertEqual(update.executionGeneration, 2)
+    let terminal = InMemoryAgentTerminalDeliveryStore()
+    terminal.mark(AgentTerminalDelivery(sourceMessageId: 0, conversationId: "conversation", turnId: "turn",
+      taskId: "task", contactId: "agent", reason: "completed", executionGeneration: 2))
+    XCTAssertTrue(terminal.isTerminal(AgentConnectorResponse(sourceMessageId: 0, contactId: update.contactId,
+      conversationId: update.conversationId, turnId: update.turnId, taskId: update.taskId,
+      executionGeneration: update.executionGeneration)))
+  }
+
+  @MainActor
+  func testDesktopResultPagesResumeValidateAndWaitForReceiptConfirmationBeforeCleanup() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let pagesURL = root.appendingPathComponent("pages.sqlite3")
+    let receiptsURL = root.appendingPathComponent("receipts.sqlite3")
+    func engine() -> AgentDesktopResultRecovery {
+      AgentDesktopResultRecovery(pages: AgentResultPageCheckpointStore(fileURL: pagesURL, secrets: secrets),
+        receipts: AgentResultReceiptJournal(fileURL: receiptsURL, secrets: secrets))
+    }
+    let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: UUID(),
+      contactId: "agent", agentId: "codex", identity: AgentTaskIdentity(clientRouteId: "route",
+        conversationId: "conversation", taskId: "task", turnId: "turn"))
+    var record = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: 1_000)
+    record.generation = 2
+    record.sequence = 3
+    record.status = "completed"
+    var body: [String: Any] = binding.fields
+    body.merge(["type": "text", "message_id": "reply", "content": String(repeating: "answer ", count: 3_000),
+      "task_status": "completed", "execution_generation": 2, "status_sequence": 3]) { _, new in new }
+    let data = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+    func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    let pageSize = AgentResultPageCheckpointStore.maximumPageBytes
+    let count = (data.count + pageSize - 1) / pageSize
+    XCTAssertEqual(count, 2)
+    func response(_ request: [String: Any], page: Int) -> [String: Any] {
+      let chunk = data.subdata(in: (page * pageSize)..<min(data.count, (page + 1) * pageSize))
+      var payload: [String: Any] = binding.fields
+      payload.merge(["type": "agent_task_result_page", "request_id": request["request_id"]!, "status": "ready",
+        "page_index": page, "page_count": count, "total_bytes": data.count, "execution_generation": 2,
+        "sha256": digest(data), "page_sha256": digest(chunk), "data_b64": chunk.base64EncodedString()]) { _, new in new }
+      return payload
+    }
+    let first = engine()
+    let request = try XCTUnwrap(first.request(record, now: 1_000))
+    let pageZero = response(request, page: 0)
+    record.resultManifest = try XCTUnwrap(first.receive(pageZero, record: record, now: 2_000))
+    XCTAssertNil(first.assembled(record))
+    let reopened = engine()
+    let next = try XCTUnwrap(reopened.request(record, now: 3_000))
+    XCTAssertEqual(next["page_index"] as? Int, 1)
+    let pageOne = response(next, page: 1)
+    var corrupt = pageOne
+    corrupt["data_b64"] = Data("corrupt".utf8).base64EncodedString()
+    XCTAssertNil(reopened.receive(corrupt, record: record, now: 4_000))
+    corrupt = pageOne
+    corrupt["turn_id"] = "foreign"
+    XCTAssertNil(reopened.receive(corrupt, record: record, now: 4_000))
+    corrupt = pageOne
+    corrupt["execution_generation"] = true
+    XCTAssertNil(reopened.receive(corrupt, record: record, now: 4_000))
+    XCTAssertNotNil(reopened.receive(pageOne, record: record, now: 4_000))
+    let assembled = try XCTUnwrap(reopened.assembled(record))
+    XCTAssertEqual(assembled["content"] as? String, body["content"] as? String)
+    let receipt = try XCTUnwrap(reopened.receipt(record))
+    XCTAssertEqual(AgentResultReceipt.fromPayload(receipt.payload, desktopId: "desktop"), receipt)
+    XCTAssertTrue(reopened.receipts.insert(receipt))
+    XCTAssertFalse(reopened.cleanup(receipt))
+    XCTAssertNotNil(reopened.assembled(record))
+    var confirmed = receipt.payload
+    confirmed["type"] = "agent_task_result_receipt_confirmed"
+    XCTAssertEqual(AgentResultReceipt.confirmedPayload(confirmed, desktopId: "desktop"), receipt)
+    XCTAssertTrue(reopened.receipts.confirm(receipt))
+    XCTAssertTrue(reopened.cleanup(receipt))
+    XCTAssertNil(reopened.assembled(record))
+    XCTAssertTrue(reopened.receipts.due(nowMillis: Int64.max).isEmpty)
+  }
+
   func testResultReceiptBindsIdentityGenerationDigestAndConfirmation() throws {
     let payload: [String: Any] = [
       "client_route_id": "route-1",
