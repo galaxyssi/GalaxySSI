@@ -8934,11 +8934,11 @@ final class MessageCoordinator: ObservableObject {
       ) else {
         throw GalaxySSIError.invalidPayload("Agent reply identity could not be registered")
       }
-      if teamContext == nil {
+      if teamContext == nil, contact.desktopId == link.desktopId, !contact.connectorAgentId.isBlank {
         let binding = AgentDesktopReplyBinding(desktopId: link.desktopId,
           displayContactId: outgoing.contactId, sourceId: outgoing.id, contactId: contact.id,
           agentId: contact.connectorAgentId, identity: taskIdentity)
-        guard desktopReplyRecovery.track(binding, now: publishStartedAt) else {
+        guard !binding.isValid || desktopReplyRecovery.track(binding, now: publishStartedAt) else {
           throw GalaxySSIError.invalidPayload("Agent reply recovery identity could not be saved")
         }
       }
