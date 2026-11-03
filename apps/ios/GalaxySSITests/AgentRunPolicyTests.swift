@@ -3,6 +3,67 @@ import CoreGraphics
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  @MainActor
+  func testDesktopReplyJournalMigratesOnlyAfterCommitAndDoesNotResurrectRetiredLegacyState() throws {
+    let suite = "DesktopReplyMigrationTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let binding = desktopReplyJournalBinding()
+    let record = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: 1_000)
+    let legacy = try JSONEncoder().encode([binding.key: record])
+    XCTAssertTrue(GalaxySSIEncryptedUserDefaultsStore.write(legacy, defaults: defaults,
+      key: AgentDesktopReplyRecovery.storageKey, secrets: secrets))
+    let failed = DesktopReplyRecoveryTestJournal()
+    failed.rejectWrites = true
+    let unavailable = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: failed)
+    XCTAssertFalse(unavailable.track(binding, now: 1_000))
+    XCTAssertEqual(GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults,
+      key: AgentDesktopReplyRecovery.storageKey, secrets: secrets), legacy)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("history.sqlite3")
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    let migrated = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertEqual(migrated.pending, [record])
+    XCTAssertNil(defaults.data(forKey: AgentDesktopReplyRecovery.storageKey + ".encrypted.v1"))
+    XCTAssertNotNil(try journal.loadDesktopReplyRecoveryState())
+    XCTAssertTrue(migrated.retire(binding))
+    // A pre-migration process may have left a stale defaults copy after retirement.
+    XCTAssertTrue(GalaxySSIEncryptedUserDefaultsStore.write(legacy, defaults: defaults,
+      key: AgentDesktopReplyRecovery.storageKey, secrets: secrets))
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets,
+      journal: GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets))
+    XCTAssertTrue(reopened.pending.isEmpty)
+    XCTAssertNil(defaults.data(forKey: AgentDesktopReplyRecovery.storageKey + ".encrypted.v1"))
+  }
+
+  @MainActor
+  func testDesktopReplyJournalRejectsFailedMutationsAndCorruptLoads() throws {
+    let suite = "DesktopReplyJournalFailureTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let journal = DesktopReplyRecoveryTestJournal()
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    let binding = desktopReplyJournalBinding()
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    let before = recovery.pending
+    journal.rejectWrites = true
+    XCTAssertNil(recovery.request(binding, online: true, now: 1_000))
+    XCTAssertEqual(recovery.pending, before)
+    XCTAssertFalse(recovery.retire(binding))
+    XCTAssertEqual(recovery.pending, before)
+    journal.rejectWrites = false
+    journal.data = Data("corrupt".utf8)
+    let corrupt = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertFalse(corrupt.track(binding, now: 2_000))
+    XCTAssertEqual(journal.data, Data("corrupt".utf8))
+    journal.rejectLoads = true
+    let inaccessible = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    XCTAssertFalse(inaccessible.track(binding, now: 2_000))
+  }
+
   func testScreenDictationKeepsEmptyDraftAndRejectsStoppedOwner() throws {
     let owner = UUID()
     let snapshot = try XCTUnwrap(AgentVoiceTranscriptPolicy.draftSnapshot(
@@ -52,7 +113,11 @@ extension GalaxySSIStoreTests {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let secrets = InMemorySecretStore()
-    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("history.sqlite3")
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets)
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
     let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: UUID(),
       contactId: "agent", agentId: "codex", identity: AgentTaskIdentity(clientRouteId: "route",
         conversationId: "conversation", taskId: "task", turnId: "turn"))
@@ -87,7 +152,8 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(recovery.acceptsFinal(final, desktopId: "desktop"))
     final["status_sequence"] = true
     XCTAssertFalse(recovery.acceptsFinal(final, desktopId: "desktop"))
-    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets)
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets,
+      journal: GalaxySSIChatHistoryDatabase(fileURL: file, secrets: secrets))
     XCTAssertEqual(reopened.pending.first?.terminalObservedAt, 3_000)
     XCTAssertNil(reopened.pending.first?.expiryReason(now: 3_000 + 15 * 60_000 - 1))
     XCTAssertEqual(reopened.pending.first?.expiryReason(now: 3_000 + 15 * 60_000), "desktop_result_unavailable")
@@ -98,7 +164,11 @@ extension GalaxySSIStoreTests {
     let suite = "DesktopReplyOfflineTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: InMemorySecretStore())
+    let secrets = InMemorySecretStore()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets,
+      journal: GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"), secrets: secrets))
     let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: UUID(),
       contactId: "agent", agentId: "codex", identity: AgentTaskIdentity(clientRouteId: "route",
         conversationId: "conversation", taskId: "task", turnId: "turn"))
@@ -3206,4 +3276,27 @@ private func runKernelEvent(eventId: String = "event-1") -> AgentRunControlEvent
     type: .runStarted,
     sequence: 1
   )
+}
+
+private func desktopReplyJournalBinding() -> AgentDesktopReplyBinding {
+  AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: UUID(),
+    contactId: "agent", agentId: "codex", identity: AgentTaskIdentity(clientRouteId: "route",
+      conversationId: "conversation", taskId: "task", turnId: "turn"))
+}
+
+private final class DesktopReplyRecoveryTestJournal: AgentDesktopReplyRecoveryPersisting {
+  var data: Data?
+  var rejectWrites = false
+  var rejectLoads = false
+
+  func loadDesktopReplyRecoveryState() throws -> Data? {
+    if rejectLoads { throw GalaxySSIError.invalidPayload("Test journal unavailable") }
+    return data
+  }
+
+  func writeDesktopReplyRecoveryState(_ data: Data) -> Bool {
+    guard !rejectWrites else { return false }
+    self.data = data
+    return true
+  }
 }

@@ -650,6 +650,10 @@ final class GalaxySSIStore: ObservableObject {
     return message
   }
 
+  func makeDesktopReplyRecovery() -> AgentDesktopReplyRecovery {
+    AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: chatHistoryDatabase)
+  }
+
   @discardableResult
   func loadMessagePage(
     contactId: String,

@@ -30,7 +30,7 @@ final class MessageCoordinator: ObservableObject {
   let deliveryStore: GalaxySSILinkDeliveryStore
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
-  private lazy var desktopReplyRecovery = AgentDesktopReplyRecovery(defaults: store.defaults, secrets: store.secrets)
+  private lazy var desktopReplyRecovery = store.makeDesktopReplyRecovery()
   private lazy var desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
   private var desktopReplyRecoveryTask: Task<Void, Never>?
@@ -2243,7 +2243,7 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     if desktopReplyRecoveryOwner != store.profile.identityFingerprint {
-      desktopReplyRecovery = AgentDesktopReplyRecovery(defaults: store.defaults, secrets: store.secrets)
+      desktopReplyRecovery = store.makeDesktopReplyRecovery()
       desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
       desktopReplyRecoveryOwner = store.profile.identityFingerprint
     }
