@@ -4,6 +4,74 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentDesktopArtifactHandoffTests: XCTestCase {
+  @MainActor
+  func testStoredArtifactReplayRemainsPendingUntilReceiptQueueCommits() throws {
+    let fixture = try ChunkFixture()
+    let suite = "artifact-stored-replay-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let root = temporaryDirectory("stored-replay")
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: fixture.secrets)
+    let artifacts = AgentDesktopArtifactStore(rootURL: root, cipher: cipher)
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let delivery = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let bytes = Data("received artifact".utf8)
+    let digest = sha256(bytes)
+    let uri = "galaxyssi-artifact://task/outputs/received.bin"
+    let id = AgentDesktopArtifactStore.stableID(uri: uri, sha256: digest)
+    let chunk = payload(artifactId: id, artifactURI: uri, fullDigest: digest, fullSize: bytes.count,
+      index: 0, count: 1, chunk: bytes)
+    XCTAssertTrue(delivery.stageAttachmentControl(messageId: "final-chunk", payload: "authenticated artifact chunk"))
+    XCTAssertTrue(try artifacts.ingest(chunk).completed)
+    let receipt = LinkDeliveryEnqueueRequest(messageId: "stored-receipt", topic: "control", wirePayload: "encrypted-receipt",
+      requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [], clientSourceMessageId: "", contactId: "")
+    try fixture.execute("CREATE TRIGGER reject_artifact_receipt BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertFalse(delivery.commitAttachmentControl([receipt], messageId: "final-chunk"))
+    XCTAssertEqual(delivery.pendingIncoming().map(\.messageId), ["final-chunk"])
+    let recovered = AgentDesktopArtifactStore(rootURL: root, cipher: cipher)
+    XCTAssertTrue(try recovered.ingest(chunk).completed)
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertEqual(reopened.pendingIncoming().map(\.messageId), ["final-chunk"])
+    try fixture.execute("DROP TRIGGER reject_artifact_receipt")
+    XCTAssertTrue(reopened.commitAttachmentControl([receipt], messageId: "final-chunk"))
+    XCTAssertTrue(reopened.pendingIncoming().isEmpty)
+    XCTAssertEqual(try reopened.outboxMigrationSnapshot().map(\.messageId), ["stored-receipt"])
+    var foreign = chunk
+    foreign["task_id"] = "different-task"
+    XCTAssertThrowsError(try recovered.ingest(foreign))
+    foreign = chunk
+    foreign["size_bytes"] = bytes.count + 1
+    XCTAssertThrowsError(try recovered.ingest(foreign))
+  }
+
+  @MainActor
+  func testPartialArtifactAcceptanceDoesNotQueueStoredReceiptAndRollsBackOnCommitFailure() throws {
+    let fixture = try ChunkFixture()
+    let suite = "artifact-partial-replay-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let artifacts = AgentDesktopArtifactStore(rootURL: temporaryDirectory("partial-replay"),
+      cipher: GalaxySSIAttachmentAtRestCipher(secrets: fixture.secrets))
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let delivery = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let bytes = Data(repeating: 7, count: 256 * 1_024 + 1)
+    let digest = sha256(bytes)
+    let uri = "galaxyssi-artifact://task/outputs/partial.bin"
+    let id = AgentDesktopArtifactStore.stableID(uri: uri, sha256: digest)
+    let first = payload(artifactId: id, artifactURI: uri, fullDigest: digest, fullSize: bytes.count,
+      index: 0, count: 2, chunk: Data(bytes.prefix(256 * 1_024)))
+    XCTAssertTrue(delivery.stageAttachmentControl(messageId: "partial", payload: "authenticated partial"))
+    XCTAssertFalse(try artifacts.ingest(first).completed)
+    try fixture.execute("CREATE TRIGGER reject_partial BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertFalse(delivery.completeAttachmentControlWithoutResponse(messageId: "partial"))
+    XCTAssertEqual(delivery.pendingIncoming().map(\.messageId), ["partial"])
+    XCTAssertFalse(try artifacts.ingest(first).completed)
+    try fixture.execute("DROP TRIGGER reject_partial")
+    XCTAssertTrue(delivery.completeAttachmentControlWithoutResponse(messageId: "partial"))
+    XCTAssertTrue(try delivery.outboxMigrationSnapshot().isEmpty)
+    XCTAssertEqual(delivery.stageIncoming(messageId: "partial", payload: "duplicate"), .completed)
+  }
+
   func testDeliveredAttachmentRecoveryRequiresExactConversationOriginAndVersion() throws {
     let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
     let store = AgentDesktopArtifactStore(rootURL: temporaryDirectory("recovery"), cipher: cipher)
