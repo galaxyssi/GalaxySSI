@@ -327,7 +327,7 @@ final class AgentConnectorTeamCompletionSink: AgentTeamCompletionSink {
 
   @discardableResult
   func publish(_ snapshot: AgentTeamExecutionSnapshot) -> Bool {
-    historyStore.upsert(snapshot)
+    guard historyStore.upsert(snapshot) else { return false }
     guard snapshot.state.deliverable,
       !ledger.contains(snapshot.supervisorRunId) else {
       return false

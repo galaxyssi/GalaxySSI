@@ -250,6 +250,34 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(responseStore.pending().count, 2)
   }
 
+  func testAgentTeamCompletionRetriesWhenHistoryEncryptionFails() throws {
+    let suite = "team-completion-write-failure-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = TeamCompletionFailingSecrets()
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]))
+    let responses = InMemoryAgentConnectorResponseStore()
+    let ledger = AgentTeamCompletionDeliveryLedger()
+    let sink = AgentConnectorTeamCompletionSink(responseStore: responses, ledger: ledger,
+      historyStore: history)
+    let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: "retry-history",
+      teamId: "team", conversationId: "conversation", taskId: "turn",
+      primaryAgentId: "lead", state: .succeeded, finalOutput: "Answer")
+
+    XCTAssertFalse(sink.publish(snapshot))
+    XCTAssertTrue(responses.pending().isEmpty)
+    XCTAssertTrue(ledger.snapshot().isEmpty)
+    XCTAssertNil(history.snapshot(supervisorRunId: snapshot.supervisorRunId))
+
+    secrets.rejectWrites = false
+    XCTAssertTrue(sink.publish(snapshot))
+    XCTAssertEqual(responses.pending().count, 1)
+    XCTAssertEqual(history.snapshot(supervisorRunId: snapshot.supervisorRunId), snapshot)
+    XCTAssertFalse(sink.publish(snapshot))
+    XCTAssertEqual(responses.pending().count, 1)
+  }
+
   func testAgentTeamCompletionSinkPublishesFailureResponseWithReason() {
     let responseStore = InMemoryAgentConnectorResponseStore()
     let sink = AgentConnectorTeamCompletionSink(
@@ -282,6 +310,19 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(response?.contactId, "agent-team:failed-team")
     XCTAssertEqual(response?.receivedAtMillis, 3_000)
   }
+}
+
+private final class TeamCompletionFailingSecrets: GalaxySSISecretStore {
+  var rejectWrites = true
+  private let backing = InMemorySecretStore()
+
+  func setString(_ value: String, account: String) throws {
+    if rejectWrites { throw GalaxySSIError.invalidPayload("Injected history key write failure") }
+    try backing.setString(value, account: account)
+  }
+
+  func string(account: String) -> String? { backing.string(account: account) }
+  func delete(account: String) { backing.delete(account: account) }
 }
 
 private final class SavedTeamRecoveryFixture: AgentTeamExecutionStore {
