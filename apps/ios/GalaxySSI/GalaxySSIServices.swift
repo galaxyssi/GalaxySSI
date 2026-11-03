@@ -36,6 +36,8 @@ final class MessageCoordinator: ObservableObject {
   private var managedDesktopDiscoveryAt: Int64 = 0
   private var managedDesktopProbeAt: Int64 = 0
   private var managedDesktopProbes = 0
+  private var teamObserverDiscoveryCursor = ""
+  private var teamObserverDiscoveryAt: Int64 = 0
   private lazy var desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
   private var desktopReplyRecoveryTask: Task<Void, Never>?
@@ -2228,7 +2230,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func currentDesktopReplySource(_ binding: AgentDesktopReplyBinding) -> ChatMessage? {
-    guard binding.managedSource == nil else { return nil }
+    guard binding.managedSource == nil, binding.teamSource == nil else { return nil }
     guard let source = store.persistedMessage(id: binding.sourceId, contactId: binding.displayContactId),
           source.isMine, source.conversationId == binding.identity.conversationId,
           source.turnId.ifBlank(source.id.uuidString) == binding.identity.turnId,
@@ -2265,7 +2267,131 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func desktopRecoveryBindingIsCurrent(_ binding: AgentDesktopReplyBinding) -> Bool {
-    binding.managedSource == nil ? currentDesktopReplySource(binding) != nil : currentManagedDesktopReply(binding) != nil
+    if binding.teamSource != nil { return currentTeamObserverRecovery(binding) != nil }
+    return binding.managedSource == nil ? currentDesktopReplySource(binding) != nil : currentManagedDesktopReply(binding) != nil
+  }
+
+  private func currentTeamObserverRecovery(_ binding: AgentDesktopReplyBinding) -> AgentTeamReplyRecoveryContext? {
+    guard let teamSource = binding.teamSource,
+          let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: binding.sourceIdentity,
+            conversation: binding.identity.conversationId, turn: binding.identity.turnId, contact: binding.contactId),
+          context.owner.supervisorRunId == teamSource.supervisorRunId, context.owner.memberId == teamSource.memberId,
+          context.owner.deliveryMode == .observe, context.team.state != .cancelled,
+          binding.identity.taskId == context.owner.sourceMessageId,
+          taskIdentityStore.identity(contactId: binding.contactId, sourceMessageId: binding.sourceIdentity) == binding.identity,
+          let session = store.agentSession(id: binding.identity.conversationId), !session.privateMode, !session.trackingPaused,
+          let contact = store.contact(id: binding.contactId), contact.trustState == .verified,
+          contact.deliveryMode.isGalaxySSILinkFamily, contact.desktopId == binding.desktopId,
+          contact.connectorAgentId == binding.agentId,
+          store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
+            $0.routes.clientRouteId == binding.identity.clientRouteId }),
+          !GalaxySSITransportPrivacyPolicy.isLocalOnly(binding.fields) else { return nil }
+    if let parent = store.agentTask(id: context.team.taskId), parent.phase == .cancelled { return nil }
+    return context
+  }
+
+  private func teamRecoveryObservationIsCurrent(_ binding: AgentDesktopReplyBinding, item: [String: Any]) -> Bool {
+    guard binding.teamSource != nil else { return true }
+    return currentTeamObserverRecovery(binding)?.owner.accepts(AgentTeamReplyObservation(payload: item)) == true
+  }
+
+  private func discoverTeamObserverReplies(now: Int64) {
+    guard now < teamObserverDiscoveryAt || now - teamObserverDiscoveryAt >= 30_000 else { return }
+    teamObserverDiscoveryAt = now
+    guard let page = try? AgentTeamExecutionHistoryStore.shared.pendingRecoveryPage(after: teamObserverDiscoveryCursor) else { return }
+    for team in page.teams {
+      for member in team.members where member.deliveryMode == .observe &&
+        (!member.status.isTerminal || (team.state == .interrupted && member.status == .interrupted)) {
+        guard let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: member.sourceMessageId,
+                conversation: team.conversationId, turn: team.taskId, contact: member.agentId),
+              let contact = store.contact(id: member.agentId), !contact.connectorAgentId.isBlank,
+              let identity = taskIdentityStore.identity(contactId: member.agentId, sourceMessageId: member.sourceMessageId),
+              let binding = AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: contact.desktopId,
+                agentId: contact.connectorAgentId, identity: identity), currentTeamObserverRecovery(binding) != nil else { continue }
+        guard desktopReplyRecovery.track(binding, now: max(1, team.createdAtMillis)) else { return }
+      }
+    }
+    teamObserverDiscoveryCursor = page.next ?? ""
+  }
+
+  private func teamReplyContent(_ payload: [String: Any]) -> String {
+    let status = AgentRemoteTaskStatusPolicy.normalize(payload.string("task_status"))
+    return AgentRemoteOutcomePolicy.isFailure(status)
+      ? payload.string("error").ifBlank(payload.string("content")).ifBlank(payload.string("text")).ifBlank(status)
+      : payload.string("content").ifBlank(payload.string("text"))
+  }
+
+  private func teamObserverResultIsCommitted(_ payload: [String: Any], binding: AgentDesktopReplyBinding) -> Bool {
+    guard let context = currentTeamObserverRecovery(binding),
+          context.owner.accepts(AgentTeamReplyObservation(payload: payload)),
+          context.member.replyContent == teamReplyContent(payload),
+          context.member.richOutputJson == payload.string("rich_output").ifBlank(payload.string("rich_output_json")) else { return false }
+    let expected: AgentSubagentStatus = AgentRemoteOutcomePolicy.isFailure(payload.string("task_status")) ? .failed : .succeeded
+    return context.member.status == expected
+  }
+
+  private func persistRecoveredTeamObserver(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord) {
+    let binding = record.binding
+    guard currentTeamObserverRecovery(binding) != nil, let receipt = desktopResultRecovery.receipt(record) else { return }
+    do {
+      let disposition = try AgentTeamExecutionHistoryStore.shared.consumeOwnedReply(source: binding.sourceIdentity,
+        conversation: binding.identity.conversationId, turn: binding.identity.turnId, task: binding.identity.taskId,
+        contact: binding.contactId, content: teamReplyContent(payload),
+        richOutputJson: payload.string("rich_output").ifBlank(payload.string("rich_output_json")),
+        terminal: true, success: !AgentRemoteOutcomePolicy.isFailure(record.status), now: AgentControlPlaneClock.nowMillis(),
+        observation: AgentTeamReplyObservation(payload: payload))
+      guard disposition == .observerCommitted || disposition == .observerDuplicate,
+            teamObserverResultIsCommitted(payload, binding: binding), desktopResultRecovery.receipts.insert(receipt) else { return }
+      UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
+      reconcileSavedTeamParents()
+      if desktopReplyRecovery.retire(binding) { desktopReplyRecoverySweepRequested = true }
+    } catch { lastError = localizedReply("galaxyssi.team.reply_commit_failed", fallback: "The Agent team reply could not be saved. It will not be shown as a normal message.") }
+  }
+
+  private func sweepTeamObserverReply(_ record: AgentDesktopReplyRecoveryRecord, now: Int64, mayPublish: Bool) async -> Bool {
+    let binding = record.binding
+    guard let context = currentTeamObserverRecovery(binding) else { _ = desktopReplyRecovery.retire(binding); return false }
+    if context.team.state.deliverable && !context.member.status.isTerminal { _ = desktopReplyRecovery.retire(binding); return false }
+    if let payload = desktopResultRecovery.assembled(record) { persistRecoveredTeamObserver(payload, record: record); return false }
+    if let reason = record.expiryReason(now: now) {
+      if !context.member.status.isTerminal || context.member.status == .interrupted {
+        let detail = reason == "desktop_result_unavailable"
+          ? localizedReply("galaxyssi.agent.desktop_result_unavailable", fallback: "The Desktop task finished, but its result could not be delivered. The task was not run again.")
+          : localizedReply("galaxyssi.agent.desktop_status_unavailable", fallback: "The Desktop task status could not be confirmed. Check the connection before retrying.")
+        guard (try? AgentTeamExecutionHistoryStore.shared.consumeOwnedReply(source: binding.sourceIdentity,
+          conversation: binding.identity.conversationId, turn: binding.identity.turnId, task: binding.identity.taskId,
+          contact: binding.contactId, content: detail, richOutputJson: "", terminal: true, success: false, now: now,
+          observation: AgentTeamReplyObservation(generation: context.owner.observedGeneration, sequence: context.owner.observedSequence))) == .observerCommitted else { return false }
+        UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
+        reconcileSavedTeamParents()
+      }
+      _ = desktopReplyRecovery.retire(binding)
+      return false
+    }
+    if now < managedDesktopProbeAt || now - managedDesktopProbeAt >= 30_000 { managedDesktopProbeAt = now; managedDesktopProbes = 0 }
+    guard mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
+          let payload = desktopReplyRecovery.request(binding, online: true, now: now) ?? desktopResultRecovery.request(record, now: now),
+          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
+            $0.routes.clientRouteId == binding.identity.clientRouteId }), let wire = try? linkWirePayload(payload, link: link) else { return false }
+    managedDesktopProbes += 1
+    _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    return true
+  }
+
+  private func acknowledgeTeamObserverResult(_ payload: [String: Any], link: ServerLink) {
+    guard let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: payload.string("source_message_id"),
+            conversation: payload.string("conversation_id"), turn: payload.string("turn_id"), contact: payload.string("contact_id")),
+          let contact = store.contact(id: context.owner.contactId),
+          let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: context.owner.sourceMessageId),
+          let binding = AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: link.desktopId,
+            agentId: contact.connectorAgentId, identity: identity), teamObserverResultIsCommitted(payload, binding: binding) else { return }
+    if let receipt = AgentResultReceipt.fromPayload(payload, desktopId: link.desktopId) {
+      guard receipt.agentId == binding.agentId, desktopResultRecovery.receipts.insert(receipt) else { return }
+    } else if payload["result_recovery"] != nil || payload["sha256"] != nil { return }
+    for record in desktopReplyRecovery.pending where record.binding.teamSource != nil && record.binding.matches(payload) {
+      _ = desktopReplyRecovery.retire(record.binding)
+    }
+    Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
   }
 
   private func discoverManagedDesktopReplies(now: Int64) {
@@ -2373,6 +2499,8 @@ final class MessageCoordinator: ObservableObject {
       desktopReplyRecoveryOwner = store.profile.identityFingerprint
       managedDesktopReplyLedger = store.makeManagedResponseLedger()
       managedDesktopDiscoveryCursor = ""
+      teamObserverDiscoveryCursor = ""
+      teamObserverDiscoveryAt = 0
       managedDesktopDiscoveryAt = 0
       managedDesktopProbeAt = 0
       managedDesktopProbes = 0
@@ -2380,6 +2508,7 @@ final class MessageCoordinator: ObservableObject {
     guard UIApplication.shared.applicationState == .active else { return }
     if discoverLegacyDesktopReplies() { desktopReplyRecoverySweepRequested = true }
     discoverManagedDesktopReplies(now: AgentControlPlaneClock.nowMillis())
+    discoverTeamObserverReplies(now: AgentControlPlaneClock.nowMillis())
     let now = AgentControlPlaneClock.nowMillis()
     await sweepDesktopResultReceipts(now: now)
     var published = 0
@@ -2387,6 +2516,10 @@ final class MessageCoordinator: ObservableObject {
       guard !Task.isCancelled, desktopReplyRecoveryOwner == store.profile.identityFingerprint else { return }
       guard let record = desktopReplyRecovery.record(for: candidate.binding) else { continue }
       let binding = record.binding
+      if binding.teamSource != nil {
+        if await sweepTeamObserverReply(record, now: now, mayPublish: published < 8) { published += 1 }
+        continue
+      }
       if binding.managedSource != nil {
         if await sweepManagedDesktopReply(record, now: now, mayPublish: published < 8) { published += 1 }
         continue
@@ -6569,6 +6702,13 @@ final class MessageCoordinator: ObservableObject {
       if !tracked, volatile?.deliveryMode == .observe {
         disposition = .observerProgress
       } else {
+        if terminal, tracked,
+           let context = try AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source,
+             conversation: conversation, turn: turn, contact: contact.id), context.owner.deliveryMode == .observe,
+           !desktopReplyRecovery.acceptsFinal(payload, desktopId: link.desktopId) {
+          if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+          return true
+        }
         let content = AgentRemoteOutcomePolicy.isFailure(status)
           ? payload.string("error").ifBlank(payload.string("content")).ifBlank(payload.string("text")).ifBlank(status)
           : payload.string("content").ifBlank(payload.string("text"))
@@ -6592,6 +6732,9 @@ final class MessageCoordinator: ObservableObject {
       guard volatile?.deliveryMode == .observe else { return false }
     case .observerCommitted: reconcileSavedTeamParents()
     case .observerProgress, .observerDuplicate, .retired: break
+    }
+    if terminal, tracked, disposition == .observerCommitted || disposition == .observerDuplicate {
+      acknowledgeTeamObserverResult(payload, link: link)
     }
     if terminal { UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: source) }
     else { UserDefaultsAgentGlobalRunSlotStore.shared.touch(sourceMessageId: source, nowMillis: AgentControlPlaneClock.nowMillis()) }
@@ -9567,6 +9710,16 @@ final class MessageCoordinator: ObservableObject {
           throw GalaxySSIError.invalidPayload("Agent reply recovery identity could not be saved")
         }
       }
+      if let teamContext, teamContext.member.deliveryMode == .observe,
+         let session = store.agentSession(id: taskIdentity.conversationId), !session.privateMode, !session.trackingPaused,
+         contact.desktopId == link.desktopId, !contact.connectorAgentId.isBlank {
+        guard let owner = volatileTeamReplyOwners[sourceMessageId],
+              let binding = AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: link.desktopId,
+                agentId: contact.connectorAgentId, identity: taskIdentity), currentTeamObserverRecovery(binding) != nil,
+              desktopReplyRecovery.track(binding, now: publishStartedAt) else {
+          throw GalaxySSIError.invalidPayload("Agent team observer recovery identity could not be saved")
+        }
+      }
     }
     let requiresValidatedNetwork = AgentMediaLinkPayloadPolicy.requiresValidatedNetwork(
       attachments: attachments,
@@ -10617,7 +10770,9 @@ final class MessageCoordinator: ObservableObject {
     if appPayload.string("type") == "agent_task_recovery_result" {
       if object.string("scheme") == "signal", let link, link.paired,
          appPayload.string("client_route_id") == link.routes.clientRouteId,
-         let expected = desktopReplyRecovery.expectedBinding(appPayload), desktopRecoveryBindingIsCurrent(expected) {
+         let expected = desktopReplyRecovery.expectedBinding(appPayload), desktopRecoveryBindingIsCurrent(expected),
+         let item = (appPayload["items"] as? [[String: Any]])?.first,
+         teamRecoveryObservationIsCurrent(expected, item: item) {
         if let record = desktopReplyRecovery.receive(appPayload, authenticatedDesktopId: link.desktopId,
           now: AgentControlPlaneClock.nowMillis()) {
           if let item = (appPayload["items"] as? [[String: Any]])?.first, let page = item.dictionary("result_page"),

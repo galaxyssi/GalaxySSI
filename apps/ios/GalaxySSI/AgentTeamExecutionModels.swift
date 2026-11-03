@@ -73,6 +73,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var instanceId: String
   var sourceMessageId: String
   var richOutputJson: String
+  var replyContent: String?
 
   var memberId: String { instanceId.ifBlank(agentId) }
 
@@ -86,7 +87,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     updatedAtMillis: Int64 = 0,
     instanceId: String = "",
     sourceMessageId: String = "",
-    richOutputJson: String = ""
+    richOutputJson: String = "",
+    replyContent: String? = nil
   ) {
     self.agentId = agentId
     self.role = role
@@ -98,6 +100,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.instanceId = instanceId.ifBlank(agentId)
     self.sourceMessageId = sourceMessageId
     self.richOutputJson = richOutputJson
+    self.replyContent = replyContent
   }
 
   enum CodingKeys: String, CodingKey {
@@ -111,6 +114,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case instanceId = "instance_id"
     case sourceMessageId = "source_message_id"
     case richOutputJson = "rich_output_json"
+    case replyContent = "reply_content"
   }
 
   init(from decoder: Decoder) throws {
@@ -126,7 +130,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0,
       instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId,
       sourceMessageId: try container.decodeIfPresent(String.self, forKey: .sourceMessageId) ?? "",
-      richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? ""
+      richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? "",
+      replyContent: try container.decodeIfPresent(String.self, forKey: .replyContent)
     )
   }
 }
@@ -288,6 +293,7 @@ enum AgentSavedTeamReplyPolicy {
     result.members[index].errorMessage = success ? "" : String(content.prefix(AgentTeamMemberSnapshot.maxErrorCharacters))
     result.members[index].updatedAtMillis = now
     result.members[index].richOutputJson = richOutputJson
+    result.members[index].replyContent = content
     result.updatedAtMillis = max(saved.updatedAtMillis, now)
     if result.members[index].memberId == saved.primaryMemberId && !success {
       result.state = .failed
