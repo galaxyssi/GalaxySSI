@@ -62,6 +62,31 @@ final class MqttSignalStateJournalTests: XCTestCase {
     ], expectedSignalState: snapshot))
   }
 
+  func testMigrationReplayRejectsChangedSendRestrictionsButPreservesReleasedDependencies() throws {
+    let fixture = try ChunkFixture()
+    let journal = try makeJournal(fixture)
+    _ = try journal.commit(expected: nil) { _ in ((), snapshot) }
+    let entry = try legacyEntry("legacy")
+    _ = try journal.importLegacyOutbox([entry], expectedSignalState: snapshot)
+    var changed = entry.message
+    changed.requiresValidatedNetwork = false
+    XCTAssertThrowsError(try journal.importLegacyOutbox([
+      .init(identity: entry.identity, message: changed, traffic: .message)
+    ], expectedSignalState: snapshot))
+    changed = entry.message
+    changed.blockedByAttachmentTransferIds = []
+    XCTAssertThrowsError(try journal.importLegacyOutbox([
+      .init(identity: entry.identity, message: changed, traffic: .message)
+    ], expectedSignalState: snapshot))
+    let transfer = try XCTUnwrap(entry.message.blockedByAttachmentTransferIds.first)
+    _ = try journal.outbox.releaseAttachment(identity: entry.identity, transferID: transfer)
+    XCTAssertEqual(try journal.importLegacyOutbox([entry], expectedSignalState: snapshot), 0)
+    let saved = try XCTUnwrap(journal.outbox.entry(identity: entry.identity, messageID: "legacy"))
+    XCTAssertTrue(saved.message.blockedByAttachmentTransferIds.isEmpty)
+    XCTAssertTrue(saved.message.requiresValidatedNetwork)
+    XCTAssertEqual(try journal.load(), snapshot)
+  }
+
   private func legacyEntry(_ id: String) throws -> MqttSignalStateJournal.LegacyOutboxEntry {
     let date = Date(timeIntervalSince1970: 100)
     let wire = try GalaxySSILinkProtocol.jsonData(["scheme": "signal", "from": "local", "to": "remote", "body": "AA=="])

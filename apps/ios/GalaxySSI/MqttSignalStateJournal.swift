@@ -52,7 +52,10 @@ final class MqttSignalStateJournal {
                 existing.message.wirePayload == entry.message.wirePayload,
                 existing.message.clientSourceMessageId == entry.message.clientSourceMessageId,
                 existing.message.contactId == entry.message.contactId,
-                existing.message.attachmentTransferId == entry.message.attachmentTransferId else {
+                existing.message.attachmentTransferId == entry.message.attachmentTransferId,
+                existing.message.requiresValidatedNetwork == entry.message.requiresValidatedNetwork,
+                Set(existing.message.blockedByAttachmentTransferIds)
+                  .isSubset(of: Set(entry.message.blockedByAttachmentTransferIds)) else {
             throw MqttChunkStorageError.corruptState
           }
           continue
