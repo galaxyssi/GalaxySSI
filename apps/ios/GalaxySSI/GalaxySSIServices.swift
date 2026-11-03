@@ -30,6 +30,7 @@ final class MessageCoordinator: ObservableObject {
   let deliveryStore: GalaxySSILinkDeliveryStore
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
+  var attachmentChunkControlsInFlight = Set<String>()
   private lazy var desktopReplyRecovery = store.makeDesktopReplyRecovery()
   private lazy var managedDesktopReplyLedger = store.makeManagedResponseLedger()
   private var managedDesktopDiscoveryCursor = ""
@@ -322,7 +323,7 @@ final class MessageCoordinator: ObservableObject {
         in: .userDomainMask
       ).first ?? FileManager.default.temporaryDirectory
     )
-    self.deliveryStore = deliveryStore ?? GalaxySSILinkDeliveryStore()
+    self.deliveryStore = deliveryStore ?? store.makeLinkDeliveryStore()
     self.attachmentTransferStore = attachmentTransferStore
     self.incomingAttachmentTransferStore = incomingAttachmentTransferStore
     self.diagnosticLedger = diagnosticLedger
@@ -8290,6 +8291,14 @@ final class MessageCoordinator: ObservableObject {
     return prompt + "\n" + label + names
   }
 
+  func stageAuthenticatedAttachmentControl(_ payload: [String: Any], link: ServerLink, messageId: String) -> Bool {
+    guard link.paired, !messageId.isEmpty, JSONSerialization.isValidJSONObject(payload),
+          let data = try? JSONSerialization.data(withJSONObject: ["type": "ios_attachment_control_replay",
+            "owner": store.profile.identityFingerprint, "desktop_id": link.desktopId, "control": payload]),
+          data.count <= 64 * 1024, let text = String(data: data, encoding: .utf8) else { return false }
+    return deliveryStore.stageAttachmentControl(messageId: messageId, payload: text)
+  }
+
   private func handleAttachmentRecoveryRequest(_ payload: [String: Any], link: ServerLink?, messageId: String) {
     guard let link, JSONSerialization.isValidJSONObject(payload),
           let data = try? JSONSerialization.data(withJSONObject: payload),
@@ -8298,6 +8307,7 @@ final class MessageCoordinator: ObservableObject {
           attachmentRecoveryAuthorized(payload, link: link) else { return }
     let key = "\(link.desktopId):\(request.clientRouteId):\(request.requestId):\(request.sourceIdentity)"
     guard !attachmentRecoveryInFlight.contains(key), attachmentRecoveryInFlight.count < 2 else { return }
+    guard stageAuthenticatedAttachmentControl(payload, link: link, messageId: messageId) else { return }
     attachmentRecoveryInFlight.insert(key)
     let owner = store.profile.identityFingerprint
     Task { @MainActor [weak self] in
@@ -8355,11 +8365,12 @@ final class MessageCoordinator: ObservableObject {
         let wire = try self.linkWirePayload(object, link: link)
         let transfers = try self.makeOutboundAttachmentDeliveryRequests(prepared, link: link,
           sourceMessageId: request.sourceIdentity, contactId: request.contactId)
-        self.deliveryStore.enqueueBatch([LinkDeliveryEnqueueRequest(messageId: wire.messageId,
+        guard self.deliveryStore.commitAttachmentControl([LinkDeliveryEnqueueRequest(messageId: wire.messageId,
           topic: link.routes.upTopic, wirePayload: wire.wireText, requiresValidatedNetwork: false,
           blockedByAttachmentTransferIds: [], clientSourceMessageId: request.sourceIdentity,
-          contactId: request.contactId)] + transfers)
-        if !messageId.isEmpty { self.deliveryStore.completeIncoming(messageId: messageId) }
+          contactId: request.contactId)] + transfers, messageId: messageId) else {
+          throw GalaxySSIError.transportUnavailable
+        }
         self.scheduleOutboxFlush(after: 0)
       } catch {
         self.lastError = error.localizedDescription
@@ -9818,7 +9829,7 @@ final class MessageCoordinator: ObservableObject {
     sourceMessageId: String,
     contactId: String
   ) throws -> [LinkDeliveryEnqueueRequest] {
-    try AgentAttachmentPublishOrder.steps(attachments).map { step in
+    try AgentAttachmentPublishOrder.initialSteps(attachments).map { step in
       let wire = try linkWirePayload(try step.payload(), link: link)
       return LinkDeliveryEnqueueRequest(
         messageId: wire.messageId,
@@ -9884,7 +9895,7 @@ final class MessageCoordinator: ObservableObject {
     return wire.messageId
   }
 
-  private func linkWirePayload(
+  func linkWirePayload(
     _ payload: [String: Any],
     link: ServerLink,
     trustedBackgroundCognitionAuthorized: Bool = false
@@ -10832,8 +10843,9 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     if appPayload.string("type") == "input_attachment_receipt" {
-      handleInputAttachmentReceipt(appPayload, link: link)
-      if !messageId.isEmpty {
+      guard object.string("scheme") == "signal" else { return }
+      handleInputAttachmentReceipt(appPayload, link: link, messageId: messageId)
+      if !messageId.isEmpty, appPayload.string("status") != "missing" {
         deliveryStore.completeIncoming(messageId: messageId)
       }
       return
@@ -12331,8 +12343,19 @@ final class MessageCoordinator: ObservableObject {
         deliveryStore.completeIncoming(messageId: pending.messageId)
         return
       }
+      if object.string("type") == "ios_attachment_control_replay" {
+        guard object.string("owner") == store.profile.identityFingerprint,
+              let control = object.dictionary("control"),
+              let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == object.string("desktop_id") &&
+                $0.routes.clientRouteId == control.string("client_route_id") }) else { return }
+        if control.string("type") == AgentAttachmentRecoveryRequest.requestType {
+          handleAttachmentRecoveryRequest(control, link: link, messageId: pending.messageId)
+        } else if control.string("type") == "input_attachment_receipt", control.string("status") == "missing" {
+          handleInputAttachmentReceipt(control, link: link, messageId: pending.messageId)
+        }
+        return
+      }
       dispatchIncomingWire(topic: "", object: object, originalPayload: pending.payload, allowStage: false)
-      deliveryStore.completeIncoming(messageId: pending.messageId)
     }
     return pendingMessages.count > Self.pendingRecoveryPageSize
   }

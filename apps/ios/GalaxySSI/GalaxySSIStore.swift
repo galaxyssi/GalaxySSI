@@ -654,6 +654,10 @@ final class GalaxySSIStore: ObservableObject {
     AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: chatHistoryDatabase)
   }
 
+  func makeLinkDeliveryStore() -> GalaxySSILinkDeliveryStore {
+    GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets, journal: chatHistoryDatabase)
+  }
+
   func desktopReplySourcePage(before cursor: GalaxySSIChatHistoryCursor?) throws -> GalaxySSIChatHistoryPage {
     try chatHistoryDatabase.desktopReplySources(before: cursor)
   }

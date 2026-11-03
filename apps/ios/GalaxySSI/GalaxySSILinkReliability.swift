@@ -229,6 +229,11 @@ final class GalaxySSILinkRecoveryEnvelopeStore {
   }
 }
 
+protocol GalaxySSILinkDeliveryPersisting {
+  func loadLinkDeliveryState() throws -> Data?
+  func writeLinkDeliveryState(_ data: Data) -> Bool
+}
+
 @MainActor
 final class GalaxySSILinkDeliveryStore {
   private struct PersistedState: Codable {
@@ -240,6 +245,8 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   private let defaults: UserDefaults
+  private let journal: GalaxySSILinkDeliveryPersisting?
+  private var journalHealthy = true
   private let payloadStore: GalaxySSILinkOutboxPayloadStore
   private let recoveryStore: GalaxySSILinkRecoveryEnvelopeStore
   private let storageKey = "galaxyssi-ios-link-delivery-v1"
@@ -254,24 +261,78 @@ final class GalaxySSILinkDeliveryStore {
   init(
     defaults: UserDefaults = .standard,
     payloadStore: GalaxySSILinkOutboxPayloadStore = GalaxySSILinkOutboxPayloadStore(),
-    secrets: GalaxySSISecretStore = KeychainSecretStore.shared
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
+    journal: GalaxySSILinkDeliveryPersisting? = nil
   ) {
     self.defaults = defaults
+    self.journal = journal
     self.payloadStore = payloadStore
     recoveryStore = GalaxySSILinkRecoveryEnvelopeStore(defaults: defaults, secrets: secrets)
-    if let data = defaults.data(forKey: storageKey),
-       let saved = try? JSONDecoder.linkReliability.decode(PersistedState.self, from: data) {
-      state = saved
-    } else {
-      state = PersistedState(
+    state = PersistedState(
         transportEpoch: "",
         outbox: [],
         completedInboxIds: [],
         pendingIncoming: [:],
         ciphertextBindings: [:]
       )
-      save()
+    do {
+      if let data = try journal?.loadLinkDeliveryState() {
+        state = try JSONDecoder.linkReliability.decode(PersistedState.self, from: data)
+      } else if let data = defaults.data(forKey: storageKey) {
+        state = try JSONDecoder.linkReliability.decode(PersistedState.self, from: data)
+        journalHealthy = save()
+      } else { journalHealthy = save() }
+    } catch {
+      journalHealthy = false
     }
+  }
+
+  @discardableResult
+  func stageAttachmentControl(messageId: String, payload: String, now: Date = Date()) -> Bool {
+    guard journal != nil, journalHealthy, !messageId.isEmpty, !payload.isEmpty,
+          !state.completedInboxIds.contains(messageId) else { return false }
+    guard state.pendingIncoming[messageId].map(isAttachmentControl) == true ||
+      state.pendingIncoming.values.filter(isAttachmentControl).count < maximumPendingIncoming else { return false }
+    let previous = state
+    state.pendingIncoming[messageId] = PendingIncomingLinkMessage(messageId: messageId, payload: payload,
+      createdAt: state.pendingIncoming[messageId]?.createdAt ?? now)
+    if save() { return true }
+    state = previous
+    return false
+  }
+
+  // Commit the response batch and retire its authenticated control in one FULL SQLite transaction.
+  @discardableResult
+  func commitAttachmentControl(_ requests: [LinkDeliveryEnqueueRequest], messageId: String, now: Date = Date()) -> Bool {
+    guard journal != nil, journalHealthy, !messageId.isEmpty, state.pendingIncoming[messageId] != nil, !requests.isEmpty,
+          requests.allSatisfy({ !$0.messageId.isEmpty && !$0.topic.isEmpty && !$0.wirePayload.isEmpty && $0.recoverableEnvelope.isEmpty }),
+          Set(requests.map(\.messageId)).count == requests.count else { return false }
+    let previous = state
+    for request in requests {
+      if let existing = state.outbox.first(where: { $0.messageId == request.messageId }) {
+        guard existing.topic == request.topic,
+              existing.contactId == request.contactId, existing.clientSourceMessageId == request.clientSourceMessageId,
+              existing.attachmentTransferId == request.attachmentTransferId,
+              payloadStore.resolve(inline: existing.wirePayload, fileName: existing.wirePayloadFile) == request.wirePayload else {
+          state = previous
+          return false
+        }
+        continue
+      }
+      state.outbox.append(PendingLinkMessage(messageId: request.messageId, topic: request.topic,
+        wirePayload: request.wirePayload, status: "queued", attempts: 0, nextAttemptAt: now,
+        createdAt: now, updatedAt: now, requiresValidatedNetwork: request.requiresValidatedNetwork,
+        blockedByAttachmentTransferIds: PendingLinkMessage.normalizedTransferIds(request.blockedByAttachmentTransferIds),
+        attachmentTransferId: request.attachmentTransferId, clientSourceMessageId: request.clientSourceMessageId,
+        contactId: request.contactId))
+    }
+    if !messageId.isEmpty {
+      state.pendingIncoming.removeValue(forKey: messageId)
+      if !state.completedInboxIds.contains(messageId) { state.completedInboxIds.append(messageId); trimInbox() }
+    }
+    if save() { return true }
+    state = previous
+    return false
   }
 
   @discardableResult
@@ -574,6 +635,7 @@ final class GalaxySSILinkDeliveryStore {
     maxAttempts: Int = Int.max,
     attachmentMaxAttempts: Int? = nil
   ) -> [PendingLinkMessage] {
+    guard journalHealthy else { return [] }
     let attachmentLimit = max(maxAttempts, attachmentMaxAttempts ?? maxAttempts)
     let ready = state.outbox
       .compactMap { item -> PendingLinkMessage? in
@@ -628,9 +690,14 @@ final class GalaxySSILinkDeliveryStore {
   // Call only after the legacy publisher is quiesced. Migration must include blocked/future
   // messages and must not delete file-backed wire bytes before the destination commits.
   func outboxMigrationSnapshot() throws -> [PendingLinkMessage] {
-    guard let data = defaults.data(forKey: storageKey),
+    guard journalHealthy else { throw MqttChunkStorageError.corruptState }
+    let data: Data?
+    if let journal { data = try journal.loadLinkDeliveryState() }
+    else { data = defaults.data(forKey: storageKey) }
+    guard let data,
           let persisted = try? JSONDecoder.linkReliability.decode(PersistedState.self, from: data),
-          persisted.transportEpoch == state.transportEpoch, persisted.outbox == state.outbox,
+          persisted.transportEpoch == state.transportEpoch,
+          (try? JSONEncoder.linkReliability.encode(persisted.outbox)) == (try? JSONEncoder.linkReliability.encode(state.outbox)),
           state.outbox.count <= 4096,
           Set(state.outbox.map(\.messageId)).count == state.outbox.count else {
       throw MqttChunkStorageError.corruptState
@@ -783,6 +850,7 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   func pendingIncoming(now: Date = Date()) -> [PendingIncomingLinkMessage] {
+    guard journalHealthy else { return [] }
     prune(now: now)
     return state.pendingIncoming.values.sorted { $0.createdAt < $1.createdAt }
   }
@@ -894,10 +962,18 @@ final class GalaxySSILinkDeliveryStore {
 
   private func trimPendingIncoming() {
     guard state.pendingIncoming.count > maximumPendingIncoming else { return }
-    let keep = state.pendingIncoming.values
+    let controls = state.pendingIncoming.values.filter(isAttachmentControl)
+    let ordinary = state.pendingIncoming.values.filter { !isAttachmentControl($0) }
       .sorted { $0.createdAt > $1.createdAt }
-      .prefix(maximumPendingIncoming)
+      .prefix(max(0, maximumPendingIncoming - controls.count))
+    let keep = controls + Array(ordinary)
     state.pendingIncoming = Dictionary(uniqueKeysWithValues: keep.map { ($0.messageId, $0) })
+  }
+
+  private func isAttachmentControl(_ pending: PendingIncomingLinkMessage) -> Bool {
+    guard let data = pending.payload.data(using: .utf8),
+          let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+    return object["type"] as? String == "ios_attachment_control_replay"
   }
 
   private func trimCiphertextBindings(now: Date) {
@@ -909,10 +985,16 @@ final class GalaxySSILinkDeliveryStore {
     state.ciphertextBindings = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
   }
 
-  private func save() {
-    if let data = try? JSONEncoder.linkReliability.encode(state) {
-      defaults.set(data, forKey: storageKey)
+  @discardableResult
+  private func save() -> Bool {
+    guard journalHealthy, let data = try? JSONEncoder.linkReliability.encode(state) else { return false }
+    if let journal {
+      guard journal.writeLinkDeliveryState(data) else { return false }
+      defaults.removeObject(forKey: storageKey)
+      return true
     }
+    defaults.set(data, forKey: storageKey)
+    return defaults.data(forKey: storageKey) == data
   }
 }
 
@@ -1332,6 +1414,7 @@ final class GalaxySSIMqttChunkAssembler {
 private extension JSONEncoder {
   static var linkReliability: JSONEncoder {
     let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
     encoder.dateEncodingStrategy = .iso8601
     return encoder
   }
