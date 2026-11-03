@@ -147,6 +147,7 @@ struct GalaxySSIAttachmentMenuDivider: View {
 struct PhotoLibraryPickerView: UIViewControllerRepresentable {
   var selectionLimit = GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount
   var dismissOnSelection = true
+  var onFailure: () -> Void = {}
   var onAttachment: (GalaxySSIDraftAttachment) -> Void
 
   func makeUIViewController(context: Context) -> PHPickerViewController {
@@ -161,15 +162,18 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
   func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(dismissOnSelection: dismissOnSelection, onAttachment: onAttachment)
+    Coordinator(dismissOnSelection: dismissOnSelection, onFailure: onFailure, onAttachment: onAttachment)
   }
 
   final class Coordinator: NSObject, PHPickerViewControllerDelegate {
     private let onAttachment: (GalaxySSIDraftAttachment) -> Void
     private let dismissOnSelection: Bool
+    private let onFailure: () -> Void
 
-    init(dismissOnSelection: Bool, onAttachment: @escaping (GalaxySSIDraftAttachment) -> Void) {
+    init(dismissOnSelection: Bool, onFailure: @escaping () -> Void,
+         onAttachment: @escaping (GalaxySSIDraftAttachment) -> Void) {
       self.dismissOnSelection = dismissOnSelection
+      self.onFailure = onFailure
       self.onAttachment = onAttachment
     }
 
@@ -181,7 +185,10 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
           UTType(identifier)?.conforms(to: .image) == true
         } ?? UTType.image.identifier
         provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
-          guard let data else { return }
+          guard let data, !data.isEmpty, data.count <= 64 * 1024 * 1024 else {
+            DispatchQueue.main.async { self.onFailure() }
+            return
+          }
           let name = provider.suggestedName.map { "\($0).jpg" } ?? "photo.jpg"
           let attachment = GalaxySSIAttachmentPayloadBuilder.makePhotoAttachment(
             data: data,
@@ -193,6 +200,39 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
         }
       }
     }
+  }
+}
+
+extension AgentHomeView {
+  var screenAssistantControls: some View {
+    HStack(spacing: 12) {
+      Label(t("galaxyssi.screen_assistant.title", "Screen assistant"), systemImage: "viewfinder")
+        .font(.subheadline.weight(.semibold))
+        .lineLimit(1)
+      Spacer(minLength: 0)
+      Button {
+        screenAssistantCompact.toggle()
+      } label: {
+        Image(systemName: screenAssistantCompact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
+          .frame(width: 44, height: 44)
+      }
+      .accessibilityLabel(screenAssistantCompact
+        ? t("galaxyssi.screen_assistant.expand", "Expand result")
+        : t("galaxyssi.screen_assistant.compact", "Compact result"))
+      .accessibilityIdentifier("ios.screen-assistant.resize")
+      Button {
+        screenAssistantConversationID = ""
+      } label: {
+        Image(systemName: "xmark").frame(width: 44, height: 44)
+      }
+      .accessibilityLabel(t("galaxyssi.screen_assistant.close", "Close screen assistant"))
+      .accessibilityIdentifier("ios.screen-assistant.close")
+    }
+    .buttonStyle(.plain)
+    .padding(.leading, 16)
+    .padding(.trailing, 4)
+    .foregroundColor(.galaxySSITextPrimary)
+    .background(Color.galaxySSIPageBackground)
   }
 }
 
@@ -229,7 +269,7 @@ struct GalaxySSIScreenshotInputView: View {
           }
           .padding(12)
         } else {
-          PhotoLibraryPickerView(selectionLimit: 1, dismissOnSelection: false) { selected in
+          PhotoLibraryPickerView(selectionLimit: 1, dismissOnSelection: false, onFailure: { failed = true }) { selected in
             guard selected.data.count <= 64 * 1024 * 1024,
                   let source = CGImageSourceCreateWithData(selected.data as CFData, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [

@@ -127,6 +127,8 @@ struct AgentHomeView: View {
   @State var fileImporterPresented = false
   @State var photoPickerPresented = false
   @State var screenshotPickerPresented = false
+  @State var screenAssistantConversationID = ""
+  @State var screenAssistantCompact = true
   @State var cameraPickerPresented = false
   @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
@@ -199,7 +201,13 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
-        agentOutput
+        if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty {
+          screenAssistantControls
+          agentOutput.frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
+          if screenAssistantCompact { Spacer(minLength: 0) }
+        } else {
+          agentOutput
+        }
         agentComposer
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
@@ -339,7 +347,8 @@ struct AgentHomeView: View {
           if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             draft = t("galaxyssi.screen_assistant.prompt", "Analyze this screenshot, summarize the important content and suggest next steps.")
           }
-          screenshotPickerPresented = false
+          screenAssistantConversationID = store.activeAgentConversationId
+          screenAssistantCompact = true
         }
       }
       .galaxySSIAgentHomePresentationRoutes(
