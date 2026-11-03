@@ -57,7 +57,7 @@ class HealthCenterActivity : Activity() {
         } else if (savedInstanceState == null && !intent.getStringExtra("health_record").isNullOrBlank()) {
             recordId = intent.getStringExtra("health_record").orEmpty()
             require(runCatching { java.util.UUID.fromString(recordId).toString() == recordId }.getOrDefault(false))
-            route = "detail"
+            route = if (intent.getBooleanExtra("health_history", false)) "history" else "detail"
         }
         savedInstanceState?.let { state ->
             route = state.getString("route", "overview").orEmpty().ifBlank { "overview" }
@@ -225,7 +225,7 @@ class HealthCenterActivity : Activity() {
                                 if (record == null) 16f else 23f, bold = record != null), 12)
                             if (record != null) ui.add(this, ui.text(date(record.draft.measuredAt), 12f, muted = true), 8)
                             setOnClickListener {
-                                if (record == null) open("manual", metric) else open("detail", metric, record.id)
+                                startActivity(android.content.Intent(this@HealthCenterActivity, HealthTrendActivity::class.java).putExtra("health_metric", metric.name))
                             }
                             isFocusable = true
                         }
@@ -391,7 +391,5 @@ class HealthCenterActivity : Activity() {
     }
     private fun openCapture() { startActivity(android.content.Intent(this, HealthCaptureActivity::class.java)) }
     private fun openCatalog() { startActivity(android.content.Intent(this, HealthCatalogActivity::class.java)) }
-    private fun source(record: HealthObservation) = getString(when (record.source) {
-        "ocr" -> R.string.health_source_ocr; "table" -> R.string.health_source_table; else -> R.string.health_source_manual
-    })
+    private fun source(record: HealthObservation) = getString(healthRecordSourceResource(record.source))
 }

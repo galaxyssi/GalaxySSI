@@ -21,9 +21,11 @@ exports or all 32 design screens.
   Multi-metric searches merge at most 31 candidate IDs per indexed metric before
   decrypting at most 31 final payloads. An unfiltered catalog uses the existing
   chronological index directly rather than sorting every metric match.
-- A metric opens its actual record list, then the existing native manual editor
-  or record details. The feature menu and overview link to the catalog. There
-  are no bottom navigation tabs.
+- At this increment a metric opens its actual record list. The following trend
+  increment routes metric rows and overview cards to the native metric trend,
+  with its scoped all-record/cohort lists and revision-bound record links; see
+  [the trend contract](android-health-trends.md). The native manual editor and
+  all-record section remain available. There are no bottom navigation tabs.
 
 The initial catalog is an explicit supported set, not a claim to include every
 medical test. Arbitrary custom clinical-code definitions are not implemented.
@@ -134,3 +136,12 @@ These results are not full-repository CI success. Parent PR #3689's Android run
 (native-tool catalog, process-state, two task-intent cases and the untrusted-
 evidence boundary). Repository, Windows package, Desktop smoke and core-regression
 checks pass there. This increment leaves those unrelated Agent policies intact.
+
+## Subsequent Visible Acceptance
+
+During the 0.1.7.22 trend increment, the user unlocked Tab Active3 again. All
+14 selected native health UI/lifecycle regressions pass, including this catalog's
+three tests. Its final segmented/search-icon screenshot was pulled and inspected
+at 1200x1920, closing the earlier styled-screenshot gap without rewriting the
+historical 0.1.7.21 evidence. Populated record/trend return paths and search-state
+preservation still need separate acceptance; see the updated health ledger.

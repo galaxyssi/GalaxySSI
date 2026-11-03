@@ -154,7 +154,7 @@ class HealthCatalogActivity : Activity() {
     }
     private fun catalogRow(entry: HealthMetricEntry, latest: HealthObservation?) {
         val row = ui.row(getString(entry.metric.titleResource()), entry.aliases.joinToString(" / ")) {
-            startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_metric", entry.metric.name).putExtra("health_metric_records", true))
+            startActivity(Intent(this, HealthTrendActivity::class.java).putExtra("health_metric", entry.metric.name))
         }.apply { tag = "health-catalog-${entry.metric.name}" }
         val text = row.getChildAt(0) as LinearLayout
         val color = when (entry.group) {
@@ -191,5 +191,6 @@ internal fun healthDisplayValue(draft: HealthDraft): String {
 internal fun healthRecordSourceResource(source: String) = when (source) {
     "ocr" -> R.string.health_source_ocr
     "table" -> R.string.health_source_table
-    else -> R.string.health_source_manual
+    "manual" -> R.string.health_source_manual
+    else -> R.string.health_trend_other_source
 }
