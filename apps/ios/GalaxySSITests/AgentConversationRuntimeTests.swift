@@ -1210,6 +1210,37 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(install.targetPlatform, "android")
   }
 
+  func testPDFExportRequiresActualArtifactsAndRetainedRequestedOriginal() {
+    for goal in ["Generate a downloadable PDF and PNG previews, preserve the editable original.",
+      "Convert this document to PDF", "Export the current content as PDF",
+      "\u{57fa}\u{4e8e}\u{5f53}\u{524d}\u{5185}\u{5bb9}\u{ff0c}\u{518d}\u{751f}\u{6210}\u{4e00}\u{4efd}\u{53ef}\u{4e0b}\u{8f7d}\u{7684}PDF\u{53ca}\u{5176}PNG\u{9884}\u{89c8}\u{ff0c}\u{4fdd}\u{7559}\u{539f}\u{683c}\u{5f0f}\u{3002}",
+      "\u{8f6c}\u{6210}PDF\u{6587}\u{4ef6}"] {
+      XCTAssertTrue(AgentArtifactRequestPolicy.pdfRequested(goal), goal)
+      let profile = AgentExecutionProfile.forGoal(goal)
+      XCTAssertEqual(profile.taskKind, .artifact, goal)
+      XCTAssertTrue(profile.requiresArtifact, goal)
+      XCTAssertTrue(profile.contract.contains("current native source alongside the export"))
+      XCTAssertTrue(profile.contract.contains("PDF-only or preview-only"))
+      XCTAssertTrue(profile.contract.contains("reconcile all requested formats"))
+    }
+  }
+
+  func testPDFNegationAndPlanOnlyDoNotRequireFileDelivery() {
+    for goal in ["Do not generate a PDF", "Don't export a PDF", "Explain PDF", "Generate pdfkit code",
+      "Create a notpdf report", "\u{4e0d}\u{8981}\u{751f}\u{6210}PDF"] {
+      XCTAssertFalse(AgentArtifactRequestPolicy.pdfRequested(goal), goal)
+    }
+    XCTAssertFalse(AgentExecutionProfile.forGoal("Do not export a PDF").requiresArtifact)
+    XCTAssertTrue(AgentArtifactRequestPolicy.pdfRequested("Do not generate Word; export PDF instead."))
+    XCTAssertTrue(AgentArtifactRequestPolicy.pdfRequested("Do not omit data and create a PDF."))
+    XCTAssertTrue(AgentExecutionProfile.forGoal("Do not generate Word; export PDF instead.").requiresArtifact)
+    let planned = AgentExecutionProfile.forGoal("Generate PDF", executionMode: .planOnly)
+    XCTAssertFalse(planned.requiresArtifact)
+    XCTAssertFalse(planned.contract.contains("current native source alongside the export"))
+    XCTAssertFalse(AgentArtifactRequestPolicy.positiveTerm("{\"export\":true}", term: "export"))
+    XCTAssertFalse(AgentArtifactRequestPolicy.positiveTerm("exporter", term: "export"))
+  }
+
   func testAgentExecutionProfileContractUsesTargetRuntimeVerification() throws {
     let profile = AgentExecutionProfile.forGoal("Install APK on the phone")
 

@@ -27,7 +27,8 @@ enum AgentModelPlanningPrompt {
     let promptLimit = compact ? compactPromptCharacters : maximumPromptCharacters
     let executionProfile = AgentExecutionProfile.forGoal(
       request.planRequest.goal,
-      hasAttachments: request.hasAttachments || request.conversationContext.hasAttachments
+      hasAttachments: request.hasAttachments || request.conversationContext.hasAttachments,
+      executionMode: request.planRequest.executionMode
     )
 
     var prompt = ""
