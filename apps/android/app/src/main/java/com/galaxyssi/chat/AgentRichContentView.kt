@@ -395,7 +395,9 @@ class AgentRichContentView(
         AgentRichBlockType.CHART -> chartBlock(block)
         AgentRichBlockType.TIMELINE -> timelineBlock(block)
         AgentRichBlockType.NOTICE -> noticeBlock(block)
-        AgentRichBlockType.HTML -> htmlAnimationBlock(block)
+        AgentRichBlockType.HTML -> AgentHtmlArtifactView(activity, block, null) { html ->
+            htmlAnimationBlock(block.copy(text = html))
+        }
         AgentRichBlockType.WEBPAGE -> webPageBlock(block)
         AgentRichBlockType.ACTIONS -> actionBlock(block, approval = false)
         AgentRichBlockType.APPROVAL -> actionBlock(block, approval = true)
@@ -502,6 +504,16 @@ class AgentRichContentView(
                 setTextColor(Color.parseColor("#777C84"))
                 maxLines = 1
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            if (AgentVisualOutputContract.isDocumentCode(block) && AgentVisualOutputContract.htmlIssue(source) == null) {
+                addView(iconButton(R.drawable.ic_rich_play, activity.getString(R.string.rich_output_play)) {
+                    val preview = AgentHtmlArtifactView(activity, block.copy(type = AgentRichBlockType.HTML), null) { html ->
+                        htmlAnimationBlock(block.copy(type = AgentRichBlockType.HTML, text = html),
+                            (activity.resources.displayMetrics.heightPixels / activity.resources.displayMetrics.density * 0.7f).toInt())
+                    }
+                    android.app.AlertDialog.Builder(activity).setView(preview)
+                        .setPositiveButton(android.R.string.ok, null).show()
+                }, LinearLayout.LayoutParams(dp(34), dp(32)))
+            }
             addView(iconButton(
                 R.drawable.ic_rich_copy,
                 activity.getString(R.string.rich_output_copy)

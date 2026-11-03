@@ -10,7 +10,21 @@ const http = require('node:http');
 const { randomUUID, randomBytes, createHash, createHmac, createDecipheriv } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { rpc, equalToken, safeFailure, consumeRequestEnvironment, consumeHostCapability, consumeOperationId,
-  existingEndpoint, DRIVER_VERSION } = require('./browser-session-cli.cjs');
+  existingEndpoint, startService, DRIVER_VERSION } = require('./browser-session-cli.cjs');
+
+test('browser startup pending is a pre-dispatch observation, not an unknown page mutation', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'galaxyssi-browser-start-pending-'));
+  t.after(() => {
+    assert.equal(path.dirname(fs.realpathSync(directory)), fs.realpathSync(os.tmpdir()));
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const lock = path.join(directory, 'starting.json');
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, token: 'existing-start' }));
+  await assert.rejects(startService(directory), error => error.code === 'browser_start_pending' &&
+    error.details.executed === false && error.details.outcome_unknown === false &&
+    error.details.startup_pending === true && error.details.goal_terminal === false);
+  assert.equal(JSON.parse(fs.readFileSync(lock, 'utf8')).token, 'existing-start');
+});
 
 test('host-assigned operation ID is consumed before browser service creation', () => {
   const environment = { GALAXYSSI_BROWSER_OPERATION_ID: 'a'.repeat(64), KEEP: 'present' };

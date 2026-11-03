@@ -131,6 +131,8 @@ object AgentRichContentCodec {
                 val mimeType = item.optString("mime_type").trim().take(160)
                 val language = item.optString("language").trim().take(80)
                 val type = AgentRichFormatRegistry.normalizedType(declaredType, uri, mimeType, language)
+                // Never silently truncate executable content into a different program.
+                if (type == AgentRichBlockType.HTML && AgentVisualOutputContract.htmlIssue(item.optString("text")) != null) continue
                 val columns = jsonStrings(item.optJSONArray("columns"), MAX_TABLE_COLUMNS)
                 val rows = buildList {
                     val sourceRows = item.optJSONArray("rows") ?: JSONArray()
@@ -266,6 +268,8 @@ object AgentRichContentCodec {
                     ) }.orEmpty()
                     if (richBlocks.isNotEmpty()) blocks += richBlocks
                     else blocks += AgentRichBlock(newId(), AgentRichBlockType.CODE, text = codeText, language = language)
+                } else if (language.equals("galaxyssi-html", ignoreCase = true) && AgentVisualOutputContract.htmlIssue(codeText) == null) {
+                    blocks += AgentRichBlock(newId(), AgentRichBlockType.HTML, text = codeText, language = "html")
                 } else if (language.equals("mermaid", ignoreCase = true)) {
                     blocks += AgentRichBlock(
                         newId(),

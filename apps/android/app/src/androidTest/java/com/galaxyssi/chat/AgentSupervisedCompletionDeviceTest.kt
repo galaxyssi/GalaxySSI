@@ -13,6 +13,38 @@ import java.util.UUID
 class AgentSupervisedCompletionDeviceTest {
     private val answer = "\u6d4b\u8bd5\u7ed3\u679c\uff1a\u4e09\u9879\u68c0\u67e5\u5747\u901a\u8fc7\u3002\n\n[\u6765\u6e90](https://example.com/source)"
 
+    @Test fun animationIsDurableBeforeTheTaskIsMarkedComplete() {
+        val fixture = fixture()
+        val html = "<html><body><canvas id='${UUID.randomUUID()}'></canvas><script>void 0;</script></body></html>"
+        val rich = AgentRichContentCodec.encode(listOf(AgentRichBlock("durable-animation", AgentRichBlockType.HTML,
+            title = "result.html", text = html, fallbackText = "Animated result")))
+        val response = JSONObject().put("disposition", "respond").put("final_response", "Animated result")
+            .put("rich_output", JSONObject(rich)).toString()
+        val decision = fixture.agent.acceptSupervisedProjectPlan(fixture.plan, fixture.connector, response)
+        assertEquals(AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE, decision.disposition)
+        val checkpointed = decision.finalResult(AgentActionResult("provider", true, "")).let { it.copy(message = it.message.take(32)) }
+        val delivered = AgentRichContentCodec.decode(checkpointed.metadata.getValue("rich_output"))
+            .single { it.type == AgentRichBlockType.FILE }
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = LocalAttachmentUris.resolve(context, android.net.Uri.parse(delivered.uri))!!
+        try {
+            assertFalse(checkpointed.metadata.getValue("rich_output").contains("<script>"))
+            assertEquals(html, AgentHtmlArtifactPreview.load(context, delivered))
+        } finally { file.delete() }
+    }
+
+    @Test fun anUnescapedHtmlFenceHasTheSameDurableDelivery() {
+        val fixture = fixture()
+        val html = "<html><body><canvas id='${UUID.randomUUID()}'></canvas></body></html>"
+        val decision = fixture.agent.acceptSupervisedProjectPlan(fixture.plan, fixture.connector,
+            "Playable result\n```galaxyssi-html\n$html\n```")
+        assertEquals(AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE, decision.disposition)
+        val delivered = AgentRichContentCodec.decode(decision.richOutputJson).single { it.type == AgentRichBlockType.FILE }
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = LocalAttachmentUris.resolve(context, android.net.Uri.parse(delivered.uri))!!
+        try { assertEquals(html, AgentHtmlArtifactPreview.load(context, delivered)) } finally { file.delete() }
+    }
+
     @Test fun codexAndDeepSeekStyleCompletionAliasesFinishWithoutRepairOrProviderDispatch() {
         for (kind in listOf("task-complete", "TASK_COMPLETE")) {
             val fixture = fixture()

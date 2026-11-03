@@ -47,6 +47,10 @@ internal object AgentInterruptedCloudRecovery {
     internal fun checkpoint(workspace: AgentWorkspace, now: Long) = AgentWorkspaceCheckpoint(
         CHECKPOINT, eventSequence = workspace.eventSequence, stateJson = "{}", createdAtMillis = now)
 
+    internal fun alreadyProjected(workspace: AgentWorkspace, session: AgentSessionSnapshot): Boolean =
+        workspace.checkpoints.any { it.id == CHECKPOINT } && session.phase == AgentPhase.FAILED &&
+            session.lastActionResult?.metadata?.get("error_code") == AgentInterruptedCloudPolicy.ERROR
+
     fun reconcile(context: Context): Int {
         val app = AppLanguage.wrap(context.applicationContext)
         val workspaces = EncryptedAgentWorkspaceStore(app)
@@ -61,10 +65,10 @@ internal object AgentInterruptedCloudRecovery {
         } while (cursor != null)
         var count = 0
         workspaces.list().filter { it.workspaceId !in active && !it.cancellationRequested &&
-            it.status !in setOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.CANCELLED) &&
-            it.checkpoints.none { checkpoint -> checkpoint.id == CHECKPOINT } }.forEach { workspace ->
+            it.status !in setOf(AgentWorkspaceStatus.COMPLETED, AgentWorkspaceStatus.CANCELLED) }.forEach { workspace ->
             val sessions = SharedPreferencesAgentSessionStore(app, "task:${workspace.workspaceId}")
             val session = sessions.load() ?: return@forEach
+            if (alreadyProjected(workspace, session)) return@forEach
             val action = AgentInterruptedCloudPolicy.pending(session, AgentProcessIdentity.instanceId,
                 AgentCloudDispatchRegistry.hasActive(workspace.conversationId, workspace.taskId)) ?: return@forEach
             val source = session.lastActionResult?.metadata?.get("source_message_id")?.toLongOrNull()
@@ -88,7 +92,7 @@ internal object AgentInterruptedCloudRecovery {
             workspaces.upsert(workspace.copy(status = AgentWorkspaceStatus.FAILED, errorMessage = message,
                 resultJson = JSONObject().put("phase", "FAILED").put("message", message)
                     .put("metadata", JSONObject(finished.lastActionResult?.metadata.orEmpty())).toString(),
-                checkpoints = workspace.checkpoints + checkpoint(workspace, now),
+                checkpoints = workspace.checkpoints.filterNot { it.id == CHECKPOINT } + checkpoint(workspace, now),
                 updatedAtMillis = now), expectedRevision = workspace.revision)
             count++
         }

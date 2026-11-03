@@ -276,7 +276,8 @@ async function startService(directory, hostToken) {
       try { process.kill(previous.pid, 0); }
       catch (probe) { if (probe.code === 'ESRCH') { fs.unlinkSync(lockFile); return startService(directory, hostToken); } }
     } catch {}
-    throw new BrowserOperationError('browser_start_pending', 'A browser startup is already in progress. Inspect readiness rather than launching another service.');
+    throw new BrowserOperationError('browser_start_pending', 'A browser startup is already in progress. Inspect readiness rather than launching another service.',
+      { executed: false, outcome_unknown: false, startup_pending: true, goal_terminal: false });
   }
   let preserveLock = false;
   try {
@@ -302,11 +303,13 @@ async function startService(directory, hostToken) {
       const ready = await existingEndpoint(directory);
       if (ready) return ready;
       if (spawnError || child.exitCode !== null) throw new BrowserOperationError('browser_start_failed',
-        'Browser service did not start. Check that the browser-automation and node-js runtime packs are installed.');
+        'Browser service did not start. Check that the browser-automation and node-js runtime packs are installed.',
+        { executed: false, outcome_unknown: false, goal_terminal: false });
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     preserveLock = true;
-    throw new BrowserOperationError('browser_start_pending', 'Browser readiness has not been observed. Do not restart a live service solely because startup observation expired.');
+    throw new BrowserOperationError('browser_start_pending', 'Browser readiness has not been observed. Do not restart a live service solely because startup observation expired.',
+      { executed: false, outcome_unknown: false, startup_pending: true, goal_terminal: false });
   } finally {
     try {
       if (!preserveLock && JSON.parse(fs.readFileSync(lockFile, 'utf8')).token === owner.token) fs.unlinkSync(lockFile);
@@ -363,4 +366,4 @@ if (require.main === module) void main().catch(error => {
   process.stdout.write(`${JSON.stringify(safeFailure(error))}\n`); process.exitCode = 1;
 });
 module.exports = { rpc, equalToken, safeFailure, privateDirectory, consumeRequestEnvironment, consumeHostCapability,
-  consumeOperationId, existingEndpoint, DRIVER_VERSION };
+  consumeOperationId, existingEndpoint, startService, DRIVER_VERSION };

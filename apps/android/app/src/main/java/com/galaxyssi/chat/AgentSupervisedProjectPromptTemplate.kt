@@ -49,6 +49,7 @@ internal object AgentSupervisedProjectPromptTemplate {
             buildString {
                 if (!developmentContext && !phoneControl) {
                     append(AgentPhoneInteractionPrompt.render(evidenceExpected))
+                    append(AgentVisualOutputContract.COMPACT_PROMPT).append('\n')
                     append("Available phone tools:\n").append(toolManifest)
                     append("Working-set policy: compact signatures remain callable; inspect galaxyssi.tools.describe for full input_schema. Call only listed tools.\n")
                     return@buildString
@@ -62,6 +63,7 @@ internal object AgentSupervisedProjectPromptTemplate {
                 } else {
                     appendInitialPlanningContract()
                 }
+                append(AgentVisualOutputContract.COMPACT_PROMPT).append('\n')
                 if (!developmentContext && !phoneControl) {
                     append("Provider-native research: if your environment exposes read-only public web/image search or page opening, use those tools directly within this turn and synthesize the answer when sufficient. Do not emit a phone search plan solely to delegate native retrieval you can already perform. Return the completion-only ActionPlan with the actual answer after native research; no phone tool receipt is required for a public read-only answer. Use phone search/browser tools when native retrieval is unavailable, insufficient, or requires the phone's network/login. Keep phone side effects and project execution on the phone. Never fabricate native tool use or evidence.\n")
                 }

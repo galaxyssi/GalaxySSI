@@ -58,4 +58,15 @@ class AgentInterruptedCloudPolicyTest {
         assertTrue(normalized!!.checkpoints.contains(marker))
         assertEquals(AgentWorkspaceLimits.MAX_CHECKPOINTS, normalized.checkpoints.size)
     }
+
+    @Test fun anOldProjectionMarkerCannotHideAReintroducedOrphanWait() {
+        val workspace = AgentWorkspace("workspace", "session", "conversation", "turn")
+        val projected = workspace.copy(checkpoints = listOf(AgentInterruptedCloudRecovery.checkpoint(workspace, 200)))
+        val stopped = AgentInterruptedCloudPolicy.finish(session(), action, "new", 200, "Interrupted")
+        assertTrue(AgentInterruptedCloudRecovery.alreadyProjected(projected, stopped))
+        val restored = session().copy(phase = AgentPhase.PAUSED)
+        assertFalse(AgentInterruptedCloudRecovery.alreadyProjected(projected, restored))
+        assertNotNull(AgentInterruptedCloudPolicy.pending(restored, "new", false))
+        assertNull(AgentInterruptedCloudPolicy.pending(restored, "new", true))
+    }
 }
