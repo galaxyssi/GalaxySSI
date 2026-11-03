@@ -441,19 +441,27 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
   static let defaultStorageKey = "galaxyssi_agent_connector_responses"
 
   private let defaults: UserDefaults
+  private let secrets: GalaxySSISecretStore
   private let storageKey: String
   private let nowMillis: () -> Int64
   private let lock = NSRecursiveLock()
   private static let persistenceLock = NSRecursiveLock()
   private var store: AgentConnectorResponseStore
   private var receivedDeliveryStorageKey: String { "\(storageKey).received_deliveries" }
+  private var snapshotStorageKey: String { "\(storageKey).snapshot.v1" }
+  private struct Snapshot: Codable {
+    var responses: String
+    var receivedDeliveries: [AgentReceivedDeliveryProof]
+  }
 
   init(
     defaults: UserDefaults = .standard,
     storageKey: String = UserDefaultsAgentConnectorResponseStore.defaultStorageKey,
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
     self.defaults = defaults
+    self.secrets = secrets
     self.storageKey = storageKey
     self.nowMillis = nowMillis
     self.store = AgentConnectorResponseStore(
@@ -464,6 +472,7 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
       ),
       nowMillis: nowMillis
     )
+    _ = reloadLocked()
   }
 
   @discardableResult
@@ -474,10 +483,12 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
       lock.unlock()
       Self.persistenceLock.unlock()
     }
-    reloadLocked()
-    let accepted = store.publish(response)
-    persistLocked()
-    return accepted
+    guard reloadLocked(), store.publish(response) else { return false }
+    guard persistLocked() else {
+      _ = reloadLocked()
+      return false
+    }
+    return true
   }
 
   func pending() -> [AgentConnectorResponse] {
@@ -487,10 +498,8 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
       lock.unlock()
       Self.persistenceLock.unlock()
     }
-    reloadLocked()
-    let responses = store.pending(nowMillis: nowMillis())
-    persistLocked()
-    return responses
+    guard reloadLocked() else { return [] }
+    return store.pending(nowMillis: nowMillis())
   }
 
   func remove(_ response: AgentConnectorResponse) {
@@ -500,9 +509,9 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
       lock.unlock()
       Self.persistenceLock.unlock()
     }
-    reloadLocked()
+    guard reloadLocked() else { return }
     store.remove(response)
-    persistLocked()
+    if !persistLocked() { _ = reloadLocked() }
   }
 
   func hasReceivedDelivery(_ delivery: AgentTerminalDelivery) -> Bool {
@@ -512,7 +521,7 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
       lock.unlock()
       Self.persistenceLock.unlock()
     }
-    reloadLocked()
+    guard reloadLocked() else { return false }
     return store.hasReceivedDelivery(delivery)
   }
 
@@ -524,6 +533,7 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
       Self.persistenceLock.unlock()
     }
     store.clear()
+    GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: snapshotStorageKey, secrets: secrets)
     defaults.removeObject(forKey: storageKey)
     defaults.removeObject(forKey: receivedDeliveryStorageKey)
   }
@@ -535,19 +545,31 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
       lock.unlock()
       Self.persistenceLock.unlock()
     }
-    reloadLocked()
-    persistLocked()
+    guard reloadLocked() else { return "[]" }
     return store.serializedSnapshot()
   }
 
-  private func persistLocked() {
-    defaults.set(store.serializedSnapshot(), forKey: storageKey)
-    if let data = try? JSONEncoder().encode(store.receivedDeliverySnapshot()) {
-      defaults.set(data, forKey: receivedDeliveryStorageKey)
-    }
+  private func persistLocked() -> Bool {
+    let snapshot = Snapshot(responses: store.serializedSnapshot(),
+      receivedDeliveries: store.receivedDeliverySnapshot())
+    guard let data = try? JSONEncoder().encode(snapshot),
+          GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults,
+            key: snapshotStorageKey, secrets: secrets) else { return false }
+    defaults.removeObject(forKey: storageKey)
+    defaults.removeObject(forKey: receivedDeliveryStorageKey)
+    return true
   }
 
-  private func reloadLocked() {
+  @discardableResult
+  private func reloadLocked() -> Bool {
+    if defaults.object(forKey: snapshotStorageKey + ".encrypted.v1") != nil {
+      guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults,
+              key: snapshotStorageKey, secrets: secrets),
+            let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return false }
+      store = AgentConnectorResponseStore(serialized: snapshot.responses,
+        receivedDeliveries: snapshot.receivedDeliveries, nowMillis: nowMillis)
+      return true
+    }
     store = AgentConnectorResponseStore(
       serialized: defaults.string(forKey: storageKey) ?? "[]",
       receivedDeliveries: Self.loadReceivedDeliveries(
@@ -556,6 +578,7 @@ final class UserDefaultsAgentConnectorResponseStore: AgentConnectorResponseSink 
       ),
       nowMillis: nowMillis
     )
+    return true
   }
 
   private static func loadReceivedDeliveries(

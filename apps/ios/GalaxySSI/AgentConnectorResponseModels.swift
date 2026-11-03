@@ -1011,12 +1011,13 @@ final class AgentConnectorResponseBus {
     guard let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis()) else {
       return false
     }
-    globalRunSlots.release(sourceMessageId: String(normalized.sourceMessageId))
     if terminalStore.isTerminal(normalized) {
+      globalRunSlots.release(sourceMessageId: String(normalized.sourceMessageId))
       store.remove(normalized)
       return true
     }
-    store.publish(normalized)
+    guard store.publish(normalized) else { return false }
+    globalRunSlots.release(sourceMessageId: String(normalized.sourceMessageId))
     if registry.consume(normalized) {
       store.remove(normalized)
       return true

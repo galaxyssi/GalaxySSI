@@ -343,6 +343,56 @@ extension GalaxySSIStoreTests {
     ).find(sourceMessageId: 82))
   }
 
+  func testRejectedResponseWriteKeepsManagedInterceptorAndRunSlotForReplay() throws {
+    let registry = AgentManagedConnectorResponseRegistry()
+    let sink = RejectableConnectorResponseSink()
+    let slots = ConnectorResponseRunSlotSpy()
+    var consumed = 0
+    var notified = 0
+    try registry.register(sourceMessageId: 73, contactId: "codex", ownerId: "child",
+      conversationId: "conversation", turnId: "turn", taskId: "child-task") { _ in
+        consumed += 1
+        return true
+      }
+    let bus = AgentConnectorResponseBus(registry: registry, managedLedger: nil, store: sink,
+      terminalStore: InMemoryAgentTerminalDeliveryStore(), globalRunSlots: slots, nowMillis: { 10_000 })
+    let token = bus.addListener { _ in notified += 1 }
+    defer { bus.removeListener(token) }
+    let response = AgentConnectorResponse(sourceMessageId: 73, contactId: "codex", content: "result",
+      conversationId: "conversation", turnId: "turn", taskId: "child-task", receivedAtMillis: 9_000)
+
+    XCTAssertFalse(bus.publish(response))
+    XCTAssertEqual(consumed, 0)
+    XCTAssertEqual(notified, 0)
+    XCTAssertTrue(registry.contains(response))
+    XCTAssertTrue(slots.releasedSources.isEmpty)
+    XCTAssertFalse(bus.wasRecorded(response))
+
+    sink.reject = false
+    XCTAssertTrue(bus.publish(response))
+    XCTAssertEqual(consumed, 1)
+    XCTAssertEqual(notified, 0)
+    XCTAssertEqual(slots.releasedSources, ["73"])
+    XCTAssertTrue(sink.pending().isEmpty)
+  }
+
+  func testRejectedOrdinaryResponseWriteDoesNotNotifyListeners() {
+    let sink = RejectableConnectorResponseSink()
+    let bus = AgentConnectorResponseBus(registry: AgentManagedConnectorResponseRegistry(),
+      managedLedger: nil, store: sink, terminalStore: InMemoryAgentTerminalDeliveryStore(), nowMillis: { 10_000 })
+    var notifications = 0
+    let token = bus.addListener { _ in notifications += 1 }
+    defer { bus.removeListener(token) }
+    let response = AgentConnectorResponse(sourceMessageId: 74, contactId: "codex", content: "result",
+      conversationId: "conversation", turnId: "turn", taskId: "task", receivedAtMillis: 9_000)
+    XCTAssertFalse(bus.publish(response))
+    XCTAssertEqual(notifications, 0)
+    sink.reject = false
+    XCTAssertFalse(bus.publish(response))
+    XCTAssertEqual(notifications, 1)
+    XCTAssertTrue(bus.wasRecorded(response))
+  }
+
   func testAgentConnectorResponseBusInterceptsManagedResponsesOnce() throws {
     let registry = AgentManagedConnectorResponseRegistry()
     let store = AgentConnectorResponseStore(nowMillis: { 10_000 })
@@ -615,6 +665,7 @@ extension GalaxySSIStoreTests {
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let key = "responses"
+    let secrets = InMemorySecretStore()
     let response = AgentConnectorResponse(
       sourceMessageId: 73,
       contactId: "codex",
@@ -627,6 +678,7 @@ extension GalaxySSIStoreTests {
     let store = UserDefaultsAgentConnectorResponseStore(
       defaults: defaults,
       storageKey: key,
+      secrets: secrets,
       nowMillis: { 100_000 }
     )
     XCTAssertTrue(store.publish(response))
@@ -636,6 +688,7 @@ extension GalaxySSIStoreTests {
     let reopened = UserDefaultsAgentConnectorResponseStore(
       defaults: defaults,
       storageKey: key,
+      secrets: secrets,
       nowMillis: { 100_000 }
     )
     XCTAssertTrue(reopened.hasReceivedDelivery(AgentTerminalDelivery(
@@ -645,6 +698,68 @@ extension GalaxySSIStoreTests {
       taskId: response.taskId,
       contactId: response.contactId
     )))
+  }
+
+  func testProductionResponseStoreRejectsKeyFailureBeforePublishingAndCanRetry() {
+    let suite = "AgentConnectorResponseTests.keyFailure.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = RejectableConnectorSecretStore()
+    let store = UserDefaultsAgentConnectorResponseStore(defaults: defaults,
+      storageKey: "responses", secrets: secrets, nowMillis: { 10_000 })
+    let bus = AgentConnectorResponseBus(registry: AgentManagedConnectorResponseRegistry(),
+      managedLedger: nil, store: store, terminalStore: InMemoryAgentTerminalDeliveryStore(), nowMillis: { 10_000 })
+    var notifications = 0
+    let token = bus.addListener { _ in notifications += 1 }
+    defer { bus.removeListener(token) }
+    let response = AgentConnectorResponse(sourceMessageId: 76, contactId: "codex", content: "sensitive result",
+      conversationId: "conversation", turnId: "turn", taskId: "task", receivedAtMillis: 9_000)
+    XCTAssertFalse(bus.publish(response))
+    XCTAssertFalse(bus.wasRecorded(response))
+    XCTAssertTrue(store.pending().isEmpty)
+    XCTAssertEqual(notifications, 0)
+
+    secrets.reject = false
+    XCTAssertFalse(bus.publish(response))
+    XCTAssertTrue(bus.wasRecorded(response))
+    XCTAssertEqual(notifications, 1)
+    XCTAssertEqual(store.pending().first?.content, response.content)
+    XCTAssertNil(defaults.object(forKey: "responses"))
+    XCTAssertNil(defaults.object(forKey: "responses.received_deliveries"))
+    let ciphertext = defaults.data(forKey: "responses.snapshot.v1.encrypted.v1")!
+    XCTAssertFalse(String(decoding: ciphertext, as: UTF8.self).contains(response.content))
+  }
+
+  func testResponseSnapshotMigratesLegacyOnlyAfterSuccessfulEncryptedWrite() {
+    let suite = "AgentConnectorResponseTests.migration.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let response = AgentConnectorResponse(sourceMessageId: 77, contactId: "codex", content: "legacy answer",
+      conversationId: "conversation", turnId: "turn", taskId: "task", receivedAtMillis: 9_000)
+    let legacy = AgentConnectorResponseStoreCodec.encode([response])
+    defaults.set(legacy, forKey: "responses")
+    let secrets = RejectableConnectorSecretStore()
+    let store = UserDefaultsAgentConnectorResponseStore(defaults: defaults, storageKey: "responses",
+      secrets: secrets, nowMillis: { 10_000 })
+    XCTAssertFalse(store.publish(response))
+    XCTAssertEqual(defaults.string(forKey: "responses"), legacy)
+    XCTAssertEqual(store.pending().count, 1)
+    secrets.reject = false
+    XCTAssertTrue(store.publish(response))
+    XCTAssertNil(defaults.object(forKey: "responses"))
+    let reopened = UserDefaultsAgentConnectorResponseStore(defaults: defaults, storageKey: "responses",
+      secrets: secrets, nowMillis: { 10_000 })
+    XCTAssertEqual(reopened.pending().first?.content, response.content)
+
+    let corrupted = Data([0, 1, 2])
+    defaults.set(corrupted, forKey: "responses.snapshot.v1.encrypted.v1")
+    defaults.set(legacy, forKey: "responses")
+    XCTAssertTrue(reopened.pending().isEmpty)
+    XCTAssertFalse(reopened.publish(response))
+    XCTAssertEqual(defaults.data(forKey: "responses.snapshot.v1.encrypted.v1"), corrupted)
+    reopened.clear()
+    XCTAssertNil(defaults.object(forKey: "responses.snapshot.v1.encrypted.v1"))
+    XCTAssertNil(defaults.object(forKey: "responses"))
   }
 
   func testAgentConnectorFinalResultPersistsBeforeLiveStreamRetires() {
@@ -683,4 +798,38 @@ extension GalaxySSIStoreTests {
       turnId: turnId
     )
   }
+}
+
+private final class RejectableConnectorResponseSink: AgentConnectorResponseSink {
+  var reject = true
+  private let store = InMemoryAgentConnectorResponseStore()
+  func publish(_ response: AgentConnectorResponse) -> Bool {
+    !reject && store.publish(response)
+  }
+  func pending() -> [AgentConnectorResponse] { store.pending() }
+  func remove(_ response: AgentConnectorResponse) { store.remove(response) }
+  func hasReceivedDelivery(_ delivery: AgentTerminalDelivery) -> Bool { store.hasReceivedDelivery(delivery) }
+  func clear() { store.clear() }
+}
+
+private final class ConnectorResponseRunSlotSpy: AgentGlobalRunSlotStoring {
+  var releasedSources: [String] = []
+  func acquire(registration: AgentRegistration, ownerId: String) -> Bool { true }
+  func bindSourceMessage(ownerId: String, sourceMessageId: String) {}
+  func release(ownerId: String) {}
+  func release(sourceMessageId: String) { releasedSources.append(sourceMessageId) }
+  func touch(sourceMessageId: String, nowMillis: Int64) {}
+  func activeCounts() -> [String: Int] { [:] }
+}
+
+private final class RejectableConnectorSecretStore: GalaxySSISecretStore {
+  var reject = true
+  private let backing = InMemorySecretStore()
+  private enum Failure: Error { case unavailable }
+  func setString(_ value: String, account: String) throws {
+    if reject { throw Failure.unavailable }
+    try backing.setString(value, account: account)
+  }
+  func string(account: String) -> String? { backing.string(account: account) }
+  func delete(account: String) { backing.delete(account: account) }
 }
