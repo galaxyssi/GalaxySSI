@@ -12,6 +12,7 @@ struct GalaxySSIAgentRecentTasksView: View {
   @State private var statusText = ""
   @State private var initialTaskPresented = false
   @State private var teamSnapshots: [AgentTeamExecutionSnapshot] = []
+  @State private var cancellingTaskIDs: Set<String> = []
 
   private let teamHistoryStore = AgentTeamExecutionHistoryStore.shared
 
@@ -279,9 +280,24 @@ struct GalaxySSIAgentRecentTasksView: View {
       )
       return
     }
-    coordinator.cancelLocalNativeAction(taskId: task.taskId)
-    statusText = t("galaxyssi.agent_tasks.cancelled", "Task cancelled")
-    selectedTask = nil
+    guard !cancellingTaskIDs.contains(task.taskId) else { return }
+    let original = AgentRequestKind.originalMessage(for: task, messages: store.agentSessionMessages(task.sessionId))
+    if let original, original.requestKind == .screenAnalysis {
+      cancellingTaskIDs.insert(task.taskId)
+      Task { @MainActor in
+        defer { cancellingTaskIDs.remove(task.taskId) }
+        let cancelled = await coordinator.cancelScreenAnalysis([original])
+        statusText = cancelled
+          ? t("galaxyssi.agent_tasks.cancelled", "Task cancelled")
+          : t("galaxyssi.screen_assistant.stop_failed", "Analysis stopped locally, but remote cancellation could not be confirmed.")
+        selectedTask = nil
+      }
+    } else {
+      statusText = coordinator.cancelLocalAgentTask(taskId: task.taskId)
+        ? t("galaxyssi.agent_tasks.cancelled", "Task cancelled")
+        : t("galaxyssi.agent_tasks.cancel_unavailable", "This task cannot be cancelled now")
+      selectedTask = nil
+    }
   }
 
   private func copyTask(_ task: AgentTaskRecord) {

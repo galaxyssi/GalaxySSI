@@ -222,9 +222,14 @@ struct AgentHomeView: View {
   }
 
   var screenAssistantBubblePhase: AgentPhase? {
-    guard let startedAt = screenAssistantStartedAt,
-          let outgoing = transcriptMessages.last(where: { $0.isMine && !$0.isSystem && $0.createdAt >= startedAt }) else { return nil }
+    guard !screenAssistantConversationID.isEmpty,
+          screenAssistantConversationID == store.activeAgentConversationId else { return nil }
+    let ownedIDs = Set(screenAssistantOwnedTurns.map(\.id))
+    guard let outgoing = transcriptMessages.last(where: { $0.isMine && !$0.isSystem && ownedIDs.contains($0.id) }) else { return nil }
     let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    if let active = AgentScreenAnalysisCancellationPolicy.activePhase(for: outgoing,
+      localTasks: store.agentTasks(forSession: outgoing.conversationId, limit: 500),
+      remoteTasks: Array(coordinator.remoteAgentTaskStatuses.values)) { return active }
     if let task = store.agentTask(id: turn), task.sessionId == screenAssistantConversationID { return task.phase }
     if let reply = transcriptMessages.last(where: { !$0.isMine && !$0.isSystem && $0.turnId == outgoing.turnId }) {
       return reply.deliveryStatus == .delivered ? .completed : (reply.deliveryStatus == .failed ? .failed : .executing)

@@ -718,10 +718,14 @@ enum AgentRequestKind: String, Codable {
   }
 
   static func forTask(_ task: AgentTaskRecord, messages: [ChatMessage]) -> AgentRequestKind? {
+    originalMessage(for: task, messages: messages)?.requestKind
+  }
+
+  static func originalMessage(for task: AgentTaskRecord, messages: [ChatMessage]) -> ChatMessage? {
     messages.first {
       $0.isMine && $0.conversationId == task.sessionId &&
         ($0.turnId == task.taskId || $0.id.uuidString == task.taskId)
-    }?.requestKind
+    }
   }
 }
 

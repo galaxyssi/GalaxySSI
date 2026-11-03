@@ -63,6 +63,16 @@ extension AgentHomeView {
       return
     }
     resetAgentSessionPresentation()
+    if let original = AgentRequestKind.originalMessage(for: task, messages: store.agentSessionMessages(sessionID)),
+       original.requestKind == .screenAnalysis {
+      screenAssistantConversationID = sessionID
+      screenAssistantRunID = UUID()
+      screenAssistantStartedAt = original.createdAt
+      screenAssistantCompact = true
+      screenAssistantCollapsed = false
+      screenAssistantOwnedTurns = [original]
+      screenAssistantSubmissions = [:]
+    }
   }
 
   func recoverAgentTask(_ rawPayload: String, sourceMessage: ChatMessage? = nil) {

@@ -2,6 +2,77 @@ import XCTest
 @testable import GalaxySSI
 
 final class MessageCoordinatorCloudStreamingTests: XCTestCase {
+  func testScreenAnalysisRemoteWaitingRequiresMatchingConversationAndTurn() {
+    let original = ChatMessage(contactId: "desktop", content: "Analyze", isMine: true,
+      conversationId: "session", turnId: "turn", requestKind: .screenAnalysis)
+    func remote(contact: String = "desktop", session: String = "session", turn: String = "turn",
+                status: String = "waiting_approval") -> AgentRemoteTaskStatusSnapshot {
+      AgentRemoteTaskStatusSnapshot(taskId: "remote", clientRouteId: "route", contactId: contact,
+        conversationId: session, turnId: turn, sourceMessageId: 1, status: status, target: "Codex",
+        location: "desktop", currentStep: "", advertisedCancellable: true, detail: "",
+        updatedAtMillis: 1, history: [])
+    }
+    XCTAssertEqual(AgentScreenAnalysisCancellationPolicy.activePhase(for: original,
+      localTasks: [], remoteTasks: [remote()]), .paused)
+    // A home Agent turn can delegate to a different contact while retaining its owning turn.
+    XCTAssertEqual(AgentScreenAnalysisCancellationPolicy.activePhase(for: original,
+      localTasks: [], remoteTasks: [remote(contact: "delegate")]), .paused)
+    for snapshot in [remote(session: "foreign"), remote(turn: "foreign"),
+                     remote(status: "completed"), remote(status: "cancelled")] {
+      XCTAssertNil(AgentScreenAnalysisCancellationPolicy.activePhase(for: original,
+        localTasks: [], remoteTasks: [snapshot]))
+    }
+  }
+
+  func testScreenAnalysisPartialAnswerDoesNotHidePausedOrWaitingTask() {
+    let original = ChatMessage(contactId: "hermes", content: "Analyze", isMine: true,
+      conversationId: "session", turnId: "turn", requestKind: .screenAnalysis)
+    let partial = ChatMessage(contactId: "hermes", content: "Partial answer", isMine: false,
+      conversationId: "session", turnId: "turn")
+    var task = AgentTaskRecord(taskId: "turn", sessionId: "session", goal: "Analyze",
+      phase: .paused, routeKind: .desktopAgent, targetTitle: "Codex", risk: .low, blocked: false)
+    var delivered = partial
+    delivered.deliveryStatus = .delivered
+    for phase in AgentScreenAnalysisCancellationPolicy.activePhases {
+      task.phase = phase
+      XCTAssertEqual(AgentScreenAnalysisCancellationPolicy.activePhase(for: original,
+        localTasks: [task], remoteTasks: []), phase)
+      XCTAssertTrue(AgentScreenAnalysisCancellationPolicy.shouldCancel(original,
+        messages: [original, delivered], localTasks: [task], remoteTasks: []))
+    }
+    task.phase = .completed
+    XCTAssertFalse(AgentScreenAnalysisCancellationPolicy.shouldCancel(original,
+      messages: [original, delivered], localTasks: [task], remoteTasks: []))
+    task.phase = .paused
+    task.sessionId = "foreign"
+    XCTAssertFalse(AgentScreenAnalysisCancellationPolicy.shouldCancel(original,
+      messages: [original, delivered], localTasks: [task], remoteTasks: []))
+    task.sessionId = "session"
+    task.taskId = "unrelated"
+    XCTAssertNil(AgentScreenAnalysisCancellationPolicy.activePhase(for: original,
+      localTasks: [task], remoteTasks: []))
+  }
+
+  @MainActor
+  func testScreenAnalysisStopCancelsPausedTurnWithDeliveredPartialOnlyOnce() async throws {
+    let fixture = try makeFixture()
+    let stream = RecordingCloudConversationStream(events: [])
+    let coordinator = MessageCoordinator(store: fixture.store, cloudStreamEngine: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let original = fixture.store.appendOutgoing("Analyze", to: fixture.contact.id,
+      turnId: "paused-analysis", requestKind: .screenAnalysis)
+    let partial = fixture.store.appendIncoming("Partial answer", from: fixture.contact.id,
+      remoteMessageId: "partial", status: .delivered,
+      conversationId: original.conversationId, turnId: original.turnId)
+    fixture.store.upsertAgentTask(AgentTaskRecord(taskId: original.turnId, sessionId: original.conversationId,
+      goal: "Analyze", phase: .paused, routeKind: .desktopAgent, targetTitle: "Codex", risk: .low, blocked: false))
+    let cancelled = await coordinator.cancelScreenAnalysis([original, original])
+    XCTAssertTrue(cancelled)
+    XCTAssertEqual(stream.cancelledRequestIDs, [original.turnId])
+    XCTAssertEqual(fixture.store.agentTask(id: original.turnId)?.phase, .cancelled)
+    XCTAssertEqual(fixture.store.messages(for: fixture.contact.id).first { $0.id == partial.id }?.content, "Partial answer")
+  }
+
   @MainActor
   func testScreenAnalysisSubmissionPersistsHostRequestKind() async throws {
     let fixture = try makeFixture()

@@ -1667,16 +1667,17 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     var delivered = verified.count == ownedTurns.count
+    var seen: Set<UUID> = []
     let originals = verified.filter { outgoing in
-      !store.messages(for: outgoing.contactId).contains {
-        !$0.isMine && !$0.isSystem && $0.conversationId == outgoing.conversationId &&
-          $0.turnId == outgoing.turnId && $0.deliveryStatus == .delivered
-      }
+      seen.insert(outgoing.id).inserted && AgentScreenAnalysisCancellationPolicy.shouldCancel(outgoing,
+        messages: store.messages(for: outgoing.contactId),
+        localTasks: store.agentTasks(forSession: outgoing.conversationId, limit: 500),
+        remoteTasks: Array(remoteAgentTaskStatuses.values))
     }
     for outgoing in originals {
       let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
       for task in store.agentTasks(forSession: outgoing.conversationId, limit: 500)
-        where task.taskId == turn {
+        where task.taskId == turn || task.taskId == outgoing.id.uuidString {
         _ = cancelLocalAgentTask(taskId: task.taskId, emitReply: false)
       }
       PhoneExecutionAuthority.requestCancellation(taskId: turn)
