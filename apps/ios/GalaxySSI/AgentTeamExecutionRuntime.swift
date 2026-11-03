@@ -393,6 +393,8 @@ final class AgentTeamExecutionRuntime {
   private let lock = NSRecursiveLock()
   private var closed = false
   private var watchers: [String: Task<Void, Never>] = [:]
+  private var startingRunIds: Set<String> = []
+  private var recovering = false
 
   init(
     store: AgentTeamExecutionStore = UserDefaultsAgentTeamExecutionStore(),
@@ -416,7 +418,16 @@ final class AgentTeamExecutionRuntime {
       lock.unlock()
       throw AgentTeamExecutionRuntimeError.closed
     }
+    guard !recovering, startingRunIds.insert(request.runId).inserted else {
+      lock.unlock()
+      throw AgentTeamExecutionRuntimeError.invalid("Team startup or recovery is already in progress")
+    }
     lock.unlock()
+    defer {
+      lock.lock()
+      startingRunIds.remove(request.runId)
+      lock.unlock()
+    }
 
     let normalizedMembers = try validate(definition)
     let normalizedDefinition = AgentTeamDefinition(
@@ -597,7 +608,18 @@ final class AgentTeamExecutionRuntime {
   }
 
   func recoverInterrupted(nowMillis: Int64 = AgentControlPlaneClock.nowMillis()) -> [AgentTeamExecutionSnapshot] {
-    store.markNonTerminalInterrupted(nowMillis: nowMillis)
+    lock.lock()
+    guard !closed, !recovering else { lock.unlock(); return [] }
+    recovering = true
+    let active = startingRunIds.union(watchers.keys)
+    lock.unlock()
+    defer {
+      lock.lock()
+      recovering = false
+      lock.unlock()
+    }
+    return store.snapshots().filter { !active.contains($0.supervisorRunId) && !$0.state.isTerminal }
+      .compactMap { store.markInterrupted(supervisorRunId: $0.supervisorRunId, nowMillis: nowMillis) }
   }
 
   func close() {
