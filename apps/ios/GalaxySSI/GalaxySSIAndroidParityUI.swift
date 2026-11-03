@@ -226,17 +226,20 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
-        if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty && !screenAssistantCollapsed {
-          screenAssistantControls
-          agentOutput.frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
-          if screenAssistantCompact { Spacer(minLength: 0) }
-        } else {
-          agentOutput
+        VStack(spacing: 0) {
+          if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty && !screenAssistantCollapsed {
+            screenAssistantControls
+            agentOutput.frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
+            if screenAssistantCompact { Spacer(minLength: 0) }
+          } else {
+            agentOutput
+          }
         }
+        .frame(maxHeight: .infinity)
+        .overlay { screenAssistantRestoreControl }
         agentComposer
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
-      .overlay { screenAssistantRestoreControl }
       .task(id: screenAssistantRecoveryKey) {
         guard let key = screenAssistantRecoveryKey,
               !screenAssistantRecoveryRequests.contains(key) else { return }
