@@ -111,6 +111,7 @@
         <activity android:name=".ProactiveAttentionActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthCenterActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthCaptureActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthTableActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".HealthCameraActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".AttentionNewsSearchActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <service android:name=".VoiceNewsPlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />

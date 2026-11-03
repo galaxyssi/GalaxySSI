@@ -64,7 +64,8 @@ stored original. PDFs are recognized one page at a time; committed pages and the
 next-page cursor form one transaction. OS interruptions can resume, whereas
 explicit cancellation is sticky until the user requests retry. Unsupported file
 formats can be retained as originals, but are visibly marked as having no
-measurement extractor; CSV/JSON/XLSX mapping is not implemented here.
+measurement extractor. CSV/JSON mapping was absent in this increment and is added
+in increment 4 below; XLSX is still pending.
 
 Recognized suggestions retain their page, source text, normalized boxes and
 original hash. The supported subset is blood pressure, glucose, weight, pulse,
@@ -157,6 +158,51 @@ require an unlocked device and user-authorized hardware tests. Automatic paper
 boundary detection is not implemented; the displayed corner frame is an
 alignment guide, not a claim to detect paper edges.
 
+## Increment 4: Structured CSV And JSON Review
+
+The Record Center now routes CSV and flat-row JSON arrays into native column
+mapping instead of OCR or the unsupported-original path. Original files stay
+encrypted and byte-faithful. A 30-row paged preview shows valid, duplicate,
+missing and invalid rows separately. Users choose the metric, column mapping,
+original unit or unit column, strict timestamp format and timezone. Missing
+values are not filled with zero, formulas are not evaluated, and date-only or
+ambiguous local times are not silently completed.
+
+Observation schema 3 adds encrypted batch and row payloads with indexed
+checkpoints. The existing schema-1/schema-2 observations, drafts and audit
+history are retained. Validation never writes measurements; explicit ownership,
+value, unit and time confirmation authorizes saving verified valid rows.
+Source evidence identifies a structured source row rather than pretending it
+was an OCR page. Reimports and rows arriving concurrently after preview are
+deduplicated transactionally.
+
+Validation, save and undo advance in 30-row transactions. Observation writes,
+batch ownership and cursor progress share the same database transaction.
+Phase/revision-specific WorkManager identities prevent a finishing validation
+worker from swallowing or consuming the save handoff. Startup recovery resumes
+only interrupted active work; recorded failures require explicit retry. Batch
+undo removes only unchanged records created by that batch, retaining existing
+duplicates, later user edits and encrypted audit history.
+
+CSV uses uniVocity parsers 2.9.1 (Apache-2.0), and
+JSON uses Android JsonReader. Parsing and database work stay off the main thread;
+views and source dialogs are dropped in the background. Neither extractor sends
+health data to an Agent, Desktop or cloud. Working bounds are 64 MiB per source,
+256 columns, 16,384 characters per cell and 65,536 characters per row. They are
+explicit rejection limits, not silent truncation or a fixed total-row budget.
+
+This is the CSV/JSON subset of h09/h10/h26, not completion of every structured
+format or all 32 screens. XLSX sheet/date/formula-cache provenance, the broader
+qualitative metric catalog, and unlocked native-page acceptance remain pending.
+See [the test matrix](../testing/android-health-table-import.md).
+
+The 0.1.7.19 / 1432 increment passes 123 focused JVM tests and 78 non-visual
+device regressions on Tab Active3, including additive schema upgrades, real
+CSV/JSON file-queue imports and durable save/undo recovery. Five initial
+FileProvider fixture-location failures were corrected without broadening the
+provider's roots. Native table-page acceptance remains pending because the
+tablet reports an active keyguard; no lock-screen bypass was attempted.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
@@ -164,7 +210,8 @@ version and focused validation before claiming completion:
 
 1. Native camera hardware/device-matrix acceptance, automatic paper-edge
    detection, and original-library thumbnail/filter/batch-selection modes.
-2. Structured CSV/JSON/XLSX import with mapping, conflict review and batch undo.
+2. XLSX sheet selection, typed dates and formula-cache provenance using the same
+   mapping/transaction/undo contract; unlocked structured-import UI acceptance.
 3. Metric catalog, time-window/source filters and true, gap-aware trend charts.
 4. Original-file library, export configuration, save/share and verified backup
    restore with transactional merge and attachment integrity checks.
@@ -209,9 +256,11 @@ No synthetic health measurements or originals were placed in the user's archive;
 test databases and original roots used unique isolated names and were removed.
 
 This is focused verification, not a claim that every camera app or every health
-screen has passed end-to-end acceptance. The parent PR's full CI remains blocked
-by five existing Agent routing/state regressions (native-tool catalog, process
-state, two task-intent cases and the untrusted-evidence boundary), outside this
-increment's changes. The parent backend gate also has one existing tool-evidence
-diagnostic-log expectation failure. Repository/i18n and Desktop structure checks
-pass locally; these focused results do not claim all repository CI is green.
+screen has passed end-to-end acceptance. At the recognition increment's original
+verification time, its parent CI had five existing Agent routing/state regressions
+(native-tool catalog, process state, two task-intent cases and the untrusted-evidence
+boundary), outside that increment's changes, and a backend tool-evidence diagnostic-log
+expectation failure. At increment 4 verification, PR #3687's repository, Windows
+package, Desktop smoke and core-regression checks pass; its Android gate still
+reports the same five Agent failures. These focused health results do not claim
+that the repository's full CI is green.

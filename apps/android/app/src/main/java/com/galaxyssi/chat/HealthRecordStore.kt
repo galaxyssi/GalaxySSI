@@ -19,6 +19,7 @@ internal sealed class HealthSaveResult {
 /** Indexed metadata stays separate from authenticated, individually encrypted measurement payloads. */
 internal class HealthRecordStore(context: Context, private val name: String = "health_records_v1.db") : Closeable {
     private val helper = Database(context.applicationContext, name)
+    internal val tableDatabase: SQLiteDatabase get() = helper.writableDatabase
     private fun aad(id: String, revision: Int) = "$name|health|$id|$revision".toByteArray(Charsets.UTF_8)
     private fun dedupe(record: HealthObservation) = AgentMemoryIndexKey.token("$name|health-duplicate-v1|${HealthObservationPolicy.duplicateKey(record)}")
     private fun evidenceKey(draft: HealthDraft): String? = draft.evidence?.let {
@@ -29,6 +30,9 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE evidence_key=? AND deleted=0", arrayOf(key))
             .use { if (it.moveToFirst()) decode(it).also { record -> check(evidenceKey(record.draft) == key) { "Health evidence index mismatch" } } else null }
     }
+    fun duplicateFor(draft: HealthDraft): String? = recordForEvidence(draft)?.id ?: helper.readableDatabase.rawQuery(
+        "SELECT id FROM observations WHERE dedupe=? AND deleted=0", arrayOf(dedupe(HealthObservationPolicy.observation(draft)))
+    ).use { if (it.moveToFirst()) it.getString(0) else null }
     private fun encode(record: HealthObservation): ByteArray {
         val bytes = record.json().toString().toByteArray(Charsets.UTF_8)
         return try { AgentStorageCipher.encryptBinary(bytes, aad(record.id, record.revision)) } finally { bytes.fill(0) }
@@ -70,11 +74,16 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
 
     @Synchronized fun save(draft: HealthDraft): HealthSaveResult {
+        val database = helper.writableDatabase
+        database.beginTransaction()
+        return try { saveWithinTransaction(draft).also { database.setTransactionSuccessful() } }
+        finally { database.endTransaction() }
+    }
+    private fun saveWithinTransaction(draft: HealthDraft): HealthSaveResult {
         val record = HealthObservationPolicy.observation(draft)
         val encrypted = encode(record)
         val duplicateKey = dedupe(record)
         val database = helper.writableDatabase
-        database.beginTransaction()
         return try {
             val existing = database.rawQuery("SELECT revision FROM observations WHERE id=? AND deleted=0", arrayOf(record.id))
                 .use { if (it.moveToFirst()) it.getInt(0) else 0 }
@@ -98,9 +107,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 put("changed_at", record.receivedAt); put("deleted", 0)
             })
             database.delete("drafts", "draft_key=?", arrayOf(draftKey(draft)))
-            database.setTransactionSuccessful()
             HealthSaveResult.Saved(record)
-        } finally { database.endTransaction(); encrypted.fill(0) }
+        } finally { encrypted.fill(0) }
     }
 
     @Synchronized fun delete(id: String, revision: Int): Boolean {
@@ -149,7 +157,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     fun clearDraft(key: String) { helper.writableDatabase.delete("drafts", "draft_key=?", arrayOf(key)) }
     override fun close() = helper.close()
 
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 2) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 3) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
@@ -163,13 +171,17 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             db.execSQL("CREATE TABLE revisions(id TEXT NOT NULL REFERENCES observations(id),revision INTEGER NOT NULL," +
                 "payload BLOB NOT NULL,changed_at INTEGER NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(id,revision))")
             db.execSQL("CREATE TABLE drafts(draft_key TEXT PRIMARY KEY,payload BLOB NOT NULL)")
+            HealthTableStore.createSchema(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion == 1 && newVersion == 2) { "Unsupported health schema upgrade" }
-            db.execSQL("ALTER TABLE observations ADD COLUMN original_id TEXT")
-            db.execSQL("ALTER TABLE observations ADD COLUMN evidence_key TEXT")
-            db.execSQL("CREATE INDEX observation_original_page ON observations(original_id,deleted,measured_at DESC,id DESC)")
-            db.execSQL("CREATE UNIQUE INDEX observation_evidence ON observations(evidence_key) WHERE deleted=0 AND evidence_key IS NOT NULL")
+            check(oldVersion in 1..2 && newVersion == 3) { "Unsupported health schema upgrade" }
+            if (oldVersion < 2) {
+                db.execSQL("ALTER TABLE observations ADD COLUMN original_id TEXT")
+                db.execSQL("ALTER TABLE observations ADD COLUMN evidence_key TEXT")
+                db.execSQL("CREATE INDEX observation_original_page ON observations(original_id,deleted,measured_at DESC,id DESC)")
+                db.execSQL("CREATE UNIQUE INDEX observation_evidence ON observations(evidence_key) WHERE deleted=0 AND evidence_key IS NOT NULL")
+            }
+            HealthTableStore.createSchema(db)
         }
     }
     companion object {

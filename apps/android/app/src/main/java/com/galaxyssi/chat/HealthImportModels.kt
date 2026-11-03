@@ -3,7 +3,7 @@ package com.galaxyssi.chat
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal enum class HealthImportState { QUEUED, COPYING, RECOGNIZING, CAPTURE_READY, REVIEW, ORIGINAL_ONLY, FAILED, CANCELLED }
+internal enum class HealthImportState { QUEUED, COPYING, RECOGNIZING, CAPTURE_READY, REVIEW, TABLE_REVIEW, ORIGINAL_ONLY, FAILED, CANCELLED }
 internal data class HealthImportJob(
     val id: String, val sourceUri: String, val createdAt: Long,
     val mode: String = "report", val cameraToken: String = "",
@@ -52,20 +52,24 @@ internal data class HealthOcrPage(val page: Int, val width: Int, val height: Int
 
 internal data class HealthEvidence(
     val originalId: String, val jobId: String, val candidateId: String, val sha256: String, val page: Int,
-    val rawText: String, val boxes: List<List<Int>> = emptyList(), val confirmed: Boolean = false, val documentPage: Int = 0
+    val rawText: String, val boxes: List<List<Int>> = emptyList(), val confirmed: Boolean = false, val documentPage: Int = 0,
+    val kind: String = "ocr", val tableRow: Long = 0
 ) {
     fun json() = JSONObject().put("original", originalId).put("job", jobId).put("candidate", candidateId)
         .put("sha256", sha256).put("page", page).put("text", rawText).put("boxes", JSONArray(boxes.map { JSONArray(it) }))
         .put("confirmed", confirmed)
         .put("document_page", documentPage)
+        .put("kind", kind).put("table_row", tableRow)
     fun valid(): Boolean = listOf(originalId, jobId).all { runCatching { java.util.UUID.fromString(it).toString() == it }.getOrDefault(false) } &&
         candidateId.matches(Regex("[a-zA-Z0-9_-]{1,80}")) && sha256.matches(Regex("[0-9a-f]{64}")) &&
-        page > 0 && documentPage >= 0 && rawText.length <= 8000 && boxes.all { it.size == 4 && it.all { value -> value in 0..1000 } && it[0] <= it[2] && it[1] <= it[3] }
+        page > 0 && documentPage >= 0 && rawText.length <= 8000 &&
+        (kind == "ocr" && tableRow == 0L || kind == "table" && tableRow > 0 && documentPage == 0 && boxes.isEmpty()) &&
+        boxes.all { it.size == 4 && it.all { value -> value in 0..1000 } && it[0] <= it[2] && it[1] <= it[3] }
     companion object {
         fun from(j: JSONObject) = HealthEvidence(j.getString("original"), j.getString("job"), j.getString("candidate"), j.getString("sha256"),
             j.getInt("page"), j.getString("text"), j.getJSONArray("boxes").let { a -> (0 until a.length()).map { i ->
                 val box = a.getJSONArray(i); (0 until box.length()).map(box::getInt)
-            } }, j.getBoolean("confirmed"), j.optInt("document_page"))
+            } }, j.getBoolean("confirmed"), j.optInt("document_page"), j.optString("kind", "ocr"), j.optLong("table_row"))
     }
 }
 

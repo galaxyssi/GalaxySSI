@@ -40,6 +40,7 @@ internal class HealthImportTaskView(
         if (running) actions.addView(ui.row(context.getString(R.string.common_cancel)) { cancel(job) })
         if (job.state in listOf(HealthImportState.CANCELLED, HealthImportState.FAILED)) actions.addView(ui.row(context.getString(R.string.common_retry)) { retry(job) })
         if (job.nextPage > 0) actions.addView(ui.row(context.getString(R.string.health_review_title)) { review(job) })
+        if (job.state == HealthImportState.TABLE_REVIEW) actions.addView(ui.row(context.getString(R.string.health_table_title)) { review(job) })
         if (job.originalId.isNotBlank()) actions.addView(ui.row(context.getString(R.string.health_view_original)) { original(job) })
         if (job.captureBatch.isNotBlank()) actions.addView(ui.row(context.getString(if (job.captureSubmitted) R.string.health_photo_view_pages else R.string.health_photo_arrange)) { capture(job) })
     }

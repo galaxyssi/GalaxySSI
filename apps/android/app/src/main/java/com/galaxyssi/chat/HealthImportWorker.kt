@@ -25,6 +25,7 @@ internal object HealthImportScheduler {
     }
     fun recoverAsync(context: Context) {
         kotlin.concurrent.thread(name = "health-import-recovery", isDaemon = true) {
+            runCatching { HealthTableScheduler.recover(context) }
             if (!context.getDatabasePath("health_originals_v1.db").exists()) return@thread
             runCatching { HealthOriginalStore(context).use { store ->
                 var after: Pair<Long, String>? = null
@@ -55,10 +56,10 @@ class HealthImportWorker(context: Context, params: WorkerParameters) : Worker(co
 internal enum class HealthImportOutcome { COMPLETE, FAILED, RETRY }
 private class HealthImportInterrupted : CancellationException()
 
-internal class HealthImportPipeline(private val context: Context) {
+internal class HealthImportPipeline(private val context: Context, private val recordDatabase: String = "health_records_v1.db") {
     fun run(store: HealthOriginalStore, id: String, prepareCapture: Boolean = false, stopped: () -> Boolean = { false }): HealthImportOutcome {
             val initial = store.job(id) ?: return HealthImportOutcome.FAILED
-            if (initial.state in listOf(HealthImportState.CANCELLED, HealthImportState.REVIEW, HealthImportState.ORIGINAL_ONLY, HealthImportState.CAPTURE_READY)) return HealthImportOutcome.COMPLETE
+            if (initial.state in listOf(HealthImportState.CANCELLED, HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW, HealthImportState.ORIGINAL_ONLY, HealthImportState.CAPTURE_READY)) return HealthImportOutcome.COMPLETE
             if (prepareCapture && initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             if (!prepareCapture && initial.captureBatch.isNotBlank() && !initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             fun cancelled() {
@@ -89,6 +90,11 @@ internal class HealthImportPipeline(private val context: Context) {
                     if (!mime.startsWith("image/")) throw HealthImportFailure("image_unsupported")
                     val quality = HealthPhotoInspector.inspect(store, original)
                     cancelled(); store.inspectCapture(id, quality)
+                    return HealthImportOutcome.COMPLETE
+                }
+                if (HealthTableParser.format(original.name, original.mime) != null) {
+                    HealthTableStore(context, recordDatabase).use { tables -> HealthTableImport.stage(store, original, id, tables, ::cancelled) }
+                    cancelled(); store.updateJob(id) { it.copy(state = HealthImportState.TABLE_REVIEW, error = "") }
                     return HealthImportOutcome.COMPLETE
                 }
                 if (!mime.startsWith("image/") && mime != "application/pdf") {
