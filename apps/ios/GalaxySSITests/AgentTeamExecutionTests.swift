@@ -87,6 +87,52 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(primaryFailed.members[1].status, .pending)
   }
 
+  func testSavedTeamCompletesRegardlessOfObserverReplyOrder() throws {
+    for order in [["lead", "reviewer"], ["reviewer", "lead"]] {
+      var saved = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
+        conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .running,
+        members: [
+          AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond, sourceMessageId: "lead-request"),
+          AgentTeamMemberSnapshot(agentId: "reviewer", deliveryMode: .observe, sourceMessageId: "reviewer-request")
+        ])
+      for (index, agent) in order.enumerated() {
+        saved = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved,
+          source: agent + "-request", conversation: "conversation", turn: "turn",
+          task: agent + "-request", contact: agent,
+          content: agent == "lead" ? "Primary answer" : "Observation",
+          success: true, now: Int64(index + 1)))
+        XCTAssertEqual(saved.state, index == 0 ? .running : .succeeded)
+      }
+      XCTAssertEqual(saved.finalOutput, "Primary answer")
+      XCTAssertTrue(saved.members.allSatisfy { $0.status == .succeeded })
+      XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: saved, source: "reviewer-request",
+        conversation: "conversation", turn: "turn", task: "reviewer-request", contact: "reviewer",
+        content: "Late replacement", success: true, now: 100))
+      XCTAssertEqual(saved.finalOutput, "Primary answer")
+    }
+  }
+
+  func testSavedTeamAllowsEmptyObservationButRequiresPrimaryAnswer() throws {
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .running,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond, sourceMessageId: "primary"),
+        AgentTeamMemberSnapshot(agentId: "reviewer", deliveryMode: .observe, sourceMessageId: "observer")
+      ])
+    XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: saved, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: " \n", success: true, now: 1))
+    let observed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "observer",
+      conversation: "conversation", turn: "turn", task: "observer", contact: "reviewer",
+      content: "", success: true, now: 1))
+    XCTAssertEqual(observed.members[1].status, .succeeded)
+    let completed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: observed, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: "Answer", success: true, now: 2))
+    XCTAssertEqual(completed.state, .succeeded)
+    XCTAssertEqual(completed.finalOutput, "Answer")
+  }
+
   func testSavedTeamReplyRequiresOriginalIdentityAndPreservesTerminalOutcome() throws {
     let saved = AgentTeamExecutionSnapshot(supervisorRunId: "team-run", teamId: "team",
       conversationId: "conversation", taskId: "turn", primaryAgentId: "agent", state: .running,

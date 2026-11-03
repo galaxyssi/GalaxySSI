@@ -269,11 +269,13 @@ enum AgentSavedTeamReplyPolicy {
   static func apply(to saved: AgentTeamExecutionSnapshot, source: String, conversation: String,
                     turn: String, task: String, contact: String, content: String,
                     success: Bool, now: Int64) -> AgentTeamExecutionSnapshot? {
-    guard !saved.state.isTerminal, !source.isEmpty, !content.isEmpty,
+    guard !saved.state.isTerminal, !source.isEmpty,
           saved.conversationId == conversation, saved.taskId == turn, task == source,
           let index = saved.members.firstIndex(where: {
             $0.sourceMessageId == source && $0.agentId == contact && !$0.status.isTerminal
-          }) else { return nil }
+          }),
+          !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            (success && saved.members[index].deliveryMode == .observe) else { return nil }
     var result = saved
     result.members[index].status = success ? .succeeded : .failed
     result.members[index].output = success ? String(content.prefix(AgentConnectorResponse.maxContentCharacters)) : ""

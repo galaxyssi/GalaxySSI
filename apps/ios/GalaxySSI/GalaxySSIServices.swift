@@ -6056,15 +6056,13 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage
   ) {
     if let session = store.agentSession(id: outgoing.conversationId), !session.privateMode, !session.trackingPaused,
-       var saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
-       saved.conversationId == outgoing.conversationId,
-       saved.taskId == outgoing.turnId.ifBlank(outgoing.id.uuidString),
-       let index = saved.members.firstIndex(where: { $0.memberId == member.memberId }) {
-      saved.members[index].status = .succeeded
-      saved.members[index].output = text
-      saved.members[index].updatedAtMillis = AgentControlPlaneClock.nowMillis()
-      saved.updatedAtMillis = saved.members[index].updatedAtMillis
-      AgentTeamExecutionHistoryStore.shared.upsert(saved)
+       let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
+       let binding = saved.members.first(where: { $0.memberId == member.memberId }),
+       let updated = AgentSavedTeamReplyPolicy.apply(to: saved, source: binding.sourceMessageId,
+         conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+         task: binding.sourceMessageId, contact: member.agentId, content: text, success: true,
+         now: AgentControlPlaneClock.nowMillis()) {
+      if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
     }
     _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
       teamId: spec.definition.teamId,
