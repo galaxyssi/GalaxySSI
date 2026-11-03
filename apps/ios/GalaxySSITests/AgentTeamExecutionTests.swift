@@ -2,6 +2,30 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSavedTeamReplyRequiresOriginalIdentityAndPreservesTerminalOutcome() throws {
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "team-run", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "agent", state: .running,
+      members: [AgentTeamMemberSnapshot(agentId: "agent", deliveryMode: .respond,
+        instanceId: "lead", sourceMessageId: "request")], primaryInstanceId: "lead")
+    let completed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "request",
+      conversation: "conversation", turn: "turn", task: "request", contact: "agent",
+      content: "Final answer", success: true, now: 100))
+    XCTAssertEqual(completed.state, .succeeded)
+    XCTAssertEqual(completed.finalOutput, "Final answer")
+    XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: completed, source: "request",
+      conversation: "conversation", turn: "turn", task: "request", contact: "agent",
+      content: "Replacement", success: true, now: 200))
+    for identity in [("wrong", "conversation", "turn", "request", "agent"),
+                     ("request", "wrong", "turn", "request", "agent"),
+                     ("request", "conversation", "wrong", "request", "agent"),
+                     ("request", "conversation", "turn", "wrong", "agent"),
+                     ("request", "conversation", "turn", "request", "wrong")] {
+      XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: saved, source: identity.0,
+        conversation: identity.1, turn: identity.2, task: identity.3, contact: identity.4,
+        content: "Foreign answer", success: true, now: 100))
+    }
+  }
+
   func testTeamMemberRequestIdentityRoundTripAndLegacyDefault() throws {
     let member = AgentTeamMemberSnapshot(agentId: "agent", instanceId: "reviewer",
       sourceMessageId: "original-request")

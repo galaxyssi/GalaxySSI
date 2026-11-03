@@ -10140,6 +10140,17 @@ final class MessageCoordinator: ObservableObject {
         .ifBlank(appPayload.string("source_message_id"))
         .ifBlank(appPayload.string("message_id"))
     )
+    if appPayload.string("type") == "text", taskIdentityStore.matchesRegistered(payload: appPayload),
+       let session = store.agentSession(id: responseConversationId), !session.privateMode, !session.trackingPaused {
+      for saved in AgentTeamExecutionHistoryStore.shared.recent(AgentTeamExecutionHistoryStore.maxSnapshots) {
+        if let updated = AgentSavedTeamReplyPolicy.apply(to: saved,
+          source: appPayload.string("source_message_id"), conversation: responseConversationId,
+          turn: responseTurnId, task: responseTaskId, contact: contactId, content: content,
+          success: !AgentRemoteOutcomePolicy.isFailure(remoteTaskStatus), now: AgentControlPlaneClock.nowMillis()) {
+          AgentTeamExecutionHistoryStore.shared.upsert(updated)
+        }
+      }
+    }
     let incoming: ChatMessage
     let streamRemoteMessageId = "agent-stream-\(appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))))"
     let remoteMessageId = appPayload.string("message_id")
