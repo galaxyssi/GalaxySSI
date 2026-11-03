@@ -38,7 +38,8 @@ class GuardedModelAgentPlanner(
         if (!result.plannerProfile.startsWith("guarded-model:")) {
             val identity = AgentPlannerToolLoopRequest.create(request, settings,
                 listOf(AgentModelMessage.user(request.goal)), emptyList())
-            if (loopJournal.hasRecords(AgentModelLoopScope.from(identity))) {
+            val scope = AgentModelLoopScope.from(identity)
+            if (loopJournal.hasRecords(scope) || loopJournal.hasOperation(scope, AgentPlannerToolCatalogBinding.OPERATION)) {
                 throw AgentModelLoopRecoveryException("model_loop_requires_recovery_not_fallback")
             }
         }
@@ -134,7 +135,7 @@ class GuardedModelAgentPlanner(
         val raw = runCatching {
             modelPlanWithSafeNativeTools(contact, request, settings, requirements)
         }.getOrElse {
-            if (it is AgentModelLoopRecoveryException) throw it
+            if (it is AgentModelLoopRecoveryException || it is AgentModelLoopEventWaitException) throw it
             return fallbackPlan.copy(
                 plannerProfile = "rule-based-model-error",
                 routeRationale = "Model planning failed; the deterministic local planner was used."
@@ -165,33 +166,41 @@ class GuardedModelAgentPlanner(
                 context = appContext,
                 screenProvider = { request.screen }
             )
-        val availableCatalog = fullRegistry.availableCatalog()
-        val catalog = availableCatalog.descriptors
+        val messages = listOf(AgentModelMessage.system(MODEL_PLANNER_SYSTEM_PROMPT), AgentModelMessage.user(prompt))
+        val identity = AgentPlannerToolLoopRequest.create(request, settings, messages, emptyList())
         val outcome = runBlocking {
+            val registry = AgentModelHistoryCatalog.prepare(loopJournal, AgentModelLoopScope.from(identity), fullRegistry)
+            val catalogs = AgentPlannerToolCatalogBinding.prepare(loopJournal, identity, registry)
+            val binding = catalogs.binding
             AgentModelToolLoop(
                 modelAdapter = CloudModelClient.nativeToolAdapter(
-                    appContext,
-                    contact,
-                    catalog,
-                    availableCatalog.manifest.sha256
+                    appContext, contact, catalogs.initialAvailable, catalogs::providerCatalog
                 ),
-                toolRegistry = fullRegistry,
-                disclosedToolManifestJson = availableCatalog.manifest.json,
-                disclosedToolManifestSha256 = availableCatalog.manifest.sha256,
-                journal = loopJournal
+                toolRegistry = registry,
+                disclosedToolManifestJson = binding.manifest.json,
+                disclosedToolManifestSha256 = binding.manifest.sha256,
+                journal = loopJournal,
+                eventWaitResolver = AgentBrowserModelEventWaitResolver(AgentBrowserUserRequestStore(appContext)::load, { record ->
+                    AgentTaskRuntime.supervisor(appContext).findWorkspace(record.runWorkspaceId)?.let { workspace ->
+                        AgentBrowserRunRecoveryPolicy.matches(record, workspace,
+                            SharedPreferencesAgentSessionStore(appContext, "task:${workspace.workspaceId}").load())
+                    } == true
+                }, AppLanguage.wrap(appContext).getString(R.string.browser_user_control_waiting),
+                    AgentBrowserUserRequestStore(appContext)::markObservationCommitted)
             ).run(
                 AgentPlannerToolLoopRequest.create(
                     request = request,
                     settings = settings,
-                    catalog = catalog,
-                    messages = listOf(
-                        AgentModelMessage.system(MODEL_PLANNER_SYSTEM_PROMPT),
-                        AgentModelMessage.user(prompt)
-                    ),
+                    catalog = binding.descriptors,
+                    messages = messages,
                     eventSink = modelToolLoopEventSink,
                     cancellationToken = modelToolLoopCancellationToken
                 )
             )
+        }
+        if (outcome.status == AgentModelToolLoopStatus.WAITING_FOR_EVENT) {
+            throw AgentModelLoopEventWaitException(outcome.error?.details?.get("event_id").toString(),
+                outcome.error?.message.orEmpty())
         }
         if (outcome.status != AgentModelToolLoopStatus.COMPLETED || outcome.assistantText.isBlank()) {
             throw AgentModelLoopRecoveryException(outcome.error?.message ?: "Model-native tool planning did not complete")
@@ -259,6 +268,7 @@ internal object AgentModelPlanningPrompt {
         val maxBatchActions = settings.maxActions.coerceIn(1, 12)
         return buildString {
         append("Create an executable ActionPlan for the user goal. The phone validates every field locally.\n\n")
+        append(AgentProblemSolvingPolicy.CONTRACT).append('\n')
         if (PhoneAssistantTaskControl.isBound(request.executionTurnId)) {
             append("Floating phone task: operate this Android phone, never the Desktop screen. ")
             append("Use galaxyssi.phone.ui.inspect then galaxyssi.phone.ui.act with the exact current revision and node_path. ")

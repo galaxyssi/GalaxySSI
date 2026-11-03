@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="contact_reminder_logo" type="id" />
+    <item name="contact_reminder_header_title" type="id" />
+    <item name="contact_reminder_header_subtitle" type="id" />
+    <string name="contact_reminder_subtitle">GalaxySSI · Contact reminder</string>
+    <string name="contact_reminder_brand" translatable="false">GalaxySSI</string>
+    <string name="contact_reminder_title">Contact reminder</string>
+    <string name="contact_reminder_send">Remind contact</string>
+    <string name="contact_reminder_message">Please check your messages</string>
+    <string name="contact_reminder_sent">Reminder sent</string>
+    <string name="contact_reminder_received">Contact reminder received</string>
+    <string name="contact_reminder_waiting">Waiting for delivery and confirmation</string>
+    <string name="contact_reminder_delivered">Delivered · waiting for confirmation</string>
+    <string name="contact_reminder_quiet">Delivered quietly · waiting for confirmation</string>
+    <string name="contact_reminder_muted">Reminder silenced</string>
+    <string name="contact_reminder_acknowledged">Confirmed</string>
+    <string name="contact_reminder_dismissed">Dismissed</string>
+    <string name="contact_reminder_cancelled">Reminder cancelled</string>
+    <string name="contact_reminder_expired">Reminder expired without confirmation</string>
+    <string name="contact_reminder_failed">Reminder could not be sent</string>
+    <string name="contact_reminder_disabled">Recipient has disabled reminders</string>
+    <string name="contact_reminder_mute">Silence</string>
+    <string name="contact_reminder_ignore">Dismiss</string>
+    <string name="contact_reminder_confirm">Got it</string>
+    <string name="contact_reminder_cancel">Cancel reminder</string>
+    <string name="contact_reminder_close">Close</string>
+    <string name="contact_reminder_settings">Contact reminders</string>
+    <string name="contact_reminder_enable">Receive reminders from paired contacts</string>
+    <string name="contact_reminder_silent_sound">Use alarm sound in silent mode</string>
+    <string name="contact_reminder_lockscreen">Show reminder panel on lock screen</string>
+    <string name="contact_reminder_system_settings">Notification settings</string>
+    <string name="contact_reminder_background">Show top panel while app is in background</string>
+    <string name="contact_reminder_panel_permissions">Panel permissions</string>
+    <string name="contact_reminder_overlay_permission">Display over other apps</string>
+    <string name="contact_reminder_fullscreen_permission">Full-screen lock screen notifications</string>
+    <string name="contact_reminder_allowed">Allowed</string>
+    <string name="contact_reminder_not_allowed">Not allowed</string>
+    <string name="contact_reminder_settings_unavailable">System settings could not be opened</string>
+</resources>

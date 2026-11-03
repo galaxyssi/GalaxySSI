@@ -841,19 +841,30 @@ internal fun MainActivity.handleDesktopRemoteControlEvent(json: JSONObject?): Bo
         )
     ) return false
     val desktopId = payload.optString("desktop_id")
+    val streamFrame = payload.optString("type") == "desktop_action_receipt" &&
+        payload.optJSONObject("output")?.optBoolean("stream_frame", false) == true
+    refreshActiveDesktopControlPage(desktopId, streamFrame)
+    return true
+}
+
+internal fun MainActivity.refreshActiveDesktopControlPage(desktopId: String, streamFrame: Boolean) {
     if (desktopId.isNotBlank() && activeDesktopControlId == desktopId && featurePage.visibility == View.VISIBLE) {
-        val streamFrame = payload.optString("type") == "desktop_action_receipt" &&
-            payload.optJSONObject("output")?.optBoolean("stream_frame", false) == true
-        if (streamFrame && updateActiveDesktopScreenshot(desktopId)) return true
+        if (streamFrame && updateActiveDesktopScreenshot(desktopId)) return
         desktopControlDevices().firstOrNull { it.id == desktopId }?.let { device ->
+            val scroll = featureContent.parent as? ScrollView
+            val scrollY = scroll?.scrollY ?: 0
             if (activeDesktopPerceptionId == desktopId) {
                 showDesktopPerceptionPage(device)
             } else {
                 showDesktopRemoteControlPage(device)
             }
+            scroll?.post {
+                if (activeDesktopControlId == desktopId && featurePage.visibility == View.VISIBLE) {
+                    scroll.scrollTo(0, scrollY)
+                }
+            }
         }
     }
-    return true
 }
 
 internal fun MainActivity.updateActiveDesktopScreenshot(desktopId: String): Boolean {

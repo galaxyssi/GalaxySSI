@@ -98,6 +98,19 @@ object AgentRunTimelineContract {
 }
 
 object AgentExecutionLoopTimelinePolicy {
+    fun actionsForState(state: AgentUiState): List<AgentExecutionLoopTimelineAction> {
+        if (AgentRuntimePermissionContinuation.waiting(state) != null) return listOf(
+            AgentExecutionLoopTimelineAction.PAUSE, AgentExecutionLoopTimelineAction.CANCEL)
+        if (AgentOutcomeCompletion.isBlocked(state.phase, state.lastActionResult)) return buildList {
+            if (AgentRuntimeOutcomeContinuation.forControls(state) != null) add(AgentExecutionLoopTimelineAction.RESUME)
+            add(AgentExecutionLoopTimelineAction.CANCEL)
+        }
+        return actionsForPhase(state.phase)
+    }
+
+    fun eventKey(runId: String, turnId: String, revision: Long): String =
+        "agent-loop-event:${runId.length}:$runId:${turnId.length}:$turnId:$revision"
+
     fun actionsForPhase(phase: AgentPhase): List<AgentExecutionLoopTimelineAction> = when (phase) {
         AgentPhase.PLANNING,
         AgentPhase.WAITING_CONFIRMATION,
@@ -124,7 +137,8 @@ object AgentExecutionLoopTimelinePolicy {
         AgentPhase.COMPLETED -> emptyList()
     }
 
-    fun project(event: AgentExecutionLoopEvent): AgentExecutionLoopTimelineProjection {
+    fun project(event: AgentExecutionLoopEvent, permissionWait: Boolean = false,
+        outcomeWait: Boolean = false): AgentExecutionLoopTimelineProjection {
         val recovered = event.previousPhase in setOf(
             AgentExecutionLoopPhase.BLOCKED,
             AgentExecutionLoopPhase.FAILED
@@ -144,7 +158,11 @@ object AgentExecutionLoopTimelinePolicy {
             AgentExecutionLoopPhase.WAITING_CONFIRMATION -> AgentRunControlEventType.WAITING_FOR_USER
             AgentExecutionLoopPhase.WAITING_RESPONSE -> AgentRunControlEventType.WAITING_FOR_DEVICE
             AgentExecutionLoopPhase.PAUSED -> AgentRunControlEventType.PAUSED
-            AgentExecutionLoopPhase.BLOCKED -> AgentRunControlEventType.RUN_FAILED
+            AgentExecutionLoopPhase.BLOCKED -> when {
+                permissionWait -> AgentRunControlEventType.TOOL_PERMISSION_REQUIRED
+                outcomeWait -> AgentRunControlEventType.WAITING_FOR_USER
+                else -> AgentRunControlEventType.RUN_FAILED
+            }
             AgentExecutionLoopPhase.FAILED -> AgentRunControlEventType.RUN_FAILED
             AgentExecutionLoopPhase.CANCELLED -> AgentRunControlEventType.RUN_CANCELLED
             AgentExecutionLoopPhase.COMPLETED -> AgentRunControlEventType.RUN_COMPLETED
@@ -166,7 +184,8 @@ object AgentExecutionLoopTimelinePolicy {
             AgentExecutionLoopPhase.FINALIZE,
             AgentExecutionLoopPhase.COMPLETED -> AgentRunTimelineKind.RESULT
             AgentExecutionLoopPhase.LEARN -> AgentRunTimelineKind.LEARN
-            AgentExecutionLoopPhase.BLOCKED,
+            AgentExecutionLoopPhase.BLOCKED -> if (permissionWait || outcomeWait) AgentRunTimelineKind.OTHER
+                else AgentRunTimelineKind.FAILURE
             AgentExecutionLoopPhase.FAILED,
             AgentExecutionLoopPhase.CANCELLED -> AgentRunTimelineKind.FAILURE
             AgentExecutionLoopPhase.WAITING_CONFIRMATION,

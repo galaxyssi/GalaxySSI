@@ -1,0 +1,21 @@
+<resources>
+    <string name="attention_search_title">搜索新闻</string>
+    <string name="attention_search_hint">搜索全部新闻</string>
+    <string name="attention_search_clear">清空搜索</string>
+    <string name="attention_search_all">全部新闻</string>
+    <string name="attention_search_sources">全部来源</string>
+    <string name="attention_search_time">全部时间</string>
+    <string name="attention_search_day">最近24小时</string>
+    <string name="attention_search_week">最近7天</string>
+    <string name="attention_search_month">最近30天</string>
+    <string name="attention_search_relevance">相关度</string>
+    <string name="attention_search_newest">最新发布</string>
+    <string name="attention_search_count">搜索结果 · %1$d 条</string>
+    <string name="attention_search_loading">正在搜索…</string>
+    <string name="attention_search_empty">没有找到相关新闻</string>
+    <string name="attention_search_error">搜索失败</string>
+    <string name="attention_search_retry">重试</string>
+    <string name="attention_search_source_filter">来源</string>
+    <string name="attention_search_time_filter">时间</string>
+    <string name="attention_search_sort">排序</string>
+</resources>

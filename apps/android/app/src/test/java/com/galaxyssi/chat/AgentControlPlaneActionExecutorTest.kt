@@ -109,6 +109,30 @@ class AgentControlPlaneActionExecutorTest {
     }
 
     @Test
+    fun boundedRetryGetsANewDispatchButItsReplayStillRunsOnlyOnce() {
+        val executions = AtomicInteger()
+        val executor = AgentControlPlaneActionExecutor(ActionExecutorAgentProvider(
+            { listOf(registration()) },
+            object : AgentActionExecutor {
+                override fun execute(action: AgentAction, screen: ScreenContext) =
+                    AgentActionResult(action.id, true, "Waiting", mapOf(
+                        "awaiting_response" to "true",
+                        "source_message_id" to executions.incrementAndGet().toString()))
+            }))
+        val screen = ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent")
+        val original = connectorAction().let { it.copy(parameters = it.parameters + ("idempotency_key" to "stable-action")) }
+        val first = executor.execute(original, screen)
+        val retry = original.copy(parameters = original.parameters + (AgentCodexSilenceRecovery.ATTEMPT to "1"))
+        val second = executor.execute(retry, screen)
+        val replay = executor.execute(retry, screen)
+        assertEquals(2, executions.get())
+        assertEquals("1", first.metadata["source_message_id"])
+        assertEquals("2", second.metadata["source_message_id"])
+        assertEquals(second.metadata["control_plane_run_id"], replay.metadata["control_plane_run_id"])
+        assertFalse(first.metadata["control_plane_run_id"] == second.metadata["control_plane_run_id"])
+    }
+
+    @Test
     fun ignoreDeliveryNeverTouchesConnectorTransport() {
         val executions = AtomicInteger()
         val delegate = object : AgentActionExecutor {

@@ -46,6 +46,11 @@ object AgentActiveTurnPolicy {
             CONTINUATION_REFERENCES.any(clean::contains)
     }
 
+    internal fun hasExplicitContinuationLead(request: String): Boolean {
+        val clean = normalize(request)
+        return INDEPENDENT_PREFIXES.none(clean::startsWith) && CONTINUATION_PREFIXES.any(clean::startsWith)
+    }
+
     fun decide(
         request: String,
         activeGoal: String,

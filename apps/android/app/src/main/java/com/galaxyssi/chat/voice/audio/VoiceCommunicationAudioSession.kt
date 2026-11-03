@@ -5,6 +5,10 @@ import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.media.AudioDeviceCallback
+import android.os.Handler
+import android.os.Looper
+import com.galaxyssi.chat.R
 
 /** Owns communication routing only while this foreground voice call is active. */
 internal class VoiceCommunicationAudioSession(private val activity: Activity) {
@@ -15,6 +19,34 @@ internal class VoiceCommunicationAudioSession(private val activity: Activity) {
     private var previousVolumeStream = AudioManager.USE_DEFAULT_STREAM_TYPE
     private var previousDevice: AudioDeviceInfo? = null
     private var selectedDeviceId: Int? = null
+    var onRouteChanged: (() -> Unit)? = null
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) { onRouteChanged?.invoke() }
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) { onRouteChanged?.invoke() }
+    }
+    private val routeListener = if (Build.VERSION.SDK_INT >= 31)
+        AudioManager.OnCommunicationDeviceChangedListener { onRouteChanged?.invoke() } else null
+
+    fun choices(): List<AudioDeviceInfo> = if (Build.VERSION.SDK_INT >= 31)
+        manager.availableCommunicationDevices else emptyList()
+
+    fun select(device: AudioDeviceInfo): Boolean = Build.VERSION.SDK_INT >= 31 && active &&
+        choices().any { it.id == device.id } && manager.setCommunicationDevice(device).also {
+            if (it) selectedDeviceId = device.id
+        }
+
+    fun label(device: AudioDeviceInfo? = if (Build.VERSION.SDK_INT >= 31) manager.communicationDevice else null): String {
+        val resource = when (device?.type) {
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET -> R.string.voice_control_bluetooth
+            AudioDeviceInfo.TYPE_WIRED_HEADSET -> R.string.voice_control_wired
+            AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> R.string.voice_control_usb
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> R.string.voice_control_earpiece
+            else -> if (Build.VERSION.SDK_INT < 31 && manager.isBluetoothScoOn) R.string.voice_control_bluetooth
+                else if (Build.VERSION.SDK_INT < 31 && manager.isWiredHeadsetOn) R.string.voice_control_wired
+                else R.string.voice_control_speaker
+        }
+        return activity.getString(resource)
+    }
 
     val active: Boolean get() = acquired && manager.mode == AudioManager.MODE_IN_COMMUNICATION
 
@@ -28,6 +60,9 @@ internal class VoiceCommunicationAudioSession(private val activity: Activity) {
         if (Build.VERSION.SDK_INT >= 31) previousDevice = manager.communicationDevice
         acquired = true
         return runCatching {
+            manager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
+            if (Build.VERSION.SDK_INT >= 31 && routeListener != null)
+                manager.addOnCommunicationDeviceChangedListener(activity.mainExecutor, routeListener)
             manager.mode = AudioManager.MODE_IN_COMMUNICATION
             if (Build.VERSION.SDK_INT >= 31) {
                 val devices = manager.availableCommunicationDevices
@@ -48,6 +83,9 @@ internal class VoiceCommunicationAudioSession(private val activity: Activity) {
         if (!acquired) return
         acquired = false
         runCatching {
+            manager.unregisterAudioDeviceCallback(deviceCallback)
+            if (Build.VERSION.SDK_INT >= 31 && routeListener != null)
+                manager.removeOnCommunicationDeviceChangedListener(routeListener)
             if (manager.mode == AudioManager.MODE_IN_COMMUNICATION) {
                 if (Build.VERSION.SDK_INT >= 31) {
                     if (manager.communicationDevice?.id == selectedDeviceId) {

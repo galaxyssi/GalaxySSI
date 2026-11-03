@@ -47,10 +47,28 @@ def workspace_root() -> Path:
     return candidate
 
 
+def _task_directory(task_id: str) -> tuple[Path, Path]:
+    from codex_experiment_registry import registered_workspace
+    registered = registered_workspace(task_id)
+    if registered is not None:
+        return registered.parent, registered
+    tasks_root = (workspace_root() / "tasks").resolve()
+    return tasks_root, (tasks_root / _safe_component(task_id)).resolve()
+
+
+def existing_task_workspace(task_id: str) -> Path | None:
+    """Resolve an existing task without creating a workspace for text-only requests."""
+    if not _safe_component(task_id):
+        return None
+    tasks_root, directory = _task_directory(task_id)
+    if not _is_within(directory, tasks_root):
+        raise ValueError("Task workspace escaped the configured workspace root")
+    return directory if directory.is_dir() else None
+
+
 def task_workspace(task_id: str = "", agent_id: str = "") -> Path:
     safe_id = _safe_component(task_id) or f"adhoc-{uuid.uuid4()}"
-    directory = (workspace_root() / "tasks" / safe_id).resolve()
-    tasks_root = (workspace_root() / "tasks").resolve()
+    tasks_root, directory = _task_directory(task_id if _safe_component(task_id) else safe_id)
     if not _is_within(directory, tasks_root):
         raise ValueError("Task workspace escaped the configured workspace root")
     directory.mkdir(parents=True, exist_ok=True)
@@ -74,9 +92,12 @@ def task_workspace(task_id: str = "", agent_id: str = "") -> Path:
 
 
 def cleanup_task_temporary_files(task_ids: list[str] | set[str]) -> list[str]:
+    from codex_experiment_registry import registered_workspace
     tasks_root = (workspace_root() / "tasks").resolve()
     cleaned: list[str] = []
     for task_id in task_ids:
+        if registered_workspace(task_id) is not None:
+            continue
         safe_id = _safe_component(task_id)
         if not safe_id:
             continue
@@ -93,6 +114,9 @@ def cleanup_task_temporary_files(task_ids: list[str] | set[str]) -> list[str]:
 
 def cleanup_task_workspace(task_id: str, *, missing_ok: bool = False) -> bool:
     """Remove one GalaxySSI-owned task workspace after phone handoff."""
+    from codex_experiment_registry import registered_workspace
+    if registered_workspace(task_id) is not None:
+        return False  # Private experiment artifacts require explicit host retention decisions.
     safe_id = _safe_component(task_id)
     if not safe_id:
         return False
@@ -117,8 +141,7 @@ def task_artifact_path(task_id: str, relative_path: str) -> Path | None:
         or any(part in {"", ".", ".."} for part in candidate.parts)
     ):
         return None
-    tasks_root = (workspace_root() / "tasks").resolve()
-    directory = (tasks_root / safe_id).resolve()
+    tasks_root, directory = _task_directory(task_id)
     source = (directory / Path(*candidate.parts)).resolve()
     if (
         not _is_within(directory, tasks_root)
@@ -134,8 +157,7 @@ def task_artifacts(task_id: str, limit: int = 50) -> list[dict]:
     safe_id = _safe_component(task_id)
     if not safe_id:
         return []
-    tasks_root = (workspace_root() / "tasks").resolve()
-    directory = (tasks_root / safe_id).resolve()
+    tasks_root, directory = _task_directory(task_id)
     if not _is_within(directory, tasks_root) or not directory.exists():
         return []
     artifacts: list[dict] = []
@@ -169,15 +191,53 @@ def _is_user_visible_artifact(file_path: Path) -> bool:
     return not any(part.lower() == "__pycache__" for part in file_path.parts)
 
 
-def select_reply_artifacts(content: str, artifacts: list[dict], task_id: str) -> list[dict]:
-    """Explicit final links select deliverables; unlinked replies keep all outputs."""
-    if not artifacts:
-        return artifacts
-    root = task_workspace(task_id).resolve()
+def select_reply_artifacts(
+    content: str, artifacts: list[dict], task_id: str, *, discover_unlisted: bool = False,
+) -> list[dict]:
+    """Research summaries select exact files; ordinary unlinked replies keep outputs."""
+    from research_delivery import research_summary
+    summary = research_summary(content)
+    fallback = artifacts if summary is None else []
+    if not artifacts and not discover_unlisted:
+        return fallback
+    if not _safe_component(task_id):
+        return fallback
+    root = _task_directory(task_id)[1]
+    references = _reply_artifact_references(
+        content if summary is None else summary, task_id, discover_unlisted=discover_unlisted,
+    )
+    if not references:
+        return fallback
+    selected: dict[Path, dict] = {}
+    for item in artifacts:
+        if not isinstance(item, dict):
+            continue
+        source = task_artifact_path(task_id, str(item.get("relative_path") or ""))
+        if source is not None and source.resolve() in references:
+            selected.setdefault(source.resolve(), item)
+    if discover_unlisted:
+        # Directory inventory is bounded; explicit final links are not inventory entries.
+        # Only delivery/persistence callers opt in, never the rich-output renderer.
+        for source in references:
+            if source in selected:
+                continue
+            descriptor = _reply_artifact_descriptor(root, source, task_id)
+            if descriptor is not None:
+                selected[source] = descriptor
+    return [selected[source] for source in references if source in selected] or fallback
+
+
+def _reply_artifact_references(content: str, task_id: str, *, discover_unlisted: bool) -> dict[Path, int]:
+    root = _task_directory(task_id)[1]
     references: dict[Path, int] = {}
     for match in MARKDOWN_TARGET.finditer(str(content or "")):
         value = unquote(match.group(1).strip().strip("<>"))
-        parsed = urlparse(value)
+        if not value or value.startswith("#"):
+            continue
+        try:
+            parsed = urlparse(value)
+        except ValueError:
+            continue
         if parsed.scheme in {"http", "https"}:
             continue
         if parsed.scheme == "galaxyssi-artifact":
@@ -185,28 +245,62 @@ def select_reply_artifacts(content: str, artifacts: list[dict], task_id: str) ->
                 continue
             value = parsed.path.lstrip("/")
         elif parsed.scheme == "file":
+            if parsed.netloc not in {"", "localhost"}:
+                continue
             value = unquote(parsed.path)
         elif value.startswith("sandbox:"):
             value = value.removeprefix("sandbox:").lstrip("/")
+        elif parsed.scheme and not re.match(r"^[A-Za-z]:[\\/]", value):
+            continue
         if re.match(r"^/[A-Za-z]:[\\/]", value):
             value = value[1:]
         value = value.replace("\\", "/")
         if value.startswith(("/outputs/", "/downloads/", "/screenshots/")):
             value = value.lstrip("/")
         try:
-            candidate = (root / value).resolve()
+            candidate = root / value
+            if discover_unlisted:
+                relative = candidate.relative_to(root)
+                if ".." in relative.parts or any(
+                    (root / Path(*relative.parts[:index])).is_symlink()
+                    for index in range(1, len(relative.parts) + 1)
+                ):
+                    continue
+            candidate = candidate.resolve()
             candidate.relative_to(root)
             references.setdefault(candidate, len(references))
         except (OSError, ValueError):
             continue
-    selected = []
-    for item in artifacts:
-        if not isinstance(item, dict):
-            continue
-        source = task_artifact_path(task_id, str(item.get("relative_path") or ""))
-        if source is not None and source.resolve() in references:
-            selected.append((references[source.resolve()], item))
-    return [item for _, item in sorted(selected, key=lambda entry: entry[0])] or artifacts
+    return references
+
+
+def missing_research_deliverables(content: str, selected: list[dict], task_id: str) -> list[str]:
+    from research_delivery import research_summary
+    summary = research_summary(content)
+    if summary is None or not _safe_component(task_id):
+        return []
+    root = _task_directory(task_id)[1]
+    references = _reply_artifact_references(summary, task_id, discover_unlisted=True)
+    delivered = {(root / item["relative_path"]).resolve() for item in selected}
+    return [source.relative_to(root).as_posix() for source in references if source not in delivered]
+
+
+def _reply_artifact_descriptor(root: Path, source: Path, task_id: str) -> dict | None:
+    try:
+        relative = source.relative_to(root)
+        parts = relative.parts
+        if len(parts) < 2 or parts[0].lower() not in {"outputs", "downloads", "screenshots"}:
+            return None
+        if parts[0].lower() == "downloads" and parts[1].lower() in {"input", "context"}:
+            return None
+        if any(part.startswith(".") for part in parts) or not _is_user_visible_artifact(source):
+            return None
+        if task_artifact_path(task_id, relative.as_posix()) != source:
+            return None
+        return {"name": source.name, "relative_path": relative.as_posix(),
+                "category": parts[0], "size": source.stat().st_size}
+    except (OSError, ValueError):
+        return None
 
 
 def referenced_task_artifact_paths(content: str, limit: int = 20) -> list[Path]:

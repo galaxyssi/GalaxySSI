@@ -13,9 +13,11 @@ data class VadDecision(
     val noiseFloorDb: Float
 )
 
-interface VoiceActivityDetector {
+interface VoiceActivityDetector : AutoCloseable {
+    fun prepare(sampleRateHz: Int) = Unit
     fun reset()
     fun accept(frame: AudioFrame): VadDecision
+    override fun close() = Unit
 }
 
 class AdaptiveSpeechVad(

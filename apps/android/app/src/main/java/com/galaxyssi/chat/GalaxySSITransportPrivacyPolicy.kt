@@ -30,10 +30,13 @@ internal object GalaxySSITransportPrivacyPolicy {
 
     fun isLocalOnly(
         payload: JSONObject,
-        trustedBackgroundCognitionAuthorized: Boolean = false
+        trustedBackgroundCognitionAuthorized: Boolean = false,
+        outbound: Boolean = false
     ): Boolean {
         val type = payload.optString("type").trim().lowercase(Locale.ROOT)
         val conversationId = payload.optString("conversation_id").trim().lowercase(Locale.ROOT)
+        if (outbound && type == "text" && conversationId.startsWith("public-attention:") &&
+            !trustedBackgroundCognitionAuthorized) return true
         if (trustedBackgroundCognitionAuthorized &&
             type == "text" &&
             delegatableBackgroundConversationPrefixes.any(conversationId::startsWith)

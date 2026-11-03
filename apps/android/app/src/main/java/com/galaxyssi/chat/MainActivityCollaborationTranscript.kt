@@ -8,14 +8,16 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 internal fun MainActivity.collaborationTranscriptRow(
-    entry: AgentTranscriptEntry, metadata: CollaborationTranscriptMetadata
+    entry: AgentTranscriptEntry, metadata: CollaborationTranscriptMetadata, showStageInHeader: Boolean = true
 ): View = LinearLayout(this).apply {
     orientation = LinearLayout.VERTICAL
     layoutParams = ViewGroup.LayoutParams(-1, -2)
     setPadding(0, dp(6), 0, dp(6))
     addView(collaborationMemberRow(CollaborationMember(id = metadata.memberId, name = metadata.name,
         agentId = metadata.memberId, providerLabel = metadata.provider,
-        role = listOf(metadata.role, collaborationStageLabel(metadata.researchStage)).filter(String::isNotBlank).joinToString(" · ")), compact = true))
+        role = listOf(metadata.role, if (showStageInHeader) collaborationStageLabel(metadata.researchStage) else "")
+            .filter(String::isNotBlank).joinToString(" · ")), compact = true,
+        replyAtMillis = if (metadata.current) metadata.updatedAtMillis else CollaborationReplyTiming.replyAt(metadata, entry.timestampMillis)))
     if (metadata.result) addView(agentAssistantTranscriptRow(entry.copy(role = AgentTranscriptRole.ASSISTANT)),
         LinearLayout.LayoutParams(-1, -2))
 
@@ -32,33 +34,41 @@ internal fun MainActivity.collaborationTranscriptRow(
         })
         addView(agentResearchTraceRow(entry.copy(turnId = metadata.traceTurnId), if (metadata.result) entry.text else ""))
     }
-    val status = TextView(context).apply {
-        textSize = 13f
+    val status = LinearLayout(context).apply statusRow@ {
+        orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minHeight = dp(44)
-        setTextColor(getColorCompat(R.color.text_secondary))
-        maxLines = 2
-        ellipsize = android.text.TextUtils.TruncateAt.END
-        text = when {
-            metadata.goalDisposition == "blocked" -> getString(R.string.collaboration_goal_blocked)
-            metadata.result -> getString(R.string.collaboration_view_process)
-            metadata.paused -> getString(R.string.collaboration_team_paused)
-            metadata.status == AgentSubagentStatus.QUEUED -> getString(if (metadata.waiting)
-                R.string.collaboration_waiting_dependencies else R.string.collaboration_queued)
-            metadata.status == AgentSubagentStatus.FAILED -> getString(R.string.collaboration_failed_status)
-            metadata.status == AgentSubagentStatus.CANCELLED -> getString(R.string.collaboration_cancelled)
-            metadata.status == AgentSubagentStatus.SKIPPED -> getString(R.string.collaboration_skipped)
-            metadata.summary.isNotBlank() -> metadata.summary.lineSequence().first().take(180)
-            metadata.primary -> getString(R.string.collaboration_synthesizing)
-            else -> getString(R.string.collaboration_running)
+        minimumHeight = dp(44)
+        val statusLabel = collaborationCurrentMemberLabel(metadata)
+        addView(TextView(context).apply {
+            text = statusLabel
+            textSize = 13f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(getColorCompat(R.color.text_secondary))
+        }, if (metadata.result) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams(0, -2, 1f))
+        val time = CollaborationTimeTextView(context).apply {
+            tag = "collaboration-process-time"
+            textSize = 13f
+            maxLines = 1
+            setTextColor(getColorCompat(R.color.text_secondary))
+            compoundDrawablePadding = dp(8)
+            bindTime(CollaborationReplyTiming.isTicking(metadata)) { now ->
+                val value = CollaborationReplyTiming.elapsedMillis(metadata, entry.timestampMillis, now)?.let { elapsed ->
+                    getString(R.string.collaboration_process_duration, agentProcessedDuration(elapsed))
+                }.orEmpty()
+                this@statusRow.contentDescription = "${metadata.name}: $statusLabel $value, " + getString(if (details.visibility == View.VISIBLE)
+                    R.string.research_trace_collapse else R.string.research_trace_expand)
+                value
+            }
         }
+        addView(time, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
         fun updateIcon(expanded: Boolean) {
             val chevron = getDrawable(R.drawable.ic_chevron_down)?.mutate()?.apply {
                 setBounds(0, 0, dp(18), dp(18))
                 setTint(getColorCompat(R.color.text_secondary))
             }
-            setCompoundDrawablesRelative(null, null, chevron, null)
-            contentDescription = "${metadata.name}: $text, " + getString(if (expanded)
+            time.setCompoundDrawablesRelative(null, null, chevron, null)
+            contentDescription = "${metadata.name}: $statusLabel ${time.text}, " + getString(if (expanded)
                 R.string.research_trace_collapse else R.string.research_trace_expand)
         }
         updateIcon(details.visibility == View.VISIBLE)
@@ -102,6 +112,32 @@ internal fun MainActivity.collaborationTranscriptRow(
     addView(details)
 }
 
+internal fun android.content.Context.collaborationCurrentMemberLabel(metadata: CollaborationTranscriptMetadata): String = when {
+    metadata.result -> getString(R.string.collaboration_view_process)
+    metadata.recoveryScopeMissing -> getString(R.string.collaboration_recovery_scope_missing)
+    metadata.recoveryFailureCount >= AgentTeamRecoveryPolicy.MAX_FAILURES ->
+        getString(R.string.collaboration_recovery_stalled, metadata.recoveryFailureCount)
+    metadata.status == AgentSubagentStatus.SUCCEEDED -> getString(R.string.agent_team_state_succeeded)
+    metadata.status == AgentSubagentStatus.CANCELLED -> getString(R.string.collaboration_cancelled)
+    metadata.paused -> getString(R.string.collaboration_team_paused)
+    metadata.goalDisposition == "blocked" -> getString(R.string.collaboration_goal_blocked)
+    metadata.status == AgentSubagentStatus.QUEUED && metadata.dependencies.isNotBlank() ->
+        getString(R.string.collaboration_waiting_members, metadata.dependencies)
+    metadata.status == AgentSubagentStatus.QUEUED -> getString(if (metadata.waiting)
+        R.string.collaboration_waiting_dependencies else R.string.collaboration_queued)
+    metadata.status == AgentSubagentStatus.FAILED -> getString(R.string.collaboration_failed_status)
+    metadata.status == AgentSubagentStatus.SKIPPED -> getString(R.string.collaboration_skipped)
+    metadata.connectionState == "waiting" -> getString(R.string.collaboration_connection_lost)
+    metadata.connectionState == "reconciling" -> getString(R.string.collaboration_connection_reconciling)
+    metadata.connectionState == "evidence_sync" -> metadata.summary.ifBlank { getString(R.string.collaboration_evidence_transfer) }
+    metadata.connectionState == "delivering" -> getString(R.string.conversation_status_delivering)
+    metadata.connectionState == "remote_paused" -> getString(R.string.collaboration_team_paused)
+    metadata.connectionState == "remote_queued" -> getString(R.string.collaboration_queued)
+    metadata.summary.isNotBlank() -> metadata.summary.lineSequence().first().take(180)
+    metadata.primary -> getString(R.string.collaboration_synthesizing)
+    else -> getString(R.string.collaboration_running)
+}
+
 internal fun MainActivity.collaborationStageLabel(stage: String): String = when (stage) {
     "BRIEF" -> R.string.collaboration_stage_brief
     "EXPLORE" -> R.string.collaboration_stage_explore
@@ -109,8 +145,9 @@ internal fun MainActivity.collaborationStageLabel(stage: String): String = when 
     "REVISE" -> R.string.collaboration_stage_revise
     "COMBINE" -> R.string.collaboration_stage_combine
     "VERIFY" -> R.string.collaboration_stage_verify
+    "EXECUTE" -> R.string.collaboration_stage_execute
     "REPAIR" -> R.string.collaboration_stage_repair
     "RECHECK" -> R.string.collaboration_stage_recheck
     "DELIVER" -> R.string.collaboration_stage_deliver
     else -> null
-}?.let(::getString).orEmpty()
+}?.let(::getString) ?: stage

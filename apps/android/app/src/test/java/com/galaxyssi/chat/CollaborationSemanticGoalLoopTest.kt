@@ -6,6 +6,101 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CollaborationSemanticGoalLoopTest {
+    @Test fun unknownRecordedToolDoesNotFreezeCriteriaOrStartWorkAndCanBeCorrected() {
+        val initial = criterion().put("required_observations", JSONArray().put(
+            JSONObject().put("origin", "desktop_codex_tool").put("tool", "exec_command")))
+        val report = assessment(initial).put("work", JSONArray().put(job("measure")))
+        val rejected = advance(initial, report, "[]")
+        assertRepairOnly(rejected, "[]")
+        assertEquals(report.toString(), rejected.request.context[CollaborationGoalLoop.PREVIOUS])
+        val feedback = rejected.request.context.getValue(CollaborationGoalLoop.ACCEPTANCE_FEEDBACK).toString()
+        assertTrue(feedback.contains("\"json_syntax\":\"valid\""))
+        assertTrue(feedback.contains("initial_criteria_pending"))
+        assertTrue(feedback.contains("unknown_recorded_tool"))
+        assertTrue(feedback.contains("$.criteria[0].required_observations[0].tool"))
+        assertTrue(feedback.contains("codex.commandExecution"))
+        val corrected = JSONObject(report.toString())
+        corrected.getJSONArray("criteria").getJSONObject(0).getJSONArray("required_observations").getJSONObject(0)
+            .put("tool", "codex.commandExecution")
+        val next = requireNotNull(CollaborationGoalLoop.advance(complete(rejected, corrected),
+            rejected.definition.primaryMemberId, 100_000, false))
+        assertEquals("measure", next.definition.members.single { it.deliveryMode == AgentDeliveryMode.OBSERVE }
+            .context[CollaborationGoalLoop.WORK_ID])
+        assertEquals("codex.commandExecution", JSONArray(next.request.context[CollaborationGoalLoop.CRITERIA].toString())
+            .getJSONObject(0).getJSONArray("required_observations").getJSONObject(0).getString("tool"))
+    }
+
+    @Test fun unknownNewSourceCannotBeDeclaredCompleteEvenWithAnAcceptanceFlag() {
+        val original = criterion().put("required_observations", JSONArray().put(
+            JSONObject().put("origin", "desktop_codex_tool").put("tool", "exec_command")))
+            .put("status", "met").put("evidence", JSONArray().put("claimed-receipt"))
+        assertEquals("continue", CollaborationGoalLoop.disposition(assessment(original, "achieved").toString(),
+            previousCriteria = "[]", acceptanceVerified = true))
+    }
+
+    @Test fun rejectedInitialDraftGetsTargetedFeedbackAndCorrectedPlanCanDispatch() {
+        val initial = criterion().put("required_observations", JSONArray().put(
+            JSONObject().put("origin", "desktop").put("tool", "exec_command")))
+        val report = assessment(initial).put("work", JSONArray().put(job("measure")))
+        val rejected = advance(initial, report, "[]")
+        assertRepairOnly(rejected, "[]")
+        assertEquals(report.toString(), rejected.request.context[CollaborationGoalLoop.PREVIOUS])
+        val feedback = rejected.request.context.getValue(CollaborationGoalLoop.ACCEPTANCE_FEEDBACK).toString()
+        assertTrue(feedback.contains("initial_criteria_pending"))
+        assertTrue(feedback.contains("$.criteria[0].required_observations[0].origin"))
+        assertTrue(feedback.contains("desktop_codex_tool"))
+        val instruction = rejected.definition.members.single { it.deliveryMode == AgentDeliveryMode.RESPOND }.objective
+        assertTrue(instruction.contains("empty array is not corruption"))
+        val corrected = JSONObject(report.toString())
+        corrected.getJSONArray("criteria").getJSONObject(0).getJSONArray("required_observations").getJSONObject(0)
+            .put("origin", "desktop_codex_tool").put("tool", "codex.commandExecution")
+        val next = requireNotNull(CollaborationGoalLoop.advance(complete(rejected, corrected),
+            rejected.definition.primaryMemberId, 100_000, false))
+        assertEquals(1, next.definition.members.count { it.deliveryMode == AgentDeliveryMode.OBSERVE })
+        assertEquals("measure", next.definition.members.single { it.deliveryMode == AgentDeliveryMode.OBSERVE }.context[CollaborationGoalLoop.WORK_ID])
+        assertEquals("desktop_codex_tool", JSONArray(next.request.context[CollaborationGoalLoop.CRITERIA].toString())
+            .getJSONObject(0).getJSONArray("required_observations").getJSONObject(0).getString("origin"))
+    }
+
+    @Test fun rejectedEstablishedDraftKeepsExactPriorAndDoesNotRequestContractRecovery() {
+        val original = criterion().put("required_observations", JSONArray().put(
+            JSONObject().put("origin", "desktop_codex_tool").put("tool", "codex.commandExecution")))
+        val proposed = JSONObject(original.toString())
+        proposed.getJSONArray("required_observations").getJSONObject(0).put("origin", "desktop")
+        val next = advance(original, assessment(proposed))
+        assertRepairOnly(next, JSONArray().put(original).toString())
+        val instruction = next.definition.members.single { it.deliveryMode == AgentDeliveryMode.RESPOND }.objective
+        assertTrue(instruction.contains("preserving every established"))
+        assertFalse(instruction.contains("requiring recovery"))
+        assertTrue(next.request.context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK].toString().contains("\"contract_state\":\"established\""))
+    }
+
+    @Test fun preDispatchOverflowPreservesCheckpointWithoutInventingJsonRepairRounds() {
+        val error = CollaborationPromptBudget.Overflow(listOf(
+            CollaborationPromptBudget.Section("Assignment", "large assignment")), 100, 10).message.orEmpty()
+        val base = record(criterion(), assessment(criterion()))
+        val failed = base.copy(events = base.events.map { event ->
+            if (event.result != null) event.copy(kind = AgentSubagentEventKinds.CHILD_FAILED,
+                childStatus = AgentSubagentStatus.FAILED, result = event.result.copy(status = AgentSubagentStatus.FAILED,
+                    output = "", errorMessage = error))
+            else event.copy(kind = AgentSubagentEventKinds.SUPERVISOR_FAILED, runStatus = AgentSubagentRunStatus.FAILED)
+        })
+        repeat(20) { assertNull(CollaborationGoalLoop.advance(failed, "lead", 1000000L + it, false)) }
+        val store = InMemoryAgentTeamExecutionStore()
+        store.create(failed.definition, failed.request)
+        kotlinx.coroutines.runBlocking { failed.events.forEach { store.append(it) } }
+        val snapshot = requireNotNull(store.snapshot("run"))
+        assertEquals("blocked", snapshot.goalDisposition)
+        assertEquals(error, snapshot.finalOutput)
+        val resumed = requireNotNull(CollaborationGoalLoop.advance(failed, "lead", 1000000, true))
+        assertEquals(failed.request.context[CollaborationGoalLoop.CRITERIA], resumed.request.context[CollaborationGoalLoop.CRITERIA])
+        val retry = resumed.definition.members.single { it.deliveryMode == AgentDeliveryMode.RESPOND }
+        assertEquals(failed.definition.members.single { it.memberId == "lead" }.objective, retry.objective)
+        assertFalse(resumed.request.context[CollaborationGoalLoop.ACCEPTANCE_FEEDBACK].toString().contains("Invalid assessment"))
+        assertNotEquals("lead", retry.memberId)
+        assertTrue(resumed.definition.members.none { it.deliveryMode == AgentDeliveryMode.OBSERVE })
+    }
+
     private val goal = "Compute the exact integer sum: 2 + 3."
     private fun criterion() = JSONObject().put("id", "sum").put("requirement", goal).put("verification", "computational")
         .put("status", "open").put("evidence_kind", "observed").put("evidence", JSONArray())
@@ -29,13 +124,19 @@ class CollaborationSemanticGoalLoopTest {
         return complete(AgentTeamExecutionRecord(AgentTeamDefinition("team", "fixture", people, primaryInstanceId = "lead"), request), report)
     }
 
-    private fun complete(record: AgentTeamExecutionRecord, report: JSONObject): AgentTeamExecutionRecord {
+    private fun complete(record: AgentTeamExecutionRecord, report: JSONObject, finishWorkers: Boolean = false): AgentTeamExecutionRecord {
         val primary = record.definition.primaryMemberId
-        return record.copy(events = listOf(AgentSubagentEvent(1, "run", primary, AgentSubagentEventKinds.CHILD_SUCCEEDED,
+        val workerEvents = if (finishWorkers) record.definition.members.filter { it.deliveryMode == AgentDeliveryMode.OBSERVE }
+            .mapIndexed { index, member -> AgentSubagentEvent(index + 1L, "run", member.memberId, AgentSubagentEventKinds.CHILD_SUCCEEDED,
+                childStatus = AgentSubagentStatus.SUCCEEDED,
+                result = AgentSubagentChildResult("run", member.memberId, "run", 1, AgentSubagentStatus.SUCCEEDED, "Fixture work completed",
+                    provenance = AgentSubagentProvenance("agent-team", "team", "run",
+                        mapOf("instance_id" to member.memberId, "agent_id" to member.agentId)))) } else emptyList()
+        return record.copy(events = workerEvents + listOf(AgentSubagentEvent(workerEvents.size + 1L, "run", primary, AgentSubagentEventKinds.CHILD_SUCCEEDED,
             childStatus = AgentSubagentStatus.SUCCEEDED,
             result = AgentSubagentChildResult("run", primary, "run", 1, AgentSubagentStatus.SUCCEEDED, report.toString(),
                 provenance = AgentSubagentProvenance("agent-team", "team", "run", mapOf("instance_id" to primary, "agent_id" to "fixture")))),
-            AgentSubagentEvent(2, "run", kind = AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED, runStatus = AgentSubagentRunStatus.SUCCEEDED)))
+            AgentSubagentEvent(workerEvents.size + 2L, "run", kind = AgentSubagentEventKinds.SUPERVISOR_SUCCEEDED, runStatus = AgentSubagentRunStatus.SUCCEEDED)))
     }
 
     private fun job(id: String = "overwrite", member: String = "peer") = JSONObject().put("id", id).put("member", member)
@@ -81,13 +182,15 @@ class CollaborationSemanticGoalLoopTest {
         assertSame(request, record.request)
         assertEquals(CollaborationGoalLoop.initial(people, "Short goal"), record.definition.members)
         val coordinator = members.single { it.deliveryMode == AgentDeliveryMode.RESPOND }
-        assertTrue(coordinator.objective.contains("original goal contract"))
+        assertTrue(coordinator.objective.contains("complete original goal and constraints"))
+        assertTrue(coordinator.objective.contains("Use complete inline sections directly"))
+        assertTrue(coordinator.objective.contains("retrieve only missing relevant originals"))
         assertFalse(coordinator.objective.contains("ORIGINAL_GOAL_BEGIN"))
         assertFalse(coordinator.objective.contains("ORIGINAL_GOAL_END"))
         assertEquals("Independent source review", members.single { it.memberId == "peer" }.objective)
     }
 
-    @Test fun continuationCannotReplaceRemoveOrIntroduceValidatorBinding() {
+    @Test fun continuationCannotReplaceOrRemoveBindingButCanEstablishAnAbsentQualifiedRoute() {
         val prior = criterion()
         val mutations = listOf(
             criterion().apply { getJSONObject("validator").put("operands", JSONArray().put("1").put("4")) },
@@ -101,7 +204,48 @@ class CollaborationSemanticGoalLoopTest {
         }
         val absent = criterion().apply { remove("validator") }
         val next = advance(absent, assessment(criterion()))
-        assertFalse(JSONArray(next.request.context.getValue(CollaborationGoalLoop.CRITERIA).toString()).getJSONObject(0).has("validator"))
+        assertEquals(CollaborationQualifiedValidation.binding(criterion()), CollaborationQualifiedValidation.binding(
+            JSONArray(next.request.context.getValue(CollaborationGoalLoop.CRITERIA).toString()).getJSONObject(0)))
+        assertEquals(absent.getString("requirement"), JSONArray(next.request.context.getValue(CollaborationGoalLoop.CRITERIA).toString())
+            .getJSONObject(0).getString("requirement"))
+    }
+
+    @Test fun establishedRoutePersistsBeforeWorkAndCannotBeReboundInALaterRound() {
+        val absent = criterion().apply { remove("validator") }
+        val first = advance(absent, assessment(criterion()).put("work", JSONArray().put(job("compute"))))
+        assertEquals("compute", first.definition.members.single { it.deliveryMode == AgentDeliveryMode.OBSERVE }
+            .context[CollaborationGoalLoop.WORK_ID])
+        val saved = first.request.context.getValue(CollaborationGoalLoop.CRITERIA).toString()
+        assertEquals("", CollaborationGoalLoop.preservedCriteriaError(saved))
+        assertEquals(CollaborationSemanticGoalCoverage.criteriaHash(JSONArray(saved)), manifest(first).getString("criteria_sha256"))
+        val changed = criterion().apply { getJSONObject("validator").put("operands", JSONArray().put("1").put("4")) }
+        val nextReport = assessment(changed).put("work", JSONArray().put(job("replace")))
+        assertNull(CollaborationGoalLoop.advance(complete(first, nextReport), first.definition.primaryMemberId, 100_000, false))
+        val completed = complete(first, nextReport, finishWorkers = true)
+        assertTrue(CollaborationTeamOrganizationProjection.current(completed).settled)
+        val resumed = requireNotNull(CollaborationGoalLoop.advance(completed,
+            first.definition.primaryMemberId, 100_000, false))
+        assertRepairOnly(resumed, saved)
+    }
+
+    @Test fun routeCannotBeEstablishedInCompletionOrBlockedAssessment() {
+        val absent = criterion().apply { remove("validator") }
+        for (decision in listOf("achieved", "blocked")) {
+            val raw = assessment(criterion(), decision)
+            val next = advance(absent, raw)
+            assertRepairOnly(next, JSONArray().put(absent).toString())
+            assertEquals("continue", CollaborationGoalLoop.disposition(raw.toString(), JSONArray().put(absent).toString(), acceptanceVerified = true))
+        }
+    }
+
+    @Test fun oneInvalidRoutePreventsAllPlannedWorkAndPreservesOriginalContract() {
+        val first = criterion().apply { remove("validator") }
+        val second = JSONObject(first.toString()).put("id", "broader").put("requirement", "Prove a new scientific law")
+        val original = JSONArray().put(first).put(second).toString()
+        val invalid = JSONObject(second.toString()).put("validator", criterion().getJSONObject("validator"))
+        val report = assessment(criterion()).put("criteria", JSONArray().put(criterion()).put(invalid)).put("work", JSONArray().put(job()))
+        val next = advance(first, report, original)
+        assertRepairOnly(next, original)
     }
 
     @Test fun malformedSpecificationFailsDecodeAndCannotBeClaimedAchieved() {

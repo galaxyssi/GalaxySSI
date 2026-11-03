@@ -7,8 +7,21 @@ import org.json.JSONObject
 internal sealed interface CollaborationQualifiedValidator {
     val id: String
     val verification: String
+    fun binding(spec: JSONObject): List<String>
+    fun validateRequirement(criterion: JSONObject)
     fun validate(criterion: JSONObject, body: JSONObject)
+    fun validateRecorded(criterion: JSONObject, body: JSONObject, evidence: CollaborationValidationEvidence?) = validate(criterion, body)
 }
+
+/** Resolvers are supplied by the host acceptance path, never decoded from model JSON. */
+internal data class CollaborationValidationEvidence(
+    val delivery: JSONObject,
+    val review: JSONObject,
+    val exact: (JSONObject, String) -> JSONObject,
+    val original: (JSONObject) -> JSONObject?,
+    val requireReadCoverage: (JSONObject) -> Unit,
+    val contributors: (JSONObject) -> Set<String>
+)
 
 /** A deliberately narrow, side-effect-free computational fixture, never physical evidence. */
 internal object CollaborationExactIntegerSumValidator : CollaborationQualifiedValidator {
@@ -32,11 +45,18 @@ internal object CollaborationExactIntegerSumValidator : CollaborationQualifiedVa
 
     fun requirement(operands: List<String>) = "Compute the exact integer sum: ${operands.joinToString(" + ")}."
 
-    override fun validate(criterion: JSONObject, body: JSONObject) {
+    override fun binding(spec: JSONObject) = listOf(id) + operands(spec)
+
+    override fun validateRequirement(criterion: JSONObject) {
         val values = operands(criterion.getJSONObject(CollaborationQualifiedValidation.FIELD))
         require(criterion.opt("requirement") == requirement(values)) {
             "Exact integer sum cannot qualify a broader computational or scientific requirement"
         }
+    }
+
+    override fun validate(criterion: JSONObject, body: JSONObject) {
+        validateRequirement(criterion)
+        val values = operands(criterion.getJSONObject(CollaborationQualifiedValidation.FIELD))
         val result = requireNotNull(body.optJSONObject("computation")) { "Save body.computation with the exact result" }
         require(result.keys().asSequence().toSet() == setOf("validator_id", "result") && result.opt("validator_id") == id &&
             result.opt("result") is String) { "Invalid exact integer sum result" }
@@ -47,27 +67,51 @@ internal object CollaborationExactIntegerSumValidator : CollaborationQualifiedVa
 
 internal object CollaborationQualifiedValidation {
     const val FIELD = "validator"
-    private val qualified: CollaborationQualifiedValidator = CollaborationExactIntegerSumValidator
+    private val qualified = listOf(CollaborationExactIntegerSumValidator, CollaborationNumericModelValidator,
+        CollaborationExecutableAcceptance).associateBy { it.id }
+
+    private fun validator(spec: JSONObject): CollaborationQualifiedValidator = requireNotNull(qualified[spec.optString("id")]) {
+        "Unknown qualified validator; registered validators: ${qualified.keys.sorted().joinToString()}. " +
+            "Preserve the requirement and use an available verification route"
+    }
 
     fun binding(criterion: JSONObject): List<String>? {
         if (!criterion.has(FIELD)) return null
         val spec = requireNotNull(criterion.optJSONObject(FIELD)) { "validator must be a qualified specification object" }
-        return listOf(CollaborationExactIntegerSumValidator.id) + CollaborationExactIntegerSumValidator.operands(spec)
+        return validator(spec).binding(spec)
     }
 
     fun preserved(before: JSONObject, after: JSONObject?): Boolean = after != null && runCatching {
         binding(before) == binding(after)
     }.getOrDefault(false)
 
-    fun validate(criterion: JSONObject, body: JSONObject) {
+    /** Establishes a missing route before acceptance; never replaces a bound contract or certifies its oracle. */
+    fun canEstablish(before: JSONObject, after: JSONObject?): Boolean = after != null && runCatching {
+        require(!before.has(FIELD) && after.has(FIELD))
+        require(listOf("id", "requirement", "verification").all { before.get(it) == after.get(it) })
+        require(before.optString("verification") == "computational")
+        require(CollaborationEvidenceRequirements.preserved(before, after))
+        for (item in listOf(before, after)) {
+            require(item.optString("status") == "open" && item.optString("evidence_kind") == "observed")
+            require(item.getJSONArray("evidence").length() == 0 && !item.has("delivery") && !item.has("review"))
+        }
+        require(binding(after) != null)
+        val selected = validator(after.getJSONObject(FIELD))
+        require(selected.verification == "computational")
+        selected.validateRequirement(after)
+    }.isSuccess
+
+    fun validate(criterion: JSONObject, body: JSONObject, evidence: CollaborationValidationEvidence? = null) {
         require(criterion.optString("evidence_kind") == "observed") {
             "Proposals and simulations cannot satisfy observed acceptance"
         }
         when (criterion.optString("verification")) {
             "documentary" -> require(!criterion.has(FIELD)) { "A computational validator cannot be relabeled documentary" }
-            qualified.verification -> {
+            "computational" -> {
                 require(binding(criterion) != null) { "Computational acceptance requires a qualified host validator" }
-                qualified.validate(criterion, body)
+                val selected = validator(criterion.getJSONObject(FIELD))
+                require(selected.verification == "computational")
+                selected.validateRecorded(criterion, body, evidence)
             }
             else -> throw IllegalArgumentException("No qualified validator for this domain; simulations never certify physical results")
         }

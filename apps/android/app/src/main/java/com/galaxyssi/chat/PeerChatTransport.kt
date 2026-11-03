@@ -57,8 +57,9 @@ internal object PeerChatTransport {
                     durationMillis = durationMillis
                 ),
                 attachments = attachments,
-                mediaProfile = AgentMediaNetworkDetector.detect(context),
-                preserveOriginalBytes = true
+                mediaProfile = AgentMediaNetworkDetector.detect(context).copy(
+                    imageTargetBytes = AgentImagePipeline.CONTACT_TRANSPORT_BYTES,
+                    deferMediaUpload = false)
             )
         }.onFailure { error ->
             Log.e("GalaxySSIPeerTransport", "Could not prepare direct-message attachments", error)

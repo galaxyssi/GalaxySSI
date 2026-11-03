@@ -32,3 +32,17 @@ test("desktop input always exposes paste and standard editing roles", () => {
   assert.equal(template.find((item) => item.role === "paste").enabled, true);
   assert.equal(template.find((item) => item.role === "copy").enabled, false);
 });
+
+test("loaded images expose a real image-copy command instead of copying a file name", () => {
+  let copies = 0;
+  const menu = buildTextContextMenuTemplate({ mediaType: "image", hasImageContents: true },
+    { copyImage: () => copies++, copyImageLabel: "Copy Image" });
+  assert.equal(menu.length, 1); assert.equal(menu[0].label, "Copy Image");
+  menu[0].click(); assert.equal(copies, 1);
+});
+test("unloaded images and editable controls do not get a broken image-copy item", () => {
+  const actions = { copyImage: () => assert.fail("no image") };
+  assert.deepEqual(buildTextContextMenuTemplate({ mediaType: "image", hasImageContents: false }, actions), []);
+  assert.equal(buildTextContextMenuTemplate({ isEditable: true, mediaType: "image", hasImageContents: true }, actions)
+    .some((item) => item.label === "Copy Image"), false);
+});

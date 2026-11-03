@@ -33,6 +33,8 @@ internal object CollaborationCandidateEvolution {
             val cycle = cycles.getJSONObject(index)
             JSONObject().put("target", cycle.getJSONObject("target")).put("phase", cycle.getString("phase"))
                 .put("result", cycle.optString("result"))
+                .put("node_id", cycle.optString("node_id")).put(CollaborationCandidateReviewRetry.ELIGIBLE,
+                    cycle.optBoolean(CollaborationCandidateReviewRetry.ELIGIBLE))
         })
         JSONObject().put("recent_cycles", recent).put("total_cycles", cycles.length())
             .put("pending_requests", saved.pendingRequests.length()).toString()
@@ -61,11 +63,15 @@ internal object CollaborationCandidateEvolution {
             val existingIndex = indexes[objectId]
             val existing = existingIndex?.let { cycles.getJSONObject(it) }
             if (existing != null) {
-                if (requestedTarget.optLong("revision") <= existing.getJSONObject("target").getLong("revision")) return@forEach
+                if (!CollaborationCandidateReviewRetry.relevant(existing, request)) return@forEach
                 if (existing.getString("phase") != "done") { deferred += request; return@forEach }
             }
             val target = exact(workspace, access, requestedTarget)
             require(current(workspace, access, target)) { "Candidate enrollment needs an exact current active revision" }
+            val retry = if (request.has(CollaborationCandidateReviewRetry.REQUEST))
+                CollaborationCandidateReviewRetry.validate(workspace, access, requireNotNull(existing) {
+                    "Review reassignment must identify an existing settled cycle"
+                }, request, target) else null
             val criterion = (0 until criteria.length()).map { criteria.getJSONObject(it) }
                 .singleOrNull { it.getString("id") == request.getString("criterion_id") }
                 ?: error("Candidate cycle must name an established original criterion")
@@ -87,9 +93,10 @@ internal object CollaborationCandidateEvolution {
                     CollaborationEvidenceRequirements.required(criterion) == CollaborationEvidenceRequirements.required(existing.getJSONObject("criterion"))) {
                     "A reopened candidate must retain its original criterion/source contract"
                 }
-                enrolled.put("work_key", target.getString("sha256"))
+                enrolled.put("work_key", retry?.let { CollaborationCandidateReviewRetry.key(reference(target), it) } ?: target.getString("sha256"))
+                retry?.let { enrolled.put("review_reassignment", it) }
                 enrolled.put("prior_settlements", existing.optJSONArray("prior_settlements") ?: JSONArray())
-                    .getJSONArray("prior_settlements").put(JSONObject().put("target", existing.getJSONObject("target")).put("result", existing.getString("result")))
+                    .getJSONArray("prior_settlements").put(CollaborationCandidateReviewRetry.settlement(existing))
                 cycles.put(existingIndex!!, enrolled)
             } else {
                 indexes[objectId] = cycles.length()
@@ -104,7 +111,9 @@ internal object CollaborationCandidateEvolution {
         repeat(cycles.length()) { index ->
             val cycle = cycles.getJSONObject(index)
             if (cycle.getString("phase") == "done") return@repeat
-            fun finish(reason: String) {
+            fun finish(reason: String, retryableReview: Boolean = false) {
+                cycle.put(CollaborationCandidateReviewRetry.PHASE, cycle.getString("phase"))
+                    .put(CollaborationCandidateReviewRetry.ELIGIBLE, retryableReview)
                 cycle.put("phase", "done").put("result", reason).put("verification_state", "not_verified")
                 feedback += "${cycle.getString("object_id")}: $reason"
             }
@@ -132,7 +141,9 @@ internal object CollaborationCandidateEvolution {
                     val node = cycle.getString("node_id")
                     val outputs = workspace.publicationRevisions(access, node)
                     if (node !in succeededNodes || outputs.size != 1) {
-                        finish("No successful exact workspace publication; manual replanning required, no automatic retry")
+                        val retryable = node in succeededNodes && outputs.isEmpty() && cycle.getString("phase") in setOf("validate", "recheck")
+                        finish(if (retryable) "Completed review has no committed publication; coordinator may explicitly reassign retry_review for this node"
+                            else "No successful exact workspace publication; reconcile execution before replanning, no automatic retry", retryable)
                         return@repeat
                     }
                     val output = outputs.single()
@@ -173,6 +184,7 @@ internal object CollaborationCandidateEvolution {
                     .put("target", cycle.getJSONObject("target")).put("criterion", cycle.getJSONObject("criterion"))
                     .put("member", member).put("group_id", access.groupId).put("run_id", access.runId).put("turn_id", access.turnId)
                 if (phase == "repair") task.put("basis", cycle.getJSONObject("review"))
+                if (phase == "validate") cycle.optJSONObject("review_reassignment")?.let { task.put("review_reassignment", it) }
                 checkTask(workspace, access.copy(personId = member), task)
                 val workId = workId(cycle)
                 val node = dispatchId(workId)
@@ -188,6 +200,11 @@ internal object CollaborationCandidateEvolution {
 
     fun checkTask(workspace: CollaborationResearchWorkspace, access: CollaborationWorkspaceAccess, task: JSONObject) {
         checkIdentity(access, task)
+        task.optJSONObject("review_reassignment")?.let { retry ->
+            require(workspace.publicationRevisions(access, retry.getString("node_id")).isEmpty()) {
+                "The prior review was published after reassignment; reconcile it without another review"
+            }
+        }
         val target = exact(workspace, access, task.getJSONObject("target"))
         require(current(workspace, access, target)) { "Candidate task target changed or is isolated; do not execute stale work" }
         val criterion = task.getJSONObject("criterion")
@@ -236,9 +253,14 @@ internal object CollaborationCandidateEvolution {
     }
 
     fun instructions() = "Optional candidate_cycles enrolls exact existing workspace candidates without a fixed candidate-count limit: " +
-        "[{target:{object_id,revision,sha256},criterion_id:\"preserved goal criterion ID\",editor:\"person UUID\",reviewer:\"independent person UUID\"}]. " +
+        "[{target:{object_id,revision,sha256},criterion_id:\"preserved goal criterion ID\",editor:\"exact roster member ID\",reviewer:\"independent exact roster member ID\"}]. " +
         "Use only documentary criteria with required_observations and the exact requirement in candidate.criteria. " +
         "Every applicable refutation may lead to a repair and a fresh independent review, with no fixed repair or review count. " +
+        "Candidate reviewers must read every original evidence page before publishing; a listed ID or summary does not count. " +
+        "Read coverage is frozen at publication, so later reads require a new review rather than validating an old one. " +
+        "A settled cycle marked retryable_review permits an explicit same-version candidate_cycles request with " +
+        "retry_review:{node_id:\"exact failed-publication node\",reason:\"specific correction\"}; select an authorized independent reviewer. " +
+        "This is new review work over saved originals, not permission to repeat experiments. Never retry an offline, uncertain, already published or user-stopped execution. " +
         "Host capacity controls execution concurrency; host admission budgets defer requests in durable pending state, never discard them or declare success. " +
         "Do not duplicate this work in work[], solicit extra votes, retire alternatives, or claim candidate reviews are verification. " +
         "Physical/computational criteria need qualified host validators; simulation never satisfies physical requirements. "
@@ -252,11 +274,16 @@ internal object CollaborationCandidateEvolution {
         "criterion:\"exact shared requirement\",check:\"specific discriminating check\",rationale:\"evidence assessment\",outcome:\"supported|refuted|not_tested\",unresolved:[]}. " +
         "Compare has at least two distinct targets and outcome differentiated|inconclusive. Challenge has one target, refuted|not_tested and correction. " +
         "Review has one exact current target, a non-contributor reviewer and actual returned host observations; supported cannot retain blockers. " +
-        "Repair from a review also copies its exact reference into body.candidate.basis. A review is a member assessment, never a host verification certificate. "
+        "Repair from a review also copies its exact reference into body.candidate.basis, NOT into resolves. " +
+        "resolves accepts preserved counterexample/question objects (or a candidate challenge), not a candidate review; " +
+        "use resolves=[] for review-based repair unless a separate qualifying counterexample/question is supplied. " +
+        "A review is a member assessment, never a host verification certificate. "
 
     private fun assignment(task: JSONObject): String = "Exact-version candidate ${task.getString("operation")}. " +
         "Read the full exact target and original required host observations through scoped recall. " +
         "Publish exactly one candidate_event review, or one candidate revise with body.candidate.basis copied from this task. " +
+        "Use resolves=[]; the review basis belongs only in body.candidate.basis. For revise, object_id and base_revision name the target, " +
+        "and parents contains only the exact target reference, not the basis review. Cite original source_reference IDs in observations. " +
         "Do not change other candidates or execute unauthorized experiments; preserve alternatives. " +
         "A missing/unsupported check remains not_tested, never verified. Do not repeat completed side effects to manufacture receipts. " +
         "Host task: $task"

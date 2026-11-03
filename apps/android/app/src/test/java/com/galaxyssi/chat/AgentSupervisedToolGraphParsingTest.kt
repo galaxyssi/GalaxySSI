@@ -6,7 +6,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentSupervisedToolGraphParsingTest {
-    @Test fun `real phone inspect plan parses without being admitted as a code project tool`() {
+    @Test fun `phone inspect is available without keyword based phone classification`() {
         val tool = descriptor(AgentPhoneUiNativeTools.INSPECT, AgentNativeToolConcurrency.SERIAL)
         val screen = ScreenContext("test.fixture", pageTitle = "Fixture")
         val request = AgentRequest("Inspect the current phone App", screen, emptyList(), memories = emptyList(),
@@ -16,7 +16,7 @@ class AgentSupervisedToolGraphParsingTest {
         val source = """{"execution_location":"phone","actions":[{"kind":"CALL_NATIVE_TOOL","target":"galaxyssi.phone.ui.inspect","parameters":{"tool_id":"galaxyssi.phone.ui.inspect","arguments":{"offset":0,"limit":80}}}]}"""
         val plan = requireNotNull(AgentModelPlanParser.parse(request, source, settings))
         val site = AgentExecutionSiteDecision(AgentRequestedExecutionSite.PHONE)
-        assertFalse(AgentExecutionSiteDecisionCodec.acceptsActions(site, plan.actions))
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(site, plan.actions))
         assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(site, plan.actions, phoneControl = true))
     }
     private val write = descriptor(AgentPhoneNativeToolCatalog.WORKSPACE_WRITE_TEXT, AgentNativeToolConcurrency.SERIAL)
@@ -91,6 +91,180 @@ class AgentSupervisedToolGraphParsingTest {
     @Test fun `ordinary planner settings still control its own graph size`() {
         assertNull(AgentModelPlanParser.parse(request(), plan(action(1, write.id), action(2, read.id, 1)),
             AgentModelPlannerSettings(maxActions = 1)))
+    }
+
+    @Test fun `valid file graph has no rejection and unchanged legacy parser semantics`() {
+        val source = plan(action(1, write.id), action(2, read.id, 1))
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
+        assertNotNull(result.plan)
+        assertNull(result.rejection)
+        assertEquals(AgentModelPlanParser.parse(request(), source, settings)!!.actions, result.plan!!.actions)
+    }
+
+    @Test fun `completion must follow file receipts instead of sharing their batch`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+        val source = plan(action(1, write.id), completion)
+        val result = AgentModelPlanParser.parseWithDiagnostics(request().copy(replanReason = "Review prior result"), source, settings)
+        assertNull(result.plan)
+        assertEquals("completion_mixed_with_execution", result.rejection!!.code)
+        assertEquals("actions", result.rejection!!.field)
+        assertTrue(result.rejection!!.detail.contains("next response"))
+        val repair = AgentSupervisedProjectLoop.formatRepairPrompt(request(), source, result.rejection!!.toJson())
+        assertTrue(repair.contains("completion_mixed_with_execution"))
+        assertTrue(repair.contains("Never mix DRAFT_PLAN/task-complete"))
+    }
+
+    @Test fun `provider native research can deliver its initial complete answer without a phone search`() {
+        val answer = "Observed public facts. [Source](https://example.com/source)\n" +
+            "![Product](https://example.com/product.png)"
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", answer).put("parameters", JSONObject())
+        val requirements = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false)
+        val source = JSONObject(plan(completion)).put("completion_requirements", requirements.toJson()).toString()
+        val research = request().copy(goal = "Find public product information and pictures")
+        assertFalse(AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(research.goal, research.conversationContext))
+        val parsed = AgentModelPlanParser.parseWithDiagnostics(research, source, settings,
+            allowInitialCompletion = true)
+        assertNull(parsed.rejection)
+        assertEquals(answer, parsed.plan!!.actions.single().description)
+        assertTrue(AgentExecutionSiteDecisionCodec.acceptsActions(
+            AgentExecutionSiteDecision(AgentRequestedExecutionSite.PHONE), parsed.plan!!.actions))
+        assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(
+            parsed.plan!!.completionRequirements, emptyList(), finalAnswer = answer).isEmpty())
+        assertNull(AgentModelPlanParser.parse(research, source, settings))
+    }
+
+    @Test fun `initial research completion never permits a mixed execution and answer batch`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", "Already done")
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(),
+            plan(action(1, write.id), completion), settings, allowInitialCompletion = true)
+        assertEquals("completion_mixed_with_execution", result.rejection!!.code)
+        assertNull(result.plan)
+    }
+
+    @Test fun `initial completion admission does not waive publication or runtime evidence`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", "Claimed completion without receipts")
+        val requirements = AgentCompletionRequirements(AgentPublicationRequirement.PULL_REQUEST, true)
+        val source = JSONObject(plan(completion)).put("completion_requirements", requirements.toJson()).toString()
+        val parsed = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings,
+            allowInitialCompletion = true).plan!!
+        val missing = AgentSupervisedProjectCompletionPolicy.missingEvidence(parsed.completionRequirements,
+            emptyList(), finalAnswer = parsed.actions.single().description)
+        assertTrue(missing.any { it.contains("phone Linux") })
+        assertTrue(missing.any { it.contains("pull request") })
+    }
+
+    @Test fun `initial completion still requires an explicit model declared result contract`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", "Answer without a result contract")
+        val parsed = AgentModelPlanParser.parseWithDiagnostics(request(), plan(completion), settings,
+            allowInitialCompletion = true).plan!!
+        assertTrue(AgentSupervisedProjectCompletionPolicy.missingEvidence(parsed.completionRequirements,
+            emptyList(), finalAnswer = parsed.actions.single().description).isNotEmpty())
+    }
+
+    @Test fun `unknown tool feedback identifies inventory failure not invalid JSON`() {
+        val source = plan(action(1, "galaxyssi.unavailable.fixture"))
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
+        assertEquals("native_tool_unavailable", result.rejection!!.code)
+        assertEquals("actions[0].parameters.tool_id", result.rejection!!.field)
+        assertTrue(result.rejection!!.detail.contains("galaxyssi.unavailable.fixture"))
+        assertNull(result.plan)
+    }
+
+    @Test fun `dependency feedback identifies the rejected field and preserves all or nothing admission`() {
+        val source = plan(action(1, write.id), action(2, read.id, 7))
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
+        assertNull(result.plan)
+        assertEquals("invalid_dependency", result.rejection!!.code)
+        assertEquals("actions[1].depends_on", result.rejection!!.field)
+        assertTrue(result.rejection!!.detail.contains("Available earlier refs: step-1"))
+        assertTrue(result.rejection!!.detail.contains("not id, target, tool IDs"))
+    }
+
+    @Test fun `an id or display target cannot silently replace an action ref`() {
+        val first = action(1, write.id).put("id", "invented-id").put("target", "Displayed title")
+        for (invalid in listOf("invented-id", "Displayed title", write.id, "model-1-step-1")) {
+            val next = action(2, read.id).put("depends_on", JSONArray().put(invalid))
+            val rejected = AgentModelPlanParser.parseWithDiagnostics(request(), plan(first, next), settings)
+            assertNull(rejected.plan)
+            assertEquals("invalid_dependency", rejected.rejection!!.code)
+            assertTrue(rejected.rejection!!.detail.endsWith("Available earlier refs: step-1"))
+        }
+        assertNotNull(AgentModelPlanParser.parse(request(), plan(first, action(2, read.id, 1)), settings))
+    }
+
+
+    @Test fun `native output substitution returns actionable feedback`() {
+        val source = plan(action(1, write.id), action(2, read.id, 1)
+            .put("use_outputs_from", JSONArray().put("step-1")))
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings)
+        assertEquals("native_output_substitution", result.rejection!!.code)
+        assertEquals("actions[1].use_outputs_from", result.rejection!!.field)
+    }
+
+    @Test fun `invalid syntax and malformed requirements have distinct reasons`() {
+        assertEquals("invalid_json", AgentModelPlanParser.parseWithDiagnostics(request(), "not json", settings).rejection!!.code)
+        val source = JSONObject(plan(action(1, read.id))).put("completion_requirements", "bad").toString()
+        assertEquals("invalid_requirements", AgentModelPlanParser.parseWithDiagnostics(request(), source, settings).rejection!!.code)
+    }
+
+    @Test fun `batch feedback reports the effective bound without truncating the plan`() {
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), plan(action(1, write.id), action(2, read.id, 1)),
+            AgentModelPlannerSettings(maxActions = 1))
+        assertNull(result.plan)
+        assertEquals("batch_size", result.rejection!!.code)
+        assertTrue(result.rejection!!.detail.contains("Received 2"))
+        assertTrue(result.rejection!!.detail.contains("1..1"))
+    }
+
+    @Test fun `duplicate references are diagnosed before any execution`() {
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), plan(action(1, write.id), action(1, read.id)), settings)
+        assertNull(result.plan)
+        assertEquals("duplicate_ref", result.rejection!!.code)
+        assertEquals("actions[1].ref", result.rejection!!.field)
+    }
+
+    @Test fun `requested results survive parsing and cannot disappear during a repair`() {
+        val original = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false, results = listOf(
+            AgentGoalResultRequirement("first", "First requested result"),
+            AgentGoalResultRequirement("second", "Second requested result")))
+        val source = JSONObject(plan(action(1, read.id))).put("completion_requirements", original.toJson()).toString()
+        assertEquals(original, AgentModelPlanParser.parse(request(), source, settings)?.completionRequirements)
+        val dropped = original.copy(results = original.results.take(1), reason = "Only the first result is ready")
+        val correction = JSONObject(source).put("completion_requirements", dropped.toJson()).toString()
+        val rejected = AgentModelPlanParser.parseWithDiagnostics(request().copy(completionRequirements = original), correction, settings)
+        assertNull(rejected.plan)
+        assertEquals("unexplained_requirement_change", rejected.rejection!!.code)
+        assertTrue(rejected.rejection!!.detail.contains("Do not drop unfinished requested results"))
+    }
+
+    @Test fun `invalid outcome identity reports the exact field without rejecting JSON syntax`() {
+        val required = AgentCompletionRequirements(AgentPublicationRequirement.NONE, false,
+            outcomes = listOf(AgentObservedOutcome("value", read.id, mapOf("/scope" to "phone"), mapOf("/value" to 2))))
+        val json = required.toJson()
+        json.getJSONArray("outcomes").getJSONObject(0).getJSONObject("subject").put("/observed_at_epoch_ms", 1234)
+        val source = JSONObject(plan(action(1, read.id))).put("completion_requirements", json).toString()
+        val rejection = AgentModelPlanParser.parseWithDiagnostics(request(), source, settings).rejection!!
+        assertEquals("invalid_requirements", rejection.code)
+        assertTrue(rejection.detail.contains("outcomes[0].subject[/observed_at_epoch_ms]"))
+        assertTrue(rejection.detail.contains("requires a string identity value"))
+        assertTrue(rejection.detail.contains("JSON syntax is valid"))
+        json.getJSONArray("outcomes").getJSONObject(0).getJSONObject("subject").remove("/observed_at_epoch_ms")
+        assertNotNull(AgentModelPlanParser.parse(request(), JSONObject(source).put("completion_requirements", json).toString(), settings))
+    }
+
+    @Test fun `completion answers are not truncated to an ordinary action label`() {
+        val answer = "First requested result. ".repeat(30) + "\nFinal requested result must remain visible."
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", answer).put("parameters", JSONObject())
+        val parsed = AgentModelPlanParser.parse(request().copy(replanReason = "Observed all requested results"),
+            plan(completion), settings)!!
+        assertEquals(answer, parsed.actions.single().description)
+        val executable = action(1, read.id).put("description", answer)
+        assertEquals(300, AgentModelPlanParser.parse(request(), plan(executable), settings)!!.actions.single().description.length)
     }
 
     private fun action(index: Int, tool: String, dependency: Int? = null): JSONObject = JSONObject()

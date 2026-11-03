@@ -1,11 +1,15 @@
-function buildTextContextMenuTemplate(params = {}) {
+function buildImageContextMenuItem(params = {}, actions = {}) {
+  if (params.mediaType !== "image" || !params.hasImageContents || typeof actions.copyImage !== "function") return null;
+  return { label: actions.copyImageLabel || "Copy Image", click: actions.copyImage };
+}
+
+function buildTextContextMenuTemplate(params = {}, actions = {}) {
   const flags = params.editFlags || {};
   const hasSelection = String(params.selectionText || "").length > 0;
 
   if (!params.isEditable) {
-    return hasSelection
-      ? [{ role: "copy", enabled: flags.canCopy !== false }]
-      : [];
+    const image = buildImageContextMenuItem(params, actions);
+    return [...(image ? [image] : []), ...(hasSelection ? [{ role: "copy", enabled: flags.canCopy !== false }] : [])];
   }
 
   return [
@@ -21,4 +25,4 @@ function buildTextContextMenuTemplate(params = {}) {
   ];
 }
 
-module.exports = { buildTextContextMenuTemplate };
+module.exports = { buildTextContextMenuTemplate, buildImageContextMenuItem };

@@ -32,6 +32,31 @@ class VoiceConversationEndpointTest {
 
     @Test fun ordinaryCommandDefaultRemainsShort() {
         assertEquals(2_500L, AdaptiveEndpointConfig().noSpeechTimeoutMs)
+        assertEquals(850L, AdaptiveEndpointConfig().trailingSilenceMs(600))
+        assertEquals(650L, AdaptiveEndpointConfig().trailingSilenceMs(3_000))
+        assertEquals(500L, AdaptiveEndpointConfig().trailingSilenceMs(8_000))
+    }
+
+    @Test fun longConversationPausesKeepBothPartsInOneUtterance() {
+        for (spokenFrames in listOf(150, 400)) {
+            val detector = AdaptiveEndpointDetector(1_000, AdaptiveEndpointConfig.forVoiceConversation())
+            var index = 0
+            repeat(spokenFrames) { assertNull(detector.accept(frame(index++), speech).endpointReason) }
+            repeat(45) { assertNull(detector.accept(frame(index++), silence).endpointReason) }
+            repeat(100) { assertNull(detector.accept(frame(index++), speech).endpointReason) }
+            repeat(69) { assertNull(detector.accept(frame(index++), silence).endpointReason) }
+            assertEquals(EndpointReason.TRAILING_SILENCE, detector.accept(frame(index), silence).endpointReason)
+        }
+    }
+
+    @Test fun endpointUsesSpokenSpanRatherThanSilenceToChooseItsTimeout() {
+        for ((spokenFrames, waitFrames) in listOf(55 to 50, 245 to 60, 300 to 70)) {
+            val detector = AdaptiveEndpointDetector(1_000, AdaptiveEndpointConfig.forVoiceConversation())
+            var index = 0
+            repeat(spokenFrames) { detector.accept(frame(index++), speech) }
+            repeat(waitFrames - 1) { assertNull(detector.accept(frame(index++), silence).endpointReason) }
+            assertEquals(EndpointReason.TRAILING_SILENCE, detector.accept(frame(index), silence).endpointReason)
+        }
     }
 
     @Test(expected = IllegalArgumentException::class)

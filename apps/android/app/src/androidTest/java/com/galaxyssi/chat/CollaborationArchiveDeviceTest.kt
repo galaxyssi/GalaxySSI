@@ -97,4 +97,25 @@ class CollaborationArchiveDeviceTest {
         CollaborationGroupStore(context).remove(group)
         assertNull(archive.read(expected.first()))
     }
+
+    @Test fun repairReasonAndOriginalRemainDistinctAfterArchiveReopen() = fixture { group, archive ->
+        val original = execution(group, "original-turn")
+        val originalId = archive.record(original, "Original result; delivery incomplete")
+        val repair = execution(group, "repair-turn").let { value -> value.copy(member = value.member.copy(
+            instanceId = "repair-node", context = value.member.context + CollaborationWorkGraph.repairContext(
+                JSONObject().put("repair_of", "original-work").put("repair_reason", "Supply the omitted typed body")))) }
+        val assignmentId = archive.record(repair, "Use the archived draft without repeating the original action", input = true)
+        val resultId = archive.record(repair, "Corrected delivery; acceptance remains separate")
+        val reopened = CollaborationResearchArchive(context, group)
+        for (id in listOf(assignmentId, resultId)) {
+            val saved = JSONObject(requireNotNull(reopened.read(id)).content)
+            assertEquals("original-work", saved.getString("repair_of"))
+            assertEquals("Supply the omitted typed body", saved.getString("repair_reason"))
+            assertEquals("repair-node", saved.getString("node_id"))
+        }
+        val preserved = JSONObject(requireNotNull(reopened.read(originalId)).content)
+        assertEquals("Original result; delivery incomplete", preserved.getString("raw_output"))
+        assertEquals("", preserved.getString("repair_of"))
+        assertEquals("", preserved.getString("repair_reason"))
+    }
 }

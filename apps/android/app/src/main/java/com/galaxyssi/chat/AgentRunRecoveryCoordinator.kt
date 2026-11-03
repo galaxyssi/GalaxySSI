@@ -33,7 +33,8 @@ class AgentRunRecoveryCoordinator(
 ) {
     suspend fun recover(excludedRunIds: Set<String> = emptySet()): List<AgentRunRecoveryResult> =
         runStore.recoverableRuns()
-            .filterNot { it.runId in excludedRunIds || it.lastEvent.payload["recovery_mode"] == "observation_only" }
+            .filterNot { it.runId in excludedRunIds || it.lastEvent.payload["recovery_mode"] == "observation_only" ||
+                AgentDeviceOperationCheckpoint.isSnapshot(it.lastEvent) }
             .map { snapshot -> recover(snapshot) }
 
     private suspend fun recover(snapshot: AgentRunControlSnapshot): AgentRunRecoveryResult {

@@ -1,6 +1,7 @@
 import itertools
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 
 from mqtt_multipath_policy import (
     Attempt, BROKER_IDS, Limits, MultipathPolicy, PeerRoute, PhysicalKey, Traffic,
@@ -29,6 +30,38 @@ class MultipathPolicyTests(unittest.TestCase):
     def reserve(self, key, *, peer="peer", message="m", path="emqx", size=100,
                 traffic=Traffic.MESSAGE, content_hash=HASH, started=0.0):
         return self.policy.reserve(key, Attempt(peer, message, content_hash, path, 1, size, traffic, started))
+
+    def test_reservation_reasons_distinguish_path_identity_and_capacity(self):
+        attempt = Attempt("peer", "m", HASH, "emqx", 1, 100, Traffic.CONTROL, 0.0)
+        reserve = self.policy.reserve_reason
+        self.assertEqual("invalid_attempt", reserve("", attempt))
+        self.assertEqual("path_unavailable", reserve("bad-path", replace(attempt, generation=2)))
+        self.policy.paths["emqx"].packet_bytes = 50
+        self.assertEqual("path_packet_limit", reserve("big", attempt))
+        self.policy.paths["emqx"].packet_bytes = self.policy.limits.packet_bytes
+        self.assertEqual("", reserve("first", attempt))
+        self.assertEqual("duplicate_attempt", reserve("first", attempt))
+        self.assertEqual("message_content_conflict", reserve("changed", replace(attempt, content_hash="b" * 64)))
+        for index in range(1, self.policy.limits.inflight_packets):
+            self.assertEqual("", reserve(str(index), attempt))
+        self.assertEqual("inflight_packet_limit", reserve("excess", attempt))
+        self.assertEqual(self.policy.limits.inflight_packets, self.policy.diagnostics()["pending_attempts"])
+
+    def test_reservation_reasons_preserve_byte_and_tracking_limits(self):
+        attempt = Attempt("peer", "m", HASH, "emqx", 1, 1_048_576, Traffic.CONTROL, 0.0)
+        reserve = self.policy.reserve_reason
+        self.assertEqual("", reserve("first", attempt))
+        self.assertEqual("", reserve("second", attempt))
+        self.assertEqual("peer_byte_limit", reserve("third", attempt))
+        for index in range(6):
+            self.assertEqual("", reserve(str(index), replace(attempt, peer=str(index))))
+        self.assertEqual("inflight_byte_limit", reserve("global-full", replace(attempt, peer="new")))
+        self.policy.limits = replace(self.policy.limits, max_attempts=self.policy.limits.inflight_packets)
+        for key in list(self.policy._attempts):
+            self.policy.broker_ack(key, "emqx", 1)
+        for index in range(4):
+            self.assertEqual("", reserve("acked" + str(index), replace(attempt, wire_bytes=1)))
+        self.assertEqual("tracking_limit", reserve("tracked-full", replace(attempt, wire_bytes=1)))
 
     def test_delivery_diagnostics_require_verified_attributable_receipt(self):
         self.reserve("attempt")

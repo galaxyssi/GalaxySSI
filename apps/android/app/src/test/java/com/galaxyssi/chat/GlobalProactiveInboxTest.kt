@@ -6,6 +6,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlobalProactiveInboxTest {
+    @Test fun allFindingsAndUnreadCountsSurviveFormerLimits() {
+        val messages = (1..1205).map { message("item-$it").copy(deliveredAtMillis = it.toLong()) }
+        val items = GlobalProactiveInboxPolicy.project(messages, emptyList())
+        assertEquals(1205, items.size)
+        assertEquals(1205, GlobalProactiveInboxPolicy.newCount(items))
+        assertEquals(257, GlobalProactiveInboxPolicy.project(messages, emptyList(), 257).size)
+        assertTrue(GlobalProactiveInboxPolicy.project(messages, emptyList(), 0).isEmpty())
+        val timeline = ProactiveAttentionTimeline().apply { update(items, setOf(items.last().key)); begin(AttentionFeedFilter.ALL) }
+        assertEquals(20, timeline.visible.size)
+        while (timeline.loadOlder()) Unit
+        assertEquals(items.map { it.key }, timeline.visible.map { it.key })
+        timeline.begin(AttentionFeedFilter.SAVED)
+        assertEquals(items.last(), timeline.visible.single())
+    }
+
+    @Test fun timelineFiltersBeforeLoadingAndHandlesEmptyResults() {
+        val items = GlobalProactiveInboxPolicy.project((1..501).map {
+            message("item-$it").copy(urgent = it % 2 == 0, viewedAtMillis = if (it % 3 == 0) 1 else 0)
+        }, emptyList())
+        val timeline = ProactiveAttentionTimeline().apply { update(items, emptySet()); begin(AttentionFeedFilter.IMPORTANT) }
+        while (timeline.loadOlder()) Unit
+        assertEquals(250, timeline.visible.size)
+        assertTrue(timeline.visible.all { it.urgent })
+        timeline.begin(AttentionFeedFilter.UNREAD)
+        while (timeline.loadOlder()) Unit
+        assertEquals(334, timeline.visible.size)
+        timeline.begin(AttentionFeedFilter.SAVED)
+        assertTrue(timeline.visible.isEmpty())
+    }
+
     @Test
     fun deliveredFindingsBecomeUserVisibleInboxItems() {
         val items = GlobalProactiveInboxPolicy.project(

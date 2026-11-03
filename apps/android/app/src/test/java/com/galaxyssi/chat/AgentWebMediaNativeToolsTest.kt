@@ -11,6 +11,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentWebMediaNativeToolsTest {
+    @Test fun intelligenceFetchPreservesHttpOnlyChineseCharset() {
+        val text = "\u73e0\u6d77\u5cad\u5357\u4e16\u5bb6"
+        val transport = FakeTransport(AgentWebTransportResponse(200,
+            mapOf("Content-Type" to listOf("text/html; charset=GBK")),
+            "<html><p>$text</p></html>".toByteArray(java.nio.charset.Charset.forName("GBK"))))
+        val web = AgentBoundedWebService(transport, FakeResolver("public.example.test" to
+            listOf(InetAddress.getByName("8.8.8.8"))))
+        val fetched = AgentBoundedWebIntelligenceFetcher(web).fetch("https://public.example.test/page", 1024,
+            10_000, AgentNativeToolCancellationToken.NONE, {})
+        assertEquals("text/html; charset=GBK", fetched.contentType)
+        assertEquals(text, org.jsoup.Jsoup.parse(AgentWebTextDecoder.decode(fetched.body, fetched.contentType,
+            fetched.url)).selectFirst("p")!!.text())
+    }
+
+    @Test fun intelligenceDeadlineDoesNotExceedUnderlyingRequestBudget() {
+        val transport = FakeTransport(AgentWebTransportResponse(
+            200, mapOf("Content-Type" to listOf("text/plain")), "page".toByteArray()))
+        val web = AgentBoundedWebService(transport, FakeResolver("public.example.test" to
+            listOf(InetAddress.getByName("8.8.8.8"))))
+        val result = AgentBoundedWebIntelligenceFetcher(web).fetch(
+            "https://public.example.test/page", 1024, 60_000,
+            AgentNativeToolCancellationToken.NONE, {})
+        assertEquals("page", result.body.toString(Charsets.UTF_8))
+        assertTrue(transport.requests.single().timeoutMillis <= web.policy.maxTimeoutMillis)
+    }
+
     @Test fun encodedQueriesPathsAndRedirectsReachTransportUnchanged() {
         val original = "https://public.example.test/a%2Fb/%E4%B8%AD?q=%E5%B0%8F+fish&x=%25%26%3D%2B#fragment"
         val redirected = "https://public.example.test/image?name=%E4%B8%AD&sig=a%2Fb%3D%3D"

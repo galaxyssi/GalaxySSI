@@ -19,7 +19,6 @@ import okhttp3.Request
 
 internal object AgentMarkdownImageStore {
     private const val MAX_BYTES = 12 * 1024 * 1024
-    private const val CACHE_BYTES = 64L * 1024 * 1024
     private val locks = Array(8) { Any() }
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS)
@@ -45,6 +44,12 @@ internal object AgentMarkdownImageStore {
             checkpoint()
             val file = cacheFile(context, source)
             if (file.isFile && file.length() in 1..MAX_BYTES.toLong()) return@synchronized file
+            val legacy = File(File(context.cacheDir, "markdown-images"), key)
+            if (legacy.isFile && legacy.length() in 1..MAX_BYTES.toLong()) {
+                AttachmentLocalStore.storeFile(legacy, file)
+                legacy.delete()
+                return@synchronized file
+            }
             fetch(context, source, cancellationToken, checkpoint)
         }
     }
@@ -97,7 +102,7 @@ internal object AgentMarkdownImageStore {
     internal fun cacheFile(context: Context, source: String): File {
         val key = MessageDigest.getInstance("SHA-256").digest(source.toByteArray())
             .joinToString("") { "%02x".format(it) }
-        return File(File(context.cacheDir, "markdown-images"), key)
+        return File(context.filesDir, "agent-markdown-images-v1/${key.take(2)}/$key")
     }
 
     @Synchronized internal fun cache(context: Context, source: String, bytes: ByteArray): File {
@@ -111,10 +116,6 @@ internal object AgentMarkdownImageStore {
         val output = atomic.startWrite()
         try { output.write(bytes); atomic.finishWrite(output) }
         catch (error: Throwable) { atomic.failWrite(output); throw error }
-        var total = file.parentFile?.listFiles()?.sumOf(File::length) ?: 0L
-        file.parentFile?.listFiles()?.filter { it != file }?.sortedBy(File::lastModified)?.forEach {
-            if (total > CACHE_BYTES) { val size = it.length(); if (it.delete()) total -= size }
-        }
         return file
     }
 

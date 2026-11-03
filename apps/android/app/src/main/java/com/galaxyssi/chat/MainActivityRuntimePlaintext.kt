@@ -3,8 +3,11 @@ package com.galaxyssi.chat
 import android.view.View
 
 internal fun MainActivity.clearRuntimePlaintextForBackground() {
+    foregroundAgentReload.invalidate()
     if (runtimePlaintextCleared || isChangingConfigurations) return
+    peerChatViewport.suspend(capturePeerChatScrollAnchor())
     runtimePlaintextCleared = true
+    RuntimeSensitiveCaches.clearAll()
     KnowledgeSemanticSearch.clearRuntime(suspend = true)
     suspendConversationHubForBackground()
     runtimePlaintextContactId = selectedContact?.id.orEmpty()
@@ -28,6 +31,8 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
 
     agentAttachmentPreviewList.removeAllViews()
     agentAttachmentPreviewScroll.visibility = View.GONE
+    findViewById<android.widget.LinearLayout>(R.id.chatAttachmentPreviewList).removeAllViews()
+    findViewById<View>(R.id.chatAttachmentPreviewScroll).visibility = View.GONE
     agentRecordingTranscript.text = ""
     chatRecordingTranscript.text = ""
     wakeTranscriptText?.text = ""
@@ -44,17 +49,21 @@ internal fun MainActivity.clearRuntimePlaintextForBackground() {
 internal fun MainActivity.restoreRuntimePlaintextAfterForeground(): Boolean {
     if (!runtimePlaintextCleared) return false
     runtimePlaintextCleared = false
+    peerChatViewport.resume()
     KnowledgeSemanticSearch.resumeRuntime()
     AgentEncryptedPreferenceCache.clearAll()
 
-    loadChatOverview(force = true)
+    loadChatOverview(force = true, reloadSelectedChat = false)
     runtimePlaintextContactId
         .takeIf(String::isNotBlank)
         ?.let { contactId ->
             loadLatestChatHistory(contactId, force = true, scrollAfterLoad = false)
         }
+    // Selection can change while hidden (for example an incoming conversation intent).
+    runtimePlaintextConversationId = agentTranscriptStore.activeConversation().id
     resetAgentTranscriptRendering(runtimePlaintextConversationId)
     renderAgentInputAttachments()
+    renderPeerComposerAttachments()
     runtimePlaintextContactId = ""
     return true
 }

@@ -476,6 +476,9 @@ class AgentTaskBudgetExceeded(RuntimeError):
         super().__init__(decision.reason or "Task budget exhausted")
 
 
+COLLABORATION_WORKSPACE_RESULT = "galaxyssi.collaboration-workspace.v1"
+
+
 @dataclass(frozen=True)
 class AgentExecutionPolicy:
     task_kind: AgentTaskKind
@@ -491,6 +494,7 @@ class AgentExecutionPolicy:
     task_intent_signals: tuple[str, ...] = ()
     execution_mode: AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE
     task_budget: AgentTaskBudget = field(default_factory=AgentTaskBudget)
+    result_contract: str = ""
 
     def public(self) -> dict:
         return {
@@ -504,6 +508,7 @@ class AgentExecutionPolicy:
             "max_replans": self.max_replans,
             "max_same_failure_attempts": self.max_same_failure_attempts,
             "requires_artifact": self.requires_artifact,
+            "result_contract": self.result_contract,
             "target_platform": self.target_platform,
             "verify_installation": self.verify_installation,
             "absolute_timeout_seconds": None,
@@ -567,6 +572,8 @@ class AgentExecutionPolicy:
             )[:6],
             execution_mode=execution_mode,
             task_budget=AgentTaskBudget.from_public(value.get("task_budget")),
+            result_contract=(COLLABORATION_WORKSPACE_RESULT
+                             if value.get("result_contract") == COLLABORATION_WORKSPACE_RESULT else ""),
         )
 
 
@@ -837,11 +844,6 @@ _BUILD_TERMS = (
     "\u5beb\u4e00\u500b\u7a0b\u5f0f", "\u505a\u4e00\u500b\u904a\u6232",
     "\u751f\u6210\u7a0b\u5f0f", "\u4fee\u5fa9 bug", "\u904b\u884c\u6e2c\u8a66",
 )
-_INSTALL_TERMS = (
-    "install", "install and open", "install apk", "deploy to phone", "launch the app",
-    "\u5b89\u88c5", "\u5b89\u88c5\u5e76\u6253\u5f00", "\u5b89\u88c5 apk",
-    "\u5b89\u88c5\u5230\u624b\u673a", "\u7f16\u8bd1\u5e76\u5b89\u88c5",
-)
 _ARTIFACT_TERMS = (
     "return the file", "send the file", "export", "generate image", "create file",
     "downloadable", "zip project", "apk",
@@ -922,8 +924,10 @@ def execution_policy_for(
     requested_execution_mode: str | AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE,
     requested_task_budget: Mapping[str, Any] | None = None,
     request_kind: str = "",
+    requested_result_contract: str = "",
 ) -> AgentExecutionPolicy:
     from artifact_request_policy import office_artifact_requested, pdf_artifact_requested, positive_term
+    from installation_request_policy import installation_request
 
     normalized = " ".join(str(prompt or "").lower().split())
     has_attachment_context = bool(tuple(attachments))
@@ -931,7 +935,7 @@ def execution_policy_for(
         normalized,
         has_attachments=has_attachment_context,
     )
-    has_install = _contains_any(normalized, _INSTALL_TERMS)
+    has_install, android_install = installation_request(str(prompt or ""))
     has_build = any(positive_term(str(prompt or ""), term) for term in _BUILD_TERMS)
     from video_generation_policy import video_creation_requested
     has_office_request = office_artifact_requested(str(prompt or ""))
@@ -945,10 +949,13 @@ def execution_policy_for(
     has_device = _contains_any(normalized, _DEVICE_TERMS)
     target_platform = "android" if _contains_any(normalized, _ANDROID_TERMS) else ""
     read_only_analysis = request_kind == "screen_analysis"
+    result_contract = (COLLABORATION_WORKSPACE_RESULT
+                       if requested_result_contract == COLLABORATION_WORKSPACE_RESULT and not read_only_analysis else "")
     if read_only_analysis:
         # Captured page text and historical operation words do not request an artifact.
         has_install = has_build = has_artifact_request = has_research = has_device = False
         has_office_request = False
+        android_install = False
         target_platform = ""
         intent = AgentTaskIntentClassification(AgentTaskIntent.CHAT, 100, ("screen_analysis",))
     execution_mode, _execution_mode_signal = resolve_execution_mode(
@@ -995,17 +1002,19 @@ def execution_policy_for(
         max_same_failure_attempts=2,
         requires_artifact=execution_mode != AgentExecutionMode.PLAN_ONLY and (
             has_artifact_request
-            or kind in {AgentTaskKind.BUILD, AgentTaskKind.INSTALL}
+            or (has_build and not result_contract)
+            or android_install
         ),
         target_platform=target_platform,
         verify_installation=(
             execution_mode != AgentExecutionMode.PLAN_ONLY
-            and kind == AgentTaskKind.INSTALL
+            and android_install
         ),
         task_intent=intent.intent,
         task_intent_confidence=intent.confidence,
         task_intent_signals=intent.matched_signals + (("office_artifact",) if has_office_request else ()),
         execution_mode=execution_mode,
+        result_contract=result_contract,
         task_budget=AgentTaskBudget.from_public(requested_task_budget),
     )
 
@@ -1063,6 +1072,15 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         from office_authoring import office_authoring_contract
         if authoring_hint := office_authoring_contract():
             artifact_line += "\n" + authoring_hint
+    if policy.result_contract == COLLABORATION_WORKSPACE_RESULT:
+        artifact_line += (
+            "\n- This member returns a versioned collaboration workspace result to the originating App. "
+            "Publish complete source, tests, evidence and review records through the scoped collaboration tools, "
+            "then hand off exact immutable references and a concise summary. Recipients read the saved originals. "
+            "Do not create duplicate JSON/ZIP handoff files just because the assignment mentions build, implementation or tests. "
+            "Explicitly requested downloadable files still require actual files and normal verification/delivery. "
+            "Desktop task completion is not App goal acceptance; original evidence, independent reviews and final delivery remain required."
+        )
     install_line = (
         f"- The target is {target}. Build the native installable artifact, verify its format, "
         "and only claim installation or launch after an execution receipt confirms it."
@@ -1219,6 +1237,7 @@ class AgentExecutionHarness:
         policy: AgentExecutionPolicy | None = None,
     ) -> None:
         self._state_lock = threading.RLock()
+        self._last_progress_save_monotonic: float | None = None
         self.policy = policy or execution_policy_for(prompt, attachments=attachments)
         initial = AgentExecutionCheckpoint(
             task_id=str(task_id or "").strip(),
@@ -1236,10 +1255,18 @@ class AgentExecutionHarness:
         self._save()
 
     def progress(self, phase: str, **verification: object) -> None:
+        self._progress(phase, verification, stream=False)
+
+    def stream_progress(self, phase: str, **verification: object) -> None:
+        """Account every heartbeat, but coalesce redundant same-phase disk writes."""
+        self._progress(phase, verification, stream=True)
+
+    def _progress(self, phase: str, verification: dict, *, stream: bool) -> None:
         with self._state_lock:
             now = time.time()
             self._account_active_time(now)
             next_phase = str(phase or "act")
+            phase_changed = next_phase != self.checkpoint.phase
             self.checkpoint.phase = next_phase
             self.checkpoint.active_started_at = (
                 now if next_phase in _ACTIVE_BUDGET_PHASES else 0.0
@@ -1249,7 +1276,13 @@ class AgentExecutionHarness:
                 self.checkpoint.verification.update(verification)
             self._refresh_budget_usage()
             self._raise_if_budget_exhausted()
-            self._save()
+            monotonic = time.monotonic()
+            previous = self._last_progress_save_monotonic
+            if not stream or phase_changed or previous is None or monotonic < previous or monotonic - previous >= 1.0:
+                # Only disposable progress heartbeats coalesce. Lifecycle, tool,
+                # failure and budget transitions continue to persist immediately.
+                self._save()
+                self._last_progress_save_monotonic = time.monotonic()
 
     def begin_attempt(self) -> int:
         with self._state_lock:
@@ -1517,11 +1550,14 @@ def finalize_task_artifacts(
     agent_id: str,
     *,
     allow_device_install: bool = False,
+    reply_content: str = "",
+    execution_policy: AgentExecutionPolicy | None = None,
 ) -> ArtifactFinalization:
     from artifact_request_policy import keep_office_outputs_separate
-    from task_workspace import task_artifacts, task_workspace
+    from task_workspace import missing_research_deliverables, select_reply_artifacts, task_artifacts, task_workspace
+    from research_delivery import research_summary
 
-    policy = execution_policy_for(prompt)
+    policy = execution_policy if execution_policy is not None else execution_policy_for(prompt)
     root = task_workspace(task_id, agent_id)
     output_root = root / "outputs"
     output_root.mkdir(parents=True, exist_ok=True)
@@ -1529,7 +1565,7 @@ def finalize_task_artifacts(
 
     current = task_artifacts(task_id)
     separate_office = policy.task_kind == AgentTaskKind.ARTIFACT and keep_office_outputs_separate(prompt, current)
-    if policy.requires_artifact and not separate_office:
+    if policy.requires_artifact and not separate_office and research_summary(reply_content) is None:
         candidates = _workspace_candidates(root)
         selected_apk = _newest_file(candidates, ".apk")
         if selected_apk is not None:
@@ -1558,12 +1594,17 @@ def finalize_task_artifacts(
                 current = [_artifact_descriptor(root, archive)]
                 packaged = True
 
+    current = select_reply_artifacts(reply_content, current, task_id, discover_unlisted=True)
     verification = _verify_outputs(
         root,
         current,
         policy,
         allow_device_install=allow_device_install,
     )
+    missing = missing_research_deliverables(reply_content, current, task_id)
+    if missing:
+        verification.update(status="failed", missing_deliverables=missing,
+                            reason="Explicit research deliverables are missing or not deliverable")
     return ArtifactFinalization(tuple(current), verification, packaged)
 
 

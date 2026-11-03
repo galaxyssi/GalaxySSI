@@ -205,6 +205,10 @@ object GalaxySSILinkDeliveryStore {
         outboxDatabase(context).canEnqueue(receiptBinding(routes), traffic == "control")
 
     @Synchronized
+    internal fun hasPendingAttachmentManifest(context: Context, routes: GalaxySSILinkProtocol.Routes,
+        transferId: String): Boolean = outboxDatabase(context).hasAttachmentManifest(receiptBinding(routes), transferId)
+
+    @Synchronized
     internal fun holdStaleUncorrelated(context: Context): Int =
         outboxDatabase(context).holdStaleUncorrelated(System.currentTimeMillis())
 
@@ -800,6 +804,9 @@ object GalaxySSILinkDeliveryStore {
                     val items = runCatching { JSONArray(legacy) }.getOrDefault(JSONArray())
                     if (items.length() > 0) database.replaceAll(items)
                     preferences.remove(KEY_OUTBOX)
+                }
+                database.redundantUnsentAttachmentManifests().forEach { messageId ->
+                    database.delete(messageId)?.let { deleteOutboxPayload(context, it) }
                 }
                 outboxMigrationChecked = true
             }

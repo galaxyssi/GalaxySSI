@@ -41,7 +41,7 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
     ).also(::cacheRuntimeContext)
     logPlanningLatency("context", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
-    val planned = com.galaxyssi.chat.metrics.AgentLatencyTelemetry.planning(appContext, sessionId) {
+    val planned = try { com.galaxyssi.chat.metrics.AgentLatencyTelemetry.planning(appContext, sessionId) {
         planningPlanner.plan(
             request = AgentRequest(
                 goal = currentGoal,
@@ -55,7 +55,7 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
                 executionTurnId = activeConversationTurnId
             )
         )
-    }
+    } } catch (wait: AgentModelLoopEventWaitException) { return waitForModelToolEvent(wait) }
     if (phase in setOf(AgentPhase.PAUSED, AgentPhase.CANCELLED, AgentPhase.FAILED)) return snapshot()
     logPlanningLatency("planner", stageStartedAt, planningStartedAt)
     stageStartedAt = SystemClock.elapsedRealtime()
@@ -98,7 +98,11 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
                 }
                 .take(5)
                 .joinToString("\n") { "- ${it.title}: ${it.summary.ifBlank { it.content }.take(1_200)}" }
-            action.copy(parameters = action.parameters + mapOf(
+            val bound = if (action.kind == AgentActionKind.CALL_CONNECTOR) {
+                AgentInvocationBinding.bind(appContext, action, activeConversationContext.conversationId,
+                    action.parameters["connector_id"].orEmpty(), targets.map { it.id })
+            } else action
+            bound.copy(parameters = bound.parameters + mapOf(
                 INTERNAL_CONVERSATION_ID to activeConversationContext.conversationId,
                 INTERNAL_CONVERSATION_CONTEXT to conversationPrompt,
                 INTERNAL_CONVERSATION_HAS_ATTACHMENTS to activeConversationContext.hasAttachments.toString(),

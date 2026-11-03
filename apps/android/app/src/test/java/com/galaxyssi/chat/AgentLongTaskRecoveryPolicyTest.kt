@@ -7,6 +7,21 @@ import org.junit.Test
 
 class AgentLongTaskRecoveryPolicyTest {
     @Test
+    fun auditedAutomaticPauseReconcilesTheOriginalTeamWithoutRedispatch() {
+        val run = "original-team"
+        val saved = session(AgentPhase.PAUSED, plan(AgentActionStatus.RUNNING),
+            AgentActionResult("action", false, "Awaiting original outcome", metadata = mapOf(
+                "resource_location" to "distributed", "team_run_id" to run,
+                "source_message_id" to AgentTeamDispatchIds.sourceMessageId(run).toString(),
+                AgentTeamParentRecoveryPolicy.PAUSED to "true")))
+            .copy(auditTrail = listOf(AgentAuditEntry(AgentAuditEvent.TASK_PAUSED,
+                "Saved Agent team unavailable; awaiting original outcome", 1)))
+        assertEquals(AgentLongTaskRecoveryMode.TEAM_RECONCILIATION,
+            AgentLongTaskRecoveryPolicy.decide(workspace(AgentWorkspaceStatus.PAUSED), saved)?.mode)
+        assertNull(AgentLongTaskRecoveryPolicy.decide(workspace(AgentWorkspaceStatus.PAUSED), saved.copy(
+            auditTrail = saved.auditTrail + AgentAuditEntry(AgentAuditEvent.TASK_PAUSED, "User paused", 2))))
+    }
+    @Test
     fun oldTeamWaitUsesSavedTeamInsteadOfLivenessOrRedispatch() {
         val saved = session(AgentPhase.WAITING_RESPONSE, plan(AgentActionStatus.RUNNING),
             AgentActionResult("action", true, "Awaiting team", metadata = mapOf(

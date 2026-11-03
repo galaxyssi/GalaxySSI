@@ -5,6 +5,7 @@ import threading
 import uuid
 
 from .ci_store import CiLeaseLost
+from .ci_verification import verification_issue
 from .common import now_millis, sha256_text
 
 
@@ -65,7 +66,7 @@ class EvolutionCiSupervisor:
                     data["repair"] = None
                 data.update(snapshot=snapshot, status=snapshot["status"], error="")
                 data.pop("integration", None)
-                if snapshot.get("merged") and snapshot.get("failed") and not snapshot.get("pending"):
+                if snapshot.get("merged") and verification_issue(snapshot) and not snapshot.get("pending"):
                     from .integration_verification import verify_integration
                     data["integration"] = verify_integration(self.manager, data["task_id"], snapshot)
                 if snapshot["status"] == "failed":
@@ -74,8 +75,10 @@ class EvolutionCiSupervisor:
                     self._cancel_obsolete(data["repair"])
                 self._save_parent_observation(data)
                 delay = 300_000 if snapshot["status"] == "passed" else 30_000
+                from .integration_verification import accepted_integration
                 finished = snapshot["status"] == "closed" or (snapshot["status"] == "merged" and
-                    (snapshot.get("passed") is True or (data.get("integration") or {}).get("passed") is True))
+                    (not verification_issue(snapshot) or
+                     accepted_integration(data.get("integration"), snapshot, data["task_id"])))
                 if snapshot.get("merged") and not finished:
                     delay = 300_000
                 next_poll = -1 if finished else now_millis() + delay

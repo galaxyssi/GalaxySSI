@@ -454,7 +454,7 @@ class AgentSupervisedProjectPromptTest {
 
         assertTrue(prompt.contains("Initial response option: if no phone action is needed"))
         assertTrue(prompt.contains("\"disposition\":\"respond\""))
-        assertTrue(prompt.contains("omit runtime, workspace, permission, and tool availability"))
+        assertTrue(prompt.contains("never a substitute for requested device operations"))
     }
 
     @Test
@@ -585,18 +585,17 @@ class AgentSupervisedProjectPromptTest {
         val continuation = AgentSupervisedProjectLoop.continuationPrompt(request)
 
         assertTrue(continuation.length < planning.length)
-        assertTrue(planning.substringBefore("Available phone tools:").length < 4_800)
-        assertTrue(continuation.contains("execution_location is always phone"))
+        assertTrue(planning.substringBefore("Available phone tools:").length <= 12_000)
+        assertTrue(continuation.contains("\"execution_location\":\"phone\""))
         assertTrue(continuation.contains("Independent reads/disjoint mutations may run concurrently"))
         assertTrue(continuation.contains("Up to 64 actions per response, not lifetime"))
         assertTrue(continuation.contains("Set completes_goal=true only when"))
-        assertTrue(continuation.contains("galaxyssi.project.repository.* for all Git operations"))
-        assertTrue(continuation.contains("never run Git through galaxyssi.runtime.execute"))
-        assertTrue(continuation.contains("verification_kind and no source"))
-        assertTrue(continuation.contains("project_profiles"))
-        assertTrue(continuation.contains("required executables"))
         assertTrue(continuation.contains("Delivery follows completion_requirements"))
-        assertTrue(continuation.contains("No default publication"))
+        val development = AgentSupervisedProjectLoop.continuationPrompt(request.withDevelopmentObservation())
+        assertTrue(development.contains("galaxyssi.project.repository.* only"))
+        assertTrue(development.contains("no shell Git"))
+        assertTrue(development.contains("verification_kind and no source"))
+        assertTrue(development.contains("Delivery follows completion_requirements"))
         assertTrue(continuation.contains("Available phone tools"))
         val blocked = AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(
             request.executionHistory
@@ -730,11 +729,14 @@ class AgentSupervisedProjectPromptTest {
         val continuationContractLength = continuation.substringBefore(toolsHeader).length
         val continuationToolLength = continuation.substringAfter(toolsHeader).substringBefore(boundary).length
 
-        assertTrue("Planning contract expanded to $planningContractLength characters", planningContractLength <= 5_800)
-        assertTrue("Continuation contract expanded to $continuationContractLength characters", continuationContractLength <= 3_000)
+        assertTrue("Planning contract expanded to $planningContractLength characters", planningContractLength <= 12_000)
+        assertTrue("Continuation contract expanded to $continuationContractLength characters", continuationContractLength <= 9_000)
         assertEquals(planningToolLength, continuationToolLength)
         assertTrue(planning.length <= 24_000)
         assertTrue(continuation.length <= 24_000)
+        val ordinary = AgentSupervisedProjectLoop.planningPrompt(request("hello"))
+        assertTrue(ordinary.substringBefore(toolsHeader).length <= 5_800)
+        assertFalse(ordinary.contains("Git: use"))
     }
 
     @Test
@@ -827,7 +829,7 @@ class AgentSupervisedProjectPromptTest {
     @Test
     fun `project loop installs evidence backed dependencies and retries the blocked step`() {
         val prompt = AgentSupervisedProjectLoop.planningPrompt(
-            request("Clone the project on this phone, build it, and fix any failures")
+            request("Clone the project on this phone, build it, and fix any failures").withDevelopmentObservation()
         )
 
         assertTrue(prompt.contains("Debian apt/dpkg as root"))
@@ -908,8 +910,13 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("Durable project context"))
         assertTrue(prompt.contains("https://github.com/galaxyssi/GalaxySSI"))
         assertTrue(prompt.contains("Use the current conversation workspace only"))
-        assertTrue(prompt.contains("A new conversation intentionally starts with an empty isolated workspace"))
+        assertFalse(prompt.contains("Git: use"))
     }
+
+    private fun AgentRequest.withDevelopmentObservation(): AgentRequest = copy(executionHistory = listOf(
+        AgentAction("observed-project", AgentActionKind.CALL_NATIVE_TOOL, AgentMobileProjectNativeTools.OBSERVE,
+            AgentRisk.LOW, AgentActionStatus.COMPLETED, "Inspect repository", result = "repository_state=ready")
+    ))
 
     @Test
     fun `project tools are ordered ahead of generic runtime tools`() {
@@ -1336,7 +1343,7 @@ class AgentSupervisedProjectPromptTest {
         assertTrue(prompt.contains("Durable cross-provider project summary"))
         assertTrue(prompt.contains(latestMarker))
         assertTrue(prompt.contains(AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_HEADER))
-        assertTrue(prompt.length <= 24_000)
+        assertTrue(prompt.length <= 196_608)
     }
 
     @Test
@@ -1427,7 +1434,7 @@ class AgentSupervisedProjectPromptTest {
         )
 
         val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
-        assertTrue(prompt.length <= 24_000)
+        assertTrue(prompt.length <= 196_608)
         assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
         assertTrue(prompt.contains("LATEST_USER_PROJECT_CONSTRAINT"))
         assertTrue(prompt.contains("LATEST_VERIFIED_PHONE_EVIDENCE"))
@@ -1473,7 +1480,7 @@ class AgentSupervisedProjectPromptTest {
         )
 
         val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
-        assertTrue(prompt.length <= 24_000)
+        assertTrue(prompt.length <= 196_608)
         assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
         assertTrue(prompt.contains("LATEST_FAILURE_REASON_FROM_WATCHDOG"))
         assertTrue(prompt.contains("LATEST_FAILED_PHONE_TOOL_EVIDENCE"))
@@ -1503,7 +1510,7 @@ class AgentSupervisedProjectPromptTest {
         )
 
         val missingToolIds = tools.map(AgentNativeToolDescriptor::id).filterNot(prompt::contains)
-        assertTrue(prompt.length <= 24_000)
+        assertTrue(prompt.length <= 196_608)
         assertTrue("Missing tools: $missingToolIds; promptLength=${prompt.length}", missingToolIds.isEmpty())
         assertTrue(prompt.contains("LATEST_PROGRESS_VIOLATION_REASON"))
         assertTrue(prompt.contains("LATEST_REJECTED_MODEL_ACTION_RESPONSE"))

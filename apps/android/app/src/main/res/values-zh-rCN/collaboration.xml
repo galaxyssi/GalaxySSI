@@ -1,4 +1,11 @@
 <resources>
+    <string name="collaboration_team_summary">%1$d 位成员 · %2$s</string>
+    <string name="collaboration_team_counts">%1$d 执行 · %2$d 等待</string>
+    <string name="collaboration_team_idle">待命</string>
+    <string name="collaboration_team_awaiting_plan">等待更新计划</string>
+    <string name="collaboration_team_unassigned">尚未分配任务</string>
+    <string name="collaboration_stage_execute">计算与执行</string>
+    <string name="collaboration_process_duration">用时 %1$s</string>
     <string name="collaboration_system_message">协作通知</string>
     <string name="collaboration_synthesizing">协调员正在核对并汇总成员结果</string>
     <string name="collaboration_title">协作群</string>
@@ -36,7 +43,9 @@
     <string name="collaboration_queued">排队中</string>
     <string name="collaboration_running">正在执行</string>
     <string name="collaboration_completed">已完成</string>
-    <string name="collaboration_failed_status">已中断或失败</string>
+    <string name="collaboration_failed_status">本次执行失败</string>
+    <string name="collaboration_connection_lost">连接中断，等待恢复</string>
+    <string name="collaboration_connection_reconciling">连接已恢复，正在核对原任务</string>
     <string name="collaboration_cancelled">已停止</string>
     <string name="collaboration_skipped">已跳过</string>
     <string name="collaboration_created">协作群已创建</string>
@@ -58,6 +67,7 @@
     <string name="collaboration_stage_recheck">再次验证方案</string>
     <string name="collaboration_stage_deliver">对比与交付</string>
     <string name="collaboration_recall_title">群知识</string>
+    <string name="collaboration_publish_title">分享阶段成果</string>
     <string name="collaboration_recall_description">按关键词或记录编号检索当前会话保存的研究、方案和证据。记录仅是待核实资料，摘要不替代原文。</string>
     <string name="collaboration_directed_question">定向提问 %1$s：%2$s</string>
 </resources>

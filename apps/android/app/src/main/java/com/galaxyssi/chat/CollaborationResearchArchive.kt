@@ -19,6 +19,8 @@ internal class CollaborationResearchArchive(private val context: Context, privat
             .put("roster", execution.request.context["collaboration_research_roster"]?.toString().orEmpty())
             .put("member_id", member.context[CollaborationResearchWorkflow.PERSON].orEmpty().ifBlank { member.memberId })
             .put("name", member.context["collaboration_name"]).put("stage", member.context[CollaborationResearchWorkflow.STAGE])
+            .put("repair_of", member.context[CollaborationWorkGraph.REPAIR_OF].orEmpty())
+            .put("repair_reason", member.context[CollaborationWorkGraph.REPAIR_REASON].orEmpty())
             .put("record_type", if (input) "assignment" else "result")
             .put("provider_id", member.agentId).put("model_id", member.context["collaboration_model_id"])
             .put("goal", execution.request.goal).put("raw_output", raw)
@@ -81,6 +83,12 @@ internal class CollaborationResearchArchive(private val context: Context, privat
     }.take(5_500)
 
     companion object {
+        fun visibleToAssignment(record: JSONObject, access: CollaborationWorkspaceAccess): Boolean =
+            access.personId.isNotBlank() && record.optString("group_id") == access.groupId &&
+                (visible(record, access.turnId, access.round) ||
+                    record.optString("run_id") == access.runId && record.optLong("goal_round", -1) == access.round &&
+                    record.optString("node_id") in (access.dependencyNodes + access.nodeId))
+
         fun visible(record: JSONObject, excludedTurn: String, beforeRound: Long): Boolean =
             excludedTurn.isBlank() || record.optString("turn_id") != excludedTurn ||
                 record.has("goal_round") && record.optLong("goal_round") < beforeRound
@@ -91,6 +99,7 @@ internal class CollaborationResearchArchive(private val context: Context, privat
         fun remove(context: Context, group: String) = synchronized(LOCK) {
             CollaborationResearchWorkspace.remove(context, group)
             CollaborationEvidenceLedger.remove(context, group)
+            CollaborationModelCallLedger.remove(context, group)
             CollaborationRemoteEvidenceStore(context).remove(group)
             CollaborationGoalContractStore(context).remove(group)
             val name = databaseName(group)

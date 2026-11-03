@@ -539,6 +539,7 @@ class MobileNativeAgent(
             hasPendingActions -> AgentPhase.EXECUTING
             else -> AgentPhase.COMPLETED
         }
+        guardOutcomeCompletion()
         recordAudit(
             AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED,
             "source_message_id=$sourceMessageId; contact=$contactId; disposition=steered"

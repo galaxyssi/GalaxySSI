@@ -19,6 +19,8 @@ jobs:
       - run: npm run test:branch-protection
       - run: python tools/dev/test-blob-tooling.py -v
       - run: npm run test:trusted-pr-review
+      - run: node --test tools/testing/team-evaluation/team-evaluation.test.mjs tools/testing/team-longitudinal/protocol.test.mjs
+      - run: python -B -m unittest discover -s tools/testing/codex-isolation -p test_preflight.py -v
       - run: npm run test:runtime-tools
       - run: npm run test:android:elf-normalizer
       - run: npm run test:guest-runtime
@@ -37,6 +39,7 @@ jobs:
           bash -n tools/runtime/build-gradle-image.sh
           bash -n tools/runtime/build-browser-automation-image.sh
           bash -n tools/runtime/build-ffmpeg-image.sh
+          bash -n tools/runtime/verify-ffmpeg-images.sh
           bash -n apps/android/runtime/qemu/termux-build.sh
           bash -n apps/android/runtime/buildroot-external/board/galaxyssi/aarch64/post-build.sh
           bash -n apps/android/runtime/buildroot-external/board/galaxyssi/aarch64/rootfs-overlay/etc/init.d/S99galaxyssi
@@ -123,6 +126,8 @@ jobs:
       - uses: ./.github/actions/setup-native-memory
       - run: npm run test:core-regressions:contract
       - run: python tools/dev/test-ci-android-memory.py
+      - name: Test shared collaboration workflow core without Android
+        run: apps/android/gradlew -p apps/shared/collaboration-core test --no-daemon
       - run: npm run test:core-regressions
       - uses: actions/upload-artifact@v4
         if: always()

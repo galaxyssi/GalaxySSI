@@ -71,7 +71,7 @@ class AgentInteractiveProgressPolicyTest {
     }
 
     @Test
-    fun completedNarrationPlanReportsTheFinalStep() {
+    fun completedNarrationReportsHistoryWithoutInventingVerifiedSteps() {
         val presentation = AgentInteractiveProgressPolicy.project(
             goal = "研究最新 Agent 方案并比较多个来源",
             plan = null,
@@ -82,7 +82,9 @@ class AgentInteractiveProgressPolicyTest {
 
         assertTrue(presentation.visible)
         assertEquals("3/3", presentation.counter)
-        assertEquals(3, presentation.completedSteps)
+        assertEquals(0, presentation.completedSteps)
+        assertTrue(presentation.steps.all { it.state == AgentInteractiveProgressStepState.RECORDED })
+        assertEquals(AgentInteractiveProgressStatus.COMPLETED, presentation.status)
         assertFalse(presentation.running)
     }
 
@@ -185,6 +187,178 @@ class AgentInteractiveProgressPolicyTest {
         assertEquals(2, presentation.steps.size)
         assertEquals(listOf(1, 2), presentation.batches.map { it.planRevision })
     }
+
+    @Test
+    fun completedTaskStopsStaleRunningStepsWithoutClaimingTheirSuccess() {
+        val presentation = projectPhase(AgentPhase.COMPLETED)
+        assertEquals(AgentInteractiveProgressStatus.COMPLETED, presentation.status)
+        assertFalse(presentation.running)
+        assertEquals(1, presentation.completedSteps)
+        assertEquals(AgentInteractiveProgressStepState.RECORDED, presentation.steps[1].state)
+        assertEquals(AgentInteractiveProgressStepState.NOT_EXECUTED, presentation.steps[2].state)
+    }
+
+    @Test
+    fun pausedTaskStopsAnimationAndRetainsResumeAction() {
+        val presentation = projectPhase(AgentPhase.PAUSED)
+        assertEquals(AgentInteractiveProgressStatus.PAUSED, presentation.status)
+        assertFalse(presentation.running)
+        assertEquals(AgentInteractiveProgressStepState.PAUSED, presentation.steps[1].state)
+        assertTrue(AgentExecutionLoopTimelineAction.RESUME in
+            AgentExecutionLoopTimelinePolicy.actionsForPhase(AgentPhase.PAUSED))
+    }
+
+    @Test
+    fun waitingForConfirmationIsNotActiveExecution() {
+        val presentation = projectPhase(AgentPhase.WAITING_CONFIRMATION)
+        assertEquals(AgentInteractiveProgressStatus.WAITING_CONFIRMATION, presentation.status)
+        assertFalse(presentation.running)
+        assertEquals(AgentInteractiveProgressStepState.WAITING, presentation.steps[1].state)
+    }
+
+    @Test
+    fun waitingForResponseRemainsLiveButIsNotLabeledActiveWork() {
+        val presentation = projectPhase(AgentPhase.WAITING_RESPONSE)
+        assertEquals(AgentInteractiveProgressStatus.WAITING_RESPONSE, presentation.status)
+        assertTrue(presentation.running)
+        assertEquals(AgentInteractiveProgressStepState.WAITING, presentation.steps[1].state)
+        assertEquals("2/3", presentation.counter)
+    }
+
+    @Test
+    fun failedTaskDoesNotConvertStaleRunningActionIntoSuccess() {
+        val presentation = projectPhase(AgentPhase.FAILED, completed = true)
+        assertEquals(AgentInteractiveProgressStatus.FAILED, presentation.status)
+        assertFalse(presentation.running)
+        assertEquals(AgentInteractiveProgressStepState.STOPPED, presentation.steps[1].state)
+        assertEquals(1, presentation.completedSteps)
+    }
+
+    @Test
+    fun cancelledTaskIsNotDisplayedAsCompleted() {
+        val presentation = projectPhase(AgentPhase.CANCELLED, completed = true)
+        assertEquals(AgentInteractiveProgressStatus.CANCELLED, presentation.status)
+        assertFalse(presentation.running)
+        assertEquals(AgentInteractiveProgressStepState.STOPPED, presentation.steps[1].state)
+    }
+
+    @Test
+    fun blockedTaskRetainsReplanningWithoutActiveAnimation() {
+        val presentation = projectPhase(AgentPhase.BLOCKED, completed = true)
+        assertEquals(AgentInteractiveProgressStatus.BLOCKED, presentation.status)
+        assertFalse(presentation.running)
+        assertEquals(AgentInteractiveProgressStepState.WAITING, presentation.steps[1].state)
+        assertTrue(AgentExecutionLoopTimelineAction.REPLAN in
+            AgentExecutionLoopTimelinePolicy.actionsForPhase(AgentPhase.BLOCKED))
+    }
+
+    @Test
+    fun activeRuntimeOverridesAnOlderCompletionTimestamp() {
+        for (phase in listOf(AgentPhase.PLANNING, AgentPhase.EXECUTING, AgentPhase.OBSERVING, AgentPhase.VERIFYING)) {
+            val presentation = projectPhase(phase, completed = true)
+            assertEquals(AgentInteractiveProgressStatus.RUNNING, presentation.status)
+            assertTrue(presentation.running)
+            assertEquals(AgentInteractiveProgressStepState.ACTIVE, presentation.steps[1].state)
+        }
+    }
+
+    @Test
+    fun missingRuntimeUsesCompletionHintWithoutInventingOngoingExecution() {
+        assertEquals(AgentInteractiveProgressStatus.COMPLETED, projectPhase(null, completed = true).status)
+        val unknown = projectPhase(null)
+        assertEquals(AgentInteractiveProgressStatus.UNKNOWN, unknown.status)
+        assertFalse(unknown.running)
+        assertEquals(AgentInteractiveProgressStepState.RECORDED, unknown.steps[1].state)
+    }
+
+    @Test
+    fun staleCachedWaitingCannotRestartAnAlreadyFinishedHistoryRow() {
+        val presentation = projectFallback(AgentPhase.WAITING_RESPONSE)
+        assertEquals(AgentInteractiveProgressStatus.COMPLETED, presentation.status)
+        assertFalse(presentation.running)
+    }
+
+    @Test
+    fun cachedTerminalAndPausedStatesAreNotReplacedByGenericCompletion() {
+        for (phase in listOf(AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.PAUSED, AgentPhase.BLOCKED)) {
+            assertEquals(AgentInteractiveProgressStatus.from(phase, false), projectFallback(phase).status)
+        }
+    }
+
+    @Test
+    fun liveRuntimeStillOverridesCompletedHistoryAndCachedFailure() {
+        val presentation = projectFallback(AgentPhase.FAILED, AgentPhase.EXECUTING)
+        assertEquals(AgentInteractiveProgressStatus.RUNNING, presentation.status)
+        assertTrue(presentation.running)
+    }
+
+    private fun projectFallback(fallback: AgentPhase, livePhase: AgentPhase? = null) =
+        AgentInteractiveProgressPolicy.project(
+            goal = "Inspect and verify",
+            plan = plan(
+                action("read", "Read", AgentActionStatus.COMPLETED),
+                action("verify", "Verify", AgentActionStatus.WAITING_RESPONSE)
+            ),
+            phase = livePhase,
+            processTexts = emptyList(),
+            completed = true,
+            fallbackPhase = fallback
+        )
+
+    @Test
+    fun retiredRunningActionCannotRemainActiveOrSupplyTheSummary() {
+        val presentation = AgentInteractiveProgressPolicy.project(
+            goal = "Continue validation",
+            plan = plan(action("r2-current", "Current verification", AgentActionStatus.RUNNING)).copy(
+                revision = 2,
+                actionHistory = listOf(action("r1-old", "Obsolete work", AgentActionStatus.RUNNING)),
+                plannerProfile = PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE
+            ),
+            phase = AgentPhase.VERIFYING,
+            processTexts = emptyList(),
+            completed = false
+        )
+        assertEquals(AgentInteractiveProgressStepState.SUPERSEDED, presentation.steps[0].state)
+        assertEquals("Current verification", presentation.summary)
+    }
+
+    @Test
+    fun terminalNarrationCannotProveTheDeclaredPlanWasExecuted() {
+        for (phase in listOf(AgentPhase.COMPLETED, AgentPhase.CANCELLED, AgentPhase.FAILED)) {
+            val presentation = AgentInteractiveProgressPolicy.project(
+                goal = "Implement and verify a feature",
+                plan = null,
+                phase = phase,
+                processTexts = listOf("1. Inspect\n2. Implement\n3. Verify"),
+                completed = true
+            )
+            assertFalse(presentation.running)
+            assertEquals(0, presentation.completedSteps)
+            assertTrue(presentation.steps.none { it.state == AgentInteractiveProgressStepState.ACTIVE })
+            assertEquals(AgentInteractiveProgressStepState.NOT_EXECUTED, presentation.steps.last().state)
+        }
+    }
+
+    @Test
+    fun identicalSnapshotsRestoreTheSamePresentationWithoutWallClockState() {
+        val before = projectPhase(AgentPhase.COMPLETED)
+        val restored = projectPhase(AgentPhase.COMPLETED)
+        assertEquals(before, restored)
+        assertFalse(restored.running)
+    }
+
+    private fun projectPhase(phase: AgentPhase?, completed: Boolean = false) =
+        AgentInteractiveProgressPolicy.project(
+            goal = "Inspect, act and verify",
+            plan = plan(
+                action("observed", "Read current state", AgentActionStatus.COMPLETED),
+                action("current", "Verify result", AgentActionStatus.RUNNING),
+                action("pending", "Prepare evidence", AgentActionStatus.PROPOSED)
+            ),
+            phase = phase,
+            processTexts = emptyList(),
+            completed = completed
+        )
 
     private fun plan(vararg actions: AgentAction) = AgentPlan(
         goal = "goal",

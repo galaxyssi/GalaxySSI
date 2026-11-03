@@ -6,6 +6,7 @@ import java.util.Locale
 /** Classification uses authenticated application types, never words in a user's message. */
 internal object MqttTrafficPolicy {
     fun classify(payload: JSONObject): String = when (payload.optString("type")) {
+        ContactReminderPolicy.TYPE -> "control"
         "agent_task_cancel", "desktop_tool_call_cancel", "client_revoked", "desktop_control_revoke", "pairing_revoked" -> "control"
         "delivery_ack" -> "receipt"
         "input_attachment_chunk", "artifact_chunk" -> "chunk"

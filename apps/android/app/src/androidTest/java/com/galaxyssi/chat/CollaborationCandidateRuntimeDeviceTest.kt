@@ -141,6 +141,43 @@ class CollaborationCandidateRuntimeDeviceTest {
         }
     }
 
+    @Test fun encryptedStoreRestoresReassignedReviewWithoutRepeatingTheOriginal(): Unit = runBlocking {
+        withTimeout(60_000) {
+            val fixture = Fixture("candidate-reassignment-${UUID.randomUUID()}")
+            try {
+                val staged = CandidateReviewReassignmentFixture.seed(fixture.store(), fixture.f)
+                val reopened = fixture.store()
+                reopened.markInterrupted(fixture.f.access.runId, System.currentTimeMillis())
+                val checkpoint = requireNotNull(reopened.resumeCheckpoint(fixture.f.access.runId))
+                val replacement = CandidateReviewReassignmentFixture.replacement(staged)
+                val old = JSONObject(replacement.context.getValue(CollaborationCandidateEvolution.TASK))
+                    .getJSONObject("review_reassignment").getString("node_id")
+                assertTrue(old in checkpoint.completed)
+                val calls = CopyOnWriteArrayList<String>()
+                AgentTeamExecutionRuntime(reopened, AgentSubagentLimits(maxConcurrency = 3)).use { runtime ->
+                    runtime.resume(checkpoint) { execution ->
+                        val member = execution.member
+                        assertFalse(member.memberId in checkpoint.completed)
+                        calls += member.memberId
+                        AgentSubagentOutput(when {
+                            member.context.containsKey(CollaborationCandidateEvolution.TASK) -> fixture.f.execute(member)
+                            CollaborationLiveGraph.planner(member) -> fixture.f.expansion()
+                            member.memberId == "slow" -> "Unrelated local result"
+                            else -> fixture.f.assessment()
+                        })
+                    }.await()
+                }
+                assertEquals(1, calls.count { it == replacement.memberId })
+                assertEquals(calls.size, calls.distinct().size)
+                assertFalse(calls.contains(old))
+                val access = fixture.f.access.copy(round = 5)
+                assertEquals(1, fixture.f.workspace.publicationRevisions(access, replacement.memberId).size)
+                assertTrue(fixture.f.workspace.publicationRevisions(access, old).isEmpty())
+                assertEquals("continue", reopened.snapshot(fixture.f.access.runId)!!.goalDisposition)
+            } finally { fixture.clear() }
+        }
+    }
+
     private suspend fun complete(store: AgentTeamExecutionStore, id: String, output: String, sequence: Long) {
         store.append(AgentSubagentEvent(sequence, "candidate-run", id, AgentSubagentEventKinds.CHILD_SUCCEEDED,
             childStatus = AgentSubagentStatus.SUCCEEDED, result = AgentSubagentChildResult("candidate-run", id, "candidate-run", 1,

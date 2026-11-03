@@ -1,0 +1,3 @@
+<resources>
+    <color name="chat_shortcut_unread">@color/text_primary</color>
+</resources>

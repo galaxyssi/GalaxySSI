@@ -21,6 +21,43 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class AgentSubagentExpansionTest {
+    @Test fun externalWakeDuringPersistenceIsReconciledWithoutAnotherChildCompletion() = runBlocking {
+        withTimeout(10_000) {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val reconciled = CompletableDeferred<Unit>()
+            val stopWorker = CompletableDeferred<Unit>()
+            val phase = AtomicInteger()
+            val runtime = AgentSubagentRuntime(graphExpansion = AgentSubagentExpansionHook { plan, _ ->
+                when (phase.get()) {
+                    1 -> { entered.complete(Unit); release.await(); phase.compareAndSet(1, 2) }
+                    2 -> reconciled.complete(Unit)
+                }
+                plan
+            })
+            try {
+                val started = CompletableDeferred<Unit>()
+                val plan = AgentSubagentPlan("external", listOf(AgentSubagentChild("worker"),
+                    AgentSubagentChild("final", dependencies = setOf("worker"))), completionBarrierChildId = "final")
+                val handle = runtime.start(plan) { context ->
+                    if (context.childId == "worker") { started.complete(Unit); stopWorker.await() }
+                    AgentSubagentOutput("done")
+                }
+                started.await()
+                phase.set(1)
+                assertTrue(runtime.requestExpansion("external"))
+                entered.await()
+                repeat(20) { assertTrue(runtime.requestExpansion("external")) }
+                release.complete(Unit)
+                reconciled.await()
+                assertTrue(handle.isActive)
+                stopWorker.complete(Unit)
+                assertEquals(AgentSubagentRunStatus.SUCCEEDED, handle.await().status)
+                assertFalse(runtime.requestExpansion("external"))
+            } finally { release.complete(Unit); stopWorker.complete(Unit); runtime.shutdown() }
+        }
+    }
+
     @Test
     fun dynamicReviewFinishesWhileUnrelatedSlowChildIsHeldAndBarrierIncludesEverything() = runBlocking {
         val slowStarted = CompletableDeferred<Unit>()

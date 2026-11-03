@@ -1,0 +1,179 @@
+package com.galaxyssi.chat
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** Interim publications are immutable data, not child completion or accepted scientific claims. */
+internal class CollaborationMilestoneJournal(
+    private val rows: CollaborationWorkspaceRows,
+    private val access: CollaborationWorkspaceAccess
+) {
+    private val scope = AgentNativeJsonCodec.sha256(JSONArray(listOf(access.groupId, access.runId, access.turnId,
+        access.round, access.nodeId, access.personId)).toString())
+    private val groupPrefix = "group:${AgentNativeJsonCodec.sha256(access.groupId)}:"
+    private val prefix = "${groupPrefix}milestone:$scope:"
+
+    fun publicationKey(id: String) = "${groupPrefix}milestone-publication:$scope:${AgentNativeJsonCodec.sha256(id)}"
+
+    fun outcomeWrites(id: String, raw: String, receipt: JSONObject, now: Long): Map<String, String> {
+        val record = JSONObject().put("milestone_id", id).put("producer_node", access.nodeId)
+            .put("person_id", access.personId).put("scope_sha256", scope)
+            .put("raw", raw).put("raw_sha256", AgentNativeJsonCodec.sha256(raw)).put("recorded_at", now)
+            .put("receipt", receipt)
+        record.put("record_sha256", AgentNativeJsonCodec.sha256(record.toString()))
+        return buildMap {
+            // Preserve failed drafts as well, without rewriting a successful milestone.
+            val attemptKey = "${groupPrefix}milestone-attempt:$scope:${AgentNativeJsonCodec.sha256(id)}:" +
+                AgentNativeJsonCodec.sha256(JSONArray().put(raw).put(receipt).toString())
+            if (rows.read(attemptKey) == null) put(attemptKey, record.toString())
+            if (receipt.optString("status") == "recorded") {
+                val key = prefix + AgentNativeJsonCodec.sha256(id)
+                put(key, record.toString())
+                val token = AgentNativeJsonCodec.sha256(key)
+                val descriptor = JSONObject().put("token", token).put("milestone_id", id)
+                    .put("producer_node", access.nodeId).put("person_id", access.personId).put("recorded_at", now)
+                    .put("record_key", key).put("record_sha256", record.getString("record_sha256"))
+                    .put("revisions", receipt.getJSONArray("revisions"))
+                CollaborationMilestoneCoordination.read(receipt)?.let { descriptor.put("coordination", it) }
+                put(runPrefix(access, recordOnly = !CollaborationMilestoneCoordination.requestsCoordination(receipt)) + token,
+                    descriptor.toString())
+                val requests = CollaborationPeerExchangePolicy.requests(requireNotNull(CollaborationResearchArtifact.decode(raw)))
+                val recipients = linkedSetOf<String>()
+                repeat(requests.length()) { at -> requests.getJSONObject(at).getJSONArray("to").let { to ->
+                    repeat(to.length()) { recipients += to.getString(it) }
+                } }
+                recipients.filter { it != access.personId }.forEach { recipient ->
+                    put(peerPrefix(access, recipient) + token, descriptor.toString())
+                }
+            }
+        }
+    }
+
+    fun resolve(artifact: JSONObject, read: (JSONObject) -> JSONObject): List<JSONObject> {
+        if (!artifact.has("milestones")) return emptyList()
+        val ids = requireNotNull(artifact.optJSONArray("milestones")) { "milestones must contain this assignment's published milestone IDs" }
+        val seen = hashSetOf<String>()
+        val revisions = linkedMapOf<String, JSONObject>()
+        repeat(ids.length()) { index ->
+            val id = ids.opt(index) as? String ?: throw IllegalArgumentException("milestones[$index] must be a string")
+            validateId(id)
+            require(seen.add(id)) { "Duplicate milestone ID: $id" }
+            val record = requireNotNull(rows.read(prefix + AgentNativeJsonCodec.sha256(id))) { "Unknown milestone: $id" }.let(::JSONObject)
+            checkRecord(record)
+            require(record.getString("milestone_id") == id) { "Milestone identity changed" }
+            val refs = record.getJSONObject("receipt").getJSONArray("revisions")
+            repeat(refs.length()) { at ->
+                val original = read(refs.getJSONObject(at))
+                revisions["${original.getString("object_id")}:${original.getInt("revision")}"] = original
+            }
+        }
+        return revisions.values.toList()
+    }
+
+    fun receipt(id: String, artifactSha256: String): JSONObject {
+        validateId(id)
+        require(artifactSha256.matches(HASH)) { "artifact_sha256 must be a lowercase SHA-256" }
+        val result = JSONObject().put("milestone_id", id).put("artifact_sha256", artifactSha256)
+        val record = rows.read(prefix + AgentNativeJsonCodec.sha256(id))?.let(::JSONObject)
+            ?: return result.put("status", "not_recorded")
+        checkRecord(record)
+        require(record.getString("milestone_id") == id) { "Milestone identity changed" }
+        // Keep the existing JSON-codec journal digest; the wire identity hashes exact UTF-8 bytes.
+        require(AgentResultRecoveryClient.sha256(record.getString("raw").toByteArray(Charsets.UTF_8)) == artifactSha256) {
+            "Milestone content differs from the saved publication; use the original snapshot"
+        }
+        return JSONObject(record.getJSONObject("receipt").toString())
+            .put("milestone_id", id).put("artifact_sha256", artifactSha256).put("receipt_recovered", true)
+    }
+
+    fun page(cursor: String): JSONObject {
+        require(cursor.isEmpty() || cursor.startsWith(prefix) && cursor.removePrefix(prefix).matches(HASH)) { "Cursor belongs to another assignment" }
+        val keys = rows.page(prefix, cursor, 33)
+        val records = keys.take(32).map { key ->
+            val value = requireNotNull(rows.read(key)).let(::JSONObject)
+            checkRecord(value)
+            JSONObject().put("milestone_id", value.getString("milestone_id"))
+                .put("raw_sha256", value.getString("raw_sha256")).put("recorded_at", value.getLong("recorded_at"))
+                .put("revision_count", value.getJSONObject("receipt").getJSONArray("revisions").length())
+                .also { item -> CollaborationMilestoneCoordination.read(value.getJSONObject("receipt"))?.let {
+                    item.put("coordination", it)
+                } }
+        }
+        return JSONObject().put("status", "returned").put("milestones", JSONArray(records))
+            .put("next_cursor", if (keys.size > 32) keys[31] else JSONObject.NULL)
+            .put("trust", "host_recorded_interim_versions_not_task_completion_or_verification")
+    }
+
+    private fun checkRecord(record: JSONObject) {
+        val unsigned = JSONObject(record.toString()).apply { remove("record_sha256") }
+        require(AgentNativeJsonCodec.sha256(unsigned.toString()) == record.getString("record_sha256") &&
+            record.getString("scope_sha256") == scope && record.getString("producer_node") == access.nodeId &&
+            record.getString("person_id") == access.personId &&
+            AgentNativeJsonCodec.sha256(record.getString("raw")) == record.getString("raw_sha256") &&
+            record.getJSONObject("receipt").getString("status") == "recorded") { "Milestone integrity check failed" }
+    }
+
+    companion object {
+        private val HASH = Regex("[a-f0-9]{64}")
+        private fun runPrefix(access: CollaborationWorkspaceAccess, recordOnly: Boolean = false) =
+            "group:${AgentNativeJsonCodec.sha256(access.groupId)}:${if (recordOnly) "milestone-record-run" else "milestone-run"}:" +
+                AgentNativeJsonCodec.sha256(JSONArray(listOf(access.runId, access.turnId, access.round)).toString()) + ":"
+
+        private fun peerPrefix(access: CollaborationWorkspaceAccess, recipient: String) =
+            "group:${AgentNativeJsonCodec.sha256(access.groupId)}:milestone-peer:" +
+                AgentNativeJsonCodec.sha256(JSONArray(listOf(access.runId, access.turnId, access.round, recipient)).toString()) + ":"
+
+        fun pending(rows: CollaborationWorkspaceRows, access: CollaborationWorkspaceAccess,
+                    covered: Set<String>, producers: Set<String>, coordinationOnly: Boolean = false,
+                    recipient: String? = null): List<JSONObject> {
+            val found = mutableListOf<JSONObject>()
+            val prefixes = if (recipient != null) listOf(peerPrefix(access, recipient)) else
+                if (coordinationOnly) listOf(runPrefix(access)) else listOf(runPrefix(access), runPrefix(access, true))
+            for (prefix in prefixes) {
+                var cursor = ""
+                while (true) {
+                    val keys = rows.page(prefix, cursor, 32)
+                    for (key in keys) {
+                        cursor = key
+                        if (key.removePrefix(prefix) in covered) continue
+                        val descriptor = requireNotNull(rows.read(key)).let(::JSONObject)
+                        require(key == prefix + descriptor.getString("token")) { "Milestone index identity changed" }
+                        if (descriptor.getString("producer_node") !in producers) continue
+                        val producer = access.copy(nodeId = descriptor.getString("producer_node"), personId = descriptor.getString("person_id"))
+                        val journal = CollaborationMilestoneJournal(rows, producer)
+                        val recordKey = journal.prefix + AgentNativeJsonCodec.sha256(descriptor.getString("milestone_id"))
+                        require(descriptor.getString("record_key") == recordKey &&
+                            descriptor.getString("token") == AgentNativeJsonCodec.sha256(recordKey)) { "Milestone index scope changed" }
+                        val record = requireNotNull(rows.read(recordKey)).let(::JSONObject)
+                        journal.checkRecord(record)
+                        require(record.getString("record_sha256") == descriptor.getString("record_sha256") &&
+                            record.getJSONObject("receipt").getJSONArray("revisions").toString() == descriptor.getJSONArray("revisions").toString() &&
+                            CollaborationMilestoneCoordination.read(record.getJSONObject("receipt"))?.toString() ==
+                                CollaborationMilestoneCoordination.read(descriptor)?.toString()) {
+                            "Milestone index content changed"
+                        }
+                        require(recipient != null || (prefix == runPrefix(access, true)) == !CollaborationMilestoneCoordination.requestsCoordination(descriptor)) {
+                            "Milestone coordination index changed"
+                        }
+                        val item = JSONObject(descriptor.toString()).apply { remove("record_key"); remove("record_sha256") }
+                        if (recipient != null) {
+                            val requests = CollaborationPeerExchangePolicy.requests(requireNotNull(
+                                CollaborationResearchArtifact.decode(record.getString("raw"))), recipient)
+                            require(requests.length() > 0) { "Peer index was not addressed to this recipient" }
+                            item.put("requests", requests)
+                        }
+                        found += item
+                        // Admission page, not a research limit: the next checkpoint consumes the next page.
+                        if (found.size == (if (recipient != null) 1 else 16)) return found
+                    }
+                    if (keys.size < 32) break
+                }
+            }
+            return found
+        }
+
+        fun validateId(id: String) { require(id.isNotBlank() && id == id.trim() && id.length <= 160 && id.none(Char::isISOControl)) {
+            "Use a stable nonblank milestone_id of at most 160 characters"
+        } }
+    }
+}

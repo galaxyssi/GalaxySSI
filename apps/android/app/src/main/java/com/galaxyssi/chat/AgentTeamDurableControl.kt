@@ -16,14 +16,21 @@ internal object AgentTeamControlIntent {
 }
 
 /** Separate from transport failure: neither a reboot nor a retry clears explicit user intent. */
-internal class AgentTeamDurableControl(context: Context) {
-    private val database = AgentEncryptedDatabase(context.applicationContext, "agent_team_user_control_v1")
+internal class AgentTeamDurableControl(context: Context,
+    private val onChanged: (String) -> Unit = { AgentManagedBrowserControlEvents.enqueue(context.applicationContext, it) }) {
+    private val app = context.applicationContext
+    private val database = AgentEncryptedDatabase(app, "agent_team_user_control_v1")
 
     fun get(runId: String): AgentTeamUserControl = runCatching {
         AgentTeamUserControl.valueOf(database.readString(runId, AgentTeamUserControl.RUN.name))
     }.getOrDefault(AgentTeamUserControl.STOP)
 
-    fun set(runId: String, value: AgentTeamUserControl) = database.writeString(runId, value.name)
+    fun set(runId: String, value: AgentTeamUserControl) {
+        database.writeString(runId, value.name)
+        if (value != AgentTeamUserControl.PAUSE) runCatching { onChanged(runId) }.onFailure {
+            android.util.Log.w("GalaxySSIBrowserRecovery", "Team control is durable; browser wake enqueue deferred", it)
+        }
+    }
 
     fun remove(runId: String) = database.remove(runId)
 

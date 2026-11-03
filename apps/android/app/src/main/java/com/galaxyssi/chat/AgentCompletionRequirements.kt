@@ -1,6 +1,25 @@
 package com.galaxyssi.chat
 
 import org.json.JSONObject
+import org.json.JSONArray
+
+data class AgentArtifactRequirement(val path: String, val sourceSha256: String = "", val workspaceId: String = "") {
+    fun toJson(): JSONObject = JSONObject().put("path", path).put("source_sha256", sourceSha256)
+        .put("workspace_id", workspaceId)
+
+    companion object {
+        fun parse(value: JSONObject): AgentArtifactRequirement? {
+            val path = value.opt("path") as? String ?: return null
+            val source = if (value.has("source_sha256")) value.opt("source_sha256") as? String ?: return null else ""
+            val workspace = if (value.has("workspace_id")) value.opt("workspace_id") as? String ?: return null else ""
+            if (path.isBlank() || path.length > 4096 || path.startsWith('/') || '\\' in path || ':' in path ||
+                path.split('/').any { it == ".." || it == "." } || path.any { it.code < 32 }) return null
+            if (source.isNotEmpty() && !source.matches(Regex("[a-fA-F0-9]{64}"))) return null
+            if (workspace.length > 256 || workspace.any { it.code < 32 } || workspace != workspace.trim()) return null
+            return AgentArtifactRequirement(path, source.lowercase(java.util.Locale.ROOT), workspace)
+        }
+    }
+}
 
 enum class AgentPublicationRequirement(val wireValue: String) {
     NONE("none"), COMMIT("commit"), PUSH("push"), PULL_REQUEST("pull_request")
@@ -10,20 +29,52 @@ enum class AgentPublicationRequirement(val wireValue: String) {
 data class AgentCompletionRequirements(
     val publication: AgentPublicationRequirement,
     val phoneLinux: Boolean,
-    val reason: String = ""
+    val reason: String = "",
+    val artifacts: List<AgentArtifactRequirement> = emptyList(),
+    val outcomes: List<AgentObservedOutcome> = emptyList(),
+    val results: List<AgentGoalResultRequirement> = emptyList()
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("publication", publication.wireValue)
         .put("phone_linux", phoneLinux)
         .put("reason", reason)
+        .put("artifacts", JSONArray(artifacts.map(AgentArtifactRequirement::toJson)))
+        .put("outcomes", JSONArray(outcomes.map(AgentObservedOutcome::toJson)))
+        .put("results", JSONArray(results.map(AgentGoalResultRequirement::toJson)))
 
     fun changesOutcome(previous: AgentCompletionRequirements): Boolean =
-        publication != previous.publication || phoneLinux != previous.phoneLinux
+        publication != previous.publication || phoneLinux != previous.phoneLinux || artifacts != previous.artifacts ||
+            outcomes != previous.outcomes || results != previous.results
 
     fun canReplace(previous: AgentCompletionRequirements?): Boolean =
-        previous == null || !changesOutcome(previous) || reason.isNotBlank()
+        previous == null || outcomes.map { it.id }.containsAll(previous.outcomes.map { it.id }) &&
+            results.map { it.id }.containsAll(previous.results.map { it.id }) &&
+            (!changesOutcome(previous) || reason.isNotBlank())
 
     companion object {
+        fun rejectionDetail(json: JSONObject): String {
+            val outcomes = json.optJSONArray("outcomes")
+            if (outcomes != null) for (index in 0 until outcomes.length()) {
+                val value = outcomes.optJSONObject(index) ?: continue
+                if (AgentObservedOutcome.parse(value) != null) continue
+                val subject = value.optJSONObject("subject") ?: return "completion_requirements.outcomes[$index].subject " +
+                        "must be a JSON object mapping receipt JSON pointers to observed string identities, " +
+                        "not a string or array. Shape: {\"/actual/identity/path\":\"observed identity\"}. Use real receipt paths and values; do not rerun a successful tool to repair JSON."
+                if (value.optJSONObject("checks") == null) return "completion_requirements.outcomes[$index].checks " +
+                        "must be a JSON object mapping receipt JSON pointers to expected scalar values, " +
+                        "not an array or string. Shape: {\"/actual/state/path\":\"expected state\"}. Preserve receipt value types and fix only the plan structure."
+                for (path in subject.keys()) {
+                    if (subject.opt(path) !is String) {
+                        return "completion_requirements.outcomes[$index].subject[$path] requires a string identity value, " +
+                            "not a numeric/boolean/null value. Keep checks numeric when the receipt field is numeric. " +
+                            "Correct the identity type or omit non-identity metadata; preserve the actual observed values. JSON syntax is valid."
+                    }
+                }
+            }
+            return "Use the advertised completion requirement schema: outcomes need string-valued subject identities " +
+                "and scalar checks; results need unique id, description, string-list outcome_ids/artifact_paths and string answer. JSON syntax is valid."
+        }
+
         fun parse(json: JSONObject?): AgentCompletionRequirements? {
             if (json == null) return null
             val publication = AgentPublicationRequirement.entries.firstOrNull {
@@ -32,7 +83,27 @@ data class AgentCompletionRequirements(
             val phoneLinux = json.opt("phone_linux") as? Boolean ?: return null
             val reason = if (json.has("reason")) json.opt("reason") as? String ?: return null else ""
             if (reason.length > 1_000) return null
-            return AgentCompletionRequirements(publication, phoneLinux, reason.trim())
+            val artifacts = mutableListOf<AgentArtifactRequirement>()
+            if (json.has("artifacts")) {
+                val array = json.optJSONArray("artifacts") ?: return null
+                for (index in 0 until array.length()) {
+                    artifacts += AgentArtifactRequirement.parse(array.optJSONObject(index) ?: return null) ?: return null
+                }
+                if (artifacts.map { it.path }.distinct().size != artifacts.size) return null
+            }
+            val outcomes = mutableListOf<AgentObservedOutcome>()
+            if (json.has("outcomes")) {
+                val array = json.optJSONArray("outcomes") ?: return null
+                for (index in 0 until array.length()) outcomes += AgentObservedOutcome.parse(array.optJSONObject(index) ?: return null) ?: return null
+                if (outcomes.map { it.id }.distinct().size != outcomes.size) return null
+            }
+            val results = mutableListOf<AgentGoalResultRequirement>()
+            if (json.has("results")) {
+                val array = json.optJSONArray("results") ?: return null
+                for (index in 0 until array.length()) results += AgentGoalResultRequirement.parse(array.optJSONObject(index) ?: return null) ?: return null
+                if (results.map { it.id }.distinct().size != results.size) return null
+            }
+            return AgentCompletionRequirements(publication, phoneLinux, reason.trim(), artifacts, outcomes, results)
         }
     }
 }

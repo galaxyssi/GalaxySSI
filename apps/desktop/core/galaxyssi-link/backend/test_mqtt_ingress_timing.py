@@ -30,7 +30,8 @@ class MqttIngressTimingTest(unittest.TestCase):
         self.tracer = agent_latency.AgentLatencyTracer(self.sink, monotonic_ns=lambda: self.ns)
         self.stack.enter_context(patch('agent_latency.tracer', return_value=self.tracer))
         self.stack.enter_context(patch.object(mqtt_bridge, 'timing_now_ns', side_effect=lambda: self.ns))
-        self.client = {'client_route_id': 'route', 'signal_name': 'phone', 'link_secret': 'A' * 43}
+        self.client = {'client_route_id': 'route', 'signal_name': 'phone', 'link_secret': 'A' * 43,
+                       'identity_fingerprint': 'b' * 64, 'local_identity_fingerprint': 'c' * 64}
         self.wire = json.dumps({'scheme': 'signal', 'from': 'phone', 'to': 'desktop', 'body': 'private-ciphertext'}).encode()
         self.payload = {'type': 'agent_task', 'client_route_id': 'route', 'conversation_id': 'private-conversation',
                         'task_id': 'private-task', 'turn_id': 'private-turn', 'content': 'private-prompt'}
@@ -44,7 +45,8 @@ class MqttIngressTimingTest(unittest.TestCase):
             13, store_received_envelope("route", copy.deepcopy(self.envelope))))
         self.mock('desktop_id', return_value='desktop')
         self.mock('desktop_name', return_value='Test Desktop')
-        self.mock('bind_ciphertext', side_effect=lambda *_: self.advance(17, None))
+        self.mock('bind_ciphertext', side_effect=lambda *args, **kwargs: self.advance(
+            17, link_delivery.bind_ciphertext(*args, **kwargs)))
         for name in ('touch_client', 'complete_message'):
             self.mock(name)
         self.publish = self.mock('_publish_phone_payload', return_value=True)
@@ -132,7 +134,8 @@ class MqttIngressTimingTest(unittest.TestCase):
     def test_fragment_timing_belongs_only_to_completing_packet(self):
         assembled = self.wire.decode()
         self.wire = json.dumps({'scheme': 'signal-chunk', 'protocol': link_protocol.PROTOCOL_NAME,
-                                'version': link_protocol.PROTOCOL_VERSION, 'from': 'phone', 'to': 'desktop'}).encode()
+                                'version': link_protocol.PROTOCOL_VERSION, 'from': 'phone', 'to': 'desktop',
+                                'transfer_id': 'd' * 64}).encode()
         with patch.object(mqtt_bridge.inbound_chunk_assembler, 'accept', side_effect=[None, assembled]):
             self.run_packet()
             self.assertEqual([], self.sink.points)
@@ -148,6 +151,39 @@ class MqttIngressTimingTest(unittest.TestCase):
         self.run_packet()
         self.assertEqual(1, self.metrics()['desktop_ingress_queue_ms']['count'])
         self.assertEqual(90, self.metrics()['desktop_ingress_queue_ms']['p95_ms'])
+
+    def test_collaboration_response_records_actual_receive_phases(self):
+        self.envelope['payload'].update(type='collaboration_recall_result', request_id='private-rpc')
+        with patch('collaboration_receive_observation.log.info') as log:
+            self.run_packet()
+        self.log.error.assert_not_called()
+        self.assertEqual(['stored', 'dispatch', 'finished'], [call.args[2] for call in log.call_args_list])
+        for call in log.call_args_list:
+            self.assertEqual((90.0, 13.0, 56.0), call.args[3:])
+            self.assertNotIn('private-', str(call))
+        self.publish.assert_called_once()
+
+    def test_collaboration_handler_failure_keeps_recovery_and_failed_phase(self):
+        self.envelope['payload'].update(type='collaboration_recall_result', request_id='private-rpc')
+        with patch('collaboration_receive_observation.log.info') as log, patch.object(
+                mqtt_bridge, '_dispatch_application_payload', side_effect=OSError('private-path')):
+            self.run_packet()
+        self.assertEqual(['stored', 'dispatch', 'failed'], [call.args[2] for call in log.call_args_list])
+        self.log.error.assert_called_once()
+        db = link_delivery._connect()
+        try:
+            self.assertEqual('retry', db.execute('SELECT dispatch_state FROM inbound_messages').fetchone()[0])
+        finally:
+            db.close()
+
+    def test_evidence_request_records_actual_receive_phases(self):
+        self.envelope['payload'].update(type='agent_task_evidence_request', request_id='private-rpc')
+        with patch('collaboration_receive_observation.log.info') as log:
+            self.run_packet()
+        self.assertEqual(['stored', 'dispatch', 'finished'], [call.args[2] for call in log.call_args_list])
+        for call in log.call_args_list:
+            self.assertEqual((90.0, 13.0, 56.0), call.args[3:])
+            self.assertNotIn('private-', str(call))
 
 
 if __name__ == '__main__':

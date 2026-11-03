@@ -21,8 +21,16 @@ data class AdaptiveEndpointConfig(
         require(postRollMs in 0..1_000)
     }
 
+    fun trailingSilenceMs(speechDurationMs: Long): Long = when {
+        speechDurationMs < 1_200L -> shortUtteranceSilenceMs
+        speechDurationMs < 5_000L -> normalUtteranceSilenceMs
+        else -> longUtteranceSilenceMs
+    }.coerceIn(minTrailingSilenceMs, maxTrailingSilenceMs)
+
     companion object {
-        fun forVoiceConversation() = AdaptiveEndpointConfig(noSpeechTimeoutMs = 30_000L)
+        fun forVoiceConversation() = AdaptiveEndpointConfig(noSpeechTimeoutMs = 30_000L,
+            shortUtteranceSilenceMs = 1_000L, normalUtteranceSilenceMs = 1_200L,
+            longUtteranceSilenceMs = 1_400L, maxTrailingSilenceMs = 1_500L)
     }
 }
 
@@ -70,6 +78,8 @@ class AdaptiveEndpointDetector(
         val trailingSilenceMs = lastSpeechSampleExclusive?.let {
             samplesToMs((consumedSamples - it).coerceAtLeast(0L))
         } ?: elapsedMs
+        val spokenSpanMs = if (firstSpeechSample != null && lastSpeechSampleExclusive != null)
+            samplesToMs(lastSpeechSampleExclusive!! - firstSpeechSample!!) else 0L
 
         if (terminalReason == null && autoEndpoint) {
             terminalReason = when {
@@ -78,7 +88,7 @@ class AdaptiveEndpointDetector(
                 elapsedMs >= config.maxDurationMs -> EndpointReason.MAX_DURATION
                 firstSpeechSample != null &&
                     speechDurationMs >= config.minimumSpeechMs &&
-                    trailingSilenceMs >= targetTrailingSilence(speechDurationMs) ->
+                    trailingSilenceMs >= config.trailingSilenceMs(spokenSpanMs) ->
                     EndpointReason.TRAILING_SILENCE
                 else -> null
             }
@@ -90,15 +100,6 @@ class AdaptiveEndpointDetector(
             trailingSilenceMs = trailingSilenceMs,
             endpointReason = terminalReason
         )
-    }
-
-    private fun targetTrailingSilence(speechDurationMs: Long): Long {
-        val target = when {
-            speechDurationMs < 1_200L -> config.shortUtteranceSilenceMs
-            speechDurationMs < 5_000L -> config.normalUtteranceSilenceMs
-            else -> config.longUtteranceSilenceMs
-        }
-        return target.coerceIn(config.minTrailingSilenceMs, config.maxTrailingSilenceMs)
     }
 
     private fun samplesToMs(samples: Long): Long = samples * 1_000L / sampleRateHz

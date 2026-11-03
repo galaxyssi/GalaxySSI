@@ -13,7 +13,7 @@ object AgentSpecializedAppPlanner {
     private const val WECHAT_PACKAGE = "com.tencent.mm"
 
     fun plan(request: AgentRequest): AgentSpecializedPlan? {
-        val goal = request.goal.trim()
+        val goal = AgentLocalCommandText.withoutPolitePrefix(request.goal)
         if (goal.isBlank()) return null
         parseWechatSend(goal)?.let { task ->
             return AgentSpecializedPlan("wechat", listOf(nextWechatAction(request, task)))
@@ -344,7 +344,7 @@ object AgentSpecializedAppPlanner {
     private fun parseDial(goal: String): String? {
         val prefixes = listOf("dial ", "call ", "\u62e8\u6253", "\u6253\u7535\u8bdd\u7ed9")
         val prefix = prefixes.firstOrNull { goal.startsWith(it, ignoreCase = true) } ?: return null
-        val value = goal.drop(prefix.length).trim().take(120)
+        val value = goal.drop(prefix.length).trim()
         val normalized = value.replace(Regex("[\\s()-]"), "")
         return value.takeIf {
             normalized.matches(Regex("[+*#0-9]{3,32}")) && normalized.count(Char::isDigit) >= 3
@@ -358,7 +358,7 @@ object AgentSpecializedAppPlanner {
         }
         val openPrefixes = listOf("open url ", "open website ", "browse ", "\u6253\u5f00\u7f51\u5740")
         openPrefixes.firstOrNull { goal.startsWith(it, ignoreCase = true) }?.let { prefix ->
-            return goal.drop(prefix.length).trim().takeIf { it.isNotBlank() }?.let { BrowserTask(it, false) }
+            return goal.drop(prefix.length).trim().safeHttpUrl()?.let { BrowserTask(it, false) }
         }
         return null
     }
@@ -366,23 +366,19 @@ object AgentSpecializedAppPlanner {
     private fun parseFile(goal: String): FileTask? {
         val lower = goal.lowercase(Locale.US)
         return when {
-            lower.contains("pick image") || lower.contains("select image") || lower.contains("choose photo") ||
-                goal.contains("\u9009\u62e9\u56fe\u7247") ->
+            lower.matchesCommand("pick image") || lower.matchesCommand("select image") || lower.matchesCommand("choose photo") ||
+                lower.matchesCommand("\u9009\u62e9\u56fe\u7247") ->
                 FileTask("Image Picker", "Select an image using Android document access", "image/*", "pick_image")
-            lower.contains("pick pdf") || lower.contains("select pdf") || goal.contains("\u9009\u62e9pdf", ignoreCase = true) ->
+            lower.matchesCommand("pick pdf") || lower.matchesCommand("select pdf") || lower.matchesCommand("\u9009\u62e9pdf") ->
                 FileTask("PDF Picker", "Select a PDF using Android document access", "application/pdf", "pick_pdf")
-            lower.contains("pick file") || lower.contains("select file") || lower.contains("open files") ||
-                lower.contains("open file manager") || goal.contains("\u9009\u62e9\u6587\u4ef6") ->
+            lower.matchesCommand("pick file") || lower.matchesCommand("select file") || lower.matchesCommand("open files") ||
+                lower.matchesCommand("open file manager") || lower.matchesCommand("\u9009\u62e9\u6587\u4ef6") ->
                 FileTask("File Picker", "Open Android document access", "*/*", "pick_file")
             else -> null
         }
     }
 
-    private fun String.safeHttpUrl(): String? {
-        val normalized = if (startsWith("http://", true) || startsWith("https://", true)) this else "https://$this"
-        val uri = runCatching { Uri.parse(normalized) }.getOrNull() ?: return null
-        return normalized.takeIf { uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() }
-    }
+    private fun String.safeHttpUrl(): String? = AgentLocalCommandText.httpUrl(this)
 
     private data class WechatTask(val contact: String, val message: String)
     private data class SmsTask(val recipient: String, val message: String)

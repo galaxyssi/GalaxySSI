@@ -29,6 +29,21 @@ class CollaborationGoalContractDeviceTest {
             val session = CloudImageAnnotationSession(context, emptyList(), collaborationEvidence = CollaborationCloudEvidence(ledger, access))
             val native = AgentPhoneNativeToolCatalog.defaultRegistry(context, { ScreenContext(foregroundApp = "", pageTitle = "") })
                 .subset { it.id == CollaborationRecallNativeTool.ID }
+            val selectedInput = JSONObject().put("mode", "goal_contract").put("section", "context:Member roster")
+            val selected = JSONObject(session.execute(CollaborationCloudRecall.NAME, selectedInput))
+            assertEquals(selected.toString(), "returned", selected.optString("status"))
+            assertTrue(selected.getInt("page_index") > 0)
+            assertTrue(selected.isNull("next_cursor"))
+            assertTrue(selected.toString().contains("reader, other"))
+            val nativeSelected = native.invoke(CollaborationRecallNativeTool.ID,
+                mapOf("mode" to "goal_contract", "section" to "context:Member roster"),
+                AgentNativeToolInvocationContext(conversationId = group, turnId = "turn", collaborationSourceMessageId = sourceMessageId))
+            assertTrue(nativeSelected.toJson(), nativeSelected.isSuccess)
+            assertEquals(selected.getString("page_sha256"), nativeSelected.output["page_sha256"])
+            assertEquals(selected.getString("section_sha256"), nativeSelected.output["section_sha256"])
+            assertEquals(0, store.delivery(access, descriptor.getString("snapshot_id")).getInt("delivered_page_count"))
+            assertEquals("failed", JSONObject(session.execute(CollaborationCloudRecall.NAME,
+                JSONObject().put("mode", "goal_contract").put("section", "context:Missing"))).optString("status"))
             val reconstructed = StringBuilder()
             var cursor = ""
             var count = 0

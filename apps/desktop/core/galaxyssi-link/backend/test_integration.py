@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -18,16 +19,29 @@ class BackendIntegrationContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="galaxyssi-backend-test-") as temporary:
             state_dir = Path(temporary)
             environment = os.environ.copy()
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                sidecar_port = listener.getsockname()[1]
             environment.update(
                 {
                     "GALAXYSSI_STATE_DIR": str(state_dir),
                     "GALAXYSSI_DATA_DIR": str(state_dir / "pairing"),
                     "GALAXYSSI_DATABASE_PATH": str(state_dir / "galaxyssi.db"),
                     "GALAXYSSI_CONFIG_PATH": str(state_dir / "galaxyssi_agents.json"),
+                    "GALAXYSSI_LINK_PORT": str(sidecar_port),
+                    "GALAXYSSI_SIGNAL_STORE_PATH": str(state_dir / "pairing" / "signal_state_v3.db"),
                 }
             )
+            # Direct API calls bypass the server lifespan that normally owns cleanup.
+            isolated_source = "try:\n" + textwrap.indent(textwrap.dedent(source), "    ") + "\n" + textwrap.dedent("""
+                finally:
+                    import sys
+                    signal_client = sys.modules.get("galaxyssi_client")
+                    if signal_client is not None:
+                        signal_client.stop_signal_sidecar()
+                """)
             result = subprocess.run(
-                [sys.executable, "-c", textwrap.dedent(source)],
+                [sys.executable, "-c", isolated_source],
                 cwd=BACKEND_DIR,
                 env=environment,
                 capture_output=True,

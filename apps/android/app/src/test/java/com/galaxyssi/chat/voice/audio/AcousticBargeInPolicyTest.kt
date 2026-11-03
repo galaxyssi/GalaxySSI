@@ -7,6 +7,16 @@ class AcousticBargeInPolicyTest {
     private val voice = VadDecision(0.95f, true, false, false, 0.1f, 5_000, -58f)
     private val silence = VadDecision(0.05f, false, false, false, 0.0001f, 3, -58f)
 
+    @Test fun referenceEchoDoesNotBecomeAnInterruptionEvenAfterPlaybackStops() {
+        val policy = AcousticBargeInPolicy()
+        repeat(30) { policy.accept(silence, 320) }
+        repeat(8) { policy.accept(voice, 320, outputPlaying = true) }
+        repeat(100) { assertFalse(policy.accept(voice, 320, outputPlaying = it < 50, playbackEcho = true).started) }
+        assertNull(policy.utteranceStartSample)
+        repeat(8) { assertFalse(policy.accept(voice, 320).started) }
+        assertTrue("Independent speech still has the original 180ms confirmation", policy.accept(voice, 320).started)
+    }
+
     @Test fun requiresActualEchoProtectionNotJustBuiltinMic() {
         assertFalse(AcousticBargeInPolicy.hasEchoProtection(PcmRecorderState(inputRoute = "built_in_mic")))
         assertTrue(AcousticBargeInPolicy.hasEchoProtection(PcmRecorderState(acousticEchoCancelerEnabled = true)))
@@ -54,6 +64,68 @@ class AcousticBargeInPolicyTest {
         val policy = AcousticBargeInPolicy()
         repeat(100) { assertFalse(policy.accept(voice.copy(rms = 0.0002f), 320).started) }
         assertNull(policy.utteranceStartSample)
+    }
+
+    @Test fun quietSpeechUsesTheMeasuredNoiseFloorOnlyWhenOutputIsIdle() {
+        val quiet = voice.copy(rms = 0.0025f, noiseFloorDb = -60f)
+        for (playing in listOf(false, true)) {
+            val policy = AcousticBargeInPolicy()
+            repeat(30) { policy.accept(silence, 320, playing) }
+            repeat(30) { policy.accept(quiet, 320, playing) }
+            assertEquals(!playing, policy.utteranceStartSample != null)
+        }
+    }
+
+    @Test fun noisyOrUnknownFloorDoesNotLowerThePlaybackGate() {
+        for (noiseDb in listOf(-35f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            val policy = AcousticBargeInPolicy()
+            repeat(30) { policy.accept(silence, 320) }
+            repeat(50) { policy.accept(voice.copy(rms = 0.0025f, noiseFloorDb = noiseDb), 320) }
+            assertNull(policy.utteranceStartSample)
+            repeat(10) { policy.accept(voice, 320, outputPlaying = true) }
+            assertNotNull(policy.utteranceStartSample)
+        }
+    }
+
+    @Test fun startingPlaybackDiscardsQuietOnsetEvidence() {
+        val policy = AcousticBargeInPolicy()
+        repeat(30) { policy.accept(silence, 320) }
+        repeat(8) { policy.accept(voice.copy(rms = 0.0025f, noiseFloorDb = -60f), 320) }
+        assertFalse(policy.accept(voice, 320, outputPlaying = true).started)
+        repeat(8) { policy.accept(voice, 320, outputPlaying = true) }
+        assertNotNull(policy.utteranceStartSample)
+    }
+
+    @Test fun briefUnvoicedGapsPreserveTheBeginningButLongGapsRestartConfirmation() {
+        for (gapFrames in listOf(1, 2, 3, 4)) {
+            val policy = AcousticBargeInPolicy()
+            repeat(30) { policy.accept(silence, 320) }
+            repeat(5) { policy.accept(voice, 320) }
+            repeat(gapFrames) { policy.accept(silence, 320) }
+            repeat(4) { policy.accept(voice, 320) }
+            if (gapFrames <= 3) assertEquals(9_600L, policy.utteranceStartSample)
+            else assertNull(policy.utteranceStartSample)
+        }
+    }
+
+    @Test fun longSentencesRetainTheirTailAfterNineHundredMillisecondPauses() {
+        for (spokenFrames in listOf(150, 400)) {
+            val policy = AcousticBargeInPolicy()
+            repeat(30) { policy.accept(silence, 320) }
+            repeat(spokenFrames) { policy.accept(voice, 320) }
+            repeat(45) { assertFalse(policy.accept(silence, 320).endpoint) }
+            repeat(100) { assertFalse(policy.accept(voice, 320).endpoint) }
+            repeat(69) { assertFalse(policy.accept(silence, 320).endpoint) }
+            assertTrue(policy.accept(silence, 320).endpoint)
+        }
+    }
+
+    @Test fun silenceDoesNotChangeTheUtteranceLengthBucket() {
+        val policy = AcousticBargeInPolicy()
+        repeat(30) { policy.accept(silence, 320) }
+        repeat(55) { policy.accept(voice, 320) }
+        repeat(49) { assertFalse(policy.accept(silence, 320).endpoint) }
+        assertTrue(policy.accept(silence, 320).endpoint)
     }
 
     @Test fun continuousVoiceStartsExactlyOnceAndRetainsItsBeginning() {

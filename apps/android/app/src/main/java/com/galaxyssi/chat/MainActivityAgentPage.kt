@@ -240,6 +240,8 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         return
     }
     selectedContact = contact
+    peerChatViewport.select(contact.id, systemNotifications = contact.id == CONTACT_SYSTEM.id)
+    loadPeerComposerAttachments(contact.id)
     setChatActionTrayRequested(false)
     AppForegroundTracker.onConversationVisible(this, contact.id)
     val isCloud = raw?.optString("delivery_mode") == "cloud_api"
@@ -273,7 +275,8 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
         onMessageActions = { position -> showMessageActions(position) },
         onDeleteMessage = { messageId -> deleteMessageById(messageId) },
-        onOpenAttachment = { attachment -> openPeerAttachment(attachment) })
+        onOpenAttachment = { attachment -> openPeerAttachment(attachment) },
+        onImageMessageActions = { position, attachment -> showMessageActions(position, attachment) })
     messageList.adapter = messageAdapter
     (messageList.layoutManager as? LinearLayoutManager)?.let { layout ->
         layout.stackFromEnd = ChatMessageViewportPolicy.stackFromEnd()
@@ -284,13 +287,14 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     mainPage.visibility = View.GONE
     featurePage.visibility = View.GONE
     chatPage.visibility = View.VISIBLE
+    agentVoiceConversation?.onNavigationChanged()
     markContactRead(contact.id)
     loadLatestChatHistory(
         contactId = contact.id,
         force = ChatHistoryLoadPolicy.shouldReload(
             inMemoryMessagesEmpty = currentMessages.isEmpty(),
             markedLoaded = loadedHistoryContacts.contains(contact.id)
-        ),
+        ) || historyHasNewer[contact.id] == true,
         scrollAfterLoad = !notificationsOnly,
         scrollToStartAfterLoad = ChatMessageViewportPolicy.anchorToStartOnOpen(notificationsOnly)
     )
@@ -308,12 +312,7 @@ internal fun MainActivity.showAgentHomeFromChat(
 }
 
 internal fun MainActivity.scrollToBottom() {
-    val lastIndex = (messageList.adapter?.itemCount ?: currentMessages.size) - 1
-    if (lastIndex >= 0) {
-        (messageList.layoutManager as? LinearLayoutManager)
-            ?.scrollToPositionWithOffset(lastIndex, 0)
-            ?: messageList.scrollToPosition(lastIndex)
-    }
+    schedulePeerChatBottomAlignment()
 }
 
 internal fun MainActivity.scrollToMessageListStart() {
@@ -410,12 +409,19 @@ private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptA
         addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 when (newState) {
-                    RecyclerView.SCROLL_STATE_DRAGGING -> agentTranscriptUserScrollActive = true
-                    RecyclerView.SCROLL_STATE_IDLE -> agentTranscriptUserScrollActive = false
+                    RecyclerView.SCROLL_STATE_DRAGGING -> {
+                        agentTranscriptUserScrollActive = true
+                        conversationWindow.cancelPendingScroll()
+                    }
+                    RecyclerView.SCROLL_STATE_IDLE -> {
+                        agentTranscriptUserScrollActive = false
+                        refreshReplyUnreadDot()
+                    }
                 }
             }
 
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (!recyclerView.canScrollVertically(1)) refreshReplyUnreadDot()
                 val itemCount = agentTranscriptAdapter.itemCount
                 val lastPosition = agentOutputLayout.findLastVisibleItemPosition()
                 val lastView = agentOutputLayout.findViewByPosition(lastPosition)
@@ -454,7 +460,7 @@ private fun MainActivity.configureAgentPageControls() {
         else showAgentModelSelectionPage()
     }
     agentSettingsButton.setOnClickListener { showMainTab(PAGE_SETTINGS) }
-    agentInsightBar.setOnClickListener { showGlobalInsightsDialog() }
+    findViewById<View>(R.id.agentInsightBar).setOnClickListener { showGlobalInsightsDialog() }
     agentMemoryCaptureButton.setOnClickListener {
         val next = !mobileNativeAgent.safetySettings().memoryCapture
         renderAgentState(mobileNativeAgent.updateMemoryCapture(next))
@@ -462,26 +468,34 @@ private fun MainActivity.configureAgentPageControls() {
     agentMemoryText.setOnClickListener { showAgentMemoryPage() }
     agentKnowledgeText.setOnClickListener { showAgentKnowledgePage() }
     agentAttachButton.setOnClickListener { showAgentAttachmentMenu() }
-    findViewById<View>(R.id.agentActionNewSession).setOnClickListener {
-        setAgentActionTrayExpanded(false)
-        createAgentConversation()
+    listOf(R.id.agentActionNewSession, R.id.agentTrayActionNewSession).forEach { id ->
+        findViewById<View>(id).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            if (!initialAgentHydrationPending && !conversationWindow.openingWindow) createAgentConversation()
+        }
     }
-    findViewById<View>(R.id.agentActionSessions).setOnClickListener {
-        setAgentActionTrayExpanded(false)
-        showAgentSessionsPage()
+    listOf(R.id.agentActionSessions, R.id.agentTrayActionSessions).forEach { id ->
+        findViewById<View>(id).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            showAgentSessionsPage()
+        }
     }
-    findViewById<View>(R.id.agentActionScan).setOnClickListener {
+    findViewById<View>(R.id.agentTrayActionScan).setOnClickListener {
         setAgentActionTrayExpanded(false)
         scanMode = "contact"
         startSecurityScan()
     }
-    findViewById<View>(R.id.agentActionCamera).setOnClickListener {
-        setAgentActionTrayExpanded(false)
-        openAgentCamera()
+    listOf(R.id.agentActionCamera, R.id.agentTrayActionCamera).forEach { id ->
+        findViewById<View>(id).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            openAgentCamera()
+        }
     }
-    findViewById<View>(R.id.agentActionAddFile).setOnClickListener {
-        setAgentActionTrayExpanded(false)
-        openAgentAttachmentPicker(imagesOnly = false)
+    listOf(R.id.agentActionAddFile, R.id.agentTrayActionAddFile).forEach { id ->
+        findViewById<View>(id).setOnClickListener {
+            setAgentActionTrayExpanded(false)
+            openAgentAttachmentPicker(imagesOnly = false)
+        }
     }
     agentSubmitButton.setOnClickListener {
         Log.d("GalaxySSIAgent", "Agent submit clicked")
@@ -670,9 +684,11 @@ private const val MAX_AGENT_MENTION_CHOICES = 12
 private const val AGENT_MENTION_REFRESH_MILLIS = 1_000L
 
 internal fun MainActivity.loadOlderAgentTranscriptEntries() {
-    if (agentTranscriptPageLoading || agentTranscriptAllLoaded || agentRenderedConversationId.isBlank()) return
+    if (isFinishing || isDestroyed || runtimePlaintextCleared ||
+        agentTranscriptPageLoading || agentTranscriptAllLoaded || agentRenderedConversationId.isBlank()) return
     agentTranscriptPageLoading = true
     val conversationId = agentRenderedConversationId
+    val owner = agentTranscriptWindow.loadOwner()
     val beforeSequence = agentTranscriptWindow.nextBeforeSequence
     if (beforeSequence == null) {
         agentTranscriptAllLoaded = true
@@ -688,8 +704,8 @@ internal fun MainActivity.loadOlderAgentTranscriptEntries() {
             )
         }
         runOnUiThread {
-            if (conversationId != agentRenderedConversationId) {
-                agentTranscriptPageLoading = false
+            if (isFinishing || isDestroyed || runtimePlaintextCleared ||
+                conversationId != agentRenderedConversationId || !agentTranscriptWindow.ownsLoad(owner)) {
                 return@runOnUiThread
             }
             val page = pageResult.getOrElse {
@@ -717,6 +733,7 @@ internal fun MainActivity.clearAgentTranscriptRows() {
 }
 
 internal fun MainActivity.resetAgentTranscriptRendering(conversationId: String = "") {
+    agentTranscriptRefreshRequested = false
     dismissAgentPlanProgressOverlay()
     clearAgentTranscriptRows()
     expandedAgentTranscriptEntries.clear()
@@ -760,7 +777,7 @@ internal fun MainActivity.requestAgentTranscriptWindowRefresh(conversationId: St
         handler.post { requestAgentTranscriptWindowRefresh(cleanConversationId) }
         return
     }
-    if (isFinishing || isDestroyed || agentRenderedConversationId != cleanConversationId) return
+    if (isFinishing || isDestroyed || runtimePlaintextCleared || agentRenderedConversationId != cleanConversationId) return
     agentTranscriptRefreshConversationId = cleanConversationId
     agentTranscriptRefreshPageSize = maxOf(
         INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS,
@@ -771,8 +788,10 @@ internal fun MainActivity.requestAgentTranscriptWindowRefresh(conversationId: St
 }
 
 private fun MainActivity.startNextAgentTranscriptWindowRefresh() {
-    if (agentTranscriptRefreshInProgress || !agentTranscriptRefreshRequested) return
+    if (isFinishing || isDestroyed || runtimePlaintextCleared ||
+        agentTranscriptRefreshInProgress || !agentTranscriptRefreshRequested) return
     val conversationId = agentTranscriptRefreshConversationId
+    val owner = agentTranscriptWindow.loadOwner()
     val pageSize = agentTranscriptRefreshPageSize
     agentTranscriptRefreshRequested = false
     agentTranscriptRefreshInProgress = true
@@ -786,7 +805,8 @@ private fun MainActivity.startNextAgentTranscriptWindowRefresh() {
         }
         handler.post {
             pageResult.onSuccess { page ->
-                if (!isFinishing && !isDestroyed && agentRenderedConversationId == conversationId) {
+                if (!isFinishing && !isDestroyed && !runtimePlaintextCleared &&
+                    agentRenderedConversationId == conversationId && agentTranscriptWindow.ownsLoad(owner)) {
                     agentTranscriptWindow.replace(conversationId, page)
                     agentTranscriptAllLoaded = !page.hasMore
                     retirePersistedAgentConnectorStreams(
@@ -919,8 +939,19 @@ internal fun MainActivity.rememberAgentExecutionPresentation(
     presentation: AgentExecutionPresentation
 ) {
     if (taskId.isBlank()) return
+    val previousPhase = agentExecutionPresentations[taskId]?.phase
     agentExecutionPresentations.compute(taskId) { _, previous ->
         presentation.copy(voiceRun = presentation.voiceRun ?: previous?.voiceRun)
+    }
+    if (previousPhase != presentation.phase) runOnUiThread {
+        if (!isFinishing && !isDestroyed && isAgentTranscriptAdapterInitialized()) {
+            renderedAgentTranscriptSourceEntries.filter { it.role == AgentTranscriptRole.PROCESS &&
+                (it.taskId == taskId || it.turnId == taskId) }.forEach { entry ->
+                scheduleAgentProcessCompletionLookup(entry, entry.turnId)
+                agentTranscriptAdapter.indexOfEntry(entry.id).takeIf { it >= 0 }
+                    ?.let(agentTranscriptAdapter::notifyItemChanged)
+            }
+        }
     }
     if (agentExecutionPresentations.size <= 512) return
     agentExecutionPresentations.entries
@@ -1065,7 +1096,7 @@ internal fun MainActivity.showAgentTimelineMenu(
         ).show()
         return
     }
-    val actions = AgentExecutionLoopTimelinePolicy.actionsForPhase(runtime.snapshot().phase)
+    val actions = AgentExecutionLoopTimelinePolicy.actionsForState(runtime.snapshot())
         .filter { includeCancel || it != AgentExecutionLoopTimelineAction.CANCEL }
     if (actions.isEmpty()) {
         Toast.makeText(
@@ -1103,7 +1134,7 @@ internal fun MainActivity.runAgentTimelineAction(
     runtime: MobileNativeAgent,
     action: AgentExecutionLoopTimelineAction
 ) {
-    if (action !in AgentExecutionLoopTimelinePolicy.actionsForPhase(runtime.snapshot().phase)) {
+    if (action !in AgentExecutionLoopTimelinePolicy.actionsForState(runtime.snapshot())) {
         Toast.makeText(
             this,
             getString(R.string.agent_loop_timeline_action_unavailable),
@@ -1131,14 +1162,13 @@ internal fun MainActivity.runAgentTimelineAction(
             AgentExecutionLoopTimelineAction.RETRY -> runtime.retryFailedAction()
             AgentExecutionLoopTimelineAction.REPLAN -> runtime.replanCurrentTask()
             AgentExecutionLoopTimelineAction.CANCEL -> {
-                remoteCancellationFailed =
-                    publishRemoteAgentTaskCancellation(runtime.snapshot()) == false
                 val turnId = entry.turnId.ifBlank {
                     agentRuntimeTurnIds[runtime].orEmpty()
                 }
                 turnId.takeIf(String::isNotBlank)
-                    ?.let { AgentTaskRuntime.supervisor(this).cancellationSource(it) }
-                    ?.cancel("User cancelled the Agent task")
+                    ?.let { AgentTaskRuntime.supervisor(this).cancelWorkspace(it, "User cancelled the Agent task") }
+                remoteCancellationFailed =
+                    publishRemoteAgentTaskCancellation(runtime.snapshot()) == false
                 runtime.cancelCurrentTask()
             }
         }
@@ -1222,13 +1252,18 @@ internal fun MainActivity.cancelActiveAgentTurn(
     active: ActiveAgentTurn,
     interventionTurnId: String
 ) {
+    // Waiting tasks release their execution lease, so cancellation must address
+    // the durable workspace rather than an optional in-memory cancellation source.
+    AgentTaskRuntime.supervisor(this).cancelWorkspace(
+        active.turnId,
+        "Superseded by a newer user instruction"
+    )
     if (active.isDesktopTask) {
         publishRemoteAgentTaskCancellation(active.state)
     }
-    AgentTaskRuntime.supervisor(this).cancellationSource(active.turnId)
-        ?.cancel("Superseded by a newer user instruction")
     PhoneExecutionAuthority.requestCancellation(active.state.sessionId)
-    val cancelled = active.runtime.cancelCurrentTask()
+    val cancelled = finalizeAgentExecutionLoop(active.runtime, active.turnId, active.runtime.cancelCurrentTask())
+    persistAgentWorkspaceSnapshot(active.turnId, cancelled, active.runtime)
     val runId = agentRunIdsByTurn[active.turnId].orEmpty()
     agentRunRecorder.run(runId)?.let { run ->
         appendRunControlEvent(
@@ -1318,11 +1353,12 @@ internal fun MainActivity.submitAgentGoal(
         }
     }) return
     val requestedMembers = collaborationRequestedMembers(conversation.id, explicitMembers, goalOverride == null)
-    if (CollaborationGroupStore.cached(conversation.id)?.members?.isNotEmpty() == true && requestedMembers.isEmpty()) {
+    val scheduleCommand = attachments.isEmpty() && ConversationScheduleParser.parse(goal) != null
+    if (!scheduleCommand && CollaborationGroupStore.cached(conversation.id)?.members?.isNotEmpty() == true && requestedMembers.isEmpty()) {
         Toast.makeText(this, R.string.collaboration_no_active_members, Toast.LENGTH_LONG).show()
         return
     }
-    if (requestedMembers.size > 12) {
+    if (!scheduleCommand && requestedMembers.size > 12) {
         Toast.makeText(this, getString(R.string.collaboration_dispatch_limit, 12), Toast.LENGTH_LONG).show()
         return
     }
@@ -1331,7 +1367,8 @@ internal fun MainActivity.submitAgentGoal(
     onTurnCreated?.invoke(turnId)
     AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)
     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
-    agentVoiceConversation?.session?.registerTurn(voiceTraceId, turnId)
+    agentVoiceConversation?.onTurnSubmitted(voiceTraceId, turnId, displayGoal)
+    AppVoiceControlBridge.bindTurn(voiceTraceId, conversation.id, turnId)
     AgentTurnMentionRegistry.put(turnId, requestedMembers)
     val preparedContext = if (initialAgentHydrationPending) {
         null
@@ -1339,7 +1376,7 @@ internal fun MainActivity.submitAgentGoal(
         agentTranscriptStore.preparedContext(conversation.id)
     }
     preparedContext?.let { prepared -> agentContextBeforeTurn[turnId] = prepared }
-    val cachedPriorVisualReference = if (attachments.isEmpty()) {
+    val cachedPriorVisualReference = if (attachments.isEmpty() && !scheduleCommand) {
         AgentConversationVisualContext.latest(preparedContext)
             ?: agentTranscriptWindow.takeIf { it.conversationId == conversation.id }?.let { window ->
                 AgentConversationVisualContext.latest(window.entries)
@@ -1361,7 +1398,10 @@ internal fun MainActivity.submitAgentGoal(
     voiceCoordinatorSession(voiceTraceId).takeIf(String::isNotBlank)?.let { sessionId ->
         voiceCoordinatorIdsByTurn[turnId] = sessionId
     }
-    agentTranscriptAutoFollow = true
+    if (agentTranscriptStore.activeConversation().id == conversation.id) {
+        conversationWindow.followLatestForSubmission(conversation.id)
+        agentTranscriptAutoFollow = true
+    }
     pendingAgentReplyIndicators[turnId] = PendingAgentReplyIndicator(
         conversationId = conversation.id,
         turnId = turnId,
@@ -1425,7 +1465,7 @@ internal fun MainActivity.submitAgentGoal(
             "agent_submit stage=user_persisted turn=${turnId.take(8)} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - submissionStartedAt}"
         )
-        val priorVisualReference = if (attachments.isEmpty()) {
+        val priorVisualReference = if (attachments.isEmpty() && !scheduleCommand) {
             cachedPriorVisualReference ?: AgentConversationVisualContext.latest(
                 agentTranscriptStore.context(
                     conversationId = conversation.id,
@@ -1507,7 +1547,7 @@ internal fun MainActivity.stageAgentGoalAttachments(
                     conversation.id,
                     reference.turnId,
                     reference.blocks
-                )
+                ).map { it.copy(historicalSourceTurnId = reference.turnId) }
             }.orEmpty()
         }
         if (executionAttachments.isEmpty()) {
@@ -1534,6 +1574,9 @@ internal fun MainActivity.stageAgentGoalAttachments(
         }.getOrDefault(emptyList())
         val attachmentManifest = buildString {
             executionAttachments.forEach { attachment ->
+                if (attachment.isHistoricalReference) {
+                    append(AgentVisualTurnPolicy.historyLabel(attachment.historicalSourceTurnId)).append('\n')
+                }
                 append("- ").append(attachment.displayName)
                 append(" (").append(attachment.mimeType).append(", ")
                 append(AgentInputAttachment.humanSize(attachment.sizeBytes)).append(")\n")
@@ -1554,7 +1597,8 @@ internal fun MainActivity.stageAgentGoalAttachments(
                     append("\n\n")
                     append(directVisionInstruction)
                 }
-            append("\n\nAttached input:\n")
+            append(if (executionAttachments.all { it.isHistoricalReference })
+                "\n\nHistorical visual context (no new attachment in this turn):\n" else "\n\nAttached input:\n")
             append(
                 AgentUntrustedEvidenceBoundary.wrapText(
                     "attachment_manifest",
@@ -1563,10 +1607,10 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 )
             )
             append('\n')
-            append(
-                "Inspect the attached content, infer the user's most likely intent from the " +
-                    "content and conversation, and complete the most helpful relevant action."
-            )
+            if (executionAttachments.any { !it.isHistoricalReference }) {
+                append("Inspect the newly attached content in light of the user's current request. " +
+                    "If only a new image was sent, infer and complete the most helpful relevant task.")
+            }
         }
         runOnUiThread {
             if (isSubmissionCancelled()) return@runOnUiThread
@@ -1574,7 +1618,8 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 executionGoal,
                 conversation.id,
                 turnId,
-                forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal, conversation.id)
+                forcedAction = if (staged.isEmpty() && executionAttachments.any { !it.isHistoricalReference })
+                    attachmentConnectorAction(executionGoal, conversation.id)
                     ?.let { PhoneAssistantTaskControl.bindReadOnlyScope(it, turnId) } else null,
                 originalGoal = goal,
                 isSubmissionCancelled = isSubmissionCancelled
@@ -1628,15 +1673,32 @@ internal fun MainActivity.continueAgentGoalSubmission(
     originalGoal: String = goal,
     executionModeOverride: AgentTaskExecutionMode? = null,
     isSubmissionCancelled: () -> Boolean = { false },
-    collaborationChecked: Boolean = false
+    collaborationChecked: Boolean = false,
+    scheduleChecked: Boolean = false
 ) {
     if (isSubmissionCancelled()) return
+    if (!scheduleChecked && forcedAction == null && AgentTurnAttachmentRegistry.current(turnId).isEmpty() &&
+        (ConversationScheduleParser.parse(originalGoal) != null ||
+            AgentDeviceIntent.exactTimerSeconds(originalGoal) != null || AgentDeviceIntent.followup(originalGoal) != null)) {
+        agentRoutingExecutor.execute {
+            if (isSubmissionCancelled()) return@execute
+            if (handleConversationDeviceOperation(originalGoal, conversationId, turnId) ||
+                handleConversationSchedule(originalGoal, conversationId, turnId)) {
+                agentContextBeforeTurn.remove(turnId)
+                AgentTurnMentionRegistry.remove(turnId)
+            } else runOnUiThread {
+                continueAgentGoalSubmission(goal, conversationId, turnId, forcedAction, originalGoal,
+                    executionModeOverride, isSubmissionCancelled, collaborationChecked, scheduleChecked = true)
+            }
+        }
+        return
+    }
     if (!collaborationChecked && forcedAction == null &&
         CollaborationGroupStore.cached(conversationId)?.members?.isNotEmpty() == true &&
-        AgentTurnAttachmentRegistry.get(turnId).isEmpty() && !AgentLocalControlCommandPolicy.matches(goal)) {
+        AgentTurnAttachmentRegistry.current(turnId).isEmpty() && !AgentLocalControlCommandPolicy.matches(goal)) {
         routeCollaborationFollowup(conversationId, turnId, goal, isSubmissionCancelled) {
             continueAgentGoalSubmission(goal, conversationId, turnId, forcedAction, originalGoal,
-                executionModeOverride, isSubmissionCancelled, collaborationChecked = true)
+                executionModeOverride, isSubmissionCancelled, collaborationChecked = true, scheduleChecked = true)
         }
         return
     }
@@ -1716,7 +1778,7 @@ internal fun MainActivity.continueAgentGoalSubmission(
                 "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
         )
         val correctionContext = voiceCorrectionJournal.contextBlock(conversationId)
-        val localConversationContext = if (correctionContext.isBlank()) {
+        val correctedConversationContext = if (correctionContext.isBlank()) {
             baseConversationContext
         } else {
             baseConversationContext.copy(
@@ -1725,6 +1787,12 @@ internal fun MainActivity.continueAgentGoalSubmission(
                     .joinToString("\n\n")
             )
         }
+        val storedOperation = if (AgentSupervisedProjectContinuationPolicy.wantsContext(originalGoal) &&
+            !PhoneAssistantTaskControl.isReadOnly(turnId)) AgentDeviceOperationStore(applicationContext).get(conversationId) else null
+        val pendingOperation = AgentSupervisedProjectContinuationPolicy.scopedOperation(correctedConversationContext, storedOperation)
+        val localConversationContext = if (pendingOperation == null) correctedConversationContext else
+            correctedConversationContext.copy(summary = listOf(correctedConversationContext.summary, pendingOperation.context())
+                .filter(String::isNotBlank).joinToString("\n"))
         val turnAttachments = AgentTurnAttachmentRegistry.get(turnId)
         val clarification = AgentClarificationPolicy.decide(
             goal = originalGoal,
@@ -1765,7 +1833,8 @@ internal fun MainActivity.continueAgentGoalSubmission(
         AgentSupervisedProjectContinuationPolicy.mergedGoal(
             latestRequest = originalGoal.ifBlank { executionGoal },
             conversationContext = localConversationContext,
-            independentRequest = PhoneAssistantTaskControl.isReadOnly(turnId)
+            independentRequest = PhoneAssistantTaskControl.isReadOnly(turnId),
+            operation = storedOperation
         )?.let { resumedGoal ->
             executionGoal = resumedGoal
             clearSupersededAgentFailureEntries(conversationId)

@@ -11,7 +11,32 @@ internal class CollaborationRemoteEvidenceImporter(
     private val ledger: CollaborationEvidenceLedger
 ) {
     /** Returns with a durable partial checkpoint on transport failure; never retries an executed operation. */
-    suspend fun run(key: String, allowed: (JSONObject) -> Boolean,
+    suspend fun run(key: String, allowed: (JSONObject) -> Boolean, progress: (JSONObject) -> Unit = {},
+        query: suspend (String, JSONObject, JSONObject) -> JSONObject?): Boolean = gate.withJob(key) {
+        importSnapshot(key, allowed, progress, query)
+    }
+
+    /** Yield between network slices while keeping verified pages and the exact archive cursor. */
+    suspend fun runSlice(key: String, allowed: (JSONObject) -> Boolean, progress: (JSONObject) -> Unit = {},
+        maxQueries: Int = 4,
+        query: suspend (String, JSONObject, JSONObject) -> JSONObject?): CollaborationEvidenceSlice {
+        require(maxQueries > 0)
+        return gate.withJob(key) {
+            var remaining = maxQueries
+            var yielded = false
+            val complete = importSnapshot(key, allowed, progress) { desktop, fields, selection ->
+                if (remaining == 0) { yielded = true; null }
+                else { remaining--; query(desktop, fields, selection) }
+            }
+            when {
+                complete -> CollaborationEvidenceSlice.COMPLETE
+                yielded -> CollaborationEvidenceSlice.YIELDED
+                else -> CollaborationEvidenceSlice.DEFERRED
+            }
+        }
+    }
+
+    private suspend fun importSnapshot(key: String, allowed: (JSONObject) -> Boolean, progress: (JSONObject) -> Unit,
         query: suspend (String, JSONObject, JSONObject) -> JSONObject?): Boolean {
         val job = store.read(key) ?: return true
         if (job.getString("status") != "pending") return true
@@ -32,12 +57,16 @@ internal class CollaborationRemoteEvidenceImporter(
                     val cursor = job.getLong("cursor")
                     var entries = job.optJSONArray("index_entries")
                     if (entries == null || entries.length() == 0) {
+                        if (job.opt("index_complete") == true)
+                            return store.completeSnapshot(key, job)
                         val response = query(job.getString("desktop"), fields,
-                            JSONObject().put("mode", "index").put("after_sequence", cursor)) ?: return false
+                            JSONObject().put("mode", "index").put("after_sequence", cursor)
+                                .put("inline_page_bytes", CollaborationRemoteEvidenceProtocol.INLINE_PAGE_BYTES)) ?: return false
                         if (!authorized()) return false
                         if (response.optString("status") == "unavailable") return finish("unavailable")
                         require(response.opt("status") == "ready" && response.opt("coverage") == "observed_completed_items_only" &&
-                            response.opt("provider_history_complete") == false && response.opt("has_more") is Boolean)
+                            response.opt("provider_history_complete") == false && response.opt("has_more") is Boolean &&
+                            response.opt("archive_final") is Boolean)
                         entries = response.getJSONArray("entries")
                         require(entries.length() <= 20)
                         var last = cursor
@@ -48,8 +77,11 @@ internal class CollaborationRemoteEvidenceImporter(
                         }
                         require(CollaborationRemoteEvidenceProtocol.integer(response, "next_sequence") == last &&
                             (!response.getBoolean("has_more") || entries.length() > 0))
-                        if (entries.length() == 0) return finish(if (job.getLong("skipped_large") == 0L) "imported" else "partial_large_objects")
-                        job.put("index_entries", entries)
+                        cacheInlinePages(key, response, entries)
+                        // This boundary is a live snapshot, not proof that the provider has finished.
+                        job.put("index_entries", entries).put("index_complete",
+                            !response.getBoolean("has_more")).put("archive_final", response.getBoolean("archive_final"))
+                        if (entries.length() == 0) return store.completeSnapshot(key, job)
                     }
                     // Keep the remainder of this index page; one query supplies up to twenty observations.
                     descriptor = requireNotNull(entries).getJSONObject(0)
@@ -94,10 +126,11 @@ internal class CollaborationRemoteEvidenceImporter(
                         if (!authorized()) return false
                         val at = entry.getLong("recorded_at")
                         ledger.record(access, "desktop:${AgentNativeJsonCodec.sha256(key)}:${entry.getString("evidence_id")}",
-                            "codex.${entry.getString("item_type")}", "{}", original.toString(), at, at,
+                            CollaborationRemoteEvidenceProtocol.recordedTool(entry.getString("item_type")), "{}", original.toString(), at, at,
                             CollaborationEvidenceOrigin.DESKTOP_CODEX_TOOL)
                         // Ledger-first ordering is replay-safe if the process dies before the cursor commit.
                         store.advance(key, job, entry, imported = true)
+                        progress(job)
                     } finally { bytes.fill(0) }
                 } finally { buffer.wipe() }
             }
@@ -109,10 +142,33 @@ internal class CollaborationRemoteEvidenceImporter(
         // Storage failures propagate to the read-only recovery worker, preserving the exact descriptor/pages.
     }
 
+    private fun cacheInlinePages(key: String, response: JSONObject, entries: org.json.JSONArray) {
+        if (!response.has("inline_pages")) return
+        val pages = response.getJSONArray("inline_pages")
+        require(pages.length() <= entries.length())
+        val descriptors = (0 until entries.length()).map(entries::getJSONObject)
+            .associateBy { it.getString("evidence_id") }
+        val seen = mutableSetOf<String>()
+        var bytes = 0L
+        repeat(pages.length()) { index ->
+            val page = pages.getJSONObject(index)
+            val id = page.getString("evidence_id")
+            val entry = requireNotNull(descriptors[id])
+            require(seen.add(id) && entry.getInt("page_count") == 1)
+            bytes += entry.getLong("total_bytes")
+            require(bytes <= CollaborationRemoteEvidenceProtocol.INLINE_PAGE_BYTES)
+            requireNotNull(decode(page, entry, 0)).use { store.savePage(key, entry, 0, page) }
+        }
+    }
+
     private fun decode(page: JSONObject, descriptor: JSONObject, index: Int): AgentResultRecoveryPageCodec.Page? {
         val decoded = AgentResultRecoveryPageCodec.decode(page, index) ?: return null
         if (decoded.manifest.digest != descriptor.getString("sha256") || decoded.manifest.bytes != descriptor.getLong("total_bytes") ||
             decoded.manifest.pages != descriptor.getInt("page_count")) { decoded.close(); return null }
         return decoded
+    }
+
+    companion object {
+        private val gate = CollaborationEvidenceImportGate()
     }
 }

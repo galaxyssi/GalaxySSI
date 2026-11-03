@@ -232,6 +232,7 @@ data class AgentRuntimePackAttachment(
 
 interface AgentRuntimeEngineController {
     val controllerId: String
+    val instanceId: String get() = ""
     fun isRunning(): Boolean
     fun start(spec: AgentRuntimeEngineLaunchSpec)
     fun stop()
@@ -302,11 +303,29 @@ object AgentOnDeviceRuntimeLifecycle {
     @Volatile private var stateStore: AgentRuntimeLifecycleStore? = null
     private val startLock = ReentrantLock()
     private val operationGeneration = AtomicLong(0L)
+    private val instanceGeneration = AtomicLong(0L)
+
+    internal fun instanceIdentity(): String = AgentNativeJsonCodec.sha256(listOf(
+        AgentProcessIdentity.instanceId, operationGeneration.get(), instanceGeneration.get()))
+
+    internal fun controlIfCurrent(context: Context, operation: String, expectedInstance: String): AgentRuntimeLifecycleSnapshot =
+        startLock.withLock {
+            val generation = operationGeneration.get()
+            if (expectedInstance != instanceIdentity()) throw AgentRuntimeControlFailure("runtime_instance_changed")
+            when (operation) {
+                "start" -> startInternal(context, force = true, requiredGeneration = generation)
+                "restart" -> {
+                    stop(context)
+                    startInternal(context, force = true, requiredGeneration = generation + 1L)
+                }
+                else -> throw AgentRuntimeControlFailure("runtime_control_operation_invalid")
+            }
+        }
 
     fun inspect(context: Context): AgentRuntimeLifecycleSnapshot = inspectInternal(
         context.applicationContext,
         bridgeProbeCompleted = false,
-        knownBridgeReady = false
+        knownBridgeHealth = null
     )
 
     /** Returns the last persisted in-process state without probing or starting the guest. */
@@ -319,26 +338,27 @@ object AgentOnDeviceRuntimeLifecycle {
     ): AgentRuntimeLifecycleSnapshot = inspectInternal(
         context.applicationContext,
         bridgeProbeCompleted = true,
-        knownBridgeReady = health?.ready == true
+        knownBridgeHealth = health
     )
 
     @Synchronized
     private fun inspectInternal(
         context: Context,
         bridgeProbeCompleted: Boolean,
-        knownBridgeReady: Boolean
+        knownBridgeHealth: AgentRuntimeBridgeHealth?
     ): AgentRuntimeLifecycleSnapshot {
         val appContext = context.applicationContext
         val state = machine(appContext)
         val controller = AgentRuntimeEngineControllerRegistry.currentOrInstall(appContext)
-        val bridgeReady = if (bridgeProbeCompleted) {
-            knownBridgeReady
+        val health = if (bridgeProbeCompleted) {
+            knownBridgeHealth
         } else {
             AgentOnDeviceRuntimeSupervisor.discover(appContext)
-                ?.let { runCatching { it.health().ready }.getOrDefault(false) } == true
+                ?.let { runCatching { it.health() }.getOrNull() }
+                ?: AgentOnDeviceRuntimeSupervisor.latestProbeHealth()
         }
-        if (bridgeReady) {
-            return persist(appContext, state.ready(controller?.controllerId.orEmpty()))
+        if (health?.ready == true) {
+            return persist(appContext, state.ready(controller.controllerId))
         }
         val prerequisite = runCatching { AgentOnDeviceRuntimeManager(appContext).runtimeBootstrapFiles() }
         if (prerequisite.isFailure) {
@@ -353,7 +373,7 @@ object AgentOnDeviceRuntimeLifecycle {
             return persist(
                 appContext,
                 if (current.phase == AgentRuntimeLifecyclePhase.STARTING) current else {
-                    state.degraded(controller.controllerId, "Runtime engine is running, but the guest bridge is not healthy")
+                    state.degraded(controller.controllerId, AgentRuntimeProbePolicy.unavailableReason(health))
                 }
             )
         }
@@ -363,11 +383,23 @@ object AgentOnDeviceRuntimeLifecycle {
         return persist(appContext, state.stopped("Runtime engine is stopped", resetFailures = false))
     }
 
-    fun start(context: Context, force: Boolean = false): AgentRuntimeLifecycleSnapshot {
+    fun start(context: Context, force: Boolean = false): AgentRuntimeLifecycleSnapshot =
+        startInternal(context, force, requiredGeneration = null)
+
+    private fun startInternal(context: Context, force: Boolean, requiredGeneration: Long?): AgentRuntimeLifecycleSnapshot {
         return startLock.withLock {
             val appContext = context.applicationContext
-            inspect(appContext).takeIf { it.phase == AgentRuntimeLifecyclePhase.READY }?.let { return@withLock it }
+            if (requiredGeneration != null && requiredGeneration != operationGeneration.get()) return@withLock cached(appContext)
+            val inspected = inspect(appContext)
+            if (inspected.phase == AgentRuntimeLifecyclePhase.READY) return@withLock inspected
             val controller = AgentRuntimeEngineControllerRegistry.currentOrInstall(appContext)
+            // A normal start (including a forced backoff retry) is not a restart of live work.
+            // Explicit restart() first stops the guest and invalidates the lifecycle operation.
+            val running = runCatching(controller::isRunning).getOrElse {
+                return@withLock persist(appContext, machine(appContext).degraded(
+                    controller.controllerId, "Runtime engine state is unconfirmed; existing work was not restarted"))
+            }
+            if (!AgentRuntimeProbePolicy.mayLaunchEngine(running)) return@withLock inspected
             val files = runCatching { AgentOnDeviceRuntimeManager(appContext).runtimeBootstrapFiles() }
                 .getOrElse { error ->
                     return@withLock persist(
@@ -376,6 +408,7 @@ object AgentOnDeviceRuntimeLifecycle {
                     )
                 }
             val generation = operationGeneration.get()
+            if (requiredGeneration != null && requiredGeneration != generation) return@withLock cached(appContext)
             val state = machine(appContext)
             val starting = state.beginStart(controller.controllerId, force)
             persist(appContext, starting)
@@ -418,6 +451,7 @@ object AgentOnDeviceRuntimeLifecycle {
         attachments: List<AgentRuntimePackAttachment>,
         generation: Long
     ): LaunchOutcome {
+        instanceGeneration.incrementAndGet()
         runCatching(controller::stop)
         AgentOnDeviceRuntimeSupervisor.reset()
         files.socketFile.delete()
@@ -464,7 +498,8 @@ object AgentOnDeviceRuntimeLifecycle {
         var result = inspect(context)
         repeat(maxAttempts) {
             if (operationGeneration.get() != generation) return inspect(context)
-            if (result.phase in setOf(AgentRuntimeLifecyclePhase.READY, AgentRuntimeLifecyclePhase.BLOCKED)) {
+            if (result.phase in setOf(AgentRuntimeLifecyclePhase.READY, AgentRuntimeLifecyclePhase.BLOCKED,
+                    AgentRuntimeLifecyclePhase.DEGRADED, AgentRuntimeLifecyclePhase.STARTING)) {
                 return result
             }
             val waitMillis = (result.nextAttemptAtMillis - System.currentTimeMillis()).coerceAtLeast(0L)
@@ -479,6 +514,7 @@ object AgentOnDeviceRuntimeLifecycle {
     fun stop(context: Context): AgentRuntimeLifecycleSnapshot {
         val appContext = context.applicationContext
         operationGeneration.incrementAndGet()
+        instanceGeneration.incrementAndGet()
         val state = machine(appContext)
         val controller = AgentRuntimeEngineControllerRegistry.current()
         persist(appContext, state.stopping(controller?.controllerId.orEmpty()))

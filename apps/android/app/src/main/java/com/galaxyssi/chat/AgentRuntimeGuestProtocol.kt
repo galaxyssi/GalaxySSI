@@ -85,7 +85,8 @@ data class AgentRuntimeBridgeHealth(
     val guestApiVersion: Int = 0,
     val guestVersion: String = "",
     val capabilities: Set<String> = emptySet(),
-    val reason: String = ""
+    val reason: String = "",
+    val observationConfirmed: Boolean = true
 )
 
 data class AgentRuntimeGuestEnvelope(
@@ -329,20 +330,28 @@ class LocalSocketAgentRuntimeGuestChannelFactory(private val socketPath: String)
 
 class AgentRuntimeGuestBridge(
     private val channelFactory: AgentRuntimeGuestChannelFactory,
-    private val sessionKeyProvider: () -> ByteArray
+    private val sessionKeyProvider: () -> ByteArray,
+    override val runtimeInstanceId: String = "",
+    private val runtimeInstanceIsCurrent: () -> Boolean = { true }
 ) : AgentOnDeviceRuntimeBridge, Closeable {
     @Volatile private var cachedHealth: AgentRuntimeBridgeHealth? = null
     @Volatile private var cachedHealthAtMillis: Long = 0L
     @Volatile private var activeConnection: Connection? = null
     private val connectionLock = Any()
 
-    override fun health(): AgentRuntimeBridgeHealth {
+    override fun health(): AgentRuntimeBridgeHealth = probeHealth(useCache = true)
+
+    override fun refreshHealth(): AgentRuntimeBridgeHealth = probeHealth(useCache = false)
+
+    private fun probeHealth(useCache: Boolean): AgentRuntimeBridgeHealth {
         val now = System.currentTimeMillis()
+        var probedConnection: Connection? = null
         cachedHealth?.takeIf {
-            activeConnection?.isActive == true && now - cachedHealthAtMillis < HEALTH_CACHE_MILLIS
+            useCache && activeConnection?.isActive == true && now - cachedHealthAtMillis < HEALTH_CACHE_MILLIS
         }?.let { return it }
         val health = runCatching {
             val connection = connection()
+            probedConnection = connection
             val requestId = "health-${UUID.randomUUID()}"
             val pending = connection.register(requestId)
             try {
@@ -351,20 +360,23 @@ class AgentRuntimeGuestBridge(
                 check(response.type == AgentRuntimeGuestMessageType.HEARTBEAT_ACK && response.sequence == 1L) {
                     "Guest runtime returned an invalid heartbeat"
                 }
-                check(response.payload["ready"] as? Boolean == true) {
-                    response.payload["reason"]?.toString().orEmpty()
-                        .ifBlank { "Guest runtime reported an unhealthy state" }
-                }
-                connection.health
+                val ready = response.payload["ready"] as? Boolean ?: error("Guest heartbeat omitted readiness")
+                connection.health.copy(ready = ready, reason = if (ready) "" else
+                    response.payload["reason"]?.toString().orEmpty().ifBlank { "Guest runtime reported an unhealthy state" })
             } finally {
                 connection.unregister(requestId)
             }
         }.getOrElse { error ->
-            activeConnection?.shutdown(error)
-            AgentRuntimeBridgeHealth(false, reason = error.message ?: "Guest runtime is unavailable")
+            if (!error.isGuestRuntimeResponseTimeout()) probedConnection?.shutdown(error)
+            AgentRuntimeBridgeHealth(false, reason = error.message ?: "Guest runtime is unavailable", observationConfirmed = false)
         }
-        cachedHealth = health
-        cachedHealthAtMillis = now
+        if (health.observationConfirmed) {
+            cachedHealth = health
+            cachedHealthAtMillis = now
+        } else {
+            cachedHealth = null
+            cachedHealthAtMillis = 0L
+        }
         return health
     }
 
@@ -395,16 +407,15 @@ class AgentRuntimeGuestBridge(
                 if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
                 val remaining = deadline - System.currentTimeMillis()
                 if (remaining <= 0L) {
-                    runCatching { connection.send(request.requestId, AgentRuntimeGuestMessageType.CANCEL) }
-                    throw AgentNativeToolTimeoutException()
+                    return settleTimedOutRequest(request, connection, pending, lastReceivedSequence, startedAt)
                 }
                 val envelope = try {
                     pending.receive(remaining)
                 } catch (error: Throwable) {
                     if (!error.isGuestRuntimeResponseTimeout()) throw error
-                    runCatching { connection.send(request.requestId, AgentRuntimeGuestMessageType.CANCEL) }
-                    throw AgentNativeToolTimeoutException()
+                    return settleTimedOutRequest(request, connection, pending, lastReceivedSequence, startedAt)
                 }
+                if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
                 check(envelope.sequence > lastReceivedSequence) {
                     "Guest runtime returned a replayed or out-of-order frame"
                 }
@@ -434,6 +445,47 @@ class AgentRuntimeGuestBridge(
         }
     }
 
+    private fun settleTimedOutRequest(request: AgentRuntimeExecutionRequest, connection: Connection,
+        pending: PendingResponse, lastReceivedSequence: Long, startedAt: Long): AgentRuntimeExecutionResponse {
+        var sequence = lastReceivedSequence
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        val evidence = mutableMapOf<String, Any?>("cancellation_observed" to false, "outcome_unknown" to true,
+            "goal_terminal" to false)
+        try {
+            connection.send(request.requestId, AgentRuntimeGuestMessageType.CANCEL)
+            while (true) {
+                if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
+                val remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+                if (remaining <= 0L) break
+                val envelope = pending.receive(remaining)
+                if (request.cancellationToken.isCancellationRequested) throw AgentNativeToolCancelledException()
+                check(envelope.sequence > sequence) { "Guest runtime returned an invalid cancellation response sequence" }
+                sequence = envelope.sequence
+                when (envelope.type) {
+                    // Preserve an authoritative late result; a deadline must not manufacture failure or resubmission.
+                    AgentRuntimeGuestMessageType.RESULT -> return responseFrom(envelope, startedAt)
+                    AgentRuntimeGuestMessageType.CANCELLED -> {
+                        evidence["cancellation_observed"] = true
+                        evidence["execution_terminal_observed"] = true
+                        break
+                    }
+                    AgentRuntimeGuestMessageType.ERROR -> {
+                        evidence["execution_terminal_observed"] = true
+                        evidence["guest_error"] = AgentObservationRedaction.redact(envelope.payload["message"]?.toString().orEmpty()).take(2_000)
+                        break
+                    }
+                    else -> Unit
+                }
+            }
+        } catch (cancelled: AgentNativeToolCancelledException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            evidence["cancellation_observation_error"] = if (error.isGuestRuntimeResponseTimeout()) "response_not_observed"
+                else "control_channel_failed"
+        }
+        throw AgentNativeToolTimeoutException(evidence)
+    }
+
     override fun cancel(requestId: String): Boolean {
         val connection = activeConnection?.takeIf(Connection::isActive) ?: return false
         if (!connection.hasPending(requestId)) return false
@@ -453,6 +505,7 @@ class AgentRuntimeGuestBridge(
     }
 
     private fun connection(): Connection = synchronized(connectionLock) {
+        check(runtimeInstanceIsCurrent()) { "The guest runtime instance changed before dispatch" }
         activeConnection?.takeIf(Connection::isActive)?.let { return@synchronized it }
         val channel = channelFactory.open()
         val key = sessionKeyProvider()
@@ -498,6 +551,7 @@ class AgentRuntimeGuestBridge(
                 }
             )
             check(health.ready) { health.reason }
+            check(runtimeInstanceIsCurrent()) { "The guest runtime instance changed during handshake" }
             Connection(channel, key, health).also { connection ->
                 activeConnection = connection
                 cachedHealth = health
@@ -573,7 +627,8 @@ class AgentRuntimeGuestBridge(
                 .orEmpty(),
             projectFingerprint = envelope.payload["project_fingerprint"]?.toString().orEmpty(),
             projectFingerprintChecked = envelope.payload["project_fingerprint_checked"] as? Boolean ?: false,
-            requestId = envelope.requestId
+            requestId = envelope.requestId,
+            runtimeInstanceId = runtimeInstanceId
         )
 
     companion object {
@@ -769,6 +824,10 @@ object AgentOnDeviceRuntimeSupervisor {
 
     fun cachedHealth(bridge: AgentOnDeviceRuntimeBridge): AgentRuntimeBridgeHealth? {
         if (registeredBridge !== bridge) return null
+        return latestProbeHealth()
+    }
+
+    internal fun latestProbeHealth(): AgentRuntimeBridgeHealth? {
         val now = android.os.SystemClock.elapsedRealtime()
         return lastHealth?.takeIf { now - lastProbeAtMillis <= HEALTH_CACHE_MILLIS }
     }
@@ -796,9 +855,14 @@ object AgentOnDeviceRuntimeSupervisor {
             }
             registeredBridge?.let { bridge ->
                 val health = runCatching { bridge.health() }
-                    .getOrElse { AgentRuntimeBridgeHealth(false, reason = it.message ?: "Guest runtime is unavailable") }
+                    .getOrElse { AgentRuntimeBridgeHealth(false,
+                        reason = it.message ?: "Guest runtime health is unconfirmed", observationConfirmed = false) }
                 recordHealth(health)
-                if (health.ready) return bridge
+                if (health.ready) {
+                    AgentOnDeviceRuntimeBridgeRegistry.register(bridge)
+                    return bridge
+                }
+                if (!AgentRuntimeProbePolicy.shouldDiscardBridge(health)) return null
                 bridge.close()
                 AgentOnDeviceRuntimeBridgeRegistry.unregister(bridge)
                 registeredBridge = null
@@ -810,14 +874,22 @@ object AgentOnDeviceRuntimeSupervisor {
                 return null
             }
             val keyStore = AgentRuntimeSessionKeyStore(context)
+            val controller = AgentRuntimeEngineControllerRegistry.current()
+            val instance = controller?.instanceId.orEmpty()
             val candidate = AgentRuntimeGuestBridge(
                 channelFactory = LocalSocketAgentRuntimeGuestChannelFactory(socket.absolutePath),
-                sessionKeyProvider = keyStore::getOrCreate
+                sessionKeyProvider = keyStore::getOrCreate,
+                runtimeInstanceId = instance,
+                runtimeInstanceIsCurrent = {
+                    instance.isBlank() || AgentRuntimeEngineControllerRegistry.current() === controller &&
+                        controller?.instanceId == instance && controller?.isRunning() == true
+                }
             )
             val health = candidate.health()
             recordHealth(health)
             if (!health.ready) {
-                candidate.close()
+                if (AgentRuntimeProbePolicy.shouldDiscardBridge(health)) candidate.close()
+                else registeredBridge = candidate
                 return null
             }
             AgentOnDeviceRuntimeBridgeRegistry.register(candidate)

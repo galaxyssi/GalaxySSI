@@ -1,19 +1,9 @@
 {
   "images" : [
     {
-      "filename" : "GalaxySSILogo@1x.png",
+      "filename" : "GalaxySSIProductLogo.png",
       "idiom" : "universal",
       "scale" : "1x"
-    },
-    {
-      "filename" : "GalaxySSILogo@2x.png",
-      "idiom" : "universal",
-      "scale" : "2x"
-    },
-    {
-      "filename" : "GalaxySSILogo@3x.png",
-      "idiom" : "universal",
-      "scale" : "3x"
     }
   ],
   "info" : {

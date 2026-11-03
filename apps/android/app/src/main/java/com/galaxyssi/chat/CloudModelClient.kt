@@ -36,6 +36,13 @@ object CloudModelClient {
     private fun defaultSystemPrompt(context: Context): String =
         secureSystemPrompt(CodexStyleResponsePolicy.prompt(context) + "\n" + RICH_OUTPUT_PROMPT)
 
+    private fun defaultVisionSystemPrompt(context: Context): String {
+        val language = LanguagePolicySettings.resolvedResponseLanguage(context)
+        return secureSystemPrompt(CloudVisionPromptPolicy.DEFAULT_PROMPT +
+            "\nPreferred response language: ${LanguagePolicySettings.modelLanguageName(language)} ($language). " +
+            "Use it unless the user explicitly requests another language.")
+    }
+
     private fun secureSystemPrompt(
         systemPrompt: String,
         maximumCharacters: Int = MAX_DEFAULT_SYSTEM_PROMPT_CHARACTERS
@@ -95,11 +102,23 @@ object CloudModelClient {
         validateContact(context, contact)
         val style = contact.optString("cloud_api_style", "openai")
         val customSystemPrompt = systemPromptOverride.trim()
-        val effectiveSystemPrompt = (if (customSystemPrompt.isNotBlank()) {
-            secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS) + "\n" + ResearchQualityStandard.get(context).prompt
+        val baseSystemPrompt = if (customSystemPrompt.isNotBlank()) {
+            secureSystemPrompt(customSystemPrompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS)
+        } else if (images.isNotEmpty()) {
+            defaultVisionSystemPrompt(context)
         } else {
-            defaultSystemPrompt(context) + "\n" + CloudWebGrounding.currentEvidencePrompt(context)
-        }) + "\n" + CloudImageAnnotationPlan.instruction(images.size)
+            defaultSystemPrompt(context)
+        }
+        val effectiveSystemPrompt = CloudVisionPromptPolicy.compose(
+            base = baseSystemPrompt,
+            imageCount = images.size,
+            textOnlyEvidence = {
+                if (customSystemPrompt.isNotBlank()) ResearchQualityStandard.get(context).prompt
+                else CloudWebGrounding.currentEvidencePrompt(context)
+            },
+            annotationInstruction = CloudImageAnnotationPlan.instruction(images.size),
+            currentImageCount = images.count { it.historicalSourceTurnId.isBlank() }
+        )
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt)
         logCompaction(contact, compiled)
         return when (style) {
@@ -205,8 +224,23 @@ object CloudModelClient {
     ): String {
         val systemPrompt = systemPromptOverride.trim().takeIf(String::isNotBlank)
             ?.let { prompt -> secureSystemPrompt(prompt, MAX_AGENT_SYSTEM_PROMPT_CHARACTERS) }
-            ?: defaultSystemPrompt(context)
+            ?: if (images.isNotEmpty()) defaultVisionSystemPrompt(context) else defaultSystemPrompt(context)
         return send(context, contact, turns, systemPrompt, onToolEvent, images)
+    }
+
+    private fun legacySystemPrompt(context: Context, systemPrompt: String, images: List<CloudImagePayload>): String {
+        val imageCount = images.size
+        val base = if (imageCount > 0 && isDefaultSystemPrompt(systemPrompt)) {
+            defaultVisionSystemPrompt(context)
+        } else {
+            secureSystemPrompt(systemPrompt, if (imageCount > 0) MAX_AGENT_SYSTEM_PROMPT_CHARACTERS
+                else MAX_DEFAULT_SYSTEM_PROMPT_CHARACTERS)
+        }
+        return CloudVisionPromptPolicy.compose(
+            base, imageCount, { CloudWebGrounding.currentEvidencePrompt(context) },
+            CloudImageAnnotationPlan.instruction(imageCount),
+            currentImageCount = images.count { it.historicalSourceTurnId.isBlank() }
+        )
     }
 
     fun sendStructured(context: Context, contact: JSONObject, systemPrompt: String, prompt: String): String {
@@ -259,7 +293,20 @@ object CloudModelClient {
         contact: JSONObject,
         catalog: List<AgentNativeToolDescriptor>,
         catalogFingerprint: String = ""
+    ): AgentModelAdapter = createNativeToolAdapter(context, contact, catalog, catalogFingerprint, null)
+
+    internal fun nativeToolAdapter(context: Context, contact: JSONObject, initial: AgentNativeToolCatalogView,
+        catalogProvider: (AgentModelRequest) -> AgentNativeToolCatalogView): AgentModelAdapter =
+        createNativeToolAdapter(context, contact, initial.descriptors, initial.manifest.sha256, catalogProvider)
+
+    private fun createNativeToolAdapter(
+        context: Context,
+        contactValue: JSONObject,
+        catalog: List<AgentNativeToolDescriptor>,
+        catalogFingerprint: String,
+        catalogProvider: ((AgentModelRequest) -> AgentNativeToolCatalogView)?
     ): AgentModelAdapter {
+        val contact = JSONObject(contactValue.toString())
         validateContact(context, contact)
         val provider = when (contact.optString("cloud_api_style", "openai")) {
             "anthropic" -> AgentModelToolProvider.ANTHROPIC
@@ -267,13 +314,19 @@ object CloudModelClient {
             else -> AgentModelToolProvider.OPENAI_COMPATIBLE
         }
         val protocol = AgentModelToolProtocolAdapters.forProvider(provider)
-        val toolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog, catalogFingerprint)
-        val contextCompaction = AgentModelContextCompactionSession()
+        val initialToolCatalog = AgentModelToolCatalogSnapshot(protocol, catalog, catalogFingerprint)
+        val continuationRoute = AgentProviderContinuation.routeFingerprint(provider,
+            contact.getString("cloud_endpoint"), contact.getString("cloud_model"), contact.getString("cloud_api_key"))
+        val contextHandoff = AgentModelContextHandoffSession()
         val disclosureSummarySession = AgentModelDisclosureSummarySession()
         return AgentModelAdapter { request ->
             if (request.cancellationToken.isCancellationRequested) {
                 throw CancellationException("Model tool request cancelled")
             }
+            // Freeze one actual provider view for both this HTTP request and its response decoder.
+            val toolCatalog = catalogProvider?.invoke(request)?.let { current ->
+                AgentModelToolCatalogSnapshot(protocol, current.descriptors, current.manifest.sha256)
+            } ?: initialToolCatalog
             val disclosureSummary = disclosureSummarySession.summarize(request.messages)
             val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
                 context = context,
@@ -296,13 +349,14 @@ object CloudModelClient {
                             "cloud_max_output_tokens",
                             DEFAULT_OUTPUT_RESERVE_TOKENS
                         ).coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
-                        val compacted = contextCompaction.compact(
+                        val projection = contextHandoff.prepare(
                             AgentUntrustedEvidenceBoundary.secureMessages(request.messages),
                             ConversationContextBudget(
                                 contextWindowTokens = contextWindow,
                                 reservedOutputTokens = outputReserve
-                            )
+                            ), continuationRoute
                         )
+                        val compacted = projection.context
                         if (compacted.compacted) {
                             Log.i(
                                 TAG,
@@ -312,7 +366,8 @@ object CloudModelClient {
                             )
                         }
                         val conversation = protocol.encodeConversation(compacted.messages)
-                        val body = JSONObject().put("model", contact.getString("cloud_model"))
+                        val body = JSONObject()
+                        if (provider != AgentModelToolProvider.GEMINI) body.put("model", contact.getString("cloud_model"))
                         copyJsonFields(conversation, body)
                         when (provider) {
                             AgentModelToolProvider.OPENAI_COMPATIBLE -> {
@@ -370,7 +425,11 @@ object CloudModelClient {
                         if (request.cancellationToken.isCancellationRequested) {
                             throw CancellationException("Model tool request cancelled")
                         }
-                        protocol.decodeResponse(response, toolCatalog.descriptors)
+                        protocol.decodeResponse(response, toolCatalog.descriptors).let { decoded ->
+                            decoded.copy(continuation = decoded.continuation?.bindRoute(continuationRoute),
+                                contextHandoff = projection.newHandoff,
+                                providerMetadata = decoded.providerMetadata + (AgentModelContextHandoff.ROUTE_METADATA_KEY to continuationRoute))
+                        }
                     }
                         .also {
                             AgentDataDisclosureLedger.update(
@@ -531,9 +590,7 @@ object CloudModelClient {
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val imageSession = CloudImageAnnotationSession(context, images)
-        val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
-                "\n" + CloudImageAnnotationPlan.instruction(images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images)
         val compiled = compileCloudContext(
             context,
             contact,
@@ -770,9 +827,7 @@ object CloudModelClient {
         images: List<CloudImagePayload> = emptyList()
     ): CloudModelResponse {
         val imageSession = CloudImageAnnotationSession(context, images)
-        val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
-                "\n" + CloudImageAnnotationPlan.instruction(images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val messages = anthropicMessages(compiled.messages)
@@ -1004,9 +1059,7 @@ object CloudModelClient {
         val endpoint = contact.getString("cloud_endpoint")
         val separator = if (endpoint.contains("?")) "&" else "?"
         val url = endpoint + separator + "key=" + URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
-        val effectiveSystemPrompt =
-            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt(context) +
-                "\n" + CloudImageAnnotationPlan.instruction(images.size)
+        val effectiveSystemPrompt = legacySystemPrompt(context, systemPrompt, images)
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val contents = geminiContents(compiled.messages)
@@ -1469,6 +1522,17 @@ object CloudModelClient {
             ).coerceIn(MIN_RETRY_CONTEXT_WINDOW_TOKENS, MAX_CONTEXT_WINDOW_TOKENS)
         val outputReserve = contact.optInt("cloud_max_output_tokens", DEFAULT_OUTPUT_RESERVE_TOKENS)
             .coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
+        // Supervised envelopes already contain a bounded, source-backed handoff. Cutting an
+        // envelope as one 16K-character chat message corrupts both the history and tool contract.
+        val supervised = messages.any { it.content.contains(AgentTranscriptStore.GALAXYSSI_CONTEXT_TRANSPORT_HEADER) }
+        if (supervised) {
+            val estimated = ConversationContextCompactor.estimateTokens(systemPrompt) +
+                messages.sumOf { ConversationContextCompactor.estimateTokens(it.content) + 4 }
+            require(estimated <= contextWindow - outputReserve) {
+                "Prepared agent context exceeds the selected cloud model input budget; history must be reprojected, not truncated"
+            }
+            return CompactedConversationContext("", messages, estimated, estimated, false, 0)
+        }
         val locallyCompiled = ConversationContextCompactor.compile(
             messages = messages,
             previousSummary = usableStored.summary,

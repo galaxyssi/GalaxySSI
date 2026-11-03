@@ -58,7 +58,7 @@ internal object AgentInstalledAppLaunchPolicy {
             AgentTaskIntentClassifier.classify(goal).intent != AgentTaskIntent.DESKTOP_CONTROL
 
     fun query(goal: String): String {
-        val trimmed = goal.trim()
+        val trimmed = goal.trim().replaceFirst(POLITE_PREFIX, "").replaceFirst(PHONE_LOCATION_PREFIX, "")
         val rawQuery = when {
             trimmed.startsWith("open ", ignoreCase = true) ->
                 trimmed.removePrefixIgnoreCase("open ").removeSuffixIgnoreCase(" app").trim()
@@ -69,17 +69,31 @@ internal object AgentInstalledAppLaunchPolicy {
             trimmed.startsWith("\u6253\u5f00") -> trimmed.removePrefix("\u6253\u5f00").trim()
             trimmed.startsWith("\u542f\u52a8") -> trimmed.removePrefix("\u542f\u52a8").trim()
             trimmed.startsWith("\u8fd0\u884c") -> trimmed.removePrefix("\u8fd0\u884c").trim()
+            trimmed.startsWith("\u6253\u958b") -> trimmed.removePrefix("\u6253\u958b").trim()
+            trimmed.startsWith("\u958b\u555f") -> trimmed.removePrefix("\u958b\u555f").trim()
+            trimmed.startsWith("\u555f\u52d5") -> trimmed.removePrefix("\u555f\u52d5").trim()
+            trimmed.startsWith("\u904b\u884c") -> trimmed.removePrefix("\u904b\u884c").trim()
             else -> ""
         }
         val query = rawQuery
+            .replaceFirst(PHONE_APP_PREFIX, "")
+            .replaceFirst(PHONE_APP_SUFFIX, "")
             .removePrefixIgnoreCase("app ")
+            .removeSuffixIgnoreCase(" app")
             .removeSuffix("\u5e94\u7528")
+            .removeSuffix("\u61c9\u7528")
             .trim()
         return if (query.equals("app", ignoreCase = true)) "" else query
     }
 
     private fun String.removeSuffixIgnoreCase(suffix: String): String =
         if (endsWith(suffix, ignoreCase = true)) dropLast(suffix.length) else this
+
+    // Strip only explicit device-location grammar, not app names such as Phone Link or mobile banking.
+    private val POLITE_PREFIX = Regex("^(?:(?:please)\\s+|(?:\u8bf7|\u8acb)(?:\u5e2e\u6211|\u5e6b\u6211)?\\s*)", RegexOption.IGNORE_CASE)
+    private val PHONE_LOCATION_PREFIX = Regex("^\u5728(?:\u6211\u7684)?(?:\u624b\u673a|\u624b\u6a5f|\u672c\u673a|\u672c\u6a5f)\u4e0a\\s*")
+    private val PHONE_APP_PREFIX = Regex("^(?:\u6211\u7684)?(?:\u624b\u673a|\u624b\u6a5f|\u672c\u673a|\u672c\u6a5f)(?:\u4e0a(?:\u7684)?|\u7684)\\s*")
+    private val PHONE_APP_SUFFIX = Regex("\\s+on\\s+(?:(?:my|this|the)\\s+)?(?:phone|device)\\s*$", RegexOption.IGNORE_CASE)
 }
 
 class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner {
@@ -116,6 +130,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             hasAttachments = request.conversationContext.hasAttachments
         ).intent
         return !request.conversationContext.hasAttachments &&
+            !AgentDeviceShortcutIntent.requiresReasoning(request.goal) &&
             !requirements.complexReasoning &&
             requirements.executionHorizon == AgentExecutionHorizon.INTERACTIVE &&
             AgentCapability.TASK_EXECUTION !in requirements.capabilities &&
@@ -158,6 +173,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         }
         notificationReplyAction(request)?.let { return listOf(it) }
         deterministicLocalAction(request)?.let { return listOf(it) }
+        if (AgentDeviceShortcutIntent.requiresReasoning(request.goal) ||
+            AgentInstalledAppLaunchPolicy.isPhoneLocalRequest(request.goal)
+        ) {
+            return supervisedProjectActions(request) ?: listOf(unavailableReasoningAction(request))
+        }
         supervisedProjectActions(request)?.let { return it }
         manualSelectedConnectorAction(request)?.let { return listOf(it) }
         phoneDevelopmentActions(request)?.let { return it }
@@ -170,11 +190,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     internal fun supervisedProjectActions(request: AgentRequest): List<AgentAction>? {
         val phoneControl = PhoneAssistantTaskControl.isAutomation(request.executionTurnId)
-        if (!phoneControl && !AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(
-                request.goal,
-                request.conversationContext
-            )
-        ) return null
+        // Provider selection never transfers ownership of Android execution.
+        // The model can answer directly or choose a phone action, regardless of wording.
         val selected = manualSelectedConnectorAction(request)
         val routing = if (selected == null) context?.let { appContext ->
             AgentResourceRouter(appContext).route(
@@ -204,6 +221,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 target.kind != AgentConnectorKind.DEVICE &&
                     (AgentCapability.CODE in target.capabilities ||
                         AgentCapability.TASK_EXECUTION in target.capabilities ||
+                        AgentCapability.CHAT in target.capabilities ||
                         AgentCapability.REASONING in target.capabilities)
             }
             .minByOrNull { target ->
@@ -345,14 +363,14 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         AgentGoalSegmentationPolicy.split(goal)
 
     internal fun actionFor(request: AgentRequest): AgentAction {
-        val goal = request.goal.trim()
+        val goal = AgentLocalCommandText.withoutPolitePrefix(request.goal)
         val lower = goal.lowercase()
         val taskRequirements = AgentTaskRequirementAnalyzer.analyze(goal)
         notificationReplyAction(request)?.let { return it }
         deterministicLocalAction(request)?.let { return it }
         explicitCallableTargetAction(request)?.let { return it }
         return when {
-            lower == "back" || lower.contains("go back") -> AgentAction(
+            lower == "back" || lower.matchesCommand("go back") -> AgentAction(
                 id = "go-back",
                 kind = AgentActionKind.BACK,
                 target = request.screen.foregroundApp,
@@ -362,7 +380,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             )
             lower == "lock screen" ||
                 lower == "turn off screen" ||
-                lower.contains("lock the phone") -> AgentAction(
+                lower.matchesCommand("lock the phone") -> AgentAction(
                     id = "lock-screen",
                     kind = AgentActionKind.LOCK_SCREEN,
                     target = "Screen Lock",
@@ -370,9 +388,9 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     status = AgentActionStatus.PENDING_CONFIRMATION,
                     description = "Lock the phone screen"
                 )
-            lower.contains("save screen") ||
-                lower.contains("remember screen") ||
-                lower.contains("capture screen to knowledge") -> AgentAction(
+            lower.matchesCommand("save screen") ||
+                lower.matchesCommand("remember screen") ||
+                lower.matchesCommand("capture screen to knowledge") -> AgentAction(
                 id = "save-screen-knowledge",
                 kind = AgentActionKind.SAVE_SCREEN_KNOWLEDGE,
                 target = request.screen.foregroundApp,
@@ -380,7 +398,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 status = AgentActionStatus.PENDING_CONFIRMATION,
                 description = "Save current screen to Agent knowledge"
             )
-            lower.contains("read screen") || lower.contains("scan screen") -> AgentAction(
+            lower.matchesCommand("read screen") || lower.matchesCommand("scan screen") -> AgentAction(
                 id = "read-screen",
                 kind = AgentActionKind.READ_SCREEN,
                 target = request.screen.foregroundApp,
@@ -388,7 +406,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 status = AgentActionStatus.PENDING_CONFIRMATION,
                 description = "Read current screen structure"
             )
-            lower.contains("read notifications") || lower.contains("scan notifications") -> AgentAction(
+            lower.matchesCommand("read notifications") || lower.matchesCommand("scan notifications") -> AgentAction(
                 id = "read-notifications",
                 kind = AgentActionKind.CALL_NATIVE_TOOL,
                 target = "Notification Context",
@@ -400,10 +418,10 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     "input_json" to AgentNativeJsonCodec.stringify(mapOf("limit" to 6))
                 )
             )
-            lower.contains("read sms") ||
-                lower.contains("read messages") ||
-                lower.contains("read calls") ||
-                lower.contains("missed calls") -> AgentAction(
+            lower.matchesCommand("read sms") ||
+                lower.matchesCommand("read messages") ||
+                lower.matchesCommand("read calls") ||
+                lower.matchesCommand("missed calls") -> AgentAction(
                     id = "read-notifications",
                     kind = AgentActionKind.CALL_NATIVE_TOOL,
                     target = "Communication Notifications",
@@ -415,10 +433,10 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                         "input_json" to AgentNativeJsonCodec.stringify(mapOf("limit" to 6))
                     )
                 )
-            lower.contains("device status") ||
-                lower.contains("phone status") ||
-                lower.contains("storage status") ||
-                lower.contains("network status") -> AgentAction(
+            lower.matchesCommand("device status") ||
+                lower.matchesCommand("phone status") ||
+                lower.matchesCommand("\u67e5\u770b\u624b\u673a\u5b58\u50a8", "storage status") ||
+                lower.matchesCommand("\u67e5\u770b\u624b\u673a\u7f51\u7edc\u72b6\u6001", "network status") -> AgentAction(
                     id = "read-device-status",
                     kind = AgentActionKind.READ_SCREEN,
                     target = "Device Status",
@@ -441,7 +459,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 description = "Type text into the focused field",
                 parameters = mapOf("text" to goal.removePrefix("type ").trim())
             )
-            lower.contains("tap first") || lower.contains("click first") -> {
+            lower.matchesCommand("tap first") || lower.matchesCommand("click first") -> {
                 val firstElement = request.screen.clickableElements.firstOrNull()
                 AgentAction(
                     id = "tap-first-action",
@@ -460,7 +478,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             }
             lower.startsWith("tap ") || lower.startsWith("click ") -> namedTapAction(request)
             lower.startsWith("long press ") || lower.startsWith("press and hold ") -> namedLongPressAction(request)
-            lower.contains("swipe up") -> AgentAction(
+            lower.matchesCommand("swipe up") -> AgentAction(
                 id = "swipe-up",
                 kind = AgentActionKind.SWIPE,
                 target = request.screen.foregroundApp,
@@ -495,7 +513,12 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     }
 
     internal fun androidSystemNativeToolAction(request: AgentRequest): AgentAction? {
-        val goal = request.goal.trim()
+        val goal = AgentLocalCommandText.withoutPolitePrefix(request.goal)
+        if (AgentDeviceShortcutIntent.requiresReasoning(goal)) return null
+        AgentDeviceShortcutIntent.parse(goal)?.takeIf {
+            it.toolId == AgentHardwareNativeTools.FLASHLIGHT_SET ||
+                it.toolId == AgentAndroidSystemNativeTools.AUDIO_VOLUME_SET
+        }?.let { return nativeToolAction(request, it.toolId, JSONObject(it.input)) }
         val lower = goal.lowercase(Locale.US)
         val now = System.currentTimeMillis()
         val batteryReadIntent = lower.hasAny(
@@ -513,46 +536,38 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     "\u7701\u7535", "\u9608\u503c", "\u7535\u6c60\u8bbe\u7f6e"
                 )
             )
+        val completeStatusQuery = AgentDeviceStatusShortcutCoverage.isCompleteQuery(goal)
+        fun readCommand(vararg aliases: String): Boolean = lower.matchesCommand(*aliases) ||
+            (completeStatusQuery && lower.hasAny(*aliases))
         val selected: Pair<String, JSONObject> = when {
-            lower.hasAny(
-                "turn on flashlight", "turn on the flashlight", "switch on flashlight", "switch on the flashlight",
-                "open flashlight", "flashlight on", "turn on torch", "turn on the torch", "switch on torch", "torch on",
-                "\u6253\u5f00\u624b\u7535\u7b52", "\u5f00\u542f\u624b\u7535\u7b52", "\u6253\u5f00\u95ea\u5149\u706f", "\u5f00\u542f\u95ea\u5149\u706f"
-            ) -> AgentHardwareNativeTools.FLASHLIGHT_SET to JSONObject().put("enabled", true)
-            lower.hasAny(
-                "turn off flashlight", "turn off the flashlight", "switch off flashlight", "switch off the flashlight",
-                "close flashlight", "flashlight off", "turn off torch", "turn off the torch", "switch off torch", "torch off",
-                "\u5173\u95ed\u624b\u7535\u7b52", "\u5173\u6389\u624b\u7535\u7b52", "\u5173\u95ed\u95ea\u5149\u706f", "\u5173\u6389\u95ea\u5149\u706f"
-            ) -> AgentHardwareNativeTools.FLASHLIGHT_SET to JSONObject().put("enabled", false)
-            batteryReadIntent ->
+            batteryReadIntent && AgentDeviceStatusShortcutCoverage.isCompleteQuery(goal) ->
                 AgentHardwareNativeTools.BATTERY_STATUS to JSONObject()
-            lower.hasAny("power status", "battery saver status", "power saving status", "\u7535\u6e90\u72b6\u6001", "\u7701\u7535\u6a21\u5f0f\u72b6\u6001", "\u67e5\u770b\u7701\u7535\u6a21\u5f0f") ->
+            readCommand("power status", "battery saver status", "power saving status", "\u7535\u6e90\u72b6\u6001", "\u7701\u7535\u6a21\u5f0f\u72b6\u6001", "\u67e5\u770b\u7701\u7535\u6a21\u5f0f") ->
                 AgentHardwareNativeTools.POWER_STATUS to JSONObject()
-            lower.hasAny(
-                "phone memory", "phone ram", "device memory", "device ram", "available ram", "free ram", "ram status",
+            readCommand(
+                "\u67e5\u770b\u624b\u673a\u5185\u5b58", "phone memory", "phone ram", "device memory", "device ram", "available ram", "free ram", "ram status",
                 "\u624b\u673a\u5185\u5b58", "\u8bbe\u5907\u5185\u5b58", "\u8fd0\u884c\u5185\u5b58", "\u53ef\u7528\u5185\u5b58", "\u5269\u4f59\u5185\u5b58",
                 "\u5185\u5b58\u5360\u7528", "\u5185\u5b58\u4f7f\u7528", "\u67e5\u5185\u5b58", "\u67e5\u770b\u5185\u5b58", "\u67e5\u8be2\u5185\u5b58"
             ) -> AgentHardwareNativeTools.MEMORY_STATUS to JSONObject()
-            lower.hasAny("storage status", "phone storage", "available storage", "free storage", "\u624b\u673a\u5b58\u50a8", "\u5b58\u50a8\u72b6\u6001", "\u5269\u4f59\u5b58\u50a8", "\u5269\u4f59\u7a7a\u95f4") ->
+            readCommand("storage status", "phone storage", "available storage", "free storage", "\u624b\u673a\u5b58\u50a8", "\u5b58\u50a8\u72b6\u6001", "\u5269\u4f59\u5b58\u50a8", "\u5269\u4f59\u7a7a\u95f4") ->
                 AgentHardwareNativeTools.STORAGE_STATUS to JSONObject()
-            lower.hasAny("network status", "phone network", "active network", "\u624b\u673a\u7f51\u7edc\u72b6\u6001", "\u5f53\u524d\u7f51\u7edc", "\u7f51\u7edc\u8fde\u63a5\u72b6\u6001") ->
+            readCommand("network status", "phone network", "active network", "\u624b\u673a\u7f51\u7edc\u72b6\u6001", "\u5f53\u524d\u7f51\u7edc", "\u7f51\u7edc\u8fde\u63a5\u72b6\u6001") ->
                 AgentHardwareNativeTools.NETWORK_STATUS to JSONObject()
-            lower.hasAny("current location", "phone location", "where am i", "\u5f53\u524d\u4f4d\u7f6e", "\u624b\u673a\u4f4d\u7f6e", "\u6211\u5728\u54ea\u91cc", "\u83b7\u53d6\u4f4d\u7f6e") ->
+            lower.matchesCommand("\u83b7\u53d6\u5f53\u524d\u4f4d\u7f6e", "current location", "phone location", "where am i", "\u5f53\u524d\u4f4d\u7f6e", "\u624b\u673a\u4f4d\u7f6e", "\u6211\u5728\u54ea\u91cc", "\u83b7\u53d6\u4f4d\u7f6e") ->
                 AgentHardwareNativeTools.LOCATION_FOREGROUND_READ to JSONObject().put("timeout_ms", 10_000)
-            lower.hasAny("list sensors", "device sensors", "sensor list", "\u5217\u51fa\u4f20\u611f\u5668", "\u624b\u673a\u4f20\u611f\u5668", "\u4f20\u611f\u5668\u5217\u8868") ->
+            lower.matchesCommand("\u5217\u51fa\u624b\u673a\u4f20\u611f\u5668", "list sensors", "device sensors", "sensor list", "\u5217\u51fa\u4f20\u611f\u5668", "\u624b\u673a\u4f20\u611f\u5668", "\u4f20\u611f\u5668\u5217\u8868") ->
                 AgentHardwareNativeTools.SENSORS_LIST to JSONObject().put("limit", 64)
-            lower.hasAny("sample sensor", "read sensor", "sensor sample", "\u8bfb\u53d6\u4f20\u611f\u5668", "\u4f20\u611f\u5668\u6570\u636e", "\u91c7\u6837\u4f20\u611f\u5668") ||
-                (lower.contains("\u8bfb\u53d6") && lower.contains("\u4f20\u611f\u5668")) ->
+            AgentLocalCommandText.sensorType(goal) != null ->
                 AgentHardwareNativeTools.SENSOR_SAMPLE to JSONObject()
-                    .put("type", sensorTypeFromGoal(lower))
+                    .put("type", AgentLocalCommandText.sensorType(goal))
                     .put("timeout_ms", 5_000)
-            lower.hasAny("bluetooth status", "is bluetooth on", "\u84dd\u7259\u72b6\u6001", "\u84dd\u7259\u662f\u5426\u6253\u5f00") ->
+            readCommand("\u67e5\u770b\u84dd\u7259\u72b6\u6001", "bluetooth status", "is bluetooth on", "\u84dd\u7259\u72b6\u6001", "\u84dd\u7259\u662f\u5426\u6253\u5f00") ->
                 AgentHardwareNativeTools.BLUETOOTH_STATUS to JSONObject()
-            lower.hasAny("discover bluetooth", "scan bluetooth", "nearby bluetooth", "\u626b\u63cf\u84dd\u7259", "\u9644\u8fd1\u84dd\u7259", "\u53d1\u73b0\u84dd\u7259\u8bbe\u5907") ->
+            lower.matchesCommand("discover bluetooth", "scan bluetooth", "nearby bluetooth", "\u626b\u63cf\u84dd\u7259", "\u9644\u8fd1\u84dd\u7259", "\u53d1\u73b0\u84dd\u7259\u8bbe\u5907") ->
                 AgentHardwareNativeTools.BLUETOOTH_DISCOVERY_FOREGROUND to JSONObject().put("timeout_ms", 10_000).put("limit", 16)
-            lower.hasAny("open bluetooth pairing", "pair bluetooth", "\u6253\u5f00\u84dd\u7259\u914d\u5bf9", "\u914d\u5bf9\u84dd\u7259") ->
+            lower.matchesCommand("open bluetooth pairing", "pair bluetooth", "\u6253\u5f00\u84dd\u7259\u914d\u5bf9", "\u914d\u5bf9\u84dd\u7259") ->
                 AgentHardwareNativeTools.BLUETOOTH_PAIRING_HANDOFF to JSONObject()
-            lower.hasAny("nfc status", "is nfc on", "\u67e5\u770bnfc", "nfc\u72b6\u6001", "nfc\u662f\u5426\u6253\u5f00") ->
+            readCommand("\u67e5\u770bnfc\u72b6\u6001", "nfc status", "is nfc on", "\u67e5\u770bnfc", "nfc\u72b6\u6001", "nfc\u662f\u5426\u6253\u5f00") ->
                 AgentHardwareNativeTools.NFC_STATUS to JSONObject()
             lower.startsWith("search installed apps ") || lower.startsWith("find installed apps ") ||
                 lower.startsWith("\u641c\u7d22\u5df2\u5b89\u88c5\u5e94\u7528") || lower.startsWith("\u67e5\u627e\u5df2\u5b89\u88c5\u5e94\u7528") -> {
@@ -562,49 +577,49 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 ).trim()
                 AgentHardwareNativeTools.INSTALLED_APPS_LIST to JSONObject().put("query", query).put("limit", 100)
             }
-            lower.hasAny("list installed apps", "installed applications", "installed app list", "\u5df2\u5b89\u88c5\u5e94\u7528", "\u5e94\u7528\u5217\u8868", "\u5217\u51fa\u5df2\u5b89\u88c5app") ->
+            lower.matchesCommand("\u5217\u51fa\u5df2\u5b89\u88c5\u5e94\u7528", "list installed apps", "installed applications", "installed app list", "\u5df2\u5b89\u88c5\u5e94\u7528", "\u5e94\u7528\u5217\u8868", "\u5217\u51fa\u5df2\u5b89\u88c5app") ->
                 AgentHardwareNativeTools.INSTALLED_APPS_LIST to JSONObject().put("query", "").put("limit", 100)
-            Regex("(?:package detail|package info|app package)\\s+([A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+)", RegexOption.IGNORE_CASE).find(goal) != null -> {
+            Regex("(?:package detail|package info|app package)\\s+([A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+)", RegexOption.IGNORE_CASE).matches(goal) -> {
                 val packageName = Regex("([A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+)").find(goal)?.value.orEmpty()
                 AgentHardwareNativeTools.PACKAGE_DETAIL to JSONObject().put("package_name", packageName)
             }
-            lower.hasAny("call state", "incoming call", "\u6765\u7535\u72b6\u6001", "\u901a\u8bdd\u72b6\u6001", "\u662f\u5426\u6765\u7535") ->
+            lower.matchesCommand("call state", "incoming call", "\u6765\u7535\u72b6\u6001", "\u901a\u8bdd\u72b6\u6001", "\u662f\u5426\u6765\u7535") ->
                 AgentAndroidSystemNativeTools.TELEPHONY_CALL_STATE to JSONObject()
-            lower.hasAny("monitor incoming call", "observe call state", "\u76d1\u542c\u6765\u7535", "\u76d1\u542c\u7535\u8bdd", "\u7b49\u5f85\u6765\u7535") ->
+            lower.matchesCommand("monitor incoming call", "observe call state", "\u76d1\u542c\u6765\u7535", "\u76d1\u542c\u7535\u8bdd", "\u7b49\u5f85\u6765\u7535") ->
                 AgentAndroidSystemNativeTools.TELEPHONY_CALL_STATE_OBSERVE to JSONObject().put("timeout_ms", 30_000)
-            lower.hasAny("phone service", "telephony status", "mobile service", "\u7535\u8bdd\u72b6\u6001", "\u624b\u673a\u4fe1\u53f7", "\u8fd0\u8425\u5546", "\u79fb\u52a8\u7f51\u7edc\u72b6\u6001") ->
+            lower.matchesCommand("phone service", "telephony status", "mobile service", "\u7535\u8bdd\u72b6\u6001", "\u624b\u673a\u4fe1\u53f7", "\u8fd0\u8425\u5546", "\u79fb\u52a8\u7f51\u7edc\u72b6\u6001") ->
                 AgentAndroidSystemNativeTools.TELEPHONY_STATUS to JSONObject()
-            lower.hasAny("recent sms", "read sms", "sms list", "\u67e5\u770b\u77ed\u4fe1", "\u8bfb\u53d6\u77ed\u4fe1", "\u6700\u8fd1\u77ed\u4fe1", "\u77ed\u4fe1\u5217\u8868") ->
+            lower.matchesCommand("recent sms", "read sms", "sms list", "\u67e5\u770b\u77ed\u4fe1", "\u8bfb\u53d6\u77ed\u4fe1", "\u6700\u8fd1\u77ed\u4fe1", "\u77ed\u4fe1\u5217\u8868") ->
                 AgentAndroidSystemNativeTools.SMS_LIST to JSONObject().put("limit", 30)
-            lower.hasAny("start wifi scan", "rescan wifi", "\u91cd\u65b0\u626b\u63cfwifi", "\u5f00\u59cb\u626b\u63cfwifi") ->
+            lower.matchesCommand("start wifi scan", "rescan wifi", "\u91cd\u65b0\u626b\u63cfwifi", "\u5f00\u59cb\u626b\u63cfwifi") ->
                 AgentAndroidSystemNativeTools.WIFI_SCAN_START to JSONObject()
-            lower.hasAny("scan wifi", "nearby wifi", "wi-fi scan", "\u626b\u63cfwifi", "\u9644\u8fd1wifi", "\u67e5\u627ewifi") ->
+            lower.matchesCommand("scan wifi", "nearby wifi", "wi-fi scan", "\u626b\u63cfwifi", "\u9644\u8fd1wifi", "\u67e5\u627ewifi") ->
                 AgentAndroidSystemNativeTools.WIFI_SCAN_RESULTS to JSONObject().put("limit", 30)
-            lower.hasAny("wifi status", "wi-fi status", "\u67e5\u770bwifi", "wifi\u72b6\u6001", "\u65e0\u7ebf\u7f51\u7edc\u72b6\u6001") ->
+            readCommand("wifi status", "wi-fi status", "\u67e5\u770bwifi", "wifi\u72b6\u6001", "\u65e0\u7ebf\u7f51\u7edc\u72b6\u6001") ->
                 AgentAndroidSystemNativeTools.WIFI_STATUS to JSONObject()
-            lower.hasAny("open wifi settings", "open internet panel", "\u6253\u5f00wifi", "\u6253\u5f00\u7f51\u7edc\u8bbe\u7f6e") ->
+            lower.matchesCommand("open wifi settings", "open internet panel", "\u6253\u5f00wifi", "\u6253\u5f00\u7f51\u7edc\u8bbe\u7f6e") ->
                 AgentAndroidSystemNativeTools.WIFI_PANEL_OPEN to JSONObject()
-            lower.hasAny("open hotspot settings", "hotspot settings", "\u6253\u5f00\u70ed\u70b9", "\u70ed\u70b9\u8bbe\u7f6e") ->
+            lower.matchesCommand("open hotspot settings", "hotspot settings", "\u6253\u5f00\u70ed\u70b9", "\u70ed\u70b9\u8bbe\u7f6e") ->
                 AgentAndroidSystemNativeTools.WIFI_HOTSPOT_PANEL_OPEN to JSONObject()
-            lower.hasAny("audio status", "volume status", "\u97f3\u91cf\u72b6\u6001", "\u67e5\u770b\u97f3\u91cf", "\u5f53\u524d\u97f3\u91cf") ->
+            readCommand("audio status", "volume status", "\u97f3\u91cf\u72b6\u6001", "\u67e5\u770b\u97f3\u91cf", "\u5f53\u524d\u97f3\u91cf") ->
                 AgentAndroidSystemNativeTools.AUDIO_STATUS to JSONObject()
-            lower.hasAny("biometric status", "fingerprint status", "\u751f\u7269\u8bc6\u522b\u72b6\u6001", "\u6307\u7eb9\u72b6\u6001", "\u662f\u5426\u652f\u6301\u6307\u7eb9") ->
+            lower.matchesCommand("biometric status", "fingerprint status", "\u751f\u7269\u8bc6\u522b\u72b6\u6001", "\u6307\u7eb9\u72b6\u6001", "\u662f\u5426\u652f\u6301\u6307\u7eb9") ->
                 AgentAndroidSystemNativeTools.BIOMETRIC_STATUS to JSONObject()
-            lower.hasAny("open biometric enrollment", "enroll fingerprint", "\u5f55\u5165\u6307\u7eb9", "\u6253\u5f00\u751f\u7269\u8bc6\u522b\u8bbe\u7f6e") ->
+            lower.matchesCommand("open biometric enrollment", "enroll fingerprint", "\u5f55\u5165\u6307\u7eb9", "\u6253\u5f00\u751f\u7269\u8bc6\u522b\u8bbe\u7f6e") ->
                 AgentAndroidSystemNativeTools.BIOMETRIC_ENROLLMENT_OPEN to JSONObject()
-            lower.hasAny("vpn status", "\u67e5\u770bvpn", "vpn\u72b6\u6001", "\u662f\u5426\u8fde\u63a5vpn") ->
+            readCommand("vpn status", "\u67e5\u770bvpn", "vpn\u72b6\u6001", "\u662f\u5426\u8fde\u63a5vpn") ->
                 AgentAndroidSystemNativeTools.VPN_STATUS to JSONObject()
-            lower.hasAny("request vpn permission", "open vpn consent", "\u8bf7\u6c42vpn\u6743\u9650", "\u6253\u5f00vpn\u6388\u6743") ->
+            lower.matchesCommand("request vpn permission", "open vpn consent", "\u8bf7\u6c42vpn\u6743\u9650", "\u6253\u5f00vpn\u6388\u6743") ->
                 AgentAndroidSystemNativeTools.VPN_CONSENT_OPEN to JSONObject()
-            lower.hasAny("device policy status", "device owner status", "\u8bbe\u5907\u7ba1\u7406\u72b6\u6001", "\u8bbe\u5907\u6240\u6709\u8005\u72b6\u6001") ->
+            lower.matchesCommand("device policy status", "device owner status", "\u8bbe\u5907\u7ba1\u7406\u72b6\u6001", "\u8bbe\u5907\u6240\u6709\u8005\u72b6\u6001") ->
                 AgentAndroidSystemNativeTools.DEVICE_POLICY_STATUS to JSONObject()
-            lower.hasAny("lock this phone", "lock device", "\u9501\u5b9a\u624b\u673a", "\u9501\u5c4f") ->
+            lower.matchesCommand("lock this phone", "lock device", "\u9501\u5b9a\u624b\u673a", "\u9501\u5c4f") ->
                 AgentAndroidSystemNativeTools.DEVICE_POLICY_LOCK to JSONObject()
-            lower.hasAny("reboot this phone", "reboot device", "\u91cd\u542f\u624b\u673a", "\u91cd\u542f\u8bbe\u5907") ->
+            lower.matchesCommand("reboot this phone", "reboot device", "\u91cd\u542f\u624b\u673a", "\u91cd\u542f\u8bbe\u5907") ->
                 AgentAndroidSystemNativeTools.DEVICE_POLICY_REBOOT to JSONObject()
-            lower.hasAny("list calendars", "calendar list", "\u65e5\u5386\u5217\u8868", "\u6709\u54ea\u4e9b\u65e5\u5386") ->
+            lower.matchesCommand("list calendars", "calendar list", "\u65e5\u5386\u5217\u8868", "\u6709\u54ea\u4e9b\u65e5\u5386") ->
                 AgentAndroidSystemNativeTools.CALENDARS_LIST to JSONObject()
-            lower.hasAny("calendar events", "schedule", "agenda", "\u67e5\u770b\u65e5\u7a0b", "\u6700\u8fd1\u65e5\u7a0b", "\u4eca\u5929\u65e5\u7a0b", "\u65e5\u7a0b\u5b89\u6392") ->
+            lower.matchesCommand("calendar events", "schedule", "agenda", "\u67e5\u770b\u65e5\u7a0b", "\u6700\u8fd1\u65e5\u7a0b", "\u4eca\u5929\u65e5\u7a0b", "\u65e5\u7a0b\u5b89\u6392") ->
                 AgentAndroidSystemNativeTools.CALENDAR_EVENTS_QUERY to JSONObject()
                     .put("start_epoch_ms", now - 24L * 60L * 60L * 1000L)
                     .put("end_epoch_ms", now + 7L * 24L * 60L * 60L * 1000L)
@@ -614,34 +629,30 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 val query = goal.replace(Regex("^(?i:search contacts|find contact)\\s*|^(?:\u641c\u7d22\u8054\u7cfb\u4eba|\u67e5\u627e\u8054\u7cfb\u4eba|\u67e5\u8054\u7cfb\u4eba)\\s*"), "").trim()
                 AgentAndroidSystemNativeTools.CONTACTS_SEARCH to JSONObject().put("query", query).put("limit", 30)
             }
-            Regex("(?:volume|\u97f3\u91cf)[^0-9]{0,12}(\\d{1,3})", RegexOption.IGNORE_CASE).find(goal) != null -> {
-                val percent = Regex("(\\d{1,3})").find(goal)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100) ?: 50
-                AgentAndroidSystemNativeTools.AUDIO_VOLUME_SET to JSONObject().put("stream", audioStreamFromGoal(lower)).put("percent", percent)
-            }
-            lower.hasAny("unmute phone", "unmute media", "\u53d6\u6d88\u9759\u97f3", "\u6062\u590d\u58f0\u97f3") ->
+            lower.matchesCommand("unmute phone", "unmute media", "\u53d6\u6d88\u9759\u97f3", "\u6062\u590d\u58f0\u97f3") ->
                 AgentAndroidSystemNativeTools.AUDIO_MUTE_SET to JSONObject().put("stream", audioStreamFromGoal(lower)).put("muted", false)
-            lower.hasAny("mute phone", "mute media", "\u624b\u673a\u9759\u97f3", "\u5a92\u4f53\u9759\u97f3") ->
+            lower.matchesCommand("mute phone", "mute media", "\u624b\u673a\u9759\u97f3", "\u5a92\u4f53\u9759\u97f3") ->
                 AgentAndroidSystemNativeTools.AUDIO_MUTE_SET to JSONObject().put("stream", audioStreamFromGoal(lower)).put("muted", true)
-            Regex("(?:dial|\u62e8\u53f7|\u6253\u7535\u8bdd\u7ed9)\\s*([+0-9][0-9 ()-]{2,31})", RegexOption.IGNORE_CASE).find(goal) != null -> {
-                val number = Regex("([+0-9][0-9 ()-]{2,31})").find(goal)?.groupValues?.get(1).orEmpty().trim()
+            AgentLocalCommandText.dialNumber(goal) != null -> {
+                val number = requireNotNull(AgentLocalCommandText.dialNumber(goal))
                 AgentAndroidSystemNativeTools.TELEPHONY_DIAL_HANDOFF to JSONObject().put("phone_number", number)
             }
-            Regex("(?:send sms to|\u7ed9)\\s*([+0-9][0-9 ()-]{2,31})\\s*(?:send|\u53d1\u77ed\u4fe1|\u53d1\u9001)?\\s*[:\uff1a]?\\s*(.+)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(goal) != null -> {
-                val match = Regex("(?:send sms to|\u7ed9)\\s*([+0-9][0-9 ()-]{2,31})\\s*(?:send|\u53d1\u77ed\u4fe1|\u53d1\u9001)?\\s*[:\uff1a]?\\s*(.+)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(goal)
+            Regex("(?:send sms to|\u7ed9)\\s*([+0-9][0-9 ()-]{2,31})\\s*(?:send|\u53d1\u77ed\u4fe1|\u53d1\u9001)?\\s*[:\uff1a]+\\s*(.+)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).matches(goal) -> {
+                val match = Regex("(?:send sms to|\u7ed9)\\s*([+0-9][0-9 ()-]{2,31})\\s*(?:send|\u53d1\u77ed\u4fe1|\u53d1\u9001)?\\s*[:\uff1a]+\\s*(.+)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).matchEntire(goal)
                 AgentAndroidSystemNativeTools.SMS_SEND to JSONObject()
                     .put("phone_number", match?.groupValues?.getOrNull(1).orEmpty().trim())
                     .put("message", match?.groupValues?.getOrNull(2).orEmpty().trim())
             }
-            Regex("(?:download status|\u67e5\u770b\u4e0b\u8f7d)\\s*(\\d+)", RegexOption.IGNORE_CASE).find(goal) != null -> {
-                val id = Regex("(\\d+)").find(goal)?.value?.toLongOrNull() ?: 0L
+            Regex("(?:download status|\u67e5\u770b\u4e0b\u8f7d)\\s*(\\d+)", RegexOption.IGNORE_CASE).matches(goal) -> {
+                val id = Regex("(\\d+)").find(goal)?.value?.toLongOrNull()?.takeIf { it > 0 } ?: return null
                 AgentAndroidSystemNativeTools.DOWNLOAD_QUERY to JSONObject().put("download_id", id)
             }
-            Regex("(?:remove download|delete download|\u5220\u9664\u4e0b\u8f7d)\\s*(\\d+)", RegexOption.IGNORE_CASE).find(goal) != null -> {
-                val id = Regex("(\\d+)").find(goal)?.value?.toLongOrNull() ?: 0L
+            Regex("(?:remove download|delete download|\u5220\u9664\u4e0b\u8f7d)\\s*(\\d+)", RegexOption.IGNORE_CASE).matches(goal) -> {
+                val id = Regex("(\\d+)").find(goal)?.value?.toLongOrNull()?.takeIf { it > 0 } ?: return null
                 AgentAndroidSystemNativeTools.DOWNLOAD_REMOVE to JSONObject().put("download_id", id)
             }
-            lower.contains("https://") && lower.hasAny("download", "\u4e0b\u8f7d") -> {
-                val url = Regex("https://\\S+", RegexOption.IGNORE_CASE).find(goal)?.value.orEmpty().trimEnd('.', ',', '\u3002')
+            AgentLocalCommandText.downloadUrl(goal) != null -> {
+                val url = requireNotNull(AgentLocalCommandText.downloadUrl(goal))
                 AgentAndroidSystemNativeTools.DOWNLOAD_ENQUEUE to JSONObject().put("url", url)
             }
             else -> return null
@@ -758,9 +769,10 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
 
     internal fun directDeviceStatusAction(request: AgentRequest): AgentAction? {
         val lower = request.goal.lowercase(Locale.US)
-        if (!lower.hasAny(
+        if (!lower.matchesCommand(
                 "device status", "phone status", "storage status", "network status",
-                "\u8bbe\u5907\u72b6\u6001", "\u624b\u673a\u72b6\u6001", "\u5b58\u50a8\u72b6\u6001", "\u7f51\u7edc\u72b6\u6001"
+                "\u8bbe\u5907\u72b6\u6001", "\u624b\u673a\u72b6\u6001", "\u5b58\u50a8\u72b6\u6001", "\u7f51\u7edc\u72b6\u6001",
+                "\u67e5\u770b\u624b\u673a\u72b6\u6001", "\u67e5\u770b\u8bbe\u5907\u72b6\u6001"
             )
         ) return null
         return AgentAction(
@@ -1017,6 +1029,16 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     "_galaxyssi_desktop_executor_full",
                     (target?.desktopAccessProfile == GalaxySSILinkProtocol.ACCESS_DESKTOP_EXECUTOR).toString()
                 )
+                context?.takeIf { request.conversationContext.conversationId.isNotBlank() }?.let { appContext ->
+                    val invocationTarget = AgentInvocationBinding.canonicalTargetId(connectorId, request.targets.map { it.id })
+                    AgentModelSelectionSettings.configurationForTarget(
+                        appContext, request.conversationContext.conversationId, invocationTarget
+                    )?.let { configuration ->
+                        put("agent_model_id", configuration.modelId)
+                        put("agent_reasoning_effort", configuration.reasoningEffort.wireValue)
+                    }
+                    put(AgentInvocationBinding.TARGET, invocationTarget)
+                }
                 routing?.let { decision ->
                     put("routing_mode", decision.requirements.mode.name)
                     put("routing_requires_live_data", decision.requirements.liveDataRequired.toString())
@@ -1131,20 +1153,16 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     internal fun installedAppOpenAction(request: AgentRequest): AgentAction? {
         if (!AgentInstalledAppLaunchPolicy.isPhoneLocalRequest(request.goal)) return null
         val query = appOpenQuery(request.goal)
-        val app = findInstalledApp(request.screen.installedApps, query)
+        val app = findInstalledApp(request.screen.installedApps, query) ?: return null
         return AgentAction(
-            id = if (app == null) "open-installed-app-unavailable" else "open-installed-app",
+            id = "open-installed-app",
             kind = AgentActionKind.OPEN_APP,
-            target = app?.label ?: query,
+            target = app.label,
             risk = AgentRisk.LOW,
             status = AgentActionStatus.PENDING_CONFIRMATION,
-            description = if (app == null) {
-                "The requested app is not available on this phone"
-            } else {
-                "Open ${app.label}"
-            },
+            description = "Open ${app.label}",
             parameters = mapOf(
-                "package" to app?.packageName.orEmpty(),
+                "package" to app.packageName,
                 "execution_scope" to "android-local"
             )
         )
@@ -1155,9 +1173,15 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
     internal fun findInstalledApp(apps: List<InstalledAppInfo>, query: String): InstalledAppInfo? {
         val normalizedQuery = query.normalizeAppName()
         if (normalizedQuery.isBlank()) return null
-        return apps.firstOrNull { it.label.normalizeAppName() == normalizedQuery } ?:
-            apps.firstOrNull { it.label.normalizeAppName().contains(normalizedQuery) } ?:
-            apps.firstOrNull { it.packageName.normalizeAppName().contains(normalizedQuery) }
+        val distinct = apps.distinctBy { it.packageName }
+        val exact = distinct.filter {
+            it.label.normalizeAppName() == normalizedQuery || it.packageName.normalizeAppName() == normalizedQuery
+        }
+        if (exact.isNotEmpty()) return exact.singleOrNull()
+        return distinct.filter {
+            it.label.normalizeAppName().contains(normalizedQuery) ||
+                it.packageName.normalizeAppName().contains(normalizedQuery)
+        }.singleOrNull()
     }
 
     internal fun String.removeSuffixIgnoreCase(suffix: String): String =

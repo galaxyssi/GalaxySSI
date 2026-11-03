@@ -20,6 +20,8 @@ internal class AgentConnectorTeamCompletionSink(
     private val recovery = AgentTeamParentDeliveryRecovery(appContext)
 
     override fun publish(snapshot: AgentTeamExecutionSnapshot): Boolean {
+        // Scheduled executions have their own durable, deduplicated conversation delivery.
+        if (snapshot.teamId.startsWith(ConversationScheduledTasks.TEAM_PREFIX)) return false
         if (snapshot.state !in DELIVERABLE_STATES) return false
         if (ledger.contains(snapshot.supervisorRunId)) return false
         if (recovery.committed(snapshot)) {
@@ -33,7 +35,7 @@ internal class AgentConnectorTeamCompletionSink(
                 it.sourceMessageId == source && it.contactId == contact && it.conversationId == snapshot.conversationId &&
                     it.turnId == snapshot.taskId }) return false
         val primaryOutput = snapshot.finalOutput.trim()
-        val successful = primaryOutput.isNotBlank() && snapshot.state in setOf(
+        val successful = (primaryOutput.isNotBlank() || snapshot.finalRichOutputJson.isNotBlank()) && snapshot.state in setOf(
             AgentTeamExecutionState.SUCCEEDED,
             AgentTeamExecutionState.COMPLETED_WITH_FAILURES
         )
@@ -61,6 +63,7 @@ internal class AgentConnectorTeamCompletionSink(
                 turnId = snapshot.taskId,
                 taskId = snapshot.taskId,
                 success = successful,
+                richOutputJson = if (successful) snapshot.finalRichOutputJson else "",
                 receivedAtMillis = snapshot.updatedAtMillis.coerceAtLeast(System.currentTimeMillis())
             )
         )

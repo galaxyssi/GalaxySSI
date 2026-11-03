@@ -26,6 +26,8 @@ class AppForegroundTrackerTest {
         AppForegroundTracker.onActivityForeground(secondActivity)
         AppForegroundTracker.onActivityBackground(firstActivity)
         assertTrue(AppForegroundTracker.isForeground())
+        assertFalse(AppForegroundTracker.isActivityForeground(firstActivity))
+        assertTrue(AppForegroundTracker.isActivityForeground(secondActivity))
 
         AppForegroundTracker.onActivityBackground(secondActivity)
         assertFalse(AppForegroundTracker.isForeground())

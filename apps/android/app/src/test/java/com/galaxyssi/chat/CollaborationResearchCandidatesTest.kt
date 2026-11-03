@@ -25,10 +25,16 @@ class CollaborationResearchCandidatesTest {
         val rows = Rows()
         var allowed = true
         val ledger = CollaborationEvidenceLedger(Rows(), { allowed })
-        val workspace = CollaborationResearchWorkspace(rows, { allowed }, ledger::references)
+        val workspace = CollaborationResearchWorkspace(rows, { allowed }, ledger::references,
+            evidenceReadCoverage = ledger::requireReadCoverage)
         val reader = access("reader", round = 20)
         val observation = ledger.record(access("tool", round = 0), "experiment-1", "test", "{}", "{\"value\":17}", 1, 2)
-        fun publish(who: CollaborationWorkspaceAccess, vararg items: JSONObject) = workspace.publish(who, raw(*items), 100)
+        fun publish(who: CollaborationWorkspaceAccess, vararg items: JSONObject): JSONObject {
+            if (items.any { it.optString("kind") == "candidate_event" &&
+                it.getJSONObject("body").getJSONObject("candidate_event").optString("operation") == "review" })
+                ledger.readPage(who, observation.getString("evidence_id"), observation.getString("sha256"))
+            return workspace.publish(who, raw(*items), 100)
+        }
         fun create(id: String = "a", who: CollaborationWorkspaceAccess = access("author")): JSONObject =
             ref(publish(who, candidate(id)))
         fun saved(ref: JSONObject) = requireNotNull(workspace.read(reader, ref.getString("object_id"), ref.getInt("revision")))
@@ -251,9 +257,12 @@ class CollaborationResearchCandidatesTest {
         val a = f.create()
         val who = access("reviewer", round = 2)
         val input = raw(f.event("review", "review", a))
+        assertNull(f.ledger.readPage(who, f.observation.getString("evidence_id"), f.observation.getString("sha256"))!!.next)
         val result = f.workspace.publish(who, input, 123)
+        assertEquals("recorded", result.getString("status"))
         val snapshot = f.rows.data.toMap()
-        val reopened = CollaborationResearchWorkspace(f.rows, evidence = f.ledger::references)
+        val reopened = CollaborationResearchWorkspace(f.rows, evidence = f.ledger::references,
+            evidenceReadCoverage = f.ledger::requireReadCoverage)
         assertEquals(result.toString(), reopened.publish(who, input, 999).toString())
         assertEquals(snapshot, f.rows.data)
         rejected(reopened.publish(who, raw(f.event("changed", "review", a))))
@@ -266,6 +275,7 @@ class CollaborationResearchCandidatesTest {
         val before = f.rows.data.toMap()
         val who = access("reviewer", round = 2)
         val input = raw(candidate("parallel"), f.event("review", "review", a))
+        assertNull(f.ledger.readPage(who, f.observation.getString("evidence_id"), f.observation.getString("sha256"))!!.next)
         f.rows.rejectWrite = true
         assertTrue(runCatching { f.workspace.publish(who, input) }.isFailure)
         assertEquals(before, f.rows.data)
@@ -372,7 +382,8 @@ class CollaborationResearchCandidatesTest {
         val content = "Full original evidence. ".repeat(1000)
         val a = ref(f.publish(access("author"), candidate("a", content = content)))
         repeat(24) { index -> ref(f.publish(access("critic-$index", round = 2), f.event("challenge-$index", "challenge", a))) }
-        val reopened = CollaborationResearchWorkspace(f.rows, evidence = f.ledger::references)
+        val reopened = CollaborationResearchWorkspace(f.rows, evidence = f.ledger::references,
+            evidenceReadCoverage = f.ledger::requireReadCoverage)
         assertEquals(content, reopened.read(f.reader, a.getString("object_id"), 1)!!.getJSONObject("body").getString("content"))
         val ids = mutableSetOf<String>()
         var cursor = ""

@@ -11,9 +11,19 @@ import mqtt_bridge as bridge
 from peer_chat_store import PeerChatStore
 from peer_delivery_status import reconcile
 from mqtt_receipt_replay_gate import ReceiptReplayGate
+from mqtt_stored_receipt_publisher import StoredReceiptPublisher
 
 
 class ReceiveBacklogTests(unittest.TestCase):
+    def setUp(self):
+        self.publisher = StoredReceiptPublisher()
+        patcher = patch.object(bridge, "stored_receipt_publisher", self.publisher)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.publisher.close)
+        self.paired = {"client_route_id": "phone", "local_identity_fingerprint": "a" * 64,
+                       "identity_fingerprint": "b" * 64, "link_secret": "A" * 43}
+
     def test_reply_commits_to_queue_without_scanning_outbox_in_receive_thread(self):
         mqtt = Mock(spec=bridge.MqttPoolClient)
         paired = {"client_route_id": "phone"}
@@ -21,22 +31,37 @@ class ReceiveBacklogTests(unittest.TestCase):
                 patch.object(bridge, "_topics_for_client"), \
                 patch("agent_worker_routing.recipient_allowed", return_value=True), \
                 patch.object(bridge, "_publish_to_registered_client", return_value=bridge._DeferredPublishInfo()) as publish:
-            self.assertTrue(bridge._publish_phone_payload(mqtt, {}, {"type": "agent_task_recovery_result"}))
+            self.assertTrue(bridge._publish_phone_payload(mqtt, {}, {"type": "agent_task_result"}))
             self.assertTrue(publish.call_args.kwargs["queue_only"])
             self.assertTrue(publish.call_args.kwargs["durable"])
+
+    def test_recovery_query_reply_does_not_create_a_second_retry_queue(self):
+        mqtt = Mock(spec=bridge.MqttPoolClient)
+        paired = {"client_route_id": "phone"}
+        with patch.object(bridge, "_wire_client", return_value=paired), \
+                patch.object(bridge, "_topics_for_client"), \
+                patch("agent_worker_routing.recipient_allowed", return_value=True), \
+                patch.object(bridge, "_publish_to_registered_client",
+                             return_value=Mock(rc=bridge.mqtt.MQTT_ERR_SUCCESS, deferred=False)) as publish, \
+                patch.object(bridge, "track_delivery_ack") as track:
+            self.assertTrue(bridge._publish_phone_payload(mqtt, {}, {"type": "agent_task_recovery_result"}))
+            self.assertFalse(publish.call_args.kwargs["queue_only"])
+            self.assertFalse(publish.call_args.kwargs["durable"])
+            track.assert_not_called()
 
     def test_framed_receipt_keeps_confirmation_for_expired_sender_attempts(self):
         mqtt = Mock(spec=bridge.MqttPoolClient)
         mqtt.peer_routes = Mock()
         for admitted in (True, False, None):
             with self.subTest(admitted=admitted), \
-                    patch.object(bridge, "get_client", return_value={"client_route_id": "phone"}), \
+                    patch.object(bridge, "get_client", return_value=self.paired), \
                     patch.object(bridge, "accepted_delivery_ack_payload", return_value={"client_source_message_id": 9}), \
                     patch.object(bridge, "complete_message") as stored, \
                     patch.object(bridge, "_publish_phone_payload") as signal:
                 mqtt.peer_routes.publish_stored_receipt.return_value = admitted
                 bridge._ack_stored_application(mqtt, {"_client_route_id": "phone"}, {"message_id": "message"},
                     {"type": "peer_message"}, {}, delivery_frame=Mock(), wire_hash="a" * 64)
+                self.assertTrue(self.publisher.wait_idle())
                 stored.assert_called_once()
                 self.assertEqual(1, signal.call_count)
 
@@ -44,11 +69,12 @@ class ReceiveBacklogTests(unittest.TestCase):
         mqtt = Mock(spec=bridge.MqttPoolClient)
         mqtt.peer_routes = Mock()
         mqtt.peer_routes.publish_stored_receipt.side_effect = RuntimeError("temporarily full")
-        with patch.object(bridge, "get_client", return_value={"client_route_id": "phone"}), \
+        with patch.object(bridge, "get_client", return_value=self.paired), \
                 patch.object(bridge, "accepted_delivery_ack_payload", return_value={"client_source_message_id": 9}), \
                 patch.object(bridge, "complete_message"), patch.object(bridge, "_publish_phone_payload") as signal:
             bridge._ack_stored_application(mqtt, {"_client_route_id": "phone"}, {"message_id": "message"},
                 {"type": "peer_message"}, {}, delivery_frame=Mock(), wire_hash="a" * 64)
+            self.assertTrue(self.publisher.wait_idle())
             signal.assert_called_once()
 
     def test_receipts_never_generate_receipts(self):

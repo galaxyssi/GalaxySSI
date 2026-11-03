@@ -48,9 +48,11 @@ internal object AgentReplySpeechPresentationPolicy {
     }
 
     fun speakableText(entry: AgentTranscriptEntry): String {
+        val blocks = AgentRichContentCodec.decode(entry.richOutputJson)
+        ConversationScheduleCardPresentation.speechText(blocks)?.let { return it }
         val plain = CodexStyleResponsePolicy.sanitizeAssistantText(entry.text)
         if (plain.isNotBlank()) return plain
-        return AgentRichContentCodec.decode(entry.richOutputJson)
+        return blocks
             .mapNotNull { block ->
                 when (block.type) {
                     AgentRichBlockType.TEXT,

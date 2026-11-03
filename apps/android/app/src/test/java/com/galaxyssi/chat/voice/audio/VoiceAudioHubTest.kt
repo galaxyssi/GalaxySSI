@@ -16,6 +16,67 @@ import org.junit.Test
 
 class VoiceAudioHubTest {
     @Test
+    fun detectorPreparationFailureClosesResourcesWithoutOpeningMicrophone() {
+        val recorder = FakePcmRecorder()
+        var closed = false
+        var failed = false
+        val detector = object : VoiceActivityDetector {
+            override fun prepare(sampleRateHz: Int) { error("model unavailable") }
+            override fun reset() = Unit
+            override fun accept(frame: AudioFrame): VadDecision = error("must not run")
+            override fun close() { closed = true }
+        }
+        val hub = VoiceAudioHub(recorder, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            vadFactory = { detector })
+        hub.start(VoiceAudioSessionConfig(), object : VoiceAudioHubListener {
+            override fun onFailure(session: VoiceAudioSession, error: Throwable) { failed = true }
+        })
+        assertTrue(closed && failed)
+        assertEquals(0, recorder.starts)
+        assertEquals(null, hub.activeSession())
+    }
+
+    @Test
+    fun inferenceFailureReleasesMicrophoneAndDetector() = runBlocking {
+        val recorder = FakePcmRecorder()
+        var closed = false
+        val detector = object : VoiceActivityDetector {
+            override fun reset() = Unit
+            override fun accept(frame: AudioFrame): VadDecision = error("inference failed")
+            override fun close() { closed = true }
+        }
+        val hub = VoiceAudioHub(recorder, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            vadFactory = { detector })
+        hub.start(VoiceAudioSessionConfig())
+        recorder.emit(frame(0, ShortArray(320)))
+        assertTrue(closed)
+        assertEquals(PcmRecorderPhase.STOPPED, recorder.currentState().phase)
+        assertEquals(null, hub.activeSession())
+    }
+
+    @Test
+    fun stoppingDuringPreparationDoesNotOpenMicrophone() = runBlocking {
+        val recorder = FakePcmRecorder()
+        lateinit var hub: VoiceAudioHub
+        var closed = false
+        val detector = object : VoiceActivityDetector {
+            override fun prepare(sampleRateHz: Int) {
+                hub.requestStop(checkNotNull(hub.activeSession()), PcmStopReason.USER_CANCEL)
+            }
+            override fun reset() = Unit
+            override fun accept(frame: AudioFrame): VadDecision = error("must not run")
+            override fun close() { closed = true }
+        }
+        hub = VoiceAudioHub(recorder, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            vadFactory = { detector })
+        val session = checkNotNull(hub.start(VoiceAudioSessionConfig()))
+        hub.stop(session, PcmStopReason.USER_CANCEL)
+        assertEquals(0, recorder.starts)
+        assertTrue(closed)
+        assertEquals(null, hub.activeSession())
+    }
+
+    @Test
     fun hubFansOutOnePcmStreamAndReturnsBoundedSpeechSnapshot() = runBlocking {
         val recorder = FakePcmRecorder()
         val listener = RecordingListener()
@@ -101,10 +162,12 @@ class VoiceAudioHubTest {
     }
 
     private class FakePcmRecorder : PcmRecorder {
+        var starts = 0
         private var frames = Channel<AudioFrame>(Channel.UNLIMITED)
         private var state = PcmRecorderState(phase = PcmRecorderPhase.IDLE)
 
         override suspend fun start(config: PcmCaptureConfig): Flow<AudioFrame> {
+            starts++
             state = PcmRecorderState(phase = PcmRecorderPhase.RECORDING, audioSource = 6, inputRoute = "built_in_mic")
             return frames.receiveAsFlow()
         }

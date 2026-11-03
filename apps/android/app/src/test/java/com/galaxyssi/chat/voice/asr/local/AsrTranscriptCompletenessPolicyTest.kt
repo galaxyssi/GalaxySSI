@@ -6,6 +6,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AsrTranscriptCompletenessPolicyTest {
+    @Test fun knownInputLossRequiresFullPcmEvenWithinTheDurationTolerance() {
+        for (capturedMs in listOf(null, 2_100L)) {
+            val decision = AsrTranscriptCompletenessPolicy.evaluate(
+                text = "missing a word", decoderComplete = true,
+                decodedAudioMs = 2_000, capturedSpeechMs = capturedMs, audioInputComplete = false)
+            assertFalse(decision.accepted)
+            assertEquals("incomplete_audio_input", decision.reasonCode)
+        }
+    }
+
     @Test
     fun `complete transcript with full speech coverage is accepted`() {
         val decision = AsrTranscriptCompletenessPolicy.evaluate(

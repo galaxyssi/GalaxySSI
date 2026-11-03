@@ -55,6 +55,7 @@ internal object AgentProcessIdentity {
 
 internal object AgentSessionInterruptionPolicy {
     fun wasInterrupted(snapshot: AgentSessionSnapshot): Boolean {
+        if (AgentCompletedReplyRecovery.hasCompletedResult(snapshot)) return false
         val active = snapshot.phase == AgentPhase.EXECUTING ||
             snapshot.phase == AgentPhase.VERIFYING ||
             (snapshot.phase == AgentPhase.PLANNING && snapshot.pendingPlanning != null) ||
@@ -101,7 +102,7 @@ internal data class AgentEncodedSessionPayload(
 )
 
 private class EncryptedAgentSessionCheckpointStorage(context: Context) : AgentSessionCheckpointStorage {
-    private val delegate = AgentEncryptedPreferences(context, SharedPreferencesAgentSessionStore.PREFS)
+    private val delegate = AgentSessionRootStorage(context)
     private val plans = AgentEncryptedDatabase(context, "agent_active_plans.db")
 
     override fun readPlanPage(key: String): String = plans.readString(key, "")
@@ -220,11 +221,19 @@ class SharedPreferencesAgentSessionStore internal constructor(
         val raw = prefs.readString(storageKey, "").takeIf { it.isNotBlank() } ?: return null
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         val snapshot = runCatching { decodeSession(root) }.getOrNull() ?: return null
-        return restoreDurableActivePlan(snapshot, root, activePlanPersistence)
+        return AgentTeamParentRecoveryPolicy.restoreWaitingIdentity(AgentTeamParentRecoveryPolicy.restorePauseMarker(
+            restoreDurableActivePlan(snapshot, root, activePlanPersistence)))
     }
 
     @Synchronized
     override fun save(snapshot: AgentSessionSnapshot) = synchronized(persistenceLock) { saveLocked(snapshot) }
+
+    internal fun restoreIfUnchanged(expected: AgentSessionSnapshot, restored: AgentSessionSnapshot): Boolean =
+        synchronized(persistenceLock) {
+            if (loadLocked() != expected) return@synchronized false
+            saveLocked(restored)
+            true
+        }
 
     private fun saveLocked(snapshot: AgentSessionSnapshot) {
         val plan = snapshot.currentPlan

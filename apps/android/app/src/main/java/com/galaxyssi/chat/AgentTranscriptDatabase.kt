@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class AgentTranscriptPage(
     val entries: List<AgentTranscriptEntry>,
@@ -34,6 +35,9 @@ internal data class AgentTranscriptContentPage(
 )
 
 internal class AgentTranscriptWindow {
+    internal data class LoadOwner(val conversationId: String, val generation: Long)
+
+    private var generation = 0L
     var conversationId: String = ""
         private set
     var entries: List<AgentTranscriptEntry> = emptyList()
@@ -46,6 +50,7 @@ internal class AgentTranscriptWindow {
         private set
 
     fun reset(conversationId: String = "") {
+        generation++
         this.conversationId = conversationId
         entries = emptyList()
         nextBeforeSequence = null
@@ -53,7 +58,13 @@ internal class AgentTranscriptWindow {
         hasMore = false
     }
 
+    fun loadOwner(): LoadOwner = LoadOwner(conversationId, generation)
+
+    fun ownsLoad(owner: LoadOwner): Boolean =
+        owner.conversationId == conversationId && owner.generation == generation
+
     fun replace(conversationId: String, page: AgentTranscriptPage) {
+        if (this.conversationId != conversationId) reset(conversationId)
         this.conversationId = conversationId
         entries = page.entries.distinctBy(AgentTranscriptEntry::id)
         nextBeforeSequence = page.nextBeforeSequence
@@ -159,6 +170,7 @@ internal class AgentTranscriptEntryDatabase(
             """.trimIndent()
         )
         createChunkStorage(db)
+        createHistoryIndex(db)
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -168,6 +180,11 @@ internal class AgentTranscriptEntryDatabase(
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createChunkStorage(db)
+        if (oldVersion < 3) createHistoryIndex(db)
+    }
+
+    private fun createHistoryIndex(db: SQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS transcript_entries_conversation_sequence ON transcript_entries(conversation_id, sequence)")
     }
 
     @Synchronized
@@ -378,6 +395,18 @@ internal class AgentTranscriptEntryDatabase(
         )
     }
 
+    /** Read only indexed timing metadata, not encrypted message bodies or content chunks. */
+    internal fun firstTimestampForTurn(conversationId: String, turnId: String): Long? {
+        if (conversationId.isBlank() || turnId.isBlank()) return null
+        // MIN would otherwise favor the conversation/time index and scan earlier turns.
+        return readableDatabase.rawQuery(
+            "SELECT MIN(timestamp_millis) FROM $TABLE_ENTRIES INDEXED BY transcript_entries_turn " +
+                "WHERE conversation_id = ? AND turn_id = ? AND timestamp_millis > 0",
+            arrayOf(conversationId, turnId)).use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+        }
+    }
+
     fun listTurn(turnId: String): List<AgentTranscriptEntry> =
         readableDatabase.query(
             TABLE_ENTRIES,
@@ -388,6 +417,18 @@ internal class AgentTranscriptEntryDatabase(
             null,
             "sequence ASC"
         ).use(::decodeEntries).map(::hydrateEntry)
+
+    internal fun historyBoundary(conversationId: String, turnId: String): Long? {
+        if (conversationId.isBlank() || turnId.isBlank()) return null
+        return readableDatabase.rawQuery(
+            "SELECT MIN(sequence) FROM $TABLE_ENTRIES INDEXED BY transcript_entries_turn WHERE conversation_id = ? AND turn_id = ?",
+            arrayOf(conversationId, turnId)).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+    }
+
+    internal fun historyContains(conversationId: String, entryId: String, boundary: Long): Boolean =
+        readableDatabase.query(TABLE_ENTRIES, arrayOf("entry_id"),
+            "entry_id = ? AND conversation_id = ? AND sequence < ?",
+            arrayOf(entryId, conversationId, boundary.toString()), null, null, null, "1").use { it.moveToFirst() }
 
     fun listTask(taskId: String): List<AgentTranscriptEntry> =
         readableDatabase.query(
@@ -417,6 +458,30 @@ internal class AgentTranscriptEntryDatabase(
             "conversation_id = ? AND dedupe_hash = ?",
             arrayOf(conversationId, digest(dedupeKey))
         )
+    }
+
+    /** Probe only indexed identifiers; unread reconciliation must not decrypt message bodies. */
+    internal fun containsUnreadToken(conversationId: String, token: String): Boolean {
+        fun exists(selection: String, arguments: Array<String>): Boolean =
+            readableDatabase.query(TABLE_ENTRIES, arrayOf("entry_id"), selection, arguments,
+                null, null, null, "1").use { it.moveToFirst() }
+        return exists("conversation_id = ? AND dedupe_hash = ?", arrayOf(conversationId, digest(token))) ||
+            exists("entry_id = ? AND conversation_id = ? AND dedupe_hash = '' AND turn_id = ''",
+                arrayOf(token, conversationId)) ||
+            exists("turn_id = ? AND conversation_id = ? AND dedupe_hash = ''", arrayOf(token, conversationId))
+    }
+
+    /** Indexed read watermark; no historical message bodies are loaded or decrypted. */
+    internal fun unreadTokenThrough(conversationId: String, token: String, sequence: Long): Boolean {
+        if (sequence <= 0) return false
+        fun exists(identity: String, arguments: Array<String>) = readableDatabase.query(
+            TABLE_ENTRIES, arrayOf("entry_id"),
+            "conversation_id = ? AND sequence <= ? AND ($identity)",
+            arrayOf(conversationId, sequence.toString()) + arguments, null, null, null, "1"
+        ).use { it.moveToFirst() }
+        return exists("dedupe_hash = ?", arrayOf(digest(token))) ||
+            exists("entry_id = ? AND dedupe_hash = '' AND turn_id = ''", arrayOf(token)) ||
+            exists("turn_id = ? AND dedupe_hash = ''", arrayOf(token))
     }
 
     fun textChunkPage(
@@ -493,10 +558,10 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     fun conversationIdForTurn(turnId: String): String? =
-        scalarId("turn_id = ?", arrayOf(turnId), "conversation_id")
+        scalarId("turn_id = ?", arrayOf(turnId), "conversation_id", oldestFirst = true)
 
     fun conversationIdForTask(taskId: String): String? =
-        scalarId("task_id = ?", arrayOf(taskId), "conversation_id")
+        scalarId("task_id = ?", arrayOf(taskId), "conversation_id", oldestFirst = true)
 
     fun turnIdForTask(taskId: String): String? =
         scalarId("task_id = ? AND turn_id != ''", arrayOf(taskId), "turn_id")
@@ -605,7 +670,7 @@ internal class AgentTranscriptEntryDatabase(
             if (cursor.moveToFirst()) decodeEntry(cursor) else null
         }
 
-    private fun scalarId(selection: String, arguments: Array<String>, column: String): String? =
+    private fun scalarId(selection: String, arguments: Array<String>, column: String, oldestFirst: Boolean = false): String? =
         readableDatabase.query(
             TABLE_ENTRIES,
             arrayOf(column),
@@ -613,7 +678,7 @@ internal class AgentTranscriptEntryDatabase(
             arguments,
             null,
             null,
-            "sequence DESC",
+            if (oldestFirst) "sequence ASC" else "sequence DESC",
             "1"
         ).use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0).takeIf(String::isNotBlank) else null
@@ -893,9 +958,19 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     companion object {
+        private val sharedInstances = ConcurrentHashMap<String, AgentTranscriptEntryDatabase>()
+
+        /** Production stores borrow one process-owned pool per database path. */
+        fun shared(context: Context): AgentTranscriptEntryDatabase {
+            val app = context.applicationContext
+            return sharedInstances.computeIfAbsent(app.getDatabasePath(DATABASE_NAME).absolutePath) {
+                AgentTranscriptEntryDatabase(app)
+            }
+        }
+
         private const val SQL_DELETE_BATCH_SIZE = 400
         private const val DATABASE_NAME = "galaxyssi_agent_transcript_entries.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
         private const val TABLE_ENTRIES = "transcript_entries"
         private const val TABLE_CHUNKS = "transcript_entry_chunks"
         private const val FIELD_TEXT = "text"

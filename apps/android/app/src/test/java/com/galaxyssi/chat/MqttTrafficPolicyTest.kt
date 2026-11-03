@@ -9,7 +9,7 @@ class MqttTrafficPolicyTest {
     private fun payload(type: String) = JSONObject().put("type", type)
 
     @Test fun onlyTypedControlsUseCriticalTraffic() {
-        for (type in listOf("agent_task_cancel", "desktop_tool_call_cancel", "client_revoked", "desktop_control_revoke", "pairing_revoked")) {
+        for (type in listOf("agent_task_cancel", "desktop_tool_call_cancel", "client_revoked", "desktop_control_revoke", "pairing_revoked", "peer_attention")) {
             assertEquals("control", MqttTrafficPolicy.classify(payload(type)))
         }
         assertEquals("message", MqttTrafficPolicy.classify(payload("text").put("content", "agent_task_cancel stop")))

@@ -59,18 +59,18 @@ internal object AgentAndroidDownloadPolicy {
         return "$safeBase-$stamp$extension"
     }
 
-    fun relativePath(fileName: String): String = "Download/GalaxySSI/$fileName"
+    fun relativePath(fileName: String): String = "app_private/$fileName"
 
     fun startedMessage(chinese: Boolean): String = if (chinese) {
-        "\u5df2\u5f00\u59cb\u4e0b\u8f7d\u3002\u5b8c\u6210\u540e\u6587\u4ef6\u5c06\u4fdd\u5b58\u5230 Download/GalaxySSI\uff0c\u5e76\u663e\u793a\u5728\u5f53\u524d\u4f1a\u8bdd\u4e2d\u3002"
+        "\u5df2\u5f00\u59cb\u4e0b\u8f7d\u3002\u5b8c\u6210\u540e\u6587\u4ef6\u5c06\u4fdd\u5b58\u5728 App \u79c1\u6709\u76ee\u5f55\uff0c\u5e76\u663e\u793a\u5728\u5f53\u524d\u4f1a\u8bdd\u4e2d\u3002"
     } else {
-        "Download started. When it finishes, the file will be saved in Download/GalaxySSI and shown in this conversation."
+        "Download started. When it finishes, the file will be kept in App private storage and shown in this conversation."
     }
 
     fun completedMessage(chinese: Boolean, displayName: String): String = if (chinese) {
-        "\u4e0b\u8f7d\u5b8c\u6210\uff1a$displayName\n\u5df2\u4fdd\u5b58\u5230 Download/GalaxySSI\u3002"
+        "\u4e0b\u8f7d\u5b8c\u6210\uff1a$displayName\n\u5df2\u4fdd\u5b58\u5728 App \u79c1\u6709\u76ee\u5f55\u3002"
     } else {
-        "Download complete: $displayName\nSaved in Download/GalaxySSI."
+        "Download complete: $displayName\nKept in App private storage."
     }
 
     fun failedMessage(chinese: Boolean, displayName: String): String = if (chinese) {
@@ -115,6 +115,19 @@ internal class AgentAndroidDownloadStore(context: Context) {
     }.getOrNull()
 
     fun remove(downloadId: Long) = database.remove(key(downloadId))
+
+    fun writeCompleted(downloadId: Long, attachment: AgentInputAttachment) =
+        database.writeString("completed:$downloadId", attachment.descriptor().toString())
+
+    fun completed(downloadId: Long): AgentInputAttachment? = runCatching {
+        val raw = database.readString("completed:$downloadId", "")
+        if (raw.isBlank()) return@runCatching null
+        val json = JSONObject(raw)
+        AgentInputAttachment(json.getString("id"), Uri.parse(json.getString("uri")),
+            json.getString("name"), json.getString("mime_type"), json.getLong("size"))
+    }.getOrNull()
+
+    fun removeCompleted(downloadId: Long) = database.remove("completed:$downloadId")
 
     private fun key(downloadId: Long) = "download:$downloadId"
 
@@ -180,21 +193,34 @@ internal object AgentAndroidDownloadCoordinator {
                 val mimeType = manager.getMimeTypeForDownloadedFile(downloadId)
                     .orEmpty().ifBlank { snapshot.mimeType }.ifBlank { "application/octet-stream" }
                 val sizeBytes = metadata.sizeBytes.takeIf { it >= 0L } ?: snapshot.sizeBytes
+                val retained = runCatching {
+                    ComposerAttachmentImport.retain(app, AgentInputAttachment(
+                        id = "android-download:$downloadId",
+                        uri = uri,
+                        displayName = displayName,
+                        mimeType = mimeType,
+                        sizeBytes = sizeBytes
+                    ))
+                }.getOrElse {
+                    appendFailure(transcript, record, conversationId, chinese)
+                    store.remove(downloadId)
+                    return true
+                }
                 val richOutput = AgentRichContentCodec.encode(listOf(AgentRichBlock(
                     id = "android-download:$downloadId",
                     type = AgentRichBlockType.FILE,
                     title = displayName,
-                    text = record.relativePath,
-                    uri = uri.toString(),
+                    text = "",
+                    uri = retained.uri.toString(),
                     mimeType = mimeType,
                     fallbackText = displayName,
                     metadata = buildMap {
-                        put("saved_to_downloads", "true")
+                        put("saved_to_downloads", "false")
+                        put("storage", "app_private")
                         put("local_download", "true")
-                        put("relative_path", record.relativePath)
-                        if (sizeBytes >= 0L) {
-                            put("size_bytes", sizeBytes.toString())
-                            put("size", humanReadableSize(sizeBytes))
+                        if (retained.sizeBytes >= 0L) {
+                            put("size_bytes", retained.sizeBytes.toString())
+                            put("size", humanReadableSize(retained.sizeBytes))
                         }
                     }
                 )))
@@ -207,6 +233,9 @@ internal object AgentAndroidDownloadCoordinator {
                     taskId = record.turnId,
                     richOutputJson = richOutput
                 )
+                // Keep Agent status queries valid after removing the app-owned staging download.
+                store.writeCompleted(downloadId, retained)
+                if (record.relativePath.startsWith("app_private/")) manager.remove(downloadId)
             }
         } else {
             appendFailure(transcript, record, conversationId, chinese, snapshot.reason)

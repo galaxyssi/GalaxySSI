@@ -132,6 +132,63 @@ class MqttBrokerPoolTest {
         assertTrue(pool.snapshot().getValue("mosquitto").connected)
     }
 
+    @Test fun connectTimeoutReplacesOnlyStalledGenerationAndIgnoresLateCallback() {
+        delayed = setOf("emqx")
+        start()
+        waitFor { client("emqx").options != null && subacks.size == 2 }
+        val old = client("emqx")
+        clock.set(20_001)
+        delayed = emptySet()
+        pool.repair()
+        waitFor { clients.getValue("emqx").size == 2 && pool.snapshot().getValue("emqx").connected }
+        old.completeConnect()
+        assertEquals(2L, pool.snapshot().getValue("emqx").generation)
+        assertEquals(1, clients.getValue("hivemq").size)
+        assertEquals(1, clients.getValue("mosquitto").size)
+    }
+
+    @Test fun repeatedStartRepairsIdleSilentDisconnectWithoutNeedingSecondMessage() {
+        ready()
+        client("hivemq").connected = false
+        pool.start()
+        waitFor { clients.getValue("hivemq").size == 2 && pool.snapshot().getValue("hivemq").connected }
+        assertEquals(1, clients.getValue("emqx").size)
+        assertEquals(1, clients.getValue("mosquitto").size)
+    }
+
+    @Test fun repeatedNetworkAvailableRepairsSilentDisconnectEvenIfNetworkFlagDidNotChange() {
+        ready()
+        client("hivemq").connected = false
+        pool.networkAvailable()
+        waitFor { clients.getValue("hivemq").size == 2 && pool.snapshot().getValue("hivemq").connected }
+    }
+
+    @Test fun missingSubscriptionCannotRetryForeverOnTheSameSocket() {
+        autoSuback = false
+        readyWithoutSuback()
+        clock.set(11_000)
+        pool.refreshSubscriptions()
+        autoSuback = true
+        clock.set(20_001)
+        pool.repair()
+        waitFor { pool.snapshot().values.all { it.generation == 2L && it.state == MqttBrokerPool.PathState.RECEIVE_READY } }
+    }
+
+    @Test fun offlineDemandDoesNotStartConnectionsUntilNetworkReturns() {
+        ready()
+        pool.networkUnavailable()
+        repeat(10) { pool.start() }
+        assertTrue(pool.snapshot().values.all { it.state == MqttBrokerPool.PathState.NETWORK_UNAVAILABLE })
+        pool.networkAvailable()
+        waitFor { pool.snapshot().values.all { it.generation == 2L && it.connected } }
+    }
+
+    @Test fun healthyDemandDoesNotChurnConnectionsOrSubscriptions() {
+        ready()
+        repeat(20) { pool.start(); pool.networkAvailable(); pool.repair() }
+        assertTrue(clients.values.all { it.size == 1 && it.first().subscribeListeners.size == 1 })
+    }
+
     @Test fun connectionCompletionIsNotSubscriptionReadiness() {
         autoSuback = false
         readyWithoutSuback()

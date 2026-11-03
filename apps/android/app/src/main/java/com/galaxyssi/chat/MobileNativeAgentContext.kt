@@ -569,7 +569,8 @@ internal fun MobileNativeAgent.restoreSession(session: AgentSessionSnapshot?) {
         restoredSession.lastActionResult
     )
     val executionWasInterrupted = AgentSessionInterruptionPolicy.wasInterrupted(restoredSession) &&
-        completedDispatch == null
+        completedDispatch == null && !AgentTeamParentRecoveryPolicy.isTeamWait(
+            restoredSession.phase, restoredSession.lastActionResult?.metadata.orEmpty())
     sessionId = restoredSession.sessionId.ifBlank { UUID.randomUUID().toString() }
     pendingPlanning = restoredSession.pendingPlanning
     activeTaskExecutionMode = restoredSession.taskExecutionMode

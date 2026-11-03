@@ -27,4 +27,22 @@ class ConversationHubContactHistoryPolicyTest {
         assertFalse(ConversationHubContactHistoryPolicy.includes(JSONObject().put("delivery_mode", "cloud_api")))
         assertFalse(ConversationHubContactHistoryPolicy.includes(JSONObject().put("agent_kind", "local-cli")))
     }
+
+    @Test fun hiddenAgentHistoryCannotLightTheGlobalUnreadIndicator() {
+        for (type in listOf("agent", "model", "hermes")) {
+            assertFalse(ConversationHubContactHistoryPolicy.hasUnread(JSONObject().put("type", type), 24, 100L))
+        }
+        assertFalse(ConversationHubContactHistoryPolicy.hasUnread(JSONObject().put("delivery_mode", "cloud_api"), 1, 100L))
+        assertFalse(ConversationHubContactHistoryPolicy.hasUnread(JSONObject().put("agent_kind", "local-cli"), 1, 100L))
+    }
+
+    @Test fun unreadPeersAndSystemMessagesRemainVisibleButEmptySummariesDoNot() {
+        for (type in listOf("person", "device", "group", "system")) {
+            val contact = JSONObject().put("type", type).put("agent_kind", "stale-metadata")
+            assertTrue(ConversationHubContactHistoryPolicy.hasUnread(contact, 1, 100L))
+            assertFalse(ConversationHubContactHistoryPolicy.hasUnread(contact, 0, 100L))
+            assertFalse(ConversationHubContactHistoryPolicy.hasUnread(contact, 1, 0L))
+        }
+        assertTrue(ConversationHubContactHistoryPolicy.hasUnread(null, 1, 100L))
+    }
 }

@@ -96,4 +96,8 @@ internal object AgentCloudDispatchRegistry {
     }
 
     internal fun activeCount() = active.size
+
+    internal fun hasActive(conversationId: String, turnId: String): Boolean = active.keys.any {
+        it.conversationId == conversationId && it.turnId == turnId
+    }
 }
