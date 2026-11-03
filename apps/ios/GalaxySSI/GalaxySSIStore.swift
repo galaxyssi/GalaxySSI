@@ -662,6 +662,11 @@ final class GalaxySSIStore: ObservableObject {
     try chatHistoryDatabase.deliveredDesktopReplyTurns(contactId: contactId, conversationId: conversationId)
   }
 
+  func commitDesktopReplyDisposition(_ binding: AgentDesktopReplyBinding, remoteMessageId: String) -> Bool {
+    chatHistoryDatabase.commitDesktopReplyDisposition(contactId: binding.displayContactId,
+      remoteMessageId: remoteMessageId, conversationId: binding.identity.conversationId, turnId: binding.identity.turnId)
+  }
+
   @discardableResult
   func loadMessagePage(
     contactId: String,

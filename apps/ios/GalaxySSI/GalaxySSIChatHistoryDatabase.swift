@@ -135,6 +135,38 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
     }
   }
 
+  func commitDesktopReplyDisposition(contactId: String, remoteMessageId: String,
+                                     conversationId: String, turnId: String) -> Bool {
+    locked {
+      guard !remoteMessageId.isBlank, execute("PRAGMA synchronous = FULL"),
+            execute("PRAGMA fullfsync = ON"), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      do {
+        if try isLocallyDeleted(contactId: contactId, remoteMessageId: remoteMessageId, isMine: false) {
+          committed = execute("COMMIT")
+          return committed
+        }
+      } catch { return false }
+      guard let statement = prepare("""
+        SELECT message_id, encrypted_payload FROM chat_messages
+        WHERE contact_id = ? AND remote_message_id = ? AND is_mine = 0 AND is_system = 0
+        """) else { return false }
+      defer { sqlite3_finalize(statement) }
+      bind(contactId, at: 1, to: statement)
+      bind(remoteMessageId, at: 2, to: statement)
+      guard sqlite3_step(statement) == SQLITE_ROW, let id = sqlite3_column_text(statement, 0),
+            let message = decode(statement, id: String(cString: id), payloadColumn: 1),
+            message.contactId == contactId, message.remoteMessageId == remoteMessageId,
+            message.conversationId == conversationId, message.turnId == turnId,
+            !message.isMine, !message.isSystem,
+            [ChatDeliveryStatus.delivered, .read].contains(message.deliveryStatus),
+            sqlite3_step(statement) == SQLITE_DONE, upsert(message), execute("COMMIT") else { return false }
+      committed = true
+      return true
+    }
+  }
+
   @discardableResult
   func upsert(_ message: ChatMessage) -> Bool {
     locked {

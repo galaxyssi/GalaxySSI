@@ -2426,10 +2426,18 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func retireDeliveredDesktopReply(_ payload: [String: Any], link: ServerLink?) {
-    guard let link, link.paired, AgentDesktopReplyRecovery.terminalStatuses.contains(payload.string("task_status")),
+    guard payload.string("type") == "text", let link, link.paired,
+          AgentDesktopReplyRecovery.terminalStatuses.contains(payload.string("task_status")),
           desktopReplyRecovery.acceptsFinal(payload, desktopId: link.desktopId) else { return }
     for record in desktopReplyRecovery.pending
       where record.binding.desktopId == link.desktopId && record.binding.matches(payload) {
+      if let receipt = AgentResultReceipt.fromPayload(payload, desktopId: link.desktopId),
+         !payload.string("message_id").isEmpty {
+        guard currentDesktopReplySource(record.binding) != nil,
+              store.commitDesktopReplyDisposition(record.binding, remoteMessageId: payload.string("message_id")),
+              desktopResultRecovery.receipts.insert(receipt) else { continue }
+        Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+      }
       _ = desktopReplyRecovery.retire(record.binding)
     }
   }
