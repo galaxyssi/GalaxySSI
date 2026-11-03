@@ -2,6 +2,19 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testTeamMemberRequestIdentityRoundTripAndLegacyDefault() throws {
+    let member = AgentTeamMemberSnapshot(agentId: "agent", instanceId: "reviewer",
+      sourceMessageId: "original-request")
+    let encoded = try JSONEncoder().encode(member)
+    XCTAssertEqual(try JSONDecoder().decode(AgentTeamMemberSnapshot.self, from: encoded), member)
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    legacy.removeValue(forKey: "source_message_id")
+    let restored = try JSONDecoder().decode(AgentTeamMemberSnapshot.self,
+      from: JSONSerialization.data(withJSONObject: legacy))
+    XCTAssertEqual(restored.sourceMessageId, "")
+    XCTAssertEqual(restored.memberId, "reviewer")
+  }
+
   func testRecoveryRepublishesSavedTerminalTeamWithoutStartingAnotherRun() {
     let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: "saved-team", teamId: "team",
       conversationId: "conversation", taskId: "turn", primaryAgentId: "lead",

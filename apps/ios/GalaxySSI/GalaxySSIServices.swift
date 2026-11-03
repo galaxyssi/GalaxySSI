@@ -5519,7 +5519,10 @@ final class MessageCoordinator: ObservableObject {
       primaryAgentId: spec.definition.primaryAgentId, goal: requestText,
       visibilityMode: spec.definition.visibilityMode, state: .running,
       members: ordered.map { AgentTeamMemberSnapshot(agentId: $0.agentId, role: $0.role,
-        deliveryMode: $0.deliveryMode, status: .pending, instanceId: $0.memberId) },
+        deliveryMode: $0.deliveryMode, status: .pending, instanceId: $0.memberId,
+        sourceMessageId: AgentControlPlaneActionExecutor.stableRunId(
+          conversationId: outgoing.conversationId, turnId: homeTurnId,
+          actionId: action.id, agentId: $0.memberId)) },
       createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
       primaryInstanceId: spec.definition.primaryMemberId)
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {

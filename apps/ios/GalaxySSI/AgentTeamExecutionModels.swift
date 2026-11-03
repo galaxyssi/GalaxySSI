@@ -71,6 +71,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var errorMessage: String
   var updatedAtMillis: Int64
   var instanceId: String
+  var sourceMessageId: String
 
   var memberId: String { instanceId.ifBlank(agentId) }
 
@@ -82,7 +83,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     output: String = "",
     errorMessage: String = "",
     updatedAtMillis: Int64 = 0,
-    instanceId: String = ""
+    instanceId: String = "",
+    sourceMessageId: String = ""
   ) {
     self.agentId = agentId
     self.role = role
@@ -92,6 +94,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.errorMessage = String(errorMessage.prefix(Self.maxErrorCharacters))
     self.updatedAtMillis = max(updatedAtMillis, 0)
     self.instanceId = instanceId.ifBlank(agentId)
+    self.sourceMessageId = sourceMessageId
   }
 
   enum CodingKeys: String, CodingKey {
@@ -103,6 +106,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case errorMessage = "error_message"
     case updatedAtMillis = "updated_at_millis"
     case instanceId = "instance_id"
+    case sourceMessageId = "source_message_id"
   }
 
   init(from decoder: Decoder) throws {
@@ -116,7 +120,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       output: try container.decodeIfPresent(String.self, forKey: .output) ?? "",
       errorMessage: try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? "",
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0,
-      instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId
+      instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId,
+      sourceMessageId: try container.decodeIfPresent(String.self, forKey: .sourceMessageId) ?? ""
     )
   }
 }
