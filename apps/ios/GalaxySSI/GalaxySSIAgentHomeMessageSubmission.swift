@@ -72,6 +72,7 @@ extension AgentHomeView {
   func stopScreenAnalysis() {
     guard screenAssistantRunID != nil, !screenAssistantStopping else { return }
     screenAssistantStopping = true
+    screenAssistantVoiceCancellationRequest &+= 1
     screenAssistantRunID = nil
     screenAssistantStartedAt = nil
     screenshotPickerPresented = false
