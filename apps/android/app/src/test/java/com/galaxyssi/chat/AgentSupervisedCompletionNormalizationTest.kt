@@ -80,6 +80,15 @@ class AgentSupervisedCompletionNormalizationTest {
         assertTrue(prompt.contains("Unexecuted tool markup is not evidence"))
     }
 
+    @Test fun animationPresentationRepairReceivesTheCompleteExistingProgram() {
+        val source = "```html\n<html><body>" + "x".repeat(12_000) + "<p>retained-program-end</p></body></html>\n```"
+        val prompt = AgentSupervisedProjectLoop.formatRepairPrompt(request, source,
+            "html_source_is_not_animation_delivery: preserve the original program")
+        assertTrue(prompt.contains(source))
+        assertTrue(prompt.contains("retained-program-end"))
+        assertTrue(prompt.contains(AgentVisualOutputContract.COMPACT_PROMPT))
+    }
+
     @Test fun answerOnlyHistoryRequiresKnownCompletedReadOnlyTools() {
         val read = AgentNativeToolDescriptor("fixture-read", "1.0.0", "Read", "Read fixture",
             AgentNativeToolLocation.PHONE, AgentNativeJsonSchema.objectSchema(), AgentNativeJsonSchema.objectSchema(),

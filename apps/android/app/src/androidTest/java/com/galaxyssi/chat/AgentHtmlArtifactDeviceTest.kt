@@ -25,6 +25,45 @@ class AgentHtmlArtifactDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    @Test fun declaredCloudAnimationPersistsPrivatelyAndPlaysWithoutLinux() {
+        val block = AgentRichBlock("cloud-html", AgentRichBlockType.HTML, title = "cloud-animation",
+            text = ANIMATION, fallbackText = "Animation")
+        val answer = "Animation\n```galaxyssi-rich\n${AgentRichContentCodec.encode(listOf(block))}\n```"
+        val stored = AgentRichContentCodec.decode(AgentRichContentMaterializer.materialize(context, "", answer))
+        val delivered = stored.single { it.type == AgentRichBlockType.FILE }
+        val file = LocalAttachmentUris.resolve(context, android.net.Uri.parse(delivered.uri))!!
+        try {
+            assertEquals("text/html", delivered.mimeType)
+            assertEquals("cloud-animation.html", delivered.title)
+            assertEquals("app_private", delivered.metadata["storage"])
+            assertTrue(file.canonicalPath.startsWith(context.filesDir.canonicalPath + File.separator))
+            assertArrayEquals(ANIMATION.toByteArray(), file.readBytes())
+            assertEquals(ANIMATION, AgentHtmlArtifactPreview.load(context, delivered))
+            val again = AgentRichContentMaterializer.materialize(context, AgentRichContentCodec.encode(stored))
+            assertEquals(delivered.uri, AgentRichContentCodec.decode(again).single { it.type == AgentRichBlockType.FILE }.uri)
+            renderAndCheck(delivered, "inline-html-cloud-materialized")
+        } finally { file.delete() }
+    }
+
+    @Test fun inspectRequestedGeneratedSource() {
+        val args = InstrumentationRegistry.getArguments()
+        val path = args.getString("inspect_html_source_path").orEmpty()
+        assumeTrue(path.isNotBlank())
+        val source = File(path)
+        require(source.canonicalPath.startsWith(File(context.filesDir, "diagnostics").canonicalPath + File.separator))
+        assertEquals(args.getString("inspect_html_source_sha256"), digest(source))
+        val block = AgentRichBlock("preserved-cloud-html", AgentRichBlockType.HTML,
+            title = "preserved-animation.html", text = source.readText())
+        val stored = AgentRichContentMaterializer.materialize(context, AgentRichContentCodec.encode(listOf(block)))
+        val file = LocalAttachmentUris.resolve(context, android.net.Uri.parse(AgentRichContentCodec.decode(stored).single().uri))!!
+        val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)) as MainActivity
+        try {
+            verifyLiveCanvas(activity, AgentTranscriptEntry("preserved-html-regression", AgentTranscriptRole.ASSISTANT,
+                "Preserved model output", System.currentTimeMillis(), richOutputJson = stored))
+        } finally { file.delete(); instrumentation.runOnMainSync { activity.finish() } }
+    }
+
     @Test fun localHtmlAutomaticallyAnimatesAndReloadsAfterDetach() {
         val directory = File(context.filesDir, "agent-native-workspaces/html-preview-test-${UUID.randomUUID()}")
         directory.mkdirs()
@@ -76,6 +115,7 @@ class AgentHtmlArtifactDeviceTest {
         lateinit var dialog: Dialog
         lateinit var output: View
         instrumentation.runOnMainSync {
+            activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             output = AgentRichContentView(activity, {}, {}, { _, _ -> }, enableResponseSections = false).create(
                 AgentTranscriptEntry("html-test", AgentTranscriptRole.ASSISTANT, "", System.currentTimeMillis(),
                     richOutputJson = AgentRichContentCodec.encode(listOf(block))))

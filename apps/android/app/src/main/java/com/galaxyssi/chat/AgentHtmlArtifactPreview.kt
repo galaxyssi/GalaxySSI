@@ -71,7 +71,7 @@ internal object AgentHtmlArtifactPreview {
 internal class AgentHtmlArtifactView(
     private val activity: Activity,
     private val block: AgentRichBlock,
-    attachment: View,
+    attachment: View?,
     private val render: (String) -> View
 ) : LinearLayout(activity) {
     private val preview = LinearLayout(activity).apply { orientation = VERTICAL }
@@ -81,7 +81,7 @@ internal class AgentHtmlArtifactView(
     init {
         orientation = VERTICAL
         addView(preview, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(attachment)
+        if (attachment != null) addView(attachment)
     }
 
     override fun onAttachedToWindow() { super.onAttachedToWindow(); startPreview() }
@@ -105,7 +105,12 @@ internal class AgentHtmlArtifactView(
         preview.addView(TextView(activity).apply { setText(R.string.rich_output_loading) })
         val context = activity.applicationContext
         EXECUTOR.execute {
-            val result = runCatching { AgentHtmlArtifactPreview.load(context, block) }
+            val result = runCatching {
+                if (block.type == AgentRichBlockType.HTML) {
+                    require(AgentVisualOutputContract.htmlIssue(block.text) == null) { "Invalid inline HTML" }
+                    block.text
+                } else AgentHtmlArtifactPreview.load(context, block)
+            }
             activity.runOnUiThread {
                 if (token != generation || !isAttachedToWindow || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
                 preview.removeAllViews()

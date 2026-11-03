@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -46,6 +47,22 @@ internal class AgentArtifactOpenability(private val context: Context? = null) {
                     val bitmap = requireNotNull(BitmapFactory.decodeFile(file.path, options)) { "Image pixels could not be decoded" }
                     try { mapOf("width" to width, "height" to height, "mime_type" to options.outMimeType) }
                     finally { bitmap.recycle() }
+                }
+                extension in VIDEO_EXTENSIONS -> {
+                    scope = "video_metadata_and_first_frame_decode"
+                    requireNotNull(context) { "Video inspection requires the Android runtime" }
+                    val media = MediaMetadataRetriever()
+                    try {
+                        media.setDataSource(file.absolutePath)
+                        val duration = media.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0
+                        val width = media.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                        val height = media.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                        require(duration > 0 && width > 0 && height > 0) { "Video metadata could not be decoded" }
+                        val frame = requireNotNull(media.getFrameAtTime(0)) { "Video frame could not be decoded" }
+                        frame.recycle()
+                        mapOf("duration_millis" to duration, "width" to width, "height" to height,
+                            "all_frames_decoded" to false)
+                    } finally { media.release() }
                 }
                 extension in OFFICE_EXTENSIONS -> {
                     scope = "office_package_open"
@@ -138,6 +155,7 @@ internal class AgentArtifactOpenability(private val context: Context? = null) {
 
     companion object {
         private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp")
+        private val VIDEO_EXTENSIONS = setOf("mp4", "m4v", "webm", "mkv", "mov")
         private val OFFICE_EXTENSIONS = setOf("docx", "xlsx", "pptx")
         private val ARCHIVE_EXTENSIONS = setOf("zip", "jar", "apk", "aab")
         private val TEXT_EXTENSIONS = setOf("txt", "md", "csv", "tsv", "html", "htm", "json", "xml", "svg",
