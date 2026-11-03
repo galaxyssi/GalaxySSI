@@ -1016,13 +1016,19 @@ final class AgentConnectorResponseBus {
       store.remove(normalized)
       return true
     }
+    let managed: Bool
+    do { managed = try managedLedger?.ownsResponse(normalized) ?? false }
+    catch { return false }
     guard store.publish(normalized) else { return false }
-    globalRunSlots.release(sourceMessageId: String(normalized.sourceMessageId))
-    if registry.consume(normalized) {
+    if managed {
+      guard let record = managedLedger?.complete(normalized) else { return false }
+      globalRunSlots.release(sourceMessageId: String(normalized.sourceMessageId))
+      if record.state == .completed { _ = registry.consume(record.response ?? normalized) }
       store.remove(normalized)
       return true
     }
-    if managedLedger?.complete(normalized) != nil {
+    globalRunSlots.release(sourceMessageId: String(normalized.sourceMessageId))
+    if registry.consume(normalized) {
       store.remove(normalized)
       return true
     }

@@ -967,6 +967,9 @@ final class GalaxySSIStore: ObservableObject {
     chatHistoryDatabase.destroyAllData()
     AgentDesktopResultRecovery(ownerId: profile.identityFingerprint, secrets: secrets).destroyAllData()
     UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
+    UserDefaultsAgentManagedResponseLedger(defaults: defaults, secrets: secrets).clear()
+    UserDefaultsAgentConnectorResponseStore(defaults: defaults, secrets: secrets).clear()
+    AgentManagedConnectorResponseRegistry.shared.clear()
     GalaxySSIEncryptedUserDefaultsStore.destroy(
       defaults: defaults, key: GalaxySSIPairingDeliveryStore.storageKey, secrets: secrets
     )

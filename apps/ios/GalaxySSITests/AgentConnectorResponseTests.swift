@@ -3,6 +3,116 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testManagedSQLiteLedgerSharesWritesAcrossInstancesAndPreservesPendingBeyond512() throws {
+    let suite = "ManagedLedger.shared.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("managed.sqlite3")
+    let first = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 }, fileURL: file, secrets: secrets)
+    let second = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 }, fileURL: file, secrets: secrets)
+    for index in 1...520 {
+      try (index % 2 == 0 ? first : second).register(managedSQLiteRecord(Int64(index)))
+    }
+    XCTAssertEqual(first.pendingForSupervisor("supervisor").count, 520)
+    XCTAssertEqual(second.pendingForSupervisor("supervisor").count, 520)
+    let reopened = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 }, fileURL: file, secrets: secrets)
+    XCTAssertEqual(reopened.pendingForSupervisor("supervisor").count, 520)
+  }
+
+  func testManagedSQLiteResponseCommitsBeforeConsumerAndDuplicatesRemainHidden() throws {
+    let suite = "ManagedLedger.consume.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("managed.sqlite3")
+    let ledger = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 }, fileURL: file, secrets: secrets)
+    let reader = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 }, fileURL: file, secrets: secrets)
+    try ledger.register(managedSQLiteRecord(73))
+    let registry = AgentManagedConnectorResponseRegistry()
+    var consumed = 0
+    try registry.register(sourceMessageId: 73, contactId: "codex", ownerId: "child-73",
+      conversationId: "conversation", turnId: "turn", taskId: "task-73") { response in
+        consumed += 1
+        XCTAssertEqual(reader.completedUnapplied().first?.response?.content, "private managed answer")
+        return reader.acknowledge(response) != nil
+      }
+    let sink = InMemoryAgentConnectorResponseStore()
+    let bus = AgentConnectorResponseBus(registry: registry, managedLedger: ledger, store: sink,
+      terminalStore: InMemoryAgentTerminalDeliveryStore(), nowMillis: { 10_000 })
+    var notifications = 0
+    let token = bus.addListener { _ in notifications += 1 }
+    defer { bus.removeListener(token) }
+    var response = AgentConnectorResponse(sourceMessageId: 73, contactId: "codex", content: "private managed answer",
+      conversationId: "conversation", turnId: "turn", taskId: "task-73", receivedAtMillis: 9_000)
+    XCTAssertTrue(bus.publish(response))
+    response.content = "duplicate must not replace the first body"
+    XCTAssertTrue(bus.publish(response))
+    XCTAssertEqual(consumed, 1)
+    XCTAssertEqual(notifications, 0)
+    XCTAssertTrue(sink.pending().isEmpty)
+    XCTAssertEqual(AgentManagedResponseCodec.decode(reader.serializedSnapshot()).first?.response?.content, "private managed answer")
+    try reader.register(managedSQLiteRecord(73))
+    XCTAssertTrue(reader.pendingForSupervisor("supervisor").isEmpty)
+    for url in [file, URL(fileURLWithPath: file.path + "-wal")] {
+      if let data = try? Data(contentsOf: url) {
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("private managed answer"))
+      }
+    }
+  }
+
+  func testManagedSQLiteMigrationRetriesAfterKeyFailureAndCannotResurrectAfterClear() throws {
+    let suite = "ManagedLedger.migration.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let key = UserDefaultsAgentManagedResponseLedger.defaultStorageKey
+    let raw = AgentManagedResponseCodec.encode([managedSQLiteRecord(91)])
+    defaults.set(raw, forKey: key)
+    let secrets = RejectableConnectorSecretStore()
+    let file = root.appendingPathComponent("managed.sqlite3")
+    let ledger = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 }, fileURL: file, secrets: secrets)
+    XCTAssertThrowsError(try ledger.register(managedSQLiteRecord(92)))
+    XCTAssertEqual(defaults.string(forKey: key), raw)
+    secrets.reject = false
+    XCTAssertEqual(ledger.pendingForSupervisor("supervisor").map(\.sourceMessageId), [91])
+    XCTAssertNil(defaults.object(forKey: key))
+    ledger.clear()
+    defaults.set(raw, forKey: key)
+    let reopened = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 }, fileURL: file, secrets: secrets)
+    XCTAssertTrue(reopened.pendingForSupervisor("supervisor").isEmpty)
+    XCTAssertNil(defaults.object(forKey: key))
+  }
+
+  func testManagedSQLiteSiblingScopeAndGenerationCannotConsumeAnotherChild() throws {
+    let suite = "ManagedLedger.scope.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let ledger = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { 10_000 },
+      fileURL: root.appendingPathComponent("managed.sqlite3"), secrets: InMemorySecretStore())
+    try ledger.register(managedSQLiteRecord(73))
+    var response = AgentConnectorResponse(sourceMessageId: 73, contactId: "codex", content: "result",
+      conversationId: "conversation", turnId: "turn", taskId: "task-74", receivedAtMillis: 9_000)
+    XCTAssertFalse(try ledger.ownsResponse(response))
+    XCTAssertNil(ledger.complete(response))
+    response.taskId = "task-73"
+    response.executionGeneration = 2
+    XCTAssertFalse(try ledger.ownsResponse(response))
+    XCTAssertNil(ledger.complete(response))
+    response.executionGeneration = 1
+    XCTAssertTrue(try ledger.ownsResponse(response))
+    XCTAssertNotNil(ledger.complete(response))
+  }
+
+  private func managedSQLiteRecord(_ source: Int64) -> AgentManagedResponseRecord {
+    AgentManagedResponseRecord(ownerRunId: "child-\(source)", supervisorRunId: "supervisor", agentId: "codex",
+      deliveryMode: .observe, sourceMessageId: source, contactId: "codex", conversationId: "conversation",
+      turnId: "turn", taskId: "task-\(source)", createdAtMillis: 1_000)
+  }
+
   func testNormalDesktopReplyReceiptReadsSignedArchiveDigestWithUUIDSource() throws {
     let source = UUID().uuidString
     let digest = String(repeating: "a", count: 64)
