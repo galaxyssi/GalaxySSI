@@ -98,7 +98,7 @@ struct AgentHomeView: View {
   var onNavigateToMainTab: ((GalaxySSIMainTab) -> Void)? = nil
 
   @Environment(\.galaxySSIInterfaceLanguage) var interfaceLanguage
-  @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.scenePhase) var scenePhase
   @State private var homeVisible = false
   @State private var homeWindowFocused = false
   @State var agentUnreadCount = 0
@@ -127,6 +127,11 @@ struct AgentHomeView: View {
   @State var fileImporterPresented = false
   @State var photoPickerPresented = false
   @State var screenshotPickerPresented = false
+  @State var screenCaptureSourcePresented = false
+  @State var screenPagePickerPresented = false
+  @State var screenPageImportConversationID = ""
+  @State var screenPageImportRequestID: UUID?
+  @State var screenPageImportTask: Task<Void, Never>?
   @State var screenAssistantConversationID = ""
   @State var screenAssistantCompact = true
   @State var screenAssistantCollapsed = false
@@ -219,9 +224,14 @@ struct AgentHomeView: View {
   }
 
   var screenAssistantBubblePhase: AgentPhase? {
-    guard let startedAt = screenAssistantStartedAt,
-          let outgoing = transcriptMessages.last(where: { $0.isMine && !$0.isSystem && $0.createdAt >= startedAt }) else { return nil }
+    guard !screenAssistantConversationID.isEmpty,
+          screenAssistantConversationID == store.activeAgentConversationId else { return nil }
+    let ownedIDs = Set(screenAssistantOwnedTurns.map(\.id))
+    guard let outgoing = transcriptMessages.last(where: { $0.isMine && !$0.isSystem && ownedIDs.contains($0.id) }) else { return nil }
     let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    if let active = AgentScreenAnalysisCancellationPolicy.activePhase(for: outgoing,
+      localTasks: store.agentTasks(forSession: outgoing.conversationId, limit: 500),
+      remoteTasks: Array(coordinator.remoteAgentTaskStatuses.values)) { return active }
     if let task = store.agentTask(id: turn), task.sessionId == screenAssistantConversationID { return task.phase }
     if let reply = transcriptMessages.last(where: { !$0.isMine && !$0.isSystem && $0.turnId == outgoing.turnId }) {
       return reply.deliveryStatus == .delivered ? .completed : (reply.deliveryStatus == .failed ? .failed : .executing)
@@ -244,7 +254,7 @@ struct AgentHomeView: View {
         }
         .frame(maxHeight: .infinity)
         .overlay { screenAssistantRestoreControl }
-        agentComposer
+        agentComposer.disabled(screenPageImportTask != nil)
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
       .task(id: screenAssistantRecoveryKey) {
@@ -257,6 +267,19 @@ struct AgentHomeView: View {
         coordinator.resumePendingAgentDelivery()
       }
       .navigationBarHidden(true)
+      .background(GalaxySSIScreenPagePDFImporter(isPresented: $screenPagePickerPresented,
+        requestID: screenPageImportRequestID,
+        onResult: { requestID, result in importScreenPagePDF(result, requestID: requestID) })
+        .id(screenPageImportRequestID))
+      .confirmationDialog(t("galaxyssi.screen_page.source", "Page input"),
+        isPresented: $screenCaptureSourcePresented, titleVisibility: .visible) {
+        Button(t("galaxyssi.screen_page.screenshot", "Screenshot")) {
+          cancelScreenPagePDFImport()
+          screenshotPickerPresented = true
+        }
+        Button(t("galaxyssi.screen_page.pdf", "Full-page PDF"), action: beginScreenPagePDFImport)
+        Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) {}
+      }
       .background(GalaxySSIConversationFocusProbe(focused: $homeWindowFocused))
       .background(
         GalaxySSIAgentHomeNavigationRoutesView(
@@ -306,6 +329,7 @@ struct AgentHomeView: View {
         installAgentHomeSwipeBridge()
       }
       .onDisappear {
+        cancelScreenPagePDFImport()
         homeVisible = false
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
@@ -387,6 +411,7 @@ struct AgentHomeView: View {
       .sheet(isPresented: $screenshotPickerPresented) {
         GalaxySSIScreenshotInputView { attachment in
           guard !screenAssistantStopping else { return }
+          cancelScreenPagePDFImport()
           appendAttachment(attachment)
           screenshotPickerPresented = false
           guard attachments.contains(where: { $0.id == attachment.id }) else { return }
@@ -581,7 +606,12 @@ struct AgentHomeView: View {
       if let destination = store.agentSessionDestination(id: task.sessionId) {
         _ = store.switchAgentSession(destination)
       }
-      let sent = await coordinator.send(request, to: contact)
+      guard let kind = AgentRequestKind.forTask(task, messages: store.agentSessionMessages(task.sessionId)) else {
+        retryingAgentTaskIDs.remove(task.taskId)
+        richActionStatus = t("galaxyssi.agent.original_request_unavailable", "The original Agent request is no longer available.")
+        return
+      }
+      let sent = await coordinator.send(request, to: contact, requestKind: kind)
       retryingAgentTaskIDs.remove(task.taskId)
       resumePendingAgentDeliveryAfterTaskAction()
       if !sent {
@@ -696,10 +726,7 @@ struct AgentHomeView: View {
       onAddFile: {
         fileImporterPresented = true
       },
-      onAnalyzeScreenshot: {
-        actionTrayPresented = false
-        screenshotPickerPresented = true
-      },
+      onAnalyzeScreenshot: presentScreenCaptureSources,
       onSend: { sendAgentMessage() },
       onPendingPrimaryAction: handlePendingAgentTaskAction,
       onVoiceStart: beginAgentVoiceCapture,

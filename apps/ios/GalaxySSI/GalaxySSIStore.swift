@@ -1021,6 +1021,7 @@ final class GalaxySSIStore: ObservableObject {
     turnId: String = "",
     richOutputJson: String = "",
     messageId: UUID = UUID(),
+    requestKind: AgentRequestKind = .conversation,
     readOnlyAnalysis: Bool = false
   ) -> ChatMessage {
     let conversationId = activeConversationId(for: contactId)
@@ -1036,6 +1037,7 @@ final class GalaxySSIStore: ObservableObject {
       conversationId: conversationId,
       turnId: turnId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(messageId.uuidString),
       richOutputJson: richOutputJson,
+      requestKind: requestKind,
       readOnlyAnalysis: readOnlyAnalysis
     )
     messagesByContact[contactId, default: []].append(message)

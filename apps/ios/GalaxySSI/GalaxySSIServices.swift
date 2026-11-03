@@ -1700,16 +1700,17 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     var delivered = verified.count == ownedTurns.count
+    var seen: Set<UUID> = []
     let originals = verified.filter { outgoing in
-      !store.messages(for: outgoing.contactId).contains {
-        !$0.isMine && !$0.isSystem && $0.conversationId == outgoing.conversationId &&
-          $0.turnId == outgoing.turnId && $0.deliveryStatus == .delivered
-      }
+      seen.insert(outgoing.id).inserted && AgentScreenAnalysisCancellationPolicy.shouldCancel(outgoing,
+        messages: store.messages(for: outgoing.contactId),
+        localTasks: store.agentTasks(forSession: outgoing.conversationId, limit: 500),
+        remoteTasks: Array(remoteAgentTaskStatuses.values))
     }
     for outgoing in originals {
       let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
       for task in store.agentTasks(forSession: outgoing.conversationId, limit: 500)
-        where task.taskId == turn {
+        where task.taskId == turn || task.taskId == outgoing.id.uuidString {
         _ = cancelLocalAgentTask(taskId: task.taskId, emitReply: false)
       }
       PhoneExecutionAuthority.requestCancellation(taskId: turn)
@@ -2444,6 +2445,7 @@ final class MessageCoordinator: ObservableObject {
     voiceSessionId: String = "",
     peerMessageKind: String = "",
     peerDurationMillis: Int64 = 0,
+    requestKind: AgentRequestKind = .conversation,
     readOnlyAnalysis: Bool = false,
     onOutgoing: ((ChatMessage) -> Void)? = nil
   ) async -> Bool {
@@ -2527,6 +2529,7 @@ final class MessageCoordinator: ObservableObject {
       turnId: voiceSessionId,
       richOutputJson: richOutputJson,
       messageId: outgoingMessageId,
+      requestKind: requestKind,
       readOnlyAnalysis: readOnlyAnalysis
     )
     onOutgoing?(outgoing)
@@ -8975,6 +8978,7 @@ final class MessageCoordinator: ObservableObject {
         payload["attachments"] = attachmentDescriptors
       }
     }
+    outgoing.requestKind.apply(to: &payload)
     if payload["task_budget"] != nil {
       let estimatedBytes = Int64((try? GalaxySSILinkProtocol.jsonData(payload).count) ?? 0)
       let taskBudgetUsage = AgentTaskBudgetUsage(
