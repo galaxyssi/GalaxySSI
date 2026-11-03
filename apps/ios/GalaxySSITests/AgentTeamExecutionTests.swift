@@ -47,11 +47,13 @@ extension GalaxySSIStoreTests {
     var automatic = continued
     automatic.activePlan?.confirmationRequired = false
     automatic.pendingActions[0].status = .proposed
+    automatic.activePlan?.actions[1].status = .proposed
     XCTAssertTrue(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
     automatic.activePlan?.executionMode = .planOnly
     XCTAssertFalse(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
     automatic.activePlan?.executionMode = .autoComplete
     automatic.pendingActions[0].status = .pendingConfirmation
+    automatic.activePlan?.actions[1].status = .pendingConfirmation
     XCTAssertFalse(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
     multi.activePlan = teamBridgePlan(action, action)
     XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(multi, saved: saved, failureText: "Failed", now: 10))

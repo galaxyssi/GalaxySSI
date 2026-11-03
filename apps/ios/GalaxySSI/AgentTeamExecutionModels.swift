@@ -217,9 +217,11 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
 
 enum AgentSavedTeamReplyPolicy {
   static func canContinueAutomatically(_ task: AgentTaskRecord) -> Bool {
-    task.phase == .paused && task.teamRecoveryRunId == nil &&
-      task.activePlan?.executionMode == .autoComplete && task.activePlan?.confirmationRequired == false &&
-      !task.pendingActions.isEmpty && task.pendingActions.allSatisfy { $0.status == .proposed }
+    guard task.phase == .paused, task.teamRecoveryRunId == nil,
+          let plan = task.activePlan, plan.executionMode == .autoComplete,
+          !plan.confirmationRequired else { return false }
+    let runnable = AgentToolCoordination.runnableActions(plan)
+    return !runnable.isEmpty && runnable.allSatisfy { $0.status == .proposed }
   }
 
   static func settleParent(_ parent: AgentTaskRecord, saved: AgentTeamExecutionSnapshot,
