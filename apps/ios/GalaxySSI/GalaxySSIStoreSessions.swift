@@ -357,9 +357,35 @@ final class AgentConversationDatabase {
     _ = execute("CREATE TABLE IF NOT EXISTS agent_conversations (conversation_id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, pinned INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE TABLE IF NOT EXISTS agent_conversation_drafts (conversation_id TEXT PRIMARY KEY NOT NULL, encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE INDEX IF NOT EXISTS agent_conversations_order ON agent_conversations(status, pinned DESC, updated_at DESC, conversation_id DESC)")
-    _ = execute("ALTER TABLE agent_conversations ADD COLUMN activity_at INTEGER")
-    _ = execute("CREATE INDEX IF NOT EXISTS agent_conversations_activity_order ON agent_conversations(status, pinned DESC, COALESCE(activity_at, updated_at) DESC, conversation_id DESC)")
+    guard migrateActivityIndex() else {
+      sqlite3_close_v2(database)
+      database = nil
+      return
+    }
     _ = execute("CREATE TABLE IF NOT EXISTS agent_conversation_state (state_key TEXT PRIMARY KEY NOT NULL, state_value TEXT NOT NULL)")
+  }
+
+  private func migrateActivityIndex() -> Bool {
+    guard execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
+    var committed = false
+    defer { if !committed { _ = execute("ROLLBACK") } }
+    guard let statement = prepare("PRAGMA table_info(agent_conversations)") else { return false }
+    var hasActivity = false
+    while true {
+      let result = sqlite3_step(statement)
+      if result == SQLITE_DONE { break }
+      guard result == SQLITE_ROW else { sqlite3_finalize(statement); return false }
+      if let name = sqlite3_column_text(statement, 1), String(cString: name) == "activity_at" {
+        hasActivity = true
+      }
+    }
+    sqlite3_finalize(statement)
+    guard hasActivity || execute("ALTER TABLE agent_conversations ADD COLUMN activity_at INTEGER"),
+          execute("CREATE INDEX IF NOT EXISTS agent_conversations_activity_order ON agent_conversations(status, pinned DESC, COALESCE(activity_at, updated_at) DESC, conversation_id DESC)"),
+          execute("CREATE INDEX IF NOT EXISTS agent_conversations_activity_all ON agent_conversations(pinned DESC, COALESCE(activity_at, updated_at) DESC, conversation_id DESC)"),
+          execute("COMMIT") else { return false }
+    committed = true
+    return true
   }
 
   private func encryptedPayload(_ conversation: AgentConversation) -> Data? {

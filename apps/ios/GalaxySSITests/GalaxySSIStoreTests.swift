@@ -1,8 +1,32 @@
 import XCTest
 import SwiftUI
+import SQLite3
 @testable import GalaxySSI
 
 final class AgentConversationActivityTests: XCTestCase {
+  func testLegacyTableUpgradeCanReopenWithoutLosingConversations() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("legacy.sqlite")
+    var connection: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(url.path, &connection), SQLITE_OK)
+    XCTAssertEqual(sqlite3_exec(connection,
+      "CREATE TABLE agent_conversations (conversation_id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, pinned INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, encrypted_payload BLOB NOT NULL)",
+      nil, nil, nil), SQLITE_OK)
+    sqlite3_close(connection)
+    let secrets = InMemorySecretStore()
+    let conversation = AgentConversation(id: "legacy", title: "Legacy", createdAt: 10, updatedAt: 90,
+      latestDialogueAt: nil)
+    do {
+      let database = AgentConversationDatabase(fileURL: url, secrets: secrets)
+      XCTAssertTrue(database.upsert(conversation))
+    }
+    let reopened = AgentConversationDatabase(fileURL: url, secrets: secrets)
+    XCTAssertEqual(reopened.read("legacy"), conversation)
+    XCTAssertEqual(reopened.page(status: nil, cursor: nil).items.map(\.id), ["legacy"])
+  }
+
   func testMetadataChangesDoNotReorderDatabasePages() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
