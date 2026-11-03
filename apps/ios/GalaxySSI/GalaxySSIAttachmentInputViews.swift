@@ -230,6 +230,14 @@ extension AgentHomeView {
         .font(.subheadline.weight(.semibold))
         .lineLimit(1)
       Spacer(minLength: 0)
+      if screenAssistantRunID != nil || screenAssistantStopping {
+        Button(action: stopScreenAnalysis) {
+          Image(systemName: "stop.circle").frame(width: 44, height: 44)
+        }
+        .disabled(screenAssistantStopping)
+        .accessibilityLabel(t("galaxyssi.screen_assistant.stop", "Stop analysis"))
+        .accessibilityIdentifier("ios.screen-assistant.stop")
+      }
       Button {
         screenAssistantCompact.toggle()
       } label: {
