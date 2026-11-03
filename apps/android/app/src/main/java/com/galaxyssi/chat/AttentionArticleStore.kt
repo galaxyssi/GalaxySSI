@@ -9,7 +9,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal data class AttentionArticleJob(val key: String, val url: String, val topic: String, val topicTitle: String,
     val title: String, val publisher: String, val published: Long, val collected: Long, val attempts: Int,
-    val state: String, val chineseTitle: String = "", val preview: String = "", val provider: String = "")
+    val state: String, val chineseTitle: String = "", val preview: String = "", val provider: String = "",
+    val knowledge: Boolean = false)
 
 internal data class AttentionArticleQueueCounts(val published: Int, val waiting: Int, val retrying: Int)
 
@@ -35,7 +36,9 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             put("title", article.title); put("publisher", AttentionFeedCollectionPlan.publisher(article.url, article.publisher))
             put("published", if (article.discoveryDate) 0L else article.publishedAt)
             put("collected", article.collectedAt)
+            put("knowledge", if (article.knowledge) 1 else 0)
         }, SQLiteDatabase.CONFLICT_IGNORE)
+        if (article.knowledge) db.execSQL("UPDATE articles SET knowledge=1 WHERE id=? AND knowledge=0", arrayOf(article.key))
         AttentionArticleTopics.add(db, article.key, article.topicId, topicTitle)
         db.execSQL("UPDATE articles SET publisher=? WHERE id=? AND publisher='Hacker News'",
             arrayOf(AttentionFeedCollectionPlan.publisher(article.url, article.publisher), article.key))
@@ -52,7 +55,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             for (r in records) {
                 val article = AttentionFeedArticle(r.getString("key"), r.optString("topic"), r.optString("title"),
                     r.optString("summary"), r.optString("url"), r.optString("publisher"), r.optLong("published"), r.optLong("collected"),
-                    discoveryDate = r.optBoolean("discovery_date"))
+                    discoveryDate = r.optBoolean("discovery_date"), knowledge = r.optBoolean("knowledge"))
                 enqueue(article, topicNames[article.topicId].orEmpty())
                 val savedTopics = r.optJSONArray("topics")
                 topics.filter { topic -> ProactiveAttentionFeedSources.matches(article, topic) ||
@@ -116,13 +119,14 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     }
 
     fun presentation(key: String, expanded: Boolean): AttentionArticlePresentation? {
-        val columns = "preview,cover,cover_width,cover_height,publisher,published" + if (expanded) ",document,body" else ""
+        val columns = "preview,cover,cover_width,cover_height,publisher,published,knowledge" + if (expanded) ",document,body" else ""
         return db.rawQuery("SELECT $columns FROM articles WHERE id = ? AND state IN ('ready','published')", arrayOf(key)).use {
             if (!it.moveToFirst()) null else AttentionArticlePresentation(
                 AttentionArticleReadingPolicy.preview(AttentionArticleDocument.plain(it.getString(0))),
                 it.getString(1).takeIf(String::isNotBlank)?.let { url -> AttentionArticleBlock("image", url = url,
                     width = it.getInt(2), height = it.getInt(3)) }, it.getString(4), it.getLong(5),
-                if (expanded) AttentionArticleDocument.decode(it.getString(6)) ?: AttentionArticleDocument.plain(it.getString(7)) else null)
+                if (expanded) AttentionArticleDocument.decode(it.getString(7)) ?: AttentionArticleDocument.plain(it.getString(8)) else null,
+                knowledge = it.getInt(6) != 0)
         }
     }
 
@@ -184,9 +188,9 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     private fun putMeta(key: String, value: String) = db.execSQL("INSERT OR REPLACE INTO metadata VALUES(?,?)", arrayOf(key, value))
     private fun readJob(c: Cursor) = AttentionArticleJob(c.getString(0), c.getString(1), c.getString(2), c.getString(3),
         c.getString(4), c.getString(5), c.getLong(6), c.getLong(7),
-        c.getInt(8), c.getString(9), c.getString(10), c.getString(11), c.getString(12))
+        c.getInt(8), c.getString(9), c.getString(10), c.getString(11), c.getString(12), c.getInt(13) != 0)
 
-    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 7) {
+    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 8) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE articles(id TEXT PRIMARY KEY NOT NULL,url TEXT NOT NULL,topic TEXT NOT NULL," +
                 "topic_title TEXT NOT NULL,title TEXT NOT NULL,publisher TEXT NOT NULL,published INTEGER NOT NULL," +
@@ -195,13 +199,21 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
                 "preview TEXT NOT NULL DEFAULT '',body TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT ''," +
                 "document TEXT NOT NULL DEFAULT '',cover TEXT NOT NULL DEFAULT '',cover_width INTEGER NOT NULL DEFAULT 0," +
                 "cover_height INTEGER NOT NULL DEFAULT 0,visual_revision INTEGER NOT NULL DEFAULT 0," +
-                "visual_requested INTEGER NOT NULL DEFAULT 0)")
+                "visual_requested INTEGER NOT NULL DEFAULT 0,knowledge INTEGER NOT NULL DEFAULT 0)")
             db.execSQL("CREATE INDEX article_queue ON articles(state,next_at,topic,collected DESC)")
             db.execSQL("CREATE TABLE metadata(id TEXT PRIMARY KEY NOT NULL,value TEXT NOT NULL)")
             queueIndex(db)
             AttentionArticleTopics.create(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 8) {
+                val hasKnowledge = db.rawQuery("PRAGMA table_info(articles)", null).use { c ->
+                    var found = false
+                    while (c.moveToNext()) if (c.getString(c.getColumnIndexOrThrow("name")) == "knowledge") found = true
+                    found
+                }
+                if (!hasKnowledge) db.execSQL("ALTER TABLE articles ADD COLUMN knowledge INTEGER NOT NULL DEFAULT 0")
+            }
             if (oldVersion < 3) {
                 // Re-extract early development bodies containing page chrome. Preserve discoveries and inbox read state.
                 db.execSQL("UPDATE articles SET state = CASE WHEN state IN ('ready','published') THEN 'repair' ELSE 'pending' END," +
@@ -235,7 +247,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
 
     companion object {
         const val NAME = "attention_public_articles_v1.db"
-        private const val COLUMNS = "id,url,topic,topic_title,title,publisher,published,collected,attempts,state,zh_title,preview,provider"
+        private const val COLUMNS = "id,url,topic,topic_title,title,publisher,published,collected,attempts,state,zh_title,preview,provider,knowledge"
         private val helpers = ConcurrentHashMap<String, Helper>()
         internal fun closeTest(context: Context, name: String) {
             require(name != NAME)

@@ -16,7 +16,9 @@ internal object AttentionArticlePolicy {
 
     fun extractStructured(page: AgentWebIntelligenceFetched): AttentionArticleSource {
         require(page.contentType.contains("html", true)) { "article_not_html" }
-        require(AgentDynamicWebFallbackPolicy.reason(page) == null) { "article_challenge_or_script_shell" }
+        val fallback = AgentDynamicWebFallbackPolicy.reason(page)
+        // A noscript warning about optional sharing controls does not invalidate a complete static article.
+        require(fallback == null || fallback == "javascript_required") { "article_challenge_or_script_shell" }
         val html = AgentWebTextDecoder.decode(page.body, page.contentType, page.url)
         val document = Jsoup.parse(html, page.url)
         require(document.select("[itemprop=isAccessibleForFree][content=false]").isEmpty() &&
@@ -27,7 +29,7 @@ internal object AttentionArticlePolicy {
         val article = source.article
         require(article.content.length in 200 until AgentWebIntelligenceService.MAX_CONTENT_CHARS) { "article_body_missing_or_truncated" }
         val lower = article.content.take(1500).lowercase()
-        require(listOf("verify you are human", "enable javascript and cookies", "access denied", "sign in to continue",
+        require(listOf("verify you are human", "enable javascript", "javascript is required", "access denied", "sign in to continue",
             "subscribe to continue reading").none(lower::contains)) { "article_access_gate" }
         return source
     }
@@ -103,7 +105,7 @@ internal class AttentionArticleTranslation(private val translate: suspend (Strin
         }
         val chineseTitle = convert(title)
         val blocks = document.blocks.map { block ->
-            val text = if (block.kind == "code") block.text else convert(block.text)
+            val text = if (block.kind in setOf("code", "attribution")) block.text else convert(block.text)
             block.copy(text = text, emphasis = block.emphasis.filter(text::contains))
         }
         val translated = AttentionArticleDocument(blocks)

@@ -60,6 +60,7 @@ class ProactiveAttentionFeedCollector(
         val explicit = ProactiveAttentionWebSources.explicit(topic)
         val endpoints = AttentionFeedCollectionPlan.endpoints(topic)
         val searches = ProactiveAttentionFeedPolicy.endpoints(topic).toSet()
+        val knowledge = AttentionKnowledgeSources.endpoints(topic.id).toSet()
         val cursor = store.topicState(topic.id).optInt("cursor").coerceIn(0, endpoints.lastIndex.coerceAtLeast(0))
         val batch = AttentionFeedCollectionPlan.batch(endpoints, cursor)
         fun load(url: String, allowPage: Boolean = false): String {
@@ -80,9 +81,14 @@ class ProactiveAttentionFeedCollector(
         }
         for (endpoint in batch) {
             if (store.sourceRetryAt(endpoint) > now) continue
+            if (endpoint in knowledge && store.knowledgeRetryAt(topic.id, endpoint) > now) continue
             val items = try {
-                val xml = load(endpoint, allowPage = endpoint in explicit)
-                if (endpoint in explicit) {
+                val xml = load(endpoint, allowPage = endpoint in explicit || endpoint in knowledge)
+                if (endpoint in knowledge) {
+                    AttentionKnowledgeSources.discover(xml, endpoint, topic.id, now).also {
+                        check(it.isNotEmpty()) { "knowledge_index_empty" }
+                    }
+                } else if (endpoint in explicit) {
                     runCatching { ProactiveAttentionFeedPolicy.parse(xml, topic.id, now) }.getOrElse {
                         val page = ProactiveAttentionWebSources.discover(xml, endpoint, topic.id, now)
                         if (page.articles.isNotEmpty()) page.articles
@@ -99,12 +105,15 @@ class ProactiveAttentionFeedCollector(
             } catch (failure: Exception) {
                 if (failure is java.util.concurrent.CancellationException) throw failure
                 val code = (failure as? AgentWebMediaException)?.code ?: failure.javaClass.simpleName
+                if (endpoint in knowledge) store.sourceFailed(endpoint, code, now)
                 failures += java.net.URI(endpoint).host + ":" + code
                 android.util.Log.w("GalaxySSIAttention", "feed_source_failed host=" + java.net.URI(endpoint).host +
                     " code=" + code + " detail=" + failure.message.orEmpty().take(180))
                 continue
             }
             items.forEach { if (store.ingest(it, topic)) created++ }
+            if (endpoint in knowledge && ProactiveAttentionPolicy.shouldCollect(
+                    ProactiveAttentionStore(context).preferences(), topic.id)) store.knowledgeScanned(topic.id, endpoint, now)
         }
         val nextCursor = (cursor + batch.size).takeIf { it < endpoints.size } ?: 0
         val error = failures.joinToString("; ")

@@ -106,6 +106,32 @@ class AttentionVisualArticleDeviceTest {
         }
     }
 
+    @Test fun knowledgeLabelKeepsItsPublisherAndResetsWhenRecycledForNews() {
+        instrumentation.runOnMainSync {
+            val theme = ContextThemeWrapper(context, android.R.style.Theme_Material_Light)
+            val callbacks = mutableMapOf<String, (AttentionArticlePresentation?) -> Unit>()
+            var evidenceDone: ((org.json.JSONObject?) -> Unit)? = null
+            val view = ProactiveAttentionArticleView(theme, {}, {}, {}, {}, { _, done -> evidenceDone = done }, { _, _ -> },
+                loadArticle = { key, _, done -> callbacks[key] = done })
+            fun bind(id: String) {
+                val item = GlobalProactiveInboxPolicy.project(listOf(GlobalProactiveMessage(id = "attention-feed:$id",
+                    sourceEventId = "research:attention-research:biology:feed:$id", sourceConversationId = "",
+                    target = GlobalProactiveTarget.NEW_CONVERSATION, title = "蛋白质", content = prose, topic = "生命科学",
+                    urgent = false, status = GlobalProactiveMessageStatus.DELIVERED, newsArticleKey = id)), emptyList()).single()
+                view.bind(AttentionReaderRow(item, false, false))
+            }
+            bind("knowledge")
+            callbacks.getValue("knowledge")(AttentionArticlePresentation(prose, null, "NHGRI", 0, knowledge = true))
+            evidenceDone!!(null)
+            val label = context.getString(R.string.attention_knowledge_label)
+            assertTrue(views(view).filterIsInstance<TextView>().any { it.text.toString() == "$label · NHGRI" })
+            bind("news")
+            callbacks.getValue("news")(AttentionArticlePresentation(prose, null, "MIT", 1))
+            assertFalse(views(view).filterIsInstance<TextView>().any { it.text.contains(label) })
+            assertTrue(views(view).filterIsInstance<TextView>().any { it.text.toString() == "MIT" })
+        }
+    }
+
     @Test fun longArticlesAppendInPagesInsteadOfCreatingAllViewsAtOnce() {
         instrumentation.runOnMainSync {
             val view = AttentionArticleBodyView(context, AttentionArticleDocument((0 until 100).map {
@@ -116,6 +142,53 @@ class AttentionVisualArticleDeviceTest {
             view.findViewWithTag<View>("attention-body-more").performClick()
             assertTrue(view.childCount > initial)
             assertTrue(view.childCount < 75)
+        }
+    }
+
+    @Test fun knowledgeDefaultsToPagedFiguresAndFullTextRemainsAvailable() {
+        instrumentation.runOnMainSync {
+            val illustrated = AttentionArticleDocument(listOf(AttentionArticleBlock("paragraph", prose)) + (1..10).flatMap {
+                listOf(AttentionArticleBlock("image", "Cell $it", "https://example.org/$it.png", 800, 1200),
+                    AttentionArticleBlock("caption", "Figure $it"))
+            })
+            val view = AttentionKnowledgeReaderView(context, illustrated, "test")
+            assertTrue(view.findViewWithTag<View>("attention-knowledge-tab:0").isSelected)
+            assertEquals(4, views(view).filterIsInstance<AttentionArticleImageView>().count())
+            assertTrue(views(view).filterIsInstance<AttentionArticleImageView>().all { it.scaleType == android.widget.ImageView.ScaleType.FIT_CENTER })
+            view.findViewWithTag<View>("attention-body-more").performClick()
+            assertEquals(8, views(view).filterIsInstance<AttentionArticleImageView>().count())
+            view.findViewWithTag<View>("attention-knowledge-tab:1").performClick()
+            assertTrue(view.findViewWithTag<View>("attention-knowledge-tab:1").isSelected)
+            assertTrue(views(view).filterIsInstance<TextView>().any { it.text.toString() == prose })
+            view.findViewWithTag<View>("attention-knowledge-tab:0").performClick()
+            assertEquals(4, views(view).filterIsInstance<AttentionArticleImageView>().count())
+        }
+    }
+
+    @Test fun textOnlyKnowledgeHasNoEmptyFiguresTabAndDiagramThumbnailsAreNotCropped() {
+        instrumentation.runOnMainSync {
+            val view = AttentionKnowledgeReaderView(context, AttentionArticleDocument.plain(prose), "test")
+            assertNull(view.findViewWithTag<View>("attention-knowledge-tab:0"))
+            assertTrue(views(view).filterIsInstance<TextView>().any { it.text.toString() == prose })
+            val figure = AttentionArticleImageView(context, document.cover!!, true, true)
+            assertEquals(android.widget.ImageView.ScaleType.FIT_CENTER, figure.scaleType)
+            val news = AttentionArticleImageView(context, document.cover!!, true)
+            assertEquals(android.widget.ImageView.ScaleType.CENTER_CROP, news.scaleType)
+        }
+    }
+
+    @Test fun sourceAttributionStaysVisibleAndClickableInFiguresAndFullText() {
+        instrumentation.runOnMainSync {
+            val credit = AttentionArticleBlock("attribution", "OpenStax, Authors, Creative Commons",
+                "https://creativecommons.org/licenses/by-nc-sa/4.0/")
+            val view = AttentionKnowledgeReaderView(context, AttentionArticleDocument(document.blocks + credit), "test")
+            for (mode in listOf(0, 1)) {
+                view.findViewWithTag<View>("attention-knowledge-tab:$mode").performClick()
+                val label = views(view).filterIsInstance<TextView>().first { it.text.toString() == credit.text }
+                assertTrue(label.text is android.text.Spanned)
+                assertEquals(credit.url, (label.text as android.text.Spanned).getSpans(0, label.text.length,
+                    android.text.style.URLSpan::class.java).single().url)
+            }
         }
     }
 

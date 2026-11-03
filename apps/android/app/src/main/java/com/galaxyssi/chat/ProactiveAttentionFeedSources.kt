@@ -15,11 +15,9 @@ object ProactiveAttentionFeedSources {
         "https://www.ecb.europa.eu/rss/press.html", "https://news.mit.edu/rss/topic/economics")
     private val research = listOf(RESEARCH, "https://news.mit.edu/rss/research", "https://www.nasa.gov/feed/",
         "https://research.google/blog/rss/", "https://www.microsoft.com/en-us/research/feed/")
-    private val biology = listOf("https://news.mit.edu/rss/topic/biology-and-genetics",
-        "https://rss.arxiv.org/rss/q-bio.BM", "https://rss.arxiv.org/rss/q-bio")
-
-    fun originals(topic: AttentionTopic): List<String> = (ProactiveAttentionSourceCatalog.specialized(topic.id) +
-        if (topic.id == "protein_life_sciences") biology else when (ProactiveAttentionPolicy.group(topic.id)) {
+    fun originals(topic: AttentionTopic): List<String> = if (topic.id == AttentionLifeScienceSources.TOPIC)
+        AttentionLifeScienceSources.feeds else (ProactiveAttentionSourceCatalog.specialized(topic.id) +
+        when (ProactiveAttentionPolicy.group(topic.id)) {
         AttentionTopicGroup.FINANCE -> finance
         AttentionTopicGroup.RESEARCH -> research
         // Arbitrary custom interests use their explicit URLs plus search, not unrelated technology feeds.
@@ -29,6 +27,7 @@ object ProactiveAttentionFeedSources {
 
     fun matches(article: AttentionFeedArticle, topic: AttentionTopic): Boolean {
         val text = article.title + "\n" + article.summary
+        if (topic.id == AttentionLifeScienceSources.TOPIC) return AttentionLifeScienceSources.matches(text)
         matchers[topic.id]?.let { return it.any { matches -> matches(text) } }
         val words = (terms[topic.id]?.plus(english[topic.id].orEmpty())) ?: (topic.title + " " + topic.query)
             .split(Regex("[\\s,;]+")) .map(String::trim).filter { it.length >= 2 }

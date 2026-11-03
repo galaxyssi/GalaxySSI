@@ -10,7 +10,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 internal class AttentionArticleBodyView(context: Context, document: AttentionArticleDocument,
-    private val articleId: String = "") : LinearLayout(context) {
+    private val articleId: String = "", private val figureMode: Boolean = false) : LinearLayout(context) {
     private val spokenBlocks = mutableListOf<Pair<TextView, Int>>()
     private val playbackListener: (VoiceNewsPlaybackState) -> Unit = { updateSpokenParagraph(it) }
 
@@ -45,7 +45,7 @@ internal class AttentionArticleBodyView(context: Context, document: AttentionArt
 
     init {
         orientation = VERTICAL
-        val excerpts = AttentionArticleReadingPolicy.excerpts(document)
+        val excerpts = if (figureMode) emptyList() else AttentionArticleReadingPolicy.excerpts(document)
         if (excerpts.isNotEmpty()) {
             addView(text(context.getString(R.string.attention_news_excerpts), 12f, true).apply {
                 setTextColor(context.getColor(R.color.attention_reader_accent)); setPadding(0, dp(12), 0, dp(6))
@@ -57,7 +57,7 @@ internal class AttentionArticleBodyView(context: Context, document: AttentionArt
                 setBackgroundColor(context.getColor(R.color.attention_reader_excerpt_bg))
             }) }
         }
-        addView(text(context.getString(R.string.attention_article_body), 12f, true).apply {
+        if (!figureMode) addView(text(context.getString(R.string.attention_article_body), 12f, true).apply {
             setTextColor(context.getColor(R.color.text_secondary)); setPadding(0, dp(20), 0, dp(8))
         })
         appendPage()
@@ -65,7 +65,10 @@ internal class AttentionArticleBodyView(context: Context, document: AttentionArt
 
     private fun appendPage() {
         more?.let(::removeView)
-        val end = minOf(offset + 30, blocks.size)
+        val end = if (figureMode) {
+            var images = 0
+            (offset until blocks.size).firstOrNull { blocks[it].kind == "image" && ++images > 4 } ?: blocks.size
+        } else minOf(offset + 30, blocks.size)
         for (index in offset until end) {
             val block = blocks[index]
             if (block.kind == "image") {
@@ -73,15 +76,23 @@ internal class AttentionArticleBodyView(context: Context, document: AttentionArt
                 continue
             }
             val heading = block.kind == "heading"
-            val caption = block.kind == "caption"
+            val caption = block.kind in setOf("caption", "attribution")
             val label = text((if (block.kind == "list") "• " else "") + block.text,
                 if (heading) 19f else if (caption) 12f else 16f, heading)
             label.setPadding(if (block.kind == "quote") dp(12) else 0, dp(if (heading) 16 else 5), 0, dp(8))
             if (caption) label.setTextColor(context.getColor(R.color.text_secondary))
+            if (block.kind == "attribution") {
+                val attributed = SpannableString(block.text)
+                if (AttentionArticleDocumentParser.imageUrl(block.url, block.url) != null) {
+                    attributed.setSpan(android.text.style.URLSpan(block.url), 0, attributed.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    label.text = attributed
+                    label.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+                }
+            }
             if (block.kind in setOf("code", "table")) label.typeface = Typeface.MONOSPACE
             if (block.kind == "quote") label.setBackgroundColor(context.getColor(R.color.attention_reader_excerpt_bg))
             spokenBlocks.add(label to if (block.kind == "quote") context.getColor(R.color.attention_reader_excerpt_bg) else android.graphics.Color.TRANSPARENT)
-            if (!heading) {
+            if (!heading && block.kind != "attribution") {
                 val styled = SpannableString(label.text)
                 for (term in block.emphasis) {
                     val start = styled.toString().indexOf(term)

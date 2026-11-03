@@ -15,21 +15,24 @@ internal object ProactiveAttentionSourceCatalog {
         "agent_frontiers", "agent_products", "galaxyssi_improvements" -> listOf(LANGCHAIN, OPENAI, MIT_AI)
         "open_source", "dev_infrastructure", "product_experience", "user_needs" -> listOf(LANGCHAIN)
         "multimodal_voice", "mobile_edge_ai", "dependency_risks" -> listOf(OPENAI)
-        "protein_life_sciences" -> listOf(PLOS, ELIFE, NATURE_BIOTECH)
+        "protein_life_sciences" -> AttentionLifeScienceSources.feeds
         "research_papers", "cross_domain_innovation", "evaluation_science" -> listOf(PLOS, ELIFE, MIT_AI, SCIENCE)
         "industry" -> listOf(NATURE_BIOTECH, OPENAI)
         else -> emptyList()
     }
 
     fun dedicated(url: String, topicId: String): Boolean = when (topicId) {
-        "protein_life_sciences" -> url in specialized(topicId) ||
-            url == "https://news.mit.edu/rss/topic/biology-and-genetics" || url.startsWith("https://rss.arxiv.org/rss/q-bio")
+        "protein_life_sciences" -> url in AttentionLifeScienceSources.feeds
         "agent_frontiers", "agent_products", "galaxyssi_improvements" -> url == LANGCHAIN
         else -> false
     }
 
     // Research publishers are slower than breaking news. Keep the real publication date visible.
-    fun maxAgeDays(topicId: String): Int = if (ProactiveAttentionPolicy.group(topicId) == AttentionTopicGroup.RESEARCH) 30 else 7
+    fun maxAgeDays(topicId: String): Int = if (topicId == AttentionLifeScienceSources.TOPIC) 90
+        else if (ProactiveAttentionPolicy.group(topicId) == AttentionTopicGroup.RESEARCH) 30 else 7
+
+    fun searchQueries(topic: AttentionTopic): List<String> = if (topic.id == AttentionLifeScienceSources.TOPIC)
+        AttentionLifeScienceSources.queries else listOf(searchQuery(topic))
 
     fun searchQuery(topic: AttentionTopic): String = searches[topic.id] ?: topic.query.take(512).ifBlank { topic.title }
 

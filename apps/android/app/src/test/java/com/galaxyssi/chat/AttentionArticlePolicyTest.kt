@@ -54,6 +54,19 @@ class AttentionArticlePolicyTest {
     @Test fun scriptShellIsRejected() {
         rejected { AttentionArticlePolicy.extract(page("<html><body><div id='root'></div><script>app()</script></body></html>")) }
     }
+    @Test fun optionalJavascriptSharingWarningDoesNotHideAStaticEducationalArticle() {
+        val source = html(english).replace("<article>",
+            "<noscript>To use the sharing features on this page, please enable JavaScript.</noscript><article>")
+        val extracted = AttentionArticlePolicy.extract(page(source))
+        assertTrue(extracted.content.contains("Researchers"))
+        assertFalse(extracted.content.contains("sharing features"))
+    }
+    @Test fun actualJavascriptAndManagedChallengePagesRemainRejected() {
+        rejected { AttentionArticlePolicy.extract(page(html("Please enable JavaScript. $english"))) }
+        rejected { AttentionArticlePolicy.extract(page(html("JavaScript is required. $english"))) }
+        rejected { AttentionArticlePolicy.extract(page(html(english).replace("<head>",
+            "<head><script src='/challenge-platform/check.js'></script>"))) }
+    }
     @Test fun paywallExcerptIsRejected() {
         rejected { AttentionArticlePolicy.extract(page(html(english).replace("<head>",
             "<head><script type='application/ld+json'>{\"isAccessibleForFree\":false}</script>"))) }

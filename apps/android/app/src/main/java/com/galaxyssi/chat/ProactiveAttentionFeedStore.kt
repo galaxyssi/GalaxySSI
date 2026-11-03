@@ -18,12 +18,15 @@ class ProactiveAttentionFeedStore(context: Context) {
             .put("publisher", article.publisher).put("published", article.publishedAt)
             .put("discovered_via", article.discoveredVia)
             .put("discovery_date", article.discoveryDate)
+            .put("knowledge", article.knowledge)
             .put("collected", article.collectedAt).put("review", "pending")
         val topics = record.optJSONArray("topics") ?: org.json.JSONArray().put(record.optString("topic"))
         val addedTopic = (0 until topics.length()).none { topics.optString(it) == topic.id }
+        val kindChanged = article.knowledge && !record.optBoolean("knowledge")
+        if (kindChanged) record.put("knowledge", true)
         if (addedTopic) topics.put(topic.id)
         record.put("topics", topics)
-        if (previous == null || addedTopic) rows.put(article.key, record)
+        if (previous == null || addedTopic || kindChanged) rows.put(article.key, record)
         AttentionArticleStore(context).enqueue(article, topic.title)
         previous == null
     }
@@ -151,6 +154,16 @@ class ProactiveAttentionFeedStore(context: Context) {
             database.readString(AttentionFeedFailurePolicy.hostKey(url), "0").toLongOrNull() ?: 0L)
     }
 
+    internal fun knowledgeRetryAt(topic: String, url: String): Long = synchronized(LOCK) {
+        database.readString("knowledge_scan:$topic:" + ProactiveAttentionFeedPolicy.urlKey(url), "0").toLongOrNull() ?: 0L
+    }
+
+    internal fun knowledgeScanned(topic: String, url: String, now: Long) = synchronized(LOCK) {
+        database.writeString("knowledge_scan:$topic:" + ProactiveAttentionFeedPolicy.urlKey(url),
+            (now + AttentionKnowledgeSources.REFRESH_MILLIS).toString())
+        database.writeString("source:" + ProactiveAttentionFeedPolicy.urlKey(url), "{}")
+    }
+
     fun hostFailed(url: String, now: Long) = synchronized(LOCK) {
         database.writeString(AttentionFeedFailurePolicy.hostKey(url), (now + AttentionFeedFailurePolicy.HOST_BACKOFF).toString())
     }
@@ -189,7 +202,7 @@ class ProactiveAttentionFeedStore(context: Context) {
     companion object {
         private val LOCK = Any()
         // A new source adapter must not inherit a failed adapter's deferred wake-up.
-        private const val SOURCE_REVISION = 5
+        private const val SOURCE_REVISION = 7
         fun isFeed(task: GlobalResearchTask) = task.researchPlan.units.any { it.id.startsWith(ProactiveAttentionFeedPolicy.UNIT_PREFIX) }
     }
 }

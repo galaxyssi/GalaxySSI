@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="attention_knowledge_label">Science explainer</string>
     <string name="attention_article_body">Chinese article</string>
     <string name="attention_article_policy">Only articles with a retrieved body and completed Chinese translation are shown. Public news is stored unencrypted.</string>
     <string name="attention_reader_unread">Unread %1$d</string>
@@ -109,7 +110,7 @@
         <item>Dependency vulnerabilities, API deprecations, service and license changes; distinguish confirmed impact from potential risks</item>
         <item>Chat, collaboration, voice, floating interaction, notification and multi-device experience examples</item>
         <item>Relevant papers, methods, data, code, independent reproductions and limitations</item>
-        <item>Protein design, structure prediction, functional validation, experimental platforms, open data and tools; distinguish predictions from experiments</item>
+        <item>Protein explainers and design, structure prediction, cell biology, drug discovery, DNA/RNA, gene editing, synthetic biology, open data and tools; distinguish education, predictions and experiments</item>
         <item>Cross-domain combinations, conflicting evidence, knowledge gaps and testable hypotheses; check prior work and do not claim unverified novelty</item>
         <item>Benchmarks, datasets, controlled experiments, failure cases, evaluation contamination and reproducibility</item>
     </string-array>
@@ -133,4 +134,6 @@
     <string name="attention_translation_capacity">Translation waiting for model capacity or budget</string>
     <string name="attention_translation_retry">Translation failed; retrying later</string>
     <string name="attention_translation_disabled">Automatic title translation is off</string>
+    <string name="attention_knowledge_figures">Figures</string>
+    <string name="attention_knowledge_full_text">Full text</string>
 </resources>

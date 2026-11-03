@@ -47,7 +47,8 @@ internal data class AttentionArticlePresentation(
     val cover: AttentionArticleBlock?,
     val publisher: String,
     val published: Long,
-    val document: AttentionArticleDocument? = null
+    val document: AttentionArticleDocument? = null,
+    val knowledge: Boolean = false
 )
 
 /** Extractive reading aids never add claims or remove qualifications from the source. */

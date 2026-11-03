@@ -22,7 +22,8 @@ data class AttentionFeedArticle(
     val publishedAt: Long,
     val collectedAt: Long,
     val discoveryDate: Boolean = false,
-    val discoveredVia: String = ""
+    val discoveredVia: String = "",
+    val knowledge: Boolean = false
 )
 
 /** Discovery is a source-attributed lead, not a model verdict or a full-text reading receipt. */
@@ -32,12 +33,14 @@ object ProactiveAttentionFeedPolicy {
     const val MAX_INTERVAL = 4 * 60 * 60_000L
 
     fun endpoints(topic: AttentionTopic): List<String> {
-        val query = ProactiveAttentionSourceCatalog.searchQuery(topic)
-        val encoded = URLEncoder.encode(query, "UTF-8")
-        return listOf(
-            "https://www.bing.com/news/search?q=$encoded&format=rss&sortbydate=1",
-            "https://news.google.com/rss/search?q=$encoded+when%3A7d&hl=zh-CN&gl=CN&ceid=CN%3Azh-Hans"
-        )
+        val days = if (topic.id == AttentionLifeScienceSources.TOPIC) 90 else 7
+        return ProactiveAttentionSourceCatalog.searchQueries(topic).flatMap { query ->
+            val encoded = URLEncoder.encode(query, "UTF-8")
+            listOf(
+                "https://www.bing.com/news/search?q=$encoded&format=rss&sortbydate=1",
+                "https://news.google.com/rss/search?q=$encoded+when%3A${days}d&hl=zh-CN&gl=CN&ceid=CN%3Azh-Hans"
+            )
+        }
     }
 
     fun parse(xml: String, topicId: String, now: Long, maxAgeDays: Int = 7): List<AttentionFeedArticle> {
