@@ -125,7 +125,10 @@ class ProactiveAttentionActivity : Activity() {
     private fun showFeedMenu() {
         feedMenu?.dismiss()
         feedMenu = ProactiveAttentionFeedMenu(this, reader.timeline.filter, reader::selectFilter,
-            { navigate(true) }, { feedMenu = null }).also { it.show(header.action) }
+            { navigate(true) }, { feedMenu = null }, {
+                reader.persist()
+                startActivity(Intent(this, AttentionNewsSearchActivity::class.java))
+            }).also { it.show(header.action) }
     }
 
     private fun renderHeader() {

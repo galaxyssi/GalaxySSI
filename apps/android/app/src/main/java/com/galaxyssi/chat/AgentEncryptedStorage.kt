@@ -300,6 +300,13 @@ class AgentEncryptedDatabase(
         } finally { writable.endTransaction() }
     }
 
+    /** Read metadata without a write transaction or invalidating decrypted row caches. */
+    internal fun <T> readIndex(sql: String, args: Array<String>?, signal: android.os.CancellationSignal,
+        read: (android.database.Cursor) -> T): T = database.operations.withLock {
+        signal.throwIfCanceled()
+        database.readableDatabase.rawQuery(sql, args, signal).use(read)
+    }
+
     internal fun <T> indexedTransaction(block: (SQLiteDatabase) -> T): T = withStorage {
         // The callback can mutate rows directly, including removing a previously cached row.
         AgentEncryptedRowCache.shared.clearStorage(storageIdentity)

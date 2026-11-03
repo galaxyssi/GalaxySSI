@@ -9,6 +9,14 @@ internal data class ProactiveInboxCounts(val total: Int, val unread: Int)
 internal class ProactiveMessageReadIndex(private val database: AgentEncryptedDatabase) {
     fun ready() = database.contains(READY)
 
+    fun newsViewed(signal: android.os.CancellationSignal): Map<String, Long> = database.readIndex(
+        "SELECT id,viewed FROM $TABLE WHERE news=1 AND id LIKE 'attention-feed:%'", null, signal) { c ->
+            buildMap { while (c.moveToNext()) {
+                signal.throwIfCanceled()
+                put(c.getString(0).removePrefix("attention-feed:"), c.getLong(1))
+            } }
+    }
+
     fun prepare(records: () -> Sequence<JSONObject>) {
         if (ready()) return
         database.indexedTransaction { db ->

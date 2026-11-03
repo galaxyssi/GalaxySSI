@@ -25,7 +25,8 @@ internal class ProactiveAttentionArticleView(
     private val evidence: (GlobalProactiveInboxItem, (JSONObject?) -> Unit) -> Unit,
     private val action: (GlobalProactiveInboxItem, AttentionHeadlineAction) -> Unit,
     private val loadBody: (String, (String?) -> Unit) -> Unit = { _, callback -> callback(null) },
-    private val loadArticle: (String, Boolean, (AttentionArticlePresentation?) -> Unit) -> Unit = { _, _, callback -> callback(null) }
+    private val loadArticle: (String, Boolean, (AttentionArticlePresentation?) -> Unit) -> Unit = { _, _, callback -> callback(null) },
+    private val searchQuery: String = ""
 ) : LinearLayout(context) {
     private var row: AttentionReaderRow? = null
     private var generation = 0
@@ -85,7 +86,8 @@ internal class ProactiveAttentionArticleView(
         intro.addView(top)
         val titleRow = horizontal()
         val titles = column()
-        headline = AttentionHeadlineView(context, { toggle(item.key) }, { action(item, it) }).apply {
+        headline = AttentionHeadlineView(context, { toggle(item.key) }, { action(item, it) },
+            { AttentionNewsSearchText.highlight(it, searchQuery) }).apply {
             textSize = if (news) (if (next.expanded) 21f else 18f) else 19.36f
             setTextColor(context.getColor(R.color.text_primary))
             tag = "attention-headline:${item.key}"
@@ -117,6 +119,7 @@ internal class ProactiveAttentionArticleView(
         val preview = plain(AttentionArticleReadingPolicy.preview(AttentionArticleDocument.plain(bodyText)))
             .replace(Regex("\\s+"), " ")
         val previewView = label(preview, 13f).apply {
+            text = AttentionNewsSearchText.highlight(preview, searchQuery)
             maxLines = 2; minLines = 2; ellipsize = TextUtils.TruncateAt.END; setLineSpacing(dp(2).toFloat(), 1f)
             tag = "attention-preview:${item.key}"
         }
@@ -178,7 +181,8 @@ internal class ProactiveAttentionArticleView(
                 if (presentation.published > 0) date.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(presentation.published))
                 else date.text = context.getString(R.string.attention_news_collected,
                     SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.deliveredAtMillis)))
-                previewView.text = presentation.preview.ifBlank { preview }
+                previewView.text = AttentionNewsSearchText.highlight(
+                    if (searchQuery.isBlank()) presentation.preview.ifBlank { preview } else preview, searchQuery)
                 if (!next.expanded && presentation.cover != null) {
                     thumbnail.removeAllViews()
                     thumbnail.addView(AttentionArticleImageView(context, presentation.cover, true), LayoutParams(-1, -1))
@@ -218,7 +222,7 @@ internal class ProactiveAttentionArticleView(
         headline?.setTextColor(context.getColor(if (displayedUnread && next.item.newsArticleKey.isBlank()) R.color.attention_unread_title else R.color.text_primary))
         headline?.alpha = 1f
         val status = context.getString(if (evidenceChecked) R.string.attention_reader_checked else R.string.attention_reader_unverified)
-        sourceLine?.text = sourceName.ifBlank { next.item.topic }
+        sourceLine?.text = AttentionNewsSearchText.highlight(sourceName.ifBlank { next.item.topic }, searchQuery)
         statusLine?.text = listOf(status, if (displayedUnread) "\u2022" else context.getString(R.string.attention_is_read))
             .filter(String::isNotBlank).joinToString(" · ")
         bookmark?.apply {

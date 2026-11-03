@@ -67,6 +67,7 @@ internal class GlobalProactiveMessageStore(
     fun previewReady() = readIndex.ready()
     fun preparePreview() { prepare() }
     fun counts(feedback: List<GlobalAgentFeedback>) = readIndex.counts(feedback)
+    fun newsViewed(signal: android.os.CancellationSignal) = readIndex.newsViewed(signal)
     fun reminderPreview(feedback: List<GlobalAgentFeedback>): Pair<List<GlobalProactiveInboxItem>, Int> {
         val messages = database.readStrings(readIndex.reminderKeys(32)).values.mapNotNull { decode(JSONObject(it)) }
         // Individual reminders retain their own IDs; news digest expansion belongs only to the news reader.
