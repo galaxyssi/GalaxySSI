@@ -98,7 +98,7 @@ struct AgentHomeView: View {
   var onNavigateToMainTab: ((GalaxySSIMainTab) -> Void)? = nil
 
   @Environment(\.galaxySSIInterfaceLanguage) var interfaceLanguage
-  @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.scenePhase) var scenePhase
   @State private var homeVisible = false
   @State private var homeWindowFocused = false
   @State var agentUnreadCount = 0
@@ -127,6 +127,11 @@ struct AgentHomeView: View {
   @State var fileImporterPresented = false
   @State var photoPickerPresented = false
   @State var screenshotPickerPresented = false
+  @State var screenCaptureSourcePresented = false
+  @State var screenPagePickerPresented = false
+  @State var screenPageImportConversationID = ""
+  @State var screenPageImportRequestID: UUID?
+  @State var screenPageImportTask: Task<Void, Never>?
   @State var screenAssistantConversationID = ""
   @State var screenAssistantCompact = true
   @State var screenAssistantCollapsed = false
@@ -242,7 +247,7 @@ struct AgentHomeView: View {
         }
         .frame(maxHeight: .infinity)
         .overlay { screenAssistantRestoreControl }
-        agentComposer
+        agentComposer.disabled(screenPageImportTask != nil)
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
       .task(id: screenAssistantRecoveryKey) {
@@ -255,6 +260,19 @@ struct AgentHomeView: View {
         coordinator.resumePendingAgentDelivery()
       }
       .navigationBarHidden(true)
+      .background(GalaxySSIScreenPagePDFImporter(isPresented: $screenPagePickerPresented,
+        requestID: screenPageImportRequestID,
+        onResult: { requestID, result in importScreenPagePDF(result, requestID: requestID) })
+        .id(screenPageImportRequestID))
+      .confirmationDialog(t("galaxyssi.screen_page.source", "Page input"),
+        isPresented: $screenCaptureSourcePresented, titleVisibility: .visible) {
+        Button(t("galaxyssi.screen_page.screenshot", "Screenshot")) {
+          cancelScreenPagePDFImport()
+          screenshotPickerPresented = true
+        }
+        Button(t("galaxyssi.screen_page.pdf", "Full-page PDF"), action: beginScreenPagePDFImport)
+        Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) {}
+      }
       .background(GalaxySSIConversationFocusProbe(focused: $homeWindowFocused))
       .background(
         GalaxySSIAgentHomeNavigationRoutesView(
@@ -304,6 +322,7 @@ struct AgentHomeView: View {
         installAgentHomeSwipeBridge()
       }
       .onDisappear {
+        cancelScreenPagePDFImport()
         homeVisible = false
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
@@ -385,6 +404,7 @@ struct AgentHomeView: View {
       .sheet(isPresented: $screenshotPickerPresented) {
         GalaxySSIScreenshotInputView { attachment in
           guard !screenAssistantStopping else { return }
+          cancelScreenPagePDFImport()
           appendAttachment(attachment)
           screenshotPickerPresented = false
           guard attachments.contains(where: { $0.id == attachment.id }) else { return }
@@ -699,10 +719,7 @@ struct AgentHomeView: View {
       onAddFile: {
         fileImporterPresented = true
       },
-      onAnalyzeScreenshot: {
-        actionTrayPresented = false
-        screenshotPickerPresented = true
-      },
+      onAnalyzeScreenshot: presentScreenCaptureSources,
       onSend: { sendAgentMessage() },
       onPendingPrimaryAction: handlePendingAgentTaskAction,
       onVoiceStart: beginAgentVoiceCapture,

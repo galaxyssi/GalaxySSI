@@ -4826,6 +4826,17 @@
 "galaxyssi.conversation_status.cancelled" = "已取消";
 "galaxyssi.screen_assistant.analyze" = "分析截图";
 "galaxyssi.screen_assistant.title" = "屏幕助手";
+"galaxyssi.screen_page.source" = "页面输入";
+"galaxyssi.screen_page.screenshot" = "截图";
+"galaxyssi.screen_page.pdf" = "整页 PDF";
+"galaxyssi.screen_page.collecting" = "正在提取页面…";
+"galaxyssi.screen_page.prompt" = "请分析这份页面内容。";
+"galaxyssi.screen_page.added" = "已添加 %d 页";
+"galaxyssi.screen_page.truncated" = "文本提取已达到上限，已附上原始 PDF。";
+"galaxyssi.screen_page.image_pages" = "部分页面没有可选择文本，已附上原始 PDF。";
+"galaxyssi.screen_page.protected" = "不支持加密或禁止复制的 PDF。";
+"galaxyssi.screen_page.limit" = "PDF 超过 32 MB 或 256 页限制。";
+"galaxyssi.screen_page.failed" = "无法导入页面 PDF。";
 "galaxyssi.screen_assistant.expand" = "展开结果";
 "galaxyssi.screen_assistant.compact" = "收起结果";
 "galaxyssi.screen_assistant.close" = "关闭屏幕助手";
