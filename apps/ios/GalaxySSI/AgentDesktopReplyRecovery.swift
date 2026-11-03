@@ -2,6 +2,11 @@ import CoreFoundation
 import CryptoKit
 import Foundation
 
+protocol AgentDesktopReplyRecoveryPersisting: AnyObject {
+  func loadDesktopReplyRecoveryState() throws -> Data?
+  func writeDesktopReplyRecoveryState(_ data: Data) -> Bool
+}
+
 struct AgentDesktopReplyBinding: Codable, Equatable {
   var desktopId: String
   var displayContactId: String
@@ -69,21 +74,25 @@ final class AgentDesktopReplyRecovery {
     var binding: AgentDesktopReplyBinding
     var startedAt: Int64
   }
-  private let defaults: UserDefaults
-  private let secrets: GalaxySSISecretStore
+  private let journal: AgentDesktopReplyRecoveryPersisting
   private var records: [String: AgentDesktopReplyRecoveryRecord] = [:]
   private var queries: [String: Query] = [:]
   private var healthy = true
 
-  init(defaults: UserDefaults, secrets: GalaxySSISecretStore) {
-    self.defaults = defaults
-    self.secrets = secrets
-    if let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: Self.storageKey, secrets: secrets) {
-      if let decoded = try? JSONDecoder().decode([String: AgentDesktopReplyRecoveryRecord].self, from: data),
-         decoded.allSatisfy({ $0.key == $0.value.binding.key && $0.value.binding.isValid && $0.value.createdAt > 0 }) {
+  init(defaults: UserDefaults, secrets: GalaxySSISecretStore, journal: AgentDesktopReplyRecoveryPersisting) {
+    self.journal = journal
+    do {
+      if let data = try journal.loadDesktopReplyRecoveryState() {
+        records = try Self.decode(data)
+        // SQLite is authoritative after migration, including when the last pending request was retired.
+        GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: Self.storageKey, secrets: secrets)
+      } else if let legacy = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: Self.storageKey, secrets: secrets) {
+        let decoded = try Self.decode(legacy)
+        guard journal.writeDesktopReplyRecoveryState(legacy) else { healthy = false; return }
         records = decoded
-      } else { healthy = false }
-    } else if defaults.data(forKey: Self.storageKey + ".encrypted.v1") != nil { healthy = false }
+        GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: Self.storageKey, secrets: secrets)
+      } else if defaults.data(forKey: Self.storageKey + ".encrypted.v1") != nil { healthy = false }
+    } catch { healthy = false }
   }
 
   var pending: [AgentDesktopReplyRecoveryRecord] {
@@ -188,10 +197,17 @@ final class AgentDesktopReplyRecovery {
 
   private func save(_ next: [String: AgentDesktopReplyRecoveryRecord]) -> Bool {
     guard healthy, let data = try? JSONEncoder().encode(next),
-          GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: Self.storageKey, secrets: secrets),
-          GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: Self.storageKey, secrets: secrets) == data else { return false }
-    // Readback detects rejected writes; UserDefaults does not provide a disk-fsync barrier.
+          journal.writeDesktopReplyRecoveryState(data) else { return false }
     records = next
     return true
+  }
+
+  private static func decode(_ data: Data) throws -> [String: AgentDesktopReplyRecoveryRecord] {
+    let decoded = try JSONDecoder().decode([String: AgentDesktopReplyRecoveryRecord].self, from: data)
+    guard decoded.allSatisfy({ $0.key == $0.value.binding.key && $0.value.binding.isValid &&
+      $0.value.createdAt > 0 && ($0.value.resultManifest?.isValid ?? true) }) else {
+      throw GalaxySSIError.invalidPayload("Invalid Desktop recovery journal")
+    }
+    return decoded
   }
 }
