@@ -6576,7 +6576,8 @@ final class MessageCoordinator: ObservableObject {
           conversation: conversation, turn: turn, task: task, contact: contact.id, content: content,
           richOutputJson: payload.string("rich_output").ifBlank(payload.string("rich_output_json")),
           terminal: terminal && tracked, success: !AgentRemoteOutcomePolicy.isFailure(status),
-          now: AgentControlPlaneClock.nowMillis())
+          now: AgentControlPlaneClock.nowMillis(), observation: AgentTeamReplyObservation(payload: payload),
+          persistObservation: tracked)
       }
     } catch {
       lastError = localizedReply("galaxyssi.team.reply_commit_failed", fallback: "The Agent team reply could not be saved. It will not be shown as a normal message.")
@@ -6584,6 +6585,9 @@ final class MessageCoordinator: ObservableObject {
     }
     switch disposition {
     case .primary: return false
+    case .observerStale:
+      if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
+      return true
     case .notOwned:
       guard volatile?.deliveryMode == .observe else { return false }
     case .observerCommitted: reconcileSavedTeamParents()

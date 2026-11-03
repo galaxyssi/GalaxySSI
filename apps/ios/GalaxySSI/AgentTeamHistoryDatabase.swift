@@ -190,7 +190,10 @@ final class AgentTeamHistoryDatabase {
         guard let blob = sqlite3_column_blob(existing, 0) else { throw Failure.corrupt }
         let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(existing, 0)))
         let prior = try JSONDecoder().decode(AgentTeamReplyOwner.self, from: cipher.decrypt(data, purpose: ownerPurpose(key, run, memberKey)))
-        guard prior == owner else { throw Failure.stale }
+        var identity = prior
+        identity.observedGeneration = nil
+        identity.observedSequence = nil
+        guard identity == owner else { throw Failure.stale }
         continue
       }
       guard status == SQLITE_DONE else { throw Failure.unavailable }
@@ -206,6 +209,20 @@ final class AgentTeamHistoryDatabase {
   private func replyKey(source: String, conversation: String, turn: String, contact: String) throws -> String {
     let data = try JSONEncoder().encode([conversation, turn, source, contact])
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+
+  func updateReplyOwner(_ owner: AgentTeamReplyOwner) throws {
+    let key = try replyKey(source: owner.sourceMessageId, conversation: owner.conversationId,
+      turn: owner.turnId, contact: owner.contactId)
+    let run = Self.digest(owner.supervisorRunId)
+    let member = Self.digest(owner.memberId)
+    let encrypted = try cipher.encrypt(JSONEncoder().encode(owner), purpose: ownerPurpose(key, run, member))
+    let statement = try prepare("UPDATE team_reply_owners SET encrypted_payload=? WHERE namespace=? AND binding_key=? AND run_key=? AND member_key=?")
+    defer { sqlite3_finalize(statement) }
+    _ = encrypted.withUnsafeBytes { sqlite3_bind_blob(statement, 1, $0.baseAddress, Int32($0.count), Self.transient) }
+    for (index, value) in [namespace, key, run, member].enumerated() { bind(value, at: Int32(index + 2), to: statement) }
+    try finish(statement)
+    guard sqlite3_changes(database) == 1 else { throw Failure.stale }
   }
   private func ownerPurpose(_ key: String, _ run: String, _ member: String) -> String {
     "team-reply-owner:\(namespace):\(key):\(run):\(member)"
