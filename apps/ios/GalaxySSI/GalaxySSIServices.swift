@@ -2346,7 +2346,11 @@ final class MessageCoordinator: ObservableObject {
     } catch GalaxySSIChatHistoryError.locallyDeleted {
       // A durable user deletion is also a valid local disposition; never recreate or notify it.
       finishPendingAgentReply(turnId: binding.identity.turnId)
-    } catch { lastError = "Recovered Desktop result could not be committed to message history"; return }
+    } catch {
+      lastError = localizedReply("galaxyssi.agent.desktop_recovered_commit_failed",
+        fallback: "Recovered Desktop result could not be committed to message history")
+      return
+    }
     let streamKey = AgentConnectorStreamUpdate.streamKey(sourceMessageId: binding.sourceId.uuidString,
       turnId: binding.identity.turnId)
     liveConnectorMessageIds.removeValue(forKey: streamKey)
