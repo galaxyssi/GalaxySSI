@@ -129,6 +129,8 @@ struct AgentHomeView: View {
   @State var screenshotPickerPresented = false
   @State var screenAssistantConversationID = ""
   @State var screenAssistantCompact = true
+  @State private var screenAssistantStartedAt: Date?
+  @State private var screenAssistantRecoveryRequests: Set<String> = []
   @State var cameraPickerPresented = false
   @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
@@ -197,6 +199,17 @@ struct AgentHomeView: View {
     return settings
   }
 
+  private var screenAssistantRecoveryKey: String? {
+    guard scenePhase == .active,
+          !screenAssistantConversationID.isEmpty,
+          screenAssistantConversationID == store.activeAgentConversationId,
+          let startedAt = screenAssistantStartedAt else { return nil }
+    return transcriptMessages.last { message in
+      message.isMine && message.conversationId == screenAssistantConversationID &&
+        message.createdAt >= startedAt && waitingMessageIDs.contains(message.id)
+    }?.id.uuidString
+  }
+
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
@@ -211,6 +224,15 @@ struct AgentHomeView: View {
         agentComposer
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
+      .task(id: screenAssistantRecoveryKey) {
+        guard let key = screenAssistantRecoveryKey,
+              !screenAssistantRecoveryRequests.contains(key) else { return }
+        do { try await Task.sleep(nanoseconds: 90_000_000_000) }
+        catch { return }
+        guard !Task.isCancelled, screenAssistantRecoveryKey == key,
+              screenAssistantRecoveryRequests.insert(key).inserted else { return }
+        coordinator.resumePendingAgentDelivery()
+      }
       .navigationBarHidden(true)
       .background(GalaxySSIConversationFocusProbe(focused: $homeWindowFocused))
       .background(
@@ -349,6 +371,7 @@ struct AgentHomeView: View {
           }
           screenAssistantConversationID = store.activeAgentConversationId
           screenAssistantCompact = true
+          screenAssistantStartedAt = Date()
         }
       }
       .galaxySSIAgentHomePresentationRoutes(
