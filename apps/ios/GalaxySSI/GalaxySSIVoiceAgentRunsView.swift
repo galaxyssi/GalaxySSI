@@ -175,7 +175,7 @@ struct GalaxySSIAgentVoiceRunSummaryCard: View {
               .font(.system(size: 12, weight: .semibold))
               .foregroundColor(.galaxySSITextPrimary)
               .lineLimit(1)
-            Text(run.progressMessage.ifBlank(run.stage).ifBlank(stateLabel(run.state)))
+            Text(AgentPublicProgressPolicy.text(run.progressMessage).ifBlank(AgentPublicProgressPolicy.text(run.stage)).ifBlank(stateLabel(run.state)))
               .font(.system(size: 10.5))
               .foregroundColor(.galaxySSITextSecondary)
               .lineLimit(1)
@@ -288,8 +288,8 @@ private struct VoiceAgentRunRow: View {
           .foregroundColor(stateTint)
           .multilineTextAlignment(.trailing)
       }
-      if !run.progressMessage.isEmpty {
-        Text(run.progressMessage)
+      if !AgentPublicProgressPolicy.text(run.progressMessage).isEmpty {
+        Text(AgentPublicProgressPolicy.text(run.progressMessage))
           .font(.caption)
           .foregroundColor(.galaxySSITextSecondary)
           .lineLimit(2)
@@ -300,7 +300,7 @@ private struct VoiceAgentRunRow: View {
           .lineLimit(2)
       }
       HStack {
-        Text(run.stage.ifBlank(stateLabel))
+        Text(AgentPublicProgressPolicy.text(run.stage).ifBlank(stateLabel))
         Spacer()
         Text(updatedLabel)
       }
@@ -333,8 +333,8 @@ private struct VoiceAgentRunDetailView: View {
           detail(t("galaxyssi.voice_agent_runs.detail.state", "State"), stateLabel)
           detail(t("galaxyssi.voice_agent_runs.detail.agent", "Agent"), run.agentName.ifBlank(run.agentId).ifBlank("-"))
           detail(t("galaxyssi.voice_agent_runs.detail.goal", "Goal"), run.goal.ifBlank("-"))
-          detail(t("galaxyssi.voice_agent_runs.detail.stage", "Stage"), run.stage.ifBlank("-"))
-          detail(t("galaxyssi.voice_agent_runs.detail.progress", "Progress"), run.progressMessage.ifBlank("-"))
+          detail(t("galaxyssi.voice_agent_runs.detail.stage", "Stage"), AgentPublicProgressPolicy.text(run.stage).ifBlank("-"))
+          detail(t("galaxyssi.voice_agent_runs.detail.progress", "Progress"), AgentPublicProgressPolicy.text(run.progressMessage).ifBlank("-"))
           detail(t("galaxyssi.voice_agent_runs.detail.partial", "Partial result"), run.partialResult.ifBlank("-"))
           detail(t("galaxyssi.voice_agent_runs.detail.result", "Result"), run.resultSummary.ifBlank("-"))
           detail(t("galaxyssi.voice_agent_runs.detail.created", "Created"), createdLabel)

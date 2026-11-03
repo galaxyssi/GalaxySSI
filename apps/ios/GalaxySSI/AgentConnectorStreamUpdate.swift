@@ -1,6 +1,20 @@
 import Foundation
 import CryptoKit
 
+enum AgentPublicProgressPolicy {
+  static func isInternal(_ value: String) -> Bool {
+    value.contains("GALAXYSSI_RECOVERY_ACTION_V1")
+  }
+
+  static func text(_ value: String) -> String {
+    isInternal(value) ? "" : value
+  }
+
+  static func details(_ values: [String]) -> [String] {
+    values.filter { !$0.isBlank && !isInternal($0) }
+  }
+}
+
 struct AgentConnectorPublicProgress: Equatable {
   static let tracePrefix = "connector-progress:"
   var eventId: String
@@ -27,6 +41,7 @@ struct AgentConnectorPublicProgress: Equatable {
       let code = event.string("code").ifBlank(event.dictionary("metadata")?.string("code") ?? "").lowercased()
       let detail = event.string("detail").trimmingCharacters(in: .whitespacesAndNewlines)
       guard kind != "research_checkpoint", code != "heartbeat",
+            !AgentPublicProgressPolicy.isInternal(detail), !AgentPublicProgressPolicy.isInternal(event.string("title")),
             !(code == "dynamic_tool" && detail == "research_checkpoint") else { return nil }
       let text: String
       if ["narration", "reasoning", "plan"].contains(kind) || ["commentary", "reasoning_summary", "plan"].contains(code) {
@@ -52,6 +67,7 @@ struct AgentConnectorPublicProgress: Equatable {
   static func reducing(_ trace: [DeliveryTraceEvent], updates: [Self]) -> [DeliveryTraceEvent] {
     var result = trace
     for update in updates {
+      guard !AgentPublicProgressPolicy.isInternal(update.text) else { continue }
       let components = result.filter { $0.stage.hasPrefix(tracePrefix) }.map { $0.stage.split(separator: ":") }
       let floor = components.compactMap { parts -> (Int64, Int64)? in
         guard parts.count == 4, let generation = Int64(parts[1]), let sequence = Int64(parts[2]) else { return nil }

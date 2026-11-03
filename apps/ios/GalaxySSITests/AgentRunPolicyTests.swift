@@ -5,6 +5,40 @@ import CryptoKit
 
 extension GalaxySSIStoreTests {
   @MainActor
+  func testRecoveryControlSummariesAreExcludedBeforeProgressTruncation() {
+    let markers = ["[\"GALAXYSSI_RECOVERY_ACTION_V1\"]",
+      "[GALAXYSSI_RECOVERY_ACTION_V1]\n{\"action\":\"retry\"}\n[/GALAXYSSI_RECOVERY_ACTION_V1]",
+      "```json\n[\"GALAXYSSI_RECOVERY_ACTION_V1\"]\n```", "[/GALAXYSSI_RECOVERY_ACTION_V1]",
+      String(repeating: "a", count: 2_100) + "GALAXYSSI_RECOVERY_ACTION_V1"]
+    for marker in markers {
+      let event: [String: Any] = ["event_id": "summary", "kind": "reasoning", "code": "reasoning_summary", "detail": marker]
+      let envelope: [String: Any] = ["type": "agent_task_event", "task_status": "running", "execution_generation": 1,
+        "status_seq": 2, "progress_event": event, "events": [event]]
+      XCTAssertTrue(AgentConnectorPublicProgress.entries(envelope) { _, fallback in fallback }.isEmpty)
+      XCTAssertEqual(AgentPublicProgressPolicy.text(marker), "")
+      let entry = transcriptEntry("internal", text: marker, dedupeKey: "connector-event:task:REASONING_SUMMARY:summary")
+      XCTAssertTrue(AgentTranscriptPresentationPolicy.visibleProcessSegments([entry]).isEmpty)
+      let trace = AgentConnectorPublicProgress(eventId: "summary", generation: 1, sequence: 2, text: marker)
+      XCTAssertTrue(AgentConnectorPublicProgress.reducing([], updates: [trace]).isEmpty)
+    }
+  }
+
+  func testProgressPresentationDoesNotRewriteControlReplyOrNormalReasoning() throws {
+    let protocolText = "[GALAXYSSI_RECOVERY_ACTION_V1]\n{\"version\":1,\"action\":\"retry\"}\n[/GALAXYSSI_RECOVERY_ACTION_V1]"
+    let normal = "Checking the saved slides."
+    XCTAssertEqual(AgentPublicProgressPolicy.details([normal, protocolText, ""]), [normal])
+    XCTAssertEqual(AgentPublicProgressPolicy.text(normal), normal)
+    XCTAssertEqual(CodexStyleResponsePolicy.sanitizeAssistantText(protocolText), protocolText)
+    let envelope: [String: Any] = ["type": "agent_task_event", "task_status": "running", "source_message_id": UUID().uuidString,
+      "conversation_id": "conversation", "turn_id": "turn", "task_id": "task", "partial_result": ["text": protocolText, "sequence": 1]]
+    XCTAssertEqual(try XCTUnwrap(AgentConnectorStreamUpdate(payload: envelope)).content, protocolText)
+    let normalEntry = transcriptEntry("normal", text: normal, dedupeKey: "connector-event:task:REASONING_SUMMARY:normal")
+    let internalEntry = transcriptEntry("internal", text: protocolText, dedupeKey: "connector-event:task:REASONING_SUMMARY:internal")
+    XCTAssertEqual(AgentTranscriptRenderPolicy.processGroupSignatures([normalEntry]),
+      AgentTranscriptRenderPolicy.processGroupSignatures([normalEntry, internalEntry]))
+  }
+
+  @MainActor
   func testPublicConnectorProgressHidesInternalEventsAndRawCommands() {
     let events: [[String: Any]] = [
       ["event_id": "comment", "kind": "narration", "detail": "I will inspect the image."],

@@ -541,7 +541,7 @@ enum AgentTranscriptPresentationPolicy {
   }
 
   static func isUserRelevantProcessEntry(_ entry: AgentTranscriptEntry) -> Bool {
-    guard entry.role == .process else {
+    guard entry.role == .process, !AgentPublicProgressPolicy.isInternal(entry.text) else {
       return false
     }
     if isLegacyToolStepSummary(entry) || entry.dedupeKey.hasPrefix("task-watchdog:") {
