@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 extension MessageCoordinator {
   private func flushPendingOutbox() async {
+    guard !Task.isCancelled else { return }
     guard !outboxFlushInProgress else {
       outboxFlushRequested = true
       return
@@ -13,7 +14,7 @@ extension MessageCoordinator {
       if outboxFlushRequested {
         outboxFlushRequested = false
         scheduleOutboxFlush(after: 0)
-      } else {
+      } else if !Task.isCancelled {
         scheduleOutboxFlushFromStore()
       }
     }
@@ -22,6 +23,7 @@ extension MessageCoordinator {
       _ = deliveryStore.discardBlockedByAttachmentTransfers(discardedTransfers)
     }
     var activeMessageIds = await mqttClient.outstandingDurableMessageIds()
+    guard !Task.isCancelled else { return }
     handleExhaustedDeliveries(
       deliveryStore.discardExhausted(
         maxAttempts: Self.maximumOutboxDeliveryAttempts,
@@ -38,6 +40,7 @@ extension MessageCoordinator {
     guard !pending.isEmpty else { return }
     var rejectedSourceIds = Set<String>()
     for item in pending {
+      guard !Task.isCancelled else { return }
       if activeMessageIds.contains(item.messageId) { continue }
       let sourceId = item.clientSourceMessageId.ifBlank(item.messageId)
       if rejectedSourceIds.contains(sourceId) { continue }
@@ -93,8 +96,10 @@ extension MessageCoordinator {
     outboxRetryTask?.cancel()
     outboxRetryTask = Task { [weak self] in
       if delay > 0 {
-        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+        catch { return }
       }
+      guard !Task.isCancelled else { return }
       await self?.flushPendingOutbox()
     }
   }

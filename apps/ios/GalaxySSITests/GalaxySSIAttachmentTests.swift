@@ -544,6 +544,7 @@ final class GalaxySSIAttachmentTests: XCTestCase {
     )
   }
 
+  @MainActor
   func testAgentOutboundAttachmentTransferStorePreparesChunksAndAcknowledgesStoredReceipt() throws {
     let root = temporaryOutboundTransferRoot()
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
@@ -615,7 +616,29 @@ final class GalaxySSIAttachmentTests: XCTestCase {
       "contact_id": scope.contactId,
       "source_message_id": "client-message-1"
     ]
-    XCTAssertEqual(store.acknowledgeStored(payload: receipt), prepared.transferId)
+    let suite = "attachment-receipt-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let delivery = GalaxySSILinkDeliveryStore(defaults: defaults,
+      payloadStore: GalaxySSILinkOutboxPayloadStore(rootURL: root.deletingLastPathComponent().appendingPathComponent("outbox")),
+      secrets: InMemorySecretStore())
+    XCTAssertNil(store.acknowledgeStored(payload: receipt, deliveryStore: delivery))
+    XCTAssertNotNil(store.find(prepared.transferId))
+    delivery.enqueue(messageId: UUID().uuidString, topic: String(repeating: "s", count: 43), wirePayload: "{}",
+      blockedByAttachmentTransferIds: [prepared.transferId])
+    XCTAssertTrue(prepared.matchesStoredReceipt(receipt))
+    for field in ["status", "transfer_id", "sha256", "client_route_id", "conversation_id", "task_id", "turn_id", "contact_id", "source_message_id"] {
+      var invalid = receipt
+      invalid[field] = "wrong"
+      XCTAssertFalse(prepared.matchesStoredReceipt(invalid), field)
+      XCTAssertNil(store.acknowledgeStored(payload: invalid, deliveryStore: delivery), field)
+      XCTAssertNotNil(store.find(prepared.transferId), field)
+    }
+    let acknowledged = try XCTUnwrap(store.acknowledgeStored(payload: receipt, deliveryStore: delivery))
+    XCTAssertEqual(acknowledged.transferId, prepared.transferId)
+    XCTAssertEqual(acknowledged.matchedMessages, 1)
+    XCTAssertEqual(acknowledged.releasedMessages, 1)
+    XCTAssertNil(store.acknowledgeStored(payload: receipt, deliveryStore: delivery))
     XCTAssertTrue(store.pending().isEmpty)
   }
 
