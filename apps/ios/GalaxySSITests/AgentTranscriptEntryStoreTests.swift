@@ -314,6 +314,47 @@ final class AgentConversationDatabaseTests: XCTestCase {
 }
 
 final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
+  func testDesktopReplySourceDiscoveryPagesAllOutgoingRowsAndScopesDeliveredTurns() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopSourcePages-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+      secrets: InMemorySecretStore())
+    let outgoing = (0..<5).map { index in
+      ChatMessage(contactId: "hermes", content: "Request \(index)", isMine: true,
+        createdAt: Date(timeIntervalSince1970: Double(index / 2 + 1)), conversationId: "conversation", turnId: "turn-\(index)")
+    }
+    var delivered = ChatMessage(contactId: "hermes", content: "Answer", isMine: false,
+      conversationId: "conversation", turnId: "turn-1")
+    delivered.deliveryStatus = .delivered
+    var partial = delivered
+    partial.id = UUID()
+    partial.turnId = "turn-2"
+    partial.deliveryStatus = .sent
+    var foreign = delivered
+    foreign.id = UUID()
+    foreign.conversationId = "foreign"
+    foreign.turnId = "turn-3"
+    var opened = delivered
+    opened.id = UUID()
+    opened.turnId = "turn-4"
+    opened.deliveryStatus = .read
+    XCTAssertTrue(database.upsertAll(outgoing + [delivered, partial, foreign, opened]))
+    var cursor: GalaxySSIChatHistoryCursor?
+    var found: [UUID] = []
+    repeat {
+      let page = try database.desktopReplySources(before: cursor, pageSize: 2)
+      XCTAssertLessThanOrEqual(page.messages.count, 2)
+      found += page.messages.map(\.id)
+      cursor = page.nextCursor
+      if !page.hasMore { break }
+      XCTAssertNotNil(cursor)
+    } while true
+    XCTAssertEqual(found.count, outgoing.count)
+    XCTAssertEqual(Set(found), Set(outgoing.map(\.id)))
+    XCTAssertEqual(try database.deliveredDesktopReplyTurns(contactId: "hermes", conversationId: "conversation"), ["turn-1", "turn-4"])
+    XCTAssertTrue(try database.deliveredDesktopReplyTurns(contactId: "other", conversationId: "conversation").isEmpty)
+  }
+
   func testLocalDeletionIsContactScopedAndBlocksReplayAfterReopen() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("ChatDeletionTests-\(UUID().uuidString)", isDirectory: true)
