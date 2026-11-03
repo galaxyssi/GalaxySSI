@@ -1,5 +1,36 @@
 import Foundation
 
+final class AgentCompletionWorkQueue: @unchecked Sendable {
+  static let shared = AgentCompletionWorkQueue()
+  private let lock = NSLock()
+  private var pending: Set<String> = []
+  private var tail: Task<Void, Never>?
+
+  @discardableResult
+  func enqueue(runID: String, work: @escaping @Sendable () async throws -> Void) -> Bool {
+    guard !runID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+    lock.lock()
+    defer { lock.unlock() }
+    guard pending.insert(runID).inserted else { return false }
+    let previous = tail
+    tail = Task.detached(priority: .utility) { [self] in
+      await previous?.value
+      defer { finished(runID) }
+      // Learning is advisory: a failed observation must not fail the completed tool result
+      // or prevent later observations from running.
+      do { try await work() } catch { }
+    }
+    return true
+  }
+
+  private func finished(_ runID: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    pending.remove(runID)
+    if pending.isEmpty { tail = nil }
+  }
+}
+
 protocol AgentRecordedRunStoring: AnyObject {
   func runs(for conversationId: String) -> [AgentRecordedRun]
   func upsert(_ run: AgentRecordedRun)
