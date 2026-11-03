@@ -725,6 +725,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
   var sourceConversationId: String
   var sourceConversationTitle: String
   var voiceTranscript: String
+  var readOnlyAnalysis: Bool
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -742,6 +743,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     case sourceConversationId
     case sourceConversationTitle
     case voiceTranscript
+    case readOnlyAnalysis
   }
 
   init(
@@ -759,7 +761,8 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     richOutputJson: String = "",
     sourceConversationId: String = "",
     sourceConversationTitle: String = "",
-    voiceTranscript: String = ""
+    voiceTranscript: String = "",
+    readOnlyAnalysis: Bool = false
   ) {
     self.id = id
     self.contactId = contactId
@@ -776,6 +779,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     self.sourceConversationId = sourceConversationId
     self.sourceConversationTitle = sourceConversationTitle
     self.voiceTranscript = voiceTranscript
+    self.readOnlyAnalysis = readOnlyAnalysis
   }
 
   init(from decoder: Decoder) throws {
@@ -795,6 +799,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     sourceConversationId = try container.decodeIfPresent(String.self, forKey: .sourceConversationId) ?? ""
     sourceConversationTitle = try container.decodeIfPresent(String.self, forKey: .sourceConversationTitle) ?? ""
     voiceTranscript = try container.decodeIfPresent(String.self, forKey: .voiceTranscript) ?? ""
+    readOnlyAnalysis = try container.decodeIfPresent(Bool.self, forKey: .readOnlyAnalysis) ?? false
   }
 
   func encode(to encoder: Encoder) throws {
@@ -814,6 +819,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
     try container.encode(sourceConversationId, forKey: .sourceConversationId)
     try container.encode(sourceConversationTitle, forKey: .sourceConversationTitle)
     try container.encode(voiceTranscript, forKey: .voiceTranscript)
+    try container.encode(readOnlyAnalysis, forKey: .readOnlyAnalysis)
   }
 }
 

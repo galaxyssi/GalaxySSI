@@ -3,6 +3,51 @@ import XCTest
 
 final class MessageCoordinatorCloudStreamingTests: XCTestCase {
   @MainActor
+  func testReadOnlyAnalysisApprovalCannotBypassHostConstraint() throws {
+    let fixture = try makeFixture()
+    let stream = RecordingCloudConversationStream(events: [])
+    let coordinator = MessageCoordinator(store: fixture.store, cloudStreamEngine: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    let outgoing = fixture.store.appendOutgoing("Analyze", to: "hermes", readOnlyAnalysis: true)
+    let action = AgentAction(id: "handoff", kind: .callConnector, target: "remote",
+      risk: .low, status: .pendingConfirmation, description: "Handoff")
+    fixture.store.upsertAgentTask(AgentTaskRecord(taskId: outgoing.turnId, sessionId: outgoing.conversationId,
+      goal: "Analyze", phase: .waitingConfirmation, routeKind: .localSystem,
+      targetTitle: "Phone", risk: .low, blocked: false, pendingAction: action))
+    coordinator.approveLocalNativeAction(taskId: outgoing.turnId, remember: true)
+    let stopped = try XCTUnwrap(fixture.store.agentTask(id: outgoing.turnId))
+    XCTAssertEqual(stopped.phase, .blocked)
+    XCTAssertTrue(stopped.blocked)
+    XCTAssertNil(stopped.lastCompletedNativeAction)
+    XCTAssertTrue(stopped.pendingActions.isEmpty)
+    XCTAssertTrue(stream.calls.isEmpty)
+  }
+
+  @MainActor
+  func testReadOnlyAnalysisUsesOriginalTurnWhenAnotherSubmissionArrives() async throws {
+    let fixture = try makeFixture()
+    let stream = RecordingCloudConversationStream(events: [
+      .textDelta(ModelStreamTextDelta(requestId: "turn", sequence: 1, text: "Answer", receivedAtElapsedMs: 1)),
+      .completed(ModelStreamCompleted(requestId: "turn", finishReason: "stop", completedAtElapsedMs: 2))
+    ])
+    let coordinator = MessageCoordinator(store: fixture.store, cloudStreamEngine: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore())
+    var original: ChatMessage?
+    var newer: ChatMessage?
+    let sent = await coordinator.send("Analyze", to: fixture.contact, readOnlyAnalysis: true,
+      onOutgoing: { message in
+        original = message
+        newer = fixture.store.appendOutgoing("Unrelated", to: fixture.contact.id)
+      })
+    XCTAssertTrue(sent)
+    let call = try XCTUnwrap(stream.calls.last)
+    XCTAssertEqual(call.turns.last?.id, original?.id)
+    XCTAssertEqual(call.turns.last?.readOnlyAnalysis, true)
+    XCTAssertFalse(call.turns.contains { $0.id == newer?.id })
+    XCTAssertEqual(fixture.store.messages(for: fixture.contact.id).first { $0.id == original?.id }?.readOnlyAnalysis, true)
+  }
+
+  @MainActor
   func testScreenAnalysisStopTargetsOwnedTurnAndPreservesPartialOutput() async throws {
     let fixture = try makeFixture()
     let stream = RecordingCloudConversationStream(events: [])

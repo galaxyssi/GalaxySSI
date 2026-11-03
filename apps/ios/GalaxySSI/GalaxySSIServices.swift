@@ -2444,6 +2444,7 @@ final class MessageCoordinator: ObservableObject {
     voiceSessionId: String = "",
     peerMessageKind: String = "",
     peerDurationMillis: Int64 = 0,
+    readOnlyAnalysis: Bool = false,
     onOutgoing: ((ChatMessage) -> Void)? = nil
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2525,7 +2526,8 @@ final class MessageCoordinator: ObservableObject {
       to: contact.id,
       turnId: voiceSessionId,
       richOutputJson: richOutputJson,
-      messageId: outgoingMessageId
+      messageId: outgoingMessageId,
+      readOnlyAnalysis: readOnlyAnalysis
     )
     onOutgoing?(outgoing)
     guard !Task.isCancelled else { return false }
@@ -2603,7 +2605,7 @@ final class MessageCoordinator: ObservableObject {
     if contact.id == "hermes" {
       let previousSessionMessages = store.agentSessionMessages(outgoing.conversationId)
         .filter { $0.id != outgoing.id && !$0.isSystem }
-      if effectiveAttachments.isEmpty,
+      if !readOnlyAnalysis, effectiveAttachments.isEmpty,
          let command = AgentTaskControlCommand.parse(requestText),
          let localControlTarget = localAgentTaskControlTarget(for: outgoing.conversationId),
          AgentActiveTurnPolicy.hasLocalControlTarget(hasCurrentPlan: localControlTarget.planContext != nil) {
@@ -2643,7 +2645,7 @@ final class MessageCoordinator: ObservableObject {
       if clarification.mode == .askWithModel {
         requestText = attachmentClarificationGoal(effectiveAttachments)
       }
-      if taskExecutionMode != .planOnly,
+      if !readOnlyAnalysis, taskExecutionMode != .planOnly,
          let active = activeAgentTurn(for: outgoing.conversationId) {
         let decision = AgentActiveTurnPolicy.decide(
           request: originalRequestText,
@@ -2697,7 +2699,7 @@ final class MessageCoordinator: ObservableObject {
         hasUserGoal: !trimmed.isEmpty
       )
     }
-    if taskExecutionMode != .planOnly,
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
        let commandResult = AgentWorkflowRunScheduleCommandRouter.handle(displayText, store: store) {
@@ -2726,6 +2728,7 @@ final class MessageCoordinator: ObservableObject {
       return true
     }
     let workflowCommand: (text: String, actionId: String)? = {
+      guard !readOnlyAnalysis else { return nil }
       if let result = AgentWorkflowCommandRouter.handle(displayText) {
         return (result.text, result.actionId)
       }
@@ -2734,7 +2737,7 @@ final class MessageCoordinator: ObservableObject {
       }
       return nil
     }()
-    if taskExecutionMode != .planOnly,
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
        let commandResult = workflowCommand {
@@ -2757,7 +2760,7 @@ final class MessageCoordinator: ObservableObject {
       onIncomingMessage?(response)
       return true
     }
-    if taskExecutionMode != .planOnly,
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
        let commandResult = AgentWorkflowTemplateCommandRouter.handle(displayText) {
@@ -2785,7 +2788,7 @@ final class MessageCoordinator: ObservableObject {
       }
       return true
     }
-    if taskExecutionMode != .planOnly,
+    if !readOnlyAnalysis, taskExecutionMode != .planOnly,
        contact.deliveryMode == .local,
        effectiveAttachments.isEmpty,
        let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
@@ -2880,7 +2883,7 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
-      if contact.id == "hermes",
+      if !readOnlyAnalysis, contact.id == "hermes",
          let directPlan = deterministicLocalNativePlan(
           for: requestText,
           hasAttachments: !effectiveAttachments.isEmpty
@@ -2908,7 +2911,7 @@ final class MessageCoordinator: ObservableObject {
           conversationId: outgoing.conversationId,
           runtimeTarget: localProfile.displayName
         )
-        if taskExecutionMode != .planOnly,
+        if !readOnlyAnalysis, taskExecutionMode != .planOnly,
            effectiveAttachments.isEmpty,
            let commandResult = AgentLocalSkillCommandRouter.handle(
              displayText,
@@ -3515,6 +3518,8 @@ final class MessageCoordinator: ObservableObject {
           task.phase == .waitingConfirmation else {
       return
     }
+    if let outgoing = localOutgoingMessage(for: task),
+       rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return }
     // Android requires a second, explicit confirmation for high-risk actions.
     guard action.risk.weight < AgentRisk.high.weight || highRiskConfirmed else {
       return
@@ -3630,7 +3635,9 @@ final class MessageCoordinator: ObservableObject {
     let planRequest = AgentPlanRequest(
       goal: task.goal,
       screen: currentAgentScreenContext,
-      nativeTools: runtime.registry.descriptors(),
+      nativeTools: runtime.registry.descriptors().filter {
+        !outgoing.readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0)
+      },
       responseLanguage: store.languagePolicy.responseLanguage,
       completionRequirements: previousPlan?.completionRequirements
     )
@@ -4119,7 +4126,7 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
-      if executionMode != .planOnly {
+      if !outgoing.readOnlyAnalysis, executionMode != .planOnly {
         if handleDirectAgentScreenOverview(
           requestText: requestText,
           outgoing: outgoing,
@@ -4214,7 +4221,7 @@ final class MessageCoordinator: ObservableObject {
       ) {
         return
       }
-      if executionMode != .planOnly {
+      if !outgoing.readOnlyAnalysis, executionMode != .planOnly {
         if handleMatchedLocalSkill(
           requestText: requestText,
           outgoing: outgoing,
@@ -4295,7 +4302,8 @@ final class MessageCoordinator: ObservableObject {
         turnID: outgoing.turnId,
         taskID: task.taskId,
         baseSystemPrompt: localModelSystemPrompt,
-        registry: localNativeToolRuntime.registry
+        registry: localNativeToolRuntime.registry,
+        readOnlyAnalysis: outgoing.readOnlyAnalysis
       )
       let response = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
@@ -6112,7 +6120,8 @@ final class MessageCoordinator: ObservableObject {
       turnID: outgoing.turnId,
       taskID: outgoing.turnId.ifBlank(outgoing.id.uuidString),
       baseSystemPrompt: localModelSystemPrompt,
-      registry: localNativeToolRuntime.registry
+      registry: localNativeToolRuntime.registry,
+      readOnlyAnalysis: outgoing.readOnlyAnalysis
     )
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
@@ -6246,6 +6255,7 @@ final class MessageCoordinator: ObservableObject {
     task: inout AgentTaskRecord,
     executionMode: AgentTaskExecutionMode
   ) -> Bool {
+    guard !outgoing.readOnlyAnalysis else { return false }
     guard let runtime = localNativeToolRuntime else { return false }
     let request = AgentPlanRequest(
       goal: requestText,
@@ -6388,7 +6398,9 @@ final class MessageCoordinator: ObservableObject {
     let planRequest = AgentPlanRequest(
       goal: requestText,
       screen: currentAgentScreenContext,
-      nativeTools: runtime.registry.descriptors(),
+      nativeTools: runtime.registry.descriptors().filter {
+        !outgoing.readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0)
+      },
       responseLanguage: store.languagePolicy.responseLanguage,
       executionMode: executionMode,
       completionRequirements: completionRequirements
@@ -6590,6 +6602,18 @@ final class MessageCoordinator: ObservableObject {
     return String(([heading] + lines).joined(separator: "\n").prefix(3_000))
   }
 
+  private func rejectReadOnlyAnalysisAction(_ action: AgentAction, outgoing: ChatMessage,
+                                            task: inout AgentTaskRecord) -> Bool {
+    guard outgoing.readOnlyAnalysis else { return false }
+    let descriptor = action.kind == .callNativeTool
+      ? localNativeToolRuntime?.registry.lookup(action.parameters["tool_id"] ?? action.target)?.descriptor : nil
+    guard !AgentScreenAnalysisToolPolicy.allows(action, descriptor: descriptor) else { return false }
+    markLocalNativeActionBlocked(action: action, outgoing: outgoing, task: &task,
+      reason: localizedReply("galaxyssi.screen_assistant.read_only",
+        fallback: "Screen analysis is read-only and cannot execute this action."))
+    return true
+  }
+
   private func applyLocalNativeActions(
     actions: [AgentAction],
     outgoing: ChatMessage,
@@ -6603,6 +6627,9 @@ final class MessageCoordinator: ObservableObject {
       $0.kind == .callNativeTool || $0.kind == .callConnector
     }
     guard !nativeActions.isEmpty else { return false }
+    for action in nativeActions {
+      if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
+    }
     if var plan {
       let versionedById = Dictionary(versionedActions.map { ($0.id, $0) }) { _, latest in latest }
       plan.actions = plan.actions.map {
@@ -6683,6 +6710,9 @@ final class MessageCoordinator: ObservableObject {
           task.phase == .executing,
           let runtime = localNativeToolRuntime else {
       return
+    }
+    for action in actions {
+      if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return }
     }
     let selectedIds = Set(actions.map(\.id))
     task.pendingActions.removeAll { selectedIds.contains($0.id) }
@@ -7005,6 +7035,7 @@ final class MessageCoordinator: ObservableObject {
       task.pendingActions = [action]
     }
     task.pendingAction = action
+    if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
     task.risk = action.risk
     if action.risk == .blocked {
       markLocalNativeActionBlocked(
@@ -7091,6 +7122,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
+    if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return true }
     guard let runtime = localNativeToolRuntime else { return false }
     let screen = currentAgentScreenContext
     let rollbackAction = AgentExecutionContinuity
@@ -8010,6 +8042,16 @@ final class MessageCoordinator: ObservableObject {
     modelDetail: String,
     displayContactId: String
   ) async throws {
+    var scopedTurns = turns
+    if outgoing.readOnlyAnalysis {
+      guard let index = turns.firstIndex(where: { $0.id == outgoing.id && $0.isMine &&
+        $0.conversationId == outgoing.conversationId && $0.turnId == outgoing.turnId }) else {
+        throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.screen_assistant.original_request_missing",
+          fallback: "The original read-only analysis request is unavailable."))
+      }
+      scopedTurns = Array(turns.prefix(through: index))
+      scopedTurns[index].readOnlyAnalysis = true
+    }
     let requestId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let destinationId = displayContactId.ifBlank(contact.id)
     var accumulated = ""
@@ -8019,7 +8061,7 @@ final class MessageCoordinator: ObservableObject {
     for try await event in cloudStreamEngine.streamConversation(
       contact: contact,
       store: store,
-      turns: turns,
+      turns: scopedTurns,
       images: images,
       requestId: requestId
     ) {

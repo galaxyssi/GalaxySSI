@@ -11,6 +11,7 @@ struct CloudConversationToolExecutionContext: Equatable {
   var conversationId: String
   var turnId: String
   var images: [CloudImagePayload] = []
+  var readOnlyAnalysis = false
 }
 
 struct CloudConversationToolExecutor: CloudConversationToolExecuting {
@@ -273,7 +274,8 @@ struct CloudWebGroundingToolExecutor: CloudConversationToolExecuting {
       provider: provider,
       name: call.name,
       arguments: arguments,
-      context: invocationContext
+      context: invocationContext,
+      readOnlyAnalysis: context.readOnlyAnalysis
     )
   }
 }

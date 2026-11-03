@@ -4841,6 +4841,8 @@
 "galaxyssi.screen_assistant.processing" = "处理中";
 "galaxyssi.screen_assistant.attention" = "需要处理";
 "galaxyssi.screen_assistant.stop" = "停止分析";
+"galaxyssi.screen_assistant.read_only" = "屏幕分析为只读，不能执行此操作。";
+"galaxyssi.screen_assistant.original_request_missing" = "原始只读分析请求不可用。";
 "galaxyssi.screen_assistant.stopped" = "分析已停止，已保留部分输出。";
 "galaxyssi.screen_assistant.stop_failed" = "本地分析已停止，但未能确认远端取消请求已发送。";
 "galaxyssi.screen_assistant.reset_crop" = "重置裁剪";
