@@ -269,10 +269,11 @@ enum AgentSavedTeamReplyPolicy {
   static func apply(to saved: AgentTeamExecutionSnapshot, source: String, conversation: String,
                     turn: String, task: String, contact: String, content: String,
                     success: Bool, now: Int64) -> AgentTeamExecutionSnapshot? {
-    guard !saved.state.isTerminal, !source.isEmpty,
+    guard (!saved.state.isTerminal || saved.state == .interrupted), !source.isEmpty,
           saved.conversationId == conversation, saved.taskId == turn, task == source,
           let index = saved.members.firstIndex(where: {
-            $0.sourceMessageId == source && $0.agentId == contact && !$0.status.isTerminal
+            $0.sourceMessageId == source && $0.agentId == contact &&
+              (!$0.status.isTerminal || (saved.state == .interrupted && $0.status == .interrupted))
           }),
           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             (success && saved.members[index].deliveryMode == .observe) else { return nil }
@@ -284,7 +285,7 @@ enum AgentSavedTeamReplyPolicy {
     result.updatedAtMillis = max(saved.updatedAtMillis, now)
     if result.members[index].memberId == saved.primaryMemberId && !success {
       result.state = .failed
-    } else if result.members.allSatisfy({ $0.status.isTerminal }),
+    } else if result.members.allSatisfy({ $0.status.isTerminal && $0.status != .interrupted }),
        let primary = result.members.first(where: { $0.memberId == saved.primaryMemberId }) {
       result.finalOutput = primary.output
       if primary.status == .succeeded && !primary.output.isEmpty {

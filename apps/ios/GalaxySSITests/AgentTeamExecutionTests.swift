@@ -133,6 +133,36 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(completed.finalOutput, "Answer")
   }
 
+  func testInterruptedTeamAcceptsOnlyOriginalLateResultsWithoutReplacingFinalStates() throws {
+    let saved = AgentTeamExecutionSnapshot(supervisorRunId: "original", teamId: "team",
+      conversationId: "conversation", taskId: "turn", primaryAgentId: "lead", state: .interrupted,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond,
+          status: .interrupted, sourceMessageId: "primary"),
+        AgentTeamMemberSnapshot(agentId: "reviewer", deliveryMode: .observe,
+          status: .interrupted, sourceMessageId: "observer")
+      ])
+    XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: saved, source: "replacement",
+      conversation: "conversation", turn: "turn", task: "replacement", contact: "lead",
+      content: "Foreign", success: true, now: 1))
+    let primary = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: saved, source: "primary",
+      conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+      content: "Original answer", success: true, now: 2))
+    XCTAssertEqual(primary.state, .interrupted)
+    let completed = try XCTUnwrap(AgentSavedTeamReplyPolicy.apply(to: primary, source: "observer",
+      conversation: "conversation", turn: "turn", task: "observer", contact: "reviewer",
+      content: "Observation", success: true, now: 3))
+    XCTAssertEqual(completed.state, .succeeded)
+    XCTAssertEqual(completed.finalOutput, "Original answer")
+    for state in [AgentTeamExecutionState.cancelled, .failed, .succeeded, .completedWithFailures] {
+      var terminal = saved
+      terminal.state = state
+      XCTAssertNil(AgentSavedTeamReplyPolicy.apply(to: terminal, source: "primary",
+        conversation: "conversation", turn: "turn", task: "primary", contact: "lead",
+        content: "Late overwrite", success: true, now: 4))
+    }
+  }
+
   func testSavedTeamReplyRequiresOriginalIdentityAndPreservesTerminalOutcome() throws {
     let saved = AgentTeamExecutionSnapshot(supervisorRunId: "team-run", teamId: "team",
       conversationId: "conversation", taskId: "turn", primaryAgentId: "agent", state: .running,
