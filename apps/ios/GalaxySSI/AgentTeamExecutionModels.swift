@@ -216,6 +216,37 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
 }
 
 enum AgentSavedTeamReplyPolicy {
+  static func settleParent(_ parent: AgentTaskRecord, saved: AgentTeamExecutionSnapshot,
+                           failureText: String, now: Int64) -> AgentTaskRecord? {
+    guard saved.state.deliverable, parent.result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          parent.phase == .waitingResponse || (parent.phase == .paused && parent.teamRecoveryRunId == saved.supervisorRunId),
+          parent.taskId == saved.taskId, parent.sessionId == saved.conversationId,
+          saved.createdAtMillis >= parent.createdAtMillis,
+          var plan = parent.activePlan, plan.actions.count == 1,
+          plan.actions[0].kind == .callConnector,
+          let spec = AgentTeamDispatchSpecCodec.decode(plan.actions[0].parameters[agentTeamSpecParameter] ?? ""),
+          spec.supervisorRunId == saved.supervisorRunId, spec.definition.teamId == saved.teamId,
+          spec.definition.primaryMemberId == saved.primaryMemberId,
+          spec.definition.members.count == saved.members.count,
+          spec.definition.members.allSatisfy({ expected in
+            saved.members.contains { $0.memberId == expected.memberId && $0.agentId == expected.agentId }
+          }) else { return nil }
+    let success = [.succeeded, .completedWithFailures].contains(saved.state) && !saved.finalOutput.isEmpty
+    var result = parent
+    result.phase = saved.state == .cancelled ? .cancelled : (success ? .completed : .failed)
+    result.result = success ? saved.finalOutput : failureText
+    result.blocked = false
+    result.teamRecoveryRunId = nil
+    result.pendingAction = nil
+    result.pendingActions = []
+    plan.actions[0].status = success ? .completed : .failed
+    plan.actions[0].result = result.result
+    result.activePlan = plan
+    result.planContext = AgentTaskPlanContext(plan: plan)
+    result.updatedAtMillis = max(now, parent.updatedAtMillis)
+    return result
+  }
+
   static func apply(to saved: AgentTeamExecutionSnapshot, source: String, conversation: String,
                     turn: String, task: String, contact: String, content: String,
                     success: Bool, now: Int64) -> AgentTeamExecutionSnapshot? {

@@ -806,6 +806,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func refreshAgentHomeState() {
+    reconcileSavedTeamParents()
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
     downloadCompletionCoordinator.deliverPendingCompletions()
@@ -5990,6 +5991,18 @@ final class MessageCoordinator: ObservableObject {
     return text
   }
 
+  private func reconcileSavedTeamParents() {
+    for saved in AgentTeamExecutionHistoryStore.shared.recent(AgentTeamExecutionHistoryStore.maxSnapshots)
+      where saved.state.deliverable {
+      guard let session = store.agentSession(id: saved.conversationId), !session.privateMode, !session.trackingPaused,
+            let parent = store.agentTask(id: saved.taskId),
+            let updated = AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved,
+              failureText: localizedReply("galaxyssi.team.recovery.failed", fallback: "The original Agent team did not complete successfully."),
+              now: AgentControlPlaneClock.nowMillis()) else { continue }
+      store.upsertAgentTask(updated)
+    }
+  }
+
   private func persistTeamMemberFailure(_ error: String, member: AgentTeamMember,
                                         spec: AgentTeamDispatchSpec, outgoing: ChatMessage) {
     guard let session = store.agentSession(id: outgoing.conversationId),
@@ -6001,7 +6014,7 @@ final class MessageCoordinator: ObservableObject {
             task: binding.sourceMessageId, contact: member.agentId,
             content: error.ifBlank("Agent team member failed"), success: false,
             now: AgentControlPlaneClock.nowMillis()) else { return }
-    AgentTeamExecutionHistoryStore.shared.upsert(updated)
+    if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
   }
 
   private func persistSynchronousTeamPrimary(member: AgentTeamMember, spec: AgentTeamDispatchSpec,
@@ -6021,7 +6034,7 @@ final class MessageCoordinator: ObservableObject {
             conversation: outgoing.conversationId, turn: turn, task: binding.sourceMessageId,
             contact: member.agentId, content: reply.content, success: true,
             now: AgentControlPlaneClock.nowMillis()) else { return }
-    AgentTeamExecutionHistoryStore.shared.upsert(updated)
+    if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
   }
 
   private func persistTeamObservation(
@@ -10220,7 +10233,7 @@ final class MessageCoordinator: ObservableObject {
           source: appPayload.string("source_message_id"), conversation: responseConversationId,
           turn: responseTurnId, task: responseTaskId, contact: contactId, content: content,
           success: !AgentRemoteOutcomePolicy.isFailure(remoteTaskStatus), now: AgentControlPlaneClock.nowMillis()) {
-          AgentTeamExecutionHistoryStore.shared.upsert(updated)
+          if AgentTeamExecutionHistoryStore.shared.upsert(updated) { reconcileSavedTeamParents() }
         }
       }
     }

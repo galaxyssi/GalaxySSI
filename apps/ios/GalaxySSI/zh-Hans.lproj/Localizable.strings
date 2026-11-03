@@ -4827,3 +4827,4 @@
 "galaxyssi.team.recovery.cancelled" = "原智能体团队已取消";
 "galaxyssi.team.recovery.waiting" = "正在等待原智能体团队结果的验证";
 "galaxyssi.team.recovery.missing" = "原智能体团队不可用，正在等待，不会重新派发";
+"galaxyssi.team.recovery.failed" = "原智能体团队未能成功完成任务。";
