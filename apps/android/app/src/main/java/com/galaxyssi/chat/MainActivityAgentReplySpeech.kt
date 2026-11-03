@@ -11,6 +11,11 @@ import com.galaxyssi.chat.voice.tts.TtsCancelReason
 import com.galaxyssi.chat.voice.tts.TtsChunkSchedulerCallbacks
 import java.util.WeakHashMap
 
+internal interface AgentReplySpeechRow {
+    val replySpeechEntryId: String
+    fun refreshReplySpeechFooter()
+}
+
 private object AgentReplySpeechRuntime {
     private val controllers = WeakHashMap<MainActivity, AgentReplySpeechController>()
 
@@ -35,15 +40,27 @@ internal fun MainActivity.decorateAgentReplySpeech(
     entry: AgentTranscriptEntry,
     content: View
 ): View {
-    val footer = agentReplySpeechFooter(entry, content = content) ?: return content
-    return LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        addView(content)
-        addView(footer)
+    if (AgentReplySpeechPresentationPolicy.target(entry) == null) return content
+    val activity = this
+    return object : LinearLayout(activity), AgentReplySpeechRow {
+        private var footer: View? = null
+        override val replySpeechEntryId: String get() = entry.id
+
+        init {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(content)
+            refreshReplySpeechFooter()
+        }
+
+        override fun refreshReplySpeechFooter() {
+            val next = activity.agentReplySpeechFooter(entry, footer, content)
+            if (next !== footer) {
+                footer?.let(::removeView)
+                next?.let(::addView)
+                footer = next
+            }
+        }
     }
 }
 
@@ -152,10 +169,20 @@ private fun MainActivity.startBackgroundReply(selection: VoiceReplySelection) {
 
 internal fun MainActivity.notifyAgentReplySpeechRows(entryIds: Collection<String>) {
     if (!isAgentTranscriptAdapterInitialized()) return
-    entryIds.distinct().forEach { entryId ->
-        agentTranscriptAdapter.indexOfEntry(entryId)
-            .takeIf { it >= 0 }
-            ?.let(agentTranscriptAdapter::notifyItemChanged)
+    val changed = entryIds.toSet()
+    if (changed.isEmpty()) return
+    for (index in 0 until agentOutputList.childCount) {
+        refreshAgentReplySpeechViews(agentOutputList.getChildAt(index), changed)
+    }
+}
+
+internal fun MainActivity.refreshAgentReplySpeechViews(view: View, entryIds: Set<String>? = null) {
+    if (view is AgentReplySpeechRow) {
+        if (entryIds == null || view.replySpeechEntryId in entryIds) view.refreshReplySpeechFooter()
+        return
+    }
+    if (view is ViewGroup) for (index in 0 until view.childCount) {
+        refreshAgentReplySpeechViews(view.getChildAt(index), entryIds)
     }
 }
 

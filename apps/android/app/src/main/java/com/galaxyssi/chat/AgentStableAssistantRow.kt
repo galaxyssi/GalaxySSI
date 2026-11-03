@@ -8,7 +8,8 @@ import android.widget.LinearLayout
 internal class AgentStableAssistantRow(
     private val activity: MainActivity,
     private var entry: AgentTranscriptEntry
-) : LinearLayout(activity) {
+) : LinearLayout(activity), AgentReplySpeechRow {
+    override val replySpeechEntryId: String get() = entry.id
     private val content = activity.agentAssistantRichContent(entry, entry)
     private val footer = LinearLayout(activity).apply { orientation = VERTICAL }
     private var speechFooter: View? = null
@@ -18,18 +19,18 @@ internal class AgentStableAssistantRow(
         layoutParams = LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         addView(content)
         addView(footer, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        refreshFooter()
+        refreshReplySpeechFooter()
     }
 
     fun bind(next: AgentTranscriptEntry): Boolean {
         if (!supports(next) || !AgentTranscriptRenderPolicy.sameItem(entry, next) ||
             !activity.updateAgentAssistantRichContent(content, next)) return false
         entry = next
-        refreshFooter()
+        refreshReplySpeechFooter()
         return true
     }
 
-    private fun refreshFooter() {
+    override fun refreshReplySpeechFooter() {
         val speech = activity.agentReplySpeechFooter(entry, speechFooter, content)
         if (speech !== speechFooter) {
             speechFooter?.let(footer::removeView)
