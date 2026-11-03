@@ -73,6 +73,18 @@ struct AgentPreparedOutboundAttachment: Equatable {
   fileprivate var chunkDirectoryURL: URL
   fileprivate var cipher: any GalaxySSILocalAttachmentStoring
 
+  func matchesStoredReceipt(_ payload: [String: Any]) -> Bool {
+    guard payload.string("status") == "stored",
+          payload.string("transfer_id").lowercased() == transferId,
+          payload.string("sha256").lowercased() == sha256,
+          payload.string("client_route_id") == scope.clientRouteId,
+          payload.string("conversation_id") == scope.conversationId,
+          payload.string("task_id") == scope.taskId,
+          payload.string("turn_id") == scope.turnId,
+          payload.string("contact_id") == scope.contactId else { return false }
+    return scope.clientMessageId.map { payload.string("source_message_id") == $0 } ?? true
+  }
+
   func descriptor() -> [String: Any] {
     [
       "id": attachmentId,
@@ -426,18 +438,7 @@ final class AgentOutboundAttachmentTransferStore {
   @MainActor
   func acknowledgeStored(payload: [String: Any], deliveryStore: GalaxySSILinkDeliveryStore) -> StoredAcknowledgement? {
     let transferId = payload.string("transfer_id").lowercased()
-    guard payload.string("status") == "stored",
-          let transfer = find(transferId),
-          payload.string("sha256").lowercased() == transfer.sha256,
-          payload.string("client_route_id") == transfer.scope.clientRouteId,
-          payload.string("conversation_id") == transfer.scope.conversationId,
-          payload.string("task_id") == transfer.scope.taskId,
-          payload.string("turn_id") == transfer.scope.turnId,
-          payload.string("contact_id") == transfer.scope.contactId else {
-      return nil
-    }
-    if let clientMessageId = transfer.scope.clientMessageId,
-       payload.string("source_message_id") != clientMessageId {
+    guard let transfer = find(transferId), transfer.matchesStoredReceipt(payload) else {
       return nil
     }
     let release = deliveryStore.releaseAttachmentDependencyResult(transfer.transferId)

@@ -26,7 +26,10 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
   private let stateKey = "galaxyssi-ios-libsignal-state-v1"
   private let encryptionKeyAccount = "signal.libsignal.state.aes256"
   private let context = GalaxySSISignalStoreContext()
-  private let lock = NSLock()
+  private let lock = NSRecursiveLock()
+  private var journal: MqttSignalStateJournal?
+  private var committedState: Data?
+  private var inTransaction = false
   private var state: State
   let identityKeyPair: IdentityKeyPair
   let registrationId: UInt32
@@ -77,6 +80,63 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
 
   func identityKeyPair(context: StoreContext) throws -> IdentityKeyPair { identityKeyPair }
 
+  init(journal: MqttSignalStateJournal, defaults: UserDefaults = .standard,
+       secrets: GalaxySSISecretStore = KeychainSecretStore.shared) throws {
+    self.defaults = defaults
+    self.secrets = secrets
+    self.journal = journal
+    let saved = try journal.load()
+    let restored: State
+    if let saved {
+      restored = try JSONDecoder().decode(State.self, from: saved)
+    } else if defaults.object(forKey: stateKey) != nil {
+      guard let legacy = Self.loadState(defaults: defaults, secrets: secrets,
+        stateKey: stateKey, encryptionKeyAccount: encryptionKeyAccount) else { throw MqttChunkStorageError.corruptState }
+      restored = legacy
+    } else {
+      let pair = IdentityKeyPair.generate()
+      restored = State(identityKeyPair: pair.serialize(), registrationId: UInt32.random(in: 1..<16_384),
+        identities: [:], preKeys: [:], activePreKeyId: nil, signedPreKeys: [:], kyberPreKeys: [:],
+        sessions: [:], senderKeys: [:], usedKyberKeys: [])
+    }
+    guard (1..<16_384).contains(restored.registrationId) else { throw MqttChunkStorageError.corruptState }
+    identityKeyPair = try IdentityKeyPair(bytes: restored.identityKeyPair)
+    registrationId = restored.registrationId
+    state = restored
+    committedState = saved
+    try transaction { _ in try ensurePreKeyMaterial(newIdentity: saved == nil && defaults.object(forKey: stateKey) == nil) }
+  }
+
+  // Libsignal callbacks run synchronously while the recursive lock is held. SQL failure restores all
+  // in-memory ratchets, identities and consumed pre-keys before another operation can observe them.
+  @discardableResult
+  func transaction<T>(_ operation: (MqttChunkDatabase.Transaction?) throws -> T) throws -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let journal else { return try operation(nil) }
+    guard !inTransaction else { throw MqttChunkStorageError.databaseFailure }
+    let previous = state
+    inTransaction = true
+    defer { inTransaction = false }
+    do {
+      let (result, saved) = try journal.commit(expected: committedState) { token in
+        let result = try operation(token)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return (result, try encoder.encode(state))
+      }
+      committedState = saved
+      return result
+    } catch {
+      state = previous
+      throw error
+    }
+  }
+
+  private func requireMutationContext() throws {
+    guard journal == nil || inTransaction else { throw MqttChunkStorageError.databaseFailure }
+  }
+
   func localRegistrationId(context: StoreContext) throws -> UInt32 { registrationId }
 
   func saveIdentity(
@@ -87,6 +147,7 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
     lock.lock()
     defer { lock.unlock() }
     let key = addressKey(address)
+    try requireMutationContext()
     let encoded = identity.serialize()
     let previous = state.identities.updateValue(encoded, forKey: key)
     persistLocked()
@@ -123,16 +184,18 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
 
   func storePreKey(_ record: PreKeyRecord, id: UInt32, context: StoreContext) throws {
     lock.lock()
+    defer { lock.unlock() }
+    try requireMutationContext()
     state.preKeys[String(id)] = record.serialize()
     persistLocked()
-    lock.unlock()
   }
 
   func removePreKey(id: UInt32, context: StoreContext) throws {
     lock.lock()
+    defer { lock.unlock() }
+    try requireMutationContext()
     state.preKeys.removeValue(forKey: String(id))
     persistLocked()
-    lock.unlock()
   }
 
   func loadSignedPreKey(id: UInt32, context: StoreContext) throws -> SignedPreKeyRecord {
@@ -145,9 +208,10 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
 
   func storeSignedPreKey(_ record: SignedPreKeyRecord, id: UInt32, context: StoreContext) throws {
     lock.lock()
+    defer { lock.unlock() }
+    try requireMutationContext()
     state.signedPreKeys[String(id)] = record.serialize()
     persistLocked()
-    lock.unlock()
   }
 
   func loadKyberPreKey(id: UInt32, context: StoreContext) throws -> KyberPreKeyRecord {
@@ -160,9 +224,10 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
 
   func storeKyberPreKey(_ record: KyberPreKeyRecord, id: UInt32, context: StoreContext) throws {
     lock.lock()
+    defer { lock.unlock() }
+    try requireMutationContext()
     state.kyberPreKeys[String(id)] = record.serialize()
     persistLocked()
-    lock.unlock()
   }
 
   func markKyberPreKeyUsed(
@@ -174,6 +239,7 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
     lock.lock()
     defer { lock.unlock() }
     let key = "\(id)|\(signedPreKeyId)|\(baseKey.serialize().base64EncodedString())"
+    try requireMutationContext()
     guard !state.usedKyberKeys.contains(key) else {
       throw SignalError.invalidMessage("reused Kyber base key")
     }
@@ -199,9 +265,10 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
 
   func storeSession(_ record: SessionRecord, for address: ProtocolAddress, context: StoreContext) throws {
     lock.lock()
+    defer { lock.unlock() }
+    try requireMutationContext()
     state.sessions[addressKey(address)] = record.serialize()
     persistLocked()
-    lock.unlock()
   }
 
   func storeSenderKey(
@@ -211,9 +278,10 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
     context: StoreContext
   ) throws {
     lock.lock()
+    defer { lock.unlock() }
+    try requireMutationContext()
     state.senderKeys[senderKey(sender, distributionId)] = record.serialize()
     persistLocked()
-    lock.unlock()
   }
 
   func loadSenderKey(
@@ -233,31 +301,34 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
     return state.sessions["\(name)|\(deviceId)"] != nil
   }
 
-  func removeSession(name: String, deviceId: UInt32) {
+  func removeSession(name: String, deviceId: UInt32) throws {
     let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanName.isEmpty else { return }
     lock.lock()
+    defer { lock.unlock() }
+    try requireMutationContext()
     state.sessions.removeValue(forKey: "\(cleanName)|\(deviceId)")
     persistLocked()
-    lock.unlock()
   }
 
-  func removeRemote(name: String) {
+  func removeRemote(name: String) throws {
     let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanName.isEmpty else { return }
     let prefix = "\(cleanName)|"
     lock.lock()
+    defer { lock.unlock() }
+    try requireMutationContext()
     state.identities.removeAll { $0.key.hasPrefix(prefix) }
     state.sessions.removeAll { $0.key.hasPrefix(prefix) }
     state.senderKeys.removeAll { $0.key.hasPrefix(prefix) }
     persistLocked()
-    lock.unlock()
   }
 
   @discardableResult
   func ensurePreKeyMaterial(newIdentity: Bool = false) throws -> UInt32 {
     lock.lock()
     defer { lock.unlock() }
+    try requireMutationContext()
 
     let validPreKeyIds = state.preKeys.compactMap { key, value -> UInt32? in
       guard let id = UInt32(key), Self.validPreKeyId(id),
@@ -325,6 +396,7 @@ final class GalaxySSISignalProtocolStore: IdentityKeyStore, PreKeyStore, SignedP
   }
 
   private func persistLocked() {
+    if journal != nil { return }
     guard let encoded = try? JSONEncoder().encode(state),
           let key = encryptionKey(),
           let sealed = try? AES.GCM.seal(encoded, using: key, authenticating: Data(stateKey.utf8)),

@@ -69,4 +69,42 @@ class VoiceReplySelectionTest {
         assertEquals(0, queue.checkpoint.offset)
         assertEquals("news", queue.articleId)
     }
+
+    @Test fun richProseAfterLargeAnimationCodeIsStillSpokenInOrder() {
+        val first = "第一段介绍。"
+        val last = "动画后的第二段。"
+        val source = "$first\n\n```galaxyssi-html\n<html><script>" + "x".repeat(40_000) +
+            "</script></html>\n```\n\n$last"
+        val rich = AgentRichContentCodec.encode(listOf(
+            AgentRichBlock("before", AgentRichBlockType.TEXT, text = first),
+            AgentRichBlock("animation", AgentRichBlockType.FILE, title = "animation.html", mimeType = "text/html",
+                uri = "content://fixture/animation"),
+            AgentRichBlock("after", AgentRichBlockType.TEXT, text = last)))
+        val reply = entry(source).copy(richOutputJson = rich)
+        assertEquals("$first $last", VoiceReplySelection("conversation", "reply").text(reply))
+        val selected = VoiceReplySelection.fromParagraph(reply, last, 0)!!
+        assertEquals(last, selected.text(reply)!!.substring(selected.offset))
+        val target = AgentReplySpeechPresentationPolicy.target(reply)!!
+        assertEquals(listOf(first, last), AgentReplySpeechController().toggle(target).chunks.map { it.speechText })
+        val attachmentOnly = reply.copy(richOutputJson = AgentRichContentCodec.encode(
+            AgentRichContentCodec.decode(rich).filter { it.type == AgentRichBlockType.FILE }))
+        assertEquals("$first $last", VoiceReplySelection("conversation", "reply").text(attachmentOnly))
+    }
+
+    @Test fun legacyHtmlAndImagesDoNotHideTheFollowingParagraphs() {
+        val reply = entry("开头。\n\n```html\n<html>" + "x".repeat(40_000) +
+            "</html>\n```\n\n![图片](https://example.com/image.png)\n\n结尾。")
+        assertEquals("开头。 结尾。", VoiceReplySelection("conversation", "reply").text(reply))
+    }
+
+    @Test fun renderedListsAndDividersMapToTheFullSpokenReply() {
+        val reply = entry().copy(richOutputJson = AgentRichContentCodec.encode(listOf(
+            AgentRichBlock("first", AgentRichBlockType.TEXT, text = "第一段。"),
+            AgentRichBlock("list", AgentRichBlockType.LIST, rows = listOf(
+                listOf("bullet", "第二段。"), listOf("checked", "第三段。"))),
+            AgentRichBlock("last", AgentRichBlockType.TEXT, text = "结尾。"))))
+        val rendered = "第一段。\n\n• 第二段。\n✓ 第三段。\n\n────────\n\n结尾。"
+        val selection = VoiceReplySelection.fromParagraph(reply, rendered, rendered.indexOf("✓"))!!
+        assertEquals("第三段。 结尾。", selection.text(reply)!!.substring(selection.offset))
+    }
 }

@@ -339,7 +339,7 @@ object SpeechTextNormalizer {
     private val unixPath = Regex("(?<![A-Za-z0-9])/(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+")
     private val htmlTag = Regex("<[^>]*(?:>|$)")
     private val longNumber = Regex("(?<!\\d)\\d{10,}(?!\\d)")
-    private val markdownPrefix = Regex("(?m)^\\s{0,3}(?:#{1,6}\\s+|[-*+]\\s+|\\d+[.)]\\s+|>\\s*)")
+    private val markdownPrefix = Regex("(?m)^\\s{0,3}(?:#{1,6}\\s+|[-*+\\u2022\\u2713\\u25CB]\\s+|\\d+[.)]\\s+|>\\s*)")
     private val markdownDecoration = Regex("(?:\\*\\*|__|~~|(?<!\\*)\\*(?!\\*)|(?<!_)_(?!_))")
     private val whitespace = Regex("\\s+")
 
@@ -354,11 +354,12 @@ object SpeechTextNormalizer {
         value = windowsPath.replace(value, " ")
         value = unixPath.replace(value, " ")
         value = removeStructuredValues(value)
+        value = markdownPrefix.replace(value, "")
         value = value.lineSequence()
             .filterNot(::isMarkdownTableLine)
+            .filterNot { line -> line.isNotBlank() && line.trim().all { it == '\u2500' || it == '\u2501' } }
             .joinToString(" ")
         value = htmlTag.replace(value, " ")
-        value = markdownPrefix.replace(value, "")
         value = markdownDecoration.replace(value, "")
         value = longNumber.replace(value, " ")
         return whitespace.replace(value, " ").trim(' ', '-', ':', '\uFF1A', ',', '\uFF0C')

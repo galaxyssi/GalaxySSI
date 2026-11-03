@@ -15,6 +15,7 @@ final class GalaxySSISignalEngine {
   static let isAvailable = true
 
   private let store: GalaxySSISignalProtocolStore
+  private var journal: MqttSignalStateJournal?
   private let context = GalaxySSISignalStoreContext()
   private let localName: String
   private let localDeviceId: UInt32 = 1
@@ -38,6 +39,14 @@ final class GalaxySSISignalEngine {
       publicKey: identityKey.base64EncodedString(),
       bundle: localBundle()
     )
+  }
+
+  init(profileName: String, journal: MqttSignalStateJournal, defaults: UserDefaults = .standard,
+       secrets: GalaxySSISecretStore = KeychainSecretStore.shared) throws {
+    store = try GalaxySSISignalProtocolStore(journal: journal, defaults: defaults, secrets: secrets)
+    self.journal = journal
+    let fingerprint = Self.sha256(store.identityKeyPair.publicKey.serialize())
+    localName = "galaxyssi:\(fingerprint.prefix(16))"
   }
 
   func signContactCard(_ payload: Data) -> String? {
@@ -69,13 +78,17 @@ final class GalaxySSISignalEngine {
   }
 
   func localBundle() -> [String: Any]? {
-    guard let preKeyId = try? store.ensurePreKeyMaterial(),
-          let preKey = try? store.loadPreKey(id: preKeyId, context: context),
-          let signedPreKey = try? store.loadSignedPreKey(id: 1, context: context),
-          let kyberPreKey = try? store.loadKyberPreKey(id: 1, context: context),
-          let preKeyPublic = try? preKey.publicKey(),
-          let signedPreKeyPublic = try? signedPreKey.publicKey(),
-          let kyberPreKeyPublic = try? kyberPreKey.publicKey() else { return nil }
+    try? store.transaction { _ in try makeLocalBundle() }
+  }
+
+  private func makeLocalBundle() throws -> [String: Any] {
+    let preKeyId = try store.ensurePreKeyMaterial()
+    let preKey = try store.loadPreKey(id: preKeyId, context: context)
+    let signedPreKey = try store.loadSignedPreKey(id: 1, context: context)
+    let kyberPreKey = try store.loadKyberPreKey(id: 1, context: context)
+    let preKeyPublic = try preKey.publicKey()
+    let signedPreKeyPublic = try signedPreKey.publicKey()
+    let kyberPreKeyPublic = try kyberPreKey.publicKey()
     let identityKey = store.identityKeyPair.publicKey.serialize()
     return [
       "version": 1,
@@ -120,19 +133,21 @@ final class GalaxySSISignalEngine {
       )
       let address = try ProtocolAddress(name: name, deviceId: deviceId)
       let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
-      if !replaceExisting, store.containsSession(name: name, deviceId: deviceId) { return true }
-      if replaceExisting {
-        store.removeSession(name: name, deviceId: deviceId)
+      return try store.transaction { _ in
+        if !replaceExisting, store.containsSession(name: name, deviceId: deviceId) { return true }
+        if replaceExisting {
+          try store.removeSession(name: name, deviceId: deviceId)
+        }
+        try processPreKeyBundle(
+          bundle,
+          for: address,
+          ourAddress: localAddress,
+          sessionStore: store,
+          identityStore: store,
+          context: context
+        )
+        return true
       }
-      try processPreKeyBundle(
-        bundle,
-        for: address,
-        ourAddress: localAddress,
-        sessionStore: store,
-        identityStore: store,
-        context: context
-      )
-      return true
     } catch {
       return false
     }
@@ -175,76 +190,194 @@ final class GalaxySSISignalEngine {
     store.containsSession(name: remoteName, deviceId: deviceId)
   }
 
-  func forgetRemote(remoteName: String) {
-    store.removeRemote(name: remoteName)
+  @discardableResult
+  func forgetRemote(remoteName: String) -> Bool {
+    do {
+      try store.transaction { _ in try store.removeRemote(name: remoteName) }
+      return true
+    } catch { return false }
   }
 
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? {
-    guard hasSession(remoteName: remoteName, deviceId: deviceId),
+    guard journal == nil, hasSession(remoteName: remoteName, deviceId: deviceId),
           let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return nil }
-    do {
-      let address = try ProtocolAddress(name: remoteName, deviceId: deviceId)
-      let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
-      let message = try signalEncrypt(
-        message: data,
-        for: address,
+    return try? store.transaction { _ in
+      try encryptPayload(data, remoteName: remoteName, deviceID: deviceId, now: Date())
+    }
+  }
+
+  func encryptAndEnqueue(_ request: MqttSignalSendRequest, now: Date = Date()) throws -> MqttBusinessOutbox.Entry {
+    guard let entry = try enqueueBatch([request], now: now).first else { throw MqttRouteError.invalidPayload }
+    return entry
+  }
+
+  // The coordinator must hold its current approved binding while queueing. No network I/O is done here.
+  // Attachment-blocked requests remain encrypted at rest, without advancing a Signal sending chain.
+  func enqueueBatch(_ requests: [MqttSignalSendRequest], now: Date = Date()) throws -> [MqttBusinessOutbox.Entry] {
+    guard let journal, let first = requests.first, (1...64).contains(requests.count),
+          requests.allSatisfy({ $0.identity == first.identity }),
+          first.identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
+          requests.reduce(0, { $0 + $1.payload.count }) <= 4 * 1024 * 1024 else { throw MqttRouteError.invalidPayload }
+    let hashes = try requests.map { try $0.digest() }
+    guard Set(requests.map(\.messageID)).count == requests.count else { throw MqttRouteError.invalidPayload }
+    return try store.transaction { token in
+      guard let token else { throw MqttChunkStorageError.databaseFailure }
+      return try zip(requests, hashes).map { request, hash in
+        guard try journal.outbox.completions.event(identity: request.identity, messageID: request.messageID, transaction: token) == nil else {
+          throw MqttChunkStorageError.alreadyDelivered
+        }
+        if let existing = try journal.outbox.entry(identity: request.identity, messageID: request.messageID, transaction: token) {
+          guard existing.requestHash == hash, existing.traffic == request.traffic.rawValue, request.matches(existing.message) else {
+            throw MqttChunkStorageError.corruptState
+          }
+          return existing
+        }
+        if request.attachmentDependencies.isEmpty {
+          let wire = try outgoingWire(request, now: now)
+          try journal.outbox.enqueue(identity: request.identity, message: request.pendingMessage(wire: wire, now: now),
+            traffic: request.traffic, requestHash: hash, transaction: token)
+        } else {
+          try journal.outbox.enqueueDeferred(request, now: now, transaction: token)
+        }
+        guard let saved = try journal.outbox.entry(identity: request.identity, messageID: request.messageID, transaction: token) else {
+          throw MqttChunkStorageError.corruptState
+        }
+        return saved
+      }
+    }
+  }
+
+  func prepareFirstSend(identity: MqttBusinessIdentity, messageID: String, validatedNetwork: Bool,
+                        now: Date = Date()) throws -> MqttBusinessOutbox.Entry? {
+    guard let journal, identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()) else { throw MqttRouteError.identityChanged }
+    return try store.transaction { token in
+      guard let token else { throw MqttChunkStorageError.databaseFailure }
+      guard let entry = try journal.outbox.entry(identity: identity, messageID: messageID, transaction: token),
+            entry.message.blockedByAttachmentTransferIds.isEmpty,
+            !entry.message.requiresValidatedNetwork || validatedNetwork else { return nil }
+      guard let request = entry.deferredRequest else { return entry }
+      let hash = try request.digest()
+      let wire = try outgoingWire(request, now: now)
+      return try journal.outbox.prepare(identity: identity, messageID: messageID, requestHash: hash, wire: wire, now: now, transaction: token)
+    }
+  }
+
+  private func outgoingWire(_ request: MqttSignalSendRequest, now: Date) throws -> String {
+    try request.validate()
+    let address = try ProtocolAddress(name: request.remoteName, deviceId: request.deviceID)
+    guard let known = try store.identity(for: address, context: context),
+          Self.sha256(known.serialize()) == request.identity.remote,
+          store.containsSession(name: request.remoteName, deviceId: request.deviceID) else { throw MqttRouteError.identityChanged }
+    var wire = try encryptPayload(request.payload, remoteName: request.remoteName, deviceID: request.deviceID, now: now)
+    wire["message_id"] = request.messageID
+    if let route = request.clientRouteID { wire["_client_route_id"] = route }
+    return String(decoding: try GalaxySSILinkProtocol.jsonData(wire), as: UTF8.self)
+  }
+
+  private func encryptPayload(_ data: Data, remoteName: String, deviceID: UInt32, now: Date) throws -> [String: Any] {
+    let time = now.timeIntervalSince1970 * 1000
+    guard time.isFinite, time >= 0, time <= Double(MqttRouteProtocol.maximumInteger) else { throw MqttRouteError.invalidPayload }
+    let address = try ProtocolAddress(name: remoteName, deviceId: deviceID)
+    let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
+    let message = try signalEncrypt(message: data, for: address, localAddress: localAddress,
+      sessionStore: store, identityStore: store, context: context)
+    return ["version": 1, "scheme": "signal", "from": localName, "to": remoteName, "device_id": deviceID,
+      "signal_type": message.messageType == .preKey ? "prekey" : "signal",
+      "message_type": Int(message.messageType.rawValue), "body": message.serialize().base64EncodedString(), "time": Int64(time)]
+  }
+
+  func decrypt(_ envelope: [String: Any]) -> [String: Any]? {
+    // Durable callers must use decryptAndStore so a successful decrypt cannot lose its inbox record.
+    guard journal == nil else { return nil }
+    return try? store.transaction { _ in try decryptPayload(envelope) }
+  }
+
+  // The coordinator must invoke this under MqttPeerRoutes.withCurrent after pair-AEAD authentication.
+  func decryptAndStore(_ envelope: [String: Any], identity: MqttBusinessIdentity,
+                       remoteName: String, ingressBroker: String) throws -> MqttBusinessInbox.Accepted {
+    guard let journal, identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
+          envelope["from"] as? String == remoteName, envelope["to"] as? String == localName else {
+      throw MqttRouteError.identityChanged
+    }
+    try identity.validate()
+    let wireHash = try MqttDeliveryEnvelope.contentHash(envelope)
+    let frame = try envelope[MqttDeliveryEnvelope.field].map { _ in
+      try MqttDeliveryEnvelope.parseVerifiedFrame(envelope, sender: identity.remote,
+        receiver: identity.local, ingressBroker: ingressBroker)
+    }
+    return try store.transaction { token in
+      guard let token else { throw MqttChunkStorageError.databaseFailure }
+      if let replay = try journal.inbox.replay(identity: identity, ciphertextDigest: wireHash, transaction: token) {
+        if let frame {
+          guard replay.key == (try identity.key(messageID: frame.message.messageID)),
+                (replay.receipt != nil) == (frame.message.traffic != "receipt") else { throw MqttRouteError.invalidPayload }
+        }
+        return replay
+      }
+      let decrypted = try decryptPayload(envelope)
+      let payload: [String: Any]
+      if decrypted["protocol"] as? String == GalaxySSILinkProtocol.name, decrypted["payload"] != nil {
+        guard decrypted["source_id"] as? String == remoteName,
+              decrypted["target_id"] as? String == localName,
+              let unwrapped = GalaxySSILinkProtocol.unwrapEnvelope(decrypted) else {
+          throw MqttRouteError.invalidPayload
+        }
+        payload = unwrapped
+      } else {
+        payload = decrypted
+      }
+      let address = try ProtocolAddress(name: remoteName, deviceId: signalDeviceID(envelope))
+      guard let remoteKey = try store.identity(for: address, context: context),
+            Self.sha256(remoteKey.serialize()) == identity.remote else { throw MqttRouteError.identityChanged }
+      let messageID = try MqttDeliveryEnvelope.checkedText(payload["message_id"])
+      let type = payload["type"] as? String
+      return try journal.inbox.accept(identity: identity, messageID: messageID, payload: payload,
+        ciphertextDigest: wireHash, wireHash: wireHash,
+        receiptRequired: type != "delivery_ack" && type != MqttDeliveryEnvelope.receiptType,
+        frame: frame, transaction: token)
+    }
+  }
+
+  private func signalDeviceID(_ envelope: [String: Any]) throws -> UInt32 {
+    guard envelope["device_id"] != nil else { return 1 }
+    let id = try MqttRouteProtocol.integer(envelope, "device_id")
+    guard id > 0, id <= Int64(UInt32.max) else { throw MqttRouteError.invalidPayload }
+    return UInt32(id)
+  }
+
+  private func decryptPayload(_ envelope: [String: Any]) throws -> [String: Any] {
+    guard envelope.string("scheme") == "signal",
+          let from = envelope["from"] as? String,
+          !from.isEmpty,
+          let body = Data(base64Encoded: envelope.string("body")) else { throw MqttRouteError.invalidPayload }
+    let remoteAddress = try ProtocolAddress(name: from, deviceId: signalDeviceID(envelope))
+    let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
+    let type = envelope.string("signal_type")
+    let plaintext: Data
+    if type == "prekey" || (envelope["message_type"] as? Int) == Int(CiphertextMessage.MessageType.preKey.rawValue) {
+      plaintext = try signalDecryptPreKey(
+        message: PreKeySignalMessage(bytes: body),
+        from: remoteAddress,
         localAddress: localAddress,
+        sessionStore: store,
+        identityStore: store,
+        preKeyStore: store,
+        signedPreKeyStore: store,
+        kyberPreKeyStore: store,
+        context: context
+      )
+    } else {
+      plaintext = try signalDecrypt(
+        message: SignalMessage(bytes: body),
+        from: remoteAddress,
+        to: localAddress,
         sessionStore: store,
         identityStore: store,
         context: context
       )
-      return [
-        "version": 1,
-        "scheme": "signal",
-        "from": localName,
-        "to": remoteName,
-        "device_id": deviceId,
-        "signal_type": message.messageType == .preKey ? "prekey" : "signal",
-        "message_type": Int(message.messageType.rawValue),
-        "body": message.serialize().base64EncodedString(),
-        "time": Int64(Date().timeIntervalSince1970 * 1_000)
-      ]
-    } catch {
-      return nil
     }
-  }
-
-  func decrypt(_ envelope: [String: Any]) -> [String: Any]? {
-    guard envelope.string("scheme") == "signal",
-          let from = envelope["from"] as? String,
-          !from.isEmpty,
-          let body = Data(base64Encoded: envelope.string("body")) else { return nil }
-    do {
-      let remoteAddress = try ProtocolAddress(name: from, deviceId: UInt32(envelope["device_id"] as? Int ?? 1))
-      let localAddress = try ProtocolAddress(name: localName, deviceId: localDeviceId)
-      let type = envelope.string("signal_type")
-      let plaintext: Data
-      if type == "prekey" || (envelope["message_type"] as? Int) == Int(CiphertextMessage.MessageType.preKey.rawValue) {
-        plaintext = try signalDecryptPreKey(
-          message: PreKeySignalMessage(bytes: body),
-          from: remoteAddress,
-          localAddress: localAddress,
-          sessionStore: store,
-          identityStore: store,
-          preKeyStore: store,
-          signedPreKeyStore: store,
-          kyberPreKeyStore: store,
-          context: context
-        )
-      } else {
-        plaintext = try signalDecrypt(
-          message: SignalMessage(bytes: body),
-          from: remoteAddress,
-          to: localAddress,
-          sessionStore: store,
-          identityStore: store,
-          context: context
-        )
-      }
-      return try JSONSerialization.jsonObject(with: plaintext) as? [String: Any]
-    } catch {
-      return nil
-    }
+    guard let payload = try JSONSerialization.jsonObject(with: plaintext) as? [String: Any] else { throw MqttRouteError.invalidPayload }
+    return payload
   }
 
   private func decode(_ value: String) throws -> Data {
@@ -266,6 +399,8 @@ final class GalaxySSISignalEngine {
 final class GalaxySSISignalEngine {
   static let isAvailable = false
   init(profileName: String, defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {}
+  init(profileName: String, journal: MqttSignalStateJournal, defaults: UserDefaults = .standard,
+       secrets: GalaxySSISecretStore = KeychainSecretStore.shared) throws { throw MqttRouteError.invalidPayload }
   var identity: GalaxySSISignalIdentity { GalaxySSISignalIdentity(name: "", fingerprint: "", publicKey: "", bundle: nil) }
   func signContactCard(_ payload: Data) -> String? { nil }
   static func verifyContactCard(publicKey: String, payload: Data, signature: String) -> Bool { false }
@@ -281,8 +416,17 @@ final class GalaxySSISignalEngine {
     expectedRemoteFingerprint: String
   ) -> GalaxySSILinkRoutes? { nil }
   func hasSession(remoteName: String, deviceId: UInt32 = 1) -> Bool { false }
-  func forgetRemote(remoteName: String) {}
+  @discardableResult
+  func forgetRemote(remoteName: String) -> Bool { false }
+  func decryptAndStore(_ envelope: [String: Any], identity: MqttBusinessIdentity,
+                       remoteName: String, ingressBroker: String) throws -> MqttBusinessInbox.Accepted {
+    throw MqttRouteError.invalidPayload
+  }
   func encrypt(_ payload: [String: Any], remoteName: String, deviceId: UInt32 = 1) -> [String: Any]? { nil }
+  func encryptAndEnqueue(_ request: MqttSignalSendRequest, now: Date = Date()) throws -> MqttBusinessOutbox.Entry { throw MqttRouteError.invalidPayload }
+  func enqueueBatch(_ requests: [MqttSignalSendRequest], now: Date = Date()) throws -> [MqttBusinessOutbox.Entry] { throw MqttRouteError.invalidPayload }
+  func prepareFirstSend(identity: MqttBusinessIdentity, messageID: String, validatedNetwork: Bool,
+                        now: Date = Date()) throws -> MqttBusinessOutbox.Entry? { throw MqttRouteError.invalidPayload }
   func decrypt(_ envelope: [String: Any]) -> [String: Any]? { nil }
 }
 #endif

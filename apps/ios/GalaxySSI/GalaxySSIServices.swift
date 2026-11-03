@@ -152,7 +152,43 @@ final class MessageCoordinator: ObservableObject {
     if run.status == .running, previous == nil {
       AgentEvalOpsService.observeRunStarted(run)
     } else if run.status != .running, (previous?.status == .running || previous == nil) {
-      AgentEvalOpsService.observeRunCompleted(run)
+      AgentCompletionWorkQueue.shared.enqueue(runID: run.runId) { [weak self] in
+        let policy = await MainActor.run { () -> (AgentDeviceEvalSnapshot, Bool)? in
+          guard let self, let current = self.store.agentSession(id: run.conversationId),
+                !current.privateMode, !current.trackingPaused else { return nil }
+          return (AgentDeviceEvalProbe.capture(), self.store.agentSafetySettings.memoryCapture)
+        }
+        guard let policy else { return }
+        _ = AgentEvalOpsService.observeRunCompleted(run, completedDevice: policy.0,
+          personalLearningEnabled: policy.1)
+        let recent = UserDefaultsAgentRecordedRunStore().runs(for: "")
+        let learning = await MainActor.run { () -> (AgentLearningEngine, [AgentRecordedRun], Bool)? in
+          guard let self, let current = self.store.agentSession(id: run.conversationId),
+                !current.privateMode, !current.trackingPaused else { return nil }
+          let allowed = Set(recent.map(\.conversationId)).filter { id in
+            guard let session = self.store.agentSession(id: id) else { return false }
+            return !session.privateMode && !session.trackingPaused
+          }
+          let descriptors = self.localNativeToolRuntime?.registry.descriptors() ?? []
+          let engine = AgentLearningEngine(
+            memoryStore: self.store.agentMemoryStore,
+            skillRuntime: self.localSkillRuntime,
+            skillCompiler: AgentConversationSkillCompiler(self.localSkillRuntime, availableTools: { descriptors }),
+            proposalStore: UserDefaultsAgentLearningProposalStore()
+          )
+          return (engine, recent.filter { allowed.contains($0.conversationId) },
+            self.store.agentSafetySettings.memoryCapture)
+        }
+        guard let learning else { return }
+        let outcome = learning.0.observeCompletedRun(run: run, recentRuns: learning.1,
+          privateMode: false, memoryCaptureEnabled: learning.2)
+        if !outcome.memories.isEmpty {
+          await MainActor.run {
+            guard let self, UIApplication.shared.applicationState == .active else { return }
+            self.store.agentMemoryItems = self.store.agentMemoryStore.exportItems()
+          }
+        }
+      }
     }
   }
   private lazy var localPlanNodeJournal = EncryptedAgentPlanNodeJournal()
@@ -1656,6 +1692,86 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func cancelScreenAnalysis(_ ownedTurns: [ChatMessage]) async -> Bool {
+    let verified = ownedTurns.compactMap { owned in
+      store.messages(for: owned.contactId).first {
+        $0.id == owned.id && $0.isMine && $0.conversationId == owned.conversationId &&
+          $0.turnId == owned.turnId
+      }
+    }
+    var delivered = verified.count == ownedTurns.count
+    let originals = verified.filter { outgoing in
+      !store.messages(for: outgoing.contactId).contains {
+        !$0.isMine && !$0.isSystem && $0.conversationId == outgoing.conversationId &&
+          $0.turnId == outgoing.turnId && $0.deliveryStatus == .delivered
+      }
+    }
+    for outgoing in originals {
+      let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      for task in store.agentTasks(forSession: outgoing.conversationId, limit: 500)
+        where task.taskId == turn {
+        _ = cancelLocalAgentTask(taskId: task.taskId, emitReply: false)
+      }
+      PhoneExecutionAuthority.requestCancellation(taskId: turn)
+      finishPendingAgentReply(for: outgoing)
+      _ = deliveryStore.discardClientSourceMessage(outgoing.id.uuidString)
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
+        stage: "screen_analysis_cancelled", detail: "User stopped this screen analysis turn", status: .failed)
+    }
+    for outgoing in originals {
+      let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+      await cloudStreamEngine.cancel(requestId: turn, reason: .userStop)
+      let remoteTasks = remoteAgentTaskStatuses.values.filter {
+        $0.conversationId == outgoing.conversationId && $0.turnId == turn &&
+          !AgentRemoteTaskStatusPolicy.isTerminal($0.status)
+      }
+      for remote in remoteTasks {
+        if !(await cancelRemoteAgentTask(remote)) { delivered = false }
+      }
+      for contact in store.visibleContacts {
+        guard let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: outgoing.id.uuidString),
+              identity.conversationId == outgoing.conversationId, identity.turnId == turn,
+              !remoteTasks.contains(where: { $0.taskId == identity.taskId && $0.clientRouteId == identity.clientRouteId }) else { continue }
+        if !(await cancelRegisteredScreenAnalysis(identity: identity, contact: contact, source: outgoing.id.uuidString)) {
+          delivered = false
+        }
+      }
+    }
+    return delivered
+  }
+
+  private func cancelRegisteredScreenAnalysis(identity: AgentTaskIdentity, contact: GalaxySSIContact,
+                                              source: String) async -> Bool {
+    guard let link = store.serverLinks.first(where: {
+      $0.paired && $0.routes.clientRouteId == identity.clientRouteId
+    }) else { return false }
+    let payload: [String: Any] = [
+      "type": "agent_task_cancel", "task_id": identity.taskId,
+      "client_route_id": identity.clientRouteId, "conversation_id": identity.conversationId,
+      "turn_id": identity.turnId, "contact_id": contact.id, "source_message_id": source,
+      "agent_id": contact.connectorAgentId, "desktop_id": link.desktopId,
+      "time": AgentControlPlaneClock.nowMillis()
+    ]
+    guard let wire = try? linkWirePayload(payload, link: link) else { return false }
+    deliveryStore.enqueue(messageId: wire.messageId, topic: link.routes.upTopic,
+      wirePayload: wire.wireText, clientSourceMessageId: source, contactId: contact.id)
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+    switch result {
+    case .published:
+      deliveryStore.markPublished(messageId: wire.messageId)
+      scheduleOutboxFlushFromStore()
+      return true
+    case .queued:
+      scheduleOutboxFlushFromStore()
+      return true
+    case .failed:
+      scheduleOutboxFlush(after: 0)
+      return false
+    }
+  }
+
+  @discardableResult
   func cancelRemoteAgentTask(_ snapshot: AgentRemoteTaskStatusSnapshot) async -> Bool {
     guard !snapshot.taskId.isEmpty,
           !snapshot.clientRouteId.isEmpty,
@@ -2327,7 +2443,8 @@ final class MessageCoordinator: ObservableObject {
     agentGoalOverride: String = "",
     voiceSessionId: String = "",
     peerMessageKind: String = "",
-    peerDurationMillis: Int64 = 0
+    peerDurationMillis: Int64 = 0,
+    onOutgoing: ((ChatMessage) -> Void)? = nil
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
@@ -2410,6 +2527,8 @@ final class MessageCoordinator: ObservableObject {
       richOutputJson: richOutputJson,
       messageId: outgoingMessageId
     )
+    onOutgoing?(outgoing)
+    guard !Task.isCancelled else { return false }
     if isPeerSend {
       store.appendDeliveryTrace(
         outgoing.id,
@@ -2464,6 +2583,7 @@ final class MessageCoordinator: ObservableObject {
         status: stagedAttachments.isEmpty ? .failed : .delivered
       )
     }
+    guard !Task.isCancelled else { return false }
     if contact.id == "hermes", !effectiveAttachments.isEmpty, !reusedPriorAttachments {
       let importedCount = AgentAttachmentKnowledgeImporter.importDocuments(
         AgentAttachmentKnowledgeImporter.inputs(from: effectiveAttachments),
@@ -3939,6 +4059,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     initialPlan: AgentPlan? = nil
   ) async throws {
+    try Task.checkCancellation()
     let taskId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let createdAt = Int64(Date().timeIntervalSince1970 * 1_000)
     let isNativeRoute = initialPlan != nil
@@ -5952,6 +6073,7 @@ final class MessageCoordinator: ObservableObject {
       images: images,
       requestId: requestId
     ) {
+      try Task.checkCancellation()
       switch event {
       case .textDelta(let delta): accumulated += delta.text
       case .completed: completed = true
@@ -7901,6 +8023,7 @@ final class MessageCoordinator: ObservableObject {
       images: images,
       requestId: requestId
     ) {
+      try Task.checkCancellation()
       switch event {
       case .connected, .usage, .toolCallDelta:
         continue
@@ -8601,6 +8724,7 @@ final class MessageCoordinator: ObservableObject {
     executionMode: AgentTaskExecutionMode,
     teamContext: AgentOutboundTeamContext? = nil
   ) async throws -> AgentDisclosureStatus {
+    try Task.checkCancellation()
     let requestedDesktopId = contact.desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     let link = requestedDesktopId.isEmpty
       ? (store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first)
@@ -8843,14 +8967,16 @@ final class MessageCoordinator: ObservableObject {
         payload["task_budget_usage"] = encodedUsage
       }
     }
+    let wire = try linkWirePayload(payload, link: link)
     if !peerChat {
-      taskIdentityStore.register(
+      guard taskIdentityStore.register(
         contactId: contact.id,
         sourceMessageId: sourceMessageId,
         identity: taskIdentity
-      )
+      ) else {
+        throw GalaxySSIError.invalidPayload("Agent reply identity could not be registered")
+      }
     }
-    let wire = try linkWirePayload(payload, link: link)
     let requiresValidatedNetwork = AgentMediaLinkPayloadPolicy.requiresValidatedNetwork(
       attachments: attachments,
       profile: mediaProfile
@@ -9437,42 +9563,17 @@ final class MessageCoordinator: ObservableObject {
       contactId: contact.id,
       attachments: resolvedAttachments
     )
-    if pendingMessage == nil, store.hasIncomingDuplicate(
-      messageContent,
-      from: contact.id,
-      remoteMessageId: messageId,
-      turnId: turnId
-    ) {
-      deliveryStore.completeIncoming(messageId: messageId)
+    let incoming: ChatMessage
+    do {
+      incoming = try store.persistTransportIncoming(
+        messageContent, from: contact.id, remoteMessageId: messageId,
+        conversationId: payload.string("conversation_id"), turnId: turnId,
+        richOutputJson: richOutputJson, replacing: pendingMessage
+      )
+    } catch {
+      // Leave the durable inbox pending; an in-memory message is not a successful handoff.
       return
     }
-    let incoming = pendingMessage.flatMap {
-      store.completePendingIncomingMessage(
-        $0.id,
-        contactId: contact.id,
-        content: messageContent,
-        remoteMessageId: messageId,
-        conversationId: payload.string("conversation_id"),
-        turnId: turnId,
-        richOutputJson: richOutputJson
-      )
-    } ?? store.appendIncoming(
-        messageContent,
-        from: contact.id,
-        remoteMessageId: messageId,
-        status: .delivered,
-        traceStage: "phone_contact_received",
-        conversationId: payload.string("conversation_id"),
-        turnId: turnId,
-        richOutputJson: richOutputJson
-      )
-    store.appendDeliveryTrace(
-      incoming.id,
-      contactId: contact.id,
-      stage: "phone_contact_decrypted",
-      detail: "Signal",
-      status: .delivered
-    )
     deliveryStore.completeIncoming(messageId: messageId)
     if GalaxySSIVisibleConversationTracker.shared.shouldNotify(
       contactId: contact.id,
@@ -9916,6 +10017,13 @@ final class MessageCoordinator: ObservableObject {
     }
     if shouldValidateAgentTaskIdentity(appPayload),
        !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
+      return
+    }
+    if taskIdentityStore.matchesRegistered(payload: appPayload),
+       AgentScreenAnalysisReplyPolicy.isStopped(appPayload,
+         messages: store.agentSessionMessages(appPayload.string("conversation_id"))) {
+      let stoppedMessageId = appPayload.string("message_id")
+      if !stoppedMessageId.isEmpty { deliveryStore.completeIncoming(messageId: stoppedMessageId) }
       return
     }
     if appPayload.string("type") == "agent_task_event" {
@@ -11383,7 +11491,16 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   private func replayPendingIncoming() -> Bool {
-    let pendingMessages = deliveryStore.pendingIncoming()
+    let pendingMessages = deliveryStore.pendingIncoming().filter { pending in
+      guard let data = pending.payload.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            object.string("scheme") == "signal",
+            object.string("to") == signalEngine.identity.name,
+            let contact = store.contact(id: object.string("from")), isPhoneContact(contact) else { return true }
+      // Legacy phone entries contain already-decrypted Signal ciphertext, not replayable plaintext.
+      // Preserve them for migration instead of dispatching through the desktop path and deleting them.
+      return false
+    }
     pendingMessages.prefix(Self.pendingRecoveryPageSize).forEach { pending in
       guard let data = pending.payload.data(using: .utf8),
             let rawObject = try? JSONSerialization.jsonObject(with: data),

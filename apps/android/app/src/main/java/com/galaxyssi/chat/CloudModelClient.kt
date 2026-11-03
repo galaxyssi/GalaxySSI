@@ -30,7 +30,7 @@ object CloudModelClient {
             "Use list, key_value, table, chart, timeline, notice, code, diff, json, image, gallery, video, audio, file, link, citation, html, or webpage blocks as appropriate. " +
             "For a simple image-search reply, use Markdown images and source links instead of rich JSON. " +
             "Never repeat the same images in both Markdown and a rich image/gallery document. " +
-            "Use an html block with self-contained HTML/CSS/JavaScript fragments for animations; never use external URLs, network requests, forms, or device APIs in HTML. " +
+            AgentVisualOutputContract.PROMPT + " " +
             "Use a webpage block with an HTTPS uri when the actual public page should appear inline. Always include fallback_text."
 
     private fun defaultSystemPrompt(context: Context): String =

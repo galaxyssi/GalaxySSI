@@ -218,6 +218,15 @@ enum GalaxySSILinkProtocol {
     return encoded
   }
 
+  static func sealedWirePacketByteCount(payloadBytes: Int) throws -> Int {
+    guard payloadBytes >= 0, payloadBytes <= maxOpaquePacketBytes,
+          let bucket = wireBuckets.first(where: { payloadBytes + 5 <= $0 }) else {
+      throw GalaxySSIError.invalidPayload("Wire payload exceeds opaque packet limit.")
+    }
+    // 12-byte nonce + padded plaintext + 16-byte GCM tag, unpadded Base64URL.
+    return ((bucket + 28) * 4 + 2) / 3
+  }
+
   static func openWirePacket(_ wire: Data, secret: String) throws -> Data {
     guard let secretData = Data(base64URLEncoded: secret), secretData.count == 32,
           let sealed = Data(base64URLEncoded: String(decoding: wire, as: UTF8.self)),

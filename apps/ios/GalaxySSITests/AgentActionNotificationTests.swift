@@ -2,6 +2,12 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentActionNotificationTests: XCTestCase {
+  func testIOSPresentationSuppressesProgressDismissesSuccessAndKeepsFailure() {
+    XCTAssertEqual(AgentIOSUserNotificationPublisher.presentation(for: .running), .ignore)
+    XCTAssertEqual(AgentIOSUserNotificationPublisher.presentation(for: .succeeded), .dismiss)
+    XCTAssertEqual(AgentIOSUserNotificationPublisher.presentation(for: .failed), .show)
+  }
+
   func testNotifyingExecutorPublishesRunningAndResultNotifications() {
     let publisher = InMemoryAgentActionNotificationPublisher()
     let center = AgentActionNotificationCenter(publisher: publisher, nowMillis: { 1_000 })

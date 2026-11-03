@@ -26,6 +26,50 @@
     F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000001 /* AgentDirectVisionPolicy.swift */; };
     F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */; };
     F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000001 /* AgentReplySpeechController.swift */; };
+    F13234000000000000000001 /* MqttRouteAdvertisement.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000001 /* MqttRouteAdvertisement.swift */; };
+    F13234000000000000000002 /* MqttRouteState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000002 /* MqttRouteState.swift */; };
+    F13234000000000000000003 /* MqttPeerRouteSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000003 /* MqttPeerRouteSession.swift */; };
+    F13234000000000000000004 /* MqttPeerRouteSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000004 /* MqttPeerRouteSessionTests.swift */; };
+    F13234000000000000000005 /* MqttBrokerPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000005 /* MqttBrokerPath.swift */; };
+    F13234000000000000000006 /* GalaxySSIMqttBrokerPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000006 /* GalaxySSIMqttBrokerPool.swift */; };
+    F13234000000000000000007 /* MqttBrokerPoolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000007 /* MqttBrokerPoolTests.swift */; };
+    F13234000000000000000008 /* MqttDeliveryEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000008 /* MqttDeliveryEnvelope.swift */; };
+    F13234000000000000000009 /* MqttChunkManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000009 /* MqttChunkManifest.swift */; };
+    F13234000000000000000010 /* MqttChunkReceipts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000010 /* MqttChunkReceipts.swift */; };
+    F13234000000000000000011 /* MqttDeliveryEnvelopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000011 /* MqttDeliveryEnvelopeTests.swift */; };
+    F13234000000000000000012 /* MqttChunkProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000012 /* MqttChunkProtocolTests.swift */; };
+    F13234000000000000000013 /* MqttChunkDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000013 /* MqttChunkDatabase.swift */; };
+    F13234000000000000000014 /* MqttDurableChunks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000014 /* MqttDurableChunks.swift */; };
+    F13234000000000000000015 /* MqttDurableChunksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000015 /* MqttDurableChunksTests.swift */; };
+    F13234000000000000000016 /* MqttOutgoingChunks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000016 /* MqttOutgoingChunks.swift */; };
+    F13234000000000000000017 /* MqttReceiptRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000017 /* MqttReceiptRetry.swift */; };
+    F13234000000000000000018 /* MqttOutgoingChunksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000018 /* MqttOutgoingChunksTests.swift */; };
+    F13234000000000000000019 /* MqttReceiptRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000019 /* MqttReceiptRetryTests.swift */; };
+    F13234000000000000000020 /* MqttMultipathPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000020 /* MqttMultipathPolicy.swift */; };
+    F13234000000000000000021 /* MqttChunkThroughput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000021 /* MqttChunkThroughput.swift */; };
+    F13234000000000000000022 /* MqttMultipathPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000022 /* MqttMultipathPolicyTests.swift */; };
+    F13234000000000000000023 /* MqttChunkThroughputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000023 /* MqttChunkThroughputTests.swift */; };
+    F13234000000000000000024 /* MqttDeliveryDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000024 /* MqttDeliveryDispatch.swift */; };
+    F13234000000000000000025 /* MqttDeliveryDispatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000025 /* MqttDeliveryDispatchTests.swift */; };
+    F13234000000000000000026 /* MqttSealedPathPublication.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000026 /* MqttSealedPathPublication.swift */; };
+    F13234000000000000000027 /* MqttSealedPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000027 /* MqttSealedPathTests.swift */; };
+    F13234000000000000000028 /* MqttChunkFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000028 /* MqttChunkFeedback.swift */; };
+    F13234000000000000000029 /* MqttChunkFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000029 /* MqttChunkFeedbackTests.swift */; };
+    F13234000000000000000030 /* MqttPeerRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000030 /* MqttPeerRoutes.swift */; };
+    F13234000000000000000031 /* MqttPeerRoutesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000031 /* MqttPeerRoutesTests.swift */; };
+    F13234000000000000000032 /* MqttBusinessIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000032 /* MqttBusinessIdentity.swift */; };
+    F13234000000000000000033 /* MqttBusinessInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000033 /* MqttBusinessInbox.swift */; };
+    F13234000000000000000034 /* MqttBusinessOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000034 /* MqttBusinessOutbox.swift */; };
+    F13234000000000000000035 /* MqttBusinessJournalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000035 /* MqttBusinessJournalTests.swift */; };
+    F13234000000000000000036 /* MqttSignalStateJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000036 /* MqttSignalStateJournal.swift */; };
+    F13234000000000000000037 /* MqttSignalStateJournalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000037 /* MqttSignalStateJournalTests.swift */; };
+    F13234000000000000000038 /* MqttSignalSendRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000038 /* MqttSignalSendRequest.swift */; };
+    F13234000000000000000039 /* MqttSignalSendRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000039 /* MqttSignalSendRequestTests.swift */; };
+    F13234000000000000000040 /* MqttSignalSendTransactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000040 /* MqttSignalSendTransactionTests.swift */; };
+    F13234000000000000000041 /* MqttDeliveryCompletions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000041 /* MqttDeliveryCompletions.swift */; };
+    F13234000000000000000042 /* MqttDeliveryCompletionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000042 /* MqttDeliveryCompletionsTests.swift */; };
+    F13234000000000000000043 /* MqttBusinessReceipts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000043 /* MqttBusinessReceipts.swift */; };
+    F13234000000000000000044 /* MqttBusinessSendDrain.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000044 /* MqttBusinessSendDrain.swift */; };
     F13228000000000000000001 /* AgentReplyUnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000001 /* AgentReplyUnreadStore.swift */; };
     F13228000000000000000002 /* GalaxySSIConversationFocusProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */; };
     F13228000000000000000003 /* AgentReplyUnreadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000003 /* AgentReplyUnreadTests.swift */; };
@@ -1029,6 +1073,50 @@
     F22680000000000000000001 /* AgentDirectVisionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicy.swift; sourceTree = "<group>"; };
     F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicyTests.swift; sourceTree = "<group>"; };
     F22678000000000000000001 /* AgentReplySpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechController.swift; sourceTree = "<group>"; };
+    F23234000000000000000001 /* MqttRouteAdvertisement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttRouteAdvertisement.swift; sourceTree = "<group>"; };
+    F23234000000000000000002 /* MqttRouteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttRouteState.swift; sourceTree = "<group>"; };
+    F23234000000000000000003 /* MqttPeerRouteSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttPeerRouteSession.swift; sourceTree = "<group>"; };
+    F23234000000000000000004 /* MqttPeerRouteSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttPeerRouteSessionTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000005 /* MqttBrokerPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBrokerPath.swift; sourceTree = "<group>"; };
+    F23234000000000000000006 /* GalaxySSIMqttBrokerPool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIMqttBrokerPool.swift; sourceTree = "<group>"; };
+    F23234000000000000000007 /* MqttBrokerPoolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBrokerPoolTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000008 /* MqttDeliveryEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryEnvelope.swift; sourceTree = "<group>"; };
+    F23234000000000000000009 /* MqttChunkManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkManifest.swift; sourceTree = "<group>"; };
+    F23234000000000000000010 /* MqttChunkReceipts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkReceipts.swift; sourceTree = "<group>"; };
+    F23234000000000000000011 /* MqttDeliveryEnvelopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryEnvelopeTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000012 /* MqttChunkProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkProtocolTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000013 /* MqttChunkDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkDatabase.swift; sourceTree = "<group>"; };
+    F23234000000000000000014 /* MqttDurableChunks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDurableChunks.swift; sourceTree = "<group>"; };
+    F23234000000000000000015 /* MqttDurableChunksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDurableChunksTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000016 /* MqttOutgoingChunks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttOutgoingChunks.swift; sourceTree = "<group>"; };
+    F23234000000000000000017 /* MqttReceiptRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttReceiptRetry.swift; sourceTree = "<group>"; };
+    F23234000000000000000018 /* MqttOutgoingChunksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttOutgoingChunksTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000019 /* MqttReceiptRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttReceiptRetryTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000020 /* MqttMultipathPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttMultipathPolicy.swift; sourceTree = "<group>"; };
+    F23234000000000000000021 /* MqttChunkThroughput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkThroughput.swift; sourceTree = "<group>"; };
+    F23234000000000000000022 /* MqttMultipathPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttMultipathPolicyTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000023 /* MqttChunkThroughputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkThroughputTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000024 /* MqttDeliveryDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryDispatch.swift; sourceTree = "<group>"; };
+    F23234000000000000000025 /* MqttDeliveryDispatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryDispatchTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000026 /* MqttSealedPathPublication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttSealedPathPublication.swift; sourceTree = "<group>"; };
+    F23234000000000000000027 /* MqttSealedPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttSealedPathTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000028 /* MqttChunkFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkFeedback.swift; sourceTree = "<group>"; };
+    F23234000000000000000029 /* MqttChunkFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttChunkFeedbackTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000030 /* MqttPeerRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttPeerRoutes.swift; sourceTree = "<group>"; };
+    F23234000000000000000031 /* MqttPeerRoutesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttPeerRoutesTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000032 /* MqttBusinessIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessIdentity.swift; sourceTree = "<group>"; };
+    F23234000000000000000033 /* MqttBusinessInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessInbox.swift; sourceTree = "<group>"; };
+    F23234000000000000000034 /* MqttBusinessOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessOutbox.swift; sourceTree = "<group>"; };
+    F23234000000000000000035 /* MqttBusinessJournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessJournalTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000036 /* MqttSignalStateJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttSignalStateJournal.swift; sourceTree = "<group>"; };
+    F23234000000000000000037 /* MqttSignalStateJournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttSignalStateJournalTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000038 /* MqttSignalSendRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttSignalSendRequest.swift; sourceTree = "<group>"; };
+    F23234000000000000000039 /* MqttSignalSendRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttSignalSendRequestTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000040 /* MqttSignalSendTransactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttSignalSendTransactionTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000041 /* MqttDeliveryCompletions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryCompletions.swift; sourceTree = "<group>"; };
+    F23234000000000000000042 /* MqttDeliveryCompletionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttDeliveryCompletionsTests.swift; sourceTree = "<group>"; };
+    F23234000000000000000043 /* MqttBusinessReceipts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessReceipts.swift; sourceTree = "<group>"; };
+    F23234000000000000000044 /* MqttBusinessSendDrain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttBusinessSendDrain.swift; sourceTree = "<group>"; };
     F23228000000000000000001 /* AgentReplyUnreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplyUnreadStore.swift; sourceTree = "<group>"; };
     F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationFocusProbe.swift; sourceTree = "<group>"; };
     F23228000000000000000003 /* AgentReplyUnreadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplyUnreadTests.swift; sourceTree = "<group>"; };
@@ -2056,6 +2144,32 @@
         F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */,
         F22680000000000000000001 /* AgentDirectVisionPolicy.swift */,
         F22678000000000000000001 /* AgentReplySpeechController.swift */,
+        F23234000000000000000001 /* MqttRouteAdvertisement.swift */,
+        F23234000000000000000002 /* MqttRouteState.swift */,
+        F23234000000000000000003 /* MqttPeerRouteSession.swift */,
+        F23234000000000000000005 /* MqttBrokerPath.swift */,
+        F23234000000000000000006 /* GalaxySSIMqttBrokerPool.swift */,
+        F23234000000000000000008 /* MqttDeliveryEnvelope.swift */,
+        F23234000000000000000009 /* MqttChunkManifest.swift */,
+        F23234000000000000000010 /* MqttChunkReceipts.swift */,
+        F23234000000000000000013 /* MqttChunkDatabase.swift */,
+        F23234000000000000000014 /* MqttDurableChunks.swift */,
+        F23234000000000000000016 /* MqttOutgoingChunks.swift */,
+        F23234000000000000000017 /* MqttReceiptRetry.swift */,
+        F23234000000000000000020 /* MqttMultipathPolicy.swift */,
+        F23234000000000000000021 /* MqttChunkThroughput.swift */,
+        F23234000000000000000024 /* MqttDeliveryDispatch.swift */,
+        F23234000000000000000026 /* MqttSealedPathPublication.swift */,
+        F23234000000000000000028 /* MqttChunkFeedback.swift */,
+        F23234000000000000000030 /* MqttPeerRoutes.swift */,
+        F23234000000000000000032 /* MqttBusinessIdentity.swift */,
+        F23234000000000000000033 /* MqttBusinessInbox.swift */,
+        F23234000000000000000034 /* MqttBusinessOutbox.swift */,
+        F23234000000000000000036 /* MqttSignalStateJournal.swift */,
+        F23234000000000000000038 /* MqttSignalSendRequest.swift */,
+        F23234000000000000000041 /* MqttDeliveryCompletions.swift */,
+        F23234000000000000000043 /* MqttBusinessReceipts.swift */,
+        F23234000000000000000044 /* MqttBusinessSendDrain.swift */,
         F23228000000000000000001 /* AgentReplyUnreadStore.swift */,
         F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */,
         F22678000000000000000002 /* AgentReplySpeechRuntime.swift */,
@@ -2816,6 +2930,24 @@
         F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
         F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */,
         F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */,
+        F23234000000000000000004 /* MqttPeerRouteSessionTests.swift */,
+        F23234000000000000000007 /* MqttBrokerPoolTests.swift */,
+        F23234000000000000000011 /* MqttDeliveryEnvelopeTests.swift */,
+        F23234000000000000000012 /* MqttChunkProtocolTests.swift */,
+        F23234000000000000000015 /* MqttDurableChunksTests.swift */,
+        F23234000000000000000018 /* MqttOutgoingChunksTests.swift */,
+        F23234000000000000000019 /* MqttReceiptRetryTests.swift */,
+        F23234000000000000000022 /* MqttMultipathPolicyTests.swift */,
+        F23234000000000000000023 /* MqttChunkThroughputTests.swift */,
+        F23234000000000000000025 /* MqttDeliveryDispatchTests.swift */,
+        F23234000000000000000027 /* MqttSealedPathTests.swift */,
+        F23234000000000000000029 /* MqttChunkFeedbackTests.swift */,
+        F23234000000000000000031 /* MqttPeerRoutesTests.swift */,
+        F23234000000000000000035 /* MqttBusinessJournalTests.swift */,
+        F23234000000000000000037 /* MqttSignalStateJournalTests.swift */,
+        F23234000000000000000039 /* MqttSignalSendRequestTests.swift */,
+        F23234000000000000000040 /* MqttSignalSendTransactionTests.swift */,
+        F23234000000000000000042 /* MqttDeliveryCompletionsTests.swift */,
         F23228000000000000000003 /* AgentReplyUnreadTests.swift */,
         F22679000000000000000002 /* MicrosoftTTSVoiceCatalogTests.swift */,
         F22660000000000000000004 /* AgentRichContentMermaidTests.swift */,
@@ -3447,6 +3579,32 @@
         A10000000000000000000587 /* VoiceReplySpeechService.swift in Sources */,
         F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */,
         F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */,
+        F13234000000000000000001 /* MqttRouteAdvertisement.swift in Sources */,
+        F13234000000000000000002 /* MqttRouteState.swift in Sources */,
+        F13234000000000000000003 /* MqttPeerRouteSession.swift in Sources */,
+        F13234000000000000000005 /* MqttBrokerPath.swift in Sources */,
+        F13234000000000000000006 /* GalaxySSIMqttBrokerPool.swift in Sources */,
+        F13234000000000000000008 /* MqttDeliveryEnvelope.swift in Sources */,
+        F13234000000000000000009 /* MqttChunkManifest.swift in Sources */,
+        F13234000000000000000010 /* MqttChunkReceipts.swift in Sources */,
+        F13234000000000000000013 /* MqttChunkDatabase.swift in Sources */,
+        F13234000000000000000014 /* MqttDurableChunks.swift in Sources */,
+        F13234000000000000000016 /* MqttOutgoingChunks.swift in Sources */,
+        F13234000000000000000017 /* MqttReceiptRetry.swift in Sources */,
+        F13234000000000000000020 /* MqttMultipathPolicy.swift in Sources */,
+        F13234000000000000000021 /* MqttChunkThroughput.swift in Sources */,
+        F13234000000000000000024 /* MqttDeliveryDispatch.swift in Sources */,
+        F13234000000000000000026 /* MqttSealedPathPublication.swift in Sources */,
+        F13234000000000000000028 /* MqttChunkFeedback.swift in Sources */,
+        F13234000000000000000030 /* MqttPeerRoutes.swift in Sources */,
+        F13234000000000000000032 /* MqttBusinessIdentity.swift in Sources */,
+        F13234000000000000000033 /* MqttBusinessInbox.swift in Sources */,
+        F13234000000000000000034 /* MqttBusinessOutbox.swift in Sources */,
+        F13234000000000000000036 /* MqttSignalStateJournal.swift in Sources */,
+        F13234000000000000000038 /* MqttSignalSendRequest.swift in Sources */,
+        F13234000000000000000041 /* MqttDeliveryCompletions.swift in Sources */,
+        F13234000000000000000043 /* MqttBusinessReceipts.swift in Sources */,
+        F13234000000000000000044 /* MqttBusinessSendDrain.swift in Sources */,
         F13228000000000000000001 /* AgentReplyUnreadStore.swift in Sources */,
         F13228000000000000000002 /* GalaxySSIConversationFocusProbe.swift in Sources */,
         F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */,
@@ -3971,6 +4129,24 @@
         F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */,
         F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */,
         F12678000000000000000004 /* AgentReplySpeechControllerTests.swift in Sources */,
+        F13234000000000000000004 /* MqttPeerRouteSessionTests.swift in Sources */,
+        F13234000000000000000007 /* MqttBrokerPoolTests.swift in Sources */,
+        F13234000000000000000011 /* MqttDeliveryEnvelopeTests.swift in Sources */,
+        F13234000000000000000012 /* MqttChunkProtocolTests.swift in Sources */,
+        F13234000000000000000015 /* MqttDurableChunksTests.swift in Sources */,
+        F13234000000000000000018 /* MqttOutgoingChunksTests.swift in Sources */,
+        F13234000000000000000019 /* MqttReceiptRetryTests.swift in Sources */,
+        F13234000000000000000022 /* MqttMultipathPolicyTests.swift in Sources */,
+        F13234000000000000000023 /* MqttChunkThroughputTests.swift in Sources */,
+        F13234000000000000000025 /* MqttDeliveryDispatchTests.swift in Sources */,
+        F13234000000000000000027 /* MqttSealedPathTests.swift in Sources */,
+        F13234000000000000000029 /* MqttChunkFeedbackTests.swift in Sources */,
+        F13234000000000000000031 /* MqttPeerRoutesTests.swift in Sources */,
+        F13234000000000000000035 /* MqttBusinessJournalTests.swift in Sources */,
+        F13234000000000000000037 /* MqttSignalStateJournalTests.swift in Sources */,
+        F13234000000000000000039 /* MqttSignalSendRequestTests.swift in Sources */,
+        F13234000000000000000040 /* MqttSignalSendTransactionTests.swift in Sources */,
+        F13234000000000000000042 /* MqttDeliveryCompletionsTests.swift in Sources */,
         F13228000000000000000003 /* AgentReplyUnreadTests.swift in Sources */,
         F12679000000000000000002 /* MicrosoftTTSVoiceCatalogTests.swift in Sources */,
         F12665000000000000000002 /* CloudModelRequestRoutingPolicyTests.swift in Sources */,

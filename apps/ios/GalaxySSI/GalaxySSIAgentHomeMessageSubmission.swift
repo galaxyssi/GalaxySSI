@@ -4,6 +4,7 @@ extension AgentHomeView {
   func sendAgentMessage(
     voiceAttachmentSnapshot: [GalaxySSIDraftAttachment]? = nil
   ) {
+    guard !screenAssistantStopping else { return }
     coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = AgentVoiceAttachmentSubmissionPolicy.select(
@@ -26,15 +27,33 @@ extension AgentHomeView {
     }
     actionTrayPresented = false
     attachmentError = ""
-    Task { @MainActor in
+    if screenAssistantRunID == nil, !screenAssistantConversationID.isEmpty,
+       screenAssistantConversationID == store.activeAgentConversationId {
+      screenAssistantRunID = UUID()
+      screenAssistantStartedAt = Date()
+      screenAssistantOwnedTurns = []
+    }
+    let submissionID = UUID()
+    let assistantRunID = screenAssistantConversationID == store.activeAgentConversationId
+      ? screenAssistantRunID : nil
+    let submission = Task { @MainActor in
       var sensitiveAttachments = outgoingAttachments
-      defer { sensitiveAttachments.wipeSensitive() }
+      defer {
+        sensitiveAttachments.wipeSensitive()
+        screenAssistantSubmissions.removeValue(forKey: submissionID)
+      }
+      guard !Task.isCancelled, assistantRunID == nil || screenAssistantRunID == assistantRunID else { return }
       let sent = await coordinator.send(
         text,
         to: contact,
         attachments: sensitiveAttachments,
-        agentGoalOverride: agentGoal
+        agentGoalOverride: agentGoal,
+        onOutgoing: { outgoing in
+          guard let assistantRunID, screenAssistantRunID == assistantRunID else { return }
+          screenAssistantOwnedTurns.append(outgoing)
+        }
       )
+      guard !Task.isCancelled, assistantRunID == nil || screenAssistantRunID == assistantRunID else { return }
       voicePendingAttachments.wipeSensitive()
       if !sent {
         if !draftForRecovery.isEmpty {
@@ -46,6 +65,28 @@ extension AgentHomeView {
         }
         attachmentError = coordinator.lastError
       }
+    }
+    if assistantRunID != nil { screenAssistantSubmissions[submissionID] = submission }
+  }
+
+  func stopScreenAnalysis() {
+    guard screenAssistantRunID != nil, !screenAssistantStopping else { return }
+    screenAssistantStopping = true
+    screenAssistantRunID = nil
+    screenAssistantStartedAt = nil
+    screenshotPickerPresented = false
+    for submission in screenAssistantSubmissions.values { submission.cancel() }
+    screenAssistantSubmissions = [:]
+    attachments.removeAll { screenAssistantAttachmentIDs.contains($0.id) }
+    screenAssistantAttachmentIDs = []
+    let ownedTurns = screenAssistantOwnedTurns
+    screenAssistantOwnedTurns = []
+    Task { @MainActor in
+      let sent = await coordinator.cancelScreenAnalysis(ownedTurns)
+      screenAssistantStopping = false
+      richActionStatus = sent
+        ? t("galaxyssi.screen_assistant.stopped", "Analysis stopped. Partial output has been preserved.")
+        : t("galaxyssi.screen_assistant.stop_failed", "Analysis stopped locally, but remote cancellation could not be confirmed.")
     }
   }
 

@@ -126,6 +126,17 @@ struct AgentHomeView: View {
   @State var pendingPrimaryActionTaskID: String?
   @State var fileImporterPresented = false
   @State var photoPickerPresented = false
+  @State var screenshotPickerPresented = false
+  @State var screenAssistantConversationID = ""
+  @State var screenAssistantCompact = true
+  @State var screenAssistantCollapsed = false
+  @State var screenAssistantStartedAt: Date?
+  @State var screenAssistantRunID: UUID?
+  @State var screenAssistantOwnedTurns: [ChatMessage] = []
+  @State var screenAssistantSubmissions: [UUID: Task<Void, Never>] = [:]
+  @State var screenAssistantStopping = false
+  @State var screenAssistantAttachmentIDs: Set<String> = []
+  @State private var screenAssistantRecoveryRequests: Set<String> = []
   @State var cameraPickerPresented = false
   @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
@@ -194,14 +205,55 @@ struct AgentHomeView: View {
     return settings
   }
 
+  private var screenAssistantRecoveryKey: String? {
+    guard scenePhase == .active,
+          !screenAssistantConversationID.isEmpty,
+          screenAssistantConversationID == store.activeAgentConversationId,
+          let startedAt = screenAssistantStartedAt else { return nil }
+    return transcriptMessages.last { message in
+      message.isMine && message.conversationId == screenAssistantConversationID &&
+        message.createdAt >= startedAt && waitingMessageIDs.contains(message.id)
+    }?.id.uuidString
+  }
+
+  var screenAssistantBubblePhase: AgentPhase? {
+    guard let startedAt = screenAssistantStartedAt,
+          let outgoing = transcriptMessages.last(where: { $0.isMine && !$0.isSystem && $0.createdAt >= startedAt }) else { return nil }
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    if let task = store.agentTask(id: turn), task.sessionId == screenAssistantConversationID { return task.phase }
+    if let reply = transcriptMessages.last(where: { !$0.isMine && !$0.isSystem && $0.turnId == outgoing.turnId }) {
+      return reply.deliveryStatus == .delivered ? .completed : (reply.deliveryStatus == .failed ? .failed : .executing)
+    }
+    return outgoing.deliveryStatus == .failed ? .failed : .waitingResponse
+  }
+
   var body: some View {
     NavigationView {
       VStack(spacing: 0) {
         header
-        agentOutput
+        VStack(spacing: 0) {
+          if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty && !screenAssistantCollapsed {
+            screenAssistantControls
+            agentOutput.frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
+            if screenAssistantCompact { Spacer(minLength: 0) }
+          } else {
+            agentOutput
+          }
+        }
+        .frame(maxHeight: .infinity)
+        .overlay { screenAssistantRestoreControl }
         agentComposer
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
+      .task(id: screenAssistantRecoveryKey) {
+        guard let key = screenAssistantRecoveryKey,
+              !screenAssistantRecoveryRequests.contains(key) else { return }
+        do { try await Task.sleep(nanoseconds: 90_000_000_000) }
+        catch { return }
+        guard !Task.isCancelled, screenAssistantRecoveryKey == key,
+              screenAssistantRecoveryRequests.insert(key).inserted else { return }
+        coordinator.resumePendingAgentDelivery()
+      }
       .navigationBarHidden(true)
       .background(GalaxySSIConversationFocusProbe(focused: $homeWindowFocused))
       .background(
@@ -329,6 +381,25 @@ struct AgentHomeView: View {
       }
       .onChange(of: coordinator.pendingPhonePublicPageExport) { _ in
         presentPendingPhonePublicPageExport()
+      }
+      .sheet(isPresented: $screenshotPickerPresented) {
+        GalaxySSIScreenshotInputView { attachment in
+          guard !screenAssistantStopping else { return }
+          appendAttachment(attachment)
+          screenshotPickerPresented = false
+          guard attachments.contains(where: { $0.id == attachment.id }) else { return }
+          if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft = t("galaxyssi.screen_assistant.prompt", "Analyze this screenshot, summarize the important content and suggest next steps.")
+          }
+          screenAssistantConversationID = store.activeAgentConversationId
+          screenAssistantCompact = true
+          screenAssistantCollapsed = false
+          screenAssistantStartedAt = Date()
+          screenAssistantRunID = UUID()
+          screenAssistantOwnedTurns = []
+          screenAssistantSubmissions = [:]
+          screenAssistantAttachmentIDs = [attachment.id]
+        }
       }
       .galaxySSIAgentHomePresentationRoutes(
         scanShortcutActive: $scanShortcutActive,
@@ -622,6 +693,10 @@ struct AgentHomeView: View {
       onTakePhoto: openCameraAttachmentPicker,
       onAddFile: {
         fileImporterPresented = true
+      },
+      onAnalyzeScreenshot: {
+        actionTrayPresented = false
+        screenshotPickerPresented = true
       },
       onSend: { sendAgentMessage() },
       onPendingPrimaryAction: handlePendingAgentTaskAction,

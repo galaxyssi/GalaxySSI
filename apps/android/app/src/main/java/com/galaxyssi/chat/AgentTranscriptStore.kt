@@ -1479,7 +1479,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             id = UUID.randomUUID().toString(), role = role, text = cleanText,
             timestampMillis = timestampMillis, dedupeKey = cleanKey,
             conversationId = conversationId, turnId = turnId, taskId = taskId,
-            richOutputJson = normalizeRichOutput(richOutputJson)
+            richOutputJson = normalizeRichOutput(richOutputJson, cleanText.takeIf { role == AgentTranscriptRole.ASSISTANT }.orEmpty())
         )
         val inserted = synchronized(entryMutationLock) {
             if (
@@ -1544,7 +1544,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val mutation = synchronized(entryMutationLock) {
             val previous = entryDatabase.findByDedupeKey(conversationId, cleanKey)
             val updated = previous != null
-            val normalizedRichOutput = normalizeRichOutput(richOutputJson)
+            val normalizedRichOutput = normalizeRichOutput(richOutputJson, cleanText.takeIf { role == AgentTranscriptRole.ASSISTANT }.orEmpty())
             if (
                 previous != null &&
                 previous.text == cleanText &&
@@ -1754,8 +1754,8 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
 
     private fun allEntries(): List<AgentTranscriptEntry> = entryDatabase.listAll()
 
-    private fun normalizeRichOutput(raw: String): String =
-        AgentRichContentMaterializer.materialize(appContext, raw)
+    private fun normalizeRichOutput(raw: String, assistantText: String = ""): String =
+        AgentRichContentMaterializer.materialize(appContext, raw, assistantText)
 
     private fun updateConversation(id: String, transform: (AgentConversation) -> AgentConversation): Boolean {
         ensureConversationMigration()

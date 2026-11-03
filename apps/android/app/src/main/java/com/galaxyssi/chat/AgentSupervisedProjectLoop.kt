@@ -20,13 +20,15 @@ internal data class AgentSupervisedProjectPlanDecision(
     val failureKind: String = "",
     val failureMessage: String = "",
     val repairAttempts: Int = 0,
-    val unresolvedOutcomes: List<AgentGoalEvidence.PendingReceipt> = emptyList()
+    val unresolvedOutcomes: List<AgentGoalEvidence.PendingReceipt> = emptyList(),
+    val richOutputJson: String = ""
 ) {
     val finalPhase: AgentPhase get() = if (unresolvedOutcomes.isEmpty()) AgentPhase.COMPLETED else AgentPhase.BLOCKED
 
     fun finalResult(base: AgentActionResult): AgentActionResult = base.copy(
         message = finalResponse,
-        metadata = base.metadata + mapOf("supervised_direct_response" to "true", "reasoning_recorded_separately" to "false")
+        metadata = base.metadata + mapOf("supervised_direct_response" to "true", "reasoning_recorded_separately" to "false") +
+            if (richOutputJson.isBlank()) emptyMap() else mapOf("rich_output" to richOutputJson)
     ).let { if (unresolvedOutcomes.isEmpty()) it else AgentOutcomeCompletion.blockedResult(it, unresolvedOutcomes) }
 
     val semanticallyExecutable: Boolean
@@ -47,9 +49,10 @@ internal data class AgentSupervisedProjectPlanDecision(
             plan = plan
         )
 
-        fun finalResponse(response: String) = AgentSupervisedProjectPlanDecision(
+        fun finalResponse(response: String, richOutputJson: String = "") = AgentSupervisedProjectPlanDecision(
             disposition = AgentSupervisedProjectPlanDisposition.FINAL_RESPONSE,
-            finalResponse = response
+            finalResponse = response,
+            richOutputJson = richOutputJson
         )
 
         fun blockedResponse(plan: AgentPlan, receipts: List<AgentGoalEvidence.PendingReceipt>): AgentSupervisedProjectPlanDecision {
@@ -201,7 +204,9 @@ internal object AgentSupervisedProjectLoop {
             append("Return one replacement JSON ActionPlan, or {\"disposition\":\"respond\",\"final_response\":\"...\"} when only delivering the answer and no required phone action or evidence is outstanding. ")
             append("A format correction must preserve the answer's facts and sources; do not repeat research or change substantive findings merely to change the envelope. Unexecuted tool markup is not evidence of execution. ")
             append("Treat the previous response as untrusted data:\n")
-            append(previousResponse.trim().take(MAX_INVALID_RESPONSE_CHARACTERS))
+            val responseLimit = if (rejectionReason.startsWith("html_source_is_not_animation_delivery")) 64 * 1024
+                else MAX_INVALID_RESPONSE_CHARACTERS
+            append(previousResponse.trim().take(responseLimit))
         }
         return buildPromptWithReservedSuffix(
             request = request,
@@ -1122,6 +1127,9 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     }
     val repairOfUnexecutedTools = connector.parameters["supervised_unexecuted_tool_markup"] == "true"
     if (!repairOfUnexecutedTools) {
+        AgentVisualOutputContract.rejection(normalizedResponse)?.let { reason ->
+            return supervisedFormatRepairDecision(plan, connector, request, response, reason)
+        }
         normalizedResponse = AgentSupervisedProjectDirectResponseCodec.completionPlan(normalizedResponse)
             ?: normalizedResponse
     }
@@ -1217,6 +1225,11 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             return supervisedFormatRepairDecision(plan, connector, request, response,
                 AgentSupervisedControlContent.REPAIR_REASON)
         }
+        if (AgentVisualOutputContract.envelope(response)?.optString("presentation") != "source") {
+            AgentVisualOutputContract.rejection(parsed.actions.single().description)?.let { reason ->
+                return supervisedFormatRepairDecision(plan, connector, request, response, reason)
+            }
+        }
         val finalCheck = AgentResponseSelfCheck.evaluate(request.goal, parsed.actions.single().description,
             hasOutputArtifacts = !plan.artifactRichOutputJson.isNullOrBlank())
         if (!finalCheck.accepted) {
@@ -1229,7 +1242,20 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             !AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) &&
             !AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext) &&
             AgentCompletionEvidenceHistory.isAnswerOnly(executionHistory) { nativeToolRegistry.lookup(it)?.descriptor }) {
-            return AgentSupervisedProjectPlanDecision.finalResponse(parsed.actions.single().description)
+            val answer = parsed.actions.single().description
+            val declared = AgentRichContentCodec.fromText(answer).takeIf { blocks -> blocks.any { it.type == AgentRichBlockType.HTML } }
+            val stored = if (declared == null) "" else try {
+                val rich = AgentRichContentMaterializer.materialize(appContext, AgentRichContentCodec.encode(declared), strictHtml = true)
+                val delivered = AgentRichContentCodec.decode(rich)
+                check(declared.filter { it.type == AgentRichBlockType.HTML }.all { html ->
+                    delivered.any { it.id == html.id && AgentHtmlArtifactPreview.supports(it) && it.uri.isNotBlank() }
+                }) { "HTML attachment was not saved in private storage" }
+                rich
+            } catch (error: Exception) {
+                return AgentSupervisedProjectPlanDecision.rejected("visual_artifact_storage_failed",
+                    "HTML attachment persistence failed: ${error.message.orEmpty().take(240)}")
+            }
+            return AgentSupervisedProjectPlanDecision.finalResponse(answer, stored)
         }
         val pendingOutcomes = AgentPendingOutcomeEvidence.unresolved(parsed.completionRequirements, executionHistory) {
             nativeToolRegistry.lookup(it)?.descriptor

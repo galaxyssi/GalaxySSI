@@ -43,7 +43,7 @@ class AgentInteractiveBrowserToolsTest {
     }
 
     @Test fun provenPreflightFailureIsDistinctFromAnUnobservedMutation() {
-        for (code in listOf("node_missing", "node_path_missing", "node_start_failed", "browser_launcher_missing", "browser_launcher_path_missing")) {
+        for (code in listOf("node_missing", "node_path_missing", "node_start_failed", "browser_launcher_missing", "browser_launcher_path_missing", "browser_start_pending", "browser_start_failed")) {
             val registry = registry { response("""{"ok":false,"error":{"code":"$code","message":"Inspect runtime.","details":{"executed":false}}}""") }
             val result = registry.invoke(AgentInteractiveBrowserTools.ACT, mapOf("operation" to "click"), context.copy(idempotencyKey = code))
             assertEquals(code, result.error?.code)

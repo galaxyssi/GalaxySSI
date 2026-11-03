@@ -1,13 +1,10 @@
 package com.galaxyssi.chat
 
 import android.view.Gravity
-import android.view.GestureDetector
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.Toast
-import androidx.recyclerview.widget.RecyclerView
 import com.galaxyssi.chat.ui.AgentReplySpeechButton
 import com.galaxyssi.chat.ui.ParagraphSelectingTextView
 import com.galaxyssi.chat.voice.tts.TtsCancelReason
@@ -103,6 +100,7 @@ internal fun MainActivity.attachAgentReplyParagraphSpeech(
     entry: AgentTranscriptEntry
 ) {
     val paragraphView = textView as? ParagraphSelectingTextView ?: return
+    paragraphView.exclusiveParagraphDoubleTap = true
     paragraphView.setOnParagraphDoubleTapListener { selection ->
         val target = AgentReplySpeechPresentationPolicy.target(entry) ?: return@setOnParagraphDoubleTapListener
         if (target.complete) {
@@ -124,29 +122,8 @@ internal fun MainActivity.attachAgentReplyParagraphSpeech(
 
 internal fun MainActivity.attachAgentReplySpeechStopGesture() {
     VoiceReplyPlayback.watch(this)
-    var stopTriggered = false
-    val detector = GestureDetector(
-        this,
-        object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(event: MotionEvent): Boolean = true
-
-            override fun onDoubleTap(event: MotionEvent): Boolean {
-                stopTriggered = stopAgentReplySpeechFromOutput()
-                return stopTriggered
-            }
-        }
-    )
-    agentOutputList.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
-        override fun onInterceptTouchEvent(
-            recyclerView: RecyclerView,
-            event: MotionEvent
-        ): Boolean {
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) stopTriggered = false
-            detector.onTouchEvent(event)
-            return stopTriggered.also { intercepted ->
-                if (intercepted) stopTriggered = false
-            }
-        }
+    agentOutputList.addOnItemTouchListener(AgentReplySpeechTouchTarget.blankTapListener(agentOutputList) {
+        stopAgentReplySpeechFromOutput()
     })
 }
 
