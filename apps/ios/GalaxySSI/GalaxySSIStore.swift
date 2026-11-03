@@ -704,6 +704,10 @@ final class GalaxySSIStore: ObservableObject {
     chatHistoryDatabase.page(contactId: nil, conversationId: conversationId, before: before, pageSize: 100)
   }
 
+  func makeManagedResponseLedger() -> UserDefaultsAgentManagedResponseLedger {
+    UserDefaultsAgentManagedResponseLedger(defaults: defaults, secrets: secrets)
+  }
+
   func clearRuntimePlaintextForBackground() {
     guard !runtimePlaintextCleared else { return }
     guard save() else { return }

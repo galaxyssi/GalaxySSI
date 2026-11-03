@@ -46,6 +46,18 @@ final class UserDefaultsAgentManagedResponseLedger: AgentManagedResponseLedger {
     try access { try $0.matching(response) != nil }
   }
 
+  func recoveryRecord(owner: String) throws -> AgentManagedResponseRecord? {
+    try access { try $0.owner(owner) }
+  }
+
+  func recoveryRecord(matching response: AgentConnectorResponse) throws -> AgentManagedResponseRecord? {
+    try access { try $0.matching(response) }
+  }
+
+  func pendingRecoveryPage(after: String, limit: Int = 16) throws -> (records: [AgentManagedResponseRecord], next: String?) {
+    try access { try $0.pendingPage(after: after, limit: limit) }
+  }
+
   func complete(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord? {
     var notify = false
     let record = try? access { database -> AgentManagedResponseRecord? in

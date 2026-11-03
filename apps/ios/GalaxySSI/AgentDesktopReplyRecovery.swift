@@ -30,6 +30,12 @@ enum AgentDesktopReplyDiscoveryPolicy {
   }
 }
 
+struct AgentManagedDesktopReplySource: Codable, Equatable {
+  var ownerRunId: String
+  var sourceMessageId: Int64
+  var executionGeneration: Int64
+}
+
 struct AgentDesktopReplyBinding: Codable, Equatable {
   var desktopId: String
   var displayContactId: String
@@ -37,26 +43,55 @@ struct AgentDesktopReplyBinding: Codable, Equatable {
   var contactId: String
   var agentId: String
   var identity: AgentTaskIdentity
+  var managedSource: AgentManagedDesktopReplySource? = nil
+  var sourceIdentity: String { managedSource.map { String($0.sourceMessageId) } ?? sourceId.uuidString }
 
   var fields: [String: String] {
     ["client_route_id": identity.clientRouteId, "conversation_id": identity.conversationId,
      "task_id": identity.taskId, "turn_id": identity.turnId, "contact_id": contactId,
-     "source_message_id": sourceId.uuidString, "agent_id": agentId]
+     "source_message_id": sourceIdentity, "agent_id": agentId]
   }
 
   var isValid: Bool {
-    identity.isComplete && ([desktopId, displayContactId] + Array(fields.values))
+    identity.isComplete && (managedSource.map {
+      !$0.ownerRunId.isBlank && $0.ownerRunId.count <= 200 && $0.sourceMessageId > 0 &&
+        AgentRemoteOutcomePolicy.validGeneration($0.executionGeneration)
+    } ?? true) && ([desktopId, displayContactId] + Array(fields.values))
       .allSatisfy { !$0.isBlank && $0.count <= 200 }
   }
 
   var key: String {
-    let values = [desktopId, displayContactId] + fields.keys.sorted().map { fields[$0]! }
+    var values = [desktopId, displayContactId] + fields.keys.sorted().map { fields[$0]! }
+    if let managedSource { values += [managedSource.ownerRunId, String(managedSource.executionGeneration)] }
     let data = (try? JSONEncoder().encode(values)) ?? Data()
     return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 
   func matches(_ payload: [String: Any]) -> Bool {
-    fields.allSatisfy { payload[$0.key] as? String == $0.value }
+    fields.allSatisfy { field in
+      if field.key == "source_message_id", let managedSource,
+         let number = payload[field.key] as? NSNumber {
+        return CFGetTypeID(number) != CFBooleanGetTypeID() && number.doubleValue.isFinite &&
+          number.int64Value == managedSource.sourceMessageId && number.int64Value <= 9_007_199_254_740_991 &&
+          Double(number.int64Value) == number.doubleValue
+      }
+      return payload[field.key] as? String == field.value
+    }
+  }
+
+  static func managed(record: AgentManagedResponseRecord, desktopId: String, agentId: String,
+                      identity: AgentTaskIdentity) -> AgentDesktopReplyBinding? {
+    guard record.conversationId == identity.conversationId, record.turnId == identity.turnId,
+          record.taskId == identity.taskId else { return nil }
+    // Numeric managed sources have no visible outgoing UUID. This key is local only, never sent on the wire.
+    let bytes = Array(SHA256.hash(data: Data(("managed:" + record.ownerRunId).utf8)).prefix(16))
+    let localKey = UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+      bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+    let binding = AgentDesktopReplyBinding(desktopId: desktopId, displayContactId: "managed",
+      sourceId: localKey, contactId: record.contactId, agentId: agentId, identity: identity,
+      managedSource: AgentManagedDesktopReplySource(ownerRunId: record.ownerRunId,
+        sourceMessageId: record.sourceMessageId, executionGeneration: record.executionGeneration))
+    return binding.isValid ? binding : nil
   }
 }
 
@@ -155,6 +190,8 @@ final class AgentDesktopReplyRecovery {
 
   func acceptsFinal(_ payload: [String: Any], desktopId: String) -> Bool {
     guard let record = records.values.first(where: { $0.binding.desktopId == desktopId && $0.binding.matches(payload) }) else { return true }
+    if let managed = record.binding.managedSource,
+       Self.integer(payload["execution_generation"], minimum: 1) != managed.executionGeneration { return false }
     if record.generation == 0 { return true }
     guard let generation = Self.integer(payload["execution_generation"], minimum: 1),
           let sequence = Self.integer(payload["status_sequence"], minimum: 0) else { return false }
@@ -208,6 +245,7 @@ final class AgentDesktopReplyRecovery {
           let status = items[0]["status"] as? String, Self.statuses.contains(status),
           let runId = items[0]["remote_run_id"] as? String, !runId.isBlank, runId.count <= 200,
           let generation = Self.integer(items[0]["execution_generation"], minimum: 1),
+          query.binding.managedSource == nil || query.binding.managedSource?.executionGeneration == generation,
           let sequence = Self.integer(items[0]["status_sequence"], minimum: 0),
           generation > record.generation || (generation == record.generation && sequence >= record.sequence) else { return nil }
     if generation == record.generation, record.terminalObservedAt > 0, !Self.terminalStatuses.contains(status) { return nil }

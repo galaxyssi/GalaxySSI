@@ -1,8 +1,62 @@
 import XCTest
 import CoreGraphics
+import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  @MainActor
+  func testManagedDesktopRecoveryUsesOriginalNumericSourceAndExactGeneration() throws {
+    let suite = "ManagedDesktopRecovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let source = AgentManagedResponseRecord(ownerRunId: "child", supervisorRunId: "parent", agentId: "codex",
+      deliveryMode: .observe, sourceMessageId: 73, contactId: "agent", conversationId: "conversation",
+      turnId: "turn", taskId: "child-task", executionGeneration: 2, createdAtMillis: 1_000)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation", taskId: "child-task", turnId: "turn")
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.managed(record: source, desktopId: "desktop", agentId: "codex", identity: identity))
+    XCTAssertEqual(binding.fields["source_message_id"], "73")
+    XCTAssertEqual(binding.checkpointIdentity(generation: 2).sourceMessageId, "73")
+    var payload: [String: Any] = binding.fields
+    payload["source_message_id"] = 73
+    XCTAssertTrue(binding.matches(payload))
+    payload["source_message_id"] = true
+    XCTAssertFalse(binding.matches(payload))
+    payload["source_message_id"] = 73.5
+    XCTAssertFalse(binding.matches(payload))
+    payload["source_message_id"] = binding.sourceId.uuidString
+    XCTAssertFalse(binding.matches(payload))
+    var sibling = source
+    sibling.ownerRunId = "another-child"
+    XCTAssertNotEqual(binding.key, AgentDesktopReplyBinding.managed(record: sibling, desktopId: "desktop", agentId: "codex", identity: identity)?.key)
+
+    let recovery = AgentDesktopReplyRecovery(defaults: defaults, secrets: InMemorySecretStore(), journal: DesktopReplyRecoveryTestJournal())
+    XCTAssertTrue(recovery.track(binding, now: 1_000))
+    let request = try XCTUnwrap(recovery.request(binding, online: true, now: 1_000))
+    XCTAssertEqual((request["items"] as? [[String: Any]])?.first?["source_message_id"] as? String, "73")
+    var item: [String: Any] = binding.fields
+    item.merge(["status": "completed", "remote_run_id": "run", "execution_generation": 3,
+      "status_sequence": 4]) { _, new in new }
+    var result: [String: Any] = ["type": "agent_task_recovery_result", "request_id": request["request_id"]!,
+      "client_route_id": "route", "items": [item]]
+    XCTAssertNil(recovery.receive(result, authenticatedDesktopId: "desktop", now: 2_000))
+    item["execution_generation"] = 2
+    result["items"] = [item]
+    XCTAssertNotNil(recovery.receive(result, authenticatedDesktopId: "desktop", now: 2_000))
+    item["task_status"] = "completed"
+    XCTAssertTrue(recovery.acceptsFinal(item, desktopId: "desktop"))
+    item["execution_generation"] = 3
+    XCTAssertFalse(recovery.acceptsFinal(item, desktopId: "desktop"))
+  }
+
+  func testOrdinaryDesktopBindingKeepsLegacyKeyAlgorithm() throws {
+    let binding = desktopReplyJournalBinding()
+    let originalValues = [binding.desktopId, binding.displayContactId] + binding.fields.keys.sorted().map { binding.fields[$0]! }
+    let expected = SHA256.hash(data: try JSONEncoder().encode(originalValues)).map { String(format: "%02x", $0) }.joined()
+    XCTAssertEqual(binding.key, expected)
+    XCTAssertEqual(try JSONDecoder().decode(AgentDesktopReplyBinding.self,
+      from: JSONEncoder().encode(binding)).key, expected)
+  }
+
   func testDesktopReplyDiscoveryNeverGuessesForeignOrTeamSourceIdentity() {
     let source = ChatMessage(contactId: "hermes", content: "Pending", isMine: true,
       conversationId: "conversation", turnId: "turn")
