@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GalaxySSIAgentTranscriptMessagesView: View {
+  @State private var expandedProgress = Set<UUID>()
   var messages: [ChatMessage]
   var waitingMessageIDs: Set<UUID>
   var retryingMessageIDs: Set<UUID>
@@ -62,6 +63,36 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
         messageExecutionFooter(message)
       }
       agentMessageContent(message)
+      if message.isMine {
+        let progress = message.deliveryTrace.filter { $0.stage.hasPrefix(AgentConnectorPublicProgress.tracePrefix) }
+        if !progress.isEmpty {
+          VStack(alignment: .leading, spacing: 8) {
+            Button {
+              if !expandedProgress.insert(message.id).inserted { expandedProgress.remove(message.id) }
+            } label: {
+              HStack(alignment: .top, spacing: 6) {
+                Image(systemName: expandedProgress.contains(message.id) ? "chevron.up" : "chevron.down")
+                Text(progress.last?.detail ?? "")
+                  .multilineTextAlignment(.leading)
+              }
+              .font(.system(size: 13))
+              .foregroundColor(.galaxySSITextSecondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ios.agent.public-progress.\(message.id.uuidString)")
+            if expandedProgress.contains(message.id) {
+              ForEach(progress) { event in
+                Text(event.detail)
+                  .font(.system(size: 13))
+                  .foregroundColor(.galaxySSITextSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+              }
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.vertical, 8)
+        }
+      }
       if let target = AgentReplySpeechPresentationPolicy.target(message),
          latestSpeechTarget?.responseId == target.responseId || replySpeech.isActive(target) {
         HStack {

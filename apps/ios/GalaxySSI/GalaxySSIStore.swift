@@ -1315,6 +1315,26 @@ final class GalaxySSIStore: ObservableObject {
     return false
   }
 
+  @discardableResult
+  func persistConnectorProgress(sourceId: UUID, conversationId: String, turnId: String,
+                                updates: [AgentConnectorPublicProgress]) -> Bool? {
+    guard !updates.isEmpty, var message = chatHistoryDatabase.message(id: sourceId), message.isMine,
+          message.conversationId == conversationId, message.turnId.ifBlank(message.id.uuidString) == turnId,
+          let session = agentSession(id: conversationId), !session.privateMode, !session.trackingPaused else { return nil }
+    let trace = AgentConnectorPublicProgress.reducing(message.deliveryTrace, updates: updates)
+    guard trace != message.deliveryTrace else { return true }
+    message.deliveryTrace = trace
+    guard chatHistoryDatabase.upsert(message) else { return false }
+    if var cached = messagesByContact[message.contactId], let index = cached.firstIndex(where: { $0.id == sourceId }) {
+      cached[index] = message
+      let previous = suppressMessageDatabaseSync
+      suppressMessageDatabaseSync = true
+      messagesByContact[message.contactId] = cached
+      suppressMessageDatabaseSync = previous
+    }
+    return true
+  }
+
   // The MQTT completion drain consumes its event only after this throws-or-succeeds boundary.
   func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event) throws {
     let saved = try chatHistoryDatabase.persistTransportDelivery(event)

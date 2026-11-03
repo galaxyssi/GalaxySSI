@@ -524,6 +524,13 @@ enum AgentTranscriptPresentationPolicy {
     processSegments(entries).filter { $0.kind == .narration }
   }
 
+  static func visibleProcessSegments(_ entries: [AgentTranscriptEntry]) -> [ProcessSegment] {
+    processSegments(entries).compactMap { segment in
+      let visible = segment.entries.filter { segment.kind == .narration || $0.dedupeKey.hasPrefix("connector-event:") }
+      return visible.isEmpty ? nil : ProcessSegment(kind: segment.kind, entries: visible)
+    }
+  }
+
   static func controlMessageKind(_ value: String) -> ControlMessageKind? {
     switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "task cancelled", "task canceled":

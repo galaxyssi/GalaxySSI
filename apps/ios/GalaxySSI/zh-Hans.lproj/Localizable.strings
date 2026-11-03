@@ -4868,4 +4868,17 @@
 "galaxyssi.screen_assistant.enable" = "悬浮屏幕助手";
 "galaxyssi.screen_assistant.enabled_ios" = "已开启，悬浮图标在 GalaxySSI 应用内显示。";
 "galaxyssi.screen_assistant.disabled" = "已关闭";
+"galaxyssi.agent.progress.operation.command" = "执行命令";
+"galaxyssi.agent.progress.operation.file_change" = "更新文件";
+"galaxyssi.agent.progress.operation.web_search" = "搜索网页";
+"galaxyssi.agent.progress.operation.web_image_search" = "搜索图片";
+"galaxyssi.agent.progress.operation.image_view" = "查看图片";
+"galaxyssi.agent.progress.operation.mcp_tool" = "调用 MCP 工具";
+"galaxyssi.agent.progress.operation.dynamic_tool" = "调用工具";
+"galaxyssi.agent.progress.operation.image_generation" = "生成图片";
+"galaxyssi.agent.progress.operation.agent_collaboration" = "协调智能体";
+"galaxyssi.agent.progress.operation.context_compaction" = "压缩上下文";
+"galaxyssi.agent.progress.completed" = "已完成：%@";
+"galaxyssi.agent.progress.failed" = "失败：%@";
+"galaxyssi.agent.progress.save_failed" = "无法保存智能体进度。";
 "galaxyssi.screen_assistant.privacy_ios" = "仅在你选择内容并发送后，才向所选 Agent 提供内容。开启此开关不会截屏或启动任务。iOS 不允许此图标悬浮在其他应用之上。";

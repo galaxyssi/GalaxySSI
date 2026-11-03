@@ -10918,6 +10918,22 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     if object.string("scheme") == "signal", handleTeamObserverReply(appPayload, link: link, messageId: messageId) { return }
+    if object.string("scheme") == "signal", appPayload.string("type") == "agent_task_event",
+       let link, link.paired, appPayload.string("client_route_id") == link.routes.clientRouteId,
+       taskIdentityStore.matchesRegistered(payload: appPayload),
+       let contact = store.contact(id: appPayload.string("contact_id")), contact.trustState == .verified,
+       contact.desktopId == link.desktopId, let sourceId = UUID(uuidString: appPayload.string("source_message_id")) {
+      let updates = AgentConnectorPublicProgress.entries(appPayload) { key, fallback in
+        self.localizedReply(key, fallback: fallback)
+      }
+      if !updates.isEmpty {
+        if store.persistConnectorProgress(sourceId: sourceId, conversationId: appPayload.string("conversation_id"),
+          turnId: appPayload.string("turn_id"), updates: updates) == false {
+          lastError = localizedReply("galaxyssi.agent.progress.save_failed", fallback: "Agent progress could not be saved.")
+          return
+        }
+      }
+    }
     if let streamUpdate = AgentConnectorStreamUpdate(payload: appPayload) {
       applyAgentConnectorStreamUpdate(streamUpdate)
       if !messageId.isEmpty {
