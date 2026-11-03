@@ -226,20 +226,20 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
 extension AgentHomeView {
   @ViewBuilder
   var screenAssistantRestoreControl: some View {
-    if scenePhase == .active, !screenshotPickerPresented, !screenAssistantConversationID.isEmpty,
-       screenAssistantConversationID == store.activeAgentConversationId {
+    if screenAssistantLauncherVisible {
       GalaxySSIScreenAssistantBubble(
         restoreLabel: t("galaxyssi.screen_assistant.restore", "Restore screen assistant"),
         closeLabel: t("galaxyssi.screen_assistant.close", "Close screen assistant"),
         stopLabel: t("galaxyssi.screen_assistant.stop", "Stop analysis"),
-        phase: screenAssistantBubblePhase,
-        statusLabel: screenAssistantBubbleStatusLabel,
-        onRestore: { screenAssistantCollapsed = false },
+        phase: screenAssistantConversationID == store.activeAgentConversationId ? screenAssistantBubblePhase : nil,
+        statusLabel: screenAssistantConversationID == store.activeAgentConversationId
+          ? screenAssistantBubbleStatusLabel : t("galaxyssi.screen_assistant.ready", "Ready"),
+        onRestore: restoreScreenAssistantPresentation,
         onClose: {
-          screenAssistantCollapsed = false
-          screenAssistantConversationID = ""
+          store.updateDisplaySettings { $0.screenAssistantEnabled = false }
         },
-        onStop: screenAssistantRunID == nil || screenAssistantStopping ? nil : { stopScreenAnalysis() }
+        onStop: screenAssistantRunID == nil || screenAssistantStopping ||
+          screenAssistantConversationID != store.activeAgentConversationId ? nil : { stopScreenAnalysis() }
       )
     }
   }

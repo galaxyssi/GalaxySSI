@@ -36,7 +36,7 @@ extension GalaxySSIStore {
   func updateDisplaySettings(_ mutate: (inout AppDisplaySettings) -> Void) {
     var next = displaySettings
     mutate(&next)
-    displaySettings = AppDisplaySettings(textScale: next.textScale)
+    displaySettings = AppDisplaySettings(textScale: next.textScale, screenAssistantEnabled: next.screenAssistantEnabled)
   }
 
   func updateAgentSafetySettings(_ mutate: (inout AgentSafetySettings) -> Void) {
