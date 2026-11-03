@@ -889,7 +889,8 @@ struct ConversationView: View {
       onAction: handleRichAction,
       isVoiceTranscriptionPending: transcribingVoiceMessageIDs.contains(message.id),
       isRetrying: retryingMessageIDs.contains(message.id),
-      onRetry: { retryMessage(message) }
+      onRetry: { retryMessage(message) },
+      onDelete: { store.deleteMessage(message.id, contactId: contact.id) }
     )
       .id(message.id)
       .contextMenu {
@@ -1576,6 +1577,7 @@ struct MessageBubble: View {
   var isVoiceTranscriptionPending = false
   var isRetrying = false
   var onRetry: () -> Void = {}
+  var onDelete: (() -> Void)? = nil
 
   var body: some View {
     if message.isSystem {
@@ -1608,6 +1610,9 @@ struct MessageBubble: View {
             onFormSubmit: onFormSubmit
           )
             .environment(\.agentReplyParagraphSpeechAction, onParagraphDoubleTap)
+            .environment(\.peerTextSelection, onDelete.map {
+              GalaxySSIPeerTextSelectionContext(maximumWidth: max(1, bubbleMaxWidth - 24), onDelete: $0)
+            })
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .foregroundColor(.galaxySSITextPrimary)
