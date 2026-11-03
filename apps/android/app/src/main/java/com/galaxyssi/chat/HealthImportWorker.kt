@@ -13,13 +13,15 @@ import java.io.File
 import java.util.concurrent.CancellationException
 
 internal object HealthImportScheduler {
-    fun enqueue(context: Context, id: String) {
-        val request = OneTimeWorkRequestBuilder<HealthImportWorker>().setInputData(workDataOf("health_job" to id)).build()
-        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork("health-import:$id", ExistingWorkPolicy.KEEP, request)
+    fun enqueue(context: Context, id: String, prepareCapture: Boolean = false) {
+        val request = OneTimeWorkRequestBuilder<HealthImportWorker>().setInputData(workDataOf("health_job" to id, "capture_stage" to prepareCapture)).build()
+        // Preparation and recognition have separate unique work: submitting as preparation finishes cannot lose the OCR dispatch.
+        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork("${if (prepareCapture) "health-capture" else "health-import"}:$id", ExistingWorkPolicy.KEEP, request)
     }
     fun cancel(context: Context, id: String) {
         HealthOriginalStore(context).use { it.updateJob(id) { job -> job.copy(state = HealthImportState.CANCELLED) } }
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-import:$id")
+        WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-capture:$id")
     }
     fun recoverAsync(context: Context) {
         kotlin.concurrent.thread(name = "health-import-recovery", isDaemon = true) {
@@ -28,7 +30,7 @@ internal object HealthImportScheduler {
                 var after: Pair<Long, String>? = null
                 do {
                     val jobs = store.pendingJobs(after)
-                    jobs.forEach { enqueue(context, it.id) }
+                    jobs.forEach { enqueue(context, it.id, it.captureBatch.isNotBlank() && !it.captureSubmitted) }
                     after = if (jobs.size == 100) jobs.last().let { it.createdAt to it.id } else null
                 } while (after != null)
             } }
@@ -41,7 +43,7 @@ class HealthImportWorker(context: Context, params: WorkerParameters) : Worker(co
     override fun doWork(): Result {
         val id = inputData.getString("health_job") ?: return Result.failure()
         HealthOriginalStore(applicationContext).use { store ->
-            return when (HealthImportPipeline(applicationContext).run(store, id) { isStopped }) {
+            return when (HealthImportPipeline(applicationContext).run(store, id, inputData.getBoolean("capture_stage", false)) { isStopped }) {
                 HealthImportOutcome.COMPLETE -> Result.success()
                 HealthImportOutcome.RETRY -> Result.retry()
                 HealthImportOutcome.FAILED -> Result.failure()
@@ -54,9 +56,11 @@ internal enum class HealthImportOutcome { COMPLETE, FAILED, RETRY }
 private class HealthImportInterrupted : CancellationException()
 
 internal class HealthImportPipeline(private val context: Context) {
-    fun run(store: HealthOriginalStore, id: String, stopped: () -> Boolean = { false }): HealthImportOutcome {
+    fun run(store: HealthOriginalStore, id: String, prepareCapture: Boolean = false, stopped: () -> Boolean = { false }): HealthImportOutcome {
             val initial = store.job(id) ?: return HealthImportOutcome.FAILED
-            if (initial.state in listOf(HealthImportState.CANCELLED, HealthImportState.REVIEW, HealthImportState.ORIGINAL_ONLY)) return HealthImportOutcome.COMPLETE
+            if (initial.state in listOf(HealthImportState.CANCELLED, HealthImportState.REVIEW, HealthImportState.ORIGINAL_ONLY, HealthImportState.CAPTURE_READY)) return HealthImportOutcome.COMPLETE
+            if (prepareCapture && initial.captureSubmitted) return HealthImportOutcome.COMPLETE
+            if (!prepareCapture && initial.captureBatch.isNotBlank() && !initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             fun cancelled() {
                 if (store.job(id)?.state == HealthImportState.CANCELLED) throw CancellationException()
                 if (stopped()) throw HealthImportInterrupted()
@@ -81,6 +85,12 @@ internal class HealthImportPipeline(private val context: Context) {
                 store.updateJob(id) { it.copy(originalId = original.id, copiedBytes = original.size, totalBytes = original.size,
                     state = HealthImportState.RECOGNIZING) }
                 cancelled()
+                if (prepareCapture) {
+                    if (!mime.startsWith("image/")) throw HealthImportFailure("image_unsupported")
+                    val quality = HealthPhotoInspector.inspect(store, original)
+                    cancelled(); store.inspectCapture(id, quality)
+                    return HealthImportOutcome.COMPLETE
+                }
                 if (!mime.startsWith("image/") && mime != "application/pdf") {
                     store.updateJob(id) { it.copy(state = HealthImportState.ORIGINAL_ONLY) }; return HealthImportOutcome.COMPLETE
                 }

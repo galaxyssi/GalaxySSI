@@ -108,4 +108,10 @@ class HealthOcrCandidatesTest {
         assertFalse(manual.json().has("evidence")); assertEquals(manual, HealthDraft.from(manual.json()))
         assertNull(manual.evidence)
     }
+    @Test fun collectionOrderIsSeparateFromThePhysicalOriginalPage() {
+        val draft = HealthOcrCandidates.suggest(job.copy(documentPage = 7), original,
+            HealthOcrPage(1, 1000, 1000, listOf(HealthOcrLine("Glucose 5.6 mmol/L")))).single()
+        assertEquals(7, draft.evidence!!.documentPage); assertEquals(1, draft.evidence.page)
+        assertEquals(draft, HealthDraft.from(draft.json()))
+    }
 }

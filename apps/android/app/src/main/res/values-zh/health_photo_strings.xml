@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_photo_shutter">拍照</string>
+    <string name="health_photo_continuous">支持连续拍摄多页，识别后逐项核对。</string>
+    <string name="health_photo_light">补光</string>
+    <string name="health_photo_light_on">开启补光</string>
+    <string name="health_photo_light_off">关闭补光</string>
+    <string name="health_photo_saving">正在拍摄并加密保存原图…</string>
+    <string name="health_photo_count">已收集 %1$d 页 · 整理页面</string>
+    <string name="health_photo_page">第 %1$d 页</string>
+    <string name="health_photo_empty">还没有照片，可以拍照或从相册选择。</string>
+    <string name="health_photo_inspecting">正在检查图像质量…</string>
+    <string name="health_photo_low_detail">可能模糊或细节较少，请查看原图或重拍。</string>
+    <string name="health_photo_dark">光线较暗，请确认文字清晰，或开启补光。</string>
+    <string name="health_photo_small">图片尺寸较小，可以换用更清晰的原图。</string>
+    <string name="health_photo_check_original">原图已保存，请检查方向、边缘和文字。</string>
+    <string name="health_photo_failed">这一页尚未保存或解码成功，请重拍或移除。</string>
+    <string name="health_photo_before_recognition">可先排序、裁剪和重拍，确认后再开始识别。原件仅保存在私有目录。</string>
+    <string name="health_photo_submitted">页面已提交，可进入识别结果逐项核对。</string>
+    <string name="health_photo_start_recognition">开始识别</string>
+    <string name="health_photo_not_ready">部分页面尚未就绪、原件缺失或已提交，请重拍或移除失败页。</string>
+    <string name="health_photo_add">继续补拍</string>
+    <string name="health_photo_arrange">整理拍摄页面</string>
+    <string name="health_photo_view_pages">查看报告页面</string>
+    <string name="health_photo_retake">重拍这一页</string>
+    <string name="health_photo_remove">移除这一页</string>
+    <string name="health_photo_remove_detail">从本次草稿移除此页，已保存的原件仍保留在原件资料库。</string>
+    <string name="health_photo_move_up">向前移动</string>
+    <string name="health_photo_move_down">向后移动</string>
+    <string name="health_photo_previous">上一组页面</string>
+    <string name="health_photo_next">下一组页面</string>
+    <string name="health_photo_changed">草稿已变化或不能继续编辑，请刷新后重试。</string>
+    <string name="health_photo_save_failed">照片未能保存，请重拍；没有自动保存测量记录。</string>
+    <string name="health_photo_camera_failed">相机被中断或无法启动，可重试、选择照片或手动输入。</string>
+</resources>

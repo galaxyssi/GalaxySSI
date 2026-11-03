@@ -260,8 +260,117 @@ internal class HealthOriginalStore(
         val value = file(original)
         return !value.exists() || value.delete().also { notifyChanged("originals") }
     }
+    fun createCaptureBatch(batch: HealthPhotoBatch) {
+        require(validId(batch.id) && batch.mode in listOf("report", "device") && !batch.submitted)
+        helper.writableDatabase.insertOrThrow("capture_batches", null, ContentValues().apply {
+            put("id", batch.id); put("payload", pack("capture-batch", batch.id, batch.json()))
+        }); notifyChanged("capture")
+    }
+    fun captureBatch(id: String): HealthPhotoBatch? = helper.readableDatabase.rawQuery("SELECT payload FROM capture_batches WHERE id=?", arrayOf(id)).use {
+        if (it.moveToFirst()) HealthPhotoBatch.from(unpack("capture-batch", id, it.getBlob(0))).also { batch -> check(batch.id == id) } else null
+    }
+    private fun editableCapture(id: String) = requireNotNull(captureBatch(id)).also { check(!it.submitted) { "Capture has already been submitted" } }
+    private fun pageValues(page: HealthPhotoPage) = ContentValues().apply {
+        put("job_id", page.jobId); put("batch_id", page.batchId); put("position", page.position)
+        put("payload", pack("capture-page", page.jobId, page.json()))
+    }
+    fun capturePage(id: String): HealthPhotoPage? = helper.readableDatabase.rawQuery("SELECT batch_id,position,payload FROM capture_pages WHERE job_id=?", arrayOf(id)).use {
+        if (it.moveToFirst()) HealthPhotoPage.from(unpack("capture-page", id, it.getBlob(2))).also { page ->
+            check(page.jobId == id && page.batchId == it.getString(0) && page.position == it.getInt(1))
+        } else null
+    }
+    fun capturePages(batch: String, after: Int = -1): List<HealthPhotoPage> = helper.readableDatabase.rawQuery(
+        "SELECT job_id FROM capture_pages WHERE batch_id=? AND position>? ORDER BY position LIMIT 20", arrayOf(batch, after.toString())
+    ).use { buildList { while (it.moveToNext()) add(requireNotNull(capturePage(it.getString(0)))) } }
+    fun capturePageCount(batch: String): Int = helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM capture_pages WHERE batch_id=?", arrayOf(batch))
+        .use { it.moveToFirst(); it.getInt(0) }
+    fun capturePageNumber(id: String): Int? = capturePage(id)?.let { page ->
+        helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM capture_pages WHERE batch_id=? AND position<=?", arrayOf(page.batchId, page.position.toString()))
+            .use { it.moveToFirst(); it.getInt(0) }
+    }
+    @Synchronized fun addCaptureJob(batch: String, job: HealthImportJob, replace: String? = null) {
+        val db = helper.writableDatabase; db.beginTransaction()
+        try {
+            val owner = editableCapture(batch)
+            require(job.captureBatch == batch && !job.captureSubmitted && job.mode == owner.mode && validId(job.id) && job.sourceUri.startsWith("content://"))
+            val previous = replace?.let { requireNotNull(capturePage(it)).also { old -> require(old.batchId == batch) } }
+            val position = previous?.position ?: db.rawQuery("SELECT COALESCE(MAX(position),-1)+1 FROM capture_pages WHERE batch_id=?", arrayOf(batch)).use { it.moveToFirst(); it.getInt(0) }
+            db.insertOrThrow("jobs", null, jobValues(job))
+            if (previous != null) {
+                updateJob(previous.jobId) { it.copy(state = HealthImportState.CANCELLED) }
+                db.delete("capture_pages", "job_id=?", arrayOf(previous.jobId))
+                db.delete("jobs", "id=?", arrayOf(previous.jobId))
+            }
+            db.insertOrThrow("capture_pages", null, pageValues(HealthPhotoPage(job.id, batch, position)))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction(); notifyChanged("capture") }
+    }
+    @Synchronized fun inspectCapture(id: String, quality: HealthPhotoQuality) {
+        val db = helper.writableDatabase; db.beginTransaction()
+        try {
+            val page = requireNotNull(capturePage(id)); editableCapture(page.batchId)
+            val job = requireNotNull(job(id))
+            if (job.state == HealthImportState.CANCELLED) return
+            check(!job.captureSubmitted && job.originalId.isNotBlank())
+            db.update("capture_pages", pageValues(page.copy(quality = quality)), "job_id=?", arrayOf(id))
+            db.update("jobs", jobValues(job.copy(state = HealthImportState.CAPTURE_READY)), "id=?", arrayOf(id))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction(); notifyChanged("capture"); notifyChanged() }
+    }
+    @Synchronized fun moveCapturePage(id: String, direction: Int) {
+        require(direction in listOf(-1, 1))
+        val db = helper.writableDatabase; db.beginTransaction()
+        try {
+            val page = requireNotNull(capturePage(id)); editableCapture(page.batchId)
+            val neighbour = db.rawQuery("SELECT job_id FROM capture_pages WHERE batch_id=? AND position${if (direction < 0) "<" else ">"}? ORDER BY position ${if (direction < 0) "DESC" else "ASC"} LIMIT 1",
+                arrayOf(page.batchId, page.position.toString())).use { if (it.moveToFirst()) capturePage(it.getString(0)) else null } ?: return
+            db.update("capture_pages", pageValues(page.copy(position = neighbour.position)), "job_id=?", arrayOf(page.jobId))
+            db.update("capture_pages", pageValues(neighbour.copy(position = page.position)), "job_id=?", arrayOf(neighbour.jobId))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction(); notifyChanged("capture") }
+    }
+    @Synchronized fun removeCapturePage(id: String) {
+        val db = helper.writableDatabase; db.beginTransaction()
+        try {
+            val page = capturePage(id) ?: return; editableCapture(page.batchId)
+            updateJob(id) { it.copy(state = HealthImportState.CANCELLED) }
+            db.delete("capture_pages", "job_id=?", arrayOf(id)); db.delete("jobs", "id=?", arrayOf(id)); db.setTransactionSuccessful()
+        } finally { db.endTransaction(); notifyChanged("capture") }
+    }
+    @Synchronized fun captureMode(id: String, mode: String) {
+        require(mode in listOf("report", "device"))
+        val db = helper.writableDatabase; db.beginTransaction()
+        try {
+            val batch = editableCapture(id)
+            db.update("capture_batches", ContentValues().apply { put("payload", pack("capture-batch", id, batch.copy(mode = mode).json())) }, "id=?", arrayOf(id))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction(); notifyChanged("capture") }
+    }
+    @Synchronized fun submitCaptureBatch(id: String): List<String> {
+        val db = helper.writableDatabase; db.beginTransaction()
+        try {
+            val batch = editableCapture(id)
+            val ids = db.rawQuery("SELECT job_id FROM capture_pages WHERE batch_id=? ORDER BY position", arrayOf(id))
+                .use { buildList { while (it.moveToNext()) add(it.getString(0)) } }
+            require(ids.isNotEmpty())
+            ids.forEachIndexed { index, jobId ->
+                val page = requireNotNull(capturePage(jobId)); val job = requireNotNull(job(jobId))
+                check(page.quality != null && job.state == HealthImportState.CAPTURE_READY && original(job.originalId)?.let(::present) == true) { "Capture pages are not ready" }
+                db.update("jobs", jobValues(job.copy(mode = batch.mode, captureSubmitted = true, documentPage = index + 1, state = HealthImportState.QUEUED, error = "")), "id=?", arrayOf(jobId))
+            }
+            db.update("capture_batches", ContentValues().apply { put("payload", pack("capture-batch", id, batch.copy(submitted = true).json())) }, "id=?", arrayOf(id))
+            db.setTransactionSuccessful(); return ids
+        } finally { db.endTransaction(); notifyChanged("capture"); notifyChanged() }
+    }
+    @Synchronized fun discardEmptyCapture(id: String) {
+        val db = helper.writableDatabase; db.beginTransaction()
+        try {
+            if (captureBatch(id)?.submitted == false && capturePageCount(id) == 0) db.delete("capture_batches", "id=?", arrayOf(id))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 1) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 2) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
@@ -272,8 +381,14 @@ internal class HealthOriginalStore(
             db.execSQL("CREATE INDEX job_page ON jobs(created_at DESC,id DESC)")
             db.execSQL("CREATE INDEX job_pending ON jobs(state,created_at DESC,id DESC)")
             db.execSQL("CREATE TABLE pages(job_id TEXT NOT NULL REFERENCES jobs(id),page_number INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(job_id,page_number))")
+            captureSchema(db)
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { error("Unsupported health original schema") }
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { check(oldVersion == 1 && newVersion == 2); captureSchema(db) }
+        private fun captureSchema(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE capture_batches(id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
+            db.execSQL("CREATE TABLE capture_pages(job_id TEXT PRIMARY KEY REFERENCES jobs(id),batch_id TEXT NOT NULL REFERENCES capture_batches(id),position INTEGER NOT NULL,payload BLOB NOT NULL)")
+            db.execSQL("CREATE INDEX capture_page_order ON capture_pages(batch_id,position)")
+        }
     }
     companion object {
         fun changesUri(context: Context): Uri = Uri.parse("content://${context.packageName}.health-originals/changes")

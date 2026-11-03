@@ -99,12 +99,71 @@ batch page ordering, library thumbnail/filter/batch-selection modes, structured
 import, trend charts or the remaining health screens. Its camera entry uses the
 system camera application rather than claiming the complete h06 design.
 
+## Increment 3: Native Camera And Ordered Photo Drafts
+
+`HealthCameraActivity` implements a foreground-only rear Camera2 preview, an
+explicit shutter, optional device-supported fill light, report/device modes and
+an ordered native photo-collection page without bottom tabs. Gallery images can
+enter the same collection flow. Camera access is closed on pause; backgrounding
+clears thumbnails, dialogs, counters and the preview surface. Recents screenshots
+are disabled for this Activity where Android supports the API.
+
+The native camera's JPEG bytes go directly to encrypted original storage on a
+background executor and are wiped afterwards. It does not create the external
+camera's plaintext staging file. Full supported JPEG capture resolution is
+preserved; thumbnails and quality inspection use bounded decoded working sizes.
+EXIF orientation is applied for inspection. Laplacian detail, brightness and
+image dimensions provide explicitly tentative readability hints, never medical
+judgments or promises that OCR will be correct. Original bytes are not silently
+rotated, cropped or recompressed. Manual crop/straighten uses the shared editor
+and keeps the uncropped encrypted parent.
+
+Capture batches and individual page order/quality rows are encrypted records in
+catalog schema 2, added by a non-destructive schema-1 upgrade. Page lists use
+20-item indexed cursors, not one full-draft JSON. Users can move, remove, retake
+or crop pages before submission. Retaking replaces a draft page in its existing
+position; removing a draft page does not silently delete archived originals.
+
+Preparation only copies/checks originals and finishes as `CAPTURE_READY`; it
+does not run OCR or write measurements. Explicit submission atomically verifies
+all current pages and marks each recognition job queued with the final document
+order. Failed or missing pages roll back the entire submission. Editing is then
+closed. A document's page order is distinct from the physical page number of
+each original. Both are retained in source evidence. Preparation and recognition
+have separate unique WorkManager identities and an explicit phase input, so a
+late preparation worker cannot consume the recognition handoff. Recovery uses
+the persisted phase. Cancelled/deleted draft pages cannot be reactivated by that
+recovery query.
+
+Camera geometry follows the sensor/display orientation and centers an
+aspect-preserving preview rather than stretching it; see the
+[Android Camera2 preview guidance](https://developer.android.com/media/camera/camera2/camera-preview).
+The 0.1.7.18 / 1431 implementation builds successfully and passes 95 focused JVM
+tests and 48 non-visual device tests on Tab Active3. The latter include 15 photo
+draft transaction/migration/ordering tests and two camera close/error callback
+tests that never open the camera. The close/error tests ensure a capture outcome
+is delivered even when its surface generation becomes stale after backgrounding.
+Mode changes from another database connection cannot reopen a submitted batch.
+
+A separate 60-test device attempt had 12 UI/recreation failures while the system
+reported that the keyguard was showing. Those logs are retained; they are not
+accepted as successful visible-UI verification. Unlocked native-page, crop and
+foreground lifecycle checks must be rerun, rather than weakening their assertions
+or bypassing the lock screen. This is not a claim that the full device suite is
+green.
+
+Actual camera start/focus/light/rotation and photographed-frame acceptance still
+require an unlocked device and user-authorized hardware tests. Automatic paper
+boundary detection is not implemented; the displayed corner frame is an
+alignment guide, not a claim to detect paper edges.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
 version and focused validation before claiming completion:
 
-1. Complete custom camera, multi-page selection and original-library filters.
+1. Native camera hardware/device-matrix acceptance, automatic paper-edge
+   detection, and original-library thumbnail/filter/batch-selection modes.
 2. Structured CSV/JSON/XLSX import with mapping, conflict review and batch undo.
 3. Metric catalog, time-window/source filters and true, gap-aware trend charts.
 4. Original-file library, export configuration, save/share and verified backup

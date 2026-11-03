@@ -65,6 +65,10 @@ class HealthCaptureActivity : Activity() {
         route = state?.getString("route") ?: intent.getStringExtra("route") ?: "capture"
         selectedId = state?.getString("selected") ?: intent.getStringExtra("original").orEmpty()
         if (state == null && selectedId.isNotBlank()) route = "original"
+        if (state == null && !intent.getStringExtra("health_job").isNullOrBlank()) {
+            selectedId = intent.getStringExtra("health_job").orEmpty()
+            require(runCatching { UUID.fromString(selectedId).toString() == selectedId }.getOrDefault(false)); route = "review"
+        }
         page = state?.getInt("page", 1) ?: 1
         candidateOffset = state?.getInt("candidate_offset", 0) ?: 0
         mode = state?.getString("mode") ?: "report"
@@ -227,7 +231,9 @@ class HealthCaptureActivity : Activity() {
         jobs.forEach { job ->
             val view = HealthImportTaskView(this, ui,
                 { value -> worker.execute { HealthImportScheduler.cancel(applicationContext, value.id) } }, ::retry,
-                { open("review", it.id) }, { open("original", it.originalId) })
+                { open("review", it.id) }, { open("original", it.originalId) }, { value ->
+                    startActivity(Intent(this, HealthCameraActivity::class.java).putExtra("capture_batch", value.captureBatch))
+                })
             view.bind(job, jobState(job)); taskViews[job.id] = view; ui.add(content, view, 12)
         }
         if (jobPages.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { jobPages.removeAt(jobPages.lastIndex); generation++; refresh() }, 16)
@@ -288,7 +294,8 @@ class HealthCaptureActivity : Activity() {
     private fun renderReview(content: LinearLayout, data: CaptureSnapshot) {
         val job = data.job; val original = data.original; val scanned = data.page
         if (job == null || original == null || scanned == null) { content.addView(ui.text(getString(R.string.health_review_not_ready))); return }
-        content.addView(ui.text(getString(R.string.health_source_page, scanned.page), 14f, muted = true))
+        content.addView(ui.text(getString(if (job.documentPage > 0) R.string.health_photo_page else R.string.health_source_page,
+            if (job.documentPage > 0) job.documentPage else scanned.page), 14f, muted = true))
         ui.add(content, ui.row(getString(R.string.health_view_original), original.name) { open("original", original.id) }, 8)
         if (scanned.blurry) ui.add(content, ui.text(getString(R.string.health_ocr_quality_warning), 14f), 12)
         val suggestions = data.suggestions
@@ -353,32 +360,16 @@ class HealthCaptureActivity : Activity() {
         }
     }
     private fun choose(images: Boolean) {
+        if (images) {
+            startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode)
+                .putExtra("capture_camera", false).putExtra("capture_pick_images", true), NATIVE_CAMERA)
+            return
+        }
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
             .setType(if (images) "image/*" else "*/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true), PICK)
     }
     private fun camera() {
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION); return
-        }
-        val token = UUID.randomUUID().toString()
-        worker.execute {
-            val file = HealthCaptureFiles.file(applicationContext, token)
-            val prepared = runCatching {
-                check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs()); file.createNewFile()
-                FileProvider.getUriForFile(applicationContext, "$packageName.files", file)
-            }
-            main.post {
-                if (!active) { kotlin.concurrent.thread(name = "health-camera-cleanup", isDaemon = true) { file.delete() }; return@post }
-                prepared.fold({ uri ->
-                    pendingCamera = token
-                    getSharedPreferences("health_capture_pending", MODE_PRIVATE).edit().putString("token", token).apply()
-                    val intent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                        .apply { clipData = ClipData.newRawUri("Health capture", uri) }
-                    runCatching { startActivityForResult(intent, CAMERA) }.onFailure { worker.execute { file.delete() }; showFailure("camera_unavailable") }
-                }, { showFailure("storage") })
-            }
-        }
+        startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode), NATIVE_CAMERA)
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
@@ -389,7 +380,9 @@ class HealthCaptureActivity : Activity() {
     @Deprecated("Native document and camera result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == CAMERA) {
+        if (requestCode == NATIVE_CAMERA) {
+            if (resultCode == RESULT_OK) { jobPages.clear(); route = "capture"; generation++; refresh() }
+        } else if (requestCode == CAMERA) {
             val token = pendingCamera
             if (token.isBlank()) return
             val file = HealthCaptureFiles.file(this, token)
@@ -436,7 +429,7 @@ class HealthCaptureActivity : Activity() {
     }
     private fun retry(job: HealthImportJob) { worker.execute {
         originals.updateJob(job.id, restartCancelled = true) { it.copy(state = HealthImportState.QUEUED, error = "") }
-        HealthImportScheduler.enqueue(applicationContext, job.id)
+        HealthImportScheduler.enqueue(applicationContext, job.id, job.captureBatch.isNotBlank() && !job.captureSubmitted)
     } }
     private fun export(original: HealthOriginal) {
         exportId = original.id
@@ -450,7 +443,9 @@ class HealthCaptureActivity : Activity() {
             .putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(listOf(item)))
             .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id), CROP)
     }
-    private fun jobState(job: HealthImportJob): String = when (job.state) {
+    private fun jobState(job: HealthImportJob): String = when {
+        job.captureBatch.isNotBlank() && !job.captureSubmitted && job.state == HealthImportState.RECOGNIZING -> getString(R.string.health_photo_inspecting)
+        else -> when (job.state) {
         HealthImportState.QUEUED -> getString(R.string.health_import_queued)
         HealthImportState.COPYING -> if (job.totalBytes > 0) getString(R.string.health_import_copy_percent, (job.copiedBytes * 100 / job.totalBytes).coerceIn(0, 100))
             else getString(R.string.health_import_copying)
@@ -458,7 +453,9 @@ class HealthCaptureActivity : Activity() {
         HealthImportState.REVIEW -> getString(R.string.health_import_review_ready, job.nextPage)
         HealthImportState.ORIGINAL_ONLY -> getString(R.string.health_import_original_only)
         HealthImportState.CANCELLED -> getString(R.string.health_import_cancelled)
+        HealthImportState.CAPTURE_READY -> getString(R.string.health_photo_arrange)
         HealthImportState.FAILED -> getString(failureText(job.error))
+        }
     }
     private fun showFailure(code: String) { Toast.makeText(this, failureText(code), Toast.LENGTH_LONG).show() }
     private fun failureText(code: String): Int = when (code) {
@@ -479,5 +476,5 @@ class HealthCaptureActivity : Activity() {
         val job: HealthImportJob? = null, val original: HealthOriginal? = null, val page: HealthOcrPage? = null, val saved: List<HealthObservation> = emptyList(),
         val suggestions: List<HealthDraft> = emptyList(), val hasMore: Boolean = false, val available: Boolean = true, val pendingPhoto: Boolean = false,
         val recordsNext: HealthPageCursor? = null)
-    companion object { private const val PICK = 81; private const val CAMERA = 82; private const val EXPORT = 83; private const val CROP = 84; private const val CAMERA_PERMISSION = 85 }
+    companion object { private const val PICK = 81; private const val CAMERA = 82; private const val EXPORT = 83; private const val CROP = 84; private const val CAMERA_PERMISSION = 85; private const val NATIVE_CAMERA = 86 }
 }
