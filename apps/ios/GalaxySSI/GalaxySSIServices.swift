@@ -3742,12 +3742,16 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
-  func resumeLocalNativeAction(taskId: String) -> Bool {
+  func resumeLocalNativeAction(taskId: String, automatic: Bool = false) -> Bool {
     guard var task = store.agentTask(id: taskId),
           task.phase == .paused else {
       return false
     }
     guard task.teamRecoveryRunId == nil else { return false }
+    if automatic {
+      guard store.agentSafetySettings.taskExecutionMode == .autoComplete,
+            AgentSavedTeamReplyPolicy.canContinueAutomatically(task) else { return false }
+    }
     if task.pendingPlanning?.isReplanning == true {
       task.phase = .planning
       task.blocked = false
@@ -3776,9 +3780,11 @@ final class MessageCoordinator: ObservableObject {
     task.phase = .executing
     task.blocked = false
     task.result = ""
-    task.verification = "User resumed paused native tool execution"
+    task.verification = automatic
+      ? localizedReply("galaxyssi.team.recovery.continuing", fallback: "Continuing the plan after the original team outcome")
+      : "User resumed paused native tool execution"
     let toolId = action.parameters["tool_id"] ?? action.target
-    task.executionLog.append("Native tool \(toolId): resumed")
+    task.executionLog.append("Native tool \(toolId): " + (automatic ? "continued after original team" : "resumed"))
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
     guard let outgoing = localOutgoingMessage(for: task) else {
@@ -6000,6 +6006,12 @@ final class MessageCoordinator: ObservableObject {
               failureText: localizedReply("galaxyssi.team.recovery.failed", fallback: "The original Agent team did not complete successfully."),
               now: AgentControlPlaneClock.nowMillis()) else { continue }
       store.upsertAgentTask(updated)
+      if AgentSavedTeamReplyPolicy.canContinueAutomatically(updated) {
+        Task { @MainActor [weak self] in
+          guard let self, self.store.agentTask(id: updated.taskId) == updated else { return }
+          _ = self.resumeLocalNativeAction(taskId: updated.taskId, automatic: true)
+        }
+      }
     }
   }
 

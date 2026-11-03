@@ -216,6 +216,12 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
 }
 
 enum AgentSavedTeamReplyPolicy {
+  static func canContinueAutomatically(_ task: AgentTaskRecord) -> Bool {
+    task.phase == .paused && task.teamRecoveryRunId == nil &&
+      task.activePlan?.executionMode == .autoComplete && task.activePlan?.confirmationRequired == false &&
+      !task.pendingActions.isEmpty && task.pendingActions.allSatisfy { $0.status == .proposed }
+  }
+
   static func settleParent(_ parent: AgentTaskRecord, saved: AgentTeamExecutionSnapshot,
                            failureText: String, now: Int64) -> AgentTaskRecord? {
     guard saved.state.deliverable, parent.result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -247,6 +253,7 @@ enum AgentSavedTeamReplyPolicy {
     plan.actions[index].status = success ? .completed : .failed
     plan.actions[index].result = result.result
     if success && !plan.actions.allSatisfy({ $0.status == .completed }) {
+      result.nativeActionResults = Array((result.nativeActionResults + [String(saved.finalOutput.prefix(600))]).suffix(8))
       result.phase = .paused
       result.pendingActions = AgentToolCoordination.runnableActions(plan)
       result.pendingAction = result.pendingActions.first

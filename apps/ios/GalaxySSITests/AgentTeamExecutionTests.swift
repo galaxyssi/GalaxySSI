@@ -43,6 +43,16 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(continued.activePlan?.actions.last, followup)
     XCTAssertEqual(continued.pendingActions.map(\.id), ["followup"])
     XCTAssertNil(continued.teamRecoveryRunId)
+    XCTAssertFalse(AgentSavedTeamReplyPolicy.canContinueAutomatically(continued))
+    var automatic = continued
+    automatic.activePlan?.confirmationRequired = false
+    automatic.pendingActions[0].status = .proposed
+    XCTAssertTrue(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
+    automatic.activePlan?.executionMode = .planOnly
+    XCTAssertFalse(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
+    automatic.activePlan?.executionMode = .autoComplete
+    automatic.pendingActions[0].status = .pendingConfirmation
+    XCTAssertFalse(AgentSavedTeamReplyPolicy.canContinueAutomatically(automatic))
     multi.activePlan = teamBridgePlan(action, action)
     XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(multi, saved: saved, failureText: "Failed", now: 10))
     parent.result = "Existing answer"
