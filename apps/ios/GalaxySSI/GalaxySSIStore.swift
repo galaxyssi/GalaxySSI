@@ -700,6 +700,10 @@ final class GalaxySSIStore: ObservableObject {
     return page
   }
 
+  func attachmentRecoveryPage(conversationId: String, before: GalaxySSIChatHistoryCursor?) -> GalaxySSIChatHistoryPage {
+    chatHistoryDatabase.page(contactId: nil, conversationId: conversationId, before: before, pageSize: 100)
+  }
+
   func clearRuntimePlaintextForBackground() {
     guard !runtimePlaintextCleared else { return }
     guard save() else { return }

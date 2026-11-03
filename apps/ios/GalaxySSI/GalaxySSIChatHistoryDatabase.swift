@@ -300,15 +300,22 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting {
   }
 
   func page(
-    contactId: String,
+    contactId: String?,
     conversationId: String? = nil,
     before cursor: GalaxySSIChatHistoryCursor? = nil,
     pageSize: Int = GalaxySSIChatHistoryDatabase.defaultPageSize
   ) -> GalaxySSIChatHistoryPage {
     locked {
       let safeSize = min(max(1, pageSize), Self.maximumPageSize)
-      var clauses = ["contact_id = ?"]
-      var values: [SQLiteValue] = [.text(contactId)]
+      guard contactId != nil || conversationId?.isBlank == false else {
+        return GalaxySSIChatHistoryPage(messages: [], nextCursor: nil, hasMore: false)
+      }
+      var clauses: [String] = []
+      var values: [SQLiteValue] = []
+      if let contactId {
+        clauses.append("contact_id = ?")
+        values.append(.text(contactId))
+      }
       if let conversationId, !conversationId.isBlank {
         clauses.append("conversation_id = ?")
         values.append(.text(conversationId))

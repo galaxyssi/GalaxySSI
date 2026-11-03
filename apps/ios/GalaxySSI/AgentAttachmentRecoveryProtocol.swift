@@ -12,15 +12,18 @@ struct AgentAttachmentRecoveryRequest: Equatable {
   var contactId: String
   var sourceMessageId: Int64
   var attachmentIds: [String]
+  var sourceMessageUUID: String? = nil
+  var sourceIdentity: String { sourceMessageUUID ?? String(sourceMessageId) }
 
   static func decode(_ payload: AgentMcpJSONObject) -> AgentAttachmentRecoveryRequest? {
     guard payload.string("type") == requestType else {
       return nil
     }
     let requestId = payload.string("request_id").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let sourceUUID = payload.string("source_message_id")
+    let source = sourceMessageId(from: payload["source_message_id"]) ?? 0
     guard isValidRequestId(requestId),
-          let sourceMessageId = sourceMessageId(from: payload["source_message_id"]),
-          sourceMessageId > 0,
+          source > 0 || UUID(uuidString: sourceUUID) != nil,
           let clientRouteId = identity(payload, "client_route_id"),
           let conversationId = identity(payload, "conversation_id"),
           let taskId = identity(payload, "task_id"),
@@ -39,8 +42,9 @@ struct AgentAttachmentRecoveryRequest: Equatable {
       taskId: taskId,
       turnId: turnId,
       contactId: contactId,
-      sourceMessageId: sourceMessageId,
-      attachmentIds: attachmentIds
+      sourceMessageId: source,
+      attachmentIds: attachmentIds,
+      sourceMessageUUID: UUID(uuidString: sourceUUID) != nil ? sourceUUID : nil
     )
   }
 
@@ -59,7 +63,7 @@ struct AgentAttachmentRecoveryRequest: Equatable {
       "task_id": .string(taskId),
       "turn_id": .string(turnId),
       "contact_id": .string(contactId),
-      "source_message_id": .string(String(sourceMessageId)),
+      "source_message_id": .string(sourceIdentity),
       "status": .string(status),
       "available_attachment_ids": .array(availableAttachmentIds.map { .string($0) }),
       "missing_attachment_ids": .array(missingAttachmentIds.map { .string($0) }),
@@ -102,7 +106,7 @@ struct AgentAttachmentRecoveryRequest: Equatable {
       return Int64(raw.trimmingCharacters(in: .whitespacesAndNewlines))
     case .int(let raw):
       return raw
-    case .double(let raw) where raw.isFinite && raw.rounded(.towardZero) == raw:
+    case .double(let raw) where raw.isFinite && raw > 0 && raw <= 9_007_199_254_740_991 && raw.rounded(.towardZero) == raw:
       return Int64(raw)
     default:
       return nil

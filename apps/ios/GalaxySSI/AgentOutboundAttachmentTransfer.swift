@@ -9,6 +9,7 @@ struct AgentAttachmentTransferScope: Codable, Equatable {
   var taskId: String
   var turnId: String
   var clientMessageId: String?
+  var attachmentRequestId: String?
 
   init(
     contactId: String,
@@ -17,7 +18,8 @@ struct AgentAttachmentTransferScope: Codable, Equatable {
     conversationId: String,
     taskId: String,
     turnId: String,
-    clientMessageId: String? = nil
+    clientMessageId: String? = nil,
+    attachmentRequestId: String? = nil
   ) throws {
     self.contactId = try Self.requireBounded(contactId, field: "contact_id")
     self.desktopId = try Self.requireBounded(desktopId, field: "desktop_id")
@@ -35,6 +37,11 @@ struct AgentAttachmentTransferScope: Codable, Equatable {
       throw AgentAttachmentTransferError.invalidScope
     }
     self.clientMessageId = cleanClientMessageId
+    if let attachmentRequestId,
+       attachmentRequestId.range(of: "^[a-f0-9]{32}$", options: .regularExpression) == nil {
+      throw AgentAttachmentTransferError.invalidScope
+    }
+    self.attachmentRequestId = attachmentRequestId
   }
 
   enum CodingKeys: String, CodingKey {
@@ -45,6 +52,7 @@ struct AgentAttachmentTransferScope: Codable, Equatable {
     case taskId = "task_id"
     case turnId = "turn_id"
     case clientMessageId = "client_message_id"
+    case attachmentRequestId = "attachment_request_id"
   }
 
   private static func requireBounded(_ value: String, field: String) throws -> String {
@@ -82,6 +90,7 @@ struct AgentPreparedOutboundAttachment: Equatable {
           payload.string("task_id") == scope.taskId,
           payload.string("turn_id") == scope.turnId,
           payload.string("contact_id") == scope.contactId else { return false }
+    if let request = scope.attachmentRequestId, payload.string("attachment_request_id") != request { return false }
     return scope.clientMessageId.map { payload.string("source_message_id") == $0 } ?? true
   }
 
@@ -195,6 +204,7 @@ struct AgentPreparedOutboundAttachment: Equatable {
     if let clientMessageId = scope.clientMessageId {
       payload["client_message_id"] = clientMessageId
     }
+    if let request = scope.attachmentRequestId { payload["attachment_request_id"] = request }
     if requiresValidatedNetwork {
       payload["defer_media_upload"] = true
     }
@@ -247,14 +257,16 @@ enum AgentAttachmentTransferProtocol {
           digest.range(of: sha256Pattern, options: .regularExpression) != nil else {
       throw AgentAttachmentTransferError.contentUnavailable
     }
-    let canonical = [
+    var fields = [
       scope.clientRouteId,
       scope.conversationId,
       scope.taskId,
       scope.turnId,
       cleanAttachmentId,
       digest
-    ].joined(separator: "\u{0000}")
+    ]
+    if let request = scope.attachmentRequestId { fields.append(request) }
+    let canonical = fields.joined(separator: "\u{0000}")
     return Self.sha256(Data(canonical.utf8))
   }
 

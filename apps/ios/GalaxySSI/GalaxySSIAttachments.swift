@@ -270,7 +270,8 @@ enum AgentAttachmentWorkspaceStager {
     turnId: String,
     blocks: [AgentRichBlock],
     projectRoot: URL? = nil,
-    fileManager: FileManager = .default
+    fileManager: FileManager = .default,
+    matchExactIDs: Bool = false
   ) -> [AgentRestoredAttachment] {
     guard turnId.range(of: safeIdPattern, options: .regularExpression) != nil,
           !blocks.isEmpty else {
@@ -301,7 +302,7 @@ enum AgentAttachmentWorkspaceStager {
           let recordIndex = unused.firstIndex { record in
             !block.id.isEmpty && record.attachmentId == block.id
           } ?? unused.firstIndex { record in
-            record.name.caseInsensitiveCompare(block.title) == .orderedSame
+            !matchExactIDs && record.name.caseInsensitiveCompare(block.title) == .orderedSame
           }
           guard let recordIndex else { return nil }
           let record = unused.remove(at: recordIndex)
