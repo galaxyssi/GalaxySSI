@@ -5512,6 +5512,22 @@ final class MessageCoordinator: ObservableObject {
       return lhs.deliveryMode != .respond
     }
     let homeTurnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let teamCreatedAt = AgentControlPlaneClock.nowMillis()
+    let savedTeam = AgentTeamExecutionSnapshot(
+      supervisorRunId: spec.supervisorRunId, teamId: spec.definition.teamId,
+      conversationId: outgoing.conversationId, taskId: homeTurnId,
+      primaryAgentId: spec.definition.primaryAgentId, goal: requestText,
+      visibilityMode: spec.definition.visibilityMode, state: .running,
+      members: ordered.map { AgentTeamMemberSnapshot(agentId: $0.agentId, role: $0.role,
+        deliveryMode: $0.deliveryMode, status: .pending, instanceId: $0.memberId) },
+      createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
+      primaryInstanceId: spec.definition.primaryMemberId)
+    let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
+      !$0.privateMode && !$0.trackingPaused
+    } ?? false
+    guard !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
+      throw GalaxySSIError.invalidPayload("The original Agent team identity could not be saved")
+    }
     agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
     var primaryPublished = false
     var observerFailures: [String] = []
@@ -5938,6 +5954,17 @@ final class MessageCoordinator: ObservableObject {
     spec: AgentTeamDispatchSpec,
     outgoing: ChatMessage
   ) {
+    if let session = store.agentSession(id: outgoing.conversationId), !session.privateMode, !session.trackingPaused,
+       var saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: spec.supervisorRunId),
+       saved.conversationId == outgoing.conversationId,
+       saved.taskId == outgoing.turnId.ifBlank(outgoing.id.uuidString),
+       let index = saved.members.firstIndex(where: { $0.memberId == member.memberId }) {
+      saved.members[index].status = .succeeded
+      saved.members[index].output = text
+      saved.members[index].updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      saved.updatedAtMillis = saved.members[index].updatedAtMillis
+      AgentTeamExecutionHistoryStore.shared.upsert(saved)
+    }
     _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
       teamId: spec.definition.teamId,
       conversationId: outgoing.conversationId,

@@ -53,17 +53,24 @@ final class AgentTeamExecutionHistoryStore {
     )
   }
 
-  func upsert(_ snapshot: AgentTeamExecutionSnapshot) {
+  @discardableResult
+  func upsert(_ snapshot: AgentTeamExecutionSnapshot) -> Bool {
     let runId = snapshot.supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !runId.isEmpty else { return }
+    guard !runId.isEmpty else { return false }
     lock.lock()
+    let previous = snapshotsByRunId
     snapshotsByRunId[runId] = snapshot
-    trimAndPersistLocked()
+    guard trimAndPersistLocked() else {
+      snapshotsByRunId = previous
+      lock.unlock()
+      return false
+    }
     lock.unlock()
     NotificationCenter.default.post(
       name: .galaxySSIAgentTeamExecutionHistoryDidUpdate,
       object: runId
     )
+    return true
   }
 
   func recent(_ limit: Int = AgentTeamExecutionHistoryStore.defaultRecentLimit) -> [AgentTeamExecutionSnapshot] {
@@ -110,12 +117,12 @@ final class AgentTeamExecutionHistoryStore {
     NotificationCenter.default.post(name: .galaxySSIAgentTeamExecutionHistoryDidUpdate, object: nil)
   }
 
-  private func trimAndPersistLocked() {
+  private func trimAndPersistLocked() -> Bool {
     let ordered = orderedSnapshotsLocked()
     snapshotsByRunId = Dictionary(uniqueKeysWithValues: ordered
       .prefix(Self.maxSnapshots)
       .map { ($0.supervisorRunId, $0) })
-    persistLocked()
+    return persistLocked()
   }
 
   private func orderedSnapshotsLocked(
@@ -153,9 +160,10 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  private func persistLocked() {
-    let data = (try? JSONEncoder().encode(orderedSnapshotsLocked())) ?? Data("[]".utf8)
-    _ = GalaxySSIEncryptedUserDefaultsStore.write(
+  @discardableResult
+  private func persistLocked() -> Bool {
+    guard let data = try? JSONEncoder().encode(orderedSnapshotsLocked()) else { return false }
+    return GalaxySSIEncryptedUserDefaultsStore.write(
       data,
       defaults: defaults,
       key: storageKey,
