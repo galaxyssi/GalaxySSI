@@ -1414,6 +1414,7 @@ final class GalaxySSIMqttChunkAssembler {
 private extension JSONEncoder {
   static var linkReliability: JSONEncoder {
     let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
     encoder.dateEncodingStrategy = .iso8601
     return encoder
   }
