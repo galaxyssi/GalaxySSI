@@ -129,7 +129,12 @@ struct AgentHomeView: View {
   @State var screenshotPickerPresented = false
   @State var screenAssistantConversationID = ""
   @State var screenAssistantCompact = true
-  @State private var screenAssistantStartedAt: Date?
+  @State var screenAssistantStartedAt: Date?
+  @State var screenAssistantRunID: UUID?
+  @State var screenAssistantOwnedTurns: [ChatMessage] = []
+  @State var screenAssistantSubmissions: [UUID: Task<Void, Never>] = [:]
+  @State var screenAssistantStopping = false
+  @State var screenAssistantAttachmentIDs: Set<String> = []
   @State private var screenAssistantRecoveryRequests: Set<String> = []
   @State var cameraPickerPresented = false
   @State var scanShortcutActive = false
@@ -363,6 +368,7 @@ struct AgentHomeView: View {
       }
       .sheet(isPresented: $screenshotPickerPresented) {
         GalaxySSIScreenshotInputView { attachment in
+          guard !screenAssistantStopping else { return }
           appendAttachment(attachment)
           screenshotPickerPresented = false
           guard attachments.contains(where: { $0.id == attachment.id }) else { return }
@@ -372,6 +378,10 @@ struct AgentHomeView: View {
           screenAssistantConversationID = store.activeAgentConversationId
           screenAssistantCompact = true
           screenAssistantStartedAt = Date()
+          screenAssistantRunID = UUID()
+          screenAssistantOwnedTurns = []
+          screenAssistantSubmissions = [:]
+          screenAssistantAttachmentIDs = [attachment.id]
         }
       }
       .galaxySSIAgentHomePresentationRoutes(

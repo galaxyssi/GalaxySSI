@@ -1,5 +1,20 @@
 import Foundation
 
+enum AgentScreenAnalysisReplyPolicy {
+  static func isStopped(_ payload: [String: Any], messages: [ChatMessage]) -> Bool {
+    guard ["text", "agent_task_event"].contains(payload.string("type")),
+          let source = UUID(uuidString: payload.string("source_message_id")),
+          !payload.string("conversation_id").isEmpty,
+          !payload.string("turn_id").isEmpty else { return false }
+    return messages.contains {
+      $0.id == source && $0.isMine &&
+        $0.conversationId == payload.string("conversation_id") &&
+        $0.turnId.ifBlank($0.id.uuidString) == payload.string("turn_id") &&
+        $0.deliveryTrace.contains { $0.stage == "screen_analysis_cancelled" }
+    }
+  }
+}
+
 enum AgentConnectorStreamHandoff {
   static func persistThenRetire<Result>(
     persistFinal: () throws -> Result?,
