@@ -4,6 +4,50 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentDesktopArtifactHandoffTests: XCTestCase {
+  func testDeliveredAttachmentRecoveryRequiresExactConversationOriginAndVersion() throws {
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: InMemorySecretStore())
+    let store = AgentDesktopArtifactStore(rootURL: temporaryDirectory("recovery"), cipher: cipher)
+    let bytes = Data("editable document version 03".utf8)
+    let digest = sha256(bytes)
+    let uri = "galaxyssi-artifact://prior-task/outputs/report-v03.docx"
+    let artifactID = AgentDesktopArtifactStore.stableID(uri: uri, sha256: digest)
+    try store.ingestBlobArtifact(manifest: ["artifact_id": artifactID, "artifact_uri": uri,
+      "task_id": "prior-task", "name": "report-v03.docx", "sha256": digest,
+      "size_bytes": bytes.count, "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], plaintext: bytes)
+    var block = AgentRichBlock(id: "artifact-one", type: .file, title: "Friendly caption", uri: uri,
+      metadata: ["artifact_id": artifactID, "desktop_id": "desktop", "sha256": digest])
+    var message = ChatMessage(contactId: "hermes", content: "report", isMine: false,
+      conversationId: "conversation", turnId: "prior-turn")
+    message.deliveryStatus = .delivered
+    message.richOutputJson = AgentRichContentCodec.encode([block])
+    func recover(_ row: ChatMessage, budget: Int64 = 1_024) -> AgentDeliveredAttachmentRecovery.PageResult {
+      AgentDeliveredAttachmentRecovery.restore(messages: [row], conversationId: "conversation",
+        desktopId: "desktop", requestedIDs: ["artifact-one"], artifactStore: store, remainingBytes: budget)
+    }
+    let restored = recover(message)
+    XCTAssertEqual(restored.attachments.first?.displayName, "report-v03.docx")
+    XCTAssertEqual(restored.attachments.first?.data, bytes)
+    XCTAssertEqual(restored.consumedBytes, Int64(bytes.count))
+    XCTAssertTrue(recover(message, budget: 1).attachments.isEmpty)
+    var wrong = message
+    wrong.conversationId = "other"
+    XCTAssertTrue(recover(wrong).attachments.isEmpty)
+    wrong = message
+    wrong.isSystem = true
+    XCTAssertTrue(recover(wrong).attachments.isEmpty)
+    wrong = message
+    wrong.deliveryStatus = .sent
+    XCTAssertTrue(recover(wrong).attachments.isEmpty)
+    block.metadata["desktop_id"] = "other-desktop"
+    wrong = message
+    wrong.richOutputJson = AgentRichContentCodec.encode([block])
+    XCTAssertTrue(recover(wrong).attachments.isEmpty)
+    block.metadata["desktop_id"] = "desktop"
+    block.metadata["sha256"] = String(repeating: "0", count: 64)
+    wrong.richOutputJson = AgentRichContentCodec.encode([block])
+    XCTAssertTrue(recover(wrong).attachments.isEmpty)
+  }
+
   func testArtifactRetryGateCoalescesThenAllowsMonotonicRetry() {
     var now: Int64 = 1_000
     var gate = AgentArtifactRequestRetryGate(retryAfterMillis: 30_000, nowMillis: { now })

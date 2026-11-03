@@ -314,6 +314,32 @@ final class AgentConversationDatabaseTests: XCTestCase {
 }
 
 final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
+  func testAttachmentRecoveryPagesStayInConversationAcrossContacts() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = GalaxySSIChatHistoryDatabase(fileURL: root.appendingPathComponent("history.sqlite3"),
+      secrets: InMemorySecretStore())
+    for index in 0..<5 {
+      XCTAssertTrue(database.upsert(ChatMessage(contactId: index % 2 == 0 ? "hermes" : "codex",
+        content: String(index), isMine: false, createdAt: Date(timeIntervalSince1970: 100),
+        conversationId: "conversation", turnId: "turn")))
+    }
+    XCTAssertTrue(database.upsert(ChatMessage(contactId: "hermes", content: "other conversation",
+      isMine: false, conversationId: "other", turnId: "turn")))
+    var cursor: GalaxySSIChatHistoryCursor?
+    var ids = Set<UUID>()
+    for _ in 0..<3 {
+      let page = database.page(contactId: nil, conversationId: "conversation", before: cursor, pageSize: 2)
+      XCTAssertTrue(page.messages.allSatisfy { $0.conversationId == "conversation" })
+      ids.formUnion(page.messages.map(\.id))
+      if !page.hasMore { break }
+      cursor = page.nextCursor
+    }
+    XCTAssertEqual(ids.count, 5)
+    XCTAssertTrue(database.page(contactId: nil, conversationId: " ").messages.isEmpty)
+    XCTAssertTrue(database.page(contactId: "hermes", conversationId: "conversation").messages.allSatisfy { $0.contactId == "hermes" })
+  }
+
   func testNormalDesktopReplyDispositionRequiresExactCommittedScope() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopDisposition-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }

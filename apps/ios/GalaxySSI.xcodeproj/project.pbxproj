@@ -337,6 +337,7 @@
     F1CC32670000000000000001 /* AgentIOSScreenPagePDFCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32670000000000000002 /* AgentIOSScreenPagePDFCapture.swift */; };
     F1CC32670000000000000003 /* GalaxySSIScreenPagePDFImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32670000000000000004 /* GalaxySSIScreenPagePDFImport.swift */; };
     A10000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */; };
+    A10000000000000000003273 /* AgentDeliveredAttachmentRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003273 /* AgentDeliveredAttachmentRecovery.swift */; };
     A10000000000000000000011 /* GalaxySSIAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* GalaxySSIAttachmentTests.swift */; };
     A10000000000000000000012 /* GalaxySSIBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* GalaxySSIBackup.swift */; };
     A1000000000000000000F601 /* GalaxySSIGlobalAgentBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F601 /* GalaxySSIGlobalAgentBackup.swift */; };
@@ -1402,6 +1403,7 @@
     F1CC32670000000000000002 /* AgentIOSScreenPagePDFCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSScreenPagePDFCapture.swift; sourceTree = "<group>"; };
     F1CC32670000000000000004 /* GalaxySSIScreenPagePDFImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIScreenPagePDFImport.swift; sourceTree = "<group>"; };
     A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentRecoveryProtocol.swift; sourceTree = "<group>"; };
+    A20000000000000000003273 /* AgentDeliveredAttachmentRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDeliveredAttachmentRecovery.swift; sourceTree = "<group>"; };
     A20000000000000000000013 /* GalaxySSIAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAttachmentTests.swift; sourceTree = "<group>"; };
     A20000000000000000000014 /* GalaxySSIBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIBackup.swift; sourceTree = "<group>"; };
     A2000000000000000000F601 /* GalaxySSIGlobalAgentBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlobalAgentBackup.swift; sourceTree = "<group>"; };
@@ -2680,6 +2682,7 @@
         F1CC32670000000000000002 /* AgentIOSScreenPagePDFCapture.swift */,
         F1CC32670000000000000004 /* GalaxySSIScreenPagePDFImport.swift */,
         A20000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift */,
+        A20000000000000000003273 /* AgentDeliveredAttachmentRecovery.swift */,
         A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */,
         A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */,
         A2B283000000000000000001 /* AgentAttachmentDeliveryFailure.swift */,
@@ -3885,6 +3888,7 @@
         F1CC32670000000000000001 /* AgentIOSScreenPagePDFCapture.swift in Sources */,
         F1CC32670000000000000003 /* GalaxySSIScreenPagePDFImport.swift in Sources */,
         A10000000000000000000669 /* AgentAttachmentRecoveryProtocol.swift in Sources */,
+        A10000000000000000003273 /* AgentDeliveredAttachmentRecovery.swift in Sources */,
         A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */,
         A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */,
         A1B283000000000000000001 /* AgentAttachmentDeliveryFailure.swift in Sources */,

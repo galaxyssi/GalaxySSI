@@ -301,6 +301,7 @@ final class AgentDesktopArtifactStore {
       fields: block.fields,
       metadata: block.metadata.merging([
         "artifact_id": record.artifactId,
+        "artifact_name": record.name,
         "artifact_source_uri": sourceURI,
         "artifact_reference": safeURI,
         "size": Self.humanSize(deliveredSize),

@@ -230,6 +230,7 @@ final class MessageCoordinator: ObservableObject {
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
   private var pendingArtifactDownloads: Set<String> = []
   private var pendingArtifactFetches: Set<String> = []
+  private var attachmentRecoveryInFlight: Set<String> = []
   private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
   private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
   private var liveConnectorMessageIds: [String: UUID] = [:]
@@ -7953,6 +7954,96 @@ final class MessageCoordinator: ObservableObject {
     return prompt + "\n" + label + names
   }
 
+  private func handleAttachmentRecoveryRequest(_ payload: [String: Any], link: ServerLink?, messageId: String) {
+    guard let link, JSONSerialization.isValidJSONObject(payload),
+          let data = try? JSONSerialization.data(withJSONObject: payload),
+          let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+          let request = AgentAttachmentRecoveryRequest.decode(object),
+          attachmentRecoveryAuthorized(payload, link: link) else { return }
+    let key = "\(link.desktopId):\(request.clientRouteId):\(request.requestId):\(request.sourceIdentity)"
+    guard !attachmentRecoveryInFlight.contains(key), attachmentRecoveryInFlight.count < 2 else { return }
+    attachmentRecoveryInFlight.insert(key)
+    let owner = store.profile.identityFingerprint
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      defer { self.attachmentRecoveryInFlight.remove(key) }
+      var restored: [GalaxySSIDraftAttachment] = []
+      var remaining = AgentDeliveredAttachmentRecovery.maximumTotalBytes
+      var cursor: GalaxySSIChatHistoryCursor?
+      for _ in 0..<32 {
+        guard !Task.isCancelled, self.store.profile.identityFingerprint == owner,
+              self.attachmentRecoveryAuthorized(payload, link: link) else { return }
+        let page = self.store.attachmentRecoveryPage(conversationId: request.conversationId, before: cursor)
+        let ids = request.attachmentIds.filter { id in !restored.contains(where: { $0.id == id }) }
+        let artifactStore = self.desktopArtifactStore
+        let budget = remaining
+        let found: AgentDeliveredAttachmentRecovery.PageResult = await withCheckedContinuation { continuation in
+          DispatchQueue.global(qos: .utility).async {
+            continuation.resume(returning: AgentDeliveredAttachmentRecovery.restore(messages: page.messages,
+              conversationId: request.conversationId, desktopId: link.desktopId, requestedIDs: ids,
+              artifactStore: artifactStore, remainingBytes: budget))
+          }
+        }
+        restored += found.attachments
+        remaining -= found.consumedBytes
+        guard restored.count < request.attachmentIds.count, remaining > 0,
+              page.hasMore, let next = page.nextCursor, next != cursor else { break }
+        cursor = next
+        await Task.yield()
+      }
+      guard !Task.isCancelled, self.store.profile.identityFingerprint == owner,
+            self.attachmentRecoveryAuthorized(payload, link: link) else { return }
+      do {
+        let scope = try AgentAttachmentTransferScope(contactId: request.contactId, desktopId: link.desktopId,
+          clientRouteId: request.clientRouteId, conversationId: request.conversationId,
+          taskId: request.taskId, turnId: request.turnId, clientMessageId: request.sourceIdentity,
+          attachmentRequestId: request.requestId)
+        let transferStore = self.attachmentTransferStore
+        let profile = self.mediaNetworkProfileProvider()
+        let attachments = restored
+        let prepared: [AgentPreparedOutboundAttachment] = try await withCheckedThrowingContinuation { continuation in
+          DispatchQueue.global(qos: .utility).async {
+            do {
+              continuation.resume(returning: try transferStore.prepare(scope: scope,
+                attachments: attachments, mediaProfile: profile, preserveOriginalBytes: true))
+            } catch { continuation.resume(throwing: error) }
+          }
+        }
+        guard !Task.isCancelled, self.store.profile.identityFingerprint == owner,
+              self.attachmentRecoveryAuthorized(payload, link: link) else { return }
+        let available = restored.map(\.id)
+        let result = request.result(status: available.isEmpty ? "missing" : "transferring",
+          availableAttachmentIds: available, missingAttachmentIds: request.attachmentIds.filter { !available.contains($0) })
+        let data = try JSONEncoder().encode(result)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        let wire = try self.linkWirePayload(object, link: link)
+        let transfers = try self.makeOutboundAttachmentDeliveryRequests(prepared, link: link,
+          sourceMessageId: request.sourceIdentity, contactId: request.contactId)
+        self.deliveryStore.enqueueBatch([LinkDeliveryEnqueueRequest(messageId: wire.messageId,
+          topic: link.routes.upTopic, wirePayload: wire.wireText, requiresValidatedNetwork: false,
+          blockedByAttachmentTransferIds: [], clientSourceMessageId: request.sourceIdentity,
+          contactId: request.contactId)] + transfers)
+        if !messageId.isEmpty { self.deliveryStore.completeIncoming(messageId: messageId) }
+        self.scheduleOutboxFlush(after: 0)
+      } catch {
+        self.lastError = error.localizedDescription
+      }
+    }
+  }
+
+  private func attachmentRecoveryAuthorized(_ payload: [String: Any], link: ServerLink) -> Bool {
+    guard store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
+            $0.routes.clientRouteId == link.routes.clientRouteId }),
+          payload.string("client_route_id") == link.routes.clientRouteId,
+          taskIdentityStore.matchesRegistered(payload: payload),
+          !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload),
+          let contact = store.contact(id: payload.string("contact_id")),
+          contact.trustState == .verified, contact.deliveryMode.isGalaxySSILinkFamily,
+          contact.desktopId == link.desktopId else { return false }
+    if let task = store.agentTask(id: payload.string("turn_id")), [.cancelled, .failed].contains(task.phase) { return false }
+    return true
+  }
+
   private func stageAgentAttachments(
     conversationId: String,
     turnId: String,
@@ -10551,6 +10642,11 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     if handleProfileUpdatePayload(appPayload, messageId: messageId) {
+      return
+    }
+    if appPayload.string("type") == AgentAttachmentRecoveryRequest.requestType {
+      guard object.string("scheme") == "signal" else { return }
+      handleAttachmentRecoveryRequest(appPayload, link: link, messageId: messageId)
       return
     }
     if let response = AgentConnectorResponse.fromPayload(appPayload) {
