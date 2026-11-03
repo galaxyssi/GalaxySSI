@@ -66,6 +66,8 @@ enum AgentTeamReplyDisposition: Equatable {
   case notOwned, primary, observerProgress, observerCommitted, observerDuplicate, observerStale, retired
 }
 
+typealias AgentTeamReplyRecoveryContext = (owner: AgentTeamReplyOwner, team: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot)
+
 extension Notification.Name {
   static let galaxySSIAgentTeamExecutionHistoryDidUpdate = Notification.Name("galaxyssi.agentTeamExecutionHistoryDidUpdate")
 }
@@ -120,7 +122,8 @@ final class AgentTeamExecutionHistoryStore {
             guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
                   replacement.sourceMessageId == member.sourceMessageId,
                   replacement.status == member.status, replacement.output == member.output,
-                  replacement.richOutputJson == member.richOutputJson else { throw AgentTeamHistoryDatabase.Failure.stale }
+                  replacement.richOutputJson == member.richOutputJson,
+                  replacement.replyContent == member.replyContent else { throw AgentTeamHistoryDatabase.Failure.stale }
           }
         }
         try database.put(incoming)
@@ -162,7 +165,20 @@ final class AgentTeamExecutionHistoryStore {
               $0.sourceMessageId == source && $0.agentId == contact }), saved.state != .cancelled else { return .retired }
       if owner.deliveryMode == .respond { return .primary }
       guard owner.accepts(observation) else { return .observerStale }
-      if (member.status.isTerminal && member.status != .interrupted) || saved.state.deliverable { return .observerDuplicate }
+      if (member.status.isTerminal && member.status != .interrupted) || saved.state.deliverable {
+        let expected = success ? AgentSubagentStatus.succeeded : .failed
+        let preview = success ? member.output : member.errorMessage
+        if terminal, member.status == expected, member.richOutputJson == richOutputJson,
+           member.replyContent == content || (member.replyContent == nil && preview == content) {
+          if persistObservation { try database.updateReplyOwner(owner.advancing(observation)) }
+          if member.replyContent == nil, let index = saved.members.firstIndex(where: { $0.memberId == owner.memberId }) {
+            var restored = saved
+            restored.members[index].replyContent = content
+            try database.put(restored)
+          }
+        }
+        return .observerDuplicate
+      }
       if persistObservation {
         let advanced = owner.advancing(observation)
         if advanced != owner { try database.updateReplyOwner(advanced) }
@@ -178,6 +194,21 @@ final class AgentTeamExecutionHistoryStore {
     }
     if let changedRun { notify(changedRun) }
     return disposition
+  }
+
+  func pendingRecoveryPage(after: String, limit: Int = 8) throws -> (teams: [AgentTeamExecutionSnapshot], next: String?) {
+    try access { try $0.recoveryPage(after: after, limit: limit) }
+  }
+
+  func recoveryContext(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyRecoveryContext? {
+    try access { database in
+      guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact),
+            let team = try database.snapshots(runId: owner.supervisorRunId).first,
+            team.conversationId == conversation, team.taskId == turn,
+            let member = team.members.first(where: { $0.memberId == owner.memberId &&
+              $0.sourceMessageId == source && $0.agentId == contact && $0.deliveryMode == owner.deliveryMode }) else { return nil }
+      return (owner, team, member)
+    }
   }
 
   func recent(_ limit: Int = AgentTeamExecutionHistoryStore.defaultRecentLimit) -> [AgentTeamExecutionSnapshot] {

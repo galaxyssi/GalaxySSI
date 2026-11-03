@@ -2,6 +2,67 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testObserverRecoveryPersistsFullFailureAndRejectsPreviewOnlyDuplicateProof() throws {
+    let suite = "team-recovery-body-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertTrue(history.upsert(durableTeamSnapshot("run")))
+    let body = String(repeating: "failure-detail-", count: 400)
+    let rich = "{\"version\":1,\"blocks\":[]}"
+    XCTAssertEqual(try history.consumeOwnedReply(source: "source-review", conversation: "conversation", turn: "turn",
+      task: "source-review", contact: "review", content: body, richOutputJson: rich, terminal: true,
+      success: false, now: 20, observation: AgentTeamReplyObservation(generation: 2, sequence: 3)), .observerCommitted)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let context = try XCTUnwrap(reopened.recoveryContext(source: "source-review", conversation: "conversation",
+      turn: "turn", contact: "review"))
+    XCTAssertEqual(context.member.replyContent, body)
+    XCTAssertEqual(context.member.errorMessage.count, AgentTeamMemberSnapshot.maxErrorCharacters)
+    XCTAssertEqual(context.member.richOutputJson, rich)
+    XCTAssertEqual(context.owner.observedSequence, 3)
+    XCTAssertNil(try reopened.recoveryContext(source: "source-review", conversation: "foreign", turn: "turn", contact: "review"))
+    let replacement = String(body.prefix(AgentTeamMemberSnapshot.maxErrorCharacters)) + "different tail"
+    XCTAssertEqual(try reopened.consumeOwnedReply(source: "source-review", conversation: "conversation", turn: "turn",
+      task: "source-review", contact: "review", content: replacement, richOutputJson: rich, terminal: true,
+      success: false, now: 30, observation: AgentTeamReplyObservation(generation: 2, sequence: 4)), .observerDuplicate)
+    let unchanged = try XCTUnwrap(reopened.recoveryContext(source: "source-review", conversation: "conversation",
+      turn: "turn", contact: "review"))
+    XCTAssertEqual(unchanged.member.replyContent, body)
+    XCTAssertEqual(unchanged.owner.observedSequence, 3)
+  }
+
+  func testTeamRecoveryCursorCoversPendingTeamsExactlyOnce() throws {
+    let suite = "team-recovery-page-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite3"))
+    for index in 0..<19 { XCTAssertTrue(history.upsert(durableTeamSnapshot("pending-\(index)"))) }
+    var finished = durableTeamSnapshot("finished")
+    finished.state = .succeeded
+    XCTAssertTrue(history.upsert(finished))
+    var cursor = ""
+    var seen = Set<String>()
+    var pages = 0
+    repeat {
+      let page = try history.pendingRecoveryPage(after: cursor, limit: 8)
+      XCTAssertLessThanOrEqual(page.teams.count, 8)
+      for team in page.teams { XCTAssertTrue(seen.insert(team.supervisorRunId).inserted) }
+      cursor = page.next ?? ""
+      pages += 1
+      XCTAssertLessThanOrEqual(pages, 3)
+      if pages > 3 { break }
+    } while !cursor.isEmpty
+    XCTAssertEqual(seen, Set((0..<19).map { "pending-\($0)" }))
+    XCTAssertEqual(pages, 3)
+  }
+
   func testObserverGenerationAndSequenceFloorsSurviveReopen() throws {
     let suite = "team-owner-generation-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

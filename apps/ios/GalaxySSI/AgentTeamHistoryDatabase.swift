@@ -30,6 +30,7 @@ final class AgentTeamHistoryDatabase {
     try execute("CREATE INDEX IF NOT EXISTS team_history_retention ON team_history(namespace,finished,updated_at,run_key)")
     try execute("CREATE INDEX IF NOT EXISTS team_history_recent ON team_history(namespace,updated_at,run_key)")
     try execute("CREATE INDEX IF NOT EXISTS team_history_pending ON team_history(namespace,conversation_key,finished,updated_at)")
+    try execute("CREATE INDEX IF NOT EXISTS team_history_recovery ON team_history(namespace,finished,run_key)")
     try execute("CREATE TABLE IF NOT EXISTS team_history_migrations(namespace TEXT PRIMARY KEY)")
     try execute("""
       CREATE TABLE IF NOT EXISTS team_reply_owners (
@@ -72,14 +73,15 @@ final class AgentTeamHistoryDatabase {
   }
 
   func snapshots(runId: String? = nil, conversation: String? = nil, recoverableOnly: Bool = false, deliverableOnly: Bool = false,
-                 limit: Int? = nil) throws -> [AgentTeamExecutionSnapshot] {
+                 limit: Int? = nil, afterRunKey: String? = nil) throws -> [AgentTeamExecutionSnapshot] {
     var sql = "SELECT run_key,updated_at,finished,encrypted_payload,conversation_key FROM team_history WHERE namespace=?"
     var values = [namespace]
     if let runId { sql += " AND run_key=?"; values.append(Self.digest(runId)) }
     if let conversation { sql += " AND conversation_key=?"; values.append(Self.digest(conversation)) }
     if recoverableOnly { sql += " AND finished=0" }
     if deliverableOnly { sql += " AND finished=1" }
-    sql += " ORDER BY updated_at DESC,run_key DESC"
+    if let afterRunKey { sql += " AND run_key>?"; values.append(afterRunKey) }
+    sql += afterRunKey == nil ? " ORDER BY updated_at DESC,run_key DESC" : " ORDER BY run_key"
     if limit != nil { sql += " LIMIT ?" }
     let statement = try prepare(sql)
     defer { sqlite3_finalize(statement) }
@@ -101,6 +103,13 @@ final class AgentTeamHistoryDatabase {
             (snapshot.state.deliverable ? 1 : 0) == sqlite3_column_int(statement, 2) else { throw Failure.corrupt }
       result.append(snapshot)
     }
+  }
+
+  func recoveryPage(after: String, limit: Int) throws -> (teams: [AgentTeamExecutionSnapshot], next: String?) {
+    let size = min(16, max(1, limit))
+    let rows = try snapshots(recoverableOnly: true, limit: size + 1, afterRunKey: after)
+    let teams = Array(rows.prefix(size))
+    return (teams, rows.count > size ? teams.last.map { Self.digest($0.supervisorRunId) } : nil)
   }
 
   func put(_ snapshot: AgentTeamExecutionSnapshot) throws {
@@ -140,6 +149,7 @@ final class AgentTeamHistoryDatabase {
   }
 
   func replyOwner(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyOwner? {
+    if let known = try knownReplyOwner(source: source, conversation: conversation, turn: turn, contact: contact) { return known }
     let marker = try prepare("SELECT 1 FROM team_reply_owner_backfill WHERE namespace=? AND conversation_key=?")
     defer { sqlite3_finalize(marker) }
     bind(namespace, at: 1, to: marker)
@@ -153,6 +163,10 @@ final class AgentTeamHistoryDatabase {
       bind(Self.digest(conversation), at: 2, to: insert)
       try finish(insert)
     } else if status != SQLITE_ROW { throw Failure.unavailable }
+    return try knownReplyOwner(source: source, conversation: conversation, turn: turn, contact: contact)
+  }
+
+  private func knownReplyOwner(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyOwner? {
     let key = try replyKey(source: source, conversation: conversation, turn: turn, contact: contact)
     let statement = try prepare("SELECT run_key,member_key,encrypted_payload FROM team_reply_owners WHERE namespace=? AND binding_key=? LIMIT 2")
     defer { sqlite3_finalize(statement) }
