@@ -148,6 +148,7 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
   var selectionLimit = GalaxySSIAttachmentPayloadBuilder.maximumAttachmentCount
   var dismissOnSelection = true
   var onFailure: () -> Void = {}
+  var onCancel: () -> Void = {}
   var onAttachment: (GalaxySSIDraftAttachment) -> Void
 
   func makeUIViewController(context: Context) -> PHPickerViewController {
@@ -162,23 +163,37 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
   func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(dismissOnSelection: dismissOnSelection, onFailure: onFailure, onAttachment: onAttachment)
+    Coordinator(dismissOnSelection: dismissOnSelection, onFailure: onFailure, onCancel: onCancel,
+      onAttachment: onAttachment)
+  }
+
+  static func dismantleUIViewController(_ controller: PHPickerViewController, coordinator: Coordinator) {
+    coordinator.invalidateEmbeddedPicker()
   }
 
   final class Coordinator: NSObject, PHPickerViewControllerDelegate {
     private let onAttachment: (GalaxySSIDraftAttachment) -> Void
     private let dismissOnSelection: Bool
     private let onFailure: () -> Void
+    private let onCancel: () -> Void
+    private var acceptingResults = true
 
-    init(dismissOnSelection: Bool, onFailure: @escaping () -> Void,
+    init(dismissOnSelection: Bool, onFailure: @escaping () -> Void, onCancel: @escaping () -> Void,
          onAttachment: @escaping (GalaxySSIDraftAttachment) -> Void) {
       self.dismissOnSelection = dismissOnSelection
       self.onFailure = onFailure
+      self.onCancel = onCancel
       self.onAttachment = onAttachment
     }
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-      if dismissOnSelection || results.isEmpty { picker.dismiss(animated: true) }
+      if results.isEmpty {
+        acceptingResults = false
+        onCancel()
+        if dismissOnSelection { picker.dismiss(animated: true) }
+        return
+      }
+      if dismissOnSelection { picker.dismiss(animated: true) }
       results.forEach { result in
         let provider = result.itemProvider
         let typeIdentifier = provider.registeredTypeIdentifiers.first { identifier in
@@ -186,7 +201,7 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
         } ?? UTType.image.identifier
         provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
           guard let data, !data.isEmpty, data.count <= 64 * 1024 * 1024 else {
-            DispatchQueue.main.async { self.onFailure() }
+            DispatchQueue.main.async { if self.acceptingResults { self.onFailure() } }
             return
           }
           let name = provider.suggestedName.map { "\($0).jpg" } ?? "photo.jpg"
@@ -195,10 +210,15 @@ struct PhotoLibraryPickerView: UIViewControllerRepresentable {
             suggestedName: name
           )
           DispatchQueue.main.async {
-            self.onAttachment(attachment)
+            if self.acceptingResults { self.onAttachment(attachment) }
           }
         }
       }
+    }
+
+    func invalidateEmbeddedPicker() {
+      // Ordinary pickers finish loading after their automatic dismissal.
+      if !dismissOnSelection { acceptingResults = false }
     }
   }
 }
@@ -243,6 +263,7 @@ struct GalaxySSIScreenshotInputView: View {
   @State private var preview: UIImage?
   @State private var selection: CGRect?
   @State private var failed = false
+  @State private var acceptingResults = false
   var onAttachment: (GalaxySSIDraftAttachment) -> Void
 
   var body: some View {
@@ -269,7 +290,9 @@ struct GalaxySSIScreenshotInputView: View {
           }
           .padding(12)
         } else {
-          PhotoLibraryPickerView(selectionLimit: 1, dismissOnSelection: false, onFailure: { failed = true }) { selected in
+          PhotoLibraryPickerView(selectionLimit: 1, dismissOnSelection: false,
+            onFailure: { if acceptingResults { failed = true } }, onCancel: close) { selected in
+            guard acceptingResults else { return }
             guard selected.data.count <= 64 * 1024 * 1024,
                   let source = CGImageSourceCreateWithData(selected.data as CFData, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
@@ -286,7 +309,7 @@ struct GalaxySSIScreenshotInputView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button(t("galaxyssi.common.cancel", "Cancel")) { dismiss() }
+          Button(t("galaxyssi.common.cancel", "Cancel"), action: close)
         }
         ToolbarItemGroup(placement: .confirmationAction) {
           if preview != nil {
@@ -302,8 +325,17 @@ struct GalaxySSIScreenshotInputView: View {
       }
     }
     .navigationViewStyle(.stack)
-    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in dismiss() }
-    .onDisappear { attachment = nil; preview = nil; selection = nil }
+    .onAppear { acceptingResults = true }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in close() }
+    .onDisappear { acceptingResults = false; attachment = nil; preview = nil; selection = nil }
+  }
+
+  private func close() {
+    acceptingResults = false
+    attachment = nil
+    preview = nil
+    selection = nil
+    dismiss()
   }
 
   static func cropSelection(from start: CGPoint, to end: CGPoint, size: CGSize) -> CGRect? {
@@ -317,7 +349,7 @@ struct GalaxySSIScreenshotInputView: View {
   }
 
   private func confirm() {
-    guard let attachment else { return }
+    guard acceptingResults, let attachment else { return }
     if let selection, let source = preview?.cgImage {
       let rect = CGRect(x: selection.minX * CGFloat(source.width), y: selection.minY * CGFloat(source.height),
         width: selection.width * CGFloat(source.width), height: selection.height * CGFloat(source.height)).integral
@@ -329,7 +361,7 @@ struct GalaxySSIScreenshotInputView: View {
     } else {
       onAttachment(attachment)
     }
-    dismiss()
+    close()
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
