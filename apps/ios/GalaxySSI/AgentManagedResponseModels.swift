@@ -117,6 +117,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
 }
 
 protocol AgentManagedResponseLedger: AnyObject {
+  func ownsResponse(_ response: AgentConnectorResponse) throws -> Bool
   func register(_ record: AgentManagedResponseRecord) throws
   func complete(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord?
   func acknowledge(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord?
@@ -130,6 +131,12 @@ protocol AgentManagedResponseLedger: AnyObject {
 final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
   private let lock = NSRecursiveLock()
   private var records: [String: AgentManagedResponseRecord] = [:]
+
+  func ownsResponse(_ response: AgentConnectorResponse) throws -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return records.values.contains { $0.correlates(response) }
+  }
 
   func register(_ record: AgentManagedResponseRecord) throws {
     guard !record.ownerRunId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
