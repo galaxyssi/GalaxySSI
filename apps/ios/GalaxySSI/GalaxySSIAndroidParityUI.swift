@@ -98,7 +98,7 @@ struct AgentHomeView: View {
   var onNavigateToMainTab: ((GalaxySSIMainTab) -> Void)? = nil
 
   @Environment(\.galaxySSIInterfaceLanguage) var interfaceLanguage
-  @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.scenePhase) var scenePhase
   @State private var homeVisible = false
   @State private var homeWindowFocused = false
   @State var agentUnreadCount = 0
