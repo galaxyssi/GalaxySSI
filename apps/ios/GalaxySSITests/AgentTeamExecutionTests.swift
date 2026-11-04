@@ -1528,6 +1528,20 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(recall.goalSelector(request, scope: scope, generation: 1))
   }
 
+  func testDecisionContextPrefersRecentWholeDependencyAndKeepsOriginalSelector() {
+    let long = String(repeating: "\u{1F642}", count: 200)
+    let recent = String(repeating: "r", count: 200)
+    let context = AgentCollaborationDecisionContext.dependencyLines([("old", long), ("recent", recent)], maximumBytes: 400)
+    XCTAssertTrue(context.omitted)
+    XCTAssertTrue(context.lines[0].contains("archive_record_id="))
+    XCTAssertFalse(context.lines[0].contains(long))
+    XCTAssertTrue(context.lines[1].hasSuffix(recent))
+    XCTAssertLessThanOrEqual(context.lines.joined(separator: "\n").utf8.count, 400)
+    let preview = AgentCollaborationDecisionContext.dependencyLines([("old", long)], maximumBytes: 1,
+      recallAvailable: false)
+    XCTAssertTrue(preview.lines[0].hasSuffix(long))
+  }
+
   func testDesktopObserverRecallCanUseAuthenticatedEventsBeforeText() {
     let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "observer", conversationId: "group",
       turnId: "turn", sourceMessageId: "source", contactId: "codex", deliveryMode: .observe)
