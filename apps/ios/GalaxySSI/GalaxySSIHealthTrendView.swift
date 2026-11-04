@@ -153,8 +153,9 @@ struct GalaxySSIHealthTrendView: View {
               VStack(alignment: .leading, spacing: 4) {
                 if let value = component.value(in: reading) { Text(number(value) + " " + unit) }
                 Text(reading.measuredAt, style: .time).foregroundColor(.secondary)
-                Text(reading.bluetoothReceipt == nil ? t("manual", "Source: manual measurements")
-                  : t("bluetooth", "Source: Bluetooth monitor")).foregroundColor(.secondary)
+                Text(reading.tableSource != nil ? t("table", "Source: imported table") :
+                  (reading.bluetoothReceipt == nil ? t("manual", "Source: manual measurements") :
+                    t("bluetooth", "Source: Bluetooth monitor"))).foregroundColor(.secondary)
                 Text(String(format: t("revision", "Revision %lld"), Int64(reading.revision)))
                   .foregroundColor(.secondary)
               }
