@@ -118,6 +118,10 @@ final class AgentTeamExecutionHistoryStore {
         if let current = try database.snapshots(runId: incoming.supervisorRunId).first {
           guard current.teamId == incoming.teamId, current.conversationId == incoming.conversationId,
                 current.taskId == incoming.taskId else { throw AgentTeamHistoryDatabase.Failure.stale }
+          if current.goal != incoming.goal,
+             !(try database.goalCheckpoints(runId: incoming.supervisorRunId, newestOnly: true)).isEmpty {
+            throw AgentTeamHistoryDatabase.Failure.stale
+          }
           if current.state.deliverable || current.updatedAtMillis > incoming.updatedAtMillis { return false }
           for member in current.members where member.dispatchCheckpoint != nil {
             guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
@@ -503,6 +507,36 @@ final class AgentTeamExecutionHistoryStore {
             checkpoint.conversationId == conversationId, checkpoint.turnId == turnId else { return nil }
       return checkpoint
     }
+  }
+
+  func readPinnedCollaborationGoal(scope: AgentCollaborationToolEvidenceScope, section: String,
+                                   offset: Int = 0, expectedHash: String? = nil) throws -> AgentMcpJSONObject {
+    guard ["goal", "criteria"].contains(section), offset >= 0,
+          offset == 0 || expectedHash != nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let bytes = try access { database -> Data in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+            let pinned = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first,
+            pinned.conversationId == scope.conversationId, pinned.turnId == scope.turnId,
+            !pinned.contract.isEmpty else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if section == "goal" { return Data(team.goal.utf8) }
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      return try encoder.encode(pinned.contract)
+    }
+    let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    guard offset <= bytes.count, expectedHash == nil || expectedHash == digest else {
+      throw AgentTeamHistoryDatabase.Failure.stale
+    }
+    let next = offset + min(8_192, bytes.count - offset)
+    return [
+      "section": .string(section), "sha256": .string(digest),
+      "data_b64": .string(bytes.subdata(in: offset..<next).base64EncodedString()),
+      "offset": .int(Int64(offset)), "total_bytes": .int(Int64(bytes.count)),
+      "next_offset": next < bytes.count ? .int(Int64(next)) : .null
+    ]
   }
 
   func advanceGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64) -> Bool {
