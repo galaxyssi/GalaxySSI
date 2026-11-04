@@ -257,6 +257,31 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testTransferStudyRequiresCurrentFailureAndDistinctTargetDomain() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"study","kind":"transfer_study","title":"Study","base_revision":0,
+       "parents":[{"object_id":"failure","revision":1,"sha256":"exact"}],
+       "body":{"transfer_study":{
+         "source":{"object_id":"failure","revision":1,"sha256":"exact"},
+         "source_domain":"Parsing","target_domain":"Extraction","mode":"cross_domain","target_task":"Extract fields",
+         "abstract_strategy":"Validate input","proposed_method":"Check schema","rationale":"Avoid ambiguity",
+         "risks":"Reject valid input","falsifier":"No gain","limitations":"Structured only",
+         "alternatives":["Manual review"],"calibration_data":[],
+         "mappings":[{"source_element":"Parser","target_element":"Extractor","invariant":"Structure",
+           "adaptation":"New schema","breaks_when":"Free text"}]
+       }}}
+    ]}
+    """
+    let draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    XCTAssertTrue(AgentCollaborationTransferIntake.validates(draft) { _ in "failure_experience" })
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(draft) { _ in nil })
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(draft) { _ in "proposal" })
+    let sameDomain = raw.replacingOccurrences(of: "\"Extraction\"", with: "\"Parsing\"")
+    let invalid = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: sameDomain)?.first)
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(invalid) { _ in "failure_experience" })
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

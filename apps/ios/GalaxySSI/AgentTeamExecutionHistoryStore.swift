@@ -464,6 +464,7 @@ final class AgentTeamExecutionHistoryStore {
       }
       var revisions: [AgentCollaborationResearchRevision] = []
       var objectIds = Set<String>()
+      let transferBatchUpdates = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
       for draft in drafts {
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
@@ -503,6 +504,18 @@ final class AgentTeamExecutionHistoryStore {
             existing.turnId != turnId || existing.authorId == memberId else {
             throw AgentTeamHistoryDatabase.Failure.stale
           }
+        }
+        if draft.kind == .transferStudy {
+          let valid = try AgentCollaborationTransferIntake.validates(draft) { reference in
+            guard !transferBatchUpdates.contains(reference.objectId),
+                  let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + reference.objectId),
+                  record.reference == reference else { return nil }
+            if record.draft.kind.rawValue == "failure_experience",
+               record.frozenCloudReads?.isEmpty != false { return nil }
+            return record.draft.kind.rawValue
+          }
+          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
         var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
