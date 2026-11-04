@@ -353,11 +353,7 @@ final class AgentTeamExecutionHistoryStore {
         throw AgentTeamHistoryDatabase.Failure.corrupt
       }
       let slice = try page(data)
-      let key = "cloud-read-coverage:" + AgentMcpJSONCodec.sha256([
-        "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
-        "member": .string(scope.memberId), "source": .string(scope.sourceId),
-        "evidence": .string(id), "sha256": .string(hash)
-      ])
+      let key = Self.cloudReadCoverageKey(scope: scope, id: id, hash: hash)
       let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
         conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
       var coverage = previous
@@ -391,6 +387,44 @@ final class AgentTeamExecutionHistoryStore {
       )
     }
     return result
+  }
+
+  private static func cloudReadCoverageKey(scope: AgentCollaborationToolEvidenceScope, id: String, hash: String) -> String {
+    "cloud-read-coverage:" + AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
+      "member": .string(scope.memberId), "source": .string(scope.sourceId),
+      "evidence": .string(id), "sha256": .string(hash)
+    ])
+  }
+
+  private static func freezeCloudReads(_ references: [AgentMcpJSONObject], scope: AgentCollaborationToolEvidenceScope,
+                                       database: AgentTeamHistoryDatabase) throws -> [AgentCollaborationFrozenCloudRead] {
+    guard references.count <= 32 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    var seen = Set<String>()
+    return try references.map { reference in
+      let id = reference.string("evidence_id")
+      let hash = reference.string("sha256")
+      guard Set(reference.keys) == Set(["evidence_id", "sha256"]),
+            [id, hash].allSatisfy({ $0.utf8.count == 64 &&
+              $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }),
+            seen.insert(id).inserted,
+            let original = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
+            original.scope.conversationId == scope.conversationId,
+            original.scope.turnId != scope.turnId || original.scope == scope else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let data = try encoder.encode(original)
+      let actualHash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+      let total = Int64(String(decoding: data, as: UTF8.self).count)
+      let key = cloudReadCoverageKey(scope: scope, id: id, hash: hash)
+      guard actualHash == hash,
+            let coverage = try database.researchRecord(AgentCollaborationReadCoverage.self,
+              conversationId: scope.conversationId, key: key, revision: 0),
+            coverage.contiguousEnd == total else { throw AgentTeamHistoryDatabase.Failure.stale }
+      return AgentCollaborationFrozenCloudRead(evidenceId: id, sha256: hash, totalCharacters: total)
+    }
   }
 
   func recoverable(conversationId: String) -> [AgentTeamExecutionSnapshot] {
@@ -429,12 +463,20 @@ final class AgentTeamExecutionHistoryStore {
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
               draft.baseRevision >= 0, draft.baseRevision < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-        guard draft.observations?.isEmpty != false else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let references = draft.observations ?? []
+        var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
         if draft.kind == .acceptanceReview {
           let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
             objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
           guard AgentCollaborationDocumentaryAcceptance.validReviewPublication(body: draft.body, parents: parents)
           else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          if !references.isEmpty {
+            let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+              turnId: turnId, memberId: memberId, sourceId: sourceId)
+            frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
+          }
+        } else if !references.isEmpty {
+          throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         let existingId = draft.objectId.flatMap { $0.isBlank ? nil : $0 }
         let objectId = existingId ?? AgentMcpJSONCodec.sha256([
@@ -459,7 +501,8 @@ final class AgentTeamExecutionHistoryStore {
         }
         var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
-          runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft)
+          runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
+          frozenCloudReads: frozenReads)
         revision.reference.sha256 = try digest(revision)
         revisions.append(revision)
       }
@@ -496,6 +539,14 @@ final class AgentTeamExecutionHistoryStore {
           revision.reference == reference, revision.runId == scope.runId, revision.turnId == scope.turnId,
           revision.authorId == scope.memberId, revision.sourceId == scope.sourceId else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
+        }
+        if let citations = revision.draft.observations, !citations.isEmpty {
+          guard revision.draft.kind == .acceptanceReview, let reads = revision.frozenCloudReads,
+                reads.count == citations.count,
+                zip(reads, citations).allSatisfy({ pair in
+                  pair.0.evidenceId == pair.1.string("evidence_id") &&
+                    pair.0.sha256 == pair.1.string("sha256") && pair.0.totalCharacters > 0
+                }) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         }
         return revision
       }

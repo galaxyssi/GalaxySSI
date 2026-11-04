@@ -170,6 +170,43 @@ extension GalaxySSIStoreTests {
     let fallback = CloudConversationStreamEngine.cloudEvidenceOutput("{}", receipt: nil)
     XCTAssertTrue(fallback.contains("not_durable"))
     XCTAssertFalse(fallback.contains("galaxyssi_evidence_receipt"))
+    var unread = observation
+    unread.scope = scope
+    unread.round = 2
+    let unreadReceipt = try reopened.recordCloudEvidence(unread)
+    var finished = team
+    let index = try XCTUnwrap(finished.members.firstIndex { $0.memberId == member.memberId })
+    finished.members[index].status = .succeeded
+    finished.updatedAtMillis += 1
+    XCTAssertTrue(reopened.upsert(finished))
+    func publish(_ draft: AgentCollaborationResearchDraft) throws -> AgentCollaborationResearchPublication {
+      try reopened.publishResearchObjects([draft], runId: scope.runId, conversationId: scope.conversationId,
+        turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId)
+    }
+    var earlier = durableTeamSnapshot("target-run")
+    earlier.taskId = "previous-turn"
+    earlier.members[0].status = .succeeded
+    XCTAssertTrue(reopened.upsert(earlier))
+    let targetPublication = try reopened.publishResearchObjects([
+      .init(id: "target", objectId: nil, baseRevision: 0, kind: .artifact, title: "Target",
+        body: ["content": .string("Original result")], parents: [])
+    ], runId: earlier.supervisorRunId, conversationId: scope.conversationId, turnId: earlier.taskId,
+      memberId: earlier.members[0].memberId, sourceId: earlier.members[0].sourceMessageId)
+    let target = try XCTUnwrap(targetPublication.references.first)
+    var review = AgentCollaborationResearchDraft(id: "review", objectId: nil, baseRevision: 0,
+      kind: .acceptanceReview, title: "Review", body: ["acceptance_review": .object([
+        "criterion_id": .string("accuracy"), "requirement": .string("Cite the original"),
+        "target": .object(["object_id": .string(target.objectId), "revision": .int(target.revision), "sha256": .string(target.sha256)]),
+        "verdict": .string("supported"), "rationale": .string("Observed the original"), "unresolved": .array([])
+      ])], parents: [target], observations: [
+        ["evidence_id": unreadReceipt["evidence_id"] ?? .null, "sha256": unreadReceipt["sha256"] ?? .null]
+      ])
+    XCTAssertThrowsError(try publish(review))
+    review.observations = [["evidence_id": receipt["evidence_id"] ?? .null, "sha256": receipt["sha256"] ?? .null]]
+    let reviewPublication = try publish(review)
+    XCTAssertEqual(try publish(review).references, reviewPublication.references)
+    let savedReview = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope)?.first)
+    XCTAssertEqual(savedReview.frozenCloudReads?.first?.evidenceId, source["evidence_id"]?.stringValue)
   }
 
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
