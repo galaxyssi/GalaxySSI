@@ -616,6 +616,23 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(observed.string("state"), "updated_from_observation")
     XCTAssertEqual(observed["posterior"], .object(["a": .double(1), "b": .double(0)]))
     XCTAssertEqual(observed["information_gain_bits"], .double(1))
+    XCTAssertEqual(observed["brier_scores"], .object(["yes": .string("0.25"), "no": .string("0.25")]))
+    var chained = forecast
+    var next = try XCTUnwrap(chained["hypothesis_test"]?.objectValue)
+    let previous = next
+    next["conditional_history"] = .string("Condition on the first measurement.")
+    next["prior_outcome"] = .object(["object_id": .string("old")])
+    next["hypotheses"] = .array([
+      .object(["id": .string("a"), "claim": .string("A")]),
+      .object(["id": .string("b"), "claim": .string("B")])
+    ])
+    XCTAssertTrue(AgentCollaborationForecastIntake.sameHypothesisQuestion(previous, next))
+    chained["hypothesis_test"] = .object(next)
+    let carried: AgentMcpJSONObject = ["a": .double(0.5), "b": .double(0.5)]
+    XCTAssertNil(AgentCollaborationForecastIntake.hypothesisInformation(chained))
+    XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisInformation(chained, carriedPosterior: carried), scores)
+    next["question"] = .string("A different question")
+    XCTAssertFalse(AgentCollaborationForecastIntake.sameHypothesisQuestion(previous, next))
     XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisFeedback(forecast,
       observed: .bool(true), withinValidity: false)?.string("state"), "stale_observation")
     XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisFeedback(forecast,
@@ -625,6 +642,15 @@ extension GalaxySSIStoreTests {
     let invalid = input.replacingOccurrences(of: #""probabilities":{"yes":0.5,"no":0.5}"#,
       with: #""probabilities":{"yes":0.75,"no":0.25}"#)
     XCTAssertNil(AgentCollaborationForecastIntake.hypothesisInformation(try decode(invalid)))
+  }
+
+  func testBrierScoreRetainsTinyNonzeroDerivedValues() {
+    XCTAssertEqual(AgentCollaborationForecastIntake.brierScore(probability: 1e-200, occurred: false),
+      "0." + String(repeating: "0", count: 399) + "1")
+    XCTAssertEqual(AgentCollaborationForecastIntake.brierScore(probability: 0.01, occurred: true), "0.9801")
+    XCTAssertEqual(AgentCollaborationForecastIntake.brierScore(probability: 0.99, occurred: true), "0.0001")
+    XCTAssertEqual(AgentCollaborationForecastIntake.brierScore(probability: 1, occurred: false), "1")
+    XCTAssertNil(AgentCollaborationForecastIntake.brierScore(probability: .infinity, occurred: true))
   }
 
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {

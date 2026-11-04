@@ -475,8 +475,10 @@ enum AgentCollaborationForecastIntake {
     return result
   }
 
-  static func hypothesisInformation(_ forecast: AgentMcpJSONObject) -> [String: Double]? {
-    guard let spec = forecast["hypothesis_test"]?.objectValue, spec["prior_outcome"] == nil,
+  static func hypothesisInformation(_ forecast: AgentMcpJSONObject,
+                                    carriedPosterior: AgentMcpJSONObject? = nil) -> [String: Double]? {
+    guard let spec = forecast["hypothesis_test"]?.objectValue,
+          (spec["prior_outcome"] != nil) == (carriedPosterior != nil),
           hasText(spec, ["question", "assumptions", "likelihood_basis", "misspecification_check"]),
           let hypotheses = spec["hypotheses"]?.arrayValue, (2...32).contains(hypotheses.count),
           let rawIds = spec["event_ids"]?.arrayValue, (2...32).contains(rawIds.count),
@@ -500,10 +502,13 @@ enum AgentCollaborationForecastIntake {
     }
     var weights: AgentMcpJSONObject = [:]
     for hypothesis in hypotheses {
-      guard let row = hypothesis.objectValue, hasText(row, ["id", "claim"]), let prior = row["prior"],
+      guard let row = hypothesis.objectValue, hasText(row, ["id", "claim"]),
+            carriedPosterior == nil || row["prior"] == nil,
+            let prior = carriedPosterior?[row.string("id")] ?? row["prior"],
             weights.updateValue(prior, forKey: row.string("id")) == nil else { return nil }
     }
     let keys = weights.keys.sorted()
+    if let carriedPosterior, Set(carriedPosterior.keys) != Set(keys) { return nil }
     func distribution(_ row: AgentMcpJSONObject, keys: [String]) -> [Double]? {
       guard Set(row.keys) == Set(keys) else { return nil }
       let values = keys.compactMap { number(row[$0]) }
@@ -535,13 +540,14 @@ enum AgentCollaborationForecastIntake {
   }
 
   static func hypothesisFeedback(_ forecast: AgentMcpJSONObject, observed: AgentMcpJSONValue?,
-                                 withinValidity: Bool) -> AgentMcpJSONObject? {
+                                 withinValidity: Bool, carriedPosterior: AgentMcpJSONObject? = nil) -> AgentMcpJSONObject? {
     guard let spec = forecast["hypothesis_test"]?.objectValue,
           let ids = spec["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
           let hypotheses = spec["hypotheses"]?.arrayValue?.compactMap(\.objectValue),
           let likelihoods = spec["likelihoods"]?.objectValue?[forecast.string("selected_action")]?.objectValue,
           let events = forecast["events"]?.arrayValue?.compactMap(\.objectValue) else { return nil }
     var feedback: AgentMcpJSONObject = ["state": .string("incomplete_observation"), "posterior": .null,
+      "brier_scores": .null,
       "information_gain_bits": .null, "probabilities_are_assumptions": .bool(true), "causality_proven": .bool(false)]
     guard withinValidity else { feedback["state"] = .string("stale_observation"); return feedback }
     guard let observed else { return feedback }
@@ -554,10 +560,20 @@ enum AgentCollaborationForecastIntake {
       feedback["state"] = .string("unmodeled_outcome")
       return feedback
     }
+    if let choice = forecast["choices"]?.arrayValue?.compactMap(\.objectValue).first(where: {
+      $0.string("action_id") == forecast.string("selected_action")
+    }), let probabilities = choice["probabilities"]?.objectValue {
+      var scores: AgentMcpJSONObject = [:]
+      for id in ids {
+        guard let p = number(probabilities[id]), let score = brierScore(probability: p, occurred: id == event) else { return nil }
+        scores[id] = .string(score)
+      }
+      feedback["brier_scores"] = .object(scores)
+    }
     var weights: [(String, Double, Double)] = []
     for hypothesis in hypotheses {
       let id = hypothesis.string("id")
-      guard let prior = number(hypothesis["prior"]), let row = likelihoods[id]?.objectValue,
+      guard let prior = number(carriedPosterior?[id] ?? hypothesis["prior"]), let row = likelihoods[id]?.objectValue,
             let likelihood = number(row[event]) else { return nil }
       let total = ids.compactMap { number(row[$0]) }.reduce(0, +)
       guard total > 0 else { return nil }
@@ -581,6 +597,58 @@ enum AgentCollaborationForecastIntake {
     feedback["posterior"] = .object(posterior)
     feedback["information_gain_bits"] = .double(max(0, gain))
     return feedback
+  }
+
+  static func brierScore(probability: Double, occurred: Bool) -> String? {
+    guard probability.isFinite, (0...1).contains(probability) else { return nil }
+    if probability == 0 { return occurred ? "1" : "0" }
+    if probability == 1 { return occurred ? "0" : "1" }
+    let notation = String(probability).split(separator: "e")
+    let parts = notation[0].split(separator: ".")
+    let exponent = notation.count == 2 ? (Int(notation[1]) ?? 0) : 0
+    let scale = (parts.count == 2 ? parts[1].count : 0) - exponent
+    let digits = parts.joined().utf8.map { Int($0) - 48 }
+    guard scale > 0 else { return nil }
+    // Square the decimal numerator without imposing the input type's exponent range on the result.
+    var error = Array(digits.reversed())
+    while error.last == 0 { error.removeLast() }
+    if occurred {
+      error += Array(repeating: 0, count: max(0, scale - error.count))
+      var borrow = 0
+      for index in error.indices {
+        let diff = -error[index] - borrow
+        borrow = diff < 0 ? 1 : 0
+        error[index] = diff + 10 * borrow
+      }
+    }
+    while error.last == 0 { error.removeLast() }
+    var square = Array(repeating: 0, count: 2 * scale + 1)
+    for i in error.indices {
+      for j in error.indices { square[i + j] += error[i] * error[j] }
+    }
+    for index in 0..<(square.count - 1) {
+      square[index + 1] += square[index] / 10
+      square[index] %= 10
+    }
+    let fraction = square.dropLast().reversed().map(String.init).joined()
+    let trimmed = String(fraction.reversed().drop(while: { $0 == "0" }).reversed())
+    return trimmed.isEmpty ? "0" : "0." + trimmed
+  }
+
+  static func sameHypothesisQuestion(_ old: AgentMcpJSONObject, _ new: AgentMcpJSONObject) -> Bool {
+    func claims(_ value: AgentMcpJSONObject) -> [String: Data]? {
+      guard let rows = value["hypotheses"]?.arrayValue, rows.count >= 2 else { return nil }
+      var result: [String: Data] = [:]
+      for item in rows {
+        guard let row = item.objectValue, hasText(row, ["id", "claim"]),
+              result.updateValue(Data(row.string("claim").utf8), forKey: row.string("id")) == nil else { return nil }
+      }
+      return result
+    }
+    guard hasText(old, ["question"]), hasText(new, ["question", "conditional_history"]),
+          Data(old.string("question").utf8) == Data(new.string("question").utf8),
+          let previous = claims(old), let next = claims(new) else { return false }
+    return previous == next
   }
 
   static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
@@ -820,6 +888,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var declaredExpectedUtilities: [String: Double]? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil
+  var carriedHypothesisPosterior: AgentMcpJSONObject? = nil
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil

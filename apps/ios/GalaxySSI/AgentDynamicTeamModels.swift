@@ -88,6 +88,8 @@ enum AgentCollaborationRuleTopics {
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.
     An action_forecast may declare hypothesis_test with hypotheses (id, claim, prior), event_ids, and likelihoods
     keyed by action, hypothesis, and event. Use a single report field and include every action, including defer.
+    For a follow-up, use an exact prior_outcome parent and explain conditional_history. Keep the same
+    question, hypothesis claims, and environment scope. Omit explicit priors; the host uses the saved posterior.
     A prediction_outcome binds an exact forecast parent and one fully recalled original cloud tool observation
     from its executor. The host computes any posterior; declared probabilities are assumptions, not calibration.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
