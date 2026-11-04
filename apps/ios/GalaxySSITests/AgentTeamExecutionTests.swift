@@ -2,6 +2,37 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCloudEvidenceReceiptIsScopedAndRejectsChangedReplay() throws {
+    let suite = "team-cloud-evidence-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let team = durableTeamSnapshot("cloud-team")
+    XCTAssertTrue(history.upsert(team))
+    let member = try XCTUnwrap(team.members.first { !$0.status.isTerminal })
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, memberId: member.memberId,
+      sourceId: member.sourceMessageId)
+    var observation = AgentCollaborationCloudToolEvidence(scope: scope, round: 1,
+      call: AssembledToolCall(callId: "tool-call", index: 0, name: "web_search", argumentsJson: "{}"),
+      output: "{\"hits\":[]}", succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
+    let receipt = try history.recordCloudEvidence(observation)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(try reopened.recordCloudEvidence(observation), receipt)
+    observation.output = "different"
+    XCTAssertThrowsError(try reopened.recordCloudEvidence(observation))
+    observation.scope.conversationId = "other-group"
+    XCTAssertThrowsError(try reopened.recordCloudEvidence(observation))
+    let fallback = CloudConversationStreamEngine.cloudEvidenceOutput("{}", receipt: nil)
+    XCTAssertTrue(fallback.contains("not_durable"))
+    XCTAssertFalse(fallback.contains("galaxyssi_evidence_receipt"))
+  }
+
   func testCollaborationDispatchCheckpointSurvivesReopenAndRejectsDuplicateStart() throws {
     let suite = "team-checkpoint-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

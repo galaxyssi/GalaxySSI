@@ -62,6 +62,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     var call: AssembledToolCall
     var output: String?
     var errorMessage: String?
+    var startedAtMillis: Int64
+    var finishedAtMillis: Int64
   }
 
   private let modelClient: CloudModelClient
@@ -113,6 +115,18 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     images: [CloudImagePayload],
     requestId: String = UUID().uuidString
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+    streamConversation(contact: contact, store: store, turns: turns, images: images,
+      requestId: requestId, collaborationEvidence: nil)
+  }
+
+  func streamConversation(
+    contact: GalaxySSIContact,
+    store: GalaxySSIStore,
+    turns: [ChatMessage],
+    images: [CloudImagePayload],
+    requestId: String,
+    collaborationEvidence: AgentCollaborationToolEvidenceScope?
+  ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
     return AsyncThrowingStream { continuation in
       let worker = Task {
@@ -122,6 +136,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           turns: turns,
           images: images,
           requestId: conversationRequestId,
+          collaborationEvidence: collaborationEvidence,
           continuation: continuation
         )
       }
@@ -157,6 +172,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     turns: [ChatMessage],
     images: [CloudImagePayload],
     requestId: String,
+    collaborationEvidence: AgentCollaborationToolEvidenceScope?,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
@@ -533,7 +549,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           return freshKeys.insert(key).inserted ? call : nil
         }
 
-        let outcomes = await executeToolCalls(
+        var outcomes = await executeToolCalls(
           preparedCalls,
           context: CloudConversationToolExecutionContext(
             requestId: requestId,
@@ -543,6 +559,24 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
           )
         )
+        if let scope = collaborationEvidence {
+          for index in outcomes.indices {
+            let outcome = outcomes[index]
+            let evidence = AgentCollaborationCloudToolEvidence(scope: scope, round: round,
+              call: outcome.call, output: outcome.output ?? outcome.errorMessage ?? "",
+              succeeded: outcome.output != nil, startedAtMillis: outcome.startedAtMillis,
+              finishedAtMillis: outcome.finishedAtMillis)
+            let receipt = await MainActor.run { () -> AgentMcpJSONObject? in
+              guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+                    session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+                    !session.privateMode, !session.trackingPaused else { return nil }
+              return try? AgentTeamExecutionHistoryStore.shared.recordCloudEvidence(evidence)
+            }
+            if let output = outcome.output {
+              outcomes[index].output = Self.cloudEvidenceOutput(output, receipt: receipt)
+            }
+          }
+        }
         if let failedOutcome = outcomes.first(where: { $0.errorMessage != nil }) {
           let streamError = ModelStreamError(
             code: "INVALID_TOOL_ARGUMENTS",
@@ -681,20 +715,23 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       let batchOutcomes = await withTaskGroup(of: ToolExecutionOutcome.self) { group in
         for (offset, call) in batch.enumerated() {
           group.addTask { [toolExecutor] in
+            let started = AgentControlPlaneClock.nowMillis()
             do {
               let output = try toolExecutor.executeTool(call: call, context: context)
               return ToolExecutionOutcome(
                 index: start + offset,
                 call: call,
                 output: output,
-                errorMessage: nil
+                errorMessage: nil,
+                startedAtMillis: started, finishedAtMillis: AgentControlPlaneClock.nowMillis()
               )
             } catch {
               return ToolExecutionOutcome(
                 index: start + offset,
                 call: call,
                 output: nil,
-                errorMessage: error.localizedDescription.ifBlank(String(describing: error))
+                errorMessage: error.localizedDescription.ifBlank(String(describing: error)),
+                startedAtMillis: started, finishedAtMillis: AgentControlPlaneClock.nowMillis()
               )
             }
           }
@@ -709,6 +746,21 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       outcomes.append(contentsOf: batchOutcomes)
     }
     return outcomes
+  }
+
+  static func cloudEvidenceOutput(_ output: String, receipt: AgentMcpJSONObject?) -> String {
+    var object = (try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(output.utf8)))
+      ?? ["output": .string(output)]
+    object.removeValue(forKey: "galaxyssi_evidence_receipt")
+    object.removeValue(forKey: "galaxyssi_evidence_recording")
+    if let receipt {
+      object["galaxyssi_evidence_receipt"] = .object(receipt)
+    } else {
+      object["galaxyssi_evidence_recording"] = .object([
+        "status": .string("not_durable"), "do_not_reexecute": .bool(true)
+      ])
+    }
+    return AgentMcpJSONCodec.stringify(object)
   }
 
   private func setActiveRound(_ roundId: String?, for requestId: String) {

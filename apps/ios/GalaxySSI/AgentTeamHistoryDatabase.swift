@@ -33,6 +33,11 @@ final class AgentTeamHistoryDatabase {
     try execute("CREATE INDEX IF NOT EXISTS team_history_recovery ON team_history(namespace,finished,run_key)")
     try execute("CREATE TABLE IF NOT EXISTS team_history_migrations(namespace TEXT PRIMARY KEY)")
     try execute("""
+      CREATE TABLE IF NOT EXISTS collaboration_cloud_evidence (
+        namespace TEXT NOT NULL, group_key TEXT NOT NULL, evidence_id TEXT NOT NULL,
+        encrypted_payload BLOB NOT NULL, PRIMARY KEY(namespace,group_key,evidence_id))
+      """)
+    try execute("""
       CREATE TABLE IF NOT EXISTS team_reply_owners (
         namespace TEXT NOT NULL, binding_key TEXT NOT NULL, run_key TEXT NOT NULL,
         member_key TEXT NOT NULL, encrypted_payload BLOB NOT NULL,
@@ -138,6 +143,7 @@ final class AgentTeamHistoryDatabase {
     if let runId { bind(Self.digest(runId), at: 2, to: statement) }
     try finish(statement)
     if runId == nil {
+      try removeCloudEvidence(conversationId: nil)
       for table in preserveOwners ? [] : ["team_reply_owners", "team_reply_owner_backfill"] {
         let clear = try prepare("DELETE FROM \(table) WHERE namespace=?")
         defer { sqlite3_finalize(clear) }
@@ -146,6 +152,44 @@ final class AgentTeamHistoryDatabase {
       }
       try markInitialized()
     }
+  }
+
+  func cloudEvidence(id: String, conversationId: String) throws -> AgentCollaborationCloudToolEvidence? {
+    let group = Self.digest(conversationId)
+    let statement = try prepare("SELECT encrypted_payload FROM collaboration_cloud_evidence WHERE namespace=? AND group_key=? AND evidence_id=?")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(group, at: 2, to: statement)
+    bind(id, at: 3, to: statement)
+    let status = sqlite3_step(statement)
+    if status == SQLITE_DONE { return nil }
+    guard status == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 0) else { throw Failure.corrupt }
+    let bytes = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 0)))
+    return try JSONDecoder().decode(AgentCollaborationCloudToolEvidence.self,
+      from: cipher.decrypt(bytes, purpose: "cloud-evidence:\(namespace):\(group):\(id)"))
+  }
+
+  func insertCloudEvidence(_ evidence: AgentCollaborationCloudToolEvidence, id: String) throws {
+    let group = Self.digest(evidence.scope.conversationId)
+    let bytes = try JSONEncoder().encode(evidence)
+    guard bytes.count <= 2_000_000 else { throw Failure.corrupt }
+    let payload = try cipher.encrypt(bytes, purpose: "cloud-evidence:\(namespace):\(group):\(id)")
+    let statement = try prepare("INSERT INTO collaboration_cloud_evidence VALUES(?,?,?,?)")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(group, at: 2, to: statement)
+    bind(id, at: 3, to: statement)
+    _ = payload.withUnsafeBytes { sqlite3_bind_blob(statement, 4, $0.baseAddress, Int32($0.count), Self.transient) }
+    try finish(statement)
+  }
+
+  func removeCloudEvidence(conversationId: String?) throws {
+    let statement = try prepare("DELETE FROM collaboration_cloud_evidence WHERE namespace=?" +
+      (conversationId == nil ? "" : " AND group_key=?"))
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    if let conversationId { bind(Self.digest(conversationId), at: 2, to: statement) }
+    try finish(statement)
   }
 
   func replyOwner(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyOwner? {
