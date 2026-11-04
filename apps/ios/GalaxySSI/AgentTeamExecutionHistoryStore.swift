@@ -464,6 +464,7 @@ final class AgentTeamExecutionHistoryStore {
       }
       var revisions: [AgentCollaborationResearchRevision] = []
       var objectIds = Set<String>()
+      let revisedInBatch = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
       for draft in drafts {
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
@@ -503,6 +504,19 @@ final class AgentTeamExecutionHistoryStore {
             existing.turnId != turnId || existing.authorId == memberId else {
             throw AgentTeamHistoryDatabase.Failure.stale
           }
+        }
+        if draft.kind == .learningAgenda {
+          let members = Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))
+          let valid = try AgentCollaborationLearningAgendaIntake.validates(draft, members: members) { reference in
+            guard !revisedInBatch.contains(reference.objectId),
+                  let gap = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + reference.objectId),
+                  gap.reference == reference, gap.draft.kind.rawValue == "capability_gap",
+                  let options = gap.draft.body["capability_gap"]?.objectValue?["learning_options"]?.arrayValue
+            else { return nil }
+            return Set(options.compactMap { $0.objectValue?["id"]?.stringValue })
+          }
+          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
         var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,

@@ -257,6 +257,39 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testLearningAgendaRetainsDeferredOptionAndRejectsInventedCost() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"agenda","base_revision":0,"kind":"learning_agenda","title":"Compare","parents":[
+        {"object_id":"gap","revision":1,"sha256":"original"}
+      ],"body":{"learning_agenda":{"goal_alignment":"Goal","resource_reasoning":"Bounded",
+        "selection_reason":"Defer until data arrives","reconsider_when":"Data available","options":[
+          {"id":"option","gap":{"object_id":"gap","revision":1,"sha256":"original"},"gap_option":"repeat",
+           "priority":1,"decision":"defer","member":"member","stage":"VERIFY","assignment":"Repeat",
+           "current_goal_value":"Direct","future_transfer_value":"Unknown","information_gain":"Measure variance",
+           "uncertainty":"Sample size","tradeoff":"Time","verification":"Compare","reconsider_when":"Data available",
+           "resource_estimates":[{"unit":"cost_micros","status":"unknown","basis":"Not measured"}]}
+        ]}}}
+    ]}
+    """
+    var draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    func valid(_ draft: AgentCollaborationResearchDraft) -> Bool {
+      AgentCollaborationLearningAgendaIntake.validates(draft, members: ["member"]) { reference in
+        reference.objectId == "gap" && reference.revision == 1 && reference.sha256 == "original" ? ["repeat"] : nil
+      }
+    }
+    XCTAssertTrue(valid(draft))
+    var revision = draft
+    revision.baseRevision = 1
+    XCTAssertFalse(valid(revision))
+    revision = draft
+    revision.parents = []
+    XCTAssertFalse(valid(revision))
+    let priced = raw.replacingOccurrences(of: "\"status\":\"unknown\"", with: "\"status\":\"unknown\",\"value\":0")
+    draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: priced)?.first)
+    XCTAssertFalse(valid(draft))
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
