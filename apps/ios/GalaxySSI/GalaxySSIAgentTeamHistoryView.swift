@@ -1,5 +1,67 @@
 import SwiftUI
 
+struct GalaxySSICollaborationRecallView: View {
+  let conversationId: String
+  let t: (String, String) -> String
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: GalaxySSIStore
+  @State private var query = ""
+  @State private var submittedQuery = ""
+  @State private var snapshots: [AgentTeamExecutionSnapshot] = []
+  @State private var loading = true
+
+  var body: some View {
+    NavigationView {
+      List {
+        if loading {
+          ProgressView()
+        } else if snapshots.isEmpty {
+          Text(t("galaxyssi.collaboration.history_empty", "No matching group records."))
+            .foregroundColor(.secondary)
+        }
+        ForEach(snapshots, id: \.supervisorRunId) { snapshot in
+          NavigationLink {
+            GalaxySSIAgentTeamDetailView(snapshot: snapshot)
+          } label: {
+            Text(snapshot.goal.ifBlank(snapshot.teamId)).lineLimit(2)
+          }
+        }
+      }
+      .navigationTitle(t("galaxyssi.collaboration.history", "Search Group History"))
+      .navigationBarTitleDisplayMode(.inline)
+      .searchable(text: $query, prompt: t("galaxyssi.collaboration.history_search", "Search past results"))
+      .onSubmit(of: .search) { submittedQuery = String(query.prefix(250)) }
+      .onChange(of: query) { if $0.isEmpty { submittedQuery = "" } }
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("galaxyssi.common.close", "Close")) { dismiss() }
+        }
+      }
+      .task(id: submittedQuery) {
+        guard allowed else { snapshots = []; loading = false; return }
+        loading = true
+        let id = conversationId
+        let text = submittedQuery
+        let result = await Task.detached(priority: .userInitiated) {
+          AgentTeamExecutionHistoryStore.shared.recallCollaborationResults(
+            conversationId: id, excludingTurnId: "", query: text, limit: 50)
+        }.value
+        guard !Task.isCancelled, allowed else { return }
+        snapshots = result
+        loading = false
+      }
+      .onChange(of: allowed) { if !$0 { snapshots = []; dismiss() } }
+    }
+    .navigationViewStyle(.stack)
+  }
+
+  private var allowed: Bool {
+    guard let session = store.agentSession(id: conversationId), session.id == conversationId else { return false }
+    return session.collaborationRoster != nil && session.mergedIntoConversationId.isBlank &&
+      !session.privateMode && !session.trackingPaused
+  }
+}
+
 struct GalaxySSICollaborationResultsButton: View {
   let conversationId: String
   let t: (String, String) -> String

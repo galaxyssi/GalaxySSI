@@ -2,6 +2,37 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCollaborationRecallExcludesCurrentTurnPendingRunsAndOtherGroups() {
+    let suite = "collaboration-recall-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var prior = durableTeamSnapshot("prior")
+    prior.taskId = "past"
+    prior.state = .succeeded
+    prior.finalOutput = "Verified battery comparison"
+    var current = prior
+    current.supervisorRunId = "current"
+    current.taskId = "turn"
+    var foreign = prior
+    foreign.supervisorRunId = "foreign"
+    foreign.conversationId = "another-group"
+    var pending = prior
+    pending.supervisorRunId = "pending"
+    pending.state = .running
+    for record in [prior, current, foreign, pending] { XCTAssertTrue(history.upsert(record)) }
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(reopened.recallCollaborationResults(conversationId: prior.conversationId,
+      excludingTurnId: "turn", query: "BATTERY comparison").map(\.supervisorRunId), ["prior"])
+    XCTAssertTrue(reopened.recallCollaborationResults(conversationId: prior.conversationId,
+      excludingTurnId: "turn", query: "unmatched").isEmpty)
+  }
+
   func testNativeObservationRequiresExactActiveMemberAndRejectsDeletedGroup() throws {
     let suite = "native-evidence-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
