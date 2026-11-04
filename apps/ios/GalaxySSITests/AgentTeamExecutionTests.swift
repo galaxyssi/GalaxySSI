@@ -2,6 +2,63 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
+    XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","summary":"Notes","workspace":[
+      {"id":"note","object_id":"","base_revision":0,"kind":"evidence","title":"Notes","body":{"text":"Source"},"parents":[]}
+    ]}
+    """
+    let drafts = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw))
+    XCTAssertEqual(drafts.map(\.id), ["note"])
+    XCTAssertThrowsError(try AgentCollaborationResearchEnvelope.publication(
+      in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
+  }
+
+  func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
+    let suite = "research-publication-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var first = durableTeamSnapshot("run-1")
+    first.members[0].status = .succeeded
+    let member = first.members[0]
+    XCTAssertTrue(history.upsert(first))
+    let draft = AgentCollaborationResearchDraft(id: "notes", objectId: nil, baseRevision: 0,
+      kind: .evidence, title: "Notes", body: ["text": .string("Initial evidence")], parents: [])
+    func publish(_ drafts: [AgentCollaborationResearchDraft], team: AgentTeamExecutionSnapshot,
+                 store: AgentTeamExecutionHistoryStore) throws -> AgentCollaborationResearchPublication {
+      try store.publishResearchObjects(drafts, runId: team.supervisorRunId,
+        conversationId: team.conversationId, turnId: team.taskId, memberId: team.members[0].memberId,
+        sourceId: team.members[0].sourceMessageId)
+    }
+    let original = try publish([draft], team: first, store: history)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(try publish([draft], team: first, store: reopened).references, original.references)
+    var changed = draft
+    changed.title = "Changed replay"
+    XCTAssertThrowsError(try publish([changed], team: first, store: reopened))
+    var second = first
+    second.supervisorRunId = "run-2"
+    second.taskId = "turn-2"
+    second.members[0].sourceMessageId = "new-source"
+    XCTAssertTrue(reopened.upsert(second))
+    changed.objectId = original.references[0].objectId
+    changed.parents = original.references
+    var new = draft
+    new.id = "other"
+    XCTAssertThrowsError(try publish([new, changed], team: second, store: reopened))
+    changed.baseRevision = 1
+    let updated = try publish([new, changed], team: second, store: reopened)
+    XCTAssertEqual(updated.references.map(\.revision), [1, 2])
+    XCTAssertNotEqual(updated.references.last?.sha256, original.references.first?.sha256)
+  }
+
   func testGoalCheckpointCompareAndSetRetainsPriorRevisionAfterReopen() {
     let suite = "goal-checkpoint-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

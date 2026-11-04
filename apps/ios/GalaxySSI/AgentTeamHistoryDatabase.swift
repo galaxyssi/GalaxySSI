@@ -40,6 +40,12 @@ final class AgentTeamHistoryDatabase {
       """)
     try execute("CREATE TABLE IF NOT EXISTS team_history_migrations(namespace TEXT PRIMARY KEY)")
     try execute("""
+      CREATE TABLE IF NOT EXISTS collaboration_research_records (
+        namespace TEXT NOT NULL, group_key TEXT NOT NULL, record_key TEXT NOT NULL,
+        revision INTEGER NOT NULL, encrypted_payload BLOB NOT NULL,
+        PRIMARY KEY(namespace,group_key,record_key,revision))
+      """)
+    try execute("""
       CREATE TABLE IF NOT EXISTS team_reply_owners (
         namespace TEXT NOT NULL, binding_key TEXT NOT NULL, run_key TEXT NOT NULL,
         member_key TEXT NOT NULL, encrypted_payload BLOB NOT NULL,
@@ -187,6 +193,7 @@ final class AgentTeamHistoryDatabase {
     if let runId { bind(Self.digest(runId), at: 2, to: statement) }
     try finish(statement)
     if runId == nil {
+      try removeResearchRecords(conversationId: nil)
       for table in preserveOwners ? [] : ["team_reply_owners", "team_reply_owner_backfill"] {
         let clear = try prepare("DELETE FROM \(table) WHERE namespace=?")
         defer { sqlite3_finalize(clear) }
@@ -195,6 +202,55 @@ final class AgentTeamHistoryDatabase {
       }
       try markInitialized()
     }
+  }
+
+  func researchRecord<T: Decodable>(_ type: T.Type, conversationId: String, key: String,
+                                    revision: Int64? = nil) throws -> T? {
+    let group = Self.digest(conversationId)
+    let statement = try prepare("SELECT revision,encrypted_payload FROM collaboration_research_records " +
+      "WHERE namespace=? AND group_key=? AND record_key=?" + (revision == nil ? "" : " AND revision=?") +
+      " ORDER BY revision DESC LIMIT 1")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(group, at: 2, to: statement)
+    bind(key, at: 3, to: statement)
+    if let revision { sqlite3_bind_int64(statement, 4, revision) }
+    let result = sqlite3_step(statement)
+    if result == SQLITE_DONE { return nil }
+    guard result == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 1) else { throw Failure.corrupt }
+    let rowRevision = sqlite3_column_int64(statement, 0)
+    let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 1)))
+    return try JSONDecoder().decode(type, from: cipher.decrypt(data,
+      purpose: researchPurpose(group: group, key: key, revision: rowRevision)))
+  }
+
+  func insertResearchRecord<T: Encodable>(_ record: T, conversationId: String, key: String,
+                                           revision: Int64) throws {
+    let group = Self.digest(conversationId)
+    let data = try JSONEncoder().encode(record)
+    guard data.count <= 256_000 else { throw Failure.corrupt }
+    let payload = try cipher.encrypt(data, purpose: researchPurpose(group: group, key: key, revision: revision))
+    let statement = try prepare("INSERT INTO collaboration_research_records VALUES(?,?,?,?,?)")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(group, at: 2, to: statement)
+    bind(key, at: 3, to: statement)
+    sqlite3_bind_int64(statement, 4, revision)
+    _ = payload.withUnsafeBytes { sqlite3_bind_blob(statement, 5, $0.baseAddress, Int32($0.count), Self.transient) }
+    try finish(statement)
+  }
+
+  func removeResearchRecords(conversationId: String?) throws {
+    let statement = try prepare("DELETE FROM collaboration_research_records WHERE namespace=?" +
+      (conversationId == nil ? "" : " AND group_key=?"))
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    if let conversationId { bind(Self.digest(conversationId), at: 2, to: statement) }
+    try finish(statement)
+  }
+
+  private func researchPurpose(group: String, key: String, revision: Int64) -> String {
+    "collaboration-research:\(namespace):\(group):\(key):\(revision)"
   }
 
   func replyOwner(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyOwner? {
