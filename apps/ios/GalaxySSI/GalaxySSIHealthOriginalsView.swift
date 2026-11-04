@@ -8,9 +8,13 @@ import UniformTypeIdentifiers
 struct GalaxySSIHealthOriginalsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
+  @Environment(\.calendar) private var calendar
+  @Environment(\.timeZone) private var timeZone
   let store: GalaxySSIHealthOriginalStore
   @State private var listing: GalaxySSIHealthOriginalStore.Listing?
   @State private var filter = "all"
+  @State private var recentDays = 0
+  @State private var grid = false
   @State private var shown = 30
   @State private var selection: Set<UUID> = []
   @State private var preview: Preview?
@@ -25,7 +29,8 @@ struct GalaxySSIHealthOriginalsView: View {
   private struct Preview: Identifiable {
     let id: UUID
     let name: String
-    let image: UIImage
+    var image: UIImage?
+    var pdf: PDFDocument?
   }
 
   var body: some View {
@@ -38,6 +43,16 @@ struct GalaxySSIHealthOriginalsView: View {
             Text(t("image", "Images")).tag("image")
             Text("PDF").tag("pdf")
           }
+          Picker(t("date_filter", "Import date"), selection: $recentDays) {
+            Text(t("any_date", "Any date")).tag(0)
+            Text(t("last_week", "Last 7 days")).tag(7)
+            Text(t("last_month", "Last 30 days")).tag(30)
+          }
+          Picker(t("layout", "Layout"), selection: $grid) {
+            Image(systemName: "list.bullet").accessibilityLabel(Text(t("list", "List"))).tag(false)
+            Image(systemName: "square.grid.2x2").accessibilityLabel(Text(t("grid", "Thumbnails"))).tag(true)
+          }
+          .pickerStyle(.segmented)
           if !selection.isEmpty {
             Button {
               pending = listing?.originals.filter { selection.contains($0.id) } ?? []
@@ -46,32 +61,32 @@ struct GalaxySSIHealthOriginalsView: View {
           }
         }
         if let listing {
-          let rows = listing.originals.filter { filter == "all" || $0.kind.rawValue == filter }
+          let rows = filtered(listing.originals)
           if rows.isEmpty { Text(t("empty", "No originals found")).foregroundColor(.secondary) }
           if listing.unavailable > 0 {
             Text(t("unreadable", "Some encrypted originals could not be opened.")).foregroundColor(.secondary)
           }
-          ForEach(rows.prefix(shown)) { item in
-            HStack(spacing: 10) {
-              Button {
-                if selection.contains(item.id) { selection.remove(item.id) } else { selection.insert(item.id) }
-              } label: {
-                Image(systemName: selection.contains(item.id) ? "checkmark.circle.fill" : "circle")
-                  .frame(minWidth: 44, minHeight: 44)
-              }
-              .accessibilityLabel(Text(selection.contains(item.id) ? t("unselect", "Deselect file") : t("select", "Select file")))
-              Button { open(item) } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                  Text(item.name).foregroundColor(.primary)
-                  Text(item.importedAt, style: .date).foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-              }
+          if grid {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 12)], spacing: 16) {
+              ForEach(rows.prefix(shown)) { item in thumbnailTile(item) }
             }
-            .buttonStyle(.borderless)
-            .swipeActions {
-              Button(role: .destructive) { removal = item } label: {
-                Label(t("remove", "Remove"), systemImage: "trash")
+          } else {
+            ForEach(rows.prefix(shown)) { item in
+              HStack(spacing: 10) {
+                selectButton(item)
+                Button { open(item) } label: {
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name).foregroundColor(.primary)
+                    Text(item.importedAt, style: .date).foregroundColor(.secondary)
+                  }
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                }
+              }
+              .buttonStyle(.borderless)
+              .swipeActions {
+                Button(role: .destructive) { removal = item } label: {
+                  Label(t("remove", "Remove"), systemImage: "trash")
+                }
               }
             }
           }
@@ -88,6 +103,7 @@ struct GalaxySSIHealthOriginalsView: View {
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
     .onChange(of: filter) { _ in shown = 30 }
+    .onChange(of: recentDays) { _ in shown = 30 }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
       else {
@@ -124,15 +140,59 @@ struct GalaxySSIHealthOriginalsView: View {
     }
     .onChange(of: exporting) { if !$0 { zip = nil } }
     .sheet(item: $preview) { item in
-      VStack {
+      if scene == .active {
+        VStack {
         HStack {
-          Text(item.name).font(.headline)
+          Text(item.name).font(.headline).lineLimit(2).truncationMode(.middle)
           Spacer()
           Button { preview = nil } label: { Image(systemName: "xmark.circle").font(.title2) }
             .accessibilityLabel(Text(t("close", "Close")))
         }
-        Image(uiImage: item.image).resizable().scaledToFit().accessibilityLabel(Text(item.name))
-      }.padding()
+        if let pdf = item.pdf {
+          PDFPages(document: pdf, name: item.name)
+        } else if let image = item.image {
+          Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(item.name))
+        }
+        }.padding()
+      }
+    }
+  }
+
+  private func filtered(_ originals: [GalaxySSIHealthOriginalStore.Original]) -> [GalaxySSIHealthOriginalStore.Original] {
+    var local = calendar
+    local.timeZone = timeZone
+    let cutoff = recentDays == 0 ? Date.distantPast :
+      (local.date(byAdding: .day, value: 1 - recentDays, to: local.startOfDay(for: Date())) ?? .distantPast)
+    return originals.filter { $0.importedAt >= cutoff && (filter == "all" || $0.kind.rawValue == filter) }
+  }
+
+  private func selectButton(_ item: GalaxySSIHealthOriginalStore.Original) -> some View {
+    Button {
+      if selection.contains(item.id) { selection.remove(item.id) } else { selection.insert(item.id) }
+    } label: {
+      Image(systemName: selection.contains(item.id) ? "checkmark.circle.fill" : "circle")
+        .frame(minWidth: 44, minHeight: 44)
+    }
+    .buttonStyle(.borderless)
+    .accessibilityLabel(Text(selection.contains(item.id) ? t("unselect", "Deselect file") : t("select", "Select file")))
+  }
+
+  private func thumbnailTile(_ item: GalaxySSIHealthOriginalStore.Original) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Button { open(item) } label: {
+        OriginalThumbnail(store: store, item: item)
+          .frame(height: 92).frame(maxWidth: .infinity)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text(item.name))
+      HStack(spacing: 0) {
+        Text(item.name).font(.caption).lineLimit(2).truncationMode(.middle)
+        Spacer(minLength: 0)
+        selectButton(item)
+      }
+    }
+    .contextMenu {
+      Button(role: .destructive) { removal = item } label: { Label(t("remove", "Remove"), systemImage: "trash") }
     }
   }
 
@@ -150,17 +210,13 @@ struct GalaxySSIHealthOriginalsView: View {
     guard scene == .active else { return }
     do {
       let data = try store.read(item)
-      let image: UIImage?
       if item.kind == .pdf {
-        image = PDFDocument(data: data)?.page(at: 0)?.thumbnail(of: CGSize(width: 1_200, height: 1_200), for: .cropBox)
-      } else if let source = CGImageSourceCreateWithData(data as CFData, nil) {
-        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                       kCGImageSourceCreateThumbnailWithTransform: true,
-                                       kCGImageSourceThumbnailMaxPixelSize: 1_200]
-        image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map { UIImage(cgImage: $0) }
-      } else { image = nil }
-      guard let image else { error = true; return }
-      preview = Preview(id: item.id, name: item.name, image: image)
+        guard let pdf = PDFDocument(data: data), pdf.pageCount > 0 else { error = true; return }
+        preview = Preview(id: item.id, name: item.name, pdf: pdf)
+      } else {
+        guard let image = Self.thumbnail(data, maximum: 1_200) else { error = true; return }
+        preview = Preview(id: item.id, name: item.name, image: image)
+      }
     } catch { error = true }
   }
 
@@ -174,6 +230,77 @@ struct GalaxySSIHealthOriginalsView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.originals." + key, fallback: fallback, language: language)
+  }
+
+  private static func thumbnail(_ data: Data, maximum: Int) -> UIImage? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                   kCGImageSourceCreateThumbnailWithTransform: true,
+                                   kCGImageSourceThumbnailMaxPixelSize: maximum]
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map { UIImage(cgImage: $0) }
+  }
+
+  private struct OriginalThumbnail: View {
+    @Environment(\.scenePhase) private var scene
+    let store: GalaxySSIHealthOriginalStore
+    let item: GalaxySSIHealthOriginalStore.Original
+    @State private var image: UIImage?
+
+    var body: some View {
+      ZStack {
+        Color.secondary.opacity(0.08)
+        if let image {
+          Image(uiImage: image).resizable().scaledToFit()
+        } else {
+          Image(systemName: item.kind == .pdf ? "doc.richtext" : "photo")
+        }
+      }
+      .clipped()
+      .accessibilityHidden(true)
+      .task(id: item.id) { @MainActor in
+        guard scene == .active, !Task.isCancelled, let data = try? store.read(item) else { return }
+        if item.kind == .pdf {
+          image = PDFDocument(data: data)?.page(at: 0)?.thumbnail(of: CGSize(width: 240, height: 240), for: .cropBox)
+        } else {
+          image = GalaxySSIHealthOriginalsView.thumbnail(data, maximum: 240)
+        }
+      }
+      .onChange(of: scene) { if $0 != .active { image = nil } }
+      .onDisappear { image = nil }
+    }
+  }
+
+  private struct PDFPages: View {
+    @Environment(\.galaxySSIInterfaceLanguage) private var language
+    let document: PDFDocument
+    let name: String
+    @State private var index = 0
+    @State private var image: UIImage?
+
+    var body: some View {
+      VStack {
+        if let image {
+          Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(name))
+        }
+        HStack {
+          Button { index -= 1 } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+            .disabled(index == 0)
+            .accessibilityLabel(Text(t("previous_page", "Previous page")))
+          Text(String(format: t("page", "Page %lld of %lld"), Int64(index + 1), Int64(document.pageCount)))
+          Button { index += 1 } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
+            .disabled(index >= document.pageCount - 1)
+            .accessibilityLabel(Text(t("next_page", "Next page")))
+        }
+      }
+      .task(id: index) { @MainActor in
+        guard !Task.isCancelled else { return }
+        image = document.page(at: index)?.thumbnail(of: CGSize(width: 1_200, height: 1_200), for: .cropBox)
+      }
+    }
+
+    private func t(_ key: String, _ fallback: String) -> String {
+      GalaxySSILocalization.string("galaxyssi.health.originals." + key, fallback: fallback, language: language)
+    }
   }
 }
 
