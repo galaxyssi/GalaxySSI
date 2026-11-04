@@ -2303,7 +2303,7 @@ final class MessageCoordinator: ObservableObject {
     return currentTeamObserverRecovery(binding)?.owner.accepts(AgentTeamReplyObservation(payload: item)) == true
   }
 
-  private func handleDesktopCollaborationArchiveRecall(_ payload: [String: Any], link: ServerLink) async {
+  private func handleDesktopCollaborationRecall(_ payload: [String: Any], link: ServerLink) async {
     let route = AgentDesktopCollaborationArchiveRecall.self
     let now = AgentControlPlaneClock.nowMillis()
     let requestId = payload.string("request_id")
@@ -2320,7 +2320,6 @@ final class MessageCoordinator: ObservableObject {
           let arguments = payload["arguments"] as? [String: Any],
           let bytes = try? JSONSerialization.data(withJSONObject: arguments), bytes.count <= 4_096,
           let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes),
-          let selector = route.selector(input),
           let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
           let owner = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source,
             conversation: identity.conversationId, turn: identity.turnId, contact: contact)?.owner,
@@ -2340,7 +2339,20 @@ final class MessageCoordinator: ObservableObject {
     let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
-    if let dependency = context.member.dispatchDependencyMemberIds?.first(where: {
+    if let query = route.goalSelector(input, scope: scope),
+       var page = try? history.recallCollaborationOriginal(query, scope: scope) {
+      let next = page.removeValue(forKey: "next_offset")?.intValue
+      let hash = page.string("sha256")
+      page["next_cursor"] = next.map {
+        .string(route.goalCursor(scope: scope, section: query.string("section"),
+          hash: hash, offset: $0))
+      } ?? .null
+      page["format"] = .string("galaxyssi.ios-goal-page.v1")
+      page["success"] = .bool(true)
+      page["status"] = .string("returned")
+      result = page
+    } else if let selector = route.selector(input),
+       let dependency = context.member.dispatchDependencyMemberIds?.first(where: {
       route.recordId(memberId: $0) == selector.recordId
     }) {
       var query: AgentMcpJSONObject = ["mode": .string("dependency"), "member_id": .string(dependency)]
@@ -6457,6 +6469,10 @@ final class MessageCoordinator: ObservableObject {
             memberId: member.memberId, sourceId: sourceMessageId)
           memberPrompt += "\n\n" + AgentCollaborationInlineOriginals.prompt(originalGoalPrefix: requestText) { section in
             try? AgentTeamExecutionHistoryStore.shared.readPinnedCollaborationGoal(scope: scope, section: section)
+          }
+          if target.kind == .agent {
+            memberPrompt += "\nFor missing originals on Desktop, use goal_contract with section=goal, criteria, or source. " +
+              "Keep the section unchanged while following next_cursor and join decoded data_b64 bytes."
           }
         }
         if target.id == "local-llm" {
@@ -11288,7 +11304,7 @@ final class MessageCoordinator: ObservableObject {
     if appPayload.string("type") == AgentDesktopCollaborationArchiveRecall.requestType {
       if object.string("scheme") == "signal", let link {
         Task { @MainActor [weak self] in
-          await self?.handleDesktopCollaborationArchiveRecall(appPayload, link: link)
+          await self?.handleDesktopCollaborationRecall(appPayload, link: link)
         }
       }
       return

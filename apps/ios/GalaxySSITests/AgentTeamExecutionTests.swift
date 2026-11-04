@@ -1378,6 +1378,23 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(reopened.snapshot(supervisorRunId: "new"))
   }
 
+  func testDesktopGoalRecallCursorBindsOriginalSectionAndAssignment() {
+    let recall = AgentDesktopCollaborationArchiveRecall.self
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group",
+      turnId: "turn", memberId: "review", sourceId: "source")
+    let hash = String(repeating: "a", count: 64)
+    let cursor = recall.goalCursor(scope: scope, section: "criteria", hash: hash, offset: 8_192)
+    var request: AgentMcpJSONObject = ["mode": .string("goal_contract"), "section": .string("criteria"),
+      "cursor": .string(cursor)]
+    XCTAssertEqual(recall.goalSelector(request, scope: scope)?["offset"], .int(8_192))
+    XCTAssertEqual(recall.goalSelector(request, scope: scope)?["sha256"], .string(hash))
+    var other = scope
+    other.sourceId = "other"
+    XCTAssertNil(recall.goalSelector(request, scope: other))
+    request["section"] = .string("goal")
+    XCTAssertNil(recall.goalSelector(request, scope: scope))
+  }
+
   func testDesktopArchiveRecallAcceptsOnlyScopedRecordSelectors() {
     let id = AgentDesktopCollaborationArchiveRecall.recordId(memberId: "review")
     let query: AgentMcpJSONObject = ["mode": .string("archive"), "record_id": .string(id), "offset": .int(8_192)]
