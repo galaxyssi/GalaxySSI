@@ -334,6 +334,16 @@ extension GalaxySSIStoreTests {
     var team = durableTeamSnapshot("capability-author")
     team.members[0].status = .succeeded
     XCTAssertTrue(history.upsert(team))
+    var early = durableTeamSnapshot("capability-early-reader")
+    early.taskId = "early"
+    early.goal = "Verify evidence"
+    XCTAssertTrue(history.upsert(early))
+    func scope(_ team: AgentTeamExecutionSnapshot) -> AgentCollaborationToolEvidenceScope {
+      let peer = team.members[1]
+      return .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: peer.memberId, sourceId: peer.sourceMessageId)
+    }
+    XCTAssertTrue(try history.initialCollaborationCapabilities(scope: scope(early)).isEmpty)
     let raw = """
     {"purpose":"Verify evidence","domain":"Research","bottleneck":"Errors","change_rationale":"Check",
      "applies_when":"Comparable","avoid_when":"Unsafe","risks":"Delay","expected_gain":"Accuracy","falsifier":"No gain",
@@ -349,6 +359,7 @@ extension GalaxySSIStoreTests {
       memberId: author.memberId, sourceId: author.sourceMessageId)
     var later = durableTeamSnapshot("capability-reader")
     later.taskId = "later"
+    later.goal = "Verify evidence"
     XCTAssertTrue(history.upsert(later))
     func read(_ team: AgentTeamExecutionSnapshot) throws -> AgentMcpJSONObject {
       let peer = team.members[1]
@@ -362,6 +373,10 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(entry.string("sha256"), publication.references.first?.sha256)
     XCTAssertEqual(entry.string("state"), "unverified_candidate")
     XCTAssertEqual(result["grants_permissions"], .bool(false))
+    XCTAssertTrue(try history.initialCollaborationCapabilities(scope: scope(early)).isEmpty)
+    let pinned = try history.initialCollaborationCapabilities(scope: scope(later))
+    XCTAssertEqual(pinned.first?.objectValue?.string("sha256"), publication.references.first?.sha256)
+    XCTAssertNil(pinned.first?.objectValue?["title"])
   }
 
   func testPublicationRecoveryFindsSavedReplyAndSkipsCommittedReplay() throws {

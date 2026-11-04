@@ -430,8 +430,12 @@ final class AgentTeamExecutionHistoryStore {
     return result
   }
 
-  private func recallCapabilities(_ input: AgentMcpJSONObject,
-                                  scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+  func initialCollaborationCapabilities(scope: AgentCollaborationToolEvidenceScope) throws -> [AgentMcpJSONValue] {
+    try recallCapabilities([:], scope: scope, pinInitial: true)["capabilities"]?.arrayValue ?? []
+  }
+
+  private func recallCapabilities(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope,
+                                  pinInitial: Bool = false) throws -> AgentMcpJSONObject {
     guard Set(input.keys).isSubset(of: ["mode", "query", "cursor"]),
           case .string(let query) = input["query"] ?? .string(""), query.utf8.count <= 512,
           case .string(let cursor) = input["cursor"] ?? .string(""),
@@ -450,8 +454,18 @@ final class AgentTeamExecutionHistoryStore {
               key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
+      let pinKey = "capability-initial:" + AgentMcpJSONCodec.sha256([
+        "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
+        "member": .string(scope.memberId), "source": .string(scope.sourceId)
+      ])
+      if pinInitial, let saved = try database.researchRecord(AgentMcpJSONObject.self,
+        conversationId: scope.conversationId, key: pinKey, revision: 0) { return saved }
+      let initialTerms = pinInitial ? Array(team.goal.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        .filter { $0.count >= 2 && !["the", "and", "for", "with", "this", "that", "from", "use", "please"].contains(String($0)) }
+        .prefix(12).map(String.init)) : []
       let keys = try database.researchObjectKeys(conversationId: scope.conversationId, after: cursor, limit: 33)
       var entries: [AgentMcpJSONValue] = []
+      var ranked: [(score: Int, entry: AgentMcpJSONObject)] = []
       var scanned = 0
       for key in keys.prefix(32) {
         scanned += 1
@@ -464,17 +478,35 @@ final class AgentTeamExecutionHistoryStore {
               let body = head.draft.body[kind]?.objectValue else { continue }
         let text = ([head.draft.title, kind] + ["purpose", "domain", "applies_when", "observed_issue", "rationale"]
           .map { body.string($0) }).joined(separator: "\n")
-        guard terms.allSatisfy({ text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }) else { continue }
+        func matches(_ term: String) -> Bool {
+          text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+        let score = pinInitial ? Set(initialTerms.filter(matches)).count : 0
+        guard pinInitial ? score > 0 : terms.allSatisfy(matches) else { continue }
         let state: String
         switch kind {
         case "capability_lesson": state = body.string("decision") == "retain" ? "retained_lesson" : "historical_lesson"
         case "failure_experience": state = "observed_failure"
         default: state = "unverified_candidate"
         }
-        entries.append(.object(["object_id": .string(head.reference.objectId), "revision": .int(head.reference.revision),
+        var entry: AgentMcpJSONObject = ["object_id": .string(head.reference.objectId), "revision": .int(head.reference.revision),
           "sha256": .string(head.reference.sha256), "kind": .string(kind), "title": .string(head.draft.title),
-          "state": .string(state)]))
+          "state": .string(state)]
+        if pinInitial {
+          entry.removeValue(forKey: "title")
+          ranked.append((score, entry))
+          continue
+        }
+        entries.append(.object(entry))
         if entries.count == 8 { break }
+      }
+      if pinInitial {
+        let selected = ranked.sorted { left, right in
+          left.score == right.score ? left.entry.string("object_id") < right.entry.string("object_id") : left.score > right.score
+        }.prefix(4).map { AgentMcpJSONValue.object($0.entry) }
+        let saved: AgentMcpJSONObject = ["capabilities": .array(selected)]
+        try database.insertResearchRecord(saved, conversationId: scope.conversationId, key: pinKey, revision: 0)
+        return saved
       }
       let next = scanned < keys.count && scanned > 0 ? String(keys[scanned - 1].dropFirst("object:".count)) : nil
       return ["capabilities": .array(entries), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
