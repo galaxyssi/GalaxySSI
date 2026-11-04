@@ -2,6 +2,36 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCollaborationEvolutionRejectsUnboundOptionsAndUnsupportedNovelty() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"gap","base_revision":0,"kind":"capability_gap","title":"Gap","parents":[],"body":{
+        "capability_gap":{"category":"verification","symptom":"Unstable output","needed_capability":"Repeat checks",
+          "learning_options":[{"id":"repeat","action":"Repeat","expected_gain":"Confidence","cost":"One trial",
+            "goal_relevance":"Check stability","verification":"Compare outputs"}],"chosen_option":"repeat","rationale":"Isolate noise"}}},
+      {"id":"idea","base_revision":0,"kind":"innovation","title":"Idea","parents":[],"body":{
+        "innovation":{"origin":"gap","novelty_scope":"not_checked","hypothesis":"Check twice","mechanism":"Pair trials",
+          "difference":"Same input","prior_art":"Not reviewed","falsifier":"No improvement","domain":"Testing",
+          "applies_when":"Repeatable","risks":"Correlated errors","alternatives":["Independent test"],
+          "predictions":[{"id":"p1","statement":"Detect instability","test":"Repeat on baseline"}]}}}
+    ]}
+    """
+    var drafts = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw))
+    XCTAssertTrue(drafts.allSatisfy(AgentCollaborationEvolutionIntake.validates))
+    var gap = try XCTUnwrap(drafts[0].body["capability_gap"]?.objectValue)
+    gap["chosen_option"] = .string("missing")
+    drafts[0].body["capability_gap"] = .object(gap)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[0]))
+    var idea = try XCTUnwrap(drafts[1].body["innovation"]?.objectValue)
+    idea["origin"] = .string("combination")
+    drafts[1].body["innovation"] = .object(idea)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[1]))
+    idea["origin"] = .string("gap")
+    idea["novelty_scope"] = .string("searched_scope_only")
+    drafts[1].body["innovation"] = .object(idea)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[1]))
+  }
+
   func testRejectedResearchReplyReopensWithExactScopeAndOriginalBytes() throws {
     let suite = "research-rejection-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

@@ -6616,6 +6616,12 @@ final class MessageCoordinator: ObservableObject {
         "galaxyssi.research-artifact.v1", a public summary, and a workspace array.
         Each new item needs a stable id, base_revision 0, kind (such as evidence, hypothesis, or proposal),
         title, a nonempty JSON body, and parents (empty unless you have exact saved references).
+        For collaborative learning, use capability_gap with body.capability_gap containing category, symptom,
+        needed_capability, learning_options (id, action, expected_gain, cost, goal_relevance, verification),
+        chosen_option and rationale. An innovation uses body.innovation with origin, hypothesis, mechanism,
+        difference, prior_art, falsifier, domain, applies_when, risks, alternatives and predictions (id,
+        statement, test). Use novelty_scope "not_checked"; transfer needs an exact parent and combination
+        needs two distinct exact parents. These objects are proposals, not verified findings.
         Do not invent receipt IDs or claim verification.
         """)
     }

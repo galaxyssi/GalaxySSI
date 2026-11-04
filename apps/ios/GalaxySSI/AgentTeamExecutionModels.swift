@@ -71,6 +71,8 @@ struct AgentCollaborationResearchDraft: Codable {
     case acceptanceReview = "acceptance_review"
     case candidate
     case candidateEvent = "candidate_event"
+    case capabilityGap = "capability_gap"
+    case innovation
   }
   var id: String
   var objectId: String?
@@ -86,6 +88,48 @@ struct AgentCollaborationResearchDraft: Codable {
     case id, kind, title, body, parents, resolves, observations
     case objectId = "object_id"
     case baseRevision = "base_revision"
+  }
+}
+
+enum AgentCollaborationEvolutionIntake {
+  static func validates(_ draft: AgentCollaborationResearchDraft) -> Bool {
+    guard let value = draft.body[draft.kind.rawValue]?.objectValue,
+          draft.body["content"] == nil || !draft.body.string("content").isBlank else { return false }
+    switch draft.kind {
+    case .capabilityGap:
+      guard ["knowledge", "tool", "method", "verification", "coordination", "environment",
+             "authorization", "unknown"].contains(value.string("category")),
+            hasText(value, ["symptom", "needed_capability", "chosen_option", "rationale"]),
+            let options = records(value, field: "learning_options",
+              required: ["action", "expected_gain", "cost", "goal_relevance", "verification"])
+      else { return false }
+      return options.contains { $0.string("id") == value.string("chosen_option") }
+    case .innovation:
+      let origin = value.string("origin")
+      guard ["gap", "contradiction", "limitation", "transfer", "combination"].contains(origin),
+            value.string("novelty_scope") == "not_checked",
+            hasText(value, ["hypothesis", "mechanism", "difference", "prior_art", "falsifier", "domain",
+                            "applies_when", "risks"]),
+            let alternatives = value["alternatives"]?.arrayValue, (1...32).contains(alternatives.count),
+            alternatives.allSatisfy({ $0.stringValue?.isBlank == false }),
+            records(value, field: "predictions", required: ["statement", "test"]) != nil else { return false }
+      let parents = Set(draft.parents.map(\.objectId)).count
+      return origin == "combination" ? parents >= 2 : (origin != "transfer" || parents >= 1)
+    default:
+      return false
+    }
+  }
+
+  private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { !object.string($0).isBlank }
+  }
+
+  private static func records(_ object: AgentMcpJSONObject, field: String, required: [String]) -> [AgentMcpJSONObject]? {
+    guard let items = object[field]?.arrayValue, (1...32).contains(items.count) else { return nil }
+    let values = items.compactMap(\.objectValue)
+    guard values.count == items.count, values.allSatisfy({ hasText($0, ["id"] + required) }),
+          Set(values.map { $0.string("id") }).count == values.count else { return nil }
+    return values
   }
 }
 
