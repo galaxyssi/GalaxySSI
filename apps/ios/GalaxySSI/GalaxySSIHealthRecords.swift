@@ -63,6 +63,35 @@ struct GalaxySSIHealthDraft: Codable, Identifiable {
   }
 }
 
+struct GalaxySSIHealthOverview {
+  enum Freshness: Equatable { case recent, stale, missing }
+
+  struct Metric: Identifiable {
+    let metric: GalaxySSIHealthMetric
+    let reading: GalaxySSIHealthReading?
+    let freshness: Freshness
+    var id: GalaxySSIHealthMetric { metric }
+  }
+
+  let metrics: [Metric]
+  var recentCount: Int { metrics.filter { $0.freshness == .recent }.count }
+
+  init(current: [GalaxySSIHealthReading], now: Date, calendar: Calendar) {
+    let today = calendar.startOfDay(for: now)
+    let cutoff = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+    var latest: [GalaxySSIHealthMetric: GalaxySSIHealthReading] = [:]
+    for reading in current where !reading.deleted && reading.measuredAt <= now {
+      if let previous = latest[reading.metric], previous.measuredAt >= reading.measuredAt { continue }
+      latest[reading.metric] = reading
+    }
+    metrics = GalaxySSIHealthMetric.allCases.map { metric in
+      let reading = latest[metric]
+      return Metric(metric: metric, reading: reading,
+                    freshness: reading.map { $0.measuredAt >= cutoff ? .recent : .stale } ?? .missing)
+    }
+  }
+}
+
 @MainActor
 struct GalaxySSIHealthRecords {
   enum Failure: Error {
@@ -73,6 +102,7 @@ struct GalaxySSIHealthRecords {
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
+    var derivesOverview: Bool?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -121,6 +151,12 @@ struct GalaxySSIHealthRecords {
     guard draft.fitsStorageLimits else { throw Failure.invalid }
     var archive = try load()
     archive.draft = draft
+    try persist(archive)
+  }
+
+  func setOverviewPermission(_ enabled: Bool) throws {
+    var archive = try load()
+    archive.derivesOverview = enabled
     try persist(archive)
   }
 
