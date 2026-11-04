@@ -1348,7 +1348,7 @@ final class AgentTeamExecutionHistoryStore {
 
   func readPinnedCollaborationGoal(scope: AgentCollaborationToolEvidenceScope, section: String,
                                    offset: Int = 0, expectedHash: String? = nil) throws -> AgentMcpJSONObject {
-    guard ["goal", "criteria"].contains(section), offset >= 0,
+    guard ["goal", "criteria", "source"].contains(section), offset >= 0,
           offset == 0 || expectedHash != nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let bytes = try access { database -> Data in
       guard let team = try database.snapshots(runId: scope.runId).first,
@@ -1363,7 +1363,8 @@ final class AgentTeamExecutionHistoryStore {
       if section == "goal" { return Data(team.goal.utf8) }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
-      return try encoder.encode(pinned.contract)
+      let criteria = try encoder.encode(pinned.contract)
+      return section == "source" ? AgentCollaborationInlineOriginals.source(goal: team.goal, criteria: criteria) : criteria
     }
     let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     guard offset <= bytes.count, expectedHash == nil || expectedHash == digest else {
