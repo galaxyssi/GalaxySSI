@@ -53,6 +53,12 @@ struct GalaxySSIHealthBackupView: View {
         if plan != nil || verificationInput != nil {
           passwordForm
         }
+        historySection
+        if saveUnverified { Text(t("save_unverified", "The external file could not be verified.")) }
+        if verifyingSave { ProgressView(t("working", "Processing backup")) }
+        if saveAttempt != nil && !verifyingSave {
+          Button(t("dismiss_save", "Dismiss unverified save")) { finishSave(.failure(CancellationError())) }
+        }
         if let outcome {
           Section(generated != nil ? t("created", "Encrypted backup ready") : t("verified", "Backup verified")) {
             stats(outcome)
@@ -64,12 +70,7 @@ struct GalaxySSIHealthBackupView: View {
             }
           }
         }
-        historySection
-        if saveUnverified { Text(t("save_unverified", "The external file could not be verified.")) }
-        if task != nil || verifyingSave { ProgressView(t("working", "Processing backup")) }
-        if saveAttempt != nil && !verifyingSave {
-          Button(t("dismiss_save", "Dismiss unverified save")) { finishSave(.failure(CancellationError())) }
-        }
+        if task != nil { ProgressView(t("working", "Processing backup")) }
         if error {
           Text(t("failed", "Could not prepare or verify this backup. Check its size, password and contents."))
             .foregroundColor(.secondary)
@@ -253,6 +254,10 @@ struct GalaxySSIHealthBackupView: View {
         verificationInput = nil
       } catch {
         guard token == request, scene != .background else { return }
+        if generationID != nil {
+          try? history.recover()
+          if let refreshed = try? history.entries() { entries = refreshed }
+        }
         error = true
       }
       task = nil
