@@ -127,6 +127,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case toolTestPlan = "tool_test_plan"
     case environmentModel = "task_environment_model"
     case actionForecast = "action_forecast"
+    case predictionOutcome = "prediction_outcome"
     case experimentPlan = "experiment_plan"
     case experimentResult = "experiment_result"
     case capabilityLesson = "capability_lesson"
@@ -533,6 +534,55 @@ enum AgentCollaborationForecastIntake {
     return Set(matrix.keys) == Set(result.keys) ? result : nil
   }
 
+  static func hypothesisFeedback(_ forecast: AgentMcpJSONObject, observed: AgentMcpJSONValue?,
+                                 withinValidity: Bool) -> AgentMcpJSONObject? {
+    guard let spec = forecast["hypothesis_test"]?.objectValue,
+          let ids = spec["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
+          let hypotheses = spec["hypotheses"]?.arrayValue?.compactMap(\.objectValue),
+          let likelihoods = spec["likelihoods"]?.objectValue?[forecast.string("selected_action")]?.objectValue,
+          let events = forecast["events"]?.arrayValue?.compactMap(\.objectValue) else { return nil }
+    var feedback: AgentMcpJSONObject = ["state": .string("incomplete_observation"), "posterior": .null,
+      "information_gain_bits": .null, "probabilities_are_assumptions": .bool(true), "causality_proven": .bool(false)]
+    guard withinValidity else { feedback["state"] = .string("stale_observation"); return feedback }
+    guard let observed else { return feedback }
+    let matches = events.filter { event in
+      guard ids.contains(event.string("id")), let expected = event["expected"] else { return false }
+      if let lhs = number(expected), let rhs = number(observed) { return lhs == rhs }
+      return expected == observed
+    }
+    guard matches.count == 1, let event = matches.first?.string("id") else {
+      feedback["state"] = .string("unmodeled_outcome")
+      return feedback
+    }
+    var weights: [(String, Double, Double)] = []
+    for hypothesis in hypotheses {
+      let id = hypothesis.string("id")
+      guard let prior = number(hypothesis["prior"]), let row = likelihoods[id]?.objectValue,
+            let likelihood = number(row[event]) else { return nil }
+      let total = ids.compactMap { number(row[$0]) }.reduce(0, +)
+      guard total > 0 else { return nil }
+      weights.append((id, prior, prior * (likelihood / total)))
+    }
+    let priorTotal = weights.reduce(0) { $0 + $1.1 }
+    let mass = weights.reduce(0) { $0 + $1.2 }
+    guard priorTotal > 0 else { return nil }
+    feedback["event_id"] = .string(event)
+    feedback["predictive_probability"] = .double(mass / priorTotal)
+    guard mass > 0 else { feedback["state"] = .string("contradicted_hypothesis_space"); return feedback }
+    var posterior: AgentMcpJSONObject = [:]
+    var gain = 0.0
+    for (id, prior, weight) in weights {
+      let updated = weight / mass
+      posterior[id] = .double(updated)
+      if updated > 0 { gain += updated * (log2(updated) - log2(prior / priorTotal)) }
+    }
+    guard gain.isFinite else { return nil }
+    feedback["state"] = .string("updated_from_observation")
+    feedback["posterior"] = .object(posterior)
+    feedback["information_gain_bits"] = .double(max(0, gain))
+    return feedback
+  }
+
   static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
     fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
   }
@@ -769,6 +819,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
   var expectedInformationGainBits: [String: Double]? = nil
+  var hypothesisFeedback: AgentMcpJSONObject? = nil
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil

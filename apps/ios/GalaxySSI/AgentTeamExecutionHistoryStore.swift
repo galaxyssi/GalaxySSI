@@ -727,6 +727,7 @@ final class AgentTeamExecutionHistoryStore {
         var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
         var expectedUtilities: [String: Double]? = nil
         var expectedInformation: [String: Double]? = nil
+        var hypothesisFeedback: AgentMcpJSONObject? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
         var trialAuthors: [String]? = nil
         if draft.kind == .acceptanceReview {
@@ -894,6 +895,34 @@ final class AgentTeamExecutionHistoryStore {
             return record
           }
           guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else if draft.kind == .predictionOutcome {
+          let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+            turnId: turnId, memberId: memberId, sourceId: sourceId)
+          guard draft.objectId?.isBlank != false, draft.baseRevision == 0, references.count == 1,
+                let value = draft.body["prediction_outcome"]?.objectValue, Set(value.keys) == ["forecast"],
+                let ref = Self.forecastReference(value["forecast"]), draft.parents.contains(ref),
+                let forecast = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                  conversationId: conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+                forecast.reference == ref, forecast.draft.kind == .actionForecast,
+                forecast.turnId != turnId || (forecast.runId == runId && forecast.authorId == memberId),
+                forecast.expectedInformationGainBits != nil, let registered = forecast.registeredAtMillis,
+                let spec = forecast.draft.body["action_forecast"]?.objectValue,
+                let deadline = spec["valid_until"]?.intValue,
+                let tool = spec["source"]?.objectValue?.string("tool"),
+                let ids = spec["hypothesis_test"]?.objectValue?["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
+                let event = spec["events"]?.arrayValue?.compactMap(\.objectValue).first(where: { ids.contains($0.string("id")) })
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          let reads = try Self.freezeCloudReads(references, scope: scope, database: database)
+          guard let read = reads.first, let original = try database.cloudEvidence(id: read.evidenceId, conversationId: conversationId),
+                original.succeeded, original.call.name == tool, original.scope.memberId == spec.string("executor"),
+                original.scope.runId == forecast.runId, original.scope.turnId == forecast.turnId,
+                original.startedAtMillis >= registered, original.finishedAtMillis >= original.startedAtMillis,
+                let feedback = AgentCollaborationForecastIntake.hypothesisFeedback(spec,
+                  observed: Self.measurementValue(original.output, pointer: event.string("pointer")),
+                  withinValidity: original.finishedAtMillis <= deadline)
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          hypothesisFeedback = feedback
+          frozenReads = reads
         } else if draft.kind == .experimentResult {
           guard draft.objectId?.isBlank != false, draft.baseRevision == 0, !references.isEmpty,
                 let value = draft.body["experiment_result"]?.objectValue,
@@ -985,7 +1014,8 @@ final class AgentTeamExecutionHistoryStore {
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
           frozenCloudReads: frozenReads, declaredExpectedUtilities: expectedUtilities,
           expectedInformationGainBits: expectedInformation,
-          registeredAtMillis: draft.kind == .experimentPlan ? AgentControlPlaneClock.nowMillis() : nil,
+          hypothesisFeedback: hypothesisFeedback,
+          registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors)
         revision.reference.sha256 = try digest(revision)
         revisions.append(revision)
@@ -1070,6 +1100,13 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func measurementReport(_ raw: String, pointer: String) -> AgentMcpJSONObject? {
+    guard let node = measurementValue(raw, pointer: pointer) else { return nil }
+    if let report = node.objectValue { return report }
+    guard let encoded = node.stringValue else { return nil }
+    return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(encoded.utf8))
+  }
+
+  private static func measurementValue(_ raw: String, pointer: String) -> AgentMcpJSONValue? {
     guard var node = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: Data(raw.utf8)),
           pointer.isEmpty || pointer.hasPrefix("/") else { return nil }
     for part in pointer.split(separator: "/", omittingEmptySubsequences: false).dropFirst() {
@@ -1082,9 +1119,7 @@ final class AgentTeamExecutionHistoryStore {
         return nil
       }
     }
-    if let report = node.objectValue { return report }
-    guard let encoded = node.stringValue else { return nil }
-    return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(encoded.utf8))
+    return node
   }
 
   private static func forecastReference(_ value: AgentMcpJSONValue?) -> AgentCollaborationResearchReference? {
