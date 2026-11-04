@@ -41,7 +41,8 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
             ui.add(content, ui.card().apply {
                 addView(ui.text(activity.getString(R.string.health_review_source), 17f, bold = true))
                 ui.add(this, ui.text(evidence.rawText, 14f).apply { setTextIsSelectable(true) }, 8)
-                ui.add(this, ui.row(activity.getString(R.string.health_view_original), activity.getString(R.string.health_source_page, evidence.page)) {
+                ui.add(this, ui.row(activity.getString(R.string.health_view_original), activity.getString(if (evidence.documentPage > 0) R.string.health_photo_page else R.string.health_source_page,
+                    if (evidence.documentPage > 0) evidence.documentPage else evidence.page)) {
                     activity.startActivity(android.content.Intent(activity, HealthCaptureActivity::class.java)
                         .putExtra("original", evidence.originalId))
                 }, 8)

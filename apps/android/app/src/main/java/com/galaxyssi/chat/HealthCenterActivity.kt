@@ -48,6 +48,8 @@ class HealthCenterActivity : Activity() {
             route = "review"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_functions", false)) {
             route = "functions"
+        } else if (savedInstanceState == null && intent.getBooleanExtra("health_manual", false)) {
+            route = "manual"
         } else if (savedInstanceState == null && !intent.getStringExtra("health_record").isNullOrBlank()) {
             recordId = intent.getStringExtra("health_record").orEmpty()
             require(runCatching { java.util.UUID.fromString(recordId).toString() == recordId }.getOrDefault(false))
