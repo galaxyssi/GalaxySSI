@@ -127,6 +127,11 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar")
       }
       NavigationLink {
+        GalaxySSIHealthSleepReminderView(records: records)
+      } label: {
+        Label(t("sleep_reminder.title", "Sleep Change Reminders"), systemImage: "moon.zzz")
+      }
+      NavigationLink {
         privacyOverview
       } label: {
         Label(t("privacy.title", "Health Privacy"), systemImage: "lock.shield")
