@@ -529,6 +529,33 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
   }
 
+  func testLiveGraphSeparatesReviewTargetsFromEvidenceDependencies() throws {
+    func graph(_ targets: String, independent: Bool = true) -> AgentCollaborationLiveGraph? {
+      let input = """
+      {"format":"galaxyssi.work-expansion.v1","work":[
+        {"id":"artifact","member":"author","assignment":"Write","depends_on":[]},
+        {"id":"checks","member":"reviewer","assignment":"Collect checks","depends_on":[]},
+        {"id":"review","member":"reviewer","assignment":"Review","depends_on":["artifact","checks"],
+         "independent_review":\(independent)\(targets)}
+      ]}
+      """
+      return AgentCollaborationLiveGraph().appending(input, authorizedMembers: ["author", "reviewer"],
+        historicalAuthors: [:], settled: [:])
+    }
+    let saved = try XCTUnwrap(graph(#","review_targets":["artifact"]"#))
+    let reopened = try JSONDecoder().decode(AgentCollaborationLiveGraph.self, from: JSONEncoder().encode(saved))
+    XCTAssertEqual(reopened.work.last?.review_targets, ["artifact"])
+    XCTAssertFalse(reopened.ready(settled: ["artifact": .succeeded], active: []).contains { $0.id == "review" })
+    XCTAssertTrue(reopened.ready(settled: ["artifact": .succeeded, "checks": .succeeded],
+      active: []).contains { $0.id == "review" })
+    XCTAssertNil(graph(""))
+    XCTAssertNil(graph(#","review_targets":["checks"]"#))
+    XCTAssertNil(graph(#","review_targets":["missing"]"#))
+    XCTAssertNil(graph(#","review_targets":["artifact","artifact"]"#))
+    XCTAssertNil(graph(#","review_targets":[]"#))
+    XCTAssertNil(graph(#","review_targets":["artifact"]"#, independent: false))
+  }
+
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
     let raw = """
     {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",
