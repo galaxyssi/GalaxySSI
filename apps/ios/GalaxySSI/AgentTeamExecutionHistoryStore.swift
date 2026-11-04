@@ -214,7 +214,12 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func recordDispatchResourceObservation(_ observation: AgentMcpJSONObject,
-                                         scope: AgentCollaborationToolEvidenceScope) throws {
+                                         scope: AgentCollaborationToolEvidenceScope,
+                                         sections: [String: String] = [:]) throws {
+    guard sections.allSatisfy({ AgentCollaborationInlineOriginals.contextSections.contains($0.key) &&
+      $0.value.utf8.count <= AgentCollaborationInlineOriginals.maximumContextSectionBytes }) else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
     try access { database in
       guard var snapshot = try database.snapshots(runId: scope.runId).first,
             snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
@@ -222,7 +227,19 @@ final class AgentTeamExecutionHistoryStore {
             let index = snapshot.members.firstIndex(where: {
               $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
                 $0.dispatchCheckpoint == .dispatching && !$0.status.isTerminal
-            }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+            }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if !sections.isEmpty {
+        let key = Self.dispatchContextKey(scope)
+        let originals = sections.mapValues { Data($0.utf8) }
+        if let saved = try database.researchRecord([String: Data].self, conversationId: scope.conversationId,
+          key: key, revision: 0) {
+          guard saved == originals else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else {
+          try database.insertResearchRecord(originals, conversationId: scope.conversationId, key: key, revision: 0)
+        }
+      }
       if let saved = snapshot.members[index].dispatchResourceObservation {
         guard saved == observation else { throw AgentTeamHistoryDatabase.Failure.stale }
         return
@@ -231,6 +248,13 @@ final class AgentTeamExecutionHistoryStore {
       snapshot.updatedAtMillis = max(snapshot.updatedAtMillis, observation.int64("observed_at_unix_ms"))
       try database.put(snapshot)
     }
+  }
+
+  private static func dispatchContextKey(_ scope: AgentCollaborationToolEvidenceScope) -> String {
+    "dispatch-context:" + AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "turn": .string(scope.turnId),
+      "member": .string(scope.memberId), "source": .string(scope.sourceId)
+    ])
   }
 
   func applyReply(supervisorRunId: String, source: String, conversation: String, turn: String,
@@ -1532,7 +1556,7 @@ final class AgentTeamExecutionHistoryStore {
 
   func readPinnedCollaborationGoal(scope: AgentCollaborationToolEvidenceScope, section: String,
                                    offset: Int = 0, expectedHash: String? = nil) throws -> AgentMcpJSONObject {
-    guard ["goal", "criteria", "source"].contains(section), offset >= 0,
+    guard AgentCollaborationInlineOriginals.recallSections.contains(section), offset >= 0,
           offset == 0 || expectedHash != nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let bytes = try access { database -> Data in
       guard let team = try database.snapshots(runId: scope.runId).first,
@@ -1543,6 +1567,12 @@ final class AgentTeamExecutionHistoryStore {
             try database.researchRecord(Bool.self, conversationId: scope.conversationId,
               key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
       if section == "goal", member.dispatchCheckpoint != nil { return Data(team.goal.utf8) }
+      if AgentCollaborationInlineOriginals.contextSections.contains(section) {
+        guard let originals = try database.researchRecord([String: Data].self,
+          conversationId: scope.conversationId, key: Self.dispatchContextKey(scope), revision: 0),
+          let original = originals[section] else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return original
+      }
       guard let pinned = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first,
             pinned.conversationId == scope.conversationId, pinned.turnId == scope.turnId,
             !pinned.contract.isEmpty else { throw AgentTeamHistoryDatabase.Failure.stale }
