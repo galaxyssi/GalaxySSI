@@ -371,7 +371,67 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         HealthSyncCheckpoint.from(it).also { mark -> check(mark.scope == scope) }
     } ?: HealthSyncCheckpoint(scope)
 
-    fun saveHealthSyncCheckpoint(mark: HealthSyncCheckpoint) = writeHealthSync("connect:${mark.scope.name}", mark.json())
+    private fun incidentKey(scope: HealthConnectScope) = "connect-incident:${scope.name}"
+
+    fun healthSyncIncident(scope: HealthConnectScope): HealthSyncIncident? =
+        readHealthSync(incidentKey(scope))?.let { HealthSyncIncident.from(it).also { incident -> check(incident.scope == scope) } }
+            ?: HealthSyncIncident.fromCheckpoint(healthSyncCheckpoint(scope))
+
+    fun startHealthSyncAttempt(mark: HealthSyncCheckpoint) {
+        require(mark.outcome == HealthSyncOutcome.RUNNING)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val key = incidentKey(mark.scope)
+            if (readHealthSync(key) == null) HealthSyncIncident.fromCheckpoint(healthSyncCheckpoint(mark.scope))?.let {
+                writeHealthSync(key, it.json())
+            }
+            writeHealthSync("connect:${mark.scope.name}", mark.json())
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    fun saveHealthSyncCheckpoint(mark: HealthSyncCheckpoint) {
+        val key = "connect:${mark.scope.name}"
+        val succeeded = mark.outcome == HealthSyncOutcome.UPDATED || mark.outcome == HealthSyncOutcome.NO_NEW
+        if (!succeeded && !mark.outcome.isSyncFailure) {
+            writeHealthSync(key, mark.json())
+            return
+        }
+        val db = helper.writableDatabase
+        var changed = false
+        db.beginTransaction()
+        try {
+            val prior = healthSyncIncident(mark.scope)
+            val next = if (succeeded) prior?.let {
+                if (it.resolvedAt == 0L && mark.lastSuccess > 0) it.copy(resolvedAt = mark.lastSuccess) else it
+            } else HealthSyncIncident.fromCheckpoint(mark)?.let {
+                if (prior != null && prior.resolvedAt == 0L) prior.copy(outcome = it.outcome, failedAt = it.failedAt,
+                    lastSuccess = it.lastSuccess) else it.copy(id = java.util.UUID.randomUUID().toString())
+            } ?: prior
+            writeHealthSync(key, mark.json())
+            if (next != null && next != prior) {
+                writeHealthSync(incidentKey(mark.scope), next.json())
+                changed = true
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        if (changed) notifySyncIncidents()
+    }
+
+    fun acknowledgeHealthSyncIncident(expected: HealthSyncIncident, now: Long) {
+        require(now > 0)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            if (healthSyncIncident(expected.scope) != expected || expected.handled) throw HealthReminderConflict()
+            writeHealthSync(incidentKey(expected.scope), expected.copy(acknowledgedAt = now).json())
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        notifySyncIncidents()
+    }
+
+    private fun notifySyncIncidents() = app.contentResolver.notifyChange(syncIncidentChanges(app, name), null)
 
     @Synchronized fun saveHealthSyncChunk(mark: HealthSyncCheckpoint, rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): HealthSyncCheckpoint {
         require(rows.isNotEmpty() && rows.size <= HealthConnectImport.MAX_ROWS)
@@ -580,6 +640,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         const val SCHEMA_VERSION = 8
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
+        fun syncIncidentChanges(context: Context, name: String) = android.net.Uri.parse(
+            "content://${context.packageName}.health-originals/changes/sync-incidents/" + android.net.Uri.encode(name))
         fun draftKey(draft: HealthDraft) = when {
             draft.recordId.isNotBlank() -> "edit:${draft.recordId}"
             draft.evidence != null -> "ocr:${draft.evidence.jobId}:${draft.evidence.page}:${draft.evidence.candidateId}"
