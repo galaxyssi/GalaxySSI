@@ -36,7 +36,7 @@ struct GalaxySSIHealthOriginalStore {
 
   enum Failure: Error { case invalid, limit, stale }
 
-  static let maximumFileBytes = 16 * 1024 * 1024
+  nonisolated static let maximumFileBytes = 16 * 1024 * 1024
   private static let maximumZIPBytes = 64 * 1024 * 1024
   private let maximumHeaderBytes = 4_096
   let owner: String
@@ -120,6 +120,8 @@ struct GalaxySSIHealthOriginalStore {
     guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
     else { throw Failure.stale }
     try FileManager.default.removeItem(at: url(original.id))
+    let crop = try cropURL(original.id)
+    if FileManager.default.fileExists(atPath: crop.path) { try FileManager.default.removeItem(at: crop) }
   }
 
   func makeZIP(_ originals: [Original]) throws -> Data {
@@ -312,5 +314,85 @@ struct GalaxySSIHealthOriginalStore {
 
   private static func digest(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+}
+
+extension GalaxySSIHealthOriginalStore {
+  struct CropMetadata: Codable, Equatable {
+    let revision: UUID
+    let originalID: UUID
+    let originalSHA256: String
+    let bounds: CGRect
+    let width: Int
+    let height: Int
+    let sha256: String
+  }
+
+  struct Crop: Codable {
+    let metadata: CropMetadata
+    let png: Data
+  }
+
+  func readCrop(for original: Original) throws -> Crop? {
+    let file = try cropURL(original.id)
+    let data: Data
+    do {
+      let handle = try FileHandle(forReadingFrom: file)
+      defer { try? handle.close() }
+      data = try handle.read(upToCount: Self.maximumFileBytes + 4_097) ?? Data()
+      guard data.count <= Self.maximumFileBytes + 4_096 else { throw Failure.limit }
+    } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+      return nil
+    }
+    let decoded = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key(create: false),
+                                   authenticating: cropBinding(original))
+    let crop = try PropertyListDecoder().decode(Crop.self, from: decoded)
+    guard crop.metadata.originalID == original.id, crop.metadata.originalSHA256 == original.sha256,
+          GalaxySSIHealthCropEncoder.valid(crop.metadata.bounds),
+          crop.png.count <= Self.maximumFileBytes, Self.digest(crop.png) == crop.metadata.sha256
+    else { throw Failure.invalid }
+    return crop
+  }
+
+  func saveCrop(_ output: GalaxySSIHealthCropEncoder.Output, for original: Original,
+                replacing expected: UUID?) throws -> CropMetadata {
+    guard original.kind == .image, GalaxySSIHealthCropEncoder.valid(output.bounds),
+          (1...Self.maximumFileBytes).contains(output.png.count),
+          let source = CGImageSourceCreateWithData(output.png as CFData, nil),
+          let imageType = CGImageSourceGetType(source), imageType as String == UTType.png.identifier,
+          CGImageSourceGetStatus(source) == .statusComplete,
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+          image.width == output.width, image.height == output.height
+    else { throw Failure.invalid }
+    _ = try read(original)
+    guard try readCrop(for: original)?.metadata.revision == expected else { throw Failure.stale }
+    let metadata = CropMetadata(revision: UUID(), originalID: original.id, originalSHA256: original.sha256,
+                                bounds: output.bounds, width: output.width, height: output.height,
+                                sha256: Self.digest(output.png))
+    let encoder = PropertyListEncoder()
+    encoder.outputFormat = .binary
+    let payload = try encoder.encode(Crop(metadata: metadata, png: output.png))
+    guard let sealed = try AES.GCM.seal(payload, using: key(create: false),
+                                        authenticating: cropBinding(original)).combined else { throw Failure.invalid }
+    let target = try cropURL(original.id)
+    let files = try FileManager.default.contentsOfDirectory(at: target.deletingLastPathComponent(),
+                                                             includingPropertiesForKeys: [.fileSizeKey])
+    let otherBytes = try files.filter { $0.lastPathComponent != target.lastPathComponent }.reduce(0) {
+      $0 + (try $1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
+    }
+    guard otherBytes + sealed.count <= 256 * 1024 * 1024 else { throw Failure.limit }
+    try sealed.write(to: target, options: [.atomic, .completeFileProtection])
+    return metadata
+  }
+
+  private func cropBinding(_ original: Original) -> Data {
+    Data("galaxyssi.health.originals.crop.v1:\(owner):\(original.id):\(original.sha256)".utf8)
+  }
+
+  private func cropURL(_ id: UUID) throws -> URL {
+    let root = try directory().appendingPathComponent("report-crops-v1", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                            attributes: [.protectionKey: FileProtectionType.complete])
+    return root.appendingPathComponent(id.uuidString)
   }
 }

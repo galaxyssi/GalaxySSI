@@ -1,6 +1,7 @@
 import ImageIO
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import Vision
 
 enum GalaxySSIHealthPaperEdges {
@@ -45,6 +46,53 @@ enum GalaxySSIHealthPaperEdges {
   }
 }
 
+enum GalaxySSIHealthCropEncoder {
+  struct Output: Sendable {
+    let png: Data
+    let width: Int
+    let height: Int
+    let bounds: CGRect
+  }
+
+  static func encode(_ data: Data, bounds: CGRect) throws -> Output {
+    try Task.checkCancellation()
+    guard valid(bounds), let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? Int,
+          let height = properties[kCGImagePropertyPixelHeight] as? Int,
+          (1...12_000).contains(width), (1...12_000).contains(height), width * height <= 24_000_000
+    else { throw GalaxySSIHealthOriginalStore.Failure.limit }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+      kCGImageSourceShouldCacheImmediately: true
+    ]
+    guard let upright = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else { throw GalaxySSIHealthOriginalStore.Failure.invalid }
+    let w = CGFloat(upright.width), h = CGFloat(upright.height)
+    let pixels = CGRect(x: bounds.minX * w, y: bounds.minY * h,
+                        width: bounds.width * w, height: bounds.height * h)
+      .integral.intersection(CGRect(x: 0, y: 0, width: w, height: h))
+    guard let image = upright.cropping(to: pixels) else { throw GalaxySSIHealthOriginalStore.Failure.invalid }
+    try Task.checkCancellation()
+    guard let bytes = CFDataCreateMutable(nil, 0),
+          let destination = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil)
+    else { throw GalaxySSIHealthOriginalStore.Failure.invalid }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination), CFDataGetLength(bytes) <= GalaxySSIHealthOriginalStore.maximumFileBytes
+    else { throw GalaxySSIHealthOriginalStore.Failure.limit }
+    try Task.checkCancellation()
+    return Output(png: bytes as Data, width: image.width, height: image.height, bounds: bounds)
+  }
+
+  static func valid(_ bounds: CGRect) -> Bool {
+    bounds.minX.isFinite && bounds.minY.isFinite && bounds.width.isFinite && bounds.height.isFinite &&
+      bounds.width > 0 && bounds.height > 0 && bounds.minX >= 0 && bounds.minY >= 0 &&
+      bounds.maxX <= 1.000_001 && bounds.maxY <= 1.000_001
+  }
+}
+
 @MainActor
 struct GalaxySSIHealthReportCropView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
@@ -62,6 +110,10 @@ struct GalaxySSIHealthReportCropView: View {
   @State private var limit = 30
   @State private var task: Task<Void, Never>?
   @State private var token: UUID?
+  @State private var saved: GalaxySSIHealthOriginalStore.CropMetadata?
+  @State private var saving = false
+  @State private var saveFailed = false
+  @State private var saveTask: Task<Void, Never>?
 
   private enum Edge { case left, top, right, bottom }
 
@@ -85,6 +137,16 @@ struct GalaxySSIHealthReportCropView: View {
             edgeSlider(.top, t("top", "Top"))
             edgeSlider(.right, t("right", "Right"))
             edgeSlider(.bottom, t("bottom", "Bottom"))
+          }
+          .disabled(saving)
+          Button(t("save", "Save encrypted crop"), action: save).disabled(saving || (running && !modified))
+          if saving { ProgressView(t("saving", "Saving encrypted crop")) }
+          if saveFailed {
+            Text(t("save_failed", "Could not save this crop. The original was not changed."))
+              .foregroundColor(.secondary)
+          } else if let saved, saved.bounds == crop {
+            Text(t("saved", "Crop saved on this device") + " · \(saved.width) × \(saved.height)")
+              .foregroundColor(.secondary)
           }
           Button(t("choose", "Choose another image")) { clearSelection() }
         } else {
@@ -176,6 +238,10 @@ struct GalaxySSIHealthReportCropView: View {
     else { error = true; return }
     selected = item
     image = preview
+    do {
+      saved = try store.readCrop(for: item)?.metadata
+      if let saved { crop = saved.bounds; modified = true }
+    } catch { saveFailed = true }
     let generation = UUID()
     token = generation
     running = true
@@ -192,10 +258,35 @@ struct GalaxySSIHealthReportCropView: View {
     }
   }
 
+  private func save() {
+    guard scene == .active, !saving, let selected, let generation = token else { return }
+    let input: Data
+    do { input = try store.read(selected) }
+    catch { saveFailed = true; return }
+    let bounds = crop, revision = saved?.revision
+    saving = true
+    saveFailed = false
+    saveTask = Task {
+      let worker = Task.detached(priority: .userInitiated) { try GalaxySSIHealthCropEncoder.encode(input, bounds: bounds) }
+      do {
+        let output = try await withTaskCancellationHandler(operation: { try await worker.value },
+                                                          onCancel: { worker.cancel() })
+        guard !Task.isCancelled, token == generation, scene == .active else { return }
+        saved = try store.saveCrop(output, for: selected, replacing: revision)
+      } catch {
+        guard !Task.isCancelled, token == generation, scene == .active else { return }
+        saveFailed = true
+      }
+      saving = false
+    }
+  }
+
   private func clearSelection() {
     token = nil
     task?.cancel()
     task = nil
+    saveTask?.cancel()
+    saveTask = nil
     selected = nil
     image = nil
     suggested = nil
@@ -203,6 +294,9 @@ struct GalaxySSIHealthReportCropView: View {
     running = false
     finished = false
     modified = false
+    saved = nil
+    saving = false
+    saveFailed = false
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

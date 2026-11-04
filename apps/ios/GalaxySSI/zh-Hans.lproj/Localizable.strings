@@ -401,6 +401,10 @@
 "galaxyssi.health.report_crop.empty" = "暂无已保存的图片原件。";
 "galaxyssi.health.report_crop.more" = "查看更多";
 "galaxyssi.health.report_crop.failed" = "无法打开原件。";
+"galaxyssi.health.report_crop.save" = "加密保存裁剪副本";
+"galaxyssi.health.report_crop.saving" = "正在加密保存裁剪副本";
+"galaxyssi.health.report_crop.save_failed" = "无法保存裁剪副本。原件未更改。";
+"galaxyssi.health.report_crop.saved" = "裁剪副本已保存到本机";
 "galaxyssi.health.privacy.title" = "健康隐私";
 "galaxyssi.health.privacy.local" = "本机分析";
 "galaxyssi.health.privacy.failed" = "未能保存权限变更。";
