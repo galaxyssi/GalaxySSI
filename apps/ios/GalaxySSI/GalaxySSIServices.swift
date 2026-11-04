@@ -4994,7 +4994,9 @@ final class MessageCoordinator: ObservableObject {
         baseSystemPrompt: localModelSystemPrompt,
         registry: localNativeToolRuntime.registry,
         readOnlyAnalysis: outgoing.readOnlyAnalysis,
-        collaborationRecallScope: recall
+        collaborationRecallScope: recall,
+        collaborationConversationDatabase: store.agentConversationDatabase,
+        collaborationOriginalsOnly: true
       )
       let response = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
@@ -7081,6 +7083,7 @@ final class MessageCoordinator: ObservableObject {
       registry: localNativeToolRuntime.registry,
       readOnlyAnalysis: outgoing.readOnlyAnalysis,
       collaborationRecallScope: recall,
+      collaborationConversationDatabase: store.agentConversationDatabase,
       nativeObservation: nativeObservation
     )
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
