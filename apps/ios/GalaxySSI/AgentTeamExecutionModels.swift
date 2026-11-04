@@ -426,6 +426,21 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
 }
 
 enum AgentSavedTeamReplyPolicy {
+  static func reconcileRecoveryWait(_ task: AgentTaskRecord, runId: String, cancelled: Bool,
+                                    verification: String, now: Int64) -> AgentTaskRecord? {
+    guard !runId.isBlank,
+          (task.phase == .executing && (task.teamRecoveryRunId == nil || task.teamRecoveryRunId == runId)) ||
+            (task.phase == .paused && task.teamRecoveryRunId == runId) else { return nil }
+    var recovered = task
+    recovered.phase = cancelled ? .cancelled : .waitingResponse
+    recovered.blocked = false
+    recovered.teamRecoveryRunId = cancelled ? nil : runId
+    recovered.verification = verification
+    recovered.executionLog.append("Agent team recovery: retained original team " + runId)
+    recovered.updatedAtMillis = max(task.updatedAtMillis, now)
+    return recovered
+  }
+
   static func canContinueAutomatically(_ task: AgentTaskRecord) -> Bool {
     guard task.phase == .paused, task.teamRecoveryRunId == nil,
           let plan = task.activePlan, plan.executionMode == .autoComplete,
@@ -437,7 +452,8 @@ enum AgentSavedTeamReplyPolicy {
   static func settleParent(_ parent: AgentTaskRecord, saved: AgentTeamExecutionSnapshot,
                            failureText: String, now: Int64) -> AgentTaskRecord? {
     guard saved.state.deliverable, parent.result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          parent.phase == .waitingResponse || (parent.phase == .paused && parent.teamRecoveryRunId == saved.supervisorRunId),
+          (parent.phase == .waitingResponse && (parent.teamRecoveryRunId == nil || parent.teamRecoveryRunId == saved.supervisorRunId)) ||
+            (parent.phase == .paused && parent.teamRecoveryRunId == saved.supervisorRunId),
           parent.taskId == saved.taskId, parent.sessionId == saved.conversationId,
           saved.createdAtMillis >= parent.createdAtMillis,
           var plan = parent.activePlan else { return nil }
