@@ -306,6 +306,54 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func admitCollaborationModelCall(_ admission: AgentCollaborationModelAdmission) throws {
+    let scope = admission.scope
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    try access { database in
+      guard admission.round >= 0, admission.startedAtMillis > 0,
+            (admission.requestedModel?.utf8.count ?? 0) <= 256,
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal })
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      try database.insertResearchRecord(admission, conversationId: scope.conversationId, key: key, revision: 0)
+    }
+  }
+
+  func settleCollaborationModelCall(_ admission: AgentCollaborationModelAdmission,
+                                    settlement: AgentCollaborationModelSettlement) throws {
+    let conversation = admission.scope.conversationId
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    try access { database in
+      guard settlement.finishedAtMillis >= admission.startedAtMillis, !settlement.usageComplete,
+            settlement.costMicros == nil,
+            try database.researchRecord(AgentCollaborationModelAdmission.self,
+              conversationId: conversation, key: key, revision: 0) == admission
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if let existing = try database.researchRecord(AgentCollaborationModelSettlement.self,
+        conversationId: conversation, key: key, revision: 1) {
+        guard existing == settlement else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        try database.insertResearchRecord(settlement, conversationId: conversation, key: key, revision: 1)
+      }
+    }
+  }
+
+  func collaborationModelCall(_ admission: AgentCollaborationModelAdmission)
+    throws -> (admitted: Bool, settlement: AgentCollaborationModelSettlement?) {
+    let conversation = admission.scope.conversationId
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    return try access { database in
+      guard try database.researchRecord(AgentCollaborationModelAdmission.self,
+        conversationId: conversation, key: key, revision: 0) == admission else { return (false, nil) }
+      return (true, try database.researchRecord(AgentCollaborationModelSettlement.self,
+        conversationId: conversation, key: key, revision: 1))
+    }
+  }
+
   func removeCloudEvidence(conversationId: String) {
     _ = try? access { try $0.removeCloudEvidence(conversationId: conversationId) }
   }
