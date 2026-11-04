@@ -369,6 +369,14 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testDesktopMilestonePhaseCannotSwitchReadIntoPublication() {
+    let wire = AgentDesktopCollaborationPublicationWire.self
+    XCTAssertTrue(wire.accepts(phase: "publish", input: ["mode": .string("publish")]))
+    XCTAssertTrue(wire.accepts(phase: "receipt", input: ["mode": .string("receipt")]))
+    XCTAssertFalse(wire.accepts(phase: "receipt", input: ["mode": .string("publish")]))
+    XCTAssertFalse(wire.accepts(phase: "read", input: ["mode": .string("read")]))
+  }
+
   func testInterimPublicationReopensWithSameReceiptWithoutCompletingAssignment() throws {
     let suite = "milestone-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

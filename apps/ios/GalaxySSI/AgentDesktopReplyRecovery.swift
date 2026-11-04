@@ -42,6 +42,16 @@ struct AgentTeamDesktopReplySource: Codable, Equatable {
   var sourceMessageId: String
 }
 
+enum AgentDesktopCollaborationPublicationWire {
+  static let requestType = "collaboration_publish_request"
+  static let responseType = "collaboration_publish_result"
+  static let contract = "galaxyssi.collaboration-publish/1"
+
+  static func accepts(phase: String, input: AgentMcpJSONObject) -> Bool {
+    ["publish", "status", "receipt"].contains(phase) && input["mode"] == .string(phase)
+  }
+}
+
 enum AgentDesktopCollaborationArchiveRecall {
   static let requestType = "collaboration_recall_request"
   static let responseType = "collaboration_recall_result"
