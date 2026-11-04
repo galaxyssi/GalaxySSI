@@ -5,6 +5,29 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthKitImportKeepsOriginsEditsAndTombstones() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let first = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture.a", name: "A"))
+    let second = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "b", count: 64), origin: "fixture.b", name: "B"))
+    XCTAssertThrowsError(try records.importHealthKit([first, .init(metric: .weight, value: 60)]))
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertEqual(try records.importHealthKit([first, second]), 2)
+    var edited = try XCTUnwrap(records.load().current.first { $0.id == first.id })
+    edited.value = 67
+    try records.write(edited)
+    var removed = try XCTUnwrap(records.load().current.first { $0.id == second.id })
+    removed.deleted = true
+    try records.write(removed)
+    XCTAssertEqual(try records.importHealthKit([first, second]), 0)
+    XCTAssertEqual(try records.load().current.map(\.value), [67])
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

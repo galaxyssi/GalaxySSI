@@ -1,5 +1,4 @@
 import CoreBluetooth
-import HealthKit
 import SwiftUI
 
 @MainActor
@@ -260,9 +259,16 @@ struct GalaxySSIHealthCenterView: View {
     List {
       if scenePhase == .active {
         Section(t("device_sources", "Device sources")) {
-          sourceStatus("HealthKit", detail: HKHealthStore.isHealthDataAvailable()
-            ? t("platform_available", "Available on this device")
-            : t("platform_unavailable", "Not available on this device"))
+          NavigationLink {
+            GalaxySSIHealthKitImportView(records: records)
+          } label: {
+            VStack(alignment: .leading) {
+              Text("Apple Health")
+              Text(GalaxySSIHealthKitImport.available ? t("platform_available", "Available on this device") :
+                t("healthkit.unavailable", "HealthKit is unavailable on this device or in this build."))
+                .foregroundColor(.secondary)
+            }
+          }
           sourceStatus(t("bluetooth_devices", "Bluetooth devices"), detail: bluetoothAuthorization)
           NavigationLink {
             GalaxySSIHealthBluetoothView(records: records)
@@ -316,7 +322,8 @@ struct GalaxySSIHealthCenterView: View {
               Text(summary(reading))
               Text(item.freshness == .recent ? t("fresh", "Recent") : t("stale_reading", "Older"))
                 .foregroundColor(.secondary)
-              Text(reading.tableSource != nil ? t("table.source", "Imported table") :
+              Text(reading.healthKitSource != nil ? "Apple Health" :
+                reading.tableSource != nil ? t("table.source", "Imported table") :
                 (reading.bluetoothReceipt == nil ? t("manual_source", "Entered manually") :
                   t("bluetooth.source", "Bluetooth monitor"))).foregroundColor(.secondary)
               Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened))

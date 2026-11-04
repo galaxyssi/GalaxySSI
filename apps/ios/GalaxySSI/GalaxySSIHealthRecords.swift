@@ -18,6 +18,7 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var reportedNotation: String?
   var unitOverride: String?
   var referenceInterval: String?
+  var healthKitSource: GalaxySSIHealthKitImport.Source?
 
   var unit: String { unitOverride ?? metric.unit }
   var resultKind: String { reported?.kind.rawValue ?? "number" }
@@ -272,7 +273,8 @@ struct GalaxySSIHealthRecords {
     guard (latest?.revision ?? 0) == input.revision, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
-      guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource
+      guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
+            latest.healthKitSource == input.healthKitSource
       else { throw Failure.invalid }
     } else if let receipt = input.bluetoothReceipt, archive.revisions.contains(where: {
       $0.bluetoothReceipt.map { receipt.isReplay(of: $0) } == true
@@ -321,6 +323,25 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return readings.count
+  }
+
+  func importHealthKit(_ readings: [GalaxySSIHealthReading]) throws -> Int {
+    guard readings.count <= GalaxySSIHealthKitImport.limit else { throw Failure.invalid }
+    var archive = try load()
+    var seen = Set(archive.revisions.compactMap { $0.healthKitSource?.key })
+    var additions: [GalaxySSIHealthReading] = []
+    for var reading in readings {
+      guard let source = reading.healthKitSource, source.key.utf8.count == 64, reading.revision == 0,
+            !reading.deleted, reading.isValid else { throw Failure.invalid }
+      guard seen.insert(source.key).inserted else { continue }
+      reading.revision = 1
+      additions.append(reading)
+    }
+    guard !additions.isEmpty else { return 0 }
+    archive.revisions.append(contentsOf: additions)
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return additions.count
   }
 
   func undoTableBatch(_ id: UUID) throws -> Int {
