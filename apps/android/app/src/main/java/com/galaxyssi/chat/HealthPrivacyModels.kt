@@ -37,6 +37,8 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     OVERVIEW(HealthPrivacyOption.CONFIRMED_METRICS),
     WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     SAVE_WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
+    HEALTH_ANALYSIS(HealthPrivacyOption.CONFIRMED_METRICS),
+    HEALTH_ANALYSIS_ONLINE(HealthPrivacyOption.ONLINE_ANALYSIS),
     SAVE_RECORDS, SAVE_ORIGINALS, DELETE_PROFILE
 }
 internal enum class HealthAccessOutcome { STARTED, COMPLETE, FAILED, CANCELLED, BLOCKED }
@@ -48,12 +50,14 @@ internal data class HealthAccessScope(
     val fields: Set<HealthProfileField> = emptySet(), val count: Long? = null,
     val source: HealthAccessSource = HealthAccessSource.ALL, val format: HealthAccessFormat? = null,
     val annotations: Boolean = false, val drafts: Long? = null, val basicCount: Int? = null,
-    val reportRecords: Boolean = false, val baselineFrom: Long? = null
+    val reportRecords: Boolean = false, val baselineFrom: Long? = null, val destination: String = ""
 ) {
     init {
         require(until > from && (count == null || count >= 0) && (drafts == null || drafts >= 0))
         require(basicCount == null || basicCount in 0..HealthProfileField.entries.size)
         require(baselineFrom == null || baselineFrom in 0 until from)
+        require(destination.length <= 384 && destination.none(Char::isISOControl))
+        require((purpose == HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE) == destination.isNotEmpty())
         ZoneId.of(zone)
         when (purpose) {
             HealthAccessPurpose.TREND, HealthAccessPurpose.TREND_RECORDS, HealthAccessPurpose.TREND_SOURCES ->
@@ -63,6 +67,8 @@ internal data class HealthAccessScope(
             HealthAccessPurpose.OVERVIEW -> require(metrics == setOf(HealthMetric.SLEEP_DURATION) && baselineFrom == null && format == null)
             HealthAccessPurpose.WEEKLY_REPORT, HealthAccessPurpose.SAVE_WEEKLY_REPORT ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && format == if (purpose == HealthAccessPurpose.SAVE_WEEKLY_REPORT) HealthAccessFormat.PDF else null)
+            HealthAccessPurpose.HEALTH_ANALYSIS, HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE ->
+                require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && !reportRecords && format == null)
             HealthAccessPurpose.SAVE_RECORDS -> require(metrics.isNotEmpty() && count != null && format in listOf(HealthAccessFormat.CSV, HealthAccessFormat.JSON, HealthAccessFormat.XLSX))
             HealthAccessPurpose.SAVE_ORIGINALS -> require(count != null && format in listOf(HealthAccessFormat.ZIP, HealthAccessFormat.ORIGINAL))
             HealthAccessPurpose.DELETE_PROFILE -> require(count != null && drafts != null && basicCount != null && format == null)
@@ -73,6 +79,7 @@ internal data class HealthAccessScope(
         .put("source", source.name).put("format", format?.name ?: JSONObject.NULL).put("annotations", annotations)
         .put("drafts", drafts ?: JSONObject.NULL).put("basics", basicCount ?: JSONObject.NULL)
         .put("reportRecords", reportRecords).put("baselineFrom", baselineFrom ?: JSONObject.NULL)
+        .apply { if (destination.isNotEmpty()) put("destination", destination) }
     companion object {
         fun from(j: JSONObject): HealthAccessScope {
             fun values(key: String) = j.getJSONArray(key).let { a -> (0 until a.length()).map(a::getString) }
@@ -81,7 +88,7 @@ internal data class HealthAccessScope(
                 j.takeUnless { it.isNull("count") }?.getLong("count"), HealthAccessSource.valueOf(j.getString("source")),
                 j.takeUnless { it.isNull("format") }?.getString("format")?.let(HealthAccessFormat::valueOf), j.getBoolean("annotations"),
                 j.takeUnless { it.isNull("drafts") }?.getLong("drafts"), j.takeUnless { it.isNull("basics") }?.getInt("basics"),
-                j.optBoolean("reportRecords"), j.takeUnless { it.isNull("baselineFrom") }?.getLong("baselineFrom"))
+                j.optBoolean("reportRecords"), j.takeUnless { it.isNull("baselineFrom") }?.getLong("baselineFrom"), j.optString("destination"))
         }
         fun trend(purpose: HealthAccessPurpose, spec: HealthTrendSpec) = HealthAccessScope(purpose, setOf(spec.metric), spec.from, spec.until, spec.zone.id,
             source = when { spec.source.manualOnly -> HealthAccessSource.MANUAL; spec.source.originalId.isNotEmpty() -> HealthAccessSource.ORIGINAL; else -> HealthAccessSource.ALL })
@@ -99,6 +106,10 @@ internal data class HealthAccessScope(
         fun sleepChange(scope: HealthWeeklyScope) = HealthAccessScope(HealthAccessPurpose.SLEEP_CHANGE, scope.metrics,
             scope.from, scope.until, scope.zone.id, baselineFrom = scope.baselineScope().from)
         fun overview(scope: HealthWeeklyScope) = HealthAccessScope(HealthAccessPurpose.OVERVIEW, scope.metrics, scope.from, scope.until, scope.zone.id)
+        fun analysis(scope: HealthWeeklyScope, destination: String = "") = HealthAccessScope(
+            if (destination.isBlank()) HealthAccessPurpose.HEALTH_ANALYSIS else HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE,
+            scope.metrics, scope.from, scope.until, scope.zone.id,
+            baselineFrom = if (scope.hasBaseline) scope.baselineScope().from else null, destination = destination)
         fun deleteProfile(preview: HealthProfileDeletePreview) = HealthAccessScope(HealthAccessPurpose.DELETE_PROFILE,
             count = preview.entries, drafts = preview.drafts, basicCount = preview.fields)
     }

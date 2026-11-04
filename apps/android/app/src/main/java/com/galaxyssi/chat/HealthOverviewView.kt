@@ -73,6 +73,7 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
             missing.joinToString(", ") { label(it.metric.titleResource()) }), 14f, muted = true).apply { tag = "health-overview-missing" }, 12)
         ui.add(content, ui.text(label(R.string.health_overview_no_data_warning), 13f, muted = true), 6)
         ui.add(content, ui.profileRow(label(R.string.health_weekly_title)) { start(HealthWeeklyActivity::class.java) }, 12)
+        ui.add(content, ui.profileRow(label(R.string.health_assistant_title)) { start(HealthAssistantActivity::class.java) })
         ui.add(content, ui.profileRow(label(R.string.health_export_data_files)) { start(HealthDataFilesActivity::class.java) })
         if (!snapshot.hasRecords) {
             ui.add(content, ui.profileRow(label(R.string.health_profile_title)) { start(HealthProfileActivity::class.java) })
