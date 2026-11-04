@@ -719,6 +719,42 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentCollaborationForecastIntake.brierScore(probability: .infinity, occurred: true))
   }
 
+  func testLargeNumericReplayPersistsAllComputedCases() throws {
+    let suite = "numeric-replay-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("run")
+    team.members[1].status = .succeeded
+    XCTAssertTrue(history.upsert(team))
+    let count = 1_000
+    let cases: [AgentMcpJSONValue] = (1...count).map { index in
+      .object(["id": .string("case-\(index)"), "input": .object(["x": .int(1)]),
+        "expected": .int(1), "absolute_tolerance": .int(0)])
+    }
+    let validator = AgentCollaborationNumericTrial.validatorId
+    let trial: AgentMcpJSONObject = ["purpose": .string("Replay"), "reference_basis": .string("Supplied"),
+      "limitations": .string("Finite cases"),
+      "validator": .object(["id": .string(validator), "variables": .array([.string("x")]), "cases": .array(cases)]),
+      "computation": .object(["validator_id": .string(validator), "model": .object(["constant": .double(1e300)])])]
+    let draft = AgentCollaborationResearchDraft(id: "numeric", objectId: nil, baseRevision: 0,
+      kind: .numericModelTrial, title: "Trial", body: ["numeric_model_trial": .object(trial)], parents: [])
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: team.conversationId,
+      turnId: team.taskId, memberId: "review", sourceId: "source-review")
+    _ = try history.publishResearchObjects([draft], runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let saved = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope)?.first)
+    XCTAssertGreaterThan(try JSONEncoder().encode(saved).count, AgentCollaborationResearchRevision.standardStorageBytes)
+    XCTAssertEqual(saved.numericReplay?["checks"]?.arrayValue?.count, count)
+    XCTAssertEqual(saved.numericReplay?["failed_cases"], .int(Int64(count)))
+  }
+
   func testNumericTrialUsesExactDecimalToleranceAtFloatBoundary() throws {
     let raw = """
     {"purpose":"Replay","reference_basis":"Supplied","limitations":"Finite cases",
