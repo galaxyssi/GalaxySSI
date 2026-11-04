@@ -6367,6 +6367,17 @@ final class MessageCoordinator: ObservableObject {
           ? observations.filter { member.dependsOnAgentIds.contains($0.0) }
           : (member.deliveryMode == .respond ? observations : [])
       )
+      func promptForDispatch() throws -> String {
+        guard isCollaboration else { return memberPrompt }
+        let observation = AgentCollaborationResourceObservation.record(
+          registration: AgentMentionCandidatePolicy.registration(for: target),
+          activeCounts: UserDefaultsAgentGlobalRunSlotStore.shared.activeCounts(),
+          now: AgentControlPlaneClock.nowMillis())
+        try AgentTeamExecutionHistoryStore.shared.recordDispatchResourceObservation(observation,
+          scope: .init(runId: spec.supervisorRunId, conversationId: outgoing.conversationId,
+            turnId: homeTurnId, memberId: member.memberId, sourceId: sourceMessageId))
+        return memberPrompt + "\n\n" + AgentCollaborationResourceObservation.prompt(observation)
+      }
 
       do {
         if isCollaboration {
@@ -6391,6 +6402,7 @@ final class MessageCoordinator: ObservableObject {
           let recallScope: AgentCollaborationToolEvidenceScope? = isCollaboration ? .init(runId: spec.supervisorRunId,
             conversationId: outgoing.conversationId, turnId: homeTurnId,
             memberId: member.memberId, sourceId: sourceMessageId) : nil
+          let memberPrompt = try promptForDispatch()
           try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
             if member.deliveryMode == .respond {
               try await receiveLocalModelReply(
@@ -6443,6 +6455,7 @@ final class MessageCoordinator: ObservableObject {
             }
             memberContact.selectedCloudModelId = model.modelId
           }
+          let memberPrompt = try promptForDispatch()
           try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
             if member.deliveryMode == .respond {
               try await receiveRequestedCloudReply(
@@ -6495,11 +6508,12 @@ final class MessageCoordinator: ObservableObject {
           }
           memberContact = current
         }
+        let dispatchPrompt = try promptForDispatch()
         let slotOwnerId = try acquireAgentSlot(target: target, sourceMessageId: sourceMessageId)
         do {
           try Task.checkCancellation()
           try await publishRequestedLinkTarget(
-            memberPrompt,
+            dispatchPrompt,
             contact: memberContact,
             outgoing: outgoing,
             attachments: attachments,
