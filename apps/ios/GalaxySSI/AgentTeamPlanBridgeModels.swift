@@ -242,6 +242,78 @@ enum AgentTeamDispatchIds {
 }
 
 enum AgentTeamPlanCompiler {
+  static func compileCollaboration(
+    plan: AgentPlan,
+    roster: AgentCollaborationRoster,
+    mentionedMemberIds: Set<UUID> = [],
+    targets: [AgentCallableTarget],
+    registrations: [AgentRegistration]
+  ) -> AgentPlan? {
+    guard plan.validation.valid, roster.isValid, let coordinatorId = roster.coordinatorId,
+          mentionedMemberIds.isSubset(of: Set(roster.members.map(\.id))),
+          let template = plan.actions.first else { return nil }
+    let selected = roster.members.filter {
+      $0.id == coordinatorId ||
+        (mentionedMemberIds.isEmpty ? !$0.mentionOnly : mentionedMemberIds.contains($0.id))
+    }
+    guard (minTeamMembers...maxTeamMembers).contains(selected.count) else { return nil }
+    let available = Dictionary(targets.filter {
+      [.agent, .model].contains($0.kind) && $0.status == .available
+    }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let registered = Dictionary(registrations.map { ($0.agentId, $0) },
+      uniquingKeysWith: { first, _ in first })
+    let counts = Dictionary(grouping: selected, by: \.resourceId).mapValues(\.count)
+    guard counts.allSatisfy({ id, count in
+      guard available[id] != nil, let registration = registered[id],
+            [.online, .idle, .busy].contains(registration.status) else { return false }
+      return count <= max(0, registration.maxParallelRuns - registration.activeRuns)
+    }), let coordinator = selected.first(where: { $0.id == coordinatorId }),
+        let primaryTarget = available[coordinator.resourceId] else { return nil }
+
+    let primaryId = coordinatorId.uuidString.lowercased()
+    let specialistIds = Set(selected.filter { $0.id != coordinatorId }.map { $0.id.uuidString.lowercased() })
+    let members = selected.compactMap { member -> AgentTeamMember? in
+      guard let target = available[member.resourceId] else { return nil }
+      let isCoordinator = member.id == coordinatorId
+      let role = String(member.role.ifBlank(Self.role(for: target, primary: isCoordinator)).prefix(80))
+      let objective = isCoordinator
+        ? "Synthesize the specialist results and state remaining assumptions and evidence gaps."
+        : "Contribute independently within this role: \(role). State assumptions and verifiable acceptance criteria."
+      return AgentTeamMember(
+        agentId: target.id, deliveryMode: isCoordinator ? .respond : .observe,
+        requiredCapabilities: Set(target.capabilities), role: role,
+        objective: String("\(objective) User goal: \(plan.goal)".prefix(maxMemberObjectiveCharacters)),
+        dependsOnAgentIds: isCoordinator ? specialistIds : [],
+        context: [
+          "_galaxyssi_selection_source": "collaboration_roster",
+          "_galaxyssi_member_name": member.name,
+          "_galaxyssi_member_model_id": member.modelId,
+          "_galaxyssi_independent_review": roster.independentReview ? "true" : "false"
+        ],
+        instanceId: member.id.uuidString.lowercased()
+      )
+    }
+    let identityActions = members.map { member -> AgentAction in
+      var identity = template
+      identity.id = member.memberId
+      identity.parameters["connector_id"] = member.agentId
+      return identity
+    }
+    let teamId = AgentTeamDispatchIds.teamId(plan: plan, actions: identityActions)
+    let definition = AgentTeamDefinition(teamId: teamId, primaryAgentId: primaryTarget.id,
+      members: members, visibilityMode: .background,
+      collectiveCapabilities: Set(members.flatMap(\.requiredCapabilities)), primaryInstanceId: primaryId)
+    var compiled = compileRequestedTeam(plan: plan, primaryTarget: primaryTarget, template: template,
+      definition: definition, runId: AgentTeamDispatchIds.supervisorRunId(teamId: teamId), targets: targets)
+    guard compiled.actions.count == 1,
+          let wire = compiled.actions[0].parameters[agentTeamSpecParameter],
+          AgentTeamDispatchSpecCodec.decode(wire)?.definition == definition else { return nil }
+    compiled.actions[0].parameters["agent_selection_source"] = "collaboration_roster"
+    compiled.plannerProfile += "+collaboration-roster"
+    compiled.validation = AgentPlanValidator.validate(compiled)
+    return compiled.validation.valid ? compiled : nil
+  }
+
   static func compile(
     plan: AgentPlan,
     targets: [AgentCallableTarget],

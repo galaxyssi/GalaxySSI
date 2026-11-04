@@ -1,5 +1,225 @@
 import Foundation
 
+struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
+  enum Phase: String, Codable { case planning, working, waiting }
+  var runId: String
+  var conversationId: String
+  var turnId: String
+  var revision: Int64
+  var phase: Phase
+  var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
+  var completedWorkIds: Set<String>
+}
+
+enum AgentCollaborationGoalAssessmentPolicy {
+  enum Verification: String, Codable { case documentary, computational, physical }
+  enum Decision: String, Codable { case `continue`, achieved, blocked }
+  enum EvidenceKind: String, Codable { case observed, simulation, proposal }
+
+  struct Criterion: Codable, Equatable {
+    enum Status: String, Codable { case met, open }
+    var id: String
+    var requirement: String
+    var verification: Verification
+    var status: Status
+    var evidence_kind: EvidenceKind?
+    var evidence: [String]
+    var delivery: AgentCollaborationDocumentaryAcceptance.Reference? = nil
+    var review: AgentCollaborationDocumentaryAcceptance.Reference? = nil
+  }
+
+  struct Work: Codable {
+    var id: String
+    var member: String
+    var assignment: String
+  }
+
+  struct Blocker: Codable {
+    enum Kind: String, Codable { case resource, permission, connectivity, provider, capacity }
+    struct Alternative: Codable {
+      enum Status: String, Codable { case unavailable, needs_approval, not_applicable }
+      var option: String
+      var status: Status
+      var result: String
+      var evidence: [String]
+    }
+    var id: String
+    var kind: Kind
+    var reason: String
+    var resume_when: String
+    var alternatives: [Alternative]?
+  }
+
+  struct Assessment: Codable {
+    var format: String
+    var summary: String
+    var decision: Decision
+    var criteria: [Criterion]
+    var work: [Work]
+    var blockers: [Blocker]
+    var recruit: [Work]?
+  }
+
+  struct VerifiedCriterion {
+    var requirement: String
+    var verification: Verification
+    var evidence: Set<String>
+  }
+
+  enum Outcome: Equatable {
+    case needsAssessment
+    case schedule([String])
+    case waiting([String])
+    case achieved
+  }
+
+  static func evaluate(_ raw: String, preserving contract: [Criterion],
+                       authorizedMembers: Set<String>, completedWork: Set<String>,
+                       checkedBlockers: Set<String> = [],
+                       verified: [String: VerifiedCriterion] = [:]) -> Outcome {
+    guard raw.utf8.count <= 256_000,
+          let assessment = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
+          assessment.format == "galaxyssi.goal-assessment.v1",
+          !assessment.summary.isBlank, !assessment.criteria.isEmpty,
+          Set(assessment.criteria.map(\.id)).count == assessment.criteria.count,
+          assessment.criteria.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank }) else {
+      return .needsAssessment
+    }
+    let criteria = Dictionary(uniqueKeysWithValues: assessment.criteria.map { ($0.id, $0) })
+    guard contract.allSatisfy({ original in
+      criteria[original.id]?.requirement == original.requirement &&
+        criteria[original.id]?.verification == original.verification
+    }) else { return .needsAssessment }
+    guard assessment.recruit?.isEmpty != false else { return .needsAssessment }
+
+    if !assessment.work.isEmpty {
+      let ids = assessment.work.map(\.id)
+      guard assessment.decision == .continue, Set(ids).count == ids.count,
+            completedWork.isDisjoint(with: ids), assessment.work.allSatisfy({
+              !$0.id.isBlank && !$0.assignment.isBlank && authorizedMembers.contains($0.member)
+            }) else { return .needsAssessment }
+      return .schedule(ids)
+    }
+    switch assessment.decision {
+    case .continue:
+      return .needsAssessment
+    case .blocked:
+      let ids = assessment.blockers.map(\.id)
+      guard !ids.isEmpty, Set(ids).count == ids.count,
+            assessment.blockers.allSatisfy({ blocker in
+              guard !blocker.id.isBlank, !blocker.reason.isBlank, !blocker.resume_when.isBlank else { return false }
+              guard blocker.kind == .resource || blocker.kind == .permission else { return true }
+              guard checkedBlockers.contains(blocker.id), let alternatives = blocker.alternatives,
+                    !alternatives.isEmpty else { return false }
+              return alternatives.allSatisfy {
+                !$0.option.isBlank && !$0.result.isBlank && !$0.evidence.isEmpty &&
+                  $0.evidence.allSatisfy { !$0.isBlank }
+              }
+            }) else { return .needsAssessment }
+      return .waiting(ids)
+    case .achieved:
+      guard !contract.isEmpty, assessment.blockers.isEmpty,
+            assessment.criteria.allSatisfy({ item in
+              guard item.status == .met, let kind = item.evidence_kind, kind != .proposal,
+                    item.verification != .physical || kind == .observed,
+                    !item.evidence.isEmpty, item.evidence.allSatisfy({ !$0.isBlank }),
+                    let receipt = verified[item.id], receipt.requirement == item.requirement,
+                    receipt.verification == item.verification else { return false }
+              return Set(item.evidence).isSubset(of: receipt.evidence)
+            }) else { return .needsAssessment }
+      return .achieved
+    }
+  }
+}
+
+enum AgentCollaborationDocumentaryAcceptance {
+  struct Reference: Codable, Equatable {
+    var objectId: String
+    var revision: Int64
+    var sha256: String
+
+    enum CodingKeys: String, CodingKey {
+      case objectId = "object_id"
+      case revision, sha256
+    }
+  }
+
+  struct Revision {
+    var reference: Reference
+    var conversationId: String
+    var runId: String
+    var turnId: String
+    var authorId: String
+    var kind: String
+    var body: AgentMcpJSONObject
+    var parents: [Reference]
+    var hostObservationIds: Set<String>
+  }
+
+  private struct Review: Decodable {
+    var criterion_id: String
+    var requirement: String
+    var target: Reference
+    var verdict: String
+    var rationale: String
+    var unresolved: [String]
+  }
+
+  static func evaluate(_ raw: String, preserving contract: [AgentCollaborationGoalAssessmentPolicy.Criterion],
+                       conversationId: String, runId: String, turnId: String,
+                       readRevision: (String, Int64?) throws -> Revision?,
+                       observationIsSupporting: (String) throws -> Bool)
+    -> AgentCollaborationGoalAssessmentPolicy.Outcome {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank, raw.utf8.count <= 256_000,
+          let assessment = try? JSONDecoder().decode(Policy.Assessment.self, from: Data(raw.utf8)),
+          assessment.decision == .achieved else { return .needsAssessment }
+
+    func current(_ reference: Reference) throws -> Revision? {
+      guard reference.revision > 0, !reference.objectId.isBlank,
+            reference.sha256.utf8.count == 64,
+            let record = try readRevision(reference.objectId, nil),
+            record.reference == reference, record.conversationId == conversationId,
+            record.runId == runId, record.turnId == turnId,
+            !record.authorId.isBlank else { return nil }
+      return record
+    }
+
+    var verified: [String: Policy.VerifiedCriterion] = [:]
+    do {
+      for criterion in assessment.criteria {
+        guard criterion.verification == .documentary, criterion.evidence_kind == .observed,
+              let deliveryRef = criterion.delivery, let reviewRef = criterion.review,
+              let delivery = try current(deliveryRef), let review = try current(reviewRef),
+              ["artifact", "proposal", "decision"].contains(delivery.kind),
+              !delivery.body.string("content").isBlank,
+              ["acceptance_review", "decision"].contains(review.kind),
+              delivery.authorId != review.authorId,
+              review.parents.contains(deliveryRef),
+              let rawReview = review.body["acceptance_review"]?.objectValue,
+              let check = try? JSONDecoder().decode(Review.self, from: Data(AgentMcpJSONCodec.stringify(rawReview).utf8)),
+              check.criterion_id == criterion.id, check.requirement == criterion.requirement,
+              check.target == deliveryRef, check.verdict == "supported",
+              !check.rationale.isBlank, check.unresolved.isEmpty else { return .needsAssessment }
+        var number: Int64 = 1
+        while number < deliveryRef.revision {
+          guard let previous = try readRevision(deliveryRef.objectId, number),
+                previous.reference.objectId == deliveryRef.objectId,
+                previous.reference.revision == number, previous.conversationId == conversationId,
+                !previous.authorId.isBlank, previous.authorId != review.authorId else { return .needsAssessment }
+          number += 1
+        }
+        let observations = delivery.hostObservationIds.union(review.hostObservationIds)
+        guard try observations.allSatisfy(observationIsSupporting) else { return .needsAssessment }
+        let receipts = observations.union([deliveryRef.objectId, reviewRef.objectId, deliveryRef.sha256, reviewRef.sha256])
+        verified[criterion.id] = Policy.VerifiedCriterion(requirement: criterion.requirement,
+          verification: .documentary, evidence: receipts)
+      }
+    } catch { return .needsAssessment }
+    return Policy.evaluate(raw, preserving: contract, authorizedMembers: [], completedWork: [], verified: verified)
+  }
+}
+
 enum AgentDynamicTeamOutcome: String, Codable, CaseIterable, Identifiable {
   case singleAgent = "SINGLE_AGENT"
   case team = "TEAM"

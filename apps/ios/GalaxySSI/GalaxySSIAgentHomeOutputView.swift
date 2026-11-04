@@ -42,6 +42,11 @@ extension AgentHomeView {
       onExecutionStateChanged: refreshAgentRuntimeAuditRecords
     ) {
       LazyVStack(spacing: 5) {
+          if let session = activeAgentSession, session.collaborationRoster != nil,
+             !session.privateMode, !session.trackingPaused {
+            GalaxySSICollaborationResultsButton(conversationId: session.id, t: t)
+              .id(session.id)
+          }
           GalaxySSIAgentHomeExecutionAlertsView(
             scanStatus: scanStatus,
             scanStatusIsError: scanStatusIsError,

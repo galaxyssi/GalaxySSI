@@ -562,7 +562,8 @@ extension GalaxySSIStore {
     createdByAgent: Bool,
     parentConversationId: String,
     globalTopicKey: String,
-    privateMode: Bool
+    privateMode: Bool,
+    collaborationRoster: AgentCollaborationRoster? = nil
   ) -> AgentConversation {
     let now = Self.nowMillis()
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -582,9 +583,13 @@ extension GalaxySSIStore {
       privateMode: privateMode,
       createdByAgent: createdByAgent,
       parentConversationId: parentConversationId.trimmingCharacters(in: .whitespacesAndNewlines),
-      globalTopicKey: globalTopicKey.trimmingCharacters(in: .whitespacesAndNewlines)
+      globalTopicKey: globalTopicKey.trimmingCharacters(in: .whitespacesAndNewlines),
+      collaborationRoster: collaborationRoster
     )
-    if createdByAgent {
+    if collaborationRoster != nil {
+      guard agentConversationDatabase.upsert(session) else { return session }
+      cacheAgentConversation(session)
+    } else if createdByAgent {
       persistAgentConversation(session, promoteDraft: true)
     } else {
       _ = agentConversationDatabase.saveDraft(session)
@@ -593,6 +598,26 @@ extension GalaxySSIStore {
     if !createdByAgent {
       activeAgentConversationId = session.id
     }
+    return session
+  }
+
+  func saveAgentCollaborationRoster(_ roster: AgentCollaborationRoster, title: String,
+                                    conversationId: String?) -> AgentConversation? {
+    guard roster.isValid else { return nil }
+    let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty, title.utf8.count <= 256 else { return nil }
+    guard let conversationId else {
+      let session = createAgentSession(title: title, createdByAgent: false, parentConversationId: "",
+        globalTopicKey: "", privateMode: false, collaborationRoster: roster)
+      return agentConversationDatabase.read(session.id)
+    }
+    guard var session = agentSession(id: conversationId), session.id == conversationId,
+          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank else { return nil }
+    session.title = title
+    session.collaborationRoster = roster
+    session.updatedAt = Self.nowMillis()
+    guard agentConversationDatabase.upsert(session) else { return nil }
+    cacheAgentConversation(session)
     return session
   }
 
@@ -816,6 +841,11 @@ extension GalaxySSIStore {
     guard !ids.isEmpty else { return 0 }
     let knownConversations = ids.compactMap { agentConversationDatabase.read($0) }
     let removedConversations = agentConversationDatabase.delete(ids)
+    for session in knownConversations where session.collaborationRoster != nil &&
+      agentConversationDatabase.read(session.id) == nil {
+      AgentTeamExecutionHistoryStore.shared.removeCloudEvidence(conversationId: session.id)
+      AgentTeamExecutionHistoryStore.shared.removeResearchObjects(conversationId: session.id)
+    }
     let removedChatMessages = chatHistoryDatabase.deleteConversations(ids)
     let removedTranscripts = UserDefaultsAgentTranscriptEntryStore(defaults: defaults, secrets: secrets)
       .deleteConversations(ids)

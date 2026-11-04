@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_review_finish_item">Finish review and return</string>
+    <string name="health_review_saved_item">Saved · View record</string>
+    <string name="health_review_recorded_time">Measured: %1$s</string>
+    <string name="health_review_select_item">Select for saving: %1$s</string>
+    <string name="health_review_limit">Save or deselect some items before selecting more.</string>
+    <string name="health_review_batch_idle">Select items after reviewing them.</string>
+    <string name="health_review_batch_consent">I have checked the selected records (%1$d).</string>
+    <string name="health_review_batch_save">Save selected (%1$d), keep other drafts</string>
+    <string name="health_review_batch_saved">Saved selected records (%1$d). Other drafts were kept.</string>
+    <string name="health_review_batch_duplicate">An item already exists. No records were saved. Review the selection.</string>
+    <string name="health_review_batch_stale">An item changed. No records were saved. Review the selection.</string>
+</resources>

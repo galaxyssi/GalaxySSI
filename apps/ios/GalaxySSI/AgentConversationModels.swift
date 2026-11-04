@@ -705,6 +705,32 @@ enum AgentVoiceTranscriptPolicy {
   private static let dedupePrefix = "agent-voice-transcription:"
 }
 
+struct AgentCollaborationRoster: Codable, Equatable {
+  struct Member: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var name: String
+    var role = ""
+    var resourceId: String
+    var modelId = ""
+    var mentionOnly = false
+  }
+
+  static let maximumMembers = 1_024
+  var members: [Member] = []
+  var coordinatorId: UUID?
+  var independentReview = false
+
+  var isValid: Bool {
+    guard !members.isEmpty, members.count <= Self.maximumMembers,
+          let coordinatorId, members.contains(where: { $0.id == coordinatorId }),
+          Set(members.map(\.id)).count == members.count else { return false }
+    return members.allSatisfy {
+      !$0.name.isBlank && $0.name.utf8.count <= 256 && $0.role.utf8.count <= 1_024 &&
+        !$0.resourceId.isBlank && $0.resourceId.utf8.count <= 1_024 && $0.modelId.utf8.count <= 1_024
+    }
+  }
+}
+
 struct AgentConversation: Codable, Equatable, Identifiable {
   var id: String
   var title: String
@@ -728,6 +754,7 @@ struct AgentConversation: Codable, Equatable, Identifiable {
   var contextCompactedThroughMillis: Int64
   var contextCompactedThroughEntryId: String
   var latestDialogueAt: Int64?
+  var collaborationRoster: AgentCollaborationRoster?
 
   var dialogueActivityAt: Int64 {
     guard let latestDialogueAt else { return updatedAt }
@@ -757,6 +784,7 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     case contextCompactedThroughMillis = "context_compacted_through_millis"
     case contextCompactedThroughEntryId = "context_compacted_through_entry_id"
     case latestDialogueAt = "latest_dialogue_at"
+    case collaborationRoster = "collaboration_roster"
   }
 
   init(
@@ -781,7 +809,8 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     mergedAtMillis: Int64 = 0,
     contextCompactedThroughMillis: Int64 = 0,
     contextCompactedThroughEntryId: String = "",
-    latestDialogueAt: Int64? = 0
+    latestDialogueAt: Int64? = 0,
+    collaborationRoster: AgentCollaborationRoster? = nil
   ) {
     self.id = id
     self.title = title
@@ -805,6 +834,7 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     self.contextCompactedThroughMillis = max(contextCompactedThroughMillis, 0)
     self.contextCompactedThroughEntryId = contextCompactedThroughEntryId
     self.latestDialogueAt = latestDialogueAt.map { max(0, $0) }
+    self.collaborationRoster = collaborationRoster
   }
 
   init(from decoder: Decoder) throws {
@@ -831,7 +861,8 @@ struct AgentConversation: Codable, Equatable, Identifiable {
       mergedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .mergedAtMillis) ?? 0,
       contextCompactedThroughMillis: try container.decodeIfPresent(Int64.self, forKey: .contextCompactedThroughMillis) ?? 0,
       contextCompactedThroughEntryId: try container.decodeIfPresent(String.self, forKey: .contextCompactedThroughEntryId) ?? "",
-      latestDialogueAt: try container.decodeIfPresent(Int64.self, forKey: .latestDialogueAt)
+      latestDialogueAt: try container.decodeIfPresent(Int64.self, forKey: .latestDialogueAt),
+      collaborationRoster: try container.decodeIfPresent(AgentCollaborationRoster.self, forKey: .collaborationRoster)
     )
   }
 }

@@ -253,6 +253,138 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(selection.goal.contains("@codex"))
   }
 
+  func testCollaborationMentionUsesMemberIDAndIgnoresUntrustedEvidence() {
+    let first = AgentCollaborationRoster.Member(name: "Same", resourceId: "codex")
+    let second = AgentCollaborationRoster.Member(name: "Same", resourceId: "codex")
+    var roster = AgentCollaborationRoster(members: [first, second], coordinatorId: first.id)
+    let draft = AgentCollaborationMentionText.inserting(second, into: "Review @Sa") + "the report"
+    let evidence = AgentUntrustedEvidenceBoundary.textMarker + "\n" +
+      AgentCollaborationMentionText.inserting(first, into: "@")
+    roster.members[1].name = "Renamed"
+    let result = AgentCollaborationMentionText.parse(draft + "\n\n" + evidence, roster: roster)
+    XCTAssertEqual(result.memberIds, [second.id])
+    XCTAssertTrue(result.goal.contains("the report"))
+    XCTAssertTrue(result.displayText.contains("@Renamed"))
+    XCTAssertFalse(result.goal.contains(second.id.uuidString.lowercased()))
+    XCTAssertTrue(result.goal.contains(first.id.uuidString.lowercased()))
+  }
+
+  func testCollaborationCompilationPreservesRosterIdentityAndRejectsCapacityOverflow() throws {
+    let target = teamTarget("codex")
+    var registration = teamRegistration(target)
+    registration.maxParallelRuns = 3
+    let coordinator = AgentCollaborationRoster.Member(name: "Lead", role: "Synthesis", resourceId: target.id)
+    let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", role: "Evidence review",
+      resourceId: target.id, modelId: "review-model", mentionOnly: true)
+    let researcher = AgentCollaborationRoster.Member(name: "Researcher", resourceId: target.id)
+    let roster = AgentCollaborationRoster(members: [researcher, reviewer, coordinator],
+      coordinatorId: coordinator.id, independentReview: true)
+    let plan = teamBridgePlan(goal: "Check evidence", teamAgentAction("work", target.id))
+    let compiled = try XCTUnwrap(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
+      roster: roster, mentionedMemberIds: [reviewer.id], targets: [target], registrations: [registration]))
+    let action = try XCTUnwrap(compiled.actions.first)
+    let spec = try XCTUnwrap(AgentTeamDispatchSpecCodec.decode(action.parameters[agentTeamSpecParameter] ?? ""))
+    let reviewerId = reviewer.id.uuidString.lowercased()
+    XCTAssertEqual(spec.definition.primaryMemberId, coordinator.id.uuidString.lowercased())
+    XCTAssertEqual(spec.definition.members.map(\.memberId), [reviewerId, coordinator.id.uuidString.lowercased()])
+    XCTAssertEqual(spec.definition.members.first?.role, "Evidence review")
+    XCTAssertEqual(spec.definition.members.first?.context["_galaxyssi_member_model_id"], "review-model")
+    XCTAssertEqual(spec.definition.members.last?.dependsOnAgentIds, [reviewerId])
+    registration.maxParallelRuns = 1
+    XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
+      roster: roster, targets: [target], registrations: [registration]))
+    XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
+      roster: roster, mentionedMemberIds: [UUID()], targets: [target], registrations: [registration]))
+  }
+
+  func testGoalAssessmentPreservesContractAndRequiresMatchingHostEvidence() throws {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let original = Policy.Criterion(id: "physical-test", requirement: "Observe the physical result",
+      verification: .physical, status: .open, evidence_kind: nil, evidence: [])
+    var current = original
+    current.status = .met
+    current.evidence_kind = .observed
+    current.evidence = ["receipt-1"]
+    var assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "Result",
+      decision: .achieved, criteria: [current], work: [], blockers: [])
+    let verified = ["physical-test": Policy.VerifiedCriterion(requirement: original.requirement,
+      verification: .physical, evidence: ["receipt-1"])]
+    func evaluate(_ receipts: [String: Policy.VerifiedCriterion]) throws -> Policy.Outcome {
+      let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+      return Policy.evaluate(raw, preserving: [original], authorizedMembers: [],
+        completedWork: [], verified: receipts)
+    }
+    XCTAssertEqual(try evaluate([:]), .needsAssessment)
+    XCTAssertEqual(try evaluate(verified), .achieved)
+    assessment.criteria[0].evidence_kind = .simulation
+    XCTAssertEqual(try evaluate(verified), .needsAssessment)
+    assessment.criteria[0].verification = .computational
+    XCTAssertEqual(try evaluate(verified), .needsAssessment)
+    assessment.criteria = []
+    XCTAssertEqual(try evaluate(verified), .needsAssessment)
+  }
+
+  func testGoalAssessmentDoesNotRescheduleCompletedWork() throws {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let criterion = Policy.Criterion(id: "delivery", requirement: "Deliver evidence",
+      verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    let assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "More work",
+      decision: .continue, criteria: [criterion],
+      work: [Policy.Work(id: "check", member: "researcher", assignment: "Check evidence")], blockers: [])
+    let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+    XCTAssertEqual(Policy.evaluate(raw, preserving: [criterion], authorizedMembers: ["researcher"],
+      completedWork: []), .schedule(["check"]))
+    XCTAssertEqual(Policy.evaluate(raw, preserving: [criterion], authorizedMembers: ["researcher"],
+      completedWork: ["check"]), .needsAssessment)
+    XCTAssertEqual(Policy.evaluate(raw, preserving: [criterion], authorizedMembers: [],
+      completedWork: []), .needsAssessment)
+  }
+
+  func testDocumentaryAcceptanceRequiresIndependentReviewOfExactCurrentVersion() throws {
+    typealias Gate = AgentCollaborationDocumentaryAcceptance
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let deliveryRef = Gate.Reference(objectId: "delivery", revision: 1, sha256: String(repeating: "a", count: 64))
+    let reviewRef = Gate.Reference(objectId: "review", revision: 1, sha256: String(repeating: "b", count: 64))
+    var delivery = Gate.Revision(reference: deliveryRef, conversationId: "group", runId: "run",
+      turnId: "turn", authorId: "author", kind: "artifact", body: ["content": .string("Report")],
+      parents: [], hostObservationIds: ["observed"])
+    let reviewBody: AgentMcpJSONObject = ["acceptance_review": .object([
+      "criterion_id": .string("report"), "requirement": .string("Deliver report"),
+      "target": .object(["object_id": .string("delivery"), "revision": .int(1), "sha256": .string(deliveryRef.sha256)]),
+      "verdict": .string("supported"), "rationale": .string("Checked report against the requirement"),
+      "unresolved": .array([])
+    ])]
+    var review = Gate.Revision(reference: reviewRef, conversationId: "group", runId: "run",
+      turnId: "turn", authorId: "reviewer", kind: "decision", body: reviewBody,
+      parents: [deliveryRef], hostObservationIds: [])
+    let original = Policy.Criterion(id: "report", requirement: "Deliver report",
+      verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    var met = original
+    met.status = .met
+    met.evidence_kind = .observed
+    met.evidence = ["delivery", "observed"]
+    met.delivery = deliveryRef
+    met.review = reviewRef
+    let assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "Report delivered",
+      decision: .achieved, criteria: [met], work: [], blockers: [])
+    let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+    func check(observationAvailable: Bool = true) -> Policy.Outcome {
+      Gate.evaluate(raw, preserving: [original], conversationId: "group", runId: "run", turnId: "turn",
+        readRevision: { id, _ in id == "delivery" ? delivery : (id == "review" ? review : nil) },
+        observationIsSupporting: { $0 == "observed" && observationAvailable })
+    }
+    XCTAssertEqual(check(), .achieved)
+    XCTAssertEqual(check(observationAvailable: false), .needsAssessment)
+    review.authorId = delivery.authorId
+    XCTAssertEqual(check(), .needsAssessment)
+    review.authorId = "reviewer"
+    delivery.reference.revision = 2
+    XCTAssertEqual(check(), .needsAssessment)
+    delivery.reference = deliveryRef
+    review.turnId = "older-turn"
+    XCTAssertEqual(check(), .needsAssessment)
+  }
+
   func testRequestedRepeatedAgentCompilesToInstanceScopedTeam() throws {
     let target = teamTarget("codex")
     var registration = teamRegistration(target)

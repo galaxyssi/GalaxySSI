@@ -4,6 +4,90 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDesktopToolEvidenceRejectsForeignNonceGenerationAndInnerScope() throws {
+    let source = UUID().uuidString.lowercased()
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "member",
+      conversationId: "group", turnId: "turn", sourceMessageId: source, contactId: "review", deliveryMode: .observe)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "group", taskId: source, turnId: "turn")
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamObserver(owner: owner,
+      desktopId: "desktop", agentId: "codex", identity: identity))
+    let request = try XCTUnwrap(AgentDesktopToolEvidenceWire.Request(binding: binding, generation: 2, nonce: "nonce"))
+    func digest(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
+    var original = binding.fields.mapValues(AgentMcpJSONValue.string)
+    original["contract"] = .string(AgentDesktopToolEvidenceWire.contract)
+    original["execution_generation"] = .int(2)
+    original["trust"] = .string("execution_observed_not_claim_verified")
+    original["coverage"] = .string("provider_payload_as_received")
+    original["observation"] = .object(["provider": .string("codex"), "thread_id": .string("provider-thread"),
+      "turn_id": .string("provider-turn"), "item": .object(["type": .string("webSearch")])])
+    func page(for body: Data) -> AgentMcpJSONObject {
+      binding.fields.mapValues(AgentMcpJSONValue.string).merging([
+        "type": .string("agent_task_evidence"), "mode": .string("page"), "status": .string("ready"),
+        "request_id": .string("nonce"), "contract": .string(AgentDesktopToolEvidenceWire.contract),
+        "execution_generation": .int(2), "evidence_id": .string(String(repeating: "a", count: 64)),
+        "sha256": .string(digest(body)), "page_sha256": .string(digest(body)),
+        "sequence": .int(1), "page_count": .int(1), "page_index": .int(0),
+        "total_bytes": .int(Int64(body.count)), "data_b64": .string(body.base64EncodedString()),
+        "item_type": .string("webSearch"), "trust": .string("execution_observed_not_claim_verified"),
+        "coverage": .string("provider_payload_as_received")
+      ]) { _, new in new }
+    }
+    let body = Data(AgentMcpJSONCodec.stringify(original).utf8)
+    var response = page(for: body)
+    let descriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(response))
+    XCTAssertEqual(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0), body)
+    XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "other", descriptor: descriptor, index: 0))
+    XCTAssertEqual(request.verifyOriginal([body], descriptor: descriptor), body)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let suite = "desktop-tool-archive-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      fileURL: directory.appendingPathComponent("history.sqlite"))
+    XCTAssertThrowsError(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]))
+    let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
+      conversationId: "group", taskId: "turn", primaryAgentId: "primary", goal: "Research",
+      visibilityMode: .background, state: .running, members: [
+        AgentTeamMemberSnapshot(agentId: "review", deliveryMode: .observe, status: .pending,
+          instanceId: "member", sourceMessageId: source)
+      ], createdAtMillis: 1, updatedAtMillis: 1)
+    XCTAssertTrue(history.upsert(snapshot))
+    XCTAssertEqual(try history.consumeOwnedReply(source: source, conversation: "group", turn: "turn",
+      task: source, contact: "review", content: "Completed", richOutputJson: "", terminal: true,
+      success: true, now: 2, observation: AgentTeamReplyObservation(generation: 2, sequence: 1)), .observerCommitted)
+    let receipt = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body])
+    XCTAssertEqual(receipt.sha256, descriptor.sha256)
+    XCTAssertEqual(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]), receipt)
+    var index = response
+    index["mode"] = .string("index")
+    index["entries"] = .array([.object(response)])
+    index["next_sequence"] = .int(1)
+    index["has_more"] = .bool(false)
+    index["archive_final"] = .bool(true)
+    index["provider_history_complete"] = .bool(false)
+    index["coverage"] = .string("observed_completed_items_only")
+    index["projection"] = .string("external_execution_observations")
+    index["inline_pages"] = .array([.object(response)])
+    let imported = try XCTUnwrap(request.verifyIndex(index, authenticatedDesktopId: "desktop",
+      after: 0, inlineBytes: body.count))
+    XCTAssertTrue(imported.archiveFinal)
+    XCTAssertEqual(imported.inlineOriginals[descriptor.evidenceId], body)
+    XCTAssertNil(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 1, inlineBytes: body.count))
+    XCTAssertNil(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 0, inlineBytes: body.count - 1))
+    index["entries"] = .array([.object(response), .object(response)])
+    XCTAssertNil(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 0, inlineBytes: body.count))
+    response["execution_generation"] = .int(1)
+    XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0))
+    response["execution_generation"] = .int(2)
+    response["request_id"] = .string("different")
+    XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0))
+    original["conversation_id"] = .string("foreign")
+    let foreign = Data(AgentMcpJSONCodec.stringify(original).utf8)
+    let foreignDescriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(page(for: foreign)))
+    XCTAssertNil(request.verifyOriginal([foreign], descriptor: foreignDescriptor))
+  }
+
   @MainActor
   func testRecoveryControlSummariesAreExcludedBeforeProgressTruncation() {
     let markers = ["[\"GALAXYSSI_RECOVERY_ACTION_V1\"]",
@@ -305,6 +389,8 @@ extension GalaxySSIStoreTests {
         for y in [0.0, 0.5, 1.0] {
           let center = GalaxySSIScreenAssistantBubble.center(x: x, y: y, in: size)
           let menu = GalaxySSIScreenAssistantBubble.menuRect(near: center, in: size, rows: 3)
+          XCTAssertLessThanOrEqual(menu.width, 190)
+          XCTAssertLessThanOrEqual(menu.width, size.width - 32)
           XCTAssertGreaterThanOrEqual(menu.minX, 0)
           XCTAssertGreaterThanOrEqual(menu.minY, 0)
           XCTAssertLessThanOrEqual(menu.maxX, size.width)

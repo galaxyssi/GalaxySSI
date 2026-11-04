@@ -31,6 +31,8 @@ class HealthCenterActivity : Activity() {
     }
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
+    private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
+    private var overviewHasRecords = false
     private var overviewScroll = 0
     private val reloadOverview = Runnable { if (active && route == "overview") render() }
     private val overviewChanges = object : android.database.ContentObserver(main) {
@@ -59,6 +61,7 @@ class HealthCenterActivity : Activity() {
     private val backStack = ArrayDeque<Triple<String, HealthMetric, String>>()
     internal var editor: HealthManualEditor? = null
     internal var saving = false
+    internal val stagingOcrReview get() = route == "review" && intent.getBooleanExtra("health_stage_ocr_review", false)
     private val sensitiveDialogs = mutableSetOf<android.app.Dialog>()
     private var nextPage: HealthPageCursor? = null
     private var pageAfter: HealthPageCursor? = null
@@ -76,6 +79,8 @@ class HealthCenterActivity : Activity() {
             route = "review"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_functions", false)) {
             route = "functions"
+        } else if (savedInstanceState == null && intent.getBooleanExtra("health_import_center", false)) {
+            route = "import"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_manual", false)) {
             route = "manual"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_metric_records", false)) {
@@ -166,11 +171,15 @@ class HealthCenterActivity : Activity() {
     }
     internal fun saveDraft() {
         if (saving) return
-        editor?.snapshot()?.let { draft -> worker.execute {
+        val current = editor ?: return
+        if (stagingOcrReview && !current.hasChanges) return
+        val snapshot = current.snapshot()
+        val draft = if (stagingOcrReview) snapshot.copy(evidence = snapshot.evidence?.copy(confirmed = false)) else snapshot
+        worker.execute {
             if (runCatching { records.saveDraft(draft) }.isFailure) main.post {
                 if (active && !isDestroyed) Toast.makeText(this, R.string.health_draft_error, Toast.LENGTH_LONG).show()
             }
-        } }
+        }
     }
     internal fun draftChanged() {
         main.removeCallbacks(savePendingDraft)
@@ -199,8 +208,7 @@ class HealthCenterActivity : Activity() {
     private fun render() {
         retainOverviewScroll()
         generation++; main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview); editor = null; body.removeAllViews()
-        val reminderVisibility = if (route == "overview") View.VISIBLE else View.GONE
-        reminderIcon.visibility = reminderVisibility; reminderSpacer.visibility = reminderVisibility
+        updateReminderVisibility()
         title.text = getString(when (route) {
             "manual" -> R.string.health_manual
             "review" -> R.string.health_review_title
@@ -209,6 +217,7 @@ class HealthCenterActivity : Activity() {
             "detail" -> selected.titleResource()
             "history" -> R.string.health_revision_history
             "functions" -> R.string.health_functions
+            "import" -> R.string.health_first_import_title
             else -> R.string.health_title
         })
         when (route) {
@@ -217,6 +226,7 @@ class HealthCenterActivity : Activity() {
             "detail" -> renderDetail()
             "history" -> renderHistory()
             "functions" -> renderFunctions()
+            "import" -> firstUse.showImport(scrolling())
             else -> renderOverview()
         }
     }
@@ -236,12 +246,19 @@ class HealthCenterActivity : Activity() {
         val now = System.currentTimeMillis()
         val zone = java.time.ZoneId.systemDefault()
         query({ store -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone) }) { snapshot ->
-            overview.show(content, snapshot)
+            overviewHasRecords = snapshot.hasRecords
+            updateReminderVisibility()
+            overview.show(content, snapshot, firstUse)
             val position = overviewScroll
             if (position > 0) scroll.post { if (active && scroll.parent === body) scroll.scrollTo(0, position) }
             val tomorrow = HealthOverviewPolicy.localDay(now, zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
             main.postDelayed(reloadOverview, (tomorrow - System.currentTimeMillis()).coerceAtLeast(500))
         }
+    }
+    private fun updateReminderVisibility() {
+        val visibility = if (route == "overview" && overviewHasRecords) View.VISIBLE else View.GONE
+        reminderIcon.visibility = visibility
+        reminderSpacer.visibility = visibility
     }
     private fun renderFunctions() {
         scrolling().apply {
@@ -389,6 +406,21 @@ class HealthCenterActivity : Activity() {
         saving = true
         editor?.setSaving(true)
         main.removeCallbacks(savePendingDraft)
+        if (stagingOcrReview) {
+            worker.execute {
+                val result = runCatching { records.saveDraft(draft) }
+                main.post {
+                    saving = false
+                    if (isDestroyed) return@post
+                    if (result.isSuccess) { editor = null; finish() }
+                    else if (active) {
+                        editor?.setSaving(false)
+                        Toast.makeText(this, R.string.health_draft_error, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            return
+        }
         worker.execute {
             val result = runCatching { records.save(draft) }
             main.post {

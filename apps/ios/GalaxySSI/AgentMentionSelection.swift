@@ -5,6 +5,61 @@ struct AgentMentionSelection: Equatable {
   var requestedMembers: [AgentRequestedMember]
 }
 
+struct AgentCollaborationMentionSelection {
+  var goal: String
+  var displayText: String
+  var memberIds: Set<UUID>
+}
+
+enum AgentCollaborationMentionText {
+  private static let token = try! NSRegularExpression(
+    pattern: #"@\[([^\]\r\n]{1,256})\|([a-fA-F0-9-]{36})\]"#)
+
+  static func parse(_ text: String, roster: AgentCollaborationRoster) -> AgentCollaborationMentionSelection {
+    let boundary = text.range(of: AgentUntrustedEvidenceBoundary.textMarker)
+    let instructions = boundary.map { String(text[..<$0.lowerBound]) } ?? text
+    let evidence = boundary.map { String(text[$0.lowerBound...]) } ?? ""
+    let matches = token.matches(in: instructions, range: NSRange(instructions.startIndex..., in: instructions))
+    var goal = instructions
+    var display = instructions
+    var ids = Set<UUID>()
+    let names = Dictionary(roster.members.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    for match in matches.reversed() {
+      guard let idRange = Range(match.range(at: 2), in: instructions),
+            let id = UUID(uuidString: String(instructions[idRange])),
+            let goalRange = Range(match.range, in: goal),
+            let displayRange = Range(match.range, in: display),
+            let labelRange = Range(match.range(at: 1), in: instructions) else { continue }
+      ids.insert(id)
+      goal.replaceSubrange(goalRange, with: "")
+      display.replaceSubrange(displayRange, with: "@" + (names[id] ?? String(instructions[labelRange])))
+    }
+    return AgentCollaborationMentionSelection(
+      goal: (goal + evidence).trimmingCharacters(in: .whitespacesAndNewlines),
+      displayText: (display + evidence).trimmingCharacters(in: .whitespacesAndNewlines), memberIds: ids)
+  }
+
+  static func suggestions(for text: String, roster: AgentCollaborationRoster) -> [AgentCollaborationRoster.Member] {
+    guard !text.contains(AgentUntrustedEvidenceBoundary.textMarker),
+          let fragment = AgentMentionText.activeFragment(in: text),
+          !fragment.query.contains("[") else { return [] }
+    let selected = parse(text, roster: roster).memberIds
+    return Array(roster.members.filter {
+      !selected.contains($0.id) &&
+        (fragment.query.isEmpty || $0.name.localizedCaseInsensitiveContains(fragment.query))
+    }.prefix(8))
+  }
+
+  static func inserting(_ member: AgentCollaborationRoster.Member, into text: String) -> String {
+    let label = member.name.replacingOccurrences(of: #"[\]\r\n|@]"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Member")
+    let token = "@[\(label)|\(member.id.uuidString.lowercased())] "
+    guard let fragment = AgentMentionText.activeFragment(in: text),
+          let range = Range(fragment.range, in: text) else { return text + token }
+    return text.replacingCharacters(in: range, with: token)
+  }
+}
+
 enum AgentMentionText {
   static func parse(
     _ text: String,
@@ -128,7 +183,7 @@ enum AgentMentionText {
     return text.replacingCharacters(in: range, with: token)
   }
 
-  private static func activeFragment(in text: String) -> (range: NSRange, query: String)? {
+  fileprivate static func activeFragment(in text: String) -> (range: NSRange, query: String)? {
     let source = text as NSString
     guard source.length > 0 else { return nil }
     let at = source.range(of: "@", options: .backwards)

@@ -1,5 +1,128 @@
 import SwiftUI
 
+private struct AgentCollaborationRosterEditor: View {
+  private struct Resource: Identifiable {
+    var contactId: String
+    var modelId: String
+    var label: String
+    var id: String { contactId + "\n" + modelId }
+  }
+
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: GalaxySSIStore
+  @State private var title: String
+  @State private var roster: AgentCollaborationRoster
+  @State private var saveFailed = false
+  let session: AgentConversation?
+  let t: (String, String) -> String
+
+  init(session: AgentConversation?, t: @escaping (String, String) -> String) {
+    self.session = session
+    self.t = t
+    _title = State(initialValue: session?.title ?? "")
+    _roster = State(initialValue: session?.collaborationRoster ?? AgentCollaborationRoster())
+  }
+
+  private var resources: [Resource] {
+    let agents = store.visibleContacts.filter {
+      ($0.type == "agent" || $0.id == "hermes") && $0.deliveryMode != .cloudAPI
+    }.map { Resource(contactId: $0.id, modelId: "", label: $0.displayName) }
+    let cloud = store.cloudModelContacts.flatMap { contact in
+      contact.cloudModels.map { model in
+        Resource(contactId: contact.id, modelId: model.id,
+          label: contact.displayName + " / " + model.displayName.ifBlank(model.modelId))
+      }
+    }
+    let local = LocalModelRuntimeSettings.activeProfiles().first.map {
+      Resource(contactId: "local-llm", modelId: "", label: $0.displayName.ifBlank($0.id))
+    }
+    return agents + cloud + (local.map { [$0] } ?? [])
+  }
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section {
+          TextField(t("galaxyssi.collaboration.name", "Group Name"), text: $title)
+          Toggle(t("galaxyssi.collaboration.review", "Independent Review"), isOn: $roster.independentReview)
+        }
+        ForEach($roster.members) { $member in
+          Section {
+            TextField(t("galaxyssi.collaboration.member_name", "Member Name"), text: $member.name)
+            TextField(t("galaxyssi.collaboration.role", "Role"), text: $member.role)
+            let selected = member.resourceId + "\n" + member.modelId
+            Picker(t("galaxyssi.collaboration.resource", "Resource"), selection: Binding(
+              get: { member.resourceId + "\n" + member.modelId },
+              set: { key in
+                guard let resource = resources.first(where: { $0.id == key }) else { return }
+                member.resourceId = resource.contactId
+                member.modelId = resource.modelId
+              }
+            )) {
+              if !resources.contains(where: { $0.id == selected }) {
+                Text(t("galaxyssi.collaboration.unavailable", "Unavailable Resource")).tag(selected)
+              }
+              ForEach(resources) { resource in Text(resource.label).tag(resource.id) }
+            }
+            Toggle(t("galaxyssi.collaboration.mention_only", "Mention Only"), isOn: $member.mentionOnly)
+            Button {
+              roster.coordinatorId = member.id
+            } label: {
+              Label(t("galaxyssi.collaboration.coordinator", "Coordinator"),
+                systemImage: roster.coordinatorId == member.id ? "checkmark.circle.fill" : "circle")
+            }
+            Button(role: .destructive) {
+              let id = member.id
+              roster.members.removeAll { $0.id == id }
+              if roster.coordinatorId == id { roster.coordinatorId = roster.members.first?.id }
+            } label: {
+              Label(t("galaxyssi.collaboration.remove", "Remove Member"), systemImage: "minus.circle")
+            }
+          }
+        }
+        Button {
+          guard let resource = resources.first, roster.members.count < AgentCollaborationRoster.maximumMembers else { return }
+          let member = AgentCollaborationRoster.Member(
+            name: String(format: t("galaxyssi.collaboration.default_member", "Member %d"), roster.members.count + 1),
+            resourceId: resource.contactId, modelId: resource.modelId)
+          roster.members.append(member)
+          if roster.coordinatorId == nil { roster.coordinatorId = member.id }
+        } label: {
+          Label(t("galaxyssi.collaboration.add", "Add Member"), systemImage: "person.badge.plus")
+        }
+        .disabled(resources.isEmpty || roster.members.count >= AgentCollaborationRoster.maximumMembers)
+        if resources.isEmpty {
+          Text(t("galaxyssi.collaboration.no_resources", "No Agent or cloud model is available."))
+            .foregroundColor(.secondary)
+        }
+        if saveFailed {
+          Text(t("galaxyssi.collaboration.save_failed", "Could not save the collaboration group."))
+            .foregroundColor(.red)
+        }
+      }
+      .navigationTitle(session == nil ? t("galaxyssi.collaboration.new", "New Collaboration Group")
+        : t("galaxyssi.collaboration.settings", "Collaboration Members"))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("galaxyssi.common.cancel", "Cancel")) { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button(t("galaxyssi.common.save", "Save")) {
+            if store.saveAgentCollaborationRoster(roster, title: title, conversationId: session?.id) != nil {
+              dismiss()
+            } else {
+              saveFailed = true
+            }
+          }
+          .disabled(title.isBlank || title.utf8.count > 256 || !roster.isValid)
+        }
+      }
+    }
+    .navigationViewStyle(.stack)
+  }
+}
+
 struct AgentSessionMetrics: Equatable {
   var turnCount: Int
   var messageCount: Int
@@ -51,6 +174,8 @@ struct GalaxySSIAgentSessionsView: View {
   @State private var sessionsContentLoading = true
   @State private var navigationContentGate = GalaxySSINavigationContentGate()
   @State private var preparedContent = AgentSessionsPreparedContent()
+  @State private var collaborationEditorPresented = false
+  @State private var collaborationSession: AgentConversation?
 
   private var visibleSessions: [AgentConversation] {
     let sessions = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -65,8 +190,12 @@ struct GalaxySSIAgentSessionsView: View {
         title: t("galaxyssi.agent_sessions.title", "Sessions"),
         leading: { GalaxySSIBackButton() },
         trailing: {
-          Button {
-            createSession()
+          Menu {
+            Button(t("galaxyssi.agent_session.new", "New session"), action: createSession)
+            Button(t("galaxyssi.collaboration.new", "New Collaboration Group")) {
+              collaborationSession = nil
+              collaborationEditorPresented = true
+            }
           } label: {
             Image(systemName: "plus")
               .font(.system(size: 21, weight: .semibold))
@@ -185,6 +314,9 @@ struct GalaxySSIAgentSessionsView: View {
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .sheet(isPresented: $collaborationEditorPresented) {
+      AgentCollaborationRosterEditor(session: collaborationSession, t: t)
+    }
     .sheet(item: $editDraft) { draft in
       AgentSessionTextEditSheet(
         title: draft.sheetTitle,
@@ -498,6 +630,12 @@ struct GalaxySSIAgentSessionsView: View {
       }
       Button(t("galaxyssi.agent_session.details", "Session details")) {
         detailsSession = session
+      }
+      if session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank {
+        Button(t("galaxyssi.collaboration.settings", "Collaboration Members")) {
+          collaborationSession = session
+          collaborationEditorPresented = true
+        }
       }
       Button(t("galaxyssi.agent_session.delete_more", "Delete more")) {
         beginMultiDelete()

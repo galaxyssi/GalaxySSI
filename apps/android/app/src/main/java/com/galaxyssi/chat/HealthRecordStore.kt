@@ -293,6 +293,51 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return try { saveWithinTransaction(draft).also { database.setTransactionSuccessful() } }
         finally { database.endTransaction(); publishCommittedChanges() }
     }
+    @Synchronized fun prepareOcrReviewPage(suggestions: List<HealthDraft>): List<HealthOcrReviewRow> {
+        require(suggestions.size <= HEALTH_OCR_REVIEW_PAGE_SIZE)
+        if (suggestions.isEmpty()) return emptyList()
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        return try {
+            suggestions.map { suggestion ->
+                require(suggestion.evidence?.kind == "ocr" && suggestion.recordId.isBlank() && suggestion.revision == 0)
+                val saved = recordForEvidence(suggestion)
+                if (saved != null) HealthOcrReviewRow(saved.draft, "", saved)
+                else {
+                    val key = draftKey(suggestion)
+                    reviewDraft(key) ?: run {
+                        saveDraft(suggestion)
+                        requireNotNull(reviewDraft(key))
+                    }
+                }
+            }.also { db.setTransactionSuccessful() }
+        } finally { db.endTransaction() }
+    }
+
+    @Synchronized fun saveOcrReviewBatch(jobId: String, originalId: String, items: List<HealthOcrReviewSelection>): HealthOcrBatchResult {
+        require(items.isNotEmpty() && items.size <= HEALTH_OCR_REVIEW_SELECTION_LIMIT && items.distinctBy { it.key }.size == items.size)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val validated = items.map { item ->
+                val draft = reviewDraft(item.key)?.takeIf { it.selection == item }?.draft
+                    ?: return HealthOcrBatchResult.Stale(item.key)
+                val evidence = draft.evidence
+                if (evidence?.kind != "ocr" || evidence.jobId != jobId || evidence.originalId != originalId ||
+                    draft.recordId.isNotBlank() || draft.revision != 0) return HealthOcrBatchResult.Stale(item.key)
+                draft
+            }
+            validated.forEachIndexed { index, draft ->
+                when (saveWithinTransaction(draft)) {
+                    is HealthSaveResult.Duplicate -> return HealthOcrBatchResult.Duplicate(items[index].key)
+                    HealthSaveResult.Conflict -> return HealthOcrBatchResult.Stale(items[index].key)
+                    is HealthSaveResult.Saved -> Unit
+                }
+            }
+            db.setTransactionSuccessful()
+            return HealthOcrBatchResult.Saved(items.size)
+        } finally { db.endTransaction(); publishCommittedChanges() }
+    }
     @Synchronized fun importHealthConnect(rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): Int {
         require(rows.size <= HealthConnectImport.MAX_ROWS)
         val db = helper.writableDatabase
@@ -465,11 +510,19 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         finally { encrypted.fill(0) }
     }
     fun draft(key: String): HealthDraft? = helper.readableDatabase.rawQuery("SELECT payload FROM drafts WHERE draft_key=?", arrayOf(key)).use {
-        if (!it.moveToFirst()) null else {
-            val bytes = AgentStorageCipher.decryptBinary(it.getBlob(0), aad(key, 1))
-            try { HealthDraft.from(JSONObject(String(bytes, Charsets.UTF_8))) } finally { bytes.fill(0) }
-        }
+        if (it.moveToFirst()) decodeDraft(key, it.getBlob(0)) else null
     }
+    private fun decodeDraft(key: String, payload: ByteArray): HealthDraft {
+        val bytes = AgentStorageCipher.decryptBinary(payload, aad(key, 1))
+        return try { HealthDraft.from(JSONObject(String(bytes, Charsets.UTF_8))) } finally { bytes.fill(0); payload.fill(0) }
+    }
+    private fun reviewDraft(key: String): HealthOcrReviewRow? =
+        helper.readableDatabase.rawQuery("SELECT payload FROM drafts WHERE draft_key=?", arrayOf(key)).use {
+            if (!it.moveToFirst()) return@use null
+            val payload = it.getBlob(0)
+            val version = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(payload))
+            HealthOcrReviewRow(decodeDraft(key, payload), version)
+        }
     fun clearDraft(key: String) { helper.writableDatabase.delete("drafts", "draft_key=?", arrayOf(key)) }
     override fun close() = helper.close()
 
