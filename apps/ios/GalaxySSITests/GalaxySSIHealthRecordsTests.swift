@@ -4,6 +4,32 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  @MainActor
+  func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets,
+                                         isolatedFile: root.appendingPathComponent("measurements"))
+    let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
+    let oldPlan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    try records.write(.init(metric: .weight, value: 65, notes: "private backup fixture marker"))
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.prepare(oldPlan, records: records, originals: originals))
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try originals.store(pdf, name: "fixture.pdf")
+    let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    let (payload, expected) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
+    let sealed = try GalaxySSIHealthPortableBackup.seal(payload, password: "fixture-password")
+    XCTAssertNil(sealed.range(of: Data("private backup fixture marker".utf8)))
+    XCTAssertEqual(try GalaxySSIHealthPortableBackup.verify(sealed, password: "fixture-password"), expected)
+    XCTAssertEqual(expected.readings, 1)
+    XCTAssertEqual(expected.originals, 1)
+    XCTAssertEqual(expected.missing, 0)
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.verify(sealed + Data([1]), password: "fixture-password"))
+    XCTAssertEqual(try records.load().current.count, 1)
+  }
+
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
     var reading = GalaxySSIHealthReading(metric: .bloodPressure, value: 120, diastolic: 80, pulse: 65)
     reading.conditions = " =2+2"

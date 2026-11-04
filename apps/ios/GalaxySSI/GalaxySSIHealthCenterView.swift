@@ -137,6 +137,12 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("assistant.title", "Health Assistant"), systemImage: "chart.bar.xaxis")
       }
       NavigationLink {
+        GalaxySSIHealthBackupView(records: records, originals:
+          GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
+      } label: {
+        Label(t("backup.title", "Health Backup"), systemImage: "externaldrive")
+      }
+      NavigationLink {
         GalaxySSIHealthTrendView(records: records)
       } label: {
         Label(t("trend.title", "Measurement Trends"), systemImage: "chart.xyaxis.line")
