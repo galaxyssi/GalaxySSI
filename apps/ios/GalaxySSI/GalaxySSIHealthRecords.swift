@@ -98,6 +98,17 @@ struct GalaxySSIHealthRecords {
     case invalid, stale, duplicate, unavailable, permission
   }
 
+  enum PrivacyScope: String, Codable {
+    case overview, weeklyReport
+  }
+
+  struct PrivacyEvent: Codable, Identifiable {
+    var id = UUID()
+    var at: Date
+    var scope: PrivacyScope
+    var enabled: Bool
+  }
+
   struct Archive: Codable {
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
@@ -105,6 +116,7 @@ struct GalaxySSIHealthRecords {
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
+    var privacyEvents: [PrivacyEvent]?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -157,9 +169,7 @@ struct GalaxySSIHealthRecords {
   }
 
   func setWeeklyReportAllowed(_ enabled: Bool) throws {
-    var archive = try load()
-    archive.weeklyReportAllowed = enabled
-    try persist(archive)
+    try setPrivacy(.weeklyReport, enabled: enabled)
   }
 
   func prepareWeeklyExport(_ preview: GalaxySSIWeeklyHealthReport, includeRows: Bool) throws {
@@ -176,8 +186,26 @@ struct GalaxySSIHealthRecords {
   }
 
   func setOverviewPermission(_ enabled: Bool) throws {
+    try setPrivacy(.overview, enabled: enabled)
+  }
+
+  func setPrivacy(_ scope: PrivacyScope, enabled: Bool) throws {
     var archive = try load()
-    archive.derivesOverview = enabled
+    let previous: Bool?
+    switch scope {
+    case .overview:
+      previous = archive.derivesOverview
+      archive.derivesOverview = enabled
+    case .weeklyReport:
+      previous = archive.weeklyReportAllowed
+      archive.weeklyReportAllowed = enabled
+    }
+    guard previous != enabled else { return }
+    if (previous ?? false) != enabled {
+      var history = archive.privacyEvents ?? []
+      history.append(.init(at: Date(), scope: scope, enabled: enabled))
+      archive.privacyEvents = Array(history.suffix(100))
+    }
     try persist(archive)
   }
 

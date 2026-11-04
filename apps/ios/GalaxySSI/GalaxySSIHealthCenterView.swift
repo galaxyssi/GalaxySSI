@@ -15,6 +15,8 @@ struct GalaxySSIHealthCenterView: View {
   @State private var alert: Notice?
   @State private var limit = 30
   @State private var overviewPermissionFailed = false
+  @State private var privacySaveFailed = false
+  @State private var privacyLimit = 20
 
   private enum Notice: String, Identifiable {
     case unavailable, invalid, stale, duplicate, delete, discardDraft
@@ -90,6 +92,11 @@ struct GalaxySSIHealthCenterView: View {
       } label: {
         Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar")
       }
+      NavigationLink {
+        privacyOverview
+      } label: {
+        Label(t("privacy.title", "Health Privacy"), systemImage: "lock.shield")
+      }
     }
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)
@@ -100,6 +107,8 @@ struct GalaxySSIHealthCenterView: View {
         alert = nil
         archive = nil
         overviewPermissionFailed = false
+        privacySaveFailed = false
+        privacyLimit = 20
       }
     }
     .sheet(item: $editor) { _ in
@@ -108,6 +117,66 @@ struct GalaxySSIHealthCenterView: View {
         .interactiveDismissDisabled()
         .alert(item: $alert, content: editorAlert)
     }
+  }
+
+  private var privacyOverview: some View {
+    List {
+      if scenePhase == .active, let archive {
+        Section(t("privacy.local", "Local analysis")) {
+          Toggle(t("derive_overview", "Show local measurement summary"), isOn: Binding(
+            get: { self.archive?.derivesOverview == true }, set: { changePrivacy(.overview, enabled: $0) }))
+          Toggle(t("weekly.permission", "Allow local weekly reports"), isOn: Binding(
+            get: { self.archive?.weeklyReportAllowed == true }, set: { changePrivacy(.weeklyReport, enabled: $0) }))
+          if privacySaveFailed {
+            Text(t("privacy.failed", "The permission change was not saved.")).foregroundColor(.secondary)
+          }
+        }
+        Section(t("privacy.history", "Permission history")) {
+          let events = archive.privacyEvents ?? []
+          if events.isEmpty { Text(t("privacy.empty", "No permission changes")).foregroundColor(.secondary) }
+          ForEach(events.reversed().prefix(privacyLimit)) { event in
+            VStack(alignment: .leading, spacing: 4) {
+              Text(event.scope == .overview ? t("overview", "Measurement overview") : t("weekly.title", "Weekly Health Report"))
+              Text(event.enabled ? t("privacy.allowed", "Allowed") : t("privacy.revoked", "Revoked"))
+                .foregroundColor(.secondary)
+              Text(event.at, style: .date).foregroundColor(.secondary)
+              Text(event.at, style: .time).foregroundColor(.secondary)
+            }
+          }
+          if events.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+        }
+        Section(t("privacy.export_history", "PDF export requests")) {
+          let requests = Array((archive.weeklyExportRequests ?? []).reversed())
+          if requests.isEmpty { Text(t("privacy.no_exports", "No PDF export requests")).foregroundColor(.secondary) }
+          ForEach(Array(requests.prefix(privacyLimit).enumerated()), id: \.offset) { entry in
+            let request = entry.element
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("privacy.export_prepared", "Prepared for export"))
+              Text(request.includeRows ? t("privacy.export_values", "Includes measurement values")
+                : t("privacy.export_counts", "Counts only")).foregroundColor(.secondary)
+              Text(request.at, style: .date).foregroundColor(.secondary)
+              Text(request.at, style: .time).foregroundColor(.secondary)
+            }
+          }
+          if requests.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+        }
+      } else if scenePhase == .active {
+        Text(t("unavailable", "Health records could not be accessed."))
+        Button(t("retry", "Reload records"), action: reload)
+      }
+    }
+    .navigationTitle(t("privacy.title", "Health Privacy"))
+    .navigationBarTitleDisplayMode(.inline)
+    .onAppear(perform: reload)
+  }
+
+  private func changePrivacy(_ scope: GalaxySSIHealthRecords.PrivacyScope, enabled: Bool) {
+    guard scenePhase == .active else { return }
+    do {
+      try records.setPrivacy(scope, enabled: enabled)
+      privacySaveFailed = false
+      reload()
+    } catch { privacySaveFailed = true }
   }
 
   private var bloodPressureRecords: some View {
@@ -362,6 +431,7 @@ struct GalaxySSIHealthCenterView: View {
   }
 
   private func reload() {
+    guard scenePhase == .active else { return }
     do { archive = try records.load() }
     catch { archive = nil }
   }
