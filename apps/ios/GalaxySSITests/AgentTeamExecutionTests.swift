@@ -1035,9 +1035,17 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(history.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
       turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
       to: .dispatching, now: 20))
+    let observation: AgentMcpJSONObject = ["observed_at_unix_ms": .int(21), "admissions_reserved": .int(1)]
+    var foreign = scope
+    foreign.sourceId = "foreign"
+    XCTAssertThrowsError(try history.recordDispatchResourceObservation(observation, scope: foreign))
+    try history.recordDispatchResourceObservation(observation, scope: scope)
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .dispatching)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[index].dispatchResourceObservation, observation)
+    XCTAssertNoThrow(try reopened.recordDispatchResourceObservation(observation, scope: scope))
+    XCTAssertThrowsError(try reopened.recordDispatchResourceObservation(["observed_at_unix_ms": .int(22)], scope: scope))
     XCTAssertFalse(reopened.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
       turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
       to: .dispatching, now: 30))
