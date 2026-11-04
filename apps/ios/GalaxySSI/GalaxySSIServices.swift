@@ -12,6 +12,7 @@ final class MessageCoordinator: ObservableObject {
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var pendingPeerSendContactIds: Set<String> = []
+  private var pendingCollaborationConversations: Set<String> = []
   @Published private(set) var lastRevokedContactIds: Set<String> = []
   @Published private(set) var pairingRevocationRevision = 0
   @Published private(set) var transportConnected = false
@@ -2967,7 +2968,8 @@ final class MessageCoordinator: ObservableObject {
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
     )
-    let mentionSelection = contact.id == "hermes"
+    let groupSession = contact.id == "hermes" ? store.agentSession(id: store.activeAgentConversationId) : nil
+    let mentionSelection = contact.id == "hermes" && groupSession?.collaborationRoster == nil
       ? AgentMentionText.parse(trimmed, targets: callableTargets)
       : AgentMentionSelection(goal: trimmed, requestedMembers: [])
     let requestedMembers = !mentionSelection.requestedMembers.isEmpty
@@ -3031,6 +3033,43 @@ final class MessageCoordinator: ObservableObject {
       request: originalRequestText,
       configuredMode: store.agentSafetySettings.taskExecutionMode
     ).mode
+    let collaborationPlan: AgentPlan?
+    if let session = groupSession,
+       let roster = session.collaborationRoster {
+      guard !session.privateMode, !session.trackingPaused, !readOnlyAnalysis, taskExecutionMode == .autoComplete,
+            let first = roster.members.first(where: { $0.id == roster.coordinatorId }),
+            let plan = requestedAgentPlan(goal: requestText,
+              requestedMembers: [AgentRequestedMember(agentId: first.resourceId, displayName: first.name)],
+              targets: callableTargets, roster: roster),
+            let spec = plan.actions.first.flatMap({
+              AgentTeamDispatchSpecCodec.decode($0.parameters[agentTeamSpecParameter] ?? "")
+            }), spec.definition.members.allSatisfy({ member in
+              let modelId = member.context["_galaxyssi_member_model_id"] ?? ""
+              guard !modelId.isEmpty else { return true }
+              guard let target = store.contact(id: member.agentId),
+                    let model = target.cloudModels.first(where: { $0.id == modelId }) else { return false }
+              return !(store.apiKey(for: model) ?? "").isEmpty
+            }) else {
+        lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_unavailable",
+          fallback: "The group cannot run with its current members or session settings. Your draft has not been sent.",
+          language: store.languagePolicy.interfaceLanguage)
+        return false
+      }
+      guard pendingCollaborationConversations.insert(session.id).inserted else {
+        lastError = GalaxySSILocalization.string("galaxyssi.collaboration.execution_busy",
+          fallback: "This collaboration group is still dispatching its previous request.",
+          language: store.languagePolicy.interfaceLanguage)
+        return false
+      }
+      collaborationPlan = plan
+    } else {
+      collaborationPlan = nil
+    }
+    defer {
+      if collaborationPlan != nil, let id = groupSession?.id {
+        pendingCollaborationConversations.remove(id)
+      }
+    }
     let richOutputJson = outgoingAttachmentRichOutput(
       sendAttachments,
       source: isPeerSend ? "peer_message" : "user_attachment"
@@ -3115,6 +3154,27 @@ final class MessageCoordinator: ObservableObject {
           detail: "\(importedCount) knowledge chunk(s)",
           status: .delivered
         )
+      }
+    }
+    if let collaborationPlan {
+      beginPendingAgentReply(for: outgoing)
+      defer { finishPendingAgentReply(for: outgoing) }
+      do {
+        guard try await publishRequestedAgentTeam(plan: collaborationPlan, requestedMembers: [],
+          requestText: requestText, outgoing: outgoing, attachments: effectiveAttachments,
+          voiceSessionId: voiceSessionId, executionMode: taskExecutionMode, targets: callableTargets) == true
+        else { throw GalaxySSIError.invalidPayload("The collaboration team could not be dispatched") }
+        return true
+      } catch {
+        lastError = error.localizedDescription
+        if let wire = collaborationPlan.actions.first?.parameters[agentTeamSpecParameter],
+           let spec = AgentTeamDispatchSpecCodec.decode(wire),
+           let primary = spec.definition.members.first(where: { $0.memberId == spec.definition.primaryMemberId }) {
+          persistTeamMemberFailure(error.localizedDescription, member: primary, spec: spec, outgoing: outgoing)
+        }
+        store.appendDeliveryTrace(outgoing.id, contactId: contact.id, stage: "collaboration_dispatch_failed",
+          detail: error.localizedDescription, status: .failed)
+        return false
       }
     }
     if contact.id == "hermes" {
@@ -6122,7 +6182,8 @@ final class MessageCoordinator: ObservableObject {
   private func requestedAgentPlan(
     goal: String,
     requestedMembers: [AgentRequestedMember],
-    targets: [AgentCallableTarget]
+    targets: [AgentCallableTarget],
+    roster: AgentCollaborationRoster? = nil
   ) -> AgentPlan? {
     guard let first = requestedMembers.first,
       let primary = targets.first(where: { $0.id == first.agentId && $0.status == .available }) else {
@@ -6157,6 +6218,10 @@ final class MessageCoordinator: ObservableObject {
       requiresConfirmation: false
     )
     let basePlan = AgentPlanFactory.singleAction(request: request, action: baseAction)
+    if let roster {
+      return AgentTeamPlanCompiler.compileCollaboration(plan: basePlan, roster: roster,
+        targets: targets, registrations: callableAgentRegistrations())
+    }
     let compiled = AgentTeamPlanCompiler.compile(
       plan: basePlan,
       targets: targets,
@@ -6182,6 +6247,7 @@ final class MessageCoordinator: ObservableObject {
     targets: [AgentCallableTarget]
   ) async throws -> Bool? {
     guard let action = plan.actions.first else { return nil }
+    let isCollaboration = action.parameters["agent_selection_source"] == "collaboration_roster"
     let targetsById = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, $0) })
     if requestedMembers.count == 1,
       let requested = requestedMembers.first,
@@ -6229,11 +6295,16 @@ final class MessageCoordinator: ObservableObject {
     var primaryPublished = false
     var observerFailures: [String] = []
     var observations: [(String, String)] = []
+    let profileIdentity = store.profile.identityFingerprint
 
     for member in ordered {
+      if isCollaboration {
+        try Task.checkCancellation()
+        guard store.profile.identityFingerprint == profileIdentity else { throw CancellationError() }
+      }
       guard let target = targetsById[member.agentId], target.status == .available else {
         persistTeamMemberFailure("The selected Agent is unavailable", member: member, spec: spec, outgoing: outgoing)
-        if member.deliveryMode == .respond {
+        if member.deliveryMode == .respond || isCollaboration {
           throw GalaxySSIError.invalidPayload("The selected primary Agent is unavailable")
         }
         observerFailures.append(member.memberId)
@@ -6291,17 +6362,29 @@ final class MessageCoordinator: ObservableObject {
           continue
         }
 
-        guard let memberContact = store.contact(id: member.agentId) else {
+        guard var memberContact = store.contact(id: member.agentId) else {
           throw GalaxySSIError.invalidPayload("The selected Agent target is unavailable")
         }
         if target.kind == .model, memberContact.deliveryMode == .cloudAPI {
+          if isCollaboration, let modelId = member.context["_galaxyssi_member_model_id"], !modelId.isEmpty {
+            guard let model = memberContact.cloudModels.first(where: { $0.id == modelId }) else {
+              throw GalaxySSIError.invalidPayload("The collaboration member's selected model is unavailable")
+            }
+            let needsImages = attachments.contains { $0.mimeType.lowercased().hasPrefix("image/") }
+            guard CloudModelRequestRoutingPolicy.effectiveModelId(selectedModelId: model.modelId,
+              hasImageInput: needsImages) == model.modelId else {
+              throw GalaxySSIError.invalidPayload("Select an image-capable model for this collaboration member")
+            }
+            memberContact.selectedCloudModelId = model.modelId
+          }
           try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
             if member.deliveryMode == .respond {
               try await receiveRequestedCloudReply(
                 contact: memberContact,
                 requestText: memberPrompt,
                 attachments: attachments,
-                outgoing: outgoing
+                outgoing: outgoing,
+                scopeToConversation: isCollaboration
               )
               persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing)
               primaryPublished = true
@@ -6311,7 +6394,8 @@ final class MessageCoordinator: ObservableObject {
                 requestText: memberPrompt,
                 attachments: attachments,
                 outgoing: outgoing,
-                requestId: teamContext.runId
+                requestId: teamContext.runId,
+                scopeToConversation: isCollaboration
               )
               observations.append((member.memberId, result))
               persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
@@ -6346,11 +6430,17 @@ final class MessageCoordinator: ObservableObject {
           UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slotOwnerId)
           throw error
         }
-        if member.deliveryMode == .respond { primaryPublished = true }
+        if member.deliveryMode == .respond {
+          primaryPublished = true
+        } else if isCollaboration {
+          let result = try await waitForCollaborationObserver(runId: spec.supervisorRunId,
+            memberId: member.memberId, sourceMessageId: sourceMessageId)
+          observations.append((member.memberId, result))
+        }
       } catch {
         if error is CancellationError { throw error }
         persistTeamMemberFailure(error.localizedDescription, member: member, spec: spec, outgoing: outgoing)
-        if member.deliveryMode == .respond {
+        if member.deliveryMode == .respond || isCollaboration {
           throw error
         }
         observerFailures.append(member.memberId)
@@ -6369,6 +6459,43 @@ final class MessageCoordinator: ObservableObject {
       label: "\(spec.definition.members.count) Agents"
     )
     return primaryPublished
+  }
+
+  private func waitForCollaborationObserver(runId: String, memberId: String,
+                                            sourceMessageId: String) async throws -> String {
+    var signal: AsyncStream<Void>.Continuation?
+    let updates = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
+    guard let signal else { throw CancellationError() }
+    let center = NotificationCenter.default
+    let observer = center.addObserver(forName: .galaxySSIAgentTeamExecutionHistoryDidUpdate,
+      object: nil, queue: nil) { notification in
+      if notification.object as? String == runId { signal.yield(()) }
+    }
+    let timeout = Task {
+      do { try await Task.sleep(nanoseconds: 120_000_000_000) }
+      catch { return }
+      signal.finish()
+    }
+    defer {
+      center.removeObserver(observer)
+      timeout.cancel()
+      signal.finish()
+    }
+    signal.yield(())
+    for await _ in updates {
+      try Task.checkCancellation()
+      guard let member = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: runId)?
+        .members.first(where: { $0.memberId == memberId && $0.sourceMessageId == sourceMessageId })
+      else { throw GalaxySSIError.invalidPayload("The collaboration result identity is unavailable") }
+      switch member.status {
+      case .succeeded: return member.replyContent ?? member.output
+      case .failed, .cancelled, .skipped:
+        throw GalaxySSIError.invalidPayload(member.errorMessage.ifBlank("A collaboration specialist did not finish"))
+      default: continue
+      }
+    }
+    try Task.checkCancellation()
+    throw GalaxySSIError.invalidPayload("Timed out waiting for a collaboration specialist")
   }
 
   private func agentTeamMemberPrompt(
@@ -6548,7 +6675,8 @@ final class MessageCoordinator: ObservableObject {
     contact: GalaxySSIContact,
     requestText: String,
     attachments: [GalaxySSIDraftAttachment],
-    outgoing: ChatMessage
+    outgoing: ChatMessage,
+    scopeToConversation: Bool = false
   ) async throws {
     let images = try CloudImagePayloadFactory.prepare(
       attachments,
@@ -6560,7 +6688,11 @@ final class MessageCoordinator: ObservableObject {
       hasImageInput: !images.isEmpty
     )
     let prompt = cloudPrompt(text: requestText, attachments: attachments)
-    var turns = store.messages(for: outgoing.contactId)
+    var turns = scopeToConversation ? store.agentSessionMessages(outgoing.conversationId)
+      : store.messages(for: outgoing.contactId)
+    if scopeToConversation, !turns.contains(where: { $0.id == outgoing.id }) {
+      throw GalaxySSIError.invalidPayload("The collaboration request is unavailable in its original conversation")
+    }
     if let index = turns.firstIndex(where: { $0.id == outgoing.id }) {
       turns[index].content = prompt
     }
@@ -6580,7 +6712,8 @@ final class MessageCoordinator: ObservableObject {
     requestText: String,
     attachments: [GalaxySSIDraftAttachment],
     outgoing: ChatMessage,
-    requestId: String
+    requestId: String,
+    scopeToConversation: Bool = false
   ) async throws -> String {
     let images = try CloudImagePayloadFactory.prepare(
       attachments,
@@ -6592,7 +6725,11 @@ final class MessageCoordinator: ObservableObject {
       hasImageInput: !images.isEmpty
     )
     let prompt = cloudPrompt(text: requestText, attachments: attachments)
-    var turns = store.messages(for: outgoing.contactId)
+    var turns = scopeToConversation ? store.agentSessionMessages(outgoing.conversationId)
+      : store.messages(for: outgoing.contactId)
+    if scopeToConversation, !turns.contains(where: { $0.id == outgoing.id }) {
+      throw GalaxySSIError.invalidPayload("The collaboration request is unavailable in its original conversation")
+    }
     if let index = turns.firstIndex(where: { $0.id == outgoing.id }) {
       turns[index].content = prompt
     }

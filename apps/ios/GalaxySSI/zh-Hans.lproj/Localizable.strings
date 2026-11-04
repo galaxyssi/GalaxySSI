@@ -4907,4 +4907,5 @@
 "galaxyssi.collaboration.add" = "添加成员";
 "galaxyssi.collaboration.no_resources" = "没有可选的 Agent 或云端模型。";
 "galaxyssi.collaboration.save_failed" = "无法保存协作组。";
-"galaxyssi.collaboration.execution_unavailable" = "协作组暂不能执行任务。草稿未发送。";
+"galaxyssi.collaboration.execution_unavailable" = "当前成员或会话设置不支持协作组执行。草稿未发送。";
+"galaxyssi.collaboration.execution_busy" = "协作组仍在分派上一条请求。";

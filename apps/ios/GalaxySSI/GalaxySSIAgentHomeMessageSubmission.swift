@@ -5,11 +5,6 @@ extension AgentHomeView {
     voiceAttachmentSnapshot: [GalaxySSIDraftAttachment]? = nil
   ) {
     guard !screenAssistantStopping, screenPageImportTask == nil else { return }
-    if store.agentSession(id: store.activeAgentConversationId)?.collaborationRoster != nil {
-      attachmentError = t("galaxyssi.collaboration.execution_unavailable",
-        "Group execution is not available yet. Your draft has not been sent.")
-      return
-    }
     coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = AgentVoiceAttachmentSubmissionPolicy.select(
