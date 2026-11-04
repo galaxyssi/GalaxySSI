@@ -253,6 +253,34 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(selection.goal.contains("@codex"))
   }
 
+  func testCollaborationCompilationPreservesRosterIdentityAndRejectsCapacityOverflow() throws {
+    let target = teamTarget("codex")
+    var registration = teamRegistration(target)
+    registration.maxParallelRuns = 3
+    let coordinator = AgentCollaborationRoster.Member(name: "Lead", role: "Synthesis", resourceId: target.id)
+    let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", role: "Evidence review",
+      resourceId: target.id, modelId: "review-model", mentionOnly: true)
+    let researcher = AgentCollaborationRoster.Member(name: "Researcher", resourceId: target.id)
+    let roster = AgentCollaborationRoster(members: [researcher, reviewer, coordinator],
+      coordinatorId: coordinator.id, independentReview: true)
+    let plan = teamBridgePlan(goal: "Check evidence", teamAgentAction("work", target.id))
+    let compiled = try XCTUnwrap(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
+      roster: roster, mentionedMemberIds: [reviewer.id], targets: [target], registrations: [registration]))
+    let action = try XCTUnwrap(compiled.actions.first)
+    let spec = try XCTUnwrap(AgentTeamDispatchSpecCodec.decode(action.parameters[agentTeamSpecParameter] ?? ""))
+    let reviewerId = reviewer.id.uuidString.lowercased()
+    XCTAssertEqual(spec.definition.primaryMemberId, coordinator.id.uuidString.lowercased())
+    XCTAssertEqual(spec.definition.members.map(\.memberId), [reviewerId, coordinator.id.uuidString.lowercased()])
+    XCTAssertEqual(spec.definition.members.first?.role, "Evidence review")
+    XCTAssertEqual(spec.definition.members.first?.context["_galaxyssi_member_model_id"], "review-model")
+    XCTAssertEqual(spec.definition.members.last?.dependsOnAgentIds, [reviewerId])
+    registration.maxParallelRuns = 1
+    XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
+      roster: roster, targets: [target], registrations: [registration]))
+    XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
+      roster: roster, mentionedMemberIds: [UUID()], targets: [target], registrations: [registration]))
+  }
+
   func testRequestedRepeatedAgentCompilesToInstanceScopedTeam() throws {
     let target = teamTarget("codex")
     var registration = teamRegistration(target)
