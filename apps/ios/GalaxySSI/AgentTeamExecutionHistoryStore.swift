@@ -392,6 +392,12 @@ final class AgentTeamExecutionHistoryStore {
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
               draft.baseRevision >= 0, draft.baseRevision < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         guard draft.observations?.isEmpty != false else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        if draft.kind == .acceptanceReview {
+          let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
+            objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
+          guard AgentCollaborationDocumentaryAcceptance.validReviewPublication(body: draft.body, parents: parents)
+          else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        }
         let existingId = draft.objectId.flatMap { $0.isBlank ? nil : $0 }
         let objectId = existingId ?? AgentMcpJSONCodec.sha256([
           "group": .string(conversationId), "author": .string(memberId), "id": .string(draft.id)
