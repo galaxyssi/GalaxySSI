@@ -269,12 +269,14 @@ final class AgentTeamHistoryDatabase {
   }
 
   func insertResearchRecord<T: Encodable>(_ record: T, conversationId: String, key: String,
-                                           revision: Int64) throws {
+                                           revision: Int64, replaceCoverage: Bool = false) throws {
     let group = Self.digest(conversationId)
     let data = try JSONEncoder().encode(record)
     guard data.count <= 256_000 else { throw Failure.corrupt }
     let payload = try cipher.encrypt(data, purpose: researchPurpose(group: group, key: key, revision: revision))
-    let statement = try prepare("INSERT INTO collaboration_research_records VALUES(?,?,?,?,?)")
+    guard !replaceCoverage || (key.hasPrefix("cloud-read-coverage:") && revision == 0) else { throw Failure.corrupt }
+    let insert = replaceCoverage ? "INSERT OR REPLACE" : "INSERT"
+    let statement = try prepare(insert + " INTO collaboration_research_records VALUES(?,?,?,?,?)")
     defer { sqlite3_finalize(statement) }
     bind(namespace, at: 1, to: statement)
     bind(group, at: 2, to: statement)

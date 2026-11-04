@@ -28,6 +28,32 @@ struct AgentCollaborationCloudToolEvidence: Codable, Equatable {
   var finishedAtMillis: Int64
 }
 
+struct AgentCollaborationReadCoverage: Codable, Equatable {
+  struct Span: Codable, Equatable {
+    var start: Int64
+    var end: Int64
+  }
+
+  var spans: [Span] = []
+
+  mutating func include(start: Int64, end: Int64) {
+    guard start < end else { return }
+    var merged: [Span] = []
+    for span in (spans + [.init(start: start, end: end)]).sorted(by: { $0.start < $1.start }) {
+      if let last = merged.last, last.end >= span.start {
+        merged[merged.count - 1].end = max(last.end, span.end)
+      } else {
+        merged.append(span)
+      }
+    }
+    spans = merged
+  }
+
+  var contiguousEnd: Int64 {
+    spans.first.flatMap { $0.start == 0 ? $0.end : nil } ?? 0
+  }
+}
+
 struct AgentCollaborationResearchReference: Codable, Equatable {
   var objectId: String
   var revision: Int64

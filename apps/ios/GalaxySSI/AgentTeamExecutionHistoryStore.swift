@@ -318,7 +318,15 @@ final class AgentTeamExecutionHistoryStore {
     }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    let (bytes, sourceReference) = try access { database -> (Data, AgentMcpJSONObject?) in
+    func page(_ bytes: Data) throws -> (content: String, end: Int64, total: Int64) {
+      let characters = String(decoding: bytes, as: UTF8.self)
+      let total = Int64(characters.count)
+      guard offset <= total else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let content = String(characters.dropFirst(Int(offset)).prefix(2_000))
+      return (content, offset + Int64(content.count), total)
+    }
+    let (slice, sourceReference, coverage) = try access { database
+      -> ((content: String, end: Int64, total: Int64), AgentMcpJSONObject?, AgentMcpJSONObject?) in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
@@ -333,7 +341,7 @@ final class AgentTeamExecutionHistoryStore {
               record.reference.sha256 == hash,
               record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId)
         else { throw AgentTeamHistoryDatabase.Failure.stale }
-        return (try encoder.encode(record), nil)
+        return (try page(encoder.encode(record)), nil, nil)
       }
       guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
             record.scope.conversationId == scope.conversationId,
@@ -344,20 +352,36 @@ final class AgentTeamExecutionHistoryStore {
       guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == hash else {
         throw AgentTeamHistoryDatabase.Failure.corrupt
       }
-      return (data, [
+      let slice = try page(data)
+      let key = "cloud-read-coverage:" + AgentMcpJSONCodec.sha256([
+        "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
+        "member": .string(scope.memberId), "source": .string(scope.sourceId),
+        "evidence": .string(id), "sha256": .string(hash)
+      ])
+      let previous = try database.researchRecord(AgentCollaborationReadCoverage.self,
+        conversationId: scope.conversationId, key: key, revision: 0) ?? AgentCollaborationReadCoverage()
+      var coverage = previous
+      coverage.include(start: offset, end: slice.end)
+      if coverage != previous {
+        try database.insertResearchRecord(coverage, conversationId: scope.conversationId,
+          key: key, revision: 0, replaceCoverage: true)
+      }
+      let complete = coverage.contiguousEnd == slice.total
+      return (slice, [
         "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
         "tool": .string(record.call.name), "status": .string(record.succeeded ? "succeeded" : "failed")
+      ], [
+        "complete": .bool(complete), "total_characters": .int(slice.total),
+        "first_missing_offset": complete ? .null : .int(coverage.contiguousEnd),
+        "content_utf8_sha256": .string(hash)
       ])
     }
-    let characters = String(decoding: bytes, as: UTF8.self)
-    guard offset <= Int64(characters.count) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-    let page = String(characters.dropFirst(Int(offset)).prefix(2_000))
-    let next = offset + Int64(page.count)
     var result: AgentMcpJSONObject = [
-      idKey: .string(id), "sha256": .string(hash), "content": .string(page),
-      "next_offset": next < Int64(characters.count) ? .int(next) : .null,
+      idKey: .string(id), "sha256": .string(hash), "content": .string(slice.content),
+      "next_offset": slice.end < slice.total ? .int(slice.end) : .null,
       "trust": .string("untrusted_group_evidence")
     ]
+    if let coverage { result["host_read_coverage"] = .object(coverage) }
     if let sourceReference {
       result["source_reference"] = .object(sourceReference)
       result["citation_guidance"] = .string(

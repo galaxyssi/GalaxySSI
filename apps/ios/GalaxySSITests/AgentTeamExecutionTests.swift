@@ -118,7 +118,7 @@ extension GalaxySSIStoreTests {
       sourceId: member.sourceMessageId)
     var observation = AgentCollaborationCloudToolEvidence(scope: scope, round: 1,
       call: AssembledToolCall(callId: "tool-call", index: 0, name: "web_search", argumentsJson: "{}"),
-      output: String(repeating: "search result ", count: 180), succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
+      output: String(repeating: "search result ", count: 320), succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
     let receipt = try history.recordCloudEvidence(observation)
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
@@ -135,12 +135,28 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(source["evidence_id"], receipt["evidence_id"])
     XCTAssertEqual(source["sha256"], receipt["sha256"])
     XCTAssertEqual(source["tool"], .string("web_search"))
+    var lastInput = input
+    lastInput["offset"] = .int(4_000)
+    let lastPage = try reopened.recallCollaborationOriginal(lastInput, scope: scope)
+    XCTAssertEqual(lastPage["next_offset"], .null)
+    guard case .object(let partial)? = lastPage["host_read_coverage"] else {
+      return XCTFail("Expected persisted partial coverage")
+    }
+    XCTAssertEqual(partial["complete"], .bool(false))
+    XCTAssertEqual(partial["first_missing_offset"], .int(next))
     var secondInput = input
     secondInput["offset"] = .int(next)
-    let secondPage = try reopened.recallCollaborationOriginal(secondInput, scope: scope)
+    let recovered = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let secondPage = try recovered.recallCollaborationOriginal(secondInput, scope: scope)
     XCTAssertEqual(secondPage["source_reference"], firstPage["source_reference"])
-    XCTAssertEqual(secondPage["next_offset"], .null)
-    XCTAssertTrue((firstPage.string("content") + secondPage.string("content")).contains("web_search"))
+    guard case .object(let full)? = secondPage["host_read_coverage"] else {
+      return XCTFail("Expected complete coverage after filling the gap")
+    }
+    XCTAssertEqual(full["complete"], .bool(true))
+    XCTAssertEqual(full["first_missing_offset"], .null)
+    let content = firstPage.string("content") + secondPage.string("content") + lastPage.string("content")
+    XCTAssertTrue(content.contains("web_search"))
     var invalidScope = scope
     invalidScope.memberId = "foreign-member"
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(input, scope: invalidScope))
