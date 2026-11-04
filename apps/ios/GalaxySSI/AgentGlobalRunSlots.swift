@@ -10,11 +10,11 @@ enum AgentConnectorCapacityPolicy {
 }
 
 enum AgentCollaborationResourceObservation {
-  static func prompt(registration: AgentRegistration, activeCounts: [String: Int], now: Int64) -> String {
+  static func record(registration: AgentRegistration, activeCounts: [String: Int], now: Int64) -> AgentMcpJSONObject {
     let limit = AgentConnectorCapacityPolicy.normalize(registration.maxParallelRuns)
     let occupied = max(0, activeCounts[AgentRuntimeIdentity.key(registration)] ?? 0)
     let remaining = max(0, limit - occupied)
-    let observation: AgentMcpJSONObject = [
+    return [
       "format": .string("galaxyssi.ios-execution-resources.v1"),
       "scope": .string("shared_target_runtime_pool"),
       "observed_at_unix_ms": .int(now),
@@ -28,6 +28,9 @@ enum AgentCollaborationResourceObservation {
       "provider_request_count": .null,
       "remaining_token_budget": .null
     ]
+  }
+
+  static func prompt(_ observation: AgentMcpJSONObject) -> String {
     return """
     [Host resource observation]
     \(AgentMcpJSONCodec.stringify(observation))

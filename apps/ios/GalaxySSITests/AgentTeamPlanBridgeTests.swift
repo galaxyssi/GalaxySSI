@@ -273,8 +273,9 @@ extension GalaxySSIStoreTests {
     var registration = teamRegistration(teamTarget("codex"))
     registration.maxParallelRuns = 2
     let runtime = AgentRuntimeIdentity.key(registration)
-    let prompt = AgentCollaborationResourceObservation.prompt(registration: registration,
+    let observation = AgentCollaborationResourceObservation.record(registration: registration,
       activeCounts: [runtime: 3, "unrelated-runtime": 7], now: 12)
+    let prompt = AgentCollaborationResourceObservation.prompt(observation)
     let json = try XCTUnwrap(prompt.split(separator: "\n").dropFirst().first)
     let record = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
     XCTAssertEqual(record["admission_limit"], .int(2))

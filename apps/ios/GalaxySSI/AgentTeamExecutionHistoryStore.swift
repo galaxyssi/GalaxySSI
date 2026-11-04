@@ -128,7 +128,8 @@ final class AgentTeamExecutionHistoryStore {
           for member in current.members where member.dispatchCheckpoint != nil {
             guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
                   replacement.sourceMessageId == member.sourceMessageId,
-                  replacement.dispatchCheckpoint == member.dispatchCheckpoint else {
+                  replacement.dispatchCheckpoint == member.dispatchCheckpoint,
+                  replacement.dispatchResourceObservation == member.dispatchResourceObservation else {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
           }
@@ -183,6 +184,26 @@ final class AgentTeamExecutionHistoryStore {
       if advanced { notify(runId) }
       return advanced
     } catch { return false }
+  }
+
+  func recordDispatchResourceObservation(_ observation: AgentMcpJSONObject,
+                                         scope: AgentCollaborationToolEvidenceScope) throws {
+    try access { database in
+      guard var snapshot = try database.snapshots(runId: scope.runId).first,
+            snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
+            !snapshot.state.isTerminal,
+            let index = snapshot.members.firstIndex(where: {
+              $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+                $0.dispatchCheckpoint == .dispatching && !$0.status.isTerminal
+            }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if let saved = snapshot.members[index].dispatchResourceObservation {
+        guard saved == observation else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return
+      }
+      snapshot.members[index].dispatchResourceObservation = observation
+      snapshot.updatedAtMillis = max(snapshot.updatedAtMillis, observation.int64("observed_at_unix_ms"))
+      try database.put(snapshot)
+    }
   }
 
   func applyReply(supervisorRunId: String, source: String, conversation: String, turn: String,
