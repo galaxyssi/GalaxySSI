@@ -208,6 +208,20 @@ extension GalaxySSIStoreTests {
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     let directory: AgentMcpJSONObject = ["mode": .string("problems")]
+    let rules: AgentMcpJSONObject = ["mode": .string("evolution_rules"), "topic": .string("catalog")]
+    let catalog = try reopened.recallCollaborationOriginal(rules, scope: scope)
+    XCTAssertEqual(catalog["trust"], .string("host_schema_not_execution_authority"))
+    XCTAssertTrue(catalog.string("content").contains("workflows"))
+    XCTAssertFalse(catalog.string("content").contains("self_research"))
+    let suffix = try reopened.recallCollaborationOriginal(
+      ["mode": .string("evolution_rules"), "topic": .string("catalog"), "offset": .int(10)], scope: scope)
+    XCTAssertEqual(suffix.string("content"), String(catalog.string("content").dropFirst(10)))
+    var foreignRulesScope = scope
+    foreignRulesScope.sourceId = "foreign-source"
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(rules, scope: foreignRulesScope))
+    let unknown = try reopened.recallCollaborationOriginal(
+      ["mode": .string("evolution_rules"), "topic": .string("unknown")], scope: scope)
+    XCTAssertEqual(unknown["error"], .string("unknown_evolution_topic"))
     let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
     let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
     XCTAssertEqual(entries.count, 8)

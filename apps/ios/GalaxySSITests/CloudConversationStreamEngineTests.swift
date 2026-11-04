@@ -2,6 +2,26 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  func testRuleRecallCountsOnlyNewAuthenticCharacters() throws {
+    let tool = CloudModelStreamMutableConversation.collaborationRecallName
+    let progress = CloudWebToolLoopProgress()
+    let args: AgentMcpJSONObject = ["mode": .string("evolution_rules")]
+    let page = try XCTUnwrap(AgentCollaborationRuleTopics.page(topic: "all", offset: 0))
+    let output = AgentMcpJSONCodec.stringify(page)
+    XCTAssertTrue(progress.record(toolName: tool, arguments: args, output: output))
+    XCTAssertFalse(progress.record(toolName: tool, arguments: [
+      "mode": .string("evolution_rules"), "topic": .string("all"), "offset": .int(0)
+    ], output: output))
+    let suffix = try XCTUnwrap(AgentCollaborationRuleTopics.page(topic: "all", offset: 4))
+    XCTAssertFalse(progress.record(toolName: tool, arguments: [
+      "mode": .string("evolution_rules"), "offset": .int(4)
+    ], output: AgentMcpJSONCodec.stringify(suffix)))
+    var forged = page
+    forged["content"] = .string("Not the host contract")
+    XCTAssertFalse(CloudWebToolLoopProgress().record(toolName: tool, arguments: args,
+      output: AgentMcpJSONCodec.stringify(forged)))
+  }
+
   func testCloudDispatchCancellationIsScopedToExactOwner() throws {
     let registry = AgentCloudDispatchRegistry()
     let first = AgentCloudDispatchIdentity(

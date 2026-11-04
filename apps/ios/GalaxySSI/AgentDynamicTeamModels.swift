@@ -1,5 +1,84 @@
 import Foundation
 
+enum AgentCollaborationRuleTopics {
+  private struct Topic {
+    let id: String
+    let purpose: String
+    let prerequisites: [String]
+    let contract: String
+  }
+
+  private static let topics = [
+    Topic(id: "foundation", purpose: "Publish and read scoped research originals", prerequisites: [], contract: """
+    Publish galaxyssi.research-artifact.v1 with a workspace array. Each item has id, kind, title, body, base_revision and parents.
+    Use base_revision 0 for new records and exact object_id, revision and sha256 for references. Cite original cloud observations
+    with evidence_id and sha256 when the record supports citations. Read each page before citing it. Publication is not verification.
+    capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
+    innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
+    and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.
+    experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
+    report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
+    capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
+    an independent reviewer and full original evidence reads. Reject or revise can preserve historical findings.
+    """),
+    Topic(id: "learning", purpose: "Compare and record learning choices", prerequisites: ["foundation"], contract: """
+    learning_agenda is immutable. Include goal_alignment, resource_reasoning, selection_reason, reconsider_when and options.
+    Each option names id, exact gap parent, gap_option, unique positive priority, select or defer decision, member, stage and
+    assignment. Include current_goal_value, future_transfer_value, information_gain, uncertainty, tradeoff, verification,
+    reconsider_when and resource_estimates. Estimates name unit, status and basis; unknown estimates have no numeric value.
+    A saved agenda does not execute work or grant resources.
+    """),
+    Topic(id: "procedures", purpose: "Preserve observed failure experience", prerequisites: ["foundation"], contract: """
+    failure_experience is immutable and requires completely read original cloud observations, including at least one observed
+    failure. Include observed_issue, interpretation, uncertainty, applies_when, avoid_repetition, reconsider_when and
+    recovery_options. A recorded failure is not proof of a cause and is not a permanent prohibition.
+    """),
+    Topic(id: "transfer", purpose: "Register an unverified transfer study", prerequisites: ["procedures"], contract: """
+    transfer_study binds a current failure_experience source and optional exact calibration_data artifact parents.
+    Include source_domain, target_domain, mode (cross_task or cross_domain), target_task, abstract_strategy, proposed_method,
+    rationale, risks, falsifier, limitations, alternatives and mappings (source_element, target_element, invariant, adaptation,
+    breaks_when). Cross-domain studies require distinct domains. Registration does not validate transfer.
+    """),
+    Topic(id: "tools", purpose: "Register a Python tool candidate and tests", prerequisites: ["foundation"], contract: """
+    executable_tool requires Python source, name, purpose, applies_when, avoid_when, environment, dependencies, side_effects
+    and an object input_schema using the existing Skill parameter contract. tool_test_plan binds the exact executable_tool parent
+    and matching environment. Include purpose, coverage_gaps, oracle_basis and distinct cases with id, purpose, reason, input
+    and expected (explicit null is allowed). Include target and regression cases. Registration neither executes nor releases code.
+    """),
+    Topic(id: "workflows", purpose: "Register workflow roles, steps and review conditions", prerequisites: ["foundation"], contract: """
+    workflow_method includes purpose, domain, bottleneck, change_rationale, applies_when, avoid_when, risks, expected_gain,
+    falsifier, dimensions, roles, inputs and steps. Steps declare id, role, stage, assignment, depends_on, dependency_policy,
+    independent_review and optional review_targets. Dependencies must be acyclic, review targets must be dependencies, and
+    the reviewed role must differ from the reviewer. Steps cannot override tools, models or permissions.
+    """)
+  ]
+
+  static func page(topic: String, offset: Int) -> AgentMcpJSONObject? {
+    let selected = topic.isEmpty ? "all" : topic
+    let payload: AgentMcpJSONObject
+    if selected == "catalog" {
+      payload = ["topics": .array(topics.map { item in
+        .object(["id": .string(item.id), "purpose": .string(item.purpose),
+          "prerequisites": .array(item.prerequisites.map(AgentMcpJSONValue.string))])
+      }), "required_execution_sequence": .bool(false)]
+    } else if selected == "all" {
+      payload = ["contract": .string(topics.map { $0.contract }.joined(separator: "\n\n"))]
+    } else if let match = topics.first(where: { $0.id == selected }) {
+      payload = ["contract": .string(match.contract), "prerequisites": .array(match.prerequisites.map(AgentMcpJSONValue.string))]
+    } else {
+      return ["error": .string("unknown_evolution_topic"), "guidance": .string("Use topic=catalog to list iOS rule topics.")]
+    }
+    let content = AgentMcpJSONCodec.stringify(payload.merging([
+      "format": .string("galaxyssi.collaborative-evolution.v1"), "grants_permissions": .bool(false)
+    ]) { original, _ in original })
+    guard (0...content.count).contains(offset) else { return nil }
+    let part = String(content.dropFirst(offset).prefix(8_000))
+    let next = offset + part.count
+    return ["topic": .string(selected), "content": .string(part), "total_characters": .int(Int64(content.count)),
+      "next_offset": next < content.count ? .int(Int64(next)) : .null, "trust": .string("host_schema_not_execution_authority")]
+  }
+}
+
 struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   enum Phase: String, Codable { case planning, working, waiting }
   var runId: String
