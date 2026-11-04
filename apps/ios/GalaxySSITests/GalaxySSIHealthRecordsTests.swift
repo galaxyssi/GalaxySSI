@@ -222,6 +222,35 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testOriginalZIPReceiptChecksReadbackAndPreservesPriorSuccess() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "private.pdf")
+    let originals = try store.list().originals
+    let output = root.appendingPathComponent("destination.zip")
+    let (firstZIP, first) = try store.prepareExport(originals)
+    try firstZIP.write(to: output)
+    XCTAssertTrue(try GalaxySSIHealthOriginalStore.verifyDestination(output, for: first))
+    try store.finishExport(id: first.id, verified: true)
+    let (secondZIP, second) = try store.prepareExport(originals)
+    try Data(secondZIP.dropLast()).write(to: output)
+    XCTAssertFalse(try GalaxySSIHealthOriginalStore.verifyDestination(output, for: second))
+    var tampered = secondZIP
+    tampered[tampered.count - 1] ^= 1
+    try tampered.write(to: output)
+    XCTAssertFalse(try GalaxySSIHealthOriginalStore.verifyDestination(output, for: second))
+    try store.finishExport(id: second.id, verified: false)
+    try store.finishExport(id: first.id, verified: false)
+    let history = try store.exportHistory()
+    XCTAssertEqual(history.map(\.outcome), [.unverified, .verified])
+    XCTAssertEqual(history.last?.originals, originals)
+    XCTAssertEqual(try store.list().originals, originals)
+  }
+
+  @MainActor
   func testHealthReportPDFReadsNativePageAndKeepsPageBounds() throws {
     let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 240, height: 200)).pdfData { context in
       context.beginPage()

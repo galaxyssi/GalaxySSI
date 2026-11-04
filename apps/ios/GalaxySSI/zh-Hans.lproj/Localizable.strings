@@ -80,6 +80,16 @@
 "galaxyssi.health.originals.previous_page" = "上一页";
 "galaxyssi.health.originals.next_page" = "下一页";
 "galaxyssi.health.originals.page" = "第 %lld 页，共 %lld 页";
+"galaxyssi.health.originals.export_history" = "ZIP 导出历史";
+"galaxyssi.health.originals.verifying" = "正在验证已保存的 ZIP";
+"galaxyssi.health.originals.verify_failed" = "无法验证目标文件。";
+"galaxyssi.health.originals.history_unavailable" = "无法打开导出历史";
+"galaxyssi.health.originals.retry_history" = "重新加载历史";
+"galaxyssi.health.originals.history_empty" = "暂无 ZIP 导出记录";
+"galaxyssi.health.originals.export_scope" = "本次导出的原件";
+"galaxyssi.health.originals.prepared" = "已准备，保存未验证";
+"galaxyssi.health.originals.verified" = "已验证保存";
+"galaxyssi.health.originals.not_verified" = "未能验证保存";
 "galaxyssi.health.confirmed_count" = "已确认测量";
 "galaxyssi.health.latest_manual" = "最近一次手动测量";
 "galaxyssi.health.body.title" = "人体探索";
