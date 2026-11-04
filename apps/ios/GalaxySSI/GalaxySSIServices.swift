@@ -6422,7 +6422,10 @@ final class MessageCoordinator: ObservableObject {
                 requestText: memberPrompt,
                 attachments: attachments,
                 outgoing: outgoing,
-                scopeToConversation: isCollaboration
+                scopeToConversation: isCollaboration,
+                collaborationModelAudit: isCollaboration ? AgentCollaborationToolEvidenceScope(
+                  runId: spec.supervisorRunId, conversationId: outgoing.conversationId,
+                  turnId: homeTurnId, memberId: member.memberId, sourceId: sourceMessageId) : nil
               )
               persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing)
               primaryPublished = true
@@ -6783,7 +6786,8 @@ final class MessageCoordinator: ObservableObject {
     requestText: String,
     attachments: [GalaxySSIDraftAttachment],
     outgoing: ChatMessage,
-    scopeToConversation: Bool = false
+    scopeToConversation: Bool = false,
+    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil
   ) async throws {
     let images = try CloudImagePayloadFactory.prepare(
       attachments,
@@ -6810,7 +6814,8 @@ final class MessageCoordinator: ObservableObject {
       images: images,
       outgoing: outgoing,
       modelDetail: detail,
-      displayContactId: outgoing.contactId
+      displayContactId: outgoing.contactId,
+      collaborationModelAudit: collaborationModelAudit
     )
   }
 
@@ -9054,7 +9059,8 @@ final class MessageCoordinator: ObservableObject {
     images: [CloudImagePayload],
     outgoing: ChatMessage,
     modelDetail: String,
-    displayContactId: String
+    displayContactId: String,
+    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil
   ) async throws {
     var scopedTurns = turns
     if outgoing.readOnlyAnalysis {
@@ -9072,13 +9078,15 @@ final class MessageCoordinator: ObservableObject {
     var incoming: ChatMessage?
     var completed = false
 
-    for try await event in cloudStreamEngine.streamConversation(
-      contact: contact,
-      store: store,
-      turns: scopedTurns,
-      images: images,
-      requestId: requestId
-    ) {
+    let events: AsyncThrowingStream<ModelStreamEvent, Error>
+    if let collaborationModelAudit, let engine = cloudStreamEngine as? CloudConversationStreamEngine {
+      events = engine.streamConversation(contact: contact, store: store, turns: scopedTurns, images: images,
+        requestId: requestId, collaborationEvidence: nil, collaborationModelAudit: collaborationModelAudit)
+    } else {
+      events = cloudStreamEngine.streamConversation(contact: contact, store: store, turns: scopedTurns,
+        images: images, requestId: requestId)
+    }
+    for try await event in events {
       try Task.checkCancellation()
       switch event {
       case .connected, .usage, .toolCallDelta:
