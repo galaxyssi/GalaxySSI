@@ -38,6 +38,9 @@
     <string name="health_export_attachment_missing">原件未保留或已缺失</string>
     <string name="health_export_attachment_unreadable">原件无法读取或不匹配</string>
     <string name="health_export_bundle_changed">原件在确认后发生变化。请重新核对清单再生成。</string>
+    <string name="health_export_share">分享文件</string>
+    <string name="health_export_share_unencrypted">此导出没有密码保护。你选择的应用可以读取并保留副本。</string>
+    <string name="health_export_share_unavailable">无法打开系统分享选择器，仍可保存此导出。</string>
     <string name="health_export_generate">生成数据文件</string>
     <string name="health_export_save">保存数据文件</string>
     <string name="health_export_saving">正在保存数据文件</string>

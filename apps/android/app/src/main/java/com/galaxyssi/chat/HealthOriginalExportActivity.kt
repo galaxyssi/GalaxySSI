@@ -17,6 +17,7 @@ class HealthOriginalExportActivity : Activity() {
     private val ui by lazy { HealthCenterViews(this) }; private val worker = Executors.newSingleThreadExecutor(); private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout; private var id = ""; private var active = false; private var generation = 0
     private var querying = false; private var dirty = false; private var saving = false; private var cursor = ""; private val previous = arrayListOf<String>()
+    private var shareDialog: android.app.AlertDialog? = null
     private var observedWork = ""; private var workUpdates: androidx.lifecycle.LiveData<List<androidx.work.WorkInfo>>? = null
     private val workObserver = androidx.lifecycle.Observer<List<androidx.work.WorkInfo>> { load() }
     private val observer = object : android.database.ContentObserver(main) {
@@ -37,7 +38,12 @@ class HealthOriginalExportActivity : Activity() {
         body = ui.column(); root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
     }
     override fun onStart() { super.onStart(); if (!::body.isInitialized) return; active = true; contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this), true, observer); load() }
-    override fun onStop() { active = false; generation++; workUpdates?.removeObserver(workObserver); workUpdates = null; observedWork = ""; if (::body.isInitialized) body.removeAllViews(); contentResolver.unregisterContentObserver(observer); super.onStop() }
+    override fun onStop() {
+        active = false; generation++; workUpdates?.removeObserver(workObserver); workUpdates = null; observedWork = ""
+        shareDialog?.dismiss(); shareDialog = null
+        if (::body.isInitialized) body.removeAllViews()
+        contentResolver.unregisterContentObserver(observer); super.onStop()
+    }
     override fun onDestroy() { worker.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(out: Bundle) { out.putString("cursor", cursor); out.putStringArrayList("previous", ArrayList(previous)); super.onSaveInstanceState(out) }
     private fun load() {
@@ -100,13 +106,18 @@ class HealthOriginalExportActivity : Activity() {
                 ui.add(content, ui.command(R.string.common_cancel) { mutate { it.cancel(id) } }, 16)
             }
             HealthOriginalExportState.GENERATED, HealthOriginalExportState.SAVED -> {
+                val item = HealthExportShareItem.originals(session)
                 ui.add(content, ui.text(android.text.format.Formatter.formatShortFileSize(this, session.archiveBytes), 16f), 16)
                 ui.add(content, ui.text(session.sha256, 11f, muted = true).apply { setTextIsSelectable(true) }, 8)
                 ui.add(content, ui.text(getString(R.string.health_library_plain_warning), 14f, muted = true), 12)
                 ui.add(content, ui.command(R.string.health_library_save_zip) {
-                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip")
-                        .putExtra(Intent.EXTRA_TITLE, "GalaxySSI-originals-${session.createdAt}.zip"), SAVE)
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(item.mime)
+                        .putExtra(Intent.EXTRA_TITLE, item.name), SAVE)
                 }.apply { tag = "health-export-save" }, 16)
+                ui.add(content, ui.row(getString(R.string.health_export_share)) {
+                    shareDialog?.dismiss()
+                    shareDialog = HealthExportShare.confirm(this, item)
+                }.apply { tag = "health-original-export-share" }, 8)
             }
             else -> {
                 ui.add(content, ui.text(getString(when (session.error) { "original_missing" -> R.string.health_original_missing; "original_changed" -> R.string.health_library_source_changed; "background_unavailable" -> R.string.health_library_background_failed; else -> R.string.health_library_failed }), 14f), 16)

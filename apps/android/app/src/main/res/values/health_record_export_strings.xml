@@ -38,6 +38,9 @@
     <string name="health_export_attachment_missing">Original not retained or missing</string>
     <string name="health_export_attachment_unreadable">Unreadable or mismatched original</string>
     <string name="health_export_bundle_changed">An original changed after confirmation. Review a new manifest before generating.</string>
+    <string name="health_export_share">Share file</string>
+    <string name="health_export_share_unencrypted">This export is not password-protected. The app you choose can read and keep a copy.</string>
+    <string name="health_export_share_unavailable">The share chooser could not be opened. The export is still available to save.</string>
     <string name="health_export_generate">Generate data file</string>
     <string name="health_export_save">Save data file</string>
     <string name="health_export_saving">Saving data file</string>
