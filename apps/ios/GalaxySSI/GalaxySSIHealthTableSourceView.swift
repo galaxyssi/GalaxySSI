@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct GalaxySSIHealthTableSourceSample {
   let headers: [String]
   let rows: [[String]]
+  let rowNumbers: [Int]
   let limited: Bool
 
   init(_ table: GalaxySSIHealthTableImport.Table) {
@@ -12,9 +13,33 @@ struct GalaxySSIHealthTableSourceSample {
     rows = table.rows.prefix(30).map { row in
       columns.indices.map { row.indices.contains($0) ? String(row[$0].prefix(256)) : "" }
     }
+    rowNumbers = (0..<min(table.rows.count, 30)).map { $0 + 1 }
     limited = table.headers.count > 12 || table.rows.count > 30 ||
       table.headers.prefix(12).contains(where: { $0.count > 256 }) ||
       table.rows.prefix(30).contains(where: { $0.prefix(12).contains { $0.count > 256 } })
+  }
+
+  init(sheetRows: [GalaxySSIHealthXLSX.SheetRow]) {
+    let firstRows = sheetRows.prefix(30)
+    let lastColumn = firstRows.flatMap { Array($0.cells.keys) + Array($0.formulas) }.max() ?? 0
+    let columns = 0...min(lastColumn, 11)
+    headers = columns.map { _ in "" }
+    rowNumbers = firstRows.map(\.number)
+    rows = firstRows.map { row in
+      columns.map { column in
+        let cached = row.cells[column] ?? ""
+        if let formula = row.formulaText[column], !formula.isEmpty {
+          return String(("=" + formula + (cached.isEmpty ? "" : "\n" + cached)).prefix(256))
+        }
+        return String(cached.prefix(256))
+      }
+    }
+    limited = sheetRows.count > 30 || lastColumn > 11 || firstRows.contains { row in
+      columns.contains { column in
+        let formula = row.formulaText[column] ?? ""
+        return (row.cells[column]?.count ?? 0) + (formula.isEmpty ? 0 : formula.count + 2) > 256
+      }
+    }
   }
 }
 
@@ -30,6 +55,8 @@ struct GalaxySSIHealthTableSourceView: View {
   @State private var confirming = false
   @State private var exporting = false
   @State private var document: TableOriginalDocument?
+  @State private var workbook: GalaxySSIHealthXLSX?
+  @State private var sheetID = ""
 
   var body: some View {
     List {
@@ -42,13 +69,18 @@ struct GalaxySSIHealthTableSourceView: View {
             }
           }
         }
+        if let workbook {
+          Picker(t("sheet", "Worksheet"), selection: Binding(get: { sheetID }, set: selectSheet)) {
+            ForEach(workbook.sheets) { sheet in Text(sheet.name).tag(sheet.id) }
+          }
+        }
         if let sample {
           if sample.limited {
             Text(t("limited", "Preview limited to 30 rows, 12 columns and 256 characters per cell."))
               .font(.footnote).foregroundColor(.secondary)
           }
           ForEach(sample.rows.indices, id: \.self) { row in
-            DisclosureGroup(String(format: t("row", "Data row %lld"), Int64(row + 1))) {
+            DisclosureGroup(String(format: t("row", "Source row %lld"), Int64(sample.rowNumbers[row]))) {
               ForEach(sample.headers.indices, id: \.self) { column in
                 VStack(alignment: .leading, spacing: 3) {
                   Text(sample.headers[column].isEmpty
@@ -77,6 +109,8 @@ struct GalaxySSIHealthTableSourceView: View {
       else {
         name = nil
         sample = nil
+        workbook = nil
+        sheetID = ""
         confirming = false
         if !exporting { document = nil }
       }
@@ -109,12 +143,30 @@ struct GalaxySSIHealthTableSourceView: View {
     guard scene == .active, !exporting else { return }
     name = nil
     sample = nil
+    workbook = nil
+    sheetID = ""
     error = false
     do {
       let batch = try batch()
       name = batch.name
-      let json = URL(fileURLWithPath: batch.name).pathExtension.lowercased() == "json"
-      sample = GalaxySSIHealthTableSourceSample(try GalaxySSIHealthTableImport.parse(batch.data, json: json))
+      let ext = URL(fileURLWithPath: batch.name).pathExtension.lowercased()
+      if ext == "xlsx" {
+        let contents = try GalaxySSIHealthXLSX(batch.data)
+        workbook = contents
+        if let first = contents.sheets.first { selectSheet(first.id) }
+      } else {
+        sample = GalaxySSIHealthTableSourceSample(try GalaxySSIHealthTableImport.parse(batch.data, json: ext == "json"))
+      }
+    } catch { error = true }
+  }
+
+  private func selectSheet(_ id: String) {
+    guard scene == .active, let workbook else { return }
+    sheetID = id
+    sample = nil
+    do {
+      sample = GalaxySSIHealthTableSourceSample(sheetRows: try workbook.rows(id))
+      error = false
     } catch { error = true }
   }
 
@@ -123,9 +175,13 @@ struct GalaxySSIHealthTableSourceView: View {
     do {
       let batch = try batch()
       let ext = URL(fileURLWithPath: batch.name).pathExtension.lowercased()
-      guard ext == "csv" || ext == "json" else { throw GalaxySSIHealthTableImport.Failure.malformed }
-      document = TableOriginalDocument(data: batch.data, type: ext == "json" ? .json : .commaSeparatedText,
-                                       name: batch.name)
+      let type: UTType
+      switch ext {
+      case "xlsx": type = TableOriginalDocument.workbookType
+      case "json": type = .json
+      default: type = .commaSeparatedText
+      }
+      document = TableOriginalDocument(data: batch.data, type: type, name: batch.name)
       exporting = true
     } catch { error = true }
   }
@@ -136,7 +192,8 @@ struct GalaxySSIHealthTableSourceView: View {
 }
 
 private struct TableOriginalDocument: FileDocument {
-  static var readableContentTypes: [UTType] { [.commaSeparatedText, .json] }
+  static let workbookType = UTType(filenameExtension: "xlsx") ?? .spreadsheet
+  static var readableContentTypes: [UTType] { [.commaSeparatedText, .json, workbookType] }
   let data: Data
   let type: UTType
   let name: String

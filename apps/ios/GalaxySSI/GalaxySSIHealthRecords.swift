@@ -280,9 +280,12 @@ struct GalaxySSIHealthRecords {
   }
 
   func importTable(_ data: Data, name: String, json: Bool, mapping: GalaxySSIHealthTableImport.Mapping,
-                   expected: [GalaxySSIHealthTableImport.Status]) throws -> Int {
+                   expected: [GalaxySSIHealthTableImport.Status],
+                   worksheet: GalaxySSIHealthXLSX.Selection? = nil) throws -> Int {
     var archive = try load()
-    let table = try GalaxySSIHealthTableImport.parse(data, json: json)
+    let table: GalaxySSIHealthTableImport.Table
+    if let worksheet { table = try GalaxySSIHealthXLSX(data).table(worksheet) }
+    else { table = try GalaxySSIHealthTableImport.parse(data, json: json) }
     let preview = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: archive.current)
     guard preview.map(\.status) == expected else { throw GalaxySSIHealthTableImport.Failure.stale }
     let id = UUID(), hash = GalaxySSIHealthTableImport.digest(data)
@@ -290,7 +293,8 @@ struct GalaxySSIHealthRecords {
     for row in preview {
       guard row.status == .ready, var reading = row.reading else { continue }
       reading.revision = 1
-      reading.tableSource = .init(batch: id, row: row.id, sha256: hash)
+      reading.tableSource = .init(batch: id, row: row.id, sha256: hash, sheet: table.sheet,
+                                  worksheetPath: table.sheetPath, columns: mapping.sourceColumns)
       readings.append(reading)
     }
     guard !readings.isEmpty else { return 0 }
