@@ -1378,6 +1378,21 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(reopened.snapshot(supervisorRunId: "new"))
   }
 
+  func testPrimaryRecallRequiresCurrentGenerationAndCannotReopenTerminalGeneration() {
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "primary", conversationId: "group",
+      turnId: "turn", sourceMessageId: "source", contactId: "codex", deliveryMode: .respond)
+    XCTAssertFalse(owner.permitsRecall(generation: 1))
+    let first = owner.observingPrimaryRecall(.init(generation: 1, sequence: 10), terminal: false)
+    XCTAssertTrue(first.permitsRecall(generation: 1))
+    let closed = first.observingPrimaryRecall(.init(generation: 1), terminal: true)
+    XCTAssertFalse(closed.permitsRecall(generation: 1))
+    XCTAssertFalse(closed.observingPrimaryRecall(.init(generation: 1, sequence: 11), terminal: false)
+      .permitsRecall(generation: 1))
+    let resumed = closed.observingPrimaryRecall(.init(generation: 2, sequence: 1), terminal: false)
+    XCTAssertFalse(resumed.permitsRecall(generation: 1))
+    XCTAssertTrue(resumed.permitsRecall(generation: 2))
+  }
+
   func testDesktopGoalRecallCursorBindsOriginalSectionAndAssignment() {
     let recall = AgentDesktopCollaborationArchiveRecall.self
     let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group",

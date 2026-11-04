@@ -2310,6 +2310,7 @@ final class MessageCoordinator: ObservableObject {
     let source = payload.string("source_message_id")
     let contact = payload.string("contact_id")
     guard link.paired, payload.string("client_route_id") == link.routes.clientRouteId,
+          !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload),
           payload.string("agent_id") == "codex", payload.string("contract") == route.contract,
           payload.string("phase") == "read", payload["delivery"] == nil,
           (1...128).contains(requestId.utf8.count),
@@ -2321,14 +2322,21 @@ final class MessageCoordinator: ObservableObject {
           let bytes = try? JSONSerialization.data(withJSONObject: arguments), bytes.count <= 4_096,
           let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes),
           let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
-          let owner = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source,
-            conversation: identity.conversationId, turn: identity.turnId, contact: contact)?.owner,
-          let binding = AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: link.desktopId,
-            agentId: "codex", identity: identity), binding.matches(payload),
-          let context = currentTeamObserverRecovery(binding), context.owner.observedGeneration == generation,
+          identity.taskId == source, taskIdentityStore.matchesRegistered(payload: payload),
+          let pairedContact = store.contact(id: contact), pairedContact.trustState == .verified,
+          pairedContact.desktopId == link.desktopId, pairedContact.connectorAgentId == "codex",
+          pairedContact.deliveryMode.isGalaxySSILinkFamily,
+          store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
+            $0.routes.clientRouteId == identity.clientRouteId }),
+          let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source,
+            conversation: identity.conversationId, turn: identity.turnId, contact: contact),
+          context.owner.permitsRecall(generation: generation),
+          context.owner.deliveryMode == .observe || context.owner.deliveryMode == .respond,
+          context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted,
           context.team.state == .running, !context.member.status.isTerminal,
           let session = store.agentSession(id: identity.conversationId), session.id == identity.conversationId,
-          session.mergedIntoConversationId.isBlank, let roster = session.collaborationRoster,
+          session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
+          let roster = session.collaborationRoster,
           let person = context.member.memberId.split(separator: ":").first, let personId = UUID(uuidString: String(person)),
           roster.members.contains(where: { $0.id == personId }),
           let parent = store.agentTask(id: context.team.taskId),
@@ -2368,7 +2376,11 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     }
-    var response = binding.fields.mapValues(AgentMcpJSONValue.string)
+    var response: AgentMcpJSONObject = [
+      "client_route_id": .string(identity.clientRouteId), "conversation_id": .string(identity.conversationId),
+      "task_id": .string(identity.taskId), "turn_id": .string(identity.turnId),
+      "contact_id": .string(contact), "source_message_id": .string(source), "agent_id": .string("codex")
+    ]
     response["type"] = .string(route.responseType)
     response["contract"] = .string(route.contract)
     response["request_id"] = .string(requestId)
@@ -11450,6 +11462,17 @@ final class MessageCoordinator: ObservableObject {
        taskIdentityStore.matchesRegistered(payload: appPayload),
        let contact = store.contact(id: appPayload.string("contact_id")), contact.trustState == .verified,
        contact.desktopId == link.desktopId, let sourceId = UUID(uuidString: appPayload.string("source_message_id")) {
+      let observation = AgentTeamReplyObservation(payload: appPayload)
+      if contact.connectorAgentId == "codex", appPayload.string("agent_id") == "codex",
+         observation.valid, observation.generation != nil,
+         let session = store.agentSession(id: appPayload.string("conversation_id")),
+         session.collaborationRoster != nil, !session.privateMode, !session.trackingPaused {
+        let status = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status").ifBlank(appPayload.string("status")))
+        try? AgentTeamExecutionHistoryStore.shared.observePrimaryRecallEvent(
+          source: appPayload.string("source_message_id"), conversation: appPayload.string("conversation_id"),
+          turn: appPayload.string("turn_id"), contact: contact.id, observation: observation,
+          terminal: AgentRemoteTaskStatusPolicy.isTerminal(status))
+      }
       let updates = AgentConnectorPublicProgress.entries(appPayload) { key, fallback in
         self.localizedReply(key, fallback: fallback)
       }

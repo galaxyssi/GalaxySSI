@@ -451,6 +451,7 @@ final class AgentTeamHistoryDatabase {
         var identity = prior
         identity.observedGeneration = nil
         identity.observedSequence = nil
+        identity.closedRecallGeneration = nil
         guard identity == owner else { throw Failure.stale }
         continue
       }
