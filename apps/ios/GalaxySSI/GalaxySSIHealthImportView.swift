@@ -116,7 +116,7 @@ struct GalaxySSIHealthImportView: View {
         do {
           let pdf = try result.get()
           let name = "Health-Report-" + String(UUID().uuidString.prefix(8)) + ".pdf"
-          if retainOriginal { try store.store(pdf, name: name); notice = .saved }
+          if retainOriginal { try store.store(pdf, name: name, acquisition: .camera); notice = .saved }
           else {
             pendingScanReview = try GalaxySSIHealthTransientReport(name: name, data: pdf)
           }
