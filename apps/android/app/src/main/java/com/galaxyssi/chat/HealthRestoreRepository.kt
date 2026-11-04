@@ -22,7 +22,10 @@ internal class HealthRestorePlan internal constructor(
     internal var closed = false
         private set
     @Synchronized fun conflicts(after: String = ""): HealthRestoreConflictPage { check(!closed); return stage.conflicts(after) }
-    @Synchronized fun commit(signal: CancellationSignal): HealthRestoreReceipt { check(!closed); return repository.commit(this, signal) }
+    @Synchronized fun commit(signal: CancellationSignal, replacements: Set<String> = emptySet()): HealthRestoreReceipt {
+        check(!closed)
+        return repository.commit(this, signal, replacements)
+    }
     @Synchronized override fun close() {
         if (closed) return
         closed = true
@@ -78,6 +81,7 @@ internal class HealthRestoreRepository(private val context: Context, private val
                 }
                 val manifest = spool.fill {
                     var sourceTarget: HealthObservation? = null
+                    var sourceConflictId: String? = null
                     val verified = open().use { stream ->
                         HealthBackupCodec.verify(stream, password, signal::throwIfCanceled,
                             onManifest = {
@@ -103,17 +107,20 @@ internal class HealthRestoreRepository(private val context: Context, private val
                                     HealthRestoreKind.DUPLICATE -> duplicates++
                                     HealthRestoreKind.CONFLICT -> conflicts++
                                 }
-                                spool.add(row, match, dedupe, evidenceKey)
+                                val replaceable = match.kind == HealthRestoreKind.CONFLICT && !match.deleted &&
+                                    match.existing?.let { records.canReplaceRestored(row, it) } == true
+                                spool.add(row, match, dedupe, evidenceKey, replaceable)
+                                sourceConflictId = row.id.takeIf { replaceable }
                                 sourceTarget = when (match.kind) {
                                     HealthRestoreKind.NEW -> row
                                     HealthRestoreKind.DUPLICATE -> requireNotNull(match.existing)
-                                    HealthRestoreKind.CONFLICT -> null
+                                    HealthRestoreKind.CONFLICT -> if (replaceable) row.copy(revision = requireNotNull(match.existing).revision + 1) else null
                                 }
                             }, onSourceLink = { _, evidence ->
                                 val target = sourceTarget
-                                if (target == null) sourcesSkipped++
-                                else spool.stageSource(HealthRestoreSourceLink(target.id, target.revision, target.draft.metric,
-                                    evidence.copy(originalId = requireNotNull(originalPlans[evidence.originalId]).targetId)))
+                                if (target == null || sourceConflictId != null) sourcesSkipped++
+                                if (target != null) spool.stageSource(HealthRestoreSourceLink(target.id, target.revision, target.draft.metric,
+                                    evidence.copy(originalId = requireNotNull(originalPlans[evidence.originalId]).targetId)), sourceConflictId)
                             })
                     }
                     for ((seq, link) in spool.sourceLinks()) {
@@ -146,7 +153,7 @@ internal class HealthRestoreRepository(private val context: Context, private val
         }
     }
 
-    internal fun commit(plan: HealthRestorePlan, signal: CancellationSignal): HealthRestoreReceipt = storage { records, originals ->
+    internal fun commit(plan: HealthRestorePlan, signal: CancellationSignal, replacements: Set<String>): HealthRestoreReceipt = storage { records, originals ->
         signal.throwIfCanceled()
         if (owner() != plan.owner) throw HealthRestoreChanged()
         val directory = child(originalRoot, plan.id)
@@ -160,6 +167,13 @@ internal class HealthRestoreRepository(private val context: Context, private val
         try {
             check(!HealthRestoreReceipts.committed(db, plan.id))
             if (records.metricVersions(metrics) != plan.versions) throw HealthRestoreChanged()
+            val selected = replacements.sorted()
+            if (selected.size.toLong() > plan.counts.conflicts) throw HealthRestoreChanged()
+            for (id in selected) {
+                signal.throwIfCanceled()
+                val row = plan.stage.conflict(id)?.takeIf { it.replaceable } ?: throw HealthRestoreChanged()
+                records.replaceRestored(row)
+            }
             for (file in plan.originals) {
                 signal.throwIfCanceled()
                 if (originals.restorationState(file.input) != file.state ||
@@ -184,10 +198,24 @@ internal class HealthRestoreRepository(private val context: Context, private val
                 linked++
             }
             check(linked == plan.counts.sourcesAdded)
+            var reused = plan.counts.sourcesReused
+            var skipped = plan.counts.sourcesSkipped
+            for (id in selected) {
+                for ((_, link) in plan.stage.sourceLinks(conflictId = id)) {
+                    signal.throwIfCanceled()
+                    when (records.restoreSourceMatch(link)) {
+                        HealthRestoreKind.NEW -> { records.insertRestoredSource(link); linked++; skipped-- }
+                        HealthRestoreKind.DUPLICATE -> { reused++; skipped-- }
+                        HealthRestoreKind.CONFLICT -> Unit
+                    }
+                }
+            }
+            check(skipped >= 0 && linked + reused + skipped == plan.manifest.secondary)
             if (owner() != plan.owner) throw HealthRestoreChanged()
             signal.throwIfCanceled()
             receipt = HealthRestoreReceipt(plan.id, plan.manifest.id, System.currentTimeMillis(),
-                plan.counts, plan.manifest.first, plan.manifest.last)
+                plan.counts.copy(conflicts = plan.counts.conflicts - selected.size, replaced = selected.size.toLong(),
+                    sourcesAdded = linked, sourcesReused = reused, sourcesSkipped = skipped), plan.manifest.first, plan.manifest.last)
             HealthRestoreReceipts.insert(db, receipt)
             db.setTransactionSuccessful()
         } finally {

@@ -175,6 +175,26 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     internal fun restoreDedupeKey(record: HealthObservation) = dedupe(record)
     internal fun restoreEvidenceKey(record: HealthObservation) = evidenceKey(record.draft)
 
+    internal fun canReplaceRestored(incoming: HealthObservation, existing: HealthObservation): Boolean {
+        if (incoming.id != existing.id || incoming.profileId != "self" || existing.profileId != "self" ||
+            incoming.draft.metric != existing.draft.metric || existing.source != incoming.source ||
+            incoming.source != (incoming.draft.evidence?.kind ?: "manual") ||
+            existing.revision !in 1 until Int.MAX_VALUE - 1 || draft(draftKey(existing.editable())) != null) return false
+        val evidenceOwner = recordForEvidence(incoming.draft) ?: recordForOcrLink(incoming.draft)
+        if (evidenceOwner != null && evidenceOwner.id != existing.id) return false
+        return helper.readableDatabase.rawQuery("SELECT 1 FROM observations WHERE dedupe=? AND deleted=0 AND id<>?",
+            arrayOf(dedupe(incoming), existing.id)).use { !it.moveToFirst() }
+    }
+
+    internal fun replaceRestored(conflict: HealthRestoreConflict) {
+        check(helper.writableDatabase.inTransaction())
+        val existing = conflict.existing ?: throw HealthRestoreChanged()
+        if (!conflict.replaceable || conflict.deleted || record(existing.id) != existing ||
+            !canReplaceRestored(conflict.record, existing)) throw HealthRestoreChanged()
+        val draft = conflict.record.draft.copy(recordId = existing.id, revision = existing.revision)
+        if (saveWithinTransaction(draft) !is HealthSaveResult.Saved) throw HealthRestoreChanged()
+    }
+
     internal fun backupSourceLinks(record: HealthObservation, signal: android.os.CancellationSignal): Sequence<HealthEvidence> = sequence {
         var after = listOf("", "", "")
         while (true) {
