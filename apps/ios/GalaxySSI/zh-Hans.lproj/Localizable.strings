@@ -323,6 +323,12 @@
 "galaxyssi.health.trend.source_bluetooth" = "蓝牙设备";
 "galaxyssi.health.trend.source_table" = "导入表格";
 "galaxyssi.health.trend.audit" = "趋势点核对";
+"galaxyssi.health.trend.health_origin" = "Apple 健康来源";
+"galaxyssi.health.trend.health_origin_all" = "全部 Apple 健康来源";
+"galaxyssi.health.trend.health_origin_unavailable" = "所选来源不可用";
+"galaxyssi.health.trend.health_origin_more" = "显示更多来源";
+"galaxyssi.health.trend.health_origin_steps" = "Apple 健康每日步数汇总";
+"galaxyssi.health.trend.health_origin_unknown" = "未识别的 Apple 健康来源";
 "galaxyssi.health.trend.extremum" = "跳转到极值对应的记录版本";
 "galaxyssi.health.trend.empty" = "此期间没有已确认的测量。";
 "galaxyssi.health.trend.revision" = "修订版本 %lld";

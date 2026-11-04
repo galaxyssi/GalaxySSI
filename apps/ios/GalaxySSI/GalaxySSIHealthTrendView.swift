@@ -6,16 +6,47 @@ struct GalaxySSIHealthTrend {
   }
 
   enum Source: String, CaseIterable {
-    case all, manual, bluetooth, table
+    case all, manual, bluetooth, table, healthKit
 
     func includes(_ reading: GalaxySSIHealthReading) -> Bool {
       switch self {
       case .all: return true
-      case .manual: return reading.tableSource == nil && reading.bluetoothReceipt == nil
+      case .manual: return reading.tableSource == nil && reading.bluetoothReceipt == nil && reading.healthKitSource == nil
       case .bluetooth: return reading.tableSource == nil && reading.bluetoothReceipt != nil
       case .table: return reading.tableSource != nil
+      case .healthKit: return reading.healthKitSource != nil
       }
     }
+  }
+
+  enum HealthOrigin: Hashable {
+    case all, application(String), dailySteps, unidentified
+
+    func includes(_ reading: GalaxySSIHealthReading) -> Bool {
+      if self == .all { return true }
+      return Self.origin(of: reading) == self
+    }
+
+    static func origin(of reading: GalaxySSIHealthReading) -> Self? {
+      guard let receipt = reading.healthKitSource else { return nil }
+      if let origin = receipt.origin, !origin.isEmpty { return .application(origin) }
+      return reading.metric == .steps ? .dailySteps : .unidentified
+    }
+  }
+
+  struct OriginOption: Identifiable {
+    let id: HealthOrigin
+    let name: String?
+  }
+
+  static func origins(in readings: [GalaxySSIHealthReading], metric: GalaxySSIHealthMetric) -> [OriginOption] {
+    var ids = Set<HealthOrigin>()
+    var options: [OriginOption] = []
+    for reading in readings where !reading.deleted && reading.metric == metric {
+      guard let id = HealthOrigin.origin(of: reading), ids.insert(id).inserted else { continue }
+      options.append(.init(id: id, name: reading.healthKitSource?.name))
+    }
+    return options
   }
 
   enum Component: String, CaseIterable {
@@ -58,12 +89,14 @@ struct GalaxySSIHealthTrend {
   let mean: Decimal?
 
   init(current: [GalaxySSIHealthReading], metric: GalaxySSIHealthMetric, component: Component,
-       now: Date, dayCount: Int, calendar: Calendar, unit: String? = nil, source: Source = .all) {
+       now: Date, dayCount: Int, calendar: Calendar, unit: String? = nil, source: Source = .all,
+       healthOrigin: HealthOrigin = .all) {
     let today = calendar.startOfDay(for: now)
     let dates = (0..<max(1, min(dayCount, 90))).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
     let days = Set(dates)
     let scoped = current.filter {
       !$0.deleted && $0.metric == metric && $0.measuredAt <= now && source.includes($0) &&
+        healthOrigin.includes($0) &&
         (component == .pulse || $0.unit == (unit ?? metric.unit)) &&
         days.contains(calendar.startOfDay(for: $0.measuredAt)) && component.value(in: $0) != nil
     }
@@ -114,6 +147,9 @@ struct GalaxySSIHealthTrendView: View {
   @State private var error = false
   @State private var shown = 30
   @State private var jumpTarget: UUID?
+  @State private var origin = GalaxySSIHealthTrend.HealthOrigin.all
+  @State private var origins: [GalaxySSIHealthTrend.OriginOption] = []
+  @State private var originLimit = 30
 
   var body: some View {
     List {
@@ -151,6 +187,7 @@ struct GalaxySSIHealthTrendView: View {
           Picker(t("source", "Source"), selection: $source) {
             ForEach(GalaxySSIHealthTrend.Source.allCases, id: \.self) { Text(sourceTitle($0)).tag($0) }
           }
+          if source == .healthKit { originPicker }
           if changed {
             Text(t("changed", "Measurements changed. Refresh to view current results."))
             Button(t("refresh", "Refresh"), action: reload)
@@ -187,14 +224,15 @@ struct GalaxySSIHealthTrendView: View {
     .navigationTitle(t("title", "Measurement Trends"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
-    .onChange(of: metric) { _ in component = .value; selectedUnit = nil; reload() }
+    .onChange(of: metric) { _ in component = .value; selectedUnit = nil; resetOrigin(); reload() }
     .onChange(of: component) { _ in reload() }
     .onChange(of: days) { _ in reload() }
-    .onChange(of: source) { _ in reload() }
+    .onChange(of: source) { _ in resetOrigin(); reload() }
+    .onChange(of: origin) { _ in reload() }
     .onChange(of: aggregation) { _ in selected = nil; focusedDay = nil }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
-      else { trend = nil; selected = nil; focusedDay = nil; allowed = false }
+      else { trend = nil; selected = nil; focusedDay = nil; allowed = false; resetOrigin() }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) { event in
       guard event.object as? String == records.owner, scene == .active else { return }
@@ -207,7 +245,7 @@ struct GalaxySSIHealthTrendView: View {
             if scene == .active && allowed && !changed {
               Section(t("audit", "Point audit")) {
                 Text(metricTitle(metric) + " · " + componentTitle + " · " + unit)
-                Text(aggregationTitle(aggregation) + " · " + sourceTitle(source))
+                  Text(aggregationTitle(aggregation) + " · " + auditSource)
                 Text(point.day, style: .date)
                 if let value = point.value(aggregation, component: component) {
                   statistic(aggregationTitle(aggregation), value)
@@ -228,9 +266,10 @@ struct GalaxySSIHealthTrendView: View {
                 VStack(alignment: .leading, spacing: 4) {
                   if let value = component.value(in: reading) { Text(number(value) + " " + unit) }
                   Text(reading.measuredAt, style: .time).foregroundColor(.secondary)
-                  Text(reading.tableSource != nil ? t("table", "Source: imported table") :
-                    (reading.bluetoothReceipt == nil ? t("manual", "Source: manual measurements") :
-                      t("bluetooth", "Source: Bluetooth monitor"))).foregroundColor(.secondary)
+                    Text(contributorSource(reading)).foregroundColor(.secondary)
+                    if let application = reading.healthKitSource?.origin, !application.isEmpty {
+                      Text(application).font(.footnote).foregroundColor(.secondary)
+                    }
                   Text(String(format: t("revision", "Revision %lld"), Int64(reading.revision)))
                     .foregroundColor(.secondary)
                 }
@@ -266,7 +305,8 @@ struct GalaxySSIHealthTrendView: View {
       let archive = try records.load()
       allowed = archive.derivesOverview == true
       error = false
-      guard allowed else { return }
+      guard allowed else { resetOrigin(); return }
+      origins = source == .healthKit ? GalaxySSIHealthTrend.origins(in: archive.current, metric: metric) : []
       snapshotTime = Date()
       trend = makeTrend(archive.current)
     } catch { allowed = false; error = true }
@@ -276,7 +316,8 @@ struct GalaxySSIHealthTrendView: View {
     var local = calendar
     local.timeZone = timeZone
     return GalaxySSIHealthTrend(current: current, metric: metric, component: component,
-      now: snapshotTime, dayCount: days, calendar: local, unit: selectedUnit, source: source)
+      now: snapshotTime, dayCount: days, calendar: local, unit: selectedUnit, source: source,
+      healthOrigin: source == .healthKit ? origin : .all)
   }
 
   private func openAudit(_ point: GalaxySSIHealthTrend.Point) {
@@ -296,7 +337,11 @@ struct GalaxySSIHealthTrendView: View {
     selected = nil
     focusedDay = nil
     trend = nil
-    do { allowed = try records.load().derivesOverview == true; changed = allowed }
+    do {
+      allowed = try records.load().derivesOverview == true
+      changed = allowed
+      if !allowed { resetOrigin() }
+    }
     catch { allowed = false; error = true }
   }
 
@@ -361,7 +406,56 @@ struct GalaxySSIHealthTrendView: View {
     case .manual: return t("source_manual", "Manual measurements")
     case .bluetooth: return t("source_bluetooth", "Bluetooth monitor")
     case .table: return t("source_table", "Imported table")
+    case .healthKit: return "Apple Health"
     }
+  }
+
+  private var originPicker: some View {
+    Group {
+      Picker(t("health_origin", "Apple Health origin"), selection: $origin) {
+        Text(t("health_origin_all", "All Apple Health origins")).tag(GalaxySSIHealthTrend.HealthOrigin.all)
+        ForEach(origins.prefix(originLimit)) { option in
+          Text(originTitle(option.id, name: option.name)).tag(option.id)
+        }
+        if origin != .all && !origins.prefix(originLimit).contains(where: { $0.id == origin }) {
+          Text(t("health_origin_unavailable", "Selected origin unavailable")).tag(origin)
+        }
+      }
+      if origins.count > originLimit {
+        Button(t("health_origin_more", "Show more origins")) { originLimit += 30 }
+      }
+    }
+  }
+
+  private func resetOrigin() {
+    origin = .all
+    origins = []
+    originLimit = 30
+  }
+
+  private var auditSource: String {
+    guard source == .healthKit else { return sourceTitle(source) }
+    return originTitle(origin, name: origins.first { $0.id == origin }?.name)
+  }
+
+  private func originTitle(_ origin: GalaxySSIHealthTrend.HealthOrigin, name: String?) -> String {
+    switch origin {
+    case .all: return t("health_origin_all", "All Apple Health origins")
+    case .dailySteps: return t("health_origin_steps", "Apple Health daily step total")
+    case .unidentified: return t("health_origin_unknown", "Unidentified Apple Health origin")
+    case .application(let id):
+      guard let name, !name.isEmpty, name != id else { return id }
+      return name + " · " + id
+    }
+  }
+
+  private func contributorSource(_ reading: GalaxySSIHealthReading) -> String {
+    if let origin = GalaxySSIHealthTrend.HealthOrigin.origin(of: reading) {
+      return originTitle(origin, name: reading.healthKitSource?.name)
+    }
+    if reading.tableSource != nil { return t("table", "Source: imported table") }
+    if reading.bluetoothReceipt != nil { return t("bluetooth", "Source: Bluetooth monitor") }
+    return t("manual", "Source: manual measurements")
   }
   private func number(_ value: Decimal) -> String { value.formatted(.number.locale(locale)) }
   private func statistic(_ title: String, _ value: Decimal) -> some View {
