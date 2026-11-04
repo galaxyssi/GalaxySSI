@@ -1398,16 +1398,30 @@ extension GalaxySSIStoreTests {
     let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group",
       turnId: "turn", memberId: "review", sourceId: "source")
     let hash = String(repeating: "a", count: 64)
-    let cursor = recall.goalCursor(scope: scope, section: "criteria", hash: hash, offset: 8_192)
+    let cursor = recall.goalCursor(scope: scope, generation: 1, section: "criteria", hash: hash, offset: 8_192)
     var request: AgentMcpJSONObject = ["mode": .string("goal_contract"), "section": .string("criteria"),
       "cursor": .string(cursor)]
-    XCTAssertEqual(recall.goalSelector(request, scope: scope)?["offset"], .int(8_192))
-    XCTAssertEqual(recall.goalSelector(request, scope: scope)?["sha256"], .string(hash))
+    XCTAssertEqual(recall.goalSelector(request, scope: scope, generation: 1)?["offset"], .int(8_192))
+    XCTAssertEqual(recall.goalSelector(request, scope: scope, generation: 1)?["sha256"], .string(hash))
+    XCTAssertNil(recall.goalSelector(request, scope: scope, generation: 2))
     var other = scope
     other.sourceId = "other"
-    XCTAssertNil(recall.goalSelector(request, scope: other))
+    XCTAssertNil(recall.goalSelector(request, scope: other, generation: 1))
     request["section"] = .string("goal")
-    XCTAssertNil(recall.goalSelector(request, scope: scope))
+    XCTAssertNil(recall.goalSelector(request, scope: scope, generation: 1))
+  }
+
+  func testDesktopObserverRecallCanUseAuthenticatedEventsBeforeText() {
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "observer", conversationId: "group",
+      turnId: "turn", sourceMessageId: "source", contactId: "codex", deliveryMode: .observe)
+    let first = owner.observingRecallEvent(.init(generation: 2, sequence: 4), terminal: false)
+    XCTAssertNil(first.observedGeneration)
+    XCTAssertTrue(first.permitsRecall(generation: 2))
+    XCTAssertFalse(first.observingRecallEvent(.init(generation: 1, sequence: 99), terminal: false)
+      .permitsRecall(generation: 1))
+    let closed = first.observingRecallEvent(.init(generation: 2, sequence: 5), terminal: true)
+    XCTAssertFalse(closed.observingRecallEvent(.init(generation: 2, sequence: 4), terminal: false)
+      .permitsRecall(generation: 2))
   }
 
   func testDesktopArchiveRecallAcceptsOnlyScopedRecordSelectors() {

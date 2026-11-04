@@ -2347,12 +2347,12 @@ final class MessageCoordinator: ObservableObject {
     let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
-    if let query = route.goalSelector(input, scope: scope),
+    if let query = route.goalSelector(input, scope: scope, generation: generation),
        var page = try? history.recallCollaborationOriginal(query, scope: scope) {
       let next = page.removeValue(forKey: "next_offset")?.intValue
       let hash = page.string("sha256")
       page["next_cursor"] = next.map {
-        .string(route.goalCursor(scope: scope, section: query.string("section"),
+        .string(route.goalCursor(scope: scope, generation: generation, section: query.string("section"),
           hash: hash, offset: $0))
       } ?? .null
       page["format"] = .string("galaxyssi.ios-goal-page.v1")
@@ -11468,7 +11468,7 @@ final class MessageCoordinator: ObservableObject {
          let session = store.agentSession(id: appPayload.string("conversation_id")),
          session.collaborationRoster != nil, !session.privateMode, !session.trackingPaused {
         let status = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status").ifBlank(appPayload.string("status")))
-        try? AgentTeamExecutionHistoryStore.shared.observePrimaryRecallEvent(
+        try? AgentTeamExecutionHistoryStore.shared.observeDesktopRecallEvent(
           source: appPayload.string("source_message_id"), conversation: appPayload.string("conversation_id"),
           turn: appPayload.string("turn_id"), contact: contact.id, observation: observation,
           terminal: AgentRemoteTaskStatusPolicy.isTerminal(status))

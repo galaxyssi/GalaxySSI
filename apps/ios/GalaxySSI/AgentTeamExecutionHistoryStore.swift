@@ -41,16 +41,30 @@ struct AgentTeamReplyOwner: Codable, Equatable {
   var observedGeneration: Int64? = nil
   var observedSequence: Int64? = nil
   var closedRecallGeneration: Int64? = nil
+  var recallEventGeneration: Int64? = nil
 
   func observingPrimaryRecall(_ observation: AgentTeamReplyObservation, terminal: Bool) -> Self {
     guard deliveryMode == .respond, observation.valid, let generation = observation.generation else { return self }
     var next = accepts(observation) ? advancing(observation) : self
-    if terminal, next.observedGeneration == generation { next.closedRecallGeneration = generation }
+    if terminal, max(next.observedGeneration ?? 0, next.recallEventGeneration ?? 0) == generation {
+      next.closedRecallGeneration = generation
+    }
     return next
   }
 
   func permitsRecall(generation: Int64) -> Bool {
-    observedGeneration == generation && closedRecallGeneration != generation
+    AgentRemoteOutcomePolicy.validGeneration(generation) &&
+      max(observedGeneration ?? 0, recallEventGeneration ?? 0) == generation && closedRecallGeneration != generation
+  }
+
+  func observingRecallEvent(_ observation: AgentTeamReplyObservation, terminal: Bool) -> Self {
+    guard deliveryMode == .respond || deliveryMode == .observe,
+          observation.valid, let generation = observation.generation,
+          generation >= max(observedGeneration ?? 0, recallEventGeneration ?? 0) else { return self }
+    var next = self
+    next.recallEventGeneration = generation
+    if terminal { next.closedRecallGeneration = generation }
+    return next
   }
 
   func accepts(_ observation: AgentTeamReplyObservation) -> Bool {
@@ -312,12 +326,12 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  func observePrimaryRecallEvent(source: String, conversation: String, turn: String, contact: String,
+  func observeDesktopRecallEvent(source: String, conversation: String, turn: String, contact: String,
                                  observation: AgentTeamReplyObservation, terminal: Bool) throws {
     try access { database in
       guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact)
       else { return }
-      let next = owner.observingPrimaryRecall(observation, terminal: terminal)
+      let next = owner.observingRecallEvent(observation, terminal: terminal)
       if next != owner { try database.updateReplyOwner(next) }
     }
   }

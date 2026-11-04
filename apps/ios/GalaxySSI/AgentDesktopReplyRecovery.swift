@@ -59,7 +59,7 @@ enum AgentDesktopCollaborationArchiveRecall {
     return (id, offset)
   }
 
-  static func goalSelector(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope)
+  static func goalSelector(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope, generation: Int64)
     -> AgentMcpJSONObject? {
     guard Set(input.keys).isSubset(of: ["mode", "section", "cursor"]), input["mode"] == .string("goal_contract"),
           case .string(let section) = input["section"] ?? .string("goal"),
@@ -71,18 +71,19 @@ enum AgentDesktopCollaborationArchiveRecall {
     guard cursor.utf8.count <= 160, parts.count == 3, let offset = Int64(parts[0]), offset > 0,
           String(offset) == parts[0], parts[1].utf8.count == 64,
           parts[1].utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
-          cursor == goalCursor(scope: scope, section: section, hash: String(parts[1]), offset: offset)
+          cursor == goalCursor(scope: scope, generation: generation, section: section, hash: String(parts[1]), offset: offset)
     else { return nil }
     query["offset"] = .int(offset)
     query["sha256"] = .string(String(parts[1]))
     return query
   }
 
-  static func goalCursor(scope: AgentCollaborationToolEvidenceScope, section: String, hash: String, offset: Int64) -> String {
+  static func goalCursor(scope: AgentCollaborationToolEvidenceScope, generation: Int64,
+                         section: String, hash: String, offset: Int64) -> String {
     let binding = AgentMcpJSONCodec.sha256([
       "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
       "member": .string(scope.memberId), "source": .string(scope.sourceId), "section": .string(section),
-      "sha256": .string(hash), "offset": .int(offset)
+      "sha256": .string(hash), "offset": .int(offset), "generation": .int(generation)
     ])
     return "\(offset).\(hash).\(binding)"
   }
