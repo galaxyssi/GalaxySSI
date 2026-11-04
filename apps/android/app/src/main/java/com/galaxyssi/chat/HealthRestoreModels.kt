@@ -6,7 +6,8 @@ import org.json.JSONObject
 
 internal enum class HealthRestoreKind { NEW, DUPLICATE, CONFLICT }
 internal data class HealthRestoreMatch(val kind: HealthRestoreKind, val existing: HealthObservation? = null, val deleted: Boolean = false)
-internal data class HealthRestoreConflict(val record: HealthObservation, val existing: HealthObservation?, val deleted: Boolean)
+internal data class HealthRestoreConflict(val record: HealthObservation, val existing: HealthObservation?, val deleted: Boolean,
+    val replaceable: Boolean = false)
 internal data class HealthRestoreConflictPage(val rows: List<HealthRestoreConflict>, val next: String?)
 internal data class HealthRestoreOriginalState(val duplicate: HealthOriginal?, val available: Boolean, val sameId: HealthOriginal?)
 internal data class HealthRestorePreparedOriginal(val original: HealthOriginal, val wrappedKey: ByteArray, val present: Boolean)
@@ -21,14 +22,14 @@ internal data class HealthRestoreSourceLink(val recordId: String, val revision: 
 
 internal data class HealthRestoreCounts(val added: Long, val duplicates: Long, val conflicts: Long,
     val originalsAdded: Int, val originalsReused: Int, val repaired: Int, val missing: Int,
-    val sourcesAdded: Long = 0, val sourcesReused: Long = 0, val sourcesSkipped: Long = 0) {
+    val sourcesAdded: Long = 0, val sourcesReused: Long = 0, val sourcesSkipped: Long = 0, val replaced: Long = 0) {
     fun json() = JSONObject().put("added", added).put("duplicates", duplicates).put("conflicts", conflicts)
         .put("originals_added", originalsAdded).put("originals_reused", originalsReused).put("repaired", repaired).put("missing", missing)
-        .put("sources_added", sourcesAdded).put("sources_reused", sourcesReused).put("sources_skipped", sourcesSkipped)
+        .put("sources_added", sourcesAdded).put("sources_reused", sourcesReused).put("sources_skipped", sourcesSkipped).put("replaced", replaced)
     companion object {
         fun from(j: JSONObject) = HealthRestoreCounts(j.getLong("added"), j.getLong("duplicates"), j.getLong("conflicts"),
             j.getInt("originals_added"), j.getInt("originals_reused"), j.getInt("repaired"), j.getInt("missing"),
-            j.optLong("sources_added"), j.optLong("sources_reused"), j.optLong("sources_skipped"))
+            j.optLong("sources_added"), j.optLong("sources_reused"), j.optLong("sources_skipped"), j.optLong("replaced"))
     }
 }
 internal data class HealthRestoreReceipt(val id: String, val packageId: String, val createdAt: Long,

@@ -34,6 +34,7 @@ class HealthRestoreActivity : Activity() {
     private var dialog: AlertDialog? = null
     private var plan: HealthRestorePlan? = null
     private var conflictPage: HealthRestoreConflictPage? = null
+    private val replacements = linkedSetOf<String>()
     private var completed: HealthRestoreReceipt? = null
     private var history = emptyList<HealthRestoreReceipt>()
     private var notice: Int? = null
@@ -83,6 +84,7 @@ class HealthRestoreActivity : Activity() {
         val previous = plan
         plan = null
         conflictPage = null
+        replacements.clear()
         if (previous != null) disposal.execute { runCatching { previous.close() } }
     }
 
@@ -125,9 +127,24 @@ class HealthRestoreActivity : Activity() {
                     ui.add(content, ui.text(getString(R.string.health_restore_local_note, current.draft.note.ifBlank { empty }),
                         13f, muted = true), 4)
                 }
+                if (current != null && current.draft.measuredAt != incoming.draft.measuredAt) {
+                    val localTime = DateFormat.getDateTimeInstance().format(Date(current.draft.measuredAt))
+                    ui.add(content, ui.text(getString(R.string.health_restore_local_time, localTime), 13f, muted = true), 4)
+                }
+                if (row.replaceable) ui.add(content, CheckBox(this).apply {
+                    text = getString(R.string.health_restore_use_backup)
+                    tag = "health-restore-replace-${incoming.id}"
+                    isSaveEnabled = false
+                    isChecked = incoming.id in replacements
+                    setOnCheckedChangeListener { _, checked ->
+                        if (checked) replacements += incoming.id else replacements -= incoming.id
+                    }
+                }, 6)
             }
             page.next?.let { after -> ui.add(content, ui.profileRow(getString(R.string.health_next_page)) { openConflicts(after) }, 8) }
-            ui.add(content, ui.profileRow(getString(R.string.health_restore_back_preview)) { conflictPage = null; render() }, 10)
+            ui.add(content, ui.profileRow(getString(R.string.health_restore_back_preview)) { conflictPage = null; render() }.apply {
+                tag = "health-restore-back-preview"
+            }, 10)
             return
         }
         plan?.let { value ->
@@ -142,11 +159,20 @@ class HealthRestoreActivity : Activity() {
                 ui.add(content, ui.text(getString(R.string.health_backup_dates, dates.format(Date(value.manifest.first)),
                     dates.format(Date(value.manifest.last))), 14f, muted = true), 4)
             }
-            showCounts(content, value.counts)
+            showCounts(content, value.counts, showSources = replacements.isEmpty())
             if (value.counts.conflicts > 0L) ui.add(content, ui.profileRow(getString(R.string.health_restore_conflicts),
-                getString(R.string.health_restore_keep_existing)) { openConflicts("") }, 7)
+                if (replacements.isEmpty()) getString(R.string.health_restore_keep_existing)
+                else getString(R.string.health_restore_replacement_pending, replacements.size)) { openConflicts("") }.apply {
+                tag = "health-restore-review-conflicts"
+            }, 7)
             val confirmation = CheckBox(this).apply {
-                setText(if (value.counts.missing == 0) R.string.health_restore_confirm else R.string.health_restore_confirm_missing)
+                text = when {
+                    replacements.isNotEmpty() && value.counts.missing > 0 ->
+                        getString(R.string.health_restore_confirm_replacements_missing, replacements.size)
+                    replacements.isNotEmpty() -> getString(R.string.health_restore_confirm_replacements, replacements.size)
+                    value.counts.missing > 0 -> getString(R.string.health_restore_confirm_missing)
+                    else -> getString(R.string.health_restore_confirm)
+                }
                 isSaveEnabled = false
                 tag = "health-restore-consent"
             }
@@ -177,11 +203,12 @@ class HealthRestoreActivity : Activity() {
         }
     }
 
-    private fun showCounts(content: LinearLayout, counts: HealthRestoreCounts) {
+    private fun showCounts(content: LinearLayout, counts: HealthRestoreCounts, showSources: Boolean = true) {
         ui.add(content, ui.text(getString(R.string.health_restore_record_counts, counts.added, counts.duplicates, counts.conflicts), 15f), 7)
         ui.add(content, ui.text(getString(R.string.health_restore_file_counts, counts.originalsAdded, counts.originalsReused,
             counts.repaired, counts.missing), 14f, muted = true), 4)
-        if (counts.sourcesAdded > 0 || counts.sourcesReused > 0 || counts.sourcesSkipped > 0)
+        if (counts.replaced > 0) ui.add(content, ui.text(getString(R.string.health_restore_replacement_count, counts.replaced), 14f), 4)
+        if (showSources && (counts.sourcesAdded > 0 || counts.sourcesReused > 0 || counts.sourcesSkipped > 0))
             ui.add(content, ui.text(getString(R.string.health_restore_secondary_counts, counts.sourcesAdded, counts.sourcesReused,
                 counts.sourcesSkipped), 14f), 4)
     }
@@ -236,7 +263,8 @@ class HealthRestoreActivity : Activity() {
     }
 
     private fun restore(source: HealthRestorePlan) {
-        run({ source.commit(it) }) { result ->
+        val selected = replacements.toSet()
+        run({ source.commit(it, selected) }) { result ->
             completed = result
             clearPlan()
             refreshHistory()
