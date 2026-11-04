@@ -122,15 +122,18 @@ class HealthTrendStoreDeviceTest {
         assertTrue(store.save(first.editable().copy(metric = HealthMetric.WEIGHT, values = mapOf("weight" to "68"), unit = "kg", reportedValues = emptyMap())) is HealthSaveResult.Saved)
         assertNotEquals(beforeOld, store.metricVersion(s.metric)); assertNotEquals(beforeNew, store.metricVersion(HealthMetric.WEIGHT))
     }
-    @Test fun schemaThreeUpgradeKeepsDataAndAddsOnlyMetricClockMetadata() = fixture { store ->
-        val s = spec(); val first = (store.save(draft(s, 0)) as HealthSaveResult.Saved).record
-        val name = java.io.File(store.tableDatabase.path).name
-        store.tableDatabase.execSQL("DROP TABLE health_metric_clocks"); store.tableDatabase.version = 3
-        HealthRecordStore(context, name).use { reopened ->
-            assertEquals(first, reopened.record(first.id)); assertEquals(1, reopened.history(first.id).size)
-            assertEquals("", reopened.metricVersion(s.metric)); assertEquals(4, reopened.tableDatabase.version)
-            val edit = reopened.save(first.editable().copy(note = "verified")); assertTrue(edit is HealthSaveResult.Saved); assertTrue(reopened.metricVersion(s.metric).isNotBlank())
-        }
+    @Test fun schemaThreeUpgradeKeepsDataAndAddsMetricClockMetadata() {
+        val s = spec()
+        val name = "health-trend-v3-${id()}.db"
+        try {
+            val first = seedLegacyHealthObservation(context, name, 3, draft(s, 0))
+            HealthRecordStore(context, name).use { reopened ->
+                assertEquals(first, reopened.record(first.id)); assertEquals(1, reopened.history(first.id).size)
+                assertEquals("", reopened.metricVersion(s.metric)); assertEquals(5, reopened.tableDatabase.version)
+                val edit = reopened.save(first.editable().copy(note = "verified"))
+                assertTrue(edit is HealthSaveResult.Saved); assertTrue(reopened.metricVersion(s.metric).isNotBlank())
+            }
+        } finally { context.deleteDatabase(name) }
     }
     @Test fun committedChangesNotifyOnlyTheirOwnDatabaseScope() = fixture { store ->
         val name = java.io.File(store.tableDatabase.path).name; val calls = java.util.concurrent.atomic.AtomicInteger()

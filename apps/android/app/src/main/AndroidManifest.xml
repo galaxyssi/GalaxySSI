@@ -9,6 +9,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_PRESSURE" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
@@ -236,8 +242,19 @@
         <activity android:name=".HealthProfileActivity" android:exported="false" />
         <activity android:name=".HealthPrivacyActivity" android:exported="false" />
         <activity android:name=".HealthSourcesActivity" android:exported="false" />
-        <!-- Availability checks do not require the legacy Health Connect SDK callback service. -->
-        <service android:name="androidx.health.platform.client.impl.sdkservice.HealthDataSdkService" tools:node="remove" />
+        <activity android:name=".HealthConnectActivity" android:exported="false" />
+        <activity android:name=".HealthConnectRationaleActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <activity-alias android:name=".HealthConnectPermissionUsageActivity" android:exported="true"
+            android:targetActivity=".HealthConnectRationaleActivity" android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
         <activity android:name=".HealthReminderActivity" android:exported="false" />
         <activity android:name=".HealthWeeklyActivity" android:exported="false" />
         <activity android:name=".HealthBackgroundActivity" android:exported="false" />

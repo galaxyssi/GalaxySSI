@@ -89,16 +89,18 @@ internal data class HealthObservation(
     val draft: HealthDraft,
     val receivedAt: Long,
     val source: String = "manual",
-    val profileId: String = "self"
+    val profileId: String = "self",
+    val platformOrigin: String = "",
 ) {
     fun json() = JSONObject().put("format", 1).put("id", id).put("revision", revision).put("draft", draft.json())
         .put("received_at", receivedAt).put("source", source).put("profile_id", profileId)
+        .apply { if (platformOrigin.isNotEmpty()) put("platform_origin", platformOrigin) }
     fun editable() = draft.copy(recordId = id, revision = revision)
     companion object {
         fun from(json: JSONObject): HealthObservation {
             require(json.getInt("format") == 1)
             return HealthObservation(json.getString("id"), json.getInt("revision"), HealthDraft.from(json.getJSONObject("draft")),
-                json.getLong("received_at"), json.getString("source"), json.getString("profile_id"))
+                json.getLong("received_at"), json.getString("source"), json.getString("profile_id"), json.optString("platform_origin"))
                 .also { record -> require(record.draft.reportedValues.all { (field, raw) ->
                     HealthResult.parse(raw, record.draft.metric.form)?.canonical == HealthResult.parse(record.draft.values[field].orEmpty(), record.draft.metric.form)?.canonical
                 }) }

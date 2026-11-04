@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_connect_authorize">Authorize Data Source</string>
+    <string name="health_connect_privacy">Health Connect Privacy</string>
+    <string name="health_connect_intro">Choose which health measurements to read into your local health archive.</string>
+    <string name="health_connect_read_only">Read access only</string>
+    <string name="health_connect_policy">GalaxySSI reads only selected and granted measurements when you request a preview. It does not write to Health Connect, read in the background, or send this import to a model or another device.</string>
+    <string name="health_connect_retention">Disconnecting stops new reads. Saved local copies remain encrypted. Remove a measurement from the archive in its catalog detail; the revision history is retained.</string>
+    <string name="health_connect_revocation">You can revoke access at any time in Health Connect settings.</string>
+    <string name="health_connect_scopes">Data to Read</string>
+    <string name="health_connect_scope_granted">%1$s · Allowed by Android</string>
+    <string name="health_connect_working">Checking Health Connect…</string>
+    <string name="health_connect_check_again">Check Again</string>
+    <string name="health_connect_continue">Open Android Permission Settings</string>
+    <string name="health_connect_select_first">Select at least one measurement type.</string>
+    <string name="health_connect_range">Reading Range</string>
+    <string name="health_connect_days">Past %1$d day(s)</string>
+    <string name="health_connect_hours">Past %1$d hour(s)</string>
+    <string name="health_connect_interval_note">Steps use completed local calendar days. Sleep uses recorded session duration.</string>
+    <string name="health_connect_preview">Preview Import</string>
+    <string name="health_connect_no_records">No measurements were found in this range.</string>
+    <string name="health_connect_partial">Only the selected types allowed by Android were read.</string>
+    <string name="health_connect_preview_count">%1$d measurements to review</string>
+    <string name="health_connect_preview_metric">%1$s: %2$d · Latest %3$s (%4$s)</string>
+    <string name="health_connect_self_confirmation">Confirm these measurements belong to you before saving.</string>
+    <string name="health_connect_save">Confirm and Save to My Records</string>
+    <string name="health_connect_disconnect">Disconnect Health Connect</string>
+    <string name="health_connect_saved">Saved %1$d measurements · Skipped %2$d previously imported</string>
+    <string name="health_connect_timeout">Health Connect did not respond in time. Try again.</string>
+    <string name="health_connect_permissions_changed">Health Connect access changed. Check permissions before reading or saving again.</string>
+    <string name="health_connect_too_many">Too many measurements to preview. Choose a shorter range or fewer types.</string>
+    <string name="health_connect_failed">Could not complete the Health Connect operation. Try again.</string>
+    <string name="health_connect_scope_count">Health Connect · %1$d allowed types</string>
+    <string name="health_connect_grant_status_unavailable">Could not check Health Connect authorization</string>
+    <string name="health_connect_last_import">Last confirmed import: %1$s</string>
+    <string name="health_connect_no_import">No Health Connect import yet.</string>
+    <string name="health_connect_platform_aggregate">Daily total from Health Connect</string>
+    <string name="health_connect_platform_origin">Source app: %1$s</string>
+</resources>

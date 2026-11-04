@@ -6,8 +6,8 @@ local measurements. No connector or sync is inferred from any of these.
 
 - Health Connect availability uses the [official AndroidX SDK probe](https://developer.android.com/reference/androidx/health/connect/client/HealthConnectClient). Available
   devices can open system settings; install/update cases can open the official
-  Play listing. No health permissions are declared or requested by this screen.
-  The legacy exported callback service is excluded until an integration needs it.
+  Play listing. The overview itself does not request permissions; the separate
+  [Health Connect screen](android-health-connect.md) handles scoped authorization.
 - Bluetooth LE hardware support comes from Android's package manager. No scan,
   pairing, vendor login, or background collection is started.
 - Reports and Tables displays separate counts of local original entries and
@@ -17,10 +17,9 @@ local measurements. No connector or sync is inferred from any of these.
 - Source metadata loads off the UI thread. On pause, the content is removed,
   in-flight results are invalidated, and the screen reloads on return.
 
-This increment does not implement Health Connect read consent, Bluetooth
-collection, or synchronization. Connection-specific metric scopes, revocation,
-pause, disconnect, local-copy deletion, last-sync evidence, and recovery are
-tracked separately in the [design acceptance ledger](android-health-screen-status.md).
+Bluetooth collection and incremental synchronization are tracked separately in
+the [design acceptance ledger](android-health-screen-status.md). A confirmed
+manual import timestamp is not a last-sync checkpoint.
 
 ## Verification
 
