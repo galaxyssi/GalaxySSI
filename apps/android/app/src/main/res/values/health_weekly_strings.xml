@@ -32,5 +32,7 @@
     <string name="health_weekly_changed">Records changed after this preview. Review the updated report before saving.</string>
     <string name="health_weekly_assistant_scope">Scope from your Health Assistant analysis</string>
     <string name="health_weekly_assistant_changed">Records used in the analysis have changed. Review an updated report or return to Health Assistant.</string>
+    <string name="health_weekly_reminder_scope">Scope from the sleep reminder evidence</string>
+    <string name="health_weekly_reminder_changed">Records used by this reminder have changed. Review an updated report or return to the reminder.</string>
     <string name="health_weekly_review_again">Review updated report</string>
 </resources>
