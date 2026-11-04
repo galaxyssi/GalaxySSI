@@ -414,6 +414,13 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var delivery: AgentCollaborationDocumentaryAcceptance.Reference? = nil
     var review: AgentCollaborationDocumentaryAcceptance.Reference? = nil
     var required_observations: [RequiredObservation]? = nil
+    var validator: AgentMcpJSONObject? = nil
+
+    var hasValidValidatorBinding: Bool {
+      guard let validator else { return true }
+      return verification == .computational && requirement == AgentCollaborationNumericTrial.requirement &&
+        validator["id"] == .string(AgentCollaborationNumericTrial.validatorId)
+    }
   }
 
   struct RequiredObservation: Codable, Hashable {
@@ -481,7 +488,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
           assessment.format == "galaxyssi.goal-assessment.v1",
           !assessment.summary.isBlank, !assessment.criteria.isEmpty,
           Set(assessment.criteria.map(\.id)).count == assessment.criteria.count,
-          assessment.criteria.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank &&
+          assessment.criteria.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank && $0.hasValidValidatorBinding &&
             ($0.required_observations ?? []).allSatisfy(\.isValid) }) else {
       return .needsAssessment
     }
@@ -489,6 +496,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
     guard contract.allSatisfy({ original in
       guard let current = criteria[original.id] else { return false }
       return current.requirement == original.requirement && current.verification == original.verification &&
+        current.validator == original.validator &&
         Set(original.required_observations ?? []).isSubset(of: Set(current.required_observations ?? []))
     }) else { return .needsAssessment }
     guard assessment.recruit?.isEmpty != false else { return .needsAssessment }
@@ -610,25 +618,39 @@ enum AgentCollaborationDocumentaryAcceptance {
     var verified: [String: Policy.VerifiedCriterion] = [:]
     do {
       for criterion in assessment.criteria {
-        guard criterion.verification == .documentary, criterion.evidence_kind == .observed,
+        guard criterion.evidence_kind == .observed,
               let deliveryRef = criterion.delivery, let reviewRef = criterion.review,
               let delivery = try current(deliveryRef), let review = try current(reviewRef),
               ["artifact", "proposal", "decision"].contains(delivery.kind),
               !delivery.body.string("content").isBlank,
               ["acceptance_review", "decision"].contains(review.kind),
-              delivery.authorId != review.authorId,
+              AgentTeamProgressPolicy.stableCollaborationMemberId(delivery.authorId) !=
+                AgentTeamProgressPolicy.stableCollaborationMemberId(review.authorId),
               review.parents.contains(deliveryRef),
               let rawReview = review.body["acceptance_review"]?.objectValue,
               let check = try? JSONDecoder().decode(Review.self, from: Data(AgentMcpJSONCodec.stringify(rawReview).utf8)),
               check.criterion_id == criterion.id, check.requirement == criterion.requirement,
               check.target == deliveryRef, check.verdict == "supported",
               !check.rationale.isBlank, check.unresolved.isEmpty else { return .needsAssessment }
+        switch criterion.verification {
+        case .documentary:
+          guard criterion.validator == nil else { return .needsAssessment }
+        case .computational:
+          guard let pinned = contract.first(where: { $0.id == criterion.id }), pinned.hasValidValidatorBinding,
+                let validator = pinned.validator, criterion.validator == validator,
+                let computation = delivery.body["computation"]?.objectValue,
+                AgentCollaborationNumericTrial.passes(spec: validator, computation: computation)
+          else { return .needsAssessment }
+        case .physical:
+          return .needsAssessment
+        }
         var number: Int64 = 1
         while number < deliveryRef.revision {
           guard let previous = try readRevision(deliveryRef.objectId, number),
                 previous.reference.objectId == deliveryRef.objectId,
                 previous.reference.revision == number, previous.conversationId == conversationId,
-                !previous.authorId.isBlank, previous.authorId != review.authorId else { return .needsAssessment }
+                !previous.authorId.isBlank, AgentTeamProgressPolicy.stableCollaborationMemberId(previous.authorId) !=
+                  AgentTeamProgressPolicy.stableCollaborationMemberId(review.authorId) else { return .needsAssessment }
           number += 1
         }
         let observations = delivery.hostObservationIds.union(review.hostObservationIds)
@@ -644,7 +666,7 @@ enum AgentCollaborationDocumentaryAcceptance {
         }
         let receipts = observations.union([deliveryRef.objectId, reviewRef.objectId, deliveryRef.sha256, reviewRef.sha256])
         verified[criterion.id] = Policy.VerifiedCriterion(requirement: criterion.requirement,
-          verification: .documentary, evidence: receipts,
+          verification: criterion.verification, evidence: receipts,
           originalObservations: Set(criterion.required_observations ?? []))
       }
     } catch { return .needsAssessment }

@@ -1534,7 +1534,7 @@ final class AgentTeamExecutionHistoryStore {
   func advanceGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64) -> Bool {
     guard expectedRevision >= 0, expectedRevision < Int64.max, checkpoint.revision == expectedRevision + 1,
           !checkpoint.contract.isEmpty, Set(checkpoint.contract.map(\.id)).count == checkpoint.contract.count,
-          checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank }),
+          checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank && $0.hasValidValidatorBinding }),
           checkpoint.completedWorkIds.allSatisfy({ !$0.isBlank }) else { return false }
     do {
       return try access { database in

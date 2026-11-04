@@ -2,6 +2,13 @@ import Foundation
 
 enum AgentCollaborationNumericTrial {
   static let validatorId = "numeric_model_cases.v1"
+  static let requirement = "Verify the saved numeric model on exactly the registered test cases; this does not establish generalization or physical validity."
+
+  static func passes(spec: AgentMcpJSONObject, computation: AgentMcpJSONObject) -> Bool {
+    evaluate(["purpose": .string("Verify the registered cases"), "reference_basis": .string("Pinned criterion"),
+      "limitations": .string("Finite cases only"), "validator": .object(spec),
+      "computation": .object(computation)])?["passed"] == .bool(true)
+  }
   private typealias Expression = ([String: Double]) -> Double?
   private static let unary: [String: (Double) -> Double] = [
     "neg": { -$0 }, "abs": { abs($0) }, "exp": { exp($0) }, "expm1": { expm1($0) },
