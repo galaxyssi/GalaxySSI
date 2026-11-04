@@ -475,8 +475,10 @@ enum AgentCollaborationForecastIntake {
     return result
   }
 
-  static func hypothesisInformation(_ forecast: AgentMcpJSONObject) -> [String: Double]? {
-    guard let spec = forecast["hypothesis_test"]?.objectValue, spec["prior_outcome"] == nil,
+  static func hypothesisInformation(_ forecast: AgentMcpJSONObject,
+                                    carriedPosterior: AgentMcpJSONObject? = nil) -> [String: Double]? {
+    guard let spec = forecast["hypothesis_test"]?.objectValue,
+          (spec["prior_outcome"] != nil) == (carriedPosterior != nil),
           hasText(spec, ["question", "assumptions", "likelihood_basis", "misspecification_check"]),
           let hypotheses = spec["hypotheses"]?.arrayValue, (2...32).contains(hypotheses.count),
           let rawIds = spec["event_ids"]?.arrayValue, (2...32).contains(rawIds.count),
@@ -500,10 +502,13 @@ enum AgentCollaborationForecastIntake {
     }
     var weights: AgentMcpJSONObject = [:]
     for hypothesis in hypotheses {
-      guard let row = hypothesis.objectValue, hasText(row, ["id", "claim"]), let prior = row["prior"],
+      guard let row = hypothesis.objectValue, hasText(row, ["id", "claim"]),
+            carriedPosterior == nil || row["prior"] == nil,
+            let prior = carriedPosterior?[row.string("id")] ?? row["prior"],
             weights.updateValue(prior, forKey: row.string("id")) == nil else { return nil }
     }
     let keys = weights.keys.sorted()
+    if let carriedPosterior, Set(carriedPosterior.keys) != Set(keys) { return nil }
     func distribution(_ row: AgentMcpJSONObject, keys: [String]) -> [Double]? {
       guard Set(row.keys) == Set(keys) else { return nil }
       let values = keys.compactMap { number(row[$0]) }
@@ -535,7 +540,7 @@ enum AgentCollaborationForecastIntake {
   }
 
   static func hypothesisFeedback(_ forecast: AgentMcpJSONObject, observed: AgentMcpJSONValue?,
-                                 withinValidity: Bool) -> AgentMcpJSONObject? {
+                                 withinValidity: Bool, carriedPosterior: AgentMcpJSONObject? = nil) -> AgentMcpJSONObject? {
     guard let spec = forecast["hypothesis_test"]?.objectValue,
           let ids = spec["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
           let hypotheses = spec["hypotheses"]?.arrayValue?.compactMap(\.objectValue),
@@ -557,7 +562,7 @@ enum AgentCollaborationForecastIntake {
     var weights: [(String, Double, Double)] = []
     for hypothesis in hypotheses {
       let id = hypothesis.string("id")
-      guard let prior = number(hypothesis["prior"]), let row = likelihoods[id]?.objectValue,
+      guard let prior = number(carriedPosterior?[id] ?? hypothesis["prior"]), let row = likelihoods[id]?.objectValue,
             let likelihood = number(row[event]) else { return nil }
       let total = ids.compactMap { number(row[$0]) }.reduce(0, +)
       guard total > 0 else { return nil }
@@ -581,6 +586,22 @@ enum AgentCollaborationForecastIntake {
     feedback["posterior"] = .object(posterior)
     feedback["information_gain_bits"] = .double(max(0, gain))
     return feedback
+  }
+
+  static func sameHypothesisQuestion(_ old: AgentMcpJSONObject, _ new: AgentMcpJSONObject) -> Bool {
+    func claims(_ value: AgentMcpJSONObject) -> [String: Data]? {
+      guard let rows = value["hypotheses"]?.arrayValue, rows.count >= 2 else { return nil }
+      var result: [String: Data] = [:]
+      for item in rows {
+        guard let row = item.objectValue, hasText(row, ["id", "claim"]),
+              result.updateValue(Data(row.string("claim").utf8), forKey: row.string("id")) == nil else { return nil }
+      }
+      return result
+    }
+    guard hasText(old, ["question"]), hasText(new, ["question", "conditional_history"]),
+          Data(old.string("question").utf8) == Data(new.string("question").utf8),
+          let previous = claims(old), let next = claims(new) else { return false }
+    return previous == next
   }
 
   static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
@@ -820,6 +841,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var declaredExpectedUtilities: [String: Double]? = nil
   var expectedInformationGainBits: [String: Double]? = nil
   var hypothesisFeedback: AgentMcpJSONObject? = nil
+  var carriedHypothesisPosterior: AgentMcpJSONObject? = nil
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil

@@ -728,6 +728,7 @@ final class AgentTeamExecutionHistoryStore {
         var expectedUtilities: [String: Double]? = nil
         var expectedInformation: [String: Double]? = nil
         var hypothesisFeedback: AgentMcpJSONObject? = nil
+        var carriedPosterior: AgentMcpJSONObject? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
         var trialAuthors: [String]? = nil
         if draft.kind == .acceptanceReview {
@@ -830,7 +831,14 @@ final class AgentTeamExecutionHistoryStore {
             model = savedModel
             expectedUtilities = utilities
             if value["hypothesis_test"] != nil {
-              guard let information = AgentCollaborationForecastIntake.hypothesisInformation(value) else {
+              let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+                turnId: turnId, memberId: memberId, sourceId: sourceId)
+              if let test = value["hypothesis_test"]?.objectValue, let prior = test["prior_outcome"] {
+                carriedPosterior = try Self.loadHypothesisPosterior(prior, test: test, model: savedModel,
+                  parents: draft.parents, scope: scope, database: database)
+              }
+              guard let information = AgentCollaborationForecastIntake.hypothesisInformation(value,
+                carriedPosterior: carriedPosterior) else {
                 throw AgentTeamHistoryDatabase.Failure.corrupt
               }
               expectedInformation = information
@@ -917,9 +925,11 @@ final class AgentTeamExecutionHistoryStore {
                 original.succeeded, original.call.name == tool, original.scope.memberId == spec.string("executor"),
                 original.scope.runId == forecast.runId, original.scope.turnId == forecast.turnId,
                 original.startedAtMillis >= registered, original.finishedAtMillis >= original.startedAtMillis,
+                forecast.carriedHypothesisPosterior == nil || original.startedAtMillis > registered,
                 let feedback = AgentCollaborationForecastIntake.hypothesisFeedback(spec,
                   observed: Self.measurementValue(original.output, pointer: event.string("pointer")),
-                  withinValidity: original.finishedAtMillis <= deadline)
+                  withinValidity: original.finishedAtMillis <= deadline,
+                  carriedPosterior: forecast.carriedHypothesisPosterior)
           else { throw AgentTeamHistoryDatabase.Failure.stale }
           hypothesisFeedback = feedback
           frozenReads = reads
@@ -1015,6 +1025,7 @@ final class AgentTeamExecutionHistoryStore {
           frozenCloudReads: frozenReads, declaredExpectedUtilities: expectedUtilities,
           expectedInformationGainBits: expectedInformation,
           hypothesisFeedback: hypothesisFeedback,
+          carriedHypothesisPosterior: carriedPosterior,
           registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors)
         revision.reference.sha256 = try digest(revision)
@@ -1120,6 +1131,38 @@ final class AgentTeamExecutionHistoryStore {
       }
     }
     return node
+  }
+
+  private static func loadHypothesisPosterior(_ prior: AgentMcpJSONValue, test: AgentMcpJSONObject,
+    model: AgentMcpJSONObject, parents: [AgentCollaborationResearchReference],
+    scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
+    func exact(_ value: AgentMcpJSONValue?, kind: AgentCollaborationResearchDraft.Kind)
+      throws -> AgentCollaborationResearchRevision? {
+      guard let ref = forecastReference(value),
+            let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+            saved.reference == ref, saved.draft.kind == kind,
+            saved.turnId != scope.turnId || (saved.runId == scope.runId && saved.authorId == scope.memberId)
+      else { return nil }
+      return saved
+    }
+    guard let ref = forecastReference(prior), parents.contains(ref),
+          let outcome = try exact(prior, kind: .predictionOutcome),
+          let feedback = outcome.hypothesisFeedback, feedback.string("state") == "updated_from_observation",
+          let posterior = feedback["posterior"]?.objectValue,
+          let observation = outcome.frozenCloudReads?.first,
+          let original = try database.cloudEvidence(id: observation.evidenceId, conversationId: scope.conversationId),
+          original.finishedAtMillis < AgentControlPlaneClock.nowMillis(),
+          let previous = try exact(outcome.draft.body["prediction_outcome"]?.objectValue?["forecast"], kind: .actionForecast),
+          let forecast = previous.draft.body["action_forecast"]?.objectValue,
+          let oldTest = forecast["hypothesis_test"]?.objectValue,
+          AgentCollaborationForecastIntake.sameHypothesisQuestion(oldTest, test),
+          let environment = try exact(forecast["task_environment_model"], kind: .environmentModel),
+          let oldModel = environment.draft.body["task_environment_model"]?.objectValue,
+          ["goal_sha256", "criterion_id", "requirement", "domain", "environment", "scope"].allSatisfy({
+            Data(oldModel.string($0).utf8) == Data(model.string($0).utf8)
+          }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+    return posterior
   }
 
   private static func forecastReference(_ value: AgentMcpJSONValue?) -> AgentCollaborationResearchReference? {

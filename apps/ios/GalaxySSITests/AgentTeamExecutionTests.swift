@@ -616,6 +616,22 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(observed.string("state"), "updated_from_observation")
     XCTAssertEqual(observed["posterior"], .object(["a": .double(1), "b": .double(0)]))
     XCTAssertEqual(observed["information_gain_bits"], .double(1))
+    var chained = forecast
+    var next = try XCTUnwrap(chained["hypothesis_test"]?.objectValue)
+    let previous = next
+    next["conditional_history"] = .string("Condition on the first measurement.")
+    next["prior_outcome"] = .object(["object_id": .string("old")])
+    next["hypotheses"] = .array([
+      .object(["id": .string("a"), "claim": .string("A")]),
+      .object(["id": .string("b"), "claim": .string("B")])
+    ])
+    XCTAssertTrue(AgentCollaborationForecastIntake.sameHypothesisQuestion(previous, next))
+    chained["hypothesis_test"] = .object(next)
+    let carried: AgentMcpJSONObject = ["a": .double(0.5), "b": .double(0.5)]
+    XCTAssertNil(AgentCollaborationForecastIntake.hypothesisInformation(chained))
+    XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisInformation(chained, carriedPosterior: carried), scores)
+    next["question"] = .string("A different question")
+    XCTAssertFalse(AgentCollaborationForecastIntake.sameHypothesisQuestion(previous, next))
     XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisFeedback(forecast,
       observed: .bool(true), withinValidity: false)?.string("state"), "stale_observation")
     XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisFeedback(forecast,
