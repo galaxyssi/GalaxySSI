@@ -77,6 +77,91 @@ class HealthTableStoreDeviceTest {
         assertEquals(1L, store.counts(second)[HealthTableRowState.DUPLICATE])
         HealthRecordStore(context, name).use { assertEquals(1L, it.count()); assertEquals("124", it.page().records.single().draft.values["systolic"]) }
     }
+    @Test fun linkingDuplicatesRequiresOptInAndUndoRemovesOnlyThatBatchSources() = fixture { name, store ->
+        val first = original()
+        val second = original()
+        save(store, prepare(store, listOf(raw(1)), first))
+        val skipped = prepare(store, listOf(raw(1)), second)
+        save(store, skipped)
+        HealthRecordStore(context, name).use { records ->
+            assertTrue(records.originalPage(second.id).records.isEmpty())
+            val base = records.originalPage(first.id).records.single()
+            val linked = prepare(store, listOf(raw(1)), second)
+            complete(store, linked)
+            store.confirmSave(linked, store.batch(linked)!!.mappingRevision, linkDuplicates = true)
+            complete(store, linked)
+            assertEquals(1L, store.counts(linked)[HealthTableRowState.LINKED])
+            assertEquals(0L, store.counts(linked)[HealthTableRowState.SAVED])
+            val projected = records.originalPage(second.id).records.single()
+            assertEquals(base.id, projected.id)
+            assertEquals(base.revision, projected.revision)
+            assertEquals(second.id, projected.draft.evidence?.originalId)
+            assertEquals(linked, projected.draft.evidence?.jobId)
+            assertEquals(base, records.record(base.id))
+            assertEquals(1L, records.count())
+            records.tableDatabase.rawQuery("SELECT payload FROM health_table_source_links", null).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertFalse(cursor.getBlob(0).toString(Charsets.ISO_8859_1).contains("Systolic"))
+            }
+            store.undo(linked)
+            complete(store, linked)
+            assertEquals(1L, store.counts(linked)[HealthTableRowState.UNLINKED])
+            assertEquals(base, records.record(base.id))
+            assertTrue(records.originalPage(second.id).records.isEmpty())
+        }
+    }
+
+    @Test fun sourceLinksCannotAttachToARecordChangedAfterValidation() = fixture { name, store ->
+        val primary = original()
+        val secondary = original()
+        save(store, prepare(store, listOf(raw(1)), primary))
+        val stale = prepare(store, listOf(raw(1)), secondary)
+        complete(store, stale)
+        assertEquals(1L, store.counts(stale)[HealthTableRowState.DUPLICATE])
+        HealthRecordStore(context, name).use { records ->
+            val prior = records.originalPage(primary.id).records.single()
+            assertTrue(records.save(prior.editable().copy(values = prior.draft.values + ("systolic" to "130"))) is HealthSaveResult.Saved)
+            store.confirmSave(stale, store.batch(stale)!!.mappingRevision, linkDuplicates = true)
+            complete(store, stale)
+            assertEquals(0L, store.counts(stale)[HealthTableRowState.LINKED])
+            assertTrue(records.originalPage(secondary.id).records.isEmpty())
+            assertEquals(1L, records.count())
+        }
+    }
+
+    @Test fun originalScopedPagesDeduplicateRepeatedLinksAndExcludeChangedRevisions() = fixture { name, store ->
+        val primary = original()
+        val secondary = original()
+        val rows = (1L..63).map { raw(it, (100 + it).toString()) }
+        save(store, prepare(store, rows, primary))
+        val jobs = List(2) {
+            val job = prepare(store, rows, secondary)
+            complete(store, job)
+            store.confirmSave(job, store.batch(job)!!.mappingRevision, linkDuplicates = true)
+            complete(store, job)
+            assertEquals(63L, store.counts(job)[HealthTableRowState.LINKED])
+            job
+        }
+        HealthRecordStore(context, name).use { records ->
+            val ids = linkedSetOf<String>()
+            var after: HealthPageCursor? = null
+            do {
+                val page = records.originalPage(secondary.id, after)
+                assertTrue(page.records.size <= 30)
+                page.records.forEach { assertTrue(ids.add(it.id)) }
+                after = page.next
+            } while (after != null)
+            assertEquals(63, ids.size)
+            val first = records.record(ids.first())!!
+            assertTrue(records.save(first.editable().copy(note = "New revision")) is HealthSaveResult.Saved)
+            assertFalse(records.originalPage(secondary.id).records.any { it.id == first.id })
+            store.undo(jobs[0]); complete(store, jobs[0])
+            assertTrue(records.originalPage(secondary.id).records.isNotEmpty())
+            store.undo(jobs[1]); complete(store, jobs[1])
+            assertTrue(records.originalPage(secondary.id).records.isEmpty())
+            assertEquals(63L, records.count())
+        }
+    }
     @Test fun concurrentRecordArrivalBetweenValidationAndSaveDoesNotRollbackOtherRows() = fixture { name, store ->
         val batch = prepare(store, listOf(raw(1), raw(2, "130")))
         complete(store, batch)
