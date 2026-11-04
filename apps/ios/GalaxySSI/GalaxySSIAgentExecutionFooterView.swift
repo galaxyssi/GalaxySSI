@@ -25,7 +25,7 @@ struct GalaxySSIAgentExecutionFooterView: View {
         .foregroundColor(.galaxySSITextPrimary)
         .lineLimit(1)
 
-      if !details.isEmpty {
+      if !visibleDetails.isEmpty {
         Button {
           detailsExpanded.toggle()
         } label: {
@@ -40,7 +40,7 @@ struct GalaxySSIAgentExecutionFooterView: View {
 
         if detailsExpanded {
           VStack(alignment: .leading, spacing: 3) {
-            ForEach(Array(details.suffix(4).enumerated()), id: \.offset) { _, detail in
+            ForEach(Array(visibleDetails.suffix(4).enumerated()), id: \.offset) { _, detail in
               Text(detail)
                 .font(.system(size: 10))
                 .foregroundColor(.galaxySSITextSecondary)
@@ -71,6 +71,8 @@ struct GalaxySSIAgentExecutionFooterView: View {
       processedFormat: t("galaxyssi.agent.trace.processed", "Worked for %@")
     )
   }
+
+  private var visibleDetails: [String] { AgentPublicProgressPolicy.details(details) }
 
   private var resolvedCancelTitle: String {
     cancelTitle.ifBlank(t("galaxyssi.agent.task_control.cancel", "Cancel task"))

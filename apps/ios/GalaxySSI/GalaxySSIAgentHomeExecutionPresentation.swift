@@ -69,15 +69,15 @@ extension AgentHomeView {
   }
 
   func remoteAgentStep(_ snapshot: AgentRemoteTaskStatusSnapshot) -> String {
-    snapshot.currentStep
-      .ifBlank(snapshot.detail)
+    AgentPublicProgressPolicy.text(snapshot.currentStep)
+      .ifBlank(AgentPublicProgressPolicy.text(snapshot.detail))
       .ifBlank(remoteAgentStatusLabel(snapshot.status))
   }
 
   func remoteAgentTimelineLine(_ event: AgentRemoteTaskStatusEvent) -> String {
     let label = remoteAgentStatusLabel(event.status)
-    return event.currentStep
-      .ifBlank(event.detail)
+    return AgentPublicProgressPolicy.text(event.currentStep)
+      .ifBlank(AgentPublicProgressPolicy.text(event.detail))
       .ifBlank(label)
   }
 

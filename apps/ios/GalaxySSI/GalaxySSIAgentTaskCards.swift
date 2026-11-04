@@ -182,7 +182,7 @@ struct GalaxySSIAgentExecutionStatusCard: View {
           .foregroundColor(.galaxySSITextPrimary)
           .lineLimit(1)
       }
-      if !details.isEmpty {
+      if !AgentPublicProgressPolicy.details(details).isEmpty {
         Button {
           detailsExpanded.toggle()
         } label: {
@@ -196,7 +196,7 @@ struct GalaxySSIAgentExecutionStatusCard: View {
         .buttonStyle(.plain)
         if detailsExpanded {
           VStack(alignment: .leading, spacing: 5) {
-            ForEach(Array(details.suffix(8).enumerated()), id: \.offset) { _, detail in
+            ForEach(Array(AgentPublicProgressPolicy.details(details).suffix(8).enumerated()), id: \.offset) { _, detail in
               HStack(alignment: .top, spacing: 6) {
                 Circle()
                   .fill(Color.galaxySSIInsightText)

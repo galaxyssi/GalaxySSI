@@ -64,7 +64,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       }
       agentMessageContent(message)
       if message.isMine {
-        let progress = message.deliveryTrace.filter { $0.stage.hasPrefix(AgentConnectorPublicProgress.tracePrefix) }
+        let progress = message.deliveryTrace.filter { $0.stage.hasPrefix(AgentConnectorPublicProgress.tracePrefix) &&
+          !AgentPublicProgressPolicy.isInternal($0.detail) }
         if !progress.isEmpty {
           VStack(alignment: .leading, spacing: 8) {
             Button {
