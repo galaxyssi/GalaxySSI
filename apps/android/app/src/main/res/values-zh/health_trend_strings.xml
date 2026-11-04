@@ -25,6 +25,9 @@
     <string name="health_trend_until">结束日期</string>
     <string name="health_trend_invalid_dates">结束日期不能早于开始日期。</string>
     <string name="health_trend_numeric_records">参与此点统计的数值记录 · %1$s</string>
+    <string name="health_trend_point_result">%1$s · %2$s：%3$s %4$s</string>
+    <string name="health_trend_point_contributors">参与计算的记录：%1$d 条</string>
+    <string name="health_trend_open_extremum">查看得出该极值的原记录</string>
     <string name="health_trend_changed">统计期间记录发生了变化，请刷新以获取一致的结果。</string>
     <string name="health_trend_stale">此快照之后记录已变化，刷新趋势后可查看更新结果。</string>
     <string name="health_trend_refresh">刷新趋势</string>
