@@ -36,6 +36,37 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     XCTAssertEqual(saved.wirePayload, "encrypted-task")
   }
 
+  func testAdmissionDeferralPreservesEarlierAttemptAndCiphertext() throws {
+    let store = makeDeliveryStore()
+    let start = Date(timeIntervalSince1970: 1_000)
+    let reservation = start.addingTimeInterval(10)
+    store.enqueue(messageId: "send", topic: "topic/up", wirePayload: "encrypted-wire", now: start)
+    store.markAttempt(messageId: "send", now: start)
+    store.markAttempt(messageId: "send", now: reservation)
+    XCTAssertTrue(store.deferUnadmittedAttempt(messageId: "send", reservedAttempts: 2,
+      reservedAt: reservation, now: reservation))
+    XCTAssertTrue(store.pending(now: reservation).isEmpty)
+    let retried = try XCTUnwrap(store.pending(now: reservation.addingTimeInterval(2)).first)
+    XCTAssertEqual(retried.attempts, 1)
+    XCTAssertEqual(retried.wirePayload, "encrypted-wire")
+    XCTAssertEqual(retried.status, "queued")
+  }
+
+  func testAdmissionDeferralDoesNotOverwriteBrokerOrPeerReceipt() throws {
+    let store = makeDeliveryStore()
+    let start = Date(timeIntervalSince1970: 1_000)
+    store.enqueue(messageId: "send", topic: "topic/up", wirePayload: "encrypted-wire", now: start)
+    store.markAttempt(messageId: "send", now: start)
+    store.markPublished(messageId: "send", now: start)
+    XCTAssertFalse(store.deferUnadmittedAttempt(messageId: "send", reservedAttempts: 1,
+      reservedAt: start, now: start))
+    XCTAssertEqual(try store.outboxMigrationSnapshot().first?.status, "published")
+    store.acknowledge(messageId: "send")
+    XCTAssertFalse(store.deferUnadmittedAttempt(messageId: "send", reservedAttempts: 1,
+      reservedAt: start, now: start))
+    XCTAssertTrue(try store.outboxMigrationSnapshot().isEmpty)
+  }
+
   func testAttachmentControlQueueFailureRetainsControlAcrossReopen() throws {
     let fixture = try ChunkFixture()
     let suite = "attachment-control-\(UUID().uuidString)"

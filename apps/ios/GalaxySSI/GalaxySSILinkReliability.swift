@@ -559,6 +559,21 @@ final class GalaxySSILinkDeliveryStore {
     }
   }
 
+  @discardableResult
+  func deferUnadmittedAttempt(messageId: String, reservedAttempts: Int, reservedAt: Date, now: Date = Date()) -> Bool {
+    guard let index = state.outbox.firstIndex(where: { $0.messageId == messageId }),
+          state.outbox[index].status == "publishing", state.outbox[index].attempts == reservedAttempts,
+          state.outbox[index].updatedAt == reservedAt, reservedAttempts > 0 else { return false }
+    let previous = state
+    state.outbox[index].attempts -= 1
+    state.outbox[index].status = "queued"
+    state.outbox[index].nextAttemptAt = now.addingTimeInterval(2)
+    state.outbox[index].updatedAt = now
+    if save() { return true }
+    state = previous
+    return false
+  }
+
   func acknowledge(messageId: String) {
     discard(messageId: messageId)
   }
