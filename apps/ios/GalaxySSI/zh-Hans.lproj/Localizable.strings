@@ -197,6 +197,17 @@
 "galaxyssi.health.missing_reading" = "未记录";
 "galaxyssi.health.empty" = "暂无测量记录";
 "galaxyssi.health.more" = "查看更多";
+"galaxyssi.health.export.title" = "导出测量记录";
+"galaxyssi.health.export.format" = "格式";
+"galaxyssi.health.export.from" = "开始日期";
+"galaxyssi.health.export.to" = "结束日期";
+"galaxyssi.health.export.metrics" = "测量项目";
+"galaxyssi.health.export.notes" = "包含测量条件和备注";
+"galaxyssi.health.export.prepare" = "准备导出";
+"galaxyssi.health.export.failed" = "无法导出。请检查日期、缩小范围或重新准备。";
+"galaxyssi.health.export.confirm" = "保存未加密的文件？";
+"galaxyssi.health.export.save" = "选择保存位置";
+"galaxyssi.health.export.count" = "%lld 条已确认的测量";
 "galaxyssi.health.retry" = "重新加载记录";
 "galaxyssi.health.duplicate" = "已存在相同的测量";
 "galaxyssi.health.save_duplicate" = "另存为一条记录";
