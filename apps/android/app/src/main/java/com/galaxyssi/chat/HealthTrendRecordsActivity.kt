@@ -24,6 +24,10 @@ class HealthTrendRecordsActivity : Activity() {
     private var signal: CancellationSignal? = null; private var cursor: HealthPageCursor? = null
     private var version: String? = null
     private val previous = arrayListOf<HealthPageCursor?>()
+    private val privacyDatabase by lazy { healthPrivacyDatabaseName() }
+    private val privacyObserver = object : android.database.ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) { if (active) load() }
+    }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         spec = intent.healthTrendSpec() ?: run { finish(); return }; numeric = intent.getBooleanExtra("health_numeric", false)
@@ -43,8 +47,13 @@ class HealthTrendRecordsActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
         body = ui.column(); root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
     }
-    override fun onStart() { super.onStart(); if (::spec.isInitialized) { active = true; load() } }
-    override fun onStop() { active = false; generation++; signal?.cancel(); signal = null; if (::body.isInitialized) body.removeAllViews(); super.onStop() }
+    override fun onStart() { super.onStart(); if (::spec.isInitialized) {
+        active = true; contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, privacyDatabase), false, privacyObserver); load()
+    } }
+    override fun onStop() {
+        if (active) contentResolver.unregisterContentObserver(privacyObserver)
+        active = false; generation++; signal?.cancel(); signal = null; if (::body.isInitialized) body.removeAllViews(); super.onStop()
+    }
     override fun onDestroy() { worker.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(state: Bundle) {
         cursor?.let { state.putLong("cursor_time", it.measuredAt); state.putString("cursor_id", it.id) }
@@ -56,7 +65,7 @@ class HealthTrendRecordsActivity : Activity() {
         val token = ++generation; signal?.cancel(); val cancellation = CancellationSignal(); signal = cancellation; val after = cursor
         body.removeAllViews(); body.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
         worker.execute {
-            val result = runCatching { HealthRecordStore(applicationContext).use { store ->
+            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND_RECORDS, spec), privacyDatabase) { HealthRecordStore(applicationContext).use { store ->
                 val before = store.metricVersion(spec.metric)
                 if (version != null && version != before) throw HealthTrendChangedException()
                 val page = store.trendRecords(spec, after, numeric, {
@@ -64,10 +73,11 @@ class HealthTrendRecordsActivity : Activity() {
                 }, cancellation)
                 if (store.metricVersion(spec.metric) != before) throw HealthTrendChangedException()
                 page to before
-            } }
+            } } }
             main.post { if (active && token == generation) result.fold({ (page, snapshot) -> version = snapshot; render(page) }, {
                 body.removeAllViews()
-                body.addView(ui.text(getString(if (it is HealthTrendChangedException) R.string.health_trend_changed else R.string.health_storage_error), 14f, muted = true))
+                body.addView(ui.text(getString(when (it) { is HealthTrendChangedException -> R.string.health_trend_changed; is HealthAccessBlocked -> R.string.health_privacy_trend_blocked; else -> R.string.health_storage_error }), 14f, muted = true))
+                if (it is HealthAccessBlocked) body.addView(ui.command(R.string.health_privacy_title) { startActivity(healthPrivacyIntent()) }.apply { tag = "health-privacy-blocked" })
                 body.addView(ui.command(if (numeric) R.string.health_trend_return else R.string.health_trend_refresh) {
                     if (numeric) finish() else { version = null; cursor = null; previous.clear(); load() }
                 })

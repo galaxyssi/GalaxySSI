@@ -412,8 +412,10 @@ class HealthCaptureActivity : Activity() {
             worker.execute {
                 val result = runCatching {
                     val original = originals.original(id) ?: throw HealthImportFailure("original_missing")
-                    contentResolver.openOutputStream(uri, "wt")?.use { originals.copyVerified(original, it) }
-                        ?: throw HealthImportFailure("save_failed")
+                    HealthPrivacyStore.track(applicationContext, HealthAccessScope.originals(1)) {
+                        contentResolver.openOutputStream(uri, "wt")?.use { originals.copyVerified(original, it) }
+                            ?: throw HealthImportFailure("save_failed")
+                    }
                 }
                 main.post { if (active) result.fold({ Toast.makeText(this, R.string.health_original_saved, Toast.LENGTH_LONG).show() }, { showFailure("save_failed") }) }
             }

@@ -9,7 +9,8 @@ import java.util.UUID
 import org.json.JSONObject
 
 /** Self-reported context has its own encrypted rows, never measurement or generic memory records. */
-internal class HealthProfileStore(private val context: Context, private val name: String = "health_profiles_v1.db") : Closeable {
+internal class HealthProfileStore(private val context: Context, private val name: String = "health_profiles_v1.db",
+    private val privacyDatabase: String = HealthPrivacyStore.DEFAULT_DB) : Closeable {
     private val helper = Database(context, name); private val db get() = helper.writableDatabase
     private fun aad(kind: String, key: String) = "$name|health-profile-v1|self|$kind|$key".toByteArray(Charsets.UTF_8)
     private fun pack(kind: String, key: String, json: JSONObject): ByteArray {
@@ -142,11 +143,12 @@ internal class HealthProfileStore(private val context: Context, private val name
         if (entry.token != token) throw HealthProfileConflict()
         db.delete("entries", "id=?", arrayOf(id)); db.delete("drafts", "id=?", arrayOf("edit:$id")); tick("drafts"); tick("category:${entry.kind.name}"); tick("profile"); Unit
     }
-    fun capture(fields: Set<HealthProfileField>, entryIds: Set<String>): HealthProfileContext = transaction {
+    fun capture(fields: Set<HealthProfileField>, entryIds: Set<String>): HealthProfileContext = HealthPrivacyStore.track(context,
+        HealthAccessScope(HealthAccessPurpose.PROFILE_CONTEXT, fields = fields, count = entryIds.size.toLong()), privacyDatabase) { transaction {
         val selected = fields.associateWith(::cell); val entries = entryIds.sorted().map { requireNotNull(entry(it)) }
         HealthProfileContext(selected.mapValues { it.value.value }, entries, HealthProfileStamp(generation(),
             selected.mapKeys { "field:${it.key.name}" }.mapValues { it.value.token } + entries.associate { "entry:${it.id}" to it.token }))
-    }
+    } }
     fun isCurrent(stamp: HealthProfileStamp): Boolean = transaction {
         generation() == stamp.generation && stamp.versions.all { (key, token) ->
             when {

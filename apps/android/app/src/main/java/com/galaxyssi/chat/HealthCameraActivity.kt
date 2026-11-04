@@ -341,7 +341,10 @@ class HealthCameraActivity : Activity() {
             val uri = data?.data ?: return; val id = exportId
             io.execute {
                 val result = runCatching { val original = requireNotNull(store.original(id));
-                    contentResolver.openOutputStream(uri, "wt")?.use { store.copyVerified(original, it) } ?: error("Save destination unavailable") }
+                    HealthPrivacyStore.track(applicationContext, HealthAccessScope.originals(1)) {
+                        contentResolver.openOutputStream(uri, "wt")?.use { store.copyVerified(original, it) } ?: error("Save destination unavailable")
+                    }
+                }
                 main.post { if (active) message(if (result.isSuccess) R.string.health_original_saved else R.string.health_import_save_failed) }
             }
         }

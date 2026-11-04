@@ -127,12 +127,16 @@ class HealthOriginalExportActivity : Activity() {
         if (requestCode != SAVE || resultCode != RESULT_OK) return
         val uri = data?.data ?: return; saving = true; body.removeAllViews(); body.addView(ui.text(getString(R.string.health_library_saving)))
         worker.execute {
+            var opened = false; var copied = false
             val result = runCatching { HealthOriginalStore(applicationContext).use { originals ->
                 val library = HealthOriginalLibraryStore(applicationContext, originals); val session = requireNotNull(library.session(id))
-                contentResolver.openOutputStream(uri, "wt")?.use { HealthOriginalArchive.save(library, session, it) } ?: error("Cannot open export destination")
+                HealthPrivacyStore.track(applicationContext, HealthAccessScope.originals(session.count, zip = true)) {
+                    contentResolver.openOutputStream(uri, "wt")?.use { opened = true; HealthOriginalArchive.save(library, session, it) } ?: error("Cannot open export destination")
+                    copied = true
+                }
                 library.saved(session)
             } }
-            if (result.isFailure) runCatching { android.provider.DocumentsContract.deleteDocument(contentResolver, uri) }
+            if (result.isFailure && opened && !copied) runCatching { android.provider.DocumentsContract.deleteDocument(contentResolver, uri) }
             main.post { saving = false; if (active) { if (result.isFailure) Toast.makeText(this, R.string.health_import_save_failed, Toast.LENGTH_LONG).show(); load() } }
         }
     }

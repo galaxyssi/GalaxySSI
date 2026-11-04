@@ -11,7 +11,9 @@ class HealthProfileStoreDeviceTest {
     private fun id() = UUID.randomUUID().toString()
     private fun fixture(test: (String, HealthProfileStore) -> Unit) {
         val name = "health-profile-test-${id()}.db"
-        try { HealthProfileStore(context, name).use { test(name, it) } } finally { context.deleteDatabase(name) }
+        val privacy = "health-privacy-test-${id()}.db"
+        try { HealthProfileStore(context, name, privacy).use { test(name, it) } }
+        finally { context.deleteDatabase(name); context.deleteDatabase(privacy) }
     }
     private fun change(store: HealthProfileStore, field: HealthProfileField, value: String, unit: String = ""): HealthProfileDraft {
         val s = store.snapshot(); return HealthProfileDraft(s.generation, mapOf(field to HealthProfileInput(value, unit)), mapOf(field to s.cells.getValue(field).token))

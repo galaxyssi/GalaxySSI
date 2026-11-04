@@ -1,0 +1,98 @@
+package com.galaxyssi.chat
+
+import java.time.ZoneId
+import org.json.JSONArray
+import org.json.JSONObject
+
+internal enum class HealthPrivacyOption { CONFIRMED_METRICS, PROFILE_CONTEXT, ONLINE_ANALYSIS, ORIGINAL_IMAGES }
+internal data class HealthPrivacyPolicy(
+    val metrics: Boolean = true, val profile: Boolean = true, val online: Boolean = false,
+    val images: Boolean = false, val version: String = ""
+) {
+    init { require(!images || online) }
+    fun enabled(option: HealthPrivacyOption) = when (option) {
+        HealthPrivacyOption.CONFIRMED_METRICS -> metrics
+        HealthPrivacyOption.PROFILE_CONTEXT -> profile
+        HealthPrivacyOption.ONLINE_ANALYSIS -> online
+        HealthPrivacyOption.ORIGINAL_IMAGES -> images
+    }
+    fun change(option: HealthPrivacyOption, value: Boolean) = when (option) {
+        HealthPrivacyOption.CONFIRMED_METRICS -> copy(metrics = value)
+        HealthPrivacyOption.PROFILE_CONTEXT -> copy(profile = value)
+        HealthPrivacyOption.ONLINE_ANALYSIS -> copy(online = value, images = value && images)
+        HealthPrivacyOption.ORIGINAL_IMAGES -> copy(images = value)
+    }
+    fun json() = JSONObject().put("metrics", metrics).put("profile", profile).put("online", online).put("images", images).put("version", version)
+    companion object {
+        fun from(j: JSONObject) = HealthPrivacyPolicy(j.getBoolean("metrics"), j.getBoolean("profile"), j.getBoolean("online"), j.getBoolean("images"), j.getString("version"))
+    }
+}
+
+internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = null) {
+    TREND(HealthPrivacyOption.CONFIRMED_METRICS),
+    TREND_RECORDS(HealthPrivacyOption.CONFIRMED_METRICS),
+    TREND_SOURCES(HealthPrivacyOption.CONFIRMED_METRICS),
+    PROFILE_CONTEXT(HealthPrivacyOption.PROFILE_CONTEXT),
+    SAVE_RECORDS, SAVE_ORIGINALS, DELETE_PROFILE
+}
+internal enum class HealthAccessOutcome { STARTED, COMPLETE, FAILED, CANCELLED, BLOCKED }
+internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL }
+internal enum class HealthAccessFormat { CSV, JSON, XLSX, ZIP, ORIGINAL }
+internal data class HealthAccessScope(
+    val purpose: HealthAccessPurpose, val metrics: Set<HealthMetric> = emptySet(),
+    val from: Long = 0, val until: Long = Long.MAX_VALUE, val zone: String = "UTC",
+    val fields: Set<HealthProfileField> = emptySet(), val count: Long? = null,
+    val source: HealthAccessSource = HealthAccessSource.ALL, val format: HealthAccessFormat? = null,
+    val annotations: Boolean = false, val drafts: Long? = null, val basicCount: Int? = null
+) {
+    init {
+        require(until > from && (count == null || count >= 0) && (drafts == null || drafts >= 0))
+        require(basicCount == null || basicCount in 0..HealthProfileField.entries.size)
+        ZoneId.of(zone)
+        when (purpose) {
+            HealthAccessPurpose.TREND, HealthAccessPurpose.TREND_RECORDS, HealthAccessPurpose.TREND_SOURCES ->
+                require(metrics.size == 1 && fields.isEmpty() && count == null && format == null)
+            HealthAccessPurpose.PROFILE_CONTEXT -> require(metrics.isEmpty() && count != null && format == null)
+            HealthAccessPurpose.SAVE_RECORDS -> require(metrics.isNotEmpty() && count != null && format in listOf(HealthAccessFormat.CSV, HealthAccessFormat.JSON, HealthAccessFormat.XLSX))
+            HealthAccessPurpose.SAVE_ORIGINALS -> require(count != null && format in listOf(HealthAccessFormat.ZIP, HealthAccessFormat.ORIGINAL))
+            HealthAccessPurpose.DELETE_PROFILE -> require(count != null && drafts != null && basicCount != null && format == null)
+        }
+    }
+    fun json() = JSONObject().put("purpose", purpose.name).put("metrics", JSONArray(metrics.map { it.name })).put("from", from)
+        .put("until", until).put("zone", zone).put("fields", JSONArray(fields.map { it.name })).put("count", count ?: JSONObject.NULL)
+        .put("source", source.name).put("format", format?.name ?: JSONObject.NULL).put("annotations", annotations)
+        .put("drafts", drafts ?: JSONObject.NULL).put("basics", basicCount ?: JSONObject.NULL)
+    companion object {
+        fun from(j: JSONObject): HealthAccessScope {
+            fun values(key: String) = j.getJSONArray(key).let { a -> (0 until a.length()).map(a::getString) }
+            return HealthAccessScope(HealthAccessPurpose.valueOf(j.getString("purpose")), values("metrics").map(HealthMetric::valueOf).toSet(),
+                j.getLong("from"), j.getLong("until"), j.getString("zone"), values("fields").map(HealthProfileField::valueOf).toSet(),
+                j.takeUnless { it.isNull("count") }?.getLong("count"), HealthAccessSource.valueOf(j.getString("source")),
+                j.takeUnless { it.isNull("format") }?.getString("format")?.let(HealthAccessFormat::valueOf), j.getBoolean("annotations"),
+                j.takeUnless { it.isNull("drafts") }?.getLong("drafts"), j.takeUnless { it.isNull("basics") }?.getInt("basics"))
+        }
+        fun trend(purpose: HealthAccessPurpose, spec: HealthTrendSpec) = HealthAccessScope(purpose, setOf(spec.metric), spec.from, spec.until, spec.zone.id,
+            source = when { spec.source.manualOnly -> HealthAccessSource.MANUAL; spec.source.originalId.isNotEmpty() -> HealthAccessSource.ORIGINAL; else -> HealthAccessSource.ALL })
+        fun records(session: HealthRecordExportSession) = with(session.scope) {
+            HealthAccessScope(HealthAccessPurpose.SAVE_RECORDS, metrics, from, until, zone, count = session.count,
+                source = if (originalId.isEmpty()) HealthAccessSource.ALL else HealthAccessSource.ORIGINAL,
+                format = HealthAccessFormat.valueOf(format.name), annotations = annotations)
+        }
+        fun originals(count: Long, zip: Boolean = false) = HealthAccessScope(HealthAccessPurpose.SAVE_ORIGINALS, count = count,
+            format = if (zip) HealthAccessFormat.ZIP else HealthAccessFormat.ORIGINAL)
+        fun deleteProfile(preview: HealthProfileDeletePreview) = HealthAccessScope(HealthAccessPurpose.DELETE_PROFILE,
+            count = preview.entries, drafts = preview.drafts, basicCount = preview.fields)
+    }
+}
+internal data class HealthAccessEvent(val id: String, val time: Long, val scope: HealthAccessScope,
+    val outcome: HealthAccessOutcome, val policyVersion: String) {
+    fun json() = JSONObject().put("id", id).put("time", time).put("scope", scope.json()).put("outcome", outcome.name).put("policy_version", policyVersion)
+    companion object {
+        fun from(j: JSONObject) = HealthAccessEvent(j.getString("id"), j.getLong("time"), HealthAccessScope.from(j.getJSONObject("scope")),
+            HealthAccessOutcome.valueOf(j.getString("outcome")), j.getString("policy_version"))
+    }
+}
+internal data class HealthAccessCursor(val time: Long, val id: String)
+internal data class HealthAccessPage(val entries: List<HealthAccessEvent>, val next: HealthAccessCursor?)
+internal class HealthAccessBlocked : IllegalStateException("Health use is not authorized")
+internal class HealthPrivacyConflict : IllegalStateException("Health privacy policy changed")

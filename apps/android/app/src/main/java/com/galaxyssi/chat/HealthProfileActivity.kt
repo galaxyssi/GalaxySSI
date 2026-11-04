@@ -135,7 +135,9 @@ class HealthProfileActivity : Activity() {
     private fun delete() {
         worker.execute { val result = runCatching { store.deletePreview() }; main.post { if (active) result.fold({ preview ->
             dialog = AlertDialog.Builder(this).setTitle(R.string.health_profile_delete).setMessage(getString(R.string.health_profile_delete_preview, preview.fields, preview.entries, preview.drafts))
-                .setNegativeButton(R.string.common_cancel, null).setPositiveButton(R.string.common_delete) { _, _ -> pending = null; mutate { store.clear(preview) } }.show()
+                .setNegativeButton(R.string.common_cancel, null).setPositiveButton(R.string.common_delete) { _, _ -> pending = null; mutate {
+                    HealthPrivacyStore.track(applicationContext, HealthAccessScope.deleteProfile(preview), healthPrivacyDatabaseName()) { store.clear(preview) }
+                } }.show()
         }, ::error) } }
     }
     private fun error(failure: Throwable) { Toast.makeText(this, healthProfileError(failure), Toast.LENGTH_LONG).show()

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_privacy_title">Privacy and data</string>
+    <string name="health_privacy_lead">Local health data</string>
+    <string name="health_privacy_uses">Analysis permissions</string>
+    <string name="health_privacy_metrics">Confirmed measurements</string>
+    <string name="health_privacy_metrics_detail">Local trends and derived measurement analysis</string>
+    <string name="health_privacy_profile">Health background</string>
+    <string name="health_privacy_profile_detail">Selected self-reported fields for analysis</string>
+    <string name="health_privacy_online">Online health analysis</string>
+    <string name="health_privacy_online_detail">Online health analysis is not connected. No data is sent here.</string>
+    <string name="health_privacy_images">Original report images</string>
+    <string name="health_privacy_images_detail">Separate permission; each online request still needs confirmation</string>
+    <string name="health_privacy_storage">Local data management</string>
+    <string name="health_privacy_history">Access history</string>
+    <string name="health_privacy_export">Export health records</string>
+    <string name="health_privacy_manage_profile">Manage and delete self-reported information</string>
+    <string name="health_privacy_trend_blocked">Trend access is off. Your measurement records are unchanged.</string>
+    <string name="health_privacy_conflict">Permissions changed. Review the current settings and try again.</string>
+    <string name="health_privacy_empty">No access events yet</string>
+    <string name="health_privacy_trend">Calculate local trend</string>
+    <string name="health_privacy_trend_records">Read trend detail</string>
+    <string name="health_privacy_trend_sources">Browse trend sources</string>
+    <string name="health_privacy_profile_context">Read selected health background</string>
+    <string name="health_privacy_save_records">Save measurement export</string>
+    <string name="health_privacy_save_originals">Save original files</string>
+    <string name="health_privacy_delete_profile">Delete self-reported profile</string>
+    <string name="health_privacy_started">No completion recorded</string>
+    <string name="health_privacy_complete">Completed</string>
+    <string name="health_privacy_failed">Failed or incomplete</string>
+    <string name="health_privacy_cancelled">Cancelled</string>
+    <string name="health_privacy_blocked">Blocked by permission</string>
+    <string name="health_privacy_scope_records">%1$d selected records</string>
+    <string name="health_privacy_scope_originals">%1$d selected originals</string>
+    <string name="health_privacy_scope_entries">%1$d selected background entries</string>
+    <string name="health_privacy_scope_delete">%1$d basic fields, %2$d background entries, %3$d drafts</string>
+    <string name="health_privacy_scope_manual">Manual measurements</string>
+    <string name="health_privacy_scope_original">Linked to a selected original</string>
+    <string name="health_privacy_scope_notes">Includes selected notes</string>
+    <string name="health_privacy_scope_all_dates">All measurement dates</string>
+</resources>

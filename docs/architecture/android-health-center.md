@@ -357,6 +357,16 @@ This increment also addresses the actual parent CI CSV newline regression by
 preserving quoted-cell bytes across platforms, with explicit raw-byte JVM/Android
 cases rather than weakening the Linux assertion.
 
+## Health Privacy Controls
+
+The function page now links to native privacy controls and encrypted,
+paged access history. Local derived measurements and selected profile
+context have separate authorization checks. Actual export saves and scoped
+profile deletion record their outcomes. Online and original-image settings
+do not send data or constitute consent. See the
+[privacy contract](android-health-privacy.md) for the coverage and remaining
+retention, erasure, and provider work.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
