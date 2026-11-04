@@ -118,6 +118,13 @@ final class AgentTeamExecutionHistoryStore {
           guard current.teamId == incoming.teamId, current.conversationId == incoming.conversationId,
                 current.taskId == incoming.taskId else { throw AgentTeamHistoryDatabase.Failure.stale }
           if current.state.deliverable || current.updatedAtMillis > incoming.updatedAtMillis { return false }
+          for member in current.members where member.dispatchCheckpoint != nil {
+            guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
+                  replacement.sourceMessageId == member.sourceMessageId,
+                  replacement.dispatchCheckpoint == member.dispatchCheckpoint else {
+              throw AgentTeamHistoryDatabase.Failure.stale
+            }
+          }
           for member in current.members where [.succeeded, .failed, .cancelled, .skipped].contains(member.status) {
             guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
                   replacement.sourceMessageId == member.sourceMessageId,
@@ -132,6 +139,37 @@ final class AgentTeamExecutionHistoryStore {
       }
       if changed { notify(incoming.supervisorRunId) }
       return true
+    } catch { return false }
+  }
+
+  @discardableResult
+  func advanceDispatchCheckpoint(runId: String, conversationId: String, turnId: String,
+                                 memberId: String, sourceMessageId: String,
+                                 to checkpoint: AgentTeamMemberDispatchCheckpoint, now: Int64) -> Bool {
+    guard !sourceMessageId.isBlank else { return false }
+    do {
+      return try access { database in
+        guard var snapshot = try database.snapshots(runId: runId).first,
+              snapshot.conversationId == conversationId, snapshot.taskId == turnId,
+              let index = snapshot.members.firstIndex(where: {
+                $0.memberId == memberId && $0.sourceMessageId == sourceMessageId
+              }) else { return false }
+        let previous = snapshot.members[index].dispatchCheckpoint
+        switch checkpoint {
+        case .notStarted:
+          return false
+        case .dispatching:
+          guard previous == .notStarted, !snapshot.state.isTerminal,
+                !snapshot.members[index].status.isTerminal else { return false }
+        case .accepted:
+          if previous == .accepted { return true }
+          guard previous == .dispatching else { return false }
+        }
+        snapshot.members[index].dispatchCheckpoint = checkpoint
+        snapshot.updatedAtMillis = max(snapshot.updatedAtMillis, now)
+        try database.put(snapshot)
+        return true
+      }
     } catch { return false }
   }
 

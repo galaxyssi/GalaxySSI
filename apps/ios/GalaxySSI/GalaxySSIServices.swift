@@ -6289,13 +6289,15 @@ final class MessageCoordinator: ObservableObject {
         deliveryMode: $0.deliveryMode, status: .pending, instanceId: $0.memberId,
         sourceMessageId: AgentControlPlaneActionExecutor.stableRunId(
           conversationId: outgoing.conversationId, turnId: homeTurnId,
-          actionId: action.id, agentId: $0.memberId)) },
+          actionId: action.id, agentId: $0.memberId),
+        dispatchCheckpoint: isCollaboration ? .notStarted : nil) },
       createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
       primaryInstanceId: spec.definition.primaryMemberId)
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
       !$0.privateMode && !$0.trackingPaused
     } ?? false
-    guard !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
+    guard (!isCollaboration || saveTeamHistory),
+          !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
       throw GalaxySSIError.invalidPayload("The original Agent team identity could not be saved")
     }
     agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
@@ -6339,6 +6341,13 @@ final class MessageCoordinator: ObservableObject {
       )
 
       do {
+        if isCollaboration {
+          guard AgentTeamExecutionHistoryStore.shared.advanceDispatchCheckpoint(runId: spec.supervisorRunId,
+            conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
+            sourceMessageId: sourceMessageId, to: .dispatching, now: AgentControlPlaneClock.nowMillis()) else {
+            throw GalaxySSIError.invalidPayload("The collaboration member dispatch checkpoint could not be saved")
+          }
+        }
         if target.id == "local-llm" {
           let profile = LocalModelRuntimeSettings.selectedProfile()
           guard LocalModelRuntimeSettings.isProfileEnabled(profile),
@@ -6433,6 +6442,11 @@ final class MessageCoordinator: ObservableObject {
             ownerId: slotOwnerId,
             sourceMessageId: sourceMessageId
           )
+          if isCollaboration {
+            AgentTeamExecutionHistoryStore.shared.advanceDispatchCheckpoint(runId: spec.supervisorRunId,
+              conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
+              sourceMessageId: sourceMessageId, to: .accepted, now: AgentControlPlaneClock.nowMillis())
+          }
         } catch {
           UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slotOwnerId)
           throw error
