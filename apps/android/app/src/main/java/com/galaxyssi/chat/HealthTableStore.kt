@@ -22,7 +22,7 @@ internal class HealthTableStore(context: Context, private val name: String = "he
     }
     private fun <T> transaction(block: () -> T): T {
         db.beginTransaction()
-        return try { block().also { db.setTransactionSuccessful() } } finally { db.endTransaction() }
+        return try { block().also { db.setTransactionSuccessful() } } finally { db.endTransaction(); records.publishCommittedChanges() }
     }
     fun batch(id: String): HealthTableBatch? = db.rawQuery("SELECT state,payload FROM health_tables WHERE id=?", arrayOf(id)).use {
         if (!it.moveToFirst()) null else HealthTableBatch.from(unpack("batch", id, it.getBlob(1))).also { value -> check(value.id == id && value.state.name == it.getString(0)) }

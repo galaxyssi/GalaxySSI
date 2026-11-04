@@ -258,6 +258,31 @@ that screenshot and complete return/paging interactions remain explicitly open.
 No synthetic measurements are stored in the user's health profile, and no
 hardware camera capture is claimed.
 
+## Increment 7: Gap-Aware Trends And Revision-Bound Records
+
+The catalog and overview now open native metric trends with 7/30/90-day and
+custom calendar periods, explicit units, actual manual/original-ID source
+filters, and mean/minimum/maximum aggregation. Exact numeric results alone enter
+the chart; bounds, ranges and labels remain available in record pages. Missing
+days are counted, not zero-filled, and source units are never silently converted.
+Thirty-row keyset scans feed bounded plot bins off the main thread.
+
+Additive schema 4 introduces transactional per-metric mutation tokens and
+post-commit notifications. Concurrent changes reject a mixed scan; later changes
+mark the displayed result stale with explicit refresh. Single/extremum points
+open immutable encrypted record revisions. Multi-record means open only their
+date/unit/source cohort and reject paging after a token change. Views and chart
+models are dropped in the background. No clinical interpretation or health-data
+transfer to an Agent is added.
+
+Version 0.1.7.22 / 1435 is cover-installed on Tab Active3. The final offline build
+passes 195 focused JVM tests, and 142 non-visual device tests pass. Visible-page
+regression passes all 14 selected tests after the user unlocks the tablet, and
+final catalog/empty-trend screenshots are inspected. Results are tracked in the
+[trend test contract](../testing/android-health-trends.md). Physical-device
+adapters, complete point/return acceptance and large-history rollups remain
+separate work; this increment is not completion of all 32 health screens.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
@@ -267,8 +292,9 @@ version and focused validation before claiming completion:
    detection, and original-library thumbnail/filter/batch-selection modes.
 2. XLSX ISO-typed date interoperability and unlocked structured-import UI
    acceptance; keep existing numeric-date/formula provenance checks intact.
-3. Time-window/source filters and true, gap-aware trend charts using only eligible
-   exact values; full native catalog acceptance and further metric definitions.
+3. Complete native catalog/trend point-and-return acceptance, physical-device
+   source cohorts, high-write-rate/large-window trend acceptance and further
+   metric definitions.
 4. Original-file library, export configuration, save/share and verified backup
    restore with transactional merge and attachment integrity checks.
 5. Personal profile, scoped health permissions, explicit erase and reminder

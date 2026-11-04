@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_trend_latest">Latest record · selected unit</string>
+    <string name="health_trend_7">7 days</string>
+    <string name="health_trend_30">30 days</string>
+    <string name="health_trend_90">90 days</string>
+    <string name="health_trend_custom">Custom</string>
+    <string name="health_trend_source">Source</string>
+    <string name="health_trend_all_sources">All sources</string>
+    <string name="health_trend_choose_original">Choose an original source</string>
+    <string name="health_trend_original_source">Original · %1$s</string>
+    <string name="health_trend_no_sources">No original sources in this period</string>
+    <string name="health_trend_aggregation">Aggregation</string>
+    <string name="health_trend_mean">Mean</string>
+    <string name="health_trend_min">Minimum</string>
+    <string name="health_trend_max">Maximum</string>
+    <string name="health_trend_progress">Reading records · %1$d processed</string>
+    <string name="health_trend_counts">%1$d numeric records / %2$d numeric days\n%3$d recorded days · %4$d days without records in this unit</string>
+    <string name="health_trend_excluded">Not plotted: %1$d bounds/ranges/qualitative results · %2$d records in other units</string>
+    <string name="health_trend_bucket">%1$d calendar day(s) per point</string>
+    <string name="health_trend_empty">No plottable numeric values</string>
+    <string name="health_trend_chart_description">Trend chart: %1$d numeric records across %2$d days</string>
+    <string name="health_trend_point">%1$s: %2$s %3$s · %4$d records</string>
+    <string name="health_trend_from">Start date</string>
+    <string name="health_trend_until">End date</string>
+    <string name="health_trend_invalid_dates">The end date must not precede the start date.</string>
+    <string name="health_trend_numeric_records">Numeric records contributing to this point · %1$s</string>
+    <string name="health_trend_changed">Records changed during this calculation. Refresh to obtain a consistent result.</string>
+    <string name="health_trend_stale">Records have changed since this snapshot. Refresh the trend to update it.</string>
+    <string name="health_trend_refresh">Refresh trend</string>
+    <string name="health_trend_return">Return to trend</string>
+    <string name="health_trend_unavailable">Trend currently unavailable</string>
+    <string name="health_trend_calculated">Calculated at %1$s</string>
+    <string name="health_trend_snapshot_record">Record at calculation time</string>
+    <string name="health_trend_current_record">View current record</string>
+    <string name="health_trend_other_source">Other source</string>
+</resources>
