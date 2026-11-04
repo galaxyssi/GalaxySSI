@@ -76,7 +76,7 @@ struct GalaxySSIHealthImportView: View {
         guard scene != .background, let result else { return }
         do {
           let pdf = try result.get()
-          try store.store(pdf, name: "Health-Report-" + String(UUID().uuidString.prefix(8)) + ".pdf")
+          try store.store(pdf, name: "Health-Report-" + String(UUID().uuidString.prefix(8)) + ".pdf", acquisition: .camera)
           notice = .saved
         } catch { notice = .failed }
       }

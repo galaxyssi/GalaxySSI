@@ -60,6 +60,44 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.load().current.count, 1)
   }
 
+  @MainActor
+  func testLinkedHealthExportDeduplicatesExactOriginalsAndDetectsRemoval() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData {
+      $0.beginPage()
+      $0.beginPage()
+    }
+    try store.store(pdf, name: "camera.pdf", acquisition: .camera)
+    let original = try XCTUnwrap(store.list().originals.first)
+    let readings = (0..<2).map { page in
+      GalaxySSIHealthReading(revision: 1, metric: .weight, value: Decimal(65 + page),
+        reportSource: .init(original: original.id, sha256: original.sha256, page: page, region: 0, fromOCR: true))
+    }
+    let uploadOnly = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [], store: store, choices: .init(uploaded: true))
+    XCTAssertEqual(uploadOnly.links.map(\.status), [.unselected, .unselected])
+    let camera = GalaxySSIHealthLinkedExport.Choices(camera: true)
+    let package = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [], store: store, choices: camera)
+    XCTAssertEqual(package.links.map(\.status), [.included, .included])
+    XCTAssertEqual(package.files.map(\.data), [pdf])
+    let data = try GalaxySSIHealthMeasurementExport.encode(readings, as: .csv, includeNotes: false)
+    let zip = try package.zip(measurements: data, format: .csv)
+    XCTAssertNotNil(zip.range(of: Data("manifest.json".utf8)))
+    let proof = GalaxySSIHealthOriginalStore.ExportAttempt(id: UUID(), at: Date(), originals: [], bytes: zip.count,
+      sha256: GalaxySSIHealthLinkedExport.digest(zip), outcome: .prepared)
+    let destination = root.appendingPathComponent("export.zip")
+    try zip.write(to: destination)
+    XCTAssertTrue(try GalaxySSIHealthOriginalStore.verifyDestination(destination, for: proof))
+    try Data(zip.dropLast()).write(to: destination)
+    XCTAssertFalse(try GalaxySSIHealthOriginalStore.verifyDestination(destination, for: proof))
+    try store.remove(original)
+    let stale = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [], store: store, choices: camera)
+    XCTAssertEqual(stale.links.map(\.status), [.missing, .missing])
+    XCTAssertNotEqual(package.links, stale.links)
+  }
+
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
     var reading = GalaxySSIHealthReading(metric: .bloodPressure, value: 120, diastolic: 80, pulse: 65)
     reading.conditions = " =2+2"
