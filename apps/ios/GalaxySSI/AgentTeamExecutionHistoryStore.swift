@@ -298,6 +298,61 @@ final class AgentTeamExecutionHistoryStore {
     _ = try? access { try $0.removeCloudEvidence(conversationId: conversationId) }
   }
 
+  func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
+                                   scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    let mode = input.string("mode")
+    let hash = input.string("sha256")
+    let idKey = mode == "workspace" ? "object_id" : "evidence_id"
+    let id = input.string(idKey)
+    var allowed: Set<String> = ["mode", "sha256", "offset", idKey]
+    if mode == "workspace" { allowed.insert("revision") }
+    guard ["workspace", "evidence"].contains(mode), Set(input.keys).isSubset(of: allowed),
+          [id, hash].allSatisfy({ $0.utf8.count == 64 &&
+            $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }),
+          case .int(let offset) = input["offset"] ?? .int(0), offset >= 0 else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let bytes = try access { database -> Data in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      if mode == "workspace" {
+        guard case .int(let revision)? = input["revision"], revision > 0,
+              let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: scope.conversationId, key: "object:" + id, revision: revision),
+              record.reference.objectId == id, record.reference.revision == revision,
+              record.reference.sha256 == hash,
+              record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId)
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return try encoder.encode(record)
+      }
+      guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
+            record.scope.conversationId == scope.conversationId,
+            record.scope.turnId != scope.turnId || record.scope == scope else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let data = try encoder.encode(record)
+      guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == hash else {
+        throw AgentTeamHistoryDatabase.Failure.corrupt
+      }
+      return data
+    }
+    let characters = String(decoding: bytes, as: UTF8.self)
+    guard offset <= Int64(characters.count) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let page = String(characters.dropFirst(Int(offset)).prefix(2_000))
+    let next = offset + Int64(page.count)
+    return [
+      idKey: .string(id), "sha256": .string(hash), "content": .string(page),
+      "next_offset": next < Int64(characters.count) ? .int(next) : .null,
+      "trust": .string("untrusted_group_evidence")
+    ]
+  }
+
   func recoverable(conversationId: String) -> [AgentTeamExecutionSnapshot] {
     guard !conversationId.isBlank else { return [] }
     return (try? access { try $0.snapshots(conversation: conversationId, recoverableOnly: true) }) ?? []
