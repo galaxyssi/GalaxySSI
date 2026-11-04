@@ -590,6 +590,29 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       captureHTML: capture)
   }
 
+  func weChatPDFDocument(url: URL, invocation: AgentNativeToolInvocation) throws
+    -> (String, [AgentIOSPublicArticleParser.PDFBlock]) {
+    let resource = try requestResource(requestedURL: validatedPublicHTTPSURL(url.absoluteString),
+      method: .get, maxBodyBytes: AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes,
+      timeoutMillis: 45_000, invocation: invocation)
+    guard let finalURL = URL(string: resource.finalURL),
+          AgentIOSWeChatArticlePDF.articleURL(resource.finalURL) != nil,
+          let document = AgentIOSPublicArticleParser.weChatPDFBlocks(url: finalURL,
+            source: decode(resource.body, charset: charsetName(from: resource.selectedHeaders))) else {
+      throw AgentIOSWeChatArticlePDF.ExportError.articleUnavailable
+    }
+    return document
+  }
+
+  func weChatPDFImage(_ address: String, invocation: AgentNativeToolInvocation) throws -> Data {
+    let resource = try requestResource(requestedURL: validatedPublicHTTPSURL(address),
+      method: .get, maxBodyBytes: 4 * 1_024 * 1_024, timeoutMillis: 45_000,
+      invocation: invocation, contentPolicy: .download)
+    guard ["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"].contains(resource.contentType)
+    else { throw AgentIOSWeChatArticlePDF.ExportError.articleUnavailable }
+    return resource.body
+  }
+
   private func executeWeb(
     operation: AgentIOSWebMediaOperation,
     input: AgentMcpJSONObject,

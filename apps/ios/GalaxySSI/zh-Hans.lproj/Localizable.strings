@@ -4837,6 +4837,11 @@
 "galaxyssi.screen_page.pdf" = "整页 PDF";
 "galaxyssi.screen_page.file" = "文件";
 "galaxyssi.screen_page.link" = "链接";
+"galaxyssi.screen_page.wechat_pdf" = "保存公众号文章 PDF";
+"galaxyssi.screen_page.wechat_pdf_image" = "［图片不可用］";
+"galaxyssi.screen_page.wechat_pdf_saved" = "已保存到文件：GalaxySSI / Downloads / GongZhongHao / %@";
+"galaxyssi.screen_page.wechat_pdf_missing" = "有 %d 张图片未能保存。";
+"galaxyssi.screen_page.wechat_pdf_failed" = "无法保存文章。请在微信中打开，检查是否需要验证。";
 "galaxyssi.screen_page.wechat_link" = "公众号文章链接";
 "galaxyssi.screen_page.wechat_invalid" = "请输入有效的微信公众号文章链接。";
 "galaxyssi.screen_page.file_prompt" = "请分析这个文件。";
