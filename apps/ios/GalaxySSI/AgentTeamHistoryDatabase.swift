@@ -130,6 +130,13 @@ final class AgentTeamHistoryDatabase {
     return (teams, rows.count > size ? teams.last.map { Self.digest($0.supervisorRunId) } : nil)
   }
 
+  func publicationRecoveryPage(after: String) throws -> (teams: [AgentTeamExecutionSnapshot], next: String?) {
+    let size = 8
+    let rows = try snapshots(limit: size + 1, afterRunKey: after)
+    let teams = Array(rows.prefix(size))
+    return (teams, rows.count > size ? teams.last.map { Self.digest($0.supervisorRunId) } : nil)
+  }
+
   func put(_ snapshot: AgentTeamExecutionSnapshot) throws {
     let key = Self.digest(snapshot.supervisorRunId)
     let encrypted = try cipher.encrypt(JSONEncoder().encode(snapshot), purpose: purpose(key))

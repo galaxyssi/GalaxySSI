@@ -257,6 +257,37 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testPublicationRecoveryFindsSavedReplyAndSkipsCommittedReplay() throws {
+    let suite = "publication-recovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertTrue(history.upsert(durableTeamSnapshot("run")))
+    let body = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"note","base_revision":0,"kind":"evidence","title":"Note","body":{"text":"Saved"},"parents":[]}
+    ]}
+    """
+    XCTAssertEqual(try history.consumeOwnedReply(source: "source-review", conversation: "conversation", turn: "turn",
+      task: "source-review", contact: "review", content: body, richOutputJson: "", terminal: true,
+      success: true, now: 20, observation: AgentTeamReplyObservation(generation: 2, sequence: 1)), .observerCommitted)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let pending = try reopened.pendingPublicationRecoveryPage(after: "")
+    let owner = try XCTUnwrap(pending.owners.first)
+    XCTAssertEqual(pending.owners.count, 1)
+    XCTAssertEqual(owner.sourceMessageId, "source-review")
+    let scope = AgentCollaborationToolEvidenceScope(runId: owner.supervisorRunId, conversationId: owner.conversationId,
+      turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceMessageId)
+    try reopened.publishSavedResearchReply(body, scope: scope)
+    XCTAssertTrue(try reopened.pendingPublicationRecoveryPage(after: "").owners.isEmpty)
+    XCTAssertEqual(try reopened.committedResearchRevisions(scope: scope)?.count, 1)
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
