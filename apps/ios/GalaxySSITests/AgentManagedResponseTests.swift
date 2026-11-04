@@ -2,6 +2,47 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testManagedCollaborationRepliesRecoverAfterExtendedOfflineReopen() throws {
+    let suite = "offline-managed-response-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("managed.sqlite")
+    let secrets = InMemorySecretStore()
+    let start: Int64 = 1_000
+    let reconnect = start + AgentManagedResponseRecord.maxAgeMillis + 10_000
+    let reply = AgentConnectorResponse(sourceMessageId: 41, contactId: "observer",
+      content: "Original evidence", conversationId: "group", turnId: "turn",
+      taskId: "task-41", receivedAtMillis: start + 1, executionGeneration: 2)
+    do {
+      let ledger = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { start },
+        fileURL: file, secrets: secrets)
+      for source in [Int64(41), 42] {
+        try ledger.register(AgentManagedResponseRecord(ownerRunId: "run-\(source)", supervisorRunId: "team",
+          agentId: "observer", deliveryMode: .observe, sourceMessageId: source, contactId: "observer",
+          conversationId: "group", turnId: "turn", taskId: "task-\(source)", executionGeneration: 2,
+          createdAtMillis: start))
+      }
+      XCTAssertEqual(ledger.complete(reply)?.state, .completed)
+    }
+    let reopened = UserDefaultsAgentManagedResponseLedger(defaults: defaults, nowMillis: { reconnect },
+      fileURL: file, secrets: secrets)
+    XCTAssertEqual(reopened.completedUnapplied().compactMap(\.response), [reply])
+    XCTAssertEqual(reopened.pendingForSupervisor("team").map(\.sourceMessageId), [42])
+
+    var wrongGeneration = AgentConnectorResponse(sourceMessageId: 42, contactId: "observer",
+      content: "Delayed evidence", conversationId: "group", turnId: "turn",
+      taskId: "task-42", receivedAtMillis: reconnect, executionGeneration: 1)
+    XCTAssertNil(reopened.complete(wrongGeneration))
+    wrongGeneration.executionGeneration = 2
+    XCTAssertEqual(reopened.complete(wrongGeneration)?.state, .completed)
+    var duplicate = reply
+    duplicate.content = "Duplicate must not overwrite evidence"
+    XCTAssertEqual(reopened.complete(duplicate)?.response, reply)
+    XCTAssertEqual(reopened.acknowledge(reply)?.state, .applied)
+    XCTAssertEqual(reopened.completedUnapplied().compactMap(\.response), [wrongGeneration])
+  }
+
   func testOfflineUnappliedResponsesDoNotExpire() {
     var record = AgentManagedResponseRecord(ownerRunId: "member", supervisorRunId: "team",
       agentId: "observer", deliveryMode: .observe, sourceMessageId: 42, contactId: "observer",
