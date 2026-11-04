@@ -3,7 +3,7 @@
     <string name="health_reminder_title">Reminder center</string>
     <string name="health_reminder_preferences">Reminder preferences</string>
     <string name="health_reminder_detail">Health reminder</string>
-    <string name="health_reminder_record_group">Recording and review</string>
+    <string name="health_reminder_record_group">Daily records</string>
     <string name="health_reminder_empty">No reminders in this view</string>
     <string name="health_reminder_plan_off">Daily record reminder is off</string>
     <string name="health_reminder_next_due">Next scheduled: %1$s</string>

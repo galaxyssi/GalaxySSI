@@ -269,13 +269,43 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(result.goal.contains(first.id.uuidString.lowercased()))
   }
 
-  func testCollaborationCompilationPreservesRosterIdentityAndRejectsCapacityOverflow() throws {
+  func testStagedCollaborationSchedulesExplorationBeforeReviewAndSynthesis() throws {
     let target = teamTarget("codex")
+    var registration = teamRegistration(target)
+    registration.maxParallelRuns = 3
+    let coordinator = AgentCollaborationRoster.Member(name: "Lead", resourceId: target.id)
+    let explorer = AgentCollaborationRoster.Member(name: "Explorer", resourceId: target.id)
+    let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", resourceId: target.id)
+    let roster = AgentCollaborationRoster(members: [coordinator, explorer, reviewer],
+      coordinatorId: coordinator.id, workflow: .research)
+    let plan = teamBridgePlan(goal: "Evaluate alternatives", teamAgentAction("work", target.id))
+    let compiled = try XCTUnwrap(AgentTeamPlanCompiler.compileCollaboration(
+      plan: plan, roster: roster, targets: [target], registrations: [registration]))
+    let wire = try XCTUnwrap(compiled.actions.first?.parameters[agentTeamSpecParameter])
+    let spec = try XCTUnwrap(AgentTeamDispatchSpecCodec.decode(wire))
+    let order = try XCTUnwrap(AgentTeamPlanCompiler.collaborationDispatchOrder(spec.definition.members))
+    XCTAssertEqual(order.map { $0.context["_galaxyssi_research_stage"] ?? "" },
+      ["EXPLORE", "CHALLENGE", "REVISE", "RECHECK", "DELIVER"])
+    XCTAssertEqual(order[1].dependsOnAgentIds, [order[0].memberId])
+    XCTAssertEqual(order[2].dependsOnAgentIds, [order[0].memberId, order[1].memberId])
+    XCTAssertEqual(order[3].dependsOnAgentIds, [order[1].memberId, order[2].memberId])
+    XCTAssertEqual(order[4].dependsOnAgentIds, Set(order.dropLast().map(\.memberId)))
+    XCTAssertEqual(order[0].context["_galaxyssi_roster_member_id"], order[2].context["_galaxyssi_roster_member_id"])
+    XCTAssertNotEqual(order[0].memberId, order[2].memberId)
+    var cyclic = order
+    cyclic[0].dependsOnAgentIds = [order[2].memberId]
+    XCTAssertNil(AgentTeamPlanCompiler.collaborationDispatchOrder(cyclic))
+  }
+
+  func testCollaborationCompilationPreservesRosterIdentityAndRejectsCapacityOverflow() throws {
+    var target = teamTarget("codex")
+    target.adapterType = "codex-app-server-or-cli"
+    target.invocationProfile = AgentInvocationProfile(models: [.init(id: "review-model")], reasoningEfforts: [.xhigh])
     var registration = teamRegistration(target)
     registration.maxParallelRuns = 3
     let coordinator = AgentCollaborationRoster.Member(name: "Lead", role: "Synthesis", resourceId: target.id)
     let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", role: "Evidence review",
-      resourceId: target.id, modelId: "review-model", mentionOnly: true)
+      resourceId: target.id, modelId: "review-model", mentionOnly: true, reasoningEffort: "xhigh")
     let researcher = AgentCollaborationRoster.Member(name: "Researcher", resourceId: target.id)
     let roster = AgentCollaborationRoster(members: [researcher, reviewer, coordinator],
       coordinatorId: coordinator.id, independentReview: true)
@@ -289,6 +319,17 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(spec.definition.members.map(\.memberId), [reviewerId, coordinator.id.uuidString.lowercased()])
     XCTAssertEqual(spec.definition.members.first?.role, "Evidence review")
     XCTAssertEqual(spec.definition.members.first?.context["_galaxyssi_member_model_id"], "review-model")
+    XCTAssertEqual(spec.definition.members.first?.context[AgentCollaborationReasoningSelection.contextKey], "xhigh")
+    XCTAssertNil(spec.definition.members.last?.context[AgentCollaborationReasoningSelection.contextKey])
+    XCTAssertEqual(AgentCollaborationReasoningSelection.invocation(model: "review-model", effort: "xhigh",
+      adapter: target.adapterType, profile: target.invocationProfile),
+      ["model_id": "review-model", "reasoning_effort": "xhigh"])
+    XCTAssertNil(AgentCollaborationReasoningSelection.invocation(model: "review-model", effort: "auto",
+      adapter: target.adapterType, profile: target.invocationProfile))
+    var changedTarget = target
+    changedTarget.invocationProfile.reasoningEfforts = [.high]
+    XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan, roster: roster,
+      mentionedMemberIds: [reviewer.id], targets: [changedTarget], registrations: [registration]))
     XCTAssertEqual(spec.definition.members.last?.dependsOnAgentIds, [reviewerId])
     registration.maxParallelRuns = 1
     XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,
@@ -357,8 +398,10 @@ extension GalaxySSIStoreTests {
     var review = Gate.Revision(reference: reviewRef, conversationId: "group", runId: "run",
       turnId: "turn", authorId: "reviewer", kind: "decision", body: reviewBody,
       parents: [deliveryRef], hostObservationIds: [])
-    let original = Policy.Criterion(id: "report", requirement: "Deliver report",
+    var original = Policy.Criterion(id: "report", requirement: "Deliver report",
       verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    original.required_observations = [.init(origin: "ios_cloud_tool", tool: "web_search")]
+    review.hostObservationIds = ["observed"]
     var met = original
     met.status = .met
     met.evidence_kind = .observed
@@ -368,13 +411,18 @@ extension GalaxySSIStoreTests {
     let assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "Report delivered",
       decision: .achieved, criteria: [met], work: [], blockers: [])
     let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
-    func check(observationAvailable: Bool = true) -> Policy.Outcome {
+    func check(observationAvailable: Bool = true, originalTool: String = "web_search") -> Policy.Outcome {
       Gate.evaluate(raw, preserving: [original], conversationId: "group", runId: "run", turnId: "turn",
         readRevision: { id, _ in id == "delivery" ? delivery : (id == "review" ? review : nil) },
-        observationIsSupporting: { $0 == "observed" && observationAvailable })
+        observationIsSupporting: { $0 == "observed" && observationAvailable },
+        originalObservation: { id in
+          id == "observed" ? .init(origin: "ios_cloud_tool", tool: originalTool,
+            status: "returned", kind: "tool_output_recorded") : nil
+        })
     }
     XCTAssertEqual(check(), .achieved)
     XCTAssertEqual(check(observationAvailable: false), .needsAssessment)
+    XCTAssertEqual(check(originalTool: "collaboration_recall"), .needsAssessment)
     review.authorId = delivery.authorId
     XCTAssertEqual(check(), .needsAssessment)
     review.authorId = "reviewer"

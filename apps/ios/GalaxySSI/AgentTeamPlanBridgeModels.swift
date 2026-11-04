@@ -187,6 +187,10 @@ enum AgentTeamDispatchIds {
     var source = "galaxyssi-agent-team\u{001f}\(conversationId)\u{001f}\(turnId)\u{001f}\(plan.planId)\u{001f}"
     for action in actions {
       source += "\(action.id):\(action.parameters["connector_id"] ?? "")\u{001f}"
+      if let model = action.parameters["_galaxyssi_member_model_id"] {
+        let effort = action.parameters[AgentCollaborationReasoningSelection.contextKey] ?? ""
+        source += "\(model.utf8.count):\(model):\(effort)\u{001f}"
+      }
     }
     return nameBasedUUID(source).uuidString.lowercased()
   }
@@ -213,7 +217,7 @@ enum AgentTeamDispatchIds {
     return Int64(value | sourceIdNamespaceBit)
   }
 
-  private static func nameBasedUUID(_ value: String) -> UUID {
+  static func nameBasedUUID(_ value: String) -> UUID {
     var bytes = Array(Insecure.MD5.hash(data: Data(value.utf8)))
     bytes[6] = (bytes[6] & 0x0f) | 0x30
     bytes[8] = (bytes[8] & 0x3f) | 0x80
@@ -262,6 +266,12 @@ enum AgentTeamPlanCompiler {
     }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let registered = Dictionary(registrations.map { ($0.agentId, $0) },
       uniquingKeysWith: { first, _ in first })
+    guard selected.allSatisfy({ member in
+      guard let effort = member.reasoningEffort else { return true }
+      guard let target = available[member.resourceId], target.kind == .agent else { return false }
+      return AgentCollaborationReasoningSelection.invocation(model: member.modelId, effort: effort,
+        adapter: target.adapterType, profile: target.invocationProfile) != nil
+    }) else { return nil }
     let counts = Dictionary(grouping: selected, by: \.resourceId).mapValues(\.count)
     guard counts.allSatisfy({ id, count in
       guard available[id] != nil, let registration = registered[id],
@@ -271,32 +281,91 @@ enum AgentTeamPlanCompiler {
         let primaryTarget = available[coordinator.resourceId] else { return nil }
 
     let primaryId = coordinatorId.uuidString.lowercased()
-    let specialistIds = Set(selected.filter { $0.id != coordinatorId }.map { $0.id.uuidString.lowercased() })
-    let members = selected.compactMap { member -> AgentTeamMember? in
+    let specialists = selected.filter { $0.id != coordinatorId }
+    let specialistIds = Set(specialists.map { $0.id.uuidString.lowercased() })
+    let research: Bool
+    switch roster.workflow ?? .automatic {
+    case .parallel: research = false
+    case .research: research = true
+    case .automatic:
+      research = roster.independentReview || plan.goal.range(
+        of: #"(?i)\b(research|investigat\w*|design|propos\w*|brainstorm|improv\w*)\b|\x{7814}\x{7A76}|\x{8C03}\x{7814}|\x{8A2D}\x{8A08}|\x{8BBE}\x{8BA1}|\x{65B9}\x{6848}"#,
+        options: .regularExpression) != nil
+    }
+    let reviewerId = research && specialists.count >= 2 ? specialists.last?.id : nil
+    var members = selected.compactMap { member -> AgentTeamMember? in
       guard let target = available[member.resourceId] else { return nil }
       let isCoordinator = member.id == coordinatorId
       let role = String(member.role.ifBlank(Self.role(for: target, primary: isCoordinator)).prefix(80))
-      let objective = isCoordinator
+      var objective = isCoordinator
         ? "Synthesize the specialist results and state remaining assumptions and evidence gaps."
         : "Contribute independently within this role: \(role). State assumptions and verifiable acceptance criteria."
+      var dependencies = isCoordinator ? specialistIds : []
+      var stage = ""
+      if research {
+        if isCoordinator {
+          stage = "DELIVER"
+          objective = "Synthesize the research and review, distinguish verified findings from unresolved claims, and deliver the final answer."
+        } else if member.id == reviewerId {
+          stage = "CHALLENGE"
+          dependencies = specialistIds.subtracting([member.id.uuidString.lowercased()])
+          objective = "Independently challenge the exploration results. Identify conflicting claims, missing sources, and concrete verification steps."
+        } else {
+          stage = "EXPLORE"
+          objective = "Explore the user goal within this role: \(role). Identify candidate approaches, sources, and verifiable acceptance criteria."
+        }
+      }
+      var memberContext = [
+        "_galaxyssi_selection_source": "collaboration_roster",
+        "_galaxyssi_member_name": member.name,
+        "_galaxyssi_roster_member_id": member.id.uuidString.lowercased(),
+        "_galaxyssi_member_model_id": member.modelId,
+        "_galaxyssi_independent_review": roster.independentReview ? "true" : "false",
+        "_galaxyssi_research_stage": stage
+      ]
+      memberContext[AgentCollaborationReasoningSelection.contextKey] = member.reasoningEffort
       return AgentTeamMember(
         agentId: target.id, deliveryMode: isCoordinator ? .respond : .observe,
         requiredCapabilities: Set(target.capabilities), role: role,
         objective: String("\(objective) User goal: \(plan.goal)".prefix(maxMemberObjectiveCharacters)),
-        dependsOnAgentIds: isCoordinator ? specialistIds : [],
-        context: [
-          "_galaxyssi_selection_source": "collaboration_roster",
-          "_galaxyssi_member_name": member.name,
-          "_galaxyssi_member_model_id": member.modelId,
-          "_galaxyssi_independent_review": roster.independentReview ? "true" : "false"
-        ],
+        dependsOnAgentIds: dependencies,
+        context: memberContext,
         instanceId: member.id.uuidString.lowercased()
       )
+    }
+    if let reviewerId, let explorerId = specialists.first?.id {
+      guard members.count + 2 <= maxTeamMembers,
+            let explorer = members.first(where: { $0.memberId == explorerId.uuidString.lowercased() }),
+            let reviewer = members.first(where: { $0.memberId == reviewerId.uuidString.lowercased() }),
+            let primaryIndex = members.firstIndex(where: { $0.memberId == primaryId }) else { return nil }
+      var revision = explorer
+      revision.instanceId = explorer.memberId + ":revise"
+      revision.dependsOnAgentIds = specialistIds
+      revision.context["_galaxyssi_research_stage"] = "REVISE"
+      revision.objective = String(("Revise the candidate using the exploration and independent critique. " +
+        "Address supported criticisms and identify claims that still need verification. User goal: " + plan.goal)
+        .prefix(maxMemberObjectiveCharacters))
+
+      var recheck = reviewer
+      recheck.instanceId = reviewer.memberId + ":recheck"
+      recheck.dependsOnAgentIds = [reviewer.memberId, revision.memberId]
+      recheck.context["_galaxyssi_research_stage"] = "RECHECK"
+      recheck.objective = String(("Compare the revised candidate with the original critique. " +
+        "Report resolved, unresolved, and newly introduced issues without claiming unverified evidence. User goal: " +
+        plan.goal).prefix(maxMemberObjectiveCharacters))
+
+      members[primaryIndex].dependsOnAgentIds.formUnion([revision.memberId, recheck.memberId])
+      members.append(contentsOf: [revision, recheck])
     }
     let identityActions = members.map { member -> AgentAction in
       var identity = template
       identity.id = member.memberId
       identity.parameters["connector_id"] = member.agentId
+      if available[member.agentId]?.adapterType == "codex-app-server-or-cli",
+         let model = member.context["_galaxyssi_member_model_id"], !model.isBlank {
+        identity.parameters["_galaxyssi_member_model_id"] = model
+        identity.parameters[AgentCollaborationReasoningSelection.contextKey] = member.context[AgentCollaborationReasoningSelection.contextKey]
+      }
       return identity
     }
     let teamId = AgentTeamDispatchIds.teamId(plan: plan, actions: identityActions)
@@ -312,6 +381,19 @@ enum AgentTeamPlanCompiler {
     compiled.plannerProfile += "+collaboration-roster"
     compiled.validation = AgentPlanValidator.validate(compiled)
     return compiled.validation.valid ? compiled : nil
+  }
+
+  static func collaborationDispatchOrder(_ members: [AgentTeamMember]) -> [AgentTeamMember]? {
+    var remaining = members
+    var ready = Set<String>()
+    var ordered: [AgentTeamMember] = []
+    while !remaining.isEmpty {
+      guard let index = remaining.firstIndex(where: { $0.dependsOnAgentIds.isSubset(of: ready) }) else { return nil }
+      let member = remaining.remove(at: index)
+      guard ready.insert(member.memberId).inserted else { return nil }
+      ordered.append(member)
+    }
+    return ordered
   }
 
   static func compile(

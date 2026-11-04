@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct AgentCollaborationRosterEditor: View {
+struct AgentCollaborationRosterEditor: View {
   private struct Resource: Identifiable {
     var contactId: String
     var modelId: String
@@ -26,7 +26,14 @@ private struct AgentCollaborationRosterEditor: View {
   private var resources: [Resource] {
     let agents = store.visibleContacts.filter {
       ($0.type == "agent" || $0.id == "hermes") && $0.deliveryMode != .cloudAPI
-    }.map { Resource(contactId: $0.id, modelId: "", label: $0.displayName) }
+    }.flatMap { contact -> [Resource] in
+      let defaultResource = Resource(contactId: contact.id, modelId: "", label: contact.displayName)
+      guard contact.connectorAdapterName == "codex-app-server-or-cli",
+            !contact.connectorInvocationProfile.reasoningEfforts.isEmpty else { return [defaultResource] }
+      return [defaultResource] + contact.connectorInvocationProfile.models.map { model in
+        Resource(contactId: contact.id, modelId: model.id, label: contact.displayName + " / " + model.displayName)
+      }
+    }
     let cloud = store.cloudModelContacts.flatMap { contact in
       contact.cloudModels.map { model in
         Resource(contactId: contact.id, modelId: model.id,
@@ -45,6 +52,13 @@ private struct AgentCollaborationRosterEditor: View {
         Section {
           TextField(t("galaxyssi.collaboration.name", "Group Name"), text: $title)
           Toggle(t("galaxyssi.collaboration.review", "Independent Review"), isOn: $roster.independentReview)
+          Picker(t("galaxyssi.collaboration.workflow", "Workflow"), selection: Binding(
+            get: { roster.workflow ?? .automatic }, set: { roster.workflow = $0 }
+          )) {
+            Text(t("galaxyssi.collaboration.workflow_auto", "Automatic")).tag(AgentCollaborationRoster.Workflow.automatic)
+            Text(t("galaxyssi.collaboration.workflow_parallel", "Independent Contributions")).tag(AgentCollaborationRoster.Workflow.parallel)
+            Text(t("galaxyssi.collaboration.workflow_research", "Staged Research")).tag(AgentCollaborationRoster.Workflow.research)
+          }
         }
         ForEach($roster.members) { $member in
           Section {
@@ -55,6 +69,9 @@ private struct AgentCollaborationRosterEditor: View {
               get: { member.resourceId + "\n" + member.modelId },
               set: { key in
                 guard let resource = resources.first(where: { $0.id == key }) else { return }
+                if member.resourceId != resource.contactId || member.modelId != resource.modelId {
+                  member.reasoningEffort = nil
+                }
                 member.resourceId = resource.contactId
                 member.modelId = resource.modelId
               }
@@ -63,6 +80,19 @@ private struct AgentCollaborationRosterEditor: View {
                 Text(t("galaxyssi.collaboration.unavailable", "Unavailable Resource")).tag(selected)
               }
               ForEach(resources) { resource in Text(resource.label).tag(resource.id) }
+            }
+            let efforts = availableEfforts(for: member)
+            if !efforts.isEmpty || member.reasoningEffort != nil {
+              Picker(t("galaxyssi.agent.model_selection.reasoning_effort", "Reasoning effort"), selection: Binding(
+                get: { member.reasoningEffort ?? "" },
+                set: { member.reasoningEffort = $0.isEmpty ? nil : $0 }
+              )) {
+                Text(t("galaxyssi.agent.model_selection.reasoning.auto", "Automatic")).tag("")
+                if let current = member.reasoningEffort, !efforts.contains(where: { $0.rawValue == current }) {
+                  Text(t("galaxyssi.collaboration.unavailable", "Unavailable Resource")).tag(current)
+                }
+                ForEach(efforts) { effort in Text(effortLabel(effort)).tag(effort.rawValue) }
+              }
             }
             Toggle(t("galaxyssi.collaboration.mention_only", "Mention Only"), isOn: $member.mentionOnly)
             Button {
@@ -115,11 +145,32 @@ private struct AgentCollaborationRosterEditor: View {
               saveFailed = true
             }
           }
-          .disabled(title.isBlank || title.utf8.count > 256 || !roster.isValid)
+          .disabled(title.isBlank || title.utf8.count > 256 || !roster.isValid ||
+            roster.members.contains { member in
+              guard let effort = member.reasoningEffort else { return false }
+              return !availableEfforts(for: member).contains { $0.rawValue == effort }
+            })
         }
       }
     }
     .navigationViewStyle(.stack)
+  }
+
+  private func availableEfforts(for member: AgentCollaborationRoster.Member) -> [AgentModelReasoningEffort] {
+    guard let contact = store.contact(id: member.resourceId), contact.connectorAdapterName == "codex-app-server-or-cli" else { return [] }
+    let profile = contact.connectorInvocationProfile
+    guard profile.models.contains(where: { $0.id == member.modelId }) else { return [] }
+    return profile.reasoningEfforts
+  }
+
+  private func effortLabel(_ effort: AgentModelReasoningEffort) -> String {
+    switch effort {
+    case .automatic: return t("galaxyssi.agent.model_selection.reasoning.auto", "Automatic")
+    case .low: return t("galaxyssi.agent.model_selection.reasoning.low", "Low")
+    case .medium: return t("galaxyssi.agent.model_selection.reasoning.medium", "Medium")
+    case .high: return t("galaxyssi.agent.model_selection.reasoning.high", "High")
+    case .xhigh: return t("galaxyssi.agent.model_selection.reasoning.xhigh", "Extra high")
+    }
   }
 }
 
@@ -176,6 +227,7 @@ struct GalaxySSIAgentSessionsView: View {
   @State private var preparedContent = AgentSessionsPreparedContent()
   @State private var collaborationEditorPresented = false
   @State private var collaborationSession: AgentConversation?
+  @State private var collaborationRecallSession: AgentConversation?
 
   private var visibleSessions: [AgentConversation] {
     let sessions = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -316,6 +368,9 @@ struct GalaxySSIAgentSessionsView: View {
     .navigationBarHidden(true)
     .sheet(isPresented: $collaborationEditorPresented) {
       AgentCollaborationRosterEditor(session: collaborationSession, t: t)
+    }
+    .sheet(item: $collaborationRecallSession) { session in
+      GalaxySSICollaborationRecallView(conversationId: session.id, t: t)
     }
     .sheet(item: $editDraft) { draft in
       AgentSessionTextEditSheet(
@@ -635,6 +690,11 @@ struct GalaxySSIAgentSessionsView: View {
         Button(t("galaxyssi.collaboration.settings", "Collaboration Members")) {
           collaborationSession = session
           collaborationEditorPresented = true
+        }
+        if !session.privateMode, !session.trackingPaused {
+          Button(t("galaxyssi.collaboration.history", "Search Group History")) {
+            collaborationRecallSession = session
+          }
         }
       }
       Button(t("galaxyssi.agent_session.delete_more", "Delete more")) {

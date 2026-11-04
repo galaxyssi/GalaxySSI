@@ -19,9 +19,13 @@ internal object HealthImportScheduler {
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork("${if (prepareCapture) "health-capture" else "health-import"}:$id", ExistingWorkPolicy.KEEP, request)
     }
     fun cancel(context: Context, id: String) {
-        HealthOriginalStore(context).use { it.updateJob(id) { job -> job.copy(state = HealthImportState.CANCELLED) } }
+        HealthOriginalStore(context).use {
+            it.updateJob(id) { job -> job.copy(state = HealthImportState.CANCELLED) }
+            runCatching { it.releaseReviewOriginal(id) }
+        }
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-import:$id")
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-capture:$id")
+        HealthReminderWork.sourceRemindersChanged(context)
     }
     fun recoverAsync(context: Context) {
         kotlin.concurrent.thread(name = "health-import-recovery", isDaemon = true) {
@@ -31,6 +35,7 @@ internal object HealthImportScheduler {
             if (!context.getDatabasePath("health_records_v1.db").exists() &&
                 !context.getDatabasePath(HealthOriginalStore.LEGACY_DATABASE).exists()) return@thread
             runCatching { HealthOriginalExportScheduler.recover(context) }
+            runCatching { HealthOriginalRetention.recover(context) }
             runCatching { HealthOriginalStore(context).use { store ->
                 var after: Pair<Long, String>? = null
                 do {
@@ -49,7 +54,11 @@ class HealthImportWorker(context: Context, params: WorkerParameters) : Worker(co
         val id = inputData.getString("health_job") ?: return Result.failure()
         HealthOriginalStore(applicationContext).use { store ->
             return when (HealthImportPipeline(applicationContext).run(store, id, inputData.getBoolean("capture_stage", false)) { isStopped }) {
-                HealthImportOutcome.COMPLETE -> Result.success()
+                HealthImportOutcome.COMPLETE -> {
+                    val ready = store.job(id)?.state in setOf(HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW)
+                    if (ready && runCatching { HealthReminderWork.reportReady(applicationContext, id) }.isFailure) Result.retry()
+                    else Result.success()
+                }
                 HealthImportOutcome.RETRY -> Result.retry()
                 HealthImportOutcome.FAILED -> Result.failure()
             }
@@ -67,7 +76,8 @@ internal class HealthImportPipeline(private val context: Context, private val re
             if (prepareCapture && initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             if (!prepareCapture && initial.captureBatch.isNotBlank() && !initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             fun cancelled() {
-                if (store.job(id)?.state == HealthImportState.CANCELLED) throw CancellationException()
+                val job = store.job(id) ?: throw CancellationException()
+                if (job.state == HealthImportState.CANCELLED) throw CancellationException()
                 if (stopped()) throw HealthImportInterrupted()
             }
             try {
@@ -105,14 +115,18 @@ internal class HealthImportPipeline(private val context: Context, private val re
                     return HealthImportOutcome.COMPLETE
                 }
                 if (!mime.startsWith("image/") && mime != "application/pdf") {
-                    store.updateJob(id) { it.copy(state = HealthImportState.ORIGINAL_ONLY) }; return HealthImportOutcome.COMPLETE
+                    store.updateJob(id) { it.copy(state = HealthImportState.ORIGINAL_ONLY) }
+                    runCatching { store.releaseReviewOriginal(id) }
+                    return HealthImportOutcome.COMPLETE
                 }
                 HealthOcrEngine().use { engine ->
                     val current = store.job(id) ?: throw HealthImportFailure("job_missing")
                     if (mime == "application/pdf") {
-                        engine.pdf(store, original, current.nextPage, ::cancelled,
-                            { count -> store.updateJob(id) { it.copy(pageCount = count) } },
-                            { page -> cancelled(); store.savePage(id, page) })
+                        HealthPdfTextReader.open(context, store, original, ::cancelled).use { text ->
+                            engine.pdf(store, original, current.nextPage, ::cancelled,
+                                { count -> store.updateJob(id) { it.copy(pageCount = count) } },
+                                { page -> cancelled(); store.savePage(id, page) }, text)
+                        }
                     } else if (current.nextPage == 0) {
                         store.updateJob(id) { it.copy(pageCount = 1) }
                         val page = engine.image(store, original)
@@ -125,7 +139,11 @@ internal class HealthImportPipeline(private val context: Context, private val re
                 store.updateJob(id) { it.copy(state = HealthImportState.QUEUED, error = "interrupted") }
                 return HealthImportOutcome.RETRY
             } catch (_: CancellationException) {
-                if (store.job(id)?.state == HealthImportState.CANCELLED) return HealthImportOutcome.COMPLETE
+                val job = store.job(id)
+                if (job == null || job.state == HealthImportState.CANCELLED) {
+                    runCatching { store.releaseReviewOriginal(id) }
+                    return HealthImportOutcome.COMPLETE
+                }
                 store.updateJob(id) { it.copy(state = HealthImportState.FAILED, error = "recognition_cancelled") }
                 return HealthImportOutcome.FAILED
             } catch (_: OutOfMemoryError) {

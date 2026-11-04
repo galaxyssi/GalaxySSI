@@ -81,6 +81,11 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     fun overviewHasOriginalHistory(id: String): Boolean = helper.readableDatabase.rawQuery(
         "SELECT 1 FROM observations WHERE original_id=? LIMIT 1", arrayOf(id)).use { it.moveToFirst() }
+    fun hasSelfOriginalLink(id: String): Boolean = helper.readableDatabase.rawQuery(
+        "SELECT id,revision,payload FROM observations WHERE original_id=? AND deleted=0", arrayOf(id)).use { rows ->
+        while (rows.moveToNext()) if (decode(rows).profileId == "self") return@use true
+        false
+    }
     fun overviewHasOcrDraft(job: String): Boolean {
         val prefix = "ocr:$job:"
         return helper.readableDatabase.rawQuery("SELECT 1 FROM drafts WHERE draft_key>=? AND draft_key<? LIMIT 1",
@@ -366,7 +371,93 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         HealthSyncCheckpoint.from(it).also { mark -> check(mark.scope == scope) }
     } ?: HealthSyncCheckpoint(scope)
 
-    fun saveHealthSyncCheckpoint(mark: HealthSyncCheckpoint) = writeHealthSync("connect:${mark.scope.name}", mark.json())
+    private fun incidentKey(scope: HealthConnectScope) = "connect-incident:${scope.name}"
+
+    internal fun storedSyncIncident(scope: HealthConnectScope): HealthSyncIncident? =
+        readHealthSync(incidentKey(scope))?.let { HealthSyncIncident.from(it).also { incident -> check(incident.scope == scope) } }
+
+    fun healthSyncIncident(scope: HealthConnectScope): HealthSyncIncident? =
+        storedSyncIncident(scope) ?: HealthSyncIncident.fromCheckpoint(healthSyncCheckpoint(scope))
+
+    fun startHealthSyncAttempt(mark: HealthSyncCheckpoint) {
+        require(mark.outcome == HealthSyncOutcome.RUNNING)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val key = incidentKey(mark.scope)
+            if (readHealthSync(key) == null) HealthSyncIncident.fromCheckpoint(healthSyncCheckpoint(mark.scope))?.let {
+                writeHealthSync(key, it.json())
+            }
+            writeHealthSync("connect:${mark.scope.name}", mark.json())
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    fun saveHealthSyncCheckpoint(mark: HealthSyncCheckpoint, systemDelivery: Boolean? = null) {
+        val key = "connect:${mark.scope.name}"
+        val succeeded = mark.outcome == HealthSyncOutcome.UPDATED || mark.outcome == HealthSyncOutcome.NO_NEW
+        if (!succeeded && !mark.outcome.isSyncFailure) {
+            writeHealthSync(key, mark.json())
+            return
+        }
+        val delivery = if (mark.outcome.isSyncFailure &&
+            (systemDelivery ?: (name == DEFAULT_DB && HealthReminderWork.syncDeliveryEnabled(app)))) HealthReminderDelivery.WAITING
+        else HealthReminderDelivery.IN_APP_ONLY
+        val db = helper.writableDatabase
+        var changed = false
+        var reconcileNotices = false
+        db.beginTransaction()
+        try {
+            val prior = healthSyncIncident(mark.scope)
+            val next = if (succeeded) prior?.let {
+                if (it.resolvedAt == 0L && mark.lastSuccess > 0) it.copy(resolvedAt = mark.lastSuccess, delivery = it.handledDelivery) else it
+            } else HealthSyncIncident.fromCheckpoint(mark)?.let {
+                if (prior != null && prior.resolvedAt == 0L) prior.copy(outcome = it.outcome, failedAt = it.failedAt,
+                    lastSuccess = it.lastSuccess) else it.copy(id = java.util.UUID.randomUUID().toString(), delivery = delivery)
+            } ?: prior
+            writeHealthSync(key, mark.json())
+            if (next != null && next != prior) {
+                writeHealthSync(incidentKey(mark.scope), next.json())
+                changed = true
+                reconcileNotices = (next.id != prior?.id && next.delivery == HealthReminderDelivery.WAITING) ||
+                    (next.handled && prior != null && !prior.handled && prior.delivery != HealthReminderDelivery.IN_APP_ONLY)
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        if (changed) notifySyncIncidents()
+        if (reconcileNotices && name == DEFAULT_DB) HealthReminderWork.sourceRemindersChanged(app)
+    }
+
+    fun acknowledgeHealthSyncIncident(expected: HealthSyncIncident, now: Long) {
+        require(now > 0)
+        val db = helper.writableDatabase
+        val reconcileNotices: Boolean
+        db.beginTransaction()
+        try {
+            val current = healthSyncIncident(expected.scope)
+            if (current == null || current.copy(delivery = expected.delivery) != expected || current.handled) throw HealthReminderConflict()
+            writeHealthSync(incidentKey(expected.scope), current.copy(acknowledgedAt = now, delivery = current.handledDelivery).json())
+            reconcileNotices = current.delivery != HealthReminderDelivery.IN_APP_ONLY
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        notifySyncIncidents()
+        if (reconcileNotices && name == DEFAULT_DB) HealthReminderWork.sourceRemindersChanged(app)
+    }
+
+    fun finishSyncNotice(expected: HealthSyncIncident, delivery: HealthReminderDelivery): Boolean {
+        require(delivery != HealthReminderDelivery.WAITING)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val current = healthSyncIncident(expected.scope)
+            if (current == null || current.id != expected.id || current.handled || current.delivery != HealthReminderDelivery.WAITING) return false
+            writeHealthSync(incidentKey(current.scope), current.copy(delivery = delivery).json())
+            db.setTransactionSuccessful()
+            return true
+        } finally { db.endTransaction() }
+    }
+
+    private fun notifySyncIncidents() = app.contentResolver.notifyChange(syncIncidentChanges(app, name), null)
 
     @Synchronized fun saveHealthSyncChunk(mark: HealthSyncCheckpoint, rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): HealthSyncCheckpoint {
         require(rows.isNotEmpty() && rows.size <= HealthConnectImport.MAX_ROWS)
@@ -572,9 +663,12 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         private fun createClocks(db: SQLiteDatabase) { db.execSQL("CREATE TABLE IF NOT EXISTS health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)") }
     }
     companion object {
+        const val DEFAULT_DB = "health_records_v1.db"
         const val SCHEMA_VERSION = 8
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
+        fun syncIncidentChanges(context: Context, name: String) = android.net.Uri.parse(
+            "content://${context.packageName}.health-originals/changes/sync-incidents/" + android.net.Uri.encode(name))
         fun draftKey(draft: HealthDraft) = when {
             draft.recordId.isNotBlank() -> "edit:${draft.recordId}"
             draft.evidence != null -> "ocr:${draft.evidence.jobId}:${draft.evidence.page}:${draft.evidence.candidateId}"

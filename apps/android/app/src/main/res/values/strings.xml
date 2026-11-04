@@ -1966,6 +1966,11 @@
     <string name="agent_trace_connector_progress_running">Running: %1$s%2$s</string>
     <string name="agent_trace_connector_progress_completed">Completed: %1$s%2$s</string>
     <string name="agent_trace_connector_progress_failed">Failed: %1$s%2$s</string>
+    <string name="agent_trace_research_checking_other_sources">Checking other sources</string>
+    <string name="agent_trace_research_source_unavailable">Could not read a source</string>
+    <string name="agent_trace_research_source_forbidden">Website refused access (HTTP 403)</string>
+    <string name="agent_trace_research_source_size_limit">max_bytes requested %1$d bytes, limit %2$d bytes</string>
+    <string name="agent_trace_research_source_no_body">No readable page body</string>
     <string name="agent_trace_connector_operation_web_search">web search</string>
     <string name="agent_trace_connector_operation_web_image_search">image search</string>
     <string name="agent_trace_connector_operation_command">command</string>

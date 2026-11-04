@@ -1,6 +1,191 @@
 import SwiftUI
 
-struct GalaxySSICollaborationResultsButton: View {
+struct GalaxySSICollaborationRecallView: View {
+  let conversationId: String
+  let t: (String, String) -> String
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: GalaxySSIStore
+  @State private var query = ""
+  @State private var submittedQuery = ""
+  @State private var snapshots: [AgentTeamExecutionSnapshot] = []
+  @State private var loading = true
+
+  var body: some View {
+    NavigationView {
+      List {
+        if loading {
+          ProgressView()
+        } else if snapshots.isEmpty {
+          Text(t("galaxyssi.collaboration.history_empty", "No matching group records."))
+            .foregroundColor(.secondary)
+        }
+        ForEach(snapshots, id: \.supervisorRunId) { snapshot in
+          NavigationLink {
+            GalaxySSIAgentTeamDetailView(snapshot: snapshot)
+          } label: {
+            Text(snapshot.goal.ifBlank(snapshot.teamId)).lineLimit(2)
+          }
+        }
+      }
+      .navigationTitle(t("galaxyssi.collaboration.history", "Search Group History"))
+      .navigationBarTitleDisplayMode(.inline)
+      .searchable(text: $query, prompt: t("galaxyssi.collaboration.history_search", "Search past results"))
+      .onSubmit(of: .search) { submittedQuery = String(query.prefix(250)) }
+      .onChange(of: query) { if $0.isEmpty { submittedQuery = "" } }
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("galaxyssi.common.close", "Close")) { dismiss() }
+        }
+      }
+      .task(id: submittedQuery) {
+        guard allowed else { snapshots = []; loading = false; return }
+        loading = true
+        let id = conversationId
+        let text = submittedQuery
+        let result = await Task.detached(priority: .userInitiated) {
+          AgentTeamExecutionHistoryStore.shared.recallCollaborationResults(
+            conversationId: id, excludingTurnId: "", query: text, limit: 50)
+        }.value
+        guard !Task.isCancelled, allowed else { return }
+        snapshots = result
+        loading = false
+      }
+      .onChange(of: allowed) { if !$0 { snapshots = []; dismiss() } }
+    }
+    .navigationViewStyle(.stack)
+  }
+
+  private var allowed: Bool {
+    guard let session = store.agentSession(id: conversationId), session.id == conversationId else { return false }
+    return session.collaborationRoster != nil && session.mergedIntoConversationId.isBlank &&
+      !session.privateMode && !session.trackingPaused
+  }
+}
+
+struct GalaxySSICollaborationTeamPanel: View {
+  let session: AgentConversation
+  let roster: AgentCollaborationRoster
+  let t: (String, String) -> String
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State private var snapshot: AgentTeamExecutionSnapshot?
+  @State private var expanded = false
+  @State private var settingsPresented = false
+  @State private var historyPresented = false
+  @State private var refreshRevision = 0
+
+  var body: some View {
+    DisclosureGroup(isExpanded: $expanded) {
+      LazyVStack(alignment: .leading, spacing: 8) {
+        if let snapshot {
+          ForEach(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot), id: \.memberId) { member in
+            VStack(alignment: .leading, spacing: 3) {
+              Text((member.displayName ?? "").ifBlank(member.agentId)).font(.subheadline.weight(.semibold))
+              if !member.role.isBlank { Text(member.role).font(.footnote) }
+              if let stage = stageLabel(member.researchStage) {
+                Text(stage).font(.footnote).foregroundColor(.secondary)
+              }
+              HStack {
+                Text(memberStatus(member))
+                if member.executionStartedAtMillis != nil && !member.status.isTerminal && !snapshot.state.isTerminal {
+                  TimelineView(.periodic(from: .now, by: 1)) { context in
+                    elapsed(member, team: snapshot, now: Int64(context.date.timeIntervalSince1970 * 1_000))
+                  }
+                } else {
+                  elapsed(member, team: snapshot, now: 0)
+                }
+              }
+              .font(.footnote).foregroundColor(.secondary)
+              if !member.errorMessage.isBlank {
+                Text(member.errorMessage).font(.footnote).foregroundColor(.secondary).lineLimit(2)
+              }
+            }
+            .accessibilityElement(children: .combine)
+          }
+        } else {
+          ForEach(roster.members) { member in
+            VStack(alignment: .leading, spacing: 3) {
+              Text(member.name).font(.subheadline.weight(.semibold))
+              if !member.role.isBlank { Text(member.role).font(.footnote).foregroundColor(.secondary) }
+            }
+          }
+        }
+        GalaxySSICollaborationResultsButton(conversationId: session.id, t: t)
+        Button { historyPresented = true } label: {
+          Label(t("galaxyssi.collaboration.history", "Search Group History"), systemImage: "magnifyingglass")
+            .frame(minHeight: 44)
+        }
+        Button { settingsPresented = true } label: {
+          Label(t("galaxyssi.collaboration.settings", "Collaboration Members"), systemImage: "gearshape")
+            .frame(minHeight: 44)
+        }
+      }
+      .padding(.vertical, 8)
+    } label: {
+      VStack(alignment: .leading, spacing: 3) {
+        HStack {
+          Label(t("galaxyssi.collaboration.settings", "Collaboration Members"), systemImage: "person.3")
+          Text(roster.members.count, format: .number).monospacedDigit()
+        }
+        .font(.subheadline.weight(.semibold))
+        if let snapshot {
+          Text(GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: language))
+            .font(.footnote).foregroundColor(.secondary)
+        }
+      }
+      .frame(minHeight: 44)
+    }
+    .task(id: refreshRevision) {
+      let id = session.id
+      let current = await Task.detached(priority: .userInitiated) {
+        AgentTeamExecutionHistoryStore.shared.latestCollaborationRun(conversationId: id)
+      }.value
+      if !Task.isCancelled { snapshot = current }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIAgentTeamExecutionHistoryDidUpdate)
+      .receive(on: RunLoop.main)) { notification in
+      guard let runId = notification.object as? String else { refreshRevision &+= 1; return }
+      if runId == snapshot?.supervisorRunId ||
+          AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: runId)?.conversationId == session.id {
+        refreshRevision &+= 1
+      }
+    }
+    .sheet(isPresented: $settingsPresented) {
+      AgentCollaborationRosterEditor(session: session, t: t)
+    }
+    .sheet(isPresented: $historyPresented) {
+      GalaxySSICollaborationRecallView(conversationId: session.id, t: t)
+    }
+  }
+
+  private func memberStatus(_ member: AgentTeamMemberSnapshot) -> String {
+    if member.status == .pending || member.status == .queued {
+      if member.dispatchCheckpoint == .dispatching { return t("galaxyssi.collaboration.dispatching", "Dispatching") }
+      if member.dispatchCheckpoint == .accepted { return t("galaxyssi.agent_team.state_waiting_response", "Waiting for response") }
+    }
+    return GalaxySSIAgentTeamPresentation.memberStatusLabel(member.status, language: language)
+  }
+
+  private func stageLabel(_ stage: String?) -> String? {
+    switch stage {
+    case "EXPLORE": return t("galaxyssi.collaboration.stage_explore", "Explore")
+    case "CHALLENGE": return t("galaxyssi.collaboration.stage_challenge", "Challenge")
+    case "REVISE": return t("galaxyssi.collaboration.stage_revise", "Revise")
+    case "RECHECK": return t("galaxyssi.collaboration.stage_recheck", "Recheck")
+    case "DELIVER": return t("galaxyssi.collaboration.stage_deliver", "Deliver")
+    default: return nil
+    }
+  }
+
+  @ViewBuilder
+  private func elapsed(_ member: AgentTeamMemberSnapshot, team: AgentTeamExecutionSnapshot, now: Int64) -> some View {
+    if let millis = member.elapsedExecutionMillis(now: now, team: team) {
+      Text(DurationLabel.clock(millis / 1_000)).monospacedDigit()
+    }
+  }
+
+}
+
+private struct GalaxySSICollaborationResultsButton: View {
   let conversationId: String
   let t: (String, String) -> String
   @State private var presented = false
@@ -49,8 +234,18 @@ private struct GalaxySSICollaborationResultsView: View {
               VStack(alignment: .leading, spacing: 4) {
                 Text(snapshot.goal.ifBlank(t("galaxyssi.collaboration.results", "Member Results")))
                   .lineLimit(2)
-                Text(GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: interfaceLanguage))
-                  .font(.footnote).foregroundColor(.secondary)
+                HStack {
+                  Text(GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: interfaceLanguage))
+                  if snapshot.executionEndedAtMillis == nil && (snapshot.state == .running || snapshot.state == .waitingResponse),
+                     snapshot.executionStartedAtMillis != nil {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                      elapsedLabel(snapshot, now: Int64(context.date.timeIntervalSince1970 * 1_000))
+                    }
+                  } else {
+                    elapsedLabel(snapshot, now: 0)
+                  }
+                }
+                .font(.footnote).foregroundColor(.secondary)
               }
             }
           }
@@ -98,7 +293,12 @@ private struct GalaxySSICollaborationResultsView: View {
 
   private func memberResult(_ member: AgentTeamMemberSnapshot, snapshot: AgentTeamExecutionSnapshot) -> some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text((member.displayName ?? "").ifBlank(member.agentId)).font(.subheadline.weight(.semibold))
+      HStack(alignment: .firstTextBaseline) {
+        Text((member.displayName ?? "").ifBlank(member.agentId)).font(.subheadline.weight(.semibold))
+        if member.status == .succeeded, member.updatedAtMillis > 0 {
+          Text(replyTime(member.updatedAtMillis)).font(.footnote).foregroundColor(.secondary)
+        }
+      }
       if !member.role.isBlank {
         Text(member.role).font(.footnote).foregroundColor(.secondary)
       }
@@ -116,6 +316,38 @@ private struct GalaxySSICollaborationResultsView: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .contain)
+  }
+
+  private func replyTime(_ millis: Int64) -> String {
+    let date = Date(timeIntervalSince1970: Double(millis) / 1_000)
+    let calendar = Calendar.current
+    let now = Date()
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: interfaceLanguage)
+    if calendar.isDate(date, inSameDayAs: now) {
+      formatter.setLocalizedDateFormatFromTemplate("jm")
+    } else {
+      formatter.setLocalizedDateFormatFromTemplate(calendar.isDate(date, equalTo: now, toGranularity: .year)
+        ? "MMMdjm" : "yMMMdjm")
+    }
+    return formatter.string(from: date)
+  }
+
+  @ViewBuilder
+  private func elapsedLabel(_ snapshot: AgentTeamExecutionSnapshot, now: Int64) -> some View {
+    if let millis = snapshot.elapsedExecutionMillis(now: now) {
+      let seconds = millis / 1_000
+      Text(DurationLabel.clock(seconds)).monospacedDigit()
+    }
+  }
+}
+
+private enum DurationLabel {
+  static func clock(_ seconds: Int64) -> String {
+    if seconds >= 3_600 {
+      return String(format: "%lld:%02lld:%02lld", seconds / 3_600, (seconds / 60) % 60, seconds % 60)
+    }
+    return String(format: "%lld:%02lld", seconds / 60, seconds % 60)
   }
 }
 
@@ -201,7 +433,7 @@ enum GalaxySSIAgentTeamPresentation {
   }
 
   static func memberCount(_ snapshot: AgentTeamExecutionSnapshot) -> Int {
-    snapshot.members.filter { $0.deliveryMode != .ignore }.count
+    AgentTeamProgressPolicy.currentCollaborationMembers(snapshot).count
   }
 
   static func time(_ millis: Int64, language: String) -> String {
@@ -309,6 +541,14 @@ struct GalaxySSIAgentTeamDetailView: View {
       )
       if !snapshot.taskId.isEmpty {
         detailBlock(t("galaxyssi.agent_team.task", "Task"), snapshot.taskId)
+      }
+      if !snapshot.state.isTerminal {
+        ForEach(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot), id: \.memberId) { member in
+          detailBlock(
+            (member.displayName ?? "").ifBlank(member.agentId),
+            GalaxySSIAgentTeamPresentation.memberStatusLabel(member.status, language: interfaceLanguage)
+          )
+        }
       }
     }
   }

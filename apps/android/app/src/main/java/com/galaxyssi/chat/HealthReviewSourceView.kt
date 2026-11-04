@@ -23,6 +23,8 @@ private fun validReviewBox(box: List<Int>) =
     box.size == 4 && box.all { it in 0..1000 } && box[0] < box[2] && box[1] < box[3]
 
 internal fun HealthEvidence.hasReviewRegion() = boxes.any(::validReviewBox)
+internal fun HealthRecognition.label() =
+    if (this == HealthRecognition.PDF_TEXT) R.string.health_review_pdf_text_method else R.string.health_review_source_method
 
 internal object HealthReviewRaster {
     private const val MAX_EDGE = 1600
@@ -150,7 +152,7 @@ internal class HealthReviewSourceDialog(
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { dismiss() }.apply {
                 imageTintList = ColorStateList.valueOf(Color.WHITE)
             })
-            addView(ui.text(activity.getString(R.string.health_review_source_method, displayedPage), 15f).apply {
+            addView(ui.text(activity.getString(evidence.recognition.label(), displayedPage), 15f).apply {
                 gravity = Gravity.CENTER
                 setTextColor(Color.WHITE)
             }, LinearLayout.LayoutParams(0, -2, 1f))

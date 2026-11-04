@@ -8,6 +8,7 @@ struct ParsedModelStreamFrame: Equatable {
   var terminal = false
   var error: ModelStreamError?
   var providerSequence: Int64?
+  var reportedModel: String? = nil
 }
 
 protocol ModelStreamProviderAdapter {
@@ -65,7 +66,8 @@ private final class OpenAIModelStreamAdapter: ModelStreamProviderAdapter {
         usage: response.object("usage")?.openAIUsage(),
         finishReason: response.string("status").ifBlank("stop"),
         terminal: true,
-        providerSequence: json.optionalSequence()
+        providerSequence: json.optionalSequence(),
+        reportedModel: response.string("model").nonBlank
       )
     }
     let choice = json.array("choices").firstObject
@@ -86,7 +88,8 @@ private final class OpenAIModelStreamAdapter: ModelStreamProviderAdapter {
       toolDeltas: tools,
       usage: json.object("usage")?.openAIUsage(),
       finishReason: choice?.string("finish_reason").nonBlank,
-      providerSequence: json.optionalSequence()
+      providerSequence: json.optionalSequence(),
+      reportedModel: json.string("model").nonBlank
     )
   }
 
@@ -117,7 +120,8 @@ private final class OpenAIModelStreamAdapter: ModelStreamProviderAdapter {
       toolDeltas: tools,
       usage: json.object("usage")?.openAIUsage(),
       finishReason: choice?.string("finish_reason").nonBlank,
-      terminal: true
+      terminal: true,
+      reportedModel: json.string("model").nonBlank
     )
   }
 }

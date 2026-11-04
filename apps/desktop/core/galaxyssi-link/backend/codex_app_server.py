@@ -188,6 +188,7 @@ class CodexRun:
     model: str = "gpt-5.6-sol"
     reasoning_effort: str = "medium"
     web_evidence_packs: list[dict[str, Any]] = field(default_factory=list)
+    web_read_failures: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     citation_repair_attempted: bool = False
     research_observed: bool = False
     research_quality: dict[str, Any] = field(default_factory=dict)
@@ -2541,6 +2542,15 @@ class CodexAppServer:
         else:
             result = dict(result)
         evidence_pack = result.pop("_galaxyssi_evidence_pack", None)
+        read_failures = result.pop("_galaxyssi_read_failures", None)
+        call_id = str(params.get("callId") or "")
+        if call_id and read_failures and tool_name in {CODEX_DYNAMIC_SEARCH_TOOL, CODEX_DYNAMIC_FETCH_TOOL}:
+            with self._lock:
+                run = self._runs.get(task_id)
+                if (run is not None and not run.finished
+                        and common.get("thread_id", run.thread_id) == run.thread_id
+                        and common.get("turn_id", run.turn_id) == run.turn_id):
+                    run.web_read_failures[call_id] = read_failures
         if result.get("success") and isinstance(evidence_pack, Mapping):
             with self._lock:
                 run = self._runs.get(task_id)
@@ -2837,9 +2847,9 @@ class CodexAppServer:
                 break
         if not seen:
             return (
-                "网页证据完整性校验失败，未返回未经验证的内容。"
+                "资料不足，未能核实。没有可通过完整性校验的网页证据。"
                 if run.prefers_chinese else
-                "Web evidence integrity verification failed; no unverified content was returned."
+                "There was insufficient evidence to verify the answer. No web evidence passed integrity checks."
             )
         return "\n".join(lines)
 
@@ -2948,6 +2958,18 @@ class CodexAppServer:
         completed: bool,
     ) -> None:
         progress = self._tool_progress_event(item, completed=completed)
+        if progress and completed and item.get("type") == "dynamicToolCall":
+            with self._lock:
+                run = self._runs.get(task_id)
+                failures = run.web_read_failures.pop(str(item.get("id") or ""), None) if run else None
+            if failures:
+                progress["metadata"]["web_read_failures"] = failures
+                progress["title"] = "Some source pages unavailable"
+        if progress and progress["status"] == "failed" and (
+            progress["code"] == "web_search"
+            or item.get("tool") in {CODEX_DYNAMIC_SEARCH_TOOL, CODEX_DYNAMIC_FETCH_TOOL}
+        ):
+            progress["title"] = "Checking other sources"
         legacy_event = self._item_event(
             item,
             "completed" if completed else "running",

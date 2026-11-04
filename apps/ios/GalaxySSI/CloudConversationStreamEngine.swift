@@ -227,6 +227,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         images: images
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
+      if collaborationEvidence != nil { prepared.installCollaborationRecall() }
       var evidenceResults: [(String, String)] = []
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
@@ -247,6 +248,32 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
         var roundCompleted = false
         var roundFailure: ModelStreamFailed?
+        var observedUsage: ModelUsage?
+        var reportedModel: String?
+        var audit: AgentCollaborationModelAdmission?
+        if let scope = collaborationEvidence {
+          let candidate = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: currentRound,
+            provider: roundRequest.provider,
+            requestedModel: (try? CloudModelStreamJSON.object(from: roundRequest.bodyJson))?["model"] as? String,
+            startedAtMillis: AgentControlPlaneClock.nowMillis())
+          let saved = await MainActor.run {
+            guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+                  session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+                  !session.privateMode, !session.trackingPaused else { return false }
+            return (try? AgentTeamExecutionHistoryStore.shared.admitCollaborationModelCall(candidate)) != nil
+          }
+          if saved { audit = candidate }
+        }
+        func finishAudit() {
+          guard let admission = audit else { return }
+          audit = nil
+          let state: AgentCollaborationModelSettlement.State = Task.isCancelled ? .cancelled :
+            (roundFailure != nil ? .failed : (roundCompleted ? .completed : .interrupted))
+          try? AgentTeamExecutionHistoryStore.shared.settleCollaborationModelCall(admission, settlement: .init(
+            state: state, finishedAtMillis: max(admission.startedAtMillis, AgentControlPlaneClock.nowMillis()),
+            reportedUsage: observedUsage, usageComplete: false, costMicros: nil, reportedModel: reportedModel))
+        }
+        defer { finishAudit() }
         setActiveRound(roundId, for: requestId)
 
         for try await event in streamClient.stream(roundRequest) {
@@ -307,16 +334,22 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             )
 
           case .usage(let value):
+            if value.usage.inputTokens >= 0, value.usage.outputTokens >= 0,
+               (0...value.usage.inputTokens).contains(value.usage.cachedInputTokens) {
+              observedUsage = value.usage
+            }
             continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: value.usage)))
 
           case .completed(let value):
             roundCompleted = true
+            reportedModel = value.reportedModel
             lastFinishReason = value.finishReason
 
           case .failed(let value):
             roundFailure = ModelStreamFailed(requestId: requestId, error: value.error)
           }
         }
+        finishAudit()
         setActiveRound(nil, for: requestId)
 
         if let failure = roundFailure {
@@ -557,11 +590,26 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             turnId: turnId,
             images: images,
             readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
-          )
+          ),
+          collaborationRecall: collaborationEvidence.map { scope in
+            { arguments in
+              await MainActor.run {
+                guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+                      let roster = session.collaborationRoster,
+                      let member = scope.memberId.split(separator: ":").first,
+                      let memberId = UUID(uuidString: String(member)),
+                      roster.members.contains(where: { $0.id == memberId }),
+                      session.mergedIntoConversationId.isBlank,
+                      !session.privateMode, !session.trackingPaused else { return nil }
+                return try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(arguments, scope: scope)
+              }
+            }
+          }
         )
         if let scope = collaborationEvidence {
           for index in outcomes.indices {
             let outcome = outcomes[index]
+            if outcome.call.name == CloudModelStreamMutableConversation.collaborationRecallName { continue }
             let evidence = AgentCollaborationCloudToolEvidence(scope: scope, round: round,
               call: outcome.call, output: outcome.output ?? outcome.errorMessage ?? "",
               succeeded: outcome.output != nil, startedAtMillis: outcome.startedAtMillis,
@@ -601,7 +649,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
             madeProgress = true
-            if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName {
+            if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName &&
+                !CloudWebToolLoopProgress.isRuleRecall(toolName: outcome.call.name, arguments: arguments) {
               evidenceResults.append((outcome.call.name, output))
             }
           }
@@ -620,7 +669,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           projectionByOriginal[original] = projection
         }
         let promptResults = results.map { call, output in
-          (call, projectionByOriginal[output] ?? evidencePromptLedger.project(output))
+          if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
+             CloudWebToolLoopProgress.isRuleRecall(toolName: call.name, arguments: arguments) {
+            return (call, output)
+          }
+          return (call, projectionByOriginal[output] ?? evidencePromptLedger.project(output))
         }
         if usesInlineProtocol {
           prepared.appendInlineToolResults(rawRoundText, results: promptResults)
@@ -704,7 +757,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
   private func executeToolCalls(
     _ calls: [AssembledToolCall],
-    context: CloudConversationToolExecutionContext
+    context: CloudConversationToolExecutionContext,
+    collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
   ) async -> [ToolExecutionOutcome] {
     guard !calls.isEmpty else { return [] }
 
@@ -717,7 +771,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           group.addTask { [toolExecutor] in
             let started = AgentControlPlaneClock.nowMillis()
             do {
-              let output = try toolExecutor.executeTool(call: call, context: context)
+              let output: String
+              if call.name == CloudModelStreamMutableConversation.collaborationRecallName {
+                let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+                let recalled = await collaborationRecall?(args)
+                output = AgentMcpJSONCodec.stringify(recalled ?? ["status": .string("unavailable")])
+              } else {
+                output = try toolExecutor.executeTool(call: call, context: context)
+              }
               return ToolExecutionOutcome(
                 index: start + offset,
                 call: call,

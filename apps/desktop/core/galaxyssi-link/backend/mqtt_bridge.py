@@ -3875,21 +3875,30 @@ def _readable_progress_replay(events: list[dict]) -> list[dict]:
             kind == "mcp"
             and str(metadata.get("kind") or "") == "mcp_tool_call"
         )
-        if kind not in {"narration", "reasoning", "plan"} and not is_mcp_tool_call:
+        read_failures = metadata.get("web_read_failures")
+        is_source_read = kind == "tool" and isinstance(read_failures, list) and bool(read_failures)
+        if kind not in {"narration", "reasoning", "plan"} and not (is_mcp_tool_call or is_source_read):
             continue
         if kind in {"reasoning", "plan"} and not detail:
             continue
         visible_text = detail or title
         if not visible_text:
             continue
-        if replay and len(visible_text) > remaining_characters:
+        source_diagnostics = read_failures[:4] if is_source_read else []
+        diagnostics_size = 0
+        if source_diagnostics:
+            diagnostics_size = len(json.dumps(source_diagnostics, ensure_ascii=False, separators=(",", ":")))
+            if diagnostics_size >= remaining_characters:
+                continue
+        if replay and len(visible_text) + diagnostics_size > remaining_characters:
             break
+        remaining_characters -= diagnostics_size
         bounded_detail = detail[:remaining_characters]
         bounded_title = title[: min(240, remaining_characters)]
         replay_event = {
             "event_id": str(event.get("event_id") or ""),
-            "kind": "mcp" if is_mcp_tool_call else "narration",
-            "code": "mcp_tool" if is_mcp_tool_call else str(event.get("code") or kind),
+            "kind": kind if is_mcp_tool_call or is_source_read else "narration",
+            "code": "mcp_tool" if is_mcp_tool_call else "dynamic_tool" if is_source_read else str(event.get("code") or kind),
             "title": bounded_title,
             "status": str(event.get("status") or "completed"),
             "detail": bounded_detail,
@@ -3918,6 +3927,8 @@ def _readable_progress_replay(events: list[dict]) -> list[dict]:
                 )
                 if key in metadata
             }
+        elif is_source_read:
+            replay_event["metadata"] = {"web_read_failures": source_diagnostics}
         replay.append(replay_event)
         remaining_characters -= len(bounded_detail or bounded_title)
         if len(replay) >= MAX_READABLE_PROGRESS_REPLAY_EVENTS or remaining_characters <= 0:

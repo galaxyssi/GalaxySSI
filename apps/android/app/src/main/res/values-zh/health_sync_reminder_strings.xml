@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_sync_reminder_group">数据连接</string>
+    <string name="health_sync_reminder_notice">有一项数据连接需要检查。</string>
+    <string name="health_sync_reminder_failed_at">上次同步失败：%1$s</string>
+    <string name="health_sync_reminder_resolved">同步已恢复：%1$s</string>
+    <string name="health_sync_reminder_retention">同步问题不代表健康异常。已保存的记录仍可查看。</string>
+</resources>

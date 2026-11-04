@@ -1861,6 +1861,11 @@
     <string name="agent_trace_connector_progress_running">正在执行：%1$s%2$s</string>
     <string name="agent_trace_connector_progress_completed">已完成：%1$s%2$s</string>
     <string name="agent_trace_connector_progress_failed">执行失败：%1$s%2$s</string>
+    <string name="agent_trace_research_checking_other_sources">正在核对其他来源</string>
+    <string name="agent_trace_research_source_unavailable">有来源未能读取</string>
+    <string name="agent_trace_research_source_forbidden">网站拒绝访问正文（HTTP 403）</string>
+    <string name="agent_trace_research_source_size_limit">max_bytes 请求了 %1$d 字节，上限为 %2$d 字节</string>
+    <string name="agent_trace_research_source_no_body">未获得可读正文</string>
     <string name="agent_trace_connector_operation_web_search">搜索网页</string>
     <string name="agent_trace_connector_operation_web_image_search">搜索图片</string>
     <string name="agent_trace_connector_operation_command">运行命令</string>

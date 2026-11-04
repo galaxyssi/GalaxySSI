@@ -2,6 +2,17 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSPhonePublicHTMLAttachmentTests: XCTestCase {
+  @MainActor
+  func testWeChatBrowserKeepsArticleNavigationSeparateFromCDNFrames() {
+    XCTAssertNotNil(GalaxySSIWeChatBrowserSession.articleURL("https://mp.weixin.qq.com/s/article"))
+    XCTAssertNil(GalaxySSIWeChatBrowserSession.articleURL("https://mp.weixin.qq.com:443/s/article"))
+    XCTAssertNil(GalaxySSIWeChatBrowserSession.articleURL("https://mp.weixin.qq.com.evil.test/s/article"))
+    let cdn = URL(string: "https://mmbiz.qpic.cn/image")
+    XCTAssertFalse(GalaxySSIWeChatBrowserSession.allows(cdn, mainFrame: true))
+    XCTAssertTrue(GalaxySSIWeChatBrowserSession.allows(cdn, mainFrame: false))
+    XCTAssertFalse(GalaxySSIWeChatBrowserSession.allows(URL(string: "file:///test"), mainFrame: false))
+  }
+
   func testWeChatPDFKeepsImageOrderAndRejectsVerificationPage() throws {
     let url = try XCTUnwrap(AgentIOSWeChatArticlePDF.articleURL("https://mp.weixin.qq.com/s/example"))
     let source = """

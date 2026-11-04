@@ -14,7 +14,7 @@ import java.io.Closeable
 import java.util.concurrent.TimeUnit
 
 internal class HealthOcrEngine : Closeable {
-    private val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+    private val recognizer = lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
     private val pending = mutableSetOf<Bitmap>()
     fun image(store: HealthOriginalStore, original: HealthOriginal): HealthOcrPage {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -42,7 +42,7 @@ internal class HealthOcrEngine : Closeable {
         } finally { release(bitmap) }
     }
     fun pdf(store: HealthOriginalStore, original: HealthOriginal, firstPage: Int, cancelled: () -> Unit,
-        onCount: (Int) -> Unit, onPage: (HealthOcrPage) -> Unit) {
+        onCount: (Int) -> Unit, onPage: (HealthOcrPage) -> Unit, textSource: HealthPdfTextReader? = null) {
         val descriptor = store.descriptor(original)
         val renderer = try { PdfRenderer(descriptor) } catch (failure: Exception) {
             descriptor.close()
@@ -50,8 +50,14 @@ internal class HealthOcrEngine : Closeable {
         }
         renderer.use { pdf ->
             onCount(pdf.pageCount)
+            val text = textSource?.takeIf { it.pageCount == pdf.pageCount }
             for (index in firstPage until pdf.pageCount) {
                 cancelled()
+                val extracted = text?.page(index)
+                if (extracted != null) {
+                    cancelled(); onPage(extracted)
+                    continue
+                }
                 pdf.openPage(index).use { page ->
                     val scale = minOf(3.0, kotlin.math.sqrt(6_000_000.0 / (page.width.toDouble() * page.height)))
                     val bitmap = Bitmap.createBitmap((page.width * scale).toInt().coerceAtLeast(1),
@@ -66,7 +72,7 @@ internal class HealthOcrEngine : Closeable {
         }
     }
     private fun recognize(bitmap: Bitmap, number: Int): HealthOcrPage {
-        val task = recognizer.process(InputImage.fromBitmap(bitmap, 0))
+        val task = recognizer.value.process(InputImage.fromBitmap(bitmap, 0))
         val text = try { Tasks.await(task, 90, TimeUnit.SECONDS) }
         catch (failure: Exception) {
             if (!task.isComplete) {
@@ -89,5 +95,5 @@ internal class HealthOcrEngine : Closeable {
         return HealthOcrPage(number, bitmap.width, bitmap.height, lines, blurry = lines.isEmpty())
     }
     private fun release(bitmap: Bitmap) = synchronized(pending) { if (bitmap !in pending && !bitmap.isRecycled) bitmap.recycle() }
-    override fun close() = recognizer.close()
+    override fun close() { if (recognizer.isInitialized()) recognizer.value.close() }
 }

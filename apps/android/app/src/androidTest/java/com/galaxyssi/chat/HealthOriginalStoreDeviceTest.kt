@@ -68,6 +68,72 @@ class HealthOriginalStoreDeviceTest {
         assertEquals(1, root.walkTopDown().count { it.extension == "ghealth" })
         assertEquals(first, import(store, payload, a))
     }
+    @Test fun temporaryDuplicateIsHiddenAndCanBeReleasedWithoutDeletingTheArchive() = fixture { _, _, store ->
+        val payload = bytes()
+        val archived = import(store, payload)
+        val job = id()
+        store.createJob(HealthImportJob(job, "content://fixture/report", 1L, keepOriginal = false))
+        val temporary = import(store, payload, job)
+        assertTrue(temporary.reviewOnly)
+        assertEquals(archived.sha256, temporary.sha256)
+        assertNotEquals(archived.id, temporary.id)
+        assertEquals(listOf(archived), store.originals())
+        assertEquals(1L, store.originalCount())
+        assertArrayEquals(payload, restored(store, temporary))
+        assertEquals(listOf(job), store.reviewOriginalIds(""))
+        assertTrue(store.releaseReviewOriginal(job))
+        assertTrue(store.releaseReviewOriginal(job))
+        assertFalse(store.present(temporary))
+        assertEquals(temporary, store.originalForJob(job))
+        assertTrue(store.reviewOriginalIds("").isEmpty())
+        assertArrayEquals(payload, restored(store, archived))
+    }
+
+    @Test fun captureInheritsRetentionAndRemovesDiscardedTemporaryPage() = fixture { _, _, store ->
+        val batch = HealthPhotoBatch(id(), "report", 1L, keepOriginal = false)
+        val page = HealthImportJob(id(), "content://fixture/camera", 1L, captureBatch = batch.id)
+        store.createCaptureBatch(batch)
+        store.addCaptureJob(batch.id, page)
+        assertEquals(false, store.job(page.id)?.keepOriginal)
+        val temporary = import(store, bytes(), page.id)
+        store.removeCapturePage(page.id)
+        assertNull(store.job(page.id))
+        assertFalse(store.present(temporary))
+        assertTrue(store.reviewOriginalIds("").isEmpty())
+    }
+
+    @Test fun recoveryKeepsPendingReviewButPurgesBytesAfterDurableConfirmation() {
+        val names = HealthOverviewDatabases(id())
+        try {
+            HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { store ->
+                fun ready(): HealthOriginal {
+                    val job = id()
+                    store.createJob(HealthImportJob(job, "content://fixture/report", 1L, keepOriginal = false))
+                    return import(store, bytes(), job).also { original ->
+                        store.updateJob(job) { it.copy(originalId = original.id, state = HealthImportState.REVIEW) }
+                    }
+                }
+                val confirmed = ready()
+                val pending = ready()
+                val evidence = HealthEvidence(confirmed.id, confirmed.id, "fixture", confirmed.sha256, 1, "Fixture", confirmed = true)
+                val draft = HealthDraft(HealthMetric.SLEEP_DURATION, mapOf("sleep_duration" to "7.5"), "h",
+                    1_700_000_000_000L, evidence = evidence)
+                HealthRecordStore(context, names.records).use { records ->
+                    assertTrue(records.save(draft) is HealthSaveResult.Saved)
+                    records.saveDraft(draft.copy(evidence = evidence.copy(candidateId = "unselected", confirmed = false)))
+                }
+                repeat(2) { HealthOriginalRetention.recover(context, names) }
+                assertFalse(store.present(confirmed))
+                assertTrue(store.present(pending))
+                assertEquals(listOf(pending.id), store.reviewOriginalIds(""))
+                assertEquals(confirmed, store.originalForJob(confirmed.id))
+                HealthRecordStore(context, names.records).use { records ->
+                    assertEquals(evidence, records.recordForEvidence(draft)?.draft?.evidence)
+                    assertTrue(records.overviewHasOcrDraft(confirmed.id))
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, names) }
+    }
     @Test fun missingBytesCanBeReimportedWithoutBreakingExistingSourceIdentity() = fixture { _, _, store ->
         val payload = bytes(); val original = store.importOriginal(id(), payload.inputStream(), "cropped.png", "image/png", "crop:${id()}")
         assertTrue(store.removeOriginalBytes(original)); assertFalse(store.present(original))

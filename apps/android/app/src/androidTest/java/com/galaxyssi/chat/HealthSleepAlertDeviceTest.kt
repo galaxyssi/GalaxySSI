@@ -108,13 +108,17 @@ class HealthSleepAlertDeviceTest {
                 saved
             }
             context.openOrCreateDatabase(name, 0, null).use { db ->
-                val json = old.json().apply { remove("sleepChanges"); remove("sleepDecrease"); remove("mergeSleepChanges") }
+                val json = old.json().apply {
+                    remove("sleepChanges"); remove("sleepDecrease"); remove("mergeSleepChanges"); remove("reportReviews")
+                }
                 val plain = json.toString().toByteArray(Charsets.UTF_8)
                 try { db.update("settings", ContentValues().apply {
                     put("payload", AgentStorageCipher.encryptBinary(plain, "$name|health-reminders-v1|settings".toByteArray()))
                 }, "id=1", null) } finally { plain.fill(0) }
                 db.execSQL("DROP TABLE sleep_alerts")
                 db.execSQL("DROP TABLE sleep_eval")
+                db.execSQL("DROP TABLE report_reviews")
+                db.execSQL("DROP TABLE report_notifications")
                 db.version = 1
             }
             HealthReminderStore(context, name).use {

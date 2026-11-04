@@ -61,7 +61,16 @@ class HealthTableWorker(context: Context, params: WorkerParameters) : Worker(con
                 }
                 while (!isStopped) {
                     val more = store.step(id, phase, revision); HealthTableScheduler.notify(applicationContext)
-                    if (!more) return@use Result.success()
+                    if (!more) {
+                        if (phase == HealthTableState.SAVING && store.batch(id)?.state == HealthTableState.SAVED) {
+                            runCatching { HealthOriginalStore(applicationContext).use { it.releaseReviewOriginal(id) } }
+                        }
+                        if (phase in listOf(HealthTableState.SAVING, HealthTableState.UNDOING)) {
+                            HealthOriginalStore.notifyReportReviews(applicationContext)
+                            HealthReminderWork.sourceRemindersChanged(applicationContext)
+                        }
+                        return@use Result.success()
+                    }
                 }
                 Result.retry()
             } catch (_: java.util.concurrent.CancellationException) { Result.retry() }

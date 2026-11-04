@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_backup_history">Backup history</string>
+    <string name="health_backup_history_empty">No backup tasks yet.</string>
+    <string name="health_backup_history_unavailable">Backup task unavailable.</string>
+    <string name="health_backup_history_counts">%1$d records · %2$d originals · %3$d missing</string>
+    <string name="health_backup_history_unsaved">No verified save yet</string>
+    <string name="health_backup_history_saving">Verifying saved copy</string>
+    <string name="health_backup_history_last_verified">Last verified save: %1$s</string>
+    <string name="health_backup_history_generation_failed">Backup generation failed</string>
+    <string name="health_backup_history_generation_interrupted">Backup generation was interrupted</string>
+    <string name="health_backup_history_save_failed">Last save failed verification</string>
+    <string name="health_backup_history_save_cancelled">Last save was cancelled</string>
+    <string name="health_backup_history_save_interrupted">Last save was interrupted and could not be verified</string>
+    <string name="health_backup_history_local_missing">The temporary copy is no longer available. Previously saved files are not affected.</string>
+</resources>

@@ -48,7 +48,7 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
                     else activity.getString(when {
                     evidence.kind == "table" -> R.string.health_table_source_row
                     evidence.documentPage > 0 -> R.string.health_photo_page
-                    else -> R.string.health_source_page
+                    else -> evidence.recognition.label()
                 }, when { evidence.kind == "table" -> evidence.tableRow; evidence.documentPage > 0 -> evidence.documentPage.toLong(); else -> evidence.page.toLong() })
                 ui.add(this, ui.row(activity.getString(R.string.health_view_original), location) {
                     activity.startActivity(android.content.Intent(activity, HealthCaptureActivity::class.java)

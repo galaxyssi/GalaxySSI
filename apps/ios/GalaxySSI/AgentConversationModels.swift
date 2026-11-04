@@ -706,6 +706,10 @@ enum AgentVoiceTranscriptPolicy {
 }
 
 struct AgentCollaborationRoster: Codable, Equatable {
+  enum Workflow: String, Codable, CaseIterable {
+    case automatic, parallel, research
+  }
+
   struct Member: Codable, Equatable, Identifiable {
     var id = UUID()
     var name: String
@@ -713,12 +717,14 @@ struct AgentCollaborationRoster: Codable, Equatable {
     var resourceId: String
     var modelId = ""
     var mentionOnly = false
+    var reasoningEffort: String? = nil
   }
 
   static let maximumMembers = 1_024
   var members: [Member] = []
   var coordinatorId: UUID?
   var independentReview = false
+  var workflow: Workflow?
 
   var isValid: Bool {
     guard !members.isEmpty, members.count <= Self.maximumMembers,
@@ -726,7 +732,8 @@ struct AgentCollaborationRoster: Codable, Equatable {
           Set(members.map(\.id)).count == members.count else { return false }
     return members.allSatisfy {
       !$0.name.isBlank && $0.name.utf8.count <= 256 && $0.role.utf8.count <= 1_024 &&
-        !$0.resourceId.isBlank && $0.resourceId.utf8.count <= 1_024 && $0.modelId.utf8.count <= 1_024
+        !$0.resourceId.isBlank && $0.resourceId.utf8.count <= 1_024 && $0.modelId.utf8.count <= 1_024 &&
+        ($0.reasoningEffort == nil || (!$0.modelId.isBlank && AgentCollaborationReasoningSelection.explicit($0.reasoningEffort) != nil))
     }
   }
 }

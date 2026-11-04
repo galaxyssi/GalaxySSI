@@ -99,10 +99,30 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(imported.inlineOriginals[descriptor.evidenceId], body)
     XCTAssertNil(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 1, inlineBytes: body.count))
     XCTAssertNil(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 0, inlineBytes: body.count - 1))
+    var invalidProjectionEntry = response
+    invalidProjectionEntry["phone_import"] = .string("true")
+    index["entries"] = .array([.object(invalidProjectionEntry)])
+    XCTAssertNil(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 0, inlineBytes: body.count))
     index["entries"] = .array([.object(response), .object(response)])
     XCTAssertNil(request.verifyIndex(index, authenticatedDesktopId: "desktop", after: 0, inlineBytes: body.count))
     response["execution_generation"] = .int(1)
     XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0))
+    var dynamic = original
+    func dynamicPage(tool: String) -> (Data, AgentMcpJSONObject) {
+      dynamic["observation"] = .object(["provider": .string("codex"), "thread_id": .string("provider-thread"),
+        "turn_id": .string("provider-turn"), "item": .object(["type": .string("dynamicToolCall"), "tool": .string(tool)])])
+      let bytes = Data(AgentMcpJSONCodec.stringify(dynamic).utf8)
+      var metadata = page(for: bytes)
+      metadata["item_type"] = .string("dynamicToolCall")
+      return (bytes, metadata)
+    }
+    let (echo, echoPage) = dynamicPage(tool: "collaboration_recall")
+    let echoDescriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(echoPage))
+    XCTAssertNil(request.verifyOriginal([echo], descriptor: echoDescriptor))
+    XCTAssertThrowsError(try history.archiveDesktopToolEvidence(request: request, descriptor: echoDescriptor, pages: [echo]))
+    let (external, externalPage) = dynamicPage(tool: "external_tool")
+    let externalDescriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(externalPage))
+    XCTAssertEqual(request.verifyOriginal([external], descriptor: externalDescriptor), external)
     response["execution_generation"] = .int(2)
     response["request_id"] = .string("different")
     XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0))
