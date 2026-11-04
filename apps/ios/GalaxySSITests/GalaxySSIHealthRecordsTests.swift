@@ -36,6 +36,26 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testWeeklyExportRequiresPermissionAndUnchangedSelectedRevisions() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .weight, measuredAt: now, value: 65))
+    let preview = GalaxySSIWeeklyHealthReport(current: try records.load().current,
+      interval: DateInterval(start: now.addingTimeInterval(-60), duration: 120), metrics: [.weight], through: now)
+    XCTAssertThrowsError(try records.prepareWeeklyExport(preview, includeRows: false))
+    try records.setWeeklyReportAllowed(true)
+    try records.write(.init(metric: .glucose, measuredAt: now, value: 5))
+    try records.prepareWeeklyExport(preview, includeRows: false)
+    var weight = try XCTUnwrap(preview.readings.first)
+    weight.value = 64
+    try records.write(weight)
+    XCTAssertThrowsError(try records.prepareWeeklyExport(preview, includeRows: true))
+    XCTAssertEqual(try records.load().weeklyExportRequests?.count, 1)
+  }
+
+  @MainActor
   func testPartialDraftIsEncryptedAndClearedOnlyByMatchingCommit() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

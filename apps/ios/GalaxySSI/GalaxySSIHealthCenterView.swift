@@ -80,6 +80,11 @@ struct GalaxySSIHealthCenterView: View {
         Text(t("unavailable", "Health records could not be accessed."))
         Button(t("retry", "Reload records"), action: reload)
       }
+      NavigationLink {
+        GalaxySSIWeeklyHealthReportView(records: records)
+      } label: {
+        Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar")
+      }
     }
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)

@@ -95,7 +95,7 @@ struct GalaxySSIHealthOverview {
 @MainActor
 struct GalaxySSIHealthRecords {
   enum Failure: Error {
-    case invalid, stale, duplicate, unavailable
+    case invalid, stale, duplicate, unavailable, permission
   }
 
   struct Archive: Codable {
@@ -103,6 +103,8 @@ struct GalaxySSIHealthRecords {
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
     var derivesOverview: Bool?
+    var weeklyReportAllowed: Bool?
+    var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -151,6 +153,25 @@ struct GalaxySSIHealthRecords {
     guard draft.fitsStorageLimits else { throw Failure.invalid }
     var archive = try load()
     archive.draft = draft
+    try persist(archive)
+  }
+
+  func setWeeklyReportAllowed(_ enabled: Bool) throws {
+    var archive = try load()
+    archive.weeklyReportAllowed = enabled
+    try persist(archive)
+  }
+
+  func prepareWeeklyExport(_ preview: GalaxySSIWeeklyHealthReport, includeRows: Bool) throws {
+    var archive = try load()
+    guard archive.weeklyReportAllowed == true else { throw Failure.permission }
+    let current = GalaxySSIWeeklyHealthReport(current: archive.current, interval: preview.interval,
+                                              metrics: preview.metrics, through: Date())
+    guard current.readings == preview.readings, !preview.readings.isEmpty else { throw Failure.stale }
+    var requests = archive.weeklyExportRequests ?? []
+    requests.append(.init(at: Date(), interval: preview.interval, metrics: preview.metrics,
+                          includeRows: includeRows, revisionCount: preview.readings.count))
+    archive.weeklyExportRequests = Array(requests.suffix(50))
     try persist(archive)
   }
 
