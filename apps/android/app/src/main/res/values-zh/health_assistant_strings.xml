@@ -8,7 +8,13 @@
     <string name="health_assistant_changes">最近有哪些变化？</string>
     <string name="health_assistant_coverage">哪些记录还不完整？</string>
     <string name="health_assistant_next_records">接下来可以记录什么？</string>
-    <string name="health_assistant_local_scope">仅使用本人已确认的测量数据，不使用照片、备注或个人档案。</string>
+    <string name="health_assistant_local_scope">统计仅使用已确认的测量记录。所选档案资料仅在本机单独显示。</string>
+    <string name="health_assistant_profile">本机档案资料</string>
+    <string name="health_assistant_profile_none">未选择</string>
+    <string name="health_assistant_profile_self_reported">本人填写的档案资料</string>
+    <string name="health_assistant_profile_value">%1$s：%2$s</string>
+    <string name="health_assistant_profile_changed">所选档案资料已变更，请重新分析。</string>
+    <string name="health_assistant_profile_blocked">隐私设置未允许使用档案资料。请取消选择或修改授权。</string>
     <string name="health_assistant_calculate">本机分析</string>
     <string name="health_assistant_changed">记录或授权已变更，请重新分析。</string>
     <string name="health_assistant_result">本机分析结果</string>
@@ -18,7 +24,7 @@
     <string name="health_assistant_online">用在线模型解读</string>
     <string name="health_assistant_sending">正在准备在线分析…</string>
     <string name="health_assistant_consent">确认在线发送范围</string>
-    <string name="health_assistant_disclosure">接收方：%1$s\n\n仅发送下方汇总，不发送原始记录、标识符、备注、照片或聊天历史。\n\n%2$s</string>
+    <string name="health_assistant_disclosure">接收方：%1$s\n\n仅发送下方汇总，不发送档案资料、原始记录、标识符、备注、照片或聊天历史。\n\n%2$s</string>
     <string name="health_assistant_send">确认并发送汇总</string>
     <string name="health_assistant_verified">模型选择已与本机统计核对。</string>
     <string name="health_assistant_blocked">已关闭使用确认指标进行分析的授权。</string>

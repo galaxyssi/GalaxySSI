@@ -8,7 +8,13 @@
     <string name="health_assistant_changes">What changed recently?</string>
     <string name="health_assistant_coverage">What records are missing?</string>
     <string name="health_assistant_next_records">What should I record next?</string>
-    <string name="health_assistant_local_scope">Only your confirmed measurements are used. No photos, notes, or profile details.</string>
+    <string name="health_assistant_local_scope">Statistics use confirmed measurements only. Selected profile details stay on this device and are shown separately.</string>
+    <string name="health_assistant_profile">Local profile context</string>
+    <string name="health_assistant_profile_none">None selected</string>
+    <string name="health_assistant_profile_self_reported">Self-reported profile context</string>
+    <string name="health_assistant_profile_value">%1$s: %2$s</string>
+    <string name="health_assistant_profile_changed">The selected profile context changed. Run the analysis again.</string>
+    <string name="health_assistant_profile_blocked">Profile context is disabled in Privacy and Data. Remove the selection or update your permissions.</string>
     <string name="health_assistant_calculate">Analyze on this device</string>
     <string name="health_assistant_changed">Records or permissions changed. Run the analysis again.</string>
     <string name="health_assistant_result">On-device results</string>
@@ -18,7 +24,7 @@
     <string name="health_assistant_online">Explain with an online model</string>
     <string name="health_assistant_sending">Preparing online analysis…</string>
     <string name="health_assistant_consent">Confirm online disclosure</string>
-    <string name="health_assistant_disclosure">Destination: %1$s\n\nOnly the summary below will be sent. No original records, identifiers, notes, photos, or conversation history are included.\n\n%2$s</string>
+    <string name="health_assistant_disclosure">Destination: %1$s\n\nOnly the summary below will be sent. No profile details, original records, identifiers, notes, photos, or conversation history are included.\n\n%2$s</string>
     <string name="health_assistant_send">Confirm and send summary</string>
     <string name="health_assistant_verified">Model selections verified against on-device results.</string>
     <string name="health_assistant_blocked">Access to confirmed health measurements is disabled.</string>
