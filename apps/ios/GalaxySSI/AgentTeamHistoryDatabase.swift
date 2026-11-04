@@ -323,11 +323,15 @@ final class AgentTeamHistoryDatabase {
   }
 
   func removeDesktopEvidenceJob(_ job: AgentDesktopToolEvidenceWire.ImportJob) throws {
+    try removeResearchRecord(conversationId: job.binding.identity.conversationId, key: job.key)
+  }
+
+  func removeResearchRecord(conversationId: String, key: String) throws {
     let statement = try prepare("DELETE FROM collaboration_research_records WHERE namespace=? AND group_key=? AND record_key=?")
     defer { sqlite3_finalize(statement) }
     bind(namespace, at: 1, to: statement)
-    bind(Self.digest(job.binding.identity.conversationId), at: 2, to: statement)
-    bind(job.key, at: 3, to: statement)
+    bind(Self.digest(conversationId), at: 2, to: statement)
+    bind(key, at: 3, to: statement)
     try finish(statement)
   }
 

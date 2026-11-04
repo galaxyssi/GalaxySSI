@@ -88,6 +88,10 @@ enum AgentDesktopToolEvidenceWire {
       return AgentMcpJSONCodec.sha256(fields)
     }
 
+    func stagedPageKey(_ descriptor: Descriptor) -> String {
+      "desktop-evidence-stage:" + archiveId(descriptor) + ":" + descriptor.sha256
+    }
+
     var cursorKey: String { "desktop-evidence-cursor:" + AgentMcpJSONCodec.sha256(archiveScope) }
 
     init?(binding: AgentDesktopReplyBinding, generation: Int64, nonce: String) {

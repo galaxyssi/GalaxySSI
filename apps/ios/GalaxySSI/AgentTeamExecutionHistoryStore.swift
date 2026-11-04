@@ -444,13 +444,44 @@ final class AgentTeamExecutionHistoryStore {
       if let prior = try database.researchRecord(AgentDesktopToolEvidenceWire.ArchiveReceipt.self,
         conversationId: conversation, key: key, revision: 0) {
         guard prior == receipt else { throw AgentTeamHistoryDatabase.Failure.stale }
+        try database.removeResearchRecord(conversationId: conversation, key: request.stagedPageKey(descriptor))
         return prior
       }
       for (index, page) in pages.enumerated() {
         try database.insertResearchRecord(page, conversationId: conversation, key: key, revision: Int64(index + 1))
       }
       try database.insertResearchRecord(receipt, conversationId: conversation, key: key, revision: 0)
+      try database.removeResearchRecord(conversationId: conversation, key: request.stagedPageKey(descriptor))
       return receipt
+    }
+  }
+
+  func stageDesktopEvidencePage(_ response: AgentMcpJSONObject, desktopId: String,
+                                request: AgentDesktopToolEvidenceWire.Request,
+                                descriptor: AgentDesktopToolEvidenceWire.Descriptor, index: Int) throws -> Data {
+    guard let page = request.verifyPage(response, authenticatedDesktopId: desktopId,
+      descriptor: descriptor, index: index) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      let conversation = request.binding.identity.conversationId
+      let key = request.stagedPageKey(descriptor)
+      let revision = Int64(index + 1)
+      if let saved = try database.researchRecord(Data.self, conversationId: conversation, key: key, revision: revision) {
+        guard saved == page else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        try database.insertResearchRecord(page, conversationId: conversation, key: key, revision: revision)
+      }
+      return page
+    }
+  }
+
+  func stagedDesktopEvidencePage(request: AgentDesktopToolEvidenceWire.Request,
+                                 descriptor: AgentDesktopToolEvidenceWire.Descriptor, index: Int) throws -> Data? {
+    guard descriptor.canImport, (0..<descriptor.pageCount).contains(index) else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    return try access { database in
+      try database.researchRecord(Data.self, conversationId: request.binding.identity.conversationId,
+        key: request.stagedPageKey(descriptor), revision: Int64(index + 1))
     }
   }
 

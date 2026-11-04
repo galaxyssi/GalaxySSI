@@ -57,7 +57,13 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try history.consumeOwnedReply(source: source, conversation: "group", turn: "turn",
       task: source, contact: "review", content: "Completed", richOutputJson: "", terminal: true,
       success: true, now: 2, observation: AgentTeamReplyObservation(generation: 2, sequence: 1)), .observerCommitted)
+    XCTAssertEqual(try history.stageDesktopEvidencePage(response, desktopId: "desktop",
+      request: request, descriptor: descriptor, index: 0), body)
+    let stagingReopen = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: file)
+    XCTAssertEqual(try stagingReopen.stagedDesktopEvidencePage(request: request,
+      descriptor: descriptor, index: 0), body)
     let receipt = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body])
+    XCTAssertNil(try stagingReopen.stagedDesktopEvidencePage(request: request, descriptor: descriptor, index: 0))
     XCTAssertEqual(receipt.sha256, descriptor.sha256)
     XCTAssertEqual(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]), receipt)
     XCTAssertTrue(try history.hasArchivedDesktopEvidence(descriptor, request: request))

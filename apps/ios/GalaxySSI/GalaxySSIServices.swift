@@ -2495,13 +2495,21 @@ final class MessageCoordinator: ObservableObject {
           pages = [inline]
         } else {
           for number in 0..<descriptor.pageCount {
-            guard isCurrent(),
-                  let pageRequest = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
+            guard isCurrent() else { return }
+            do {
+              if let staged = try history.stagedDesktopEvidencePage(request: request,
+                descriptor: descriptor, index: number) {
+                pages.append(staged)
+                continue
+              }
+            } catch { return }
+            guard let pageRequest = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
                     nonce: UUID().uuidString),
                   let pagePayload = pageRequest.pageRequest(descriptor, index: number),
                   let response = await queryDesktopEvidence(pageRequest, payload: pagePayload),
-                  let page = pageRequest.verifyPage(response, authenticatedDesktopId: binding.desktopId,
-                    descriptor: descriptor, index: number) else { return }
+                  isCurrent(),
+                  let page = try? history.stageDesktopEvidencePage(response, desktopId: binding.desktopId,
+                    request: pageRequest, descriptor: descriptor, index: number) else { return }
             pages.append(page)
           }
         }
