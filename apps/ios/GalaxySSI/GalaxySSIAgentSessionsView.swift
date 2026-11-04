@@ -26,7 +26,14 @@ struct AgentCollaborationRosterEditor: View {
   private var resources: [Resource] {
     let agents = store.visibleContacts.filter {
       ($0.type == "agent" || $0.id == "hermes") && $0.deliveryMode != .cloudAPI
-    }.map { Resource(contactId: $0.id, modelId: "", label: $0.displayName) }
+    }.flatMap { contact -> [Resource] in
+      let defaultResource = Resource(contactId: contact.id, modelId: "", label: contact.displayName)
+      guard contact.connectorAdapterName == "codex-app-server-or-cli",
+            !contact.connectorInvocationProfile.reasoningEfforts.isEmpty else { return [defaultResource] }
+      return [defaultResource] + contact.connectorInvocationProfile.models.map { model in
+        Resource(contactId: contact.id, modelId: model.id, label: contact.displayName + " / " + model.displayName)
+      }
+    }
     let cloud = store.cloudModelContacts.flatMap { contact in
       contact.cloudModels.map { model in
         Resource(contactId: contact.id, modelId: model.id,
@@ -62,6 +69,9 @@ struct AgentCollaborationRosterEditor: View {
               get: { member.resourceId + "\n" + member.modelId },
               set: { key in
                 guard let resource = resources.first(where: { $0.id == key }) else { return }
+                if member.resourceId != resource.contactId || member.modelId != resource.modelId {
+                  member.reasoningEffort = nil
+                }
                 member.resourceId = resource.contactId
                 member.modelId = resource.modelId
               }
@@ -70,6 +80,19 @@ struct AgentCollaborationRosterEditor: View {
                 Text(t("galaxyssi.collaboration.unavailable", "Unavailable Resource")).tag(selected)
               }
               ForEach(resources) { resource in Text(resource.label).tag(resource.id) }
+            }
+            let efforts = availableEfforts(for: member)
+            if !efforts.isEmpty || member.reasoningEffort != nil {
+              Picker(t("galaxyssi.agent.model_selection.reasoning_effort", "Reasoning effort"), selection: Binding(
+                get: { member.reasoningEffort ?? "" },
+                set: { member.reasoningEffort = $0.isEmpty ? nil : $0 }
+              )) {
+                Text(t("galaxyssi.agent.model_selection.reasoning.auto", "Automatic")).tag("")
+                if let current = member.reasoningEffort, !efforts.contains(where: { $0.rawValue == current }) {
+                  Text(t("galaxyssi.collaboration.unavailable", "Unavailable Resource")).tag(current)
+                }
+                ForEach(efforts) { effort in Text(effortLabel(effort)).tag(effort.rawValue) }
+              }
             }
             Toggle(t("galaxyssi.collaboration.mention_only", "Mention Only"), isOn: $member.mentionOnly)
             Button {
@@ -122,11 +145,32 @@ struct AgentCollaborationRosterEditor: View {
               saveFailed = true
             }
           }
-          .disabled(title.isBlank || title.utf8.count > 256 || !roster.isValid)
+          .disabled(title.isBlank || title.utf8.count > 256 || !roster.isValid ||
+            roster.members.contains { member in
+              guard let effort = member.reasoningEffort else { return false }
+              return !availableEfforts(for: member).contains { $0.rawValue == effort }
+            })
         }
       }
     }
     .navigationViewStyle(.stack)
+  }
+
+  private func availableEfforts(for member: AgentCollaborationRoster.Member) -> [AgentModelReasoningEffort] {
+    guard let contact = store.contact(id: member.resourceId), contact.connectorAdapterName == "codex-app-server-or-cli" else { return [] }
+    let profile = contact.connectorInvocationProfile
+    guard profile.models.contains(where: { $0.id == member.modelId }) else { return [] }
+    return profile.reasoningEfforts
+  }
+
+  private func effortLabel(_ effort: AgentModelReasoningEffort) -> String {
+    switch effort {
+    case .automatic: return t("galaxyssi.agent.model_selection.reasoning.auto", "Automatic")
+    case .low: return t("galaxyssi.agent.model_selection.reasoning.low", "Low")
+    case .medium: return t("galaxyssi.agent.model_selection.reasoning.medium", "Medium")
+    case .high: return t("galaxyssi.agent.model_selection.reasoning.high", "High")
+    case .xhigh: return t("galaxyssi.agent.model_selection.reasoning.xhigh", "Extra high")
+    }
   }
 }
 

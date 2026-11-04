@@ -136,6 +136,23 @@ enum AgentInvocationRequestJsonCodec {
   }
 }
 
+enum AgentCollaborationReasoningSelection {
+  static let contextKey = "_galaxyssi_collaboration_reasoning_effort"
+
+  static func explicit(_ raw: String?) -> AgentModelReasoningEffort? {
+    guard let raw, let effort = AgentModelReasoningEffort(rawValue: raw), effort != .automatic else { return nil }
+    return effort
+  }
+
+  static func invocation(model: String, effort: String, adapter: String,
+                         profile: AgentInvocationProfile) -> [String: String]? {
+    guard adapter == "codex-app-server-or-cli", let explicit = explicit(effort),
+          profile.models.contains(where: { $0.id == model }),
+          profile.reasoningEfforts.contains(explicit) else { return nil }
+    return AgentInvocationRequestJsonCodec.encode(modelId: model, reasoningEffort: explicit)
+  }
+}
+
 enum AgentConnectorKind: String, Codable, CaseIterable, Identifiable {
   case model = "MODEL"
   case agent = "AGENT"

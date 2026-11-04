@@ -9895,7 +9895,24 @@ final class MessageCoordinator: ObservableObject {
       payload["_galaxyssi_task_execution_mode"] = executionMode.rawValue
       payload["original_goal"] = String(text.prefix(500))
     }
-    if !peerChat {
+    if let member = teamContext?.member, let effort = member.context[AgentCollaborationReasoningSelection.contextKey] {
+      guard !peerChat, member.context["_galaxyssi_selection_source"] == "collaboration_roster",
+            let model = member.context["_galaxyssi_member_model_id"],
+            let invocation = AgentCollaborationReasoningSelection.invocation(model: model, effort: effort,
+              adapter: contact.connectorAdapterName, profile: contact.connectorInvocationProfile) else {
+        throw GalaxySSIError.invalidPayload("The assigned Codex model or reasoning effort is unavailable")
+      }
+      payload["agent_invocation"] = invocation
+    } else if !peerChat, let member = teamContext?.member,
+              member.context["_galaxyssi_selection_source"] == "collaboration_roster",
+              contact.connectorAdapterName == "codex-app-server-or-cli",
+              let model = member.context["_galaxyssi_member_model_id"], !model.isBlank {
+      guard contact.connectorInvocationProfile.models.contains(where: { $0.id == model }),
+            let invocation = AgentInvocationRequestJsonCodec.encode(modelId: model, reasoningEffort: .automatic) else {
+        throw GalaxySSIError.invalidPayload("The assigned Codex model is unavailable")
+      }
+      payload["agent_invocation"] = invocation
+    } else if !peerChat {
       let selection = AgentModelSelectionSettings.selection(for: outgoing.conversationId)
       let selectedTargetId = selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines)
       let selectedAgentMatchesContact = selection.mode == .manual && (
