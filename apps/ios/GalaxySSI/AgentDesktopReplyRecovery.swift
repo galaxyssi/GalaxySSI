@@ -42,6 +42,53 @@ struct AgentTeamDesktopReplySource: Codable, Equatable {
   var sourceMessageId: String
 }
 
+enum AgentDesktopCollaborationArchiveRecall {
+  static let requestType = "collaboration_recall_request"
+  static let responseType = "collaboration_recall_result"
+  static let contract = "galaxyssi.collaboration-recall/2"
+
+  static func recordId(memberId: String) -> String {
+    AgentMcpJSONCodec.sha256(["kind": .string("ios_dependency_reply"), "member_id": .string(memberId)])
+  }
+
+  static func selector(_ input: AgentMcpJSONObject) -> (recordId: String, offset: Int64)? {
+    let id = input.string("record_id")
+    guard Set(input.keys).isSubset(of: ["mode", "record_id", "offset"]), input["mode"] == .string("archive"),
+          id.utf8.count == 64, id.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+          case .int(let offset) = input["offset"] ?? .int(0), offset >= 0 else { return nil }
+    return (id, offset)
+  }
+
+  static func goalSelector(_ input: AgentMcpJSONObject, scope: AgentCollaborationToolEvidenceScope, generation: Int64)
+    -> AgentMcpJSONObject? {
+    guard Set(input.keys).isSubset(of: ["mode", "section", "cursor"]), input["mode"] == .string("goal_contract"),
+          case .string(let section) = input["section"] ?? .string("goal"),
+          ["goal", "criteria", "source"].contains(section),
+          case .string(let cursor) = input["cursor"] ?? .string("") else { return nil }
+    var query: AgentMcpJSONObject = ["mode": .string("goal"), "section": .string(section)]
+    if cursor.isEmpty { return query }
+    let parts = cursor.split(separator: ".", omittingEmptySubsequences: false)
+    guard cursor.utf8.count <= 160, parts.count == 3, let offset = Int64(parts[0]), offset > 0,
+          String(offset) == parts[0], parts[1].utf8.count == 64,
+          parts[1].utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+          cursor == goalCursor(scope: scope, generation: generation, section: section, hash: String(parts[1]), offset: offset)
+    else { return nil }
+    query["offset"] = .int(offset)
+    query["sha256"] = .string(String(parts[1]))
+    return query
+  }
+
+  static func goalCursor(scope: AgentCollaborationToolEvidenceScope, generation: Int64,
+                         section: String, hash: String, offset: Int64) -> String {
+    let binding = AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
+      "member": .string(scope.memberId), "source": .string(scope.sourceId), "section": .string(section),
+      "sha256": .string(hash), "offset": .int(offset), "generation": .int(generation)
+    ])
+    return "\(offset).\(hash).\(binding)"
+  }
+}
+
 struct AgentDesktopReplyBinding: Codable, Equatable {
   var desktopId: String
   var displayContactId: String

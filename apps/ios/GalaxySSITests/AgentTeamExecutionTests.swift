@@ -1378,6 +1378,65 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(reopened.snapshot(supervisorRunId: "new"))
   }
 
+  func testPrimaryRecallRequiresCurrentGenerationAndCannotReopenTerminalGeneration() {
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "primary", conversationId: "group",
+      turnId: "turn", sourceMessageId: "source", contactId: "codex", deliveryMode: .respond)
+    XCTAssertFalse(owner.permitsRecall(generation: 1))
+    let first = owner.observingPrimaryRecall(.init(generation: 1, sequence: 10), terminal: false)
+    XCTAssertTrue(first.permitsRecall(generation: 1))
+    let closed = first.observingPrimaryRecall(.init(generation: 1), terminal: true)
+    XCTAssertFalse(closed.permitsRecall(generation: 1))
+    XCTAssertFalse(closed.observingPrimaryRecall(.init(generation: 1, sequence: 11), terminal: false)
+      .permitsRecall(generation: 1))
+    let resumed = closed.observingPrimaryRecall(.init(generation: 2, sequence: 1), terminal: false)
+    XCTAssertFalse(resumed.permitsRecall(generation: 1))
+    XCTAssertTrue(resumed.permitsRecall(generation: 2))
+  }
+
+  func testDesktopGoalRecallCursorBindsOriginalSectionAndAssignment() {
+    let recall = AgentDesktopCollaborationArchiveRecall.self
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group",
+      turnId: "turn", memberId: "review", sourceId: "source")
+    let hash = String(repeating: "a", count: 64)
+    let cursor = recall.goalCursor(scope: scope, generation: 1, section: "criteria", hash: hash, offset: 8_192)
+    var request: AgentMcpJSONObject = ["mode": .string("goal_contract"), "section": .string("criteria"),
+      "cursor": .string(cursor)]
+    XCTAssertEqual(recall.goalSelector(request, scope: scope, generation: 1)?["offset"], .int(8_192))
+    XCTAssertEqual(recall.goalSelector(request, scope: scope, generation: 1)?["sha256"], .string(hash))
+    XCTAssertNil(recall.goalSelector(request, scope: scope, generation: 2))
+    var other = scope
+    other.sourceId = "other"
+    XCTAssertNil(recall.goalSelector(request, scope: other, generation: 1))
+    request["section"] = .string("goal")
+    XCTAssertNil(recall.goalSelector(request, scope: scope, generation: 1))
+  }
+
+  func testDesktopObserverRecallCanUseAuthenticatedEventsBeforeText() {
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "observer", conversationId: "group",
+      turnId: "turn", sourceMessageId: "source", contactId: "codex", deliveryMode: .observe)
+    let first = owner.observingRecallEvent(.init(generation: 2, sequence: 4), terminal: false)
+    XCTAssertNil(first.observedGeneration)
+    XCTAssertTrue(first.permitsRecall(generation: 2))
+    XCTAssertFalse(first.observingRecallEvent(.init(generation: 1, sequence: 99), terminal: false)
+      .permitsRecall(generation: 1))
+    let closed = first.observingRecallEvent(.init(generation: 2, sequence: 5), terminal: true)
+    XCTAssertFalse(closed.observingRecallEvent(.init(generation: 2, sequence: 4), terminal: false)
+      .permitsRecall(generation: 2))
+  }
+
+  func testDesktopArchiveRecallAcceptsOnlyScopedRecordSelectors() {
+    let id = AgentDesktopCollaborationArchiveRecall.recordId(memberId: "review")
+    let query: AgentMcpJSONObject = ["mode": .string("archive"), "record_id": .string(id), "offset": .int(8_192)]
+    XCTAssertEqual(AgentDesktopCollaborationArchiveRecall.selector(query)?.recordId, id)
+    XCTAssertEqual(AgentDesktopCollaborationArchiveRecall.selector(query)?.offset, 8_192)
+    var invalid = query
+    invalid["member_id"] = .string("review")
+    XCTAssertNil(AgentDesktopCollaborationArchiveRecall.selector(invalid))
+    invalid = query
+    invalid["offset"] = .int(-1)
+    XCTAssertNil(AgentDesktopCollaborationArchiveRecall.selector(invalid))
+  }
+
   func testDependencyRecallRequiresPinnedDirectDependencyAndExactReply() throws {
     let suite = "team-dependency-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
