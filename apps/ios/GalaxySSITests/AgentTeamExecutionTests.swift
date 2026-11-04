@@ -1378,6 +1378,19 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(reopened.snapshot(supervisorRunId: "new"))
   }
 
+  func testDesktopArchiveRecallAcceptsOnlyScopedRecordSelectors() {
+    let id = AgentDesktopCollaborationArchiveRecall.recordId(memberId: "review")
+    let query: AgentMcpJSONObject = ["mode": .string("archive"), "record_id": .string(id), "offset": .int(8_192)]
+    XCTAssertEqual(AgentDesktopCollaborationArchiveRecall.selector(query)?.recordId, id)
+    XCTAssertEqual(AgentDesktopCollaborationArchiveRecall.selector(query)?.offset, 8_192)
+    var invalid = query
+    invalid["member_id"] = .string("review")
+    XCTAssertNil(AgentDesktopCollaborationArchiveRecall.selector(invalid))
+    invalid = query
+    invalid["offset"] = .int(-1)
+    XCTAssertNil(AgentDesktopCollaborationArchiveRecall.selector(invalid))
+  }
+
   func testDependencyRecallRequiresPinnedDirectDependencyAndExactReply() throws {
     let suite = "team-dependency-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
