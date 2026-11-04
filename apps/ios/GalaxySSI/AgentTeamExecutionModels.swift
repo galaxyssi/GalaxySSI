@@ -72,6 +72,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case experimentResult = "experiment_result"
     case capabilityLesson = "capability_lesson"
     case acceptanceReview = "acceptance_review"
+    case learningAgenda = "learning_agenda"
     case candidate
     case candidateEvent = "candidate_event"
     case capabilityGap = "capability_gap"
@@ -233,6 +234,61 @@ struct AgentCollaborationMeasuredCase: Codable, Equatable {
     cases.contains { $0.purpose == "target" } &&
       cases.contains { $0.purpose == "regression" } &&
       cases.allSatisfy { $0.state == "passed" }
+  }
+}
+
+enum AgentCollaborationLearningAgendaIntake {
+  static func matchesSelection(_ option: AgentMcpJSONObject, work: AgentCollaborationLiveGraph.Work) -> Bool {
+    option.string("decision") == "select" && option.string("member") == work.member &&
+      option["assignment"]?.stringValue.map { Data($0.utf8) == Data(work.assignment.utf8) } == true &&
+      option.string("stage") == work.stage
+  }
+
+  static func validates(_ draft: AgentCollaborationResearchDraft, members: Set<String>,
+                        gapOptions: (AgentCollaborationResearchReference) throws -> Set<String>?) rethrows -> Bool {
+    guard draft.objectId?.isBlank != false, draft.baseRevision == 0,
+          let agenda = draft.body["learning_agenda"]?.objectValue,
+          hasText(agenda, ["goal_alignment", "resource_reasoning", "selection_reason", "reconsider_when"]),
+          let options = agenda["options"]?.arrayValue, (1...32).contains(options.count) else { return false }
+    var ranks = Set<Int64>()
+    var ids = Set<String>()
+    var choices: [String: Set<String>] = [:]
+    for entry in options {
+      guard let option = entry.objectValue,
+            hasText(option, ["id", "gap_option", "current_goal_value", "future_transfer_value", "information_gain",
+                             "uncertainty", "tradeoff", "verification", "reconsider_when", "member", "assignment"]),
+            ids.insert(option.string("id")).inserted,
+            case .int(let rank)? = option["priority"], rank > 0, ranks.insert(rank).inserted,
+            members.contains(option.string("member")), option.string("assignment").utf8.count <= 8_000,
+            ["select", "defer"].contains(option.string("decision")),
+            ["EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE"].contains(option.string("stage")),
+            let gap = option["gap"]?.objectValue, Set(gap.keys) == Set(["object_id", "revision", "sha256"]),
+            case .int(let revision)? = gap["revision"], revision > 0,
+            let estimates = option["resource_estimates"]?.arrayValue, (1...5).contains(estimates.count)
+      else { return false }
+      let reference = AgentCollaborationResearchReference(objectId: gap.string("object_id"), revision: revision,
+        sha256: gap.string("sha256"))
+      let choice = option.string("gap_option")
+      guard draft.parents.contains(reference), try gapOptions(reference)?.contains(choice) == true,
+            choices[reference.sha256, default: []].insert(choice).inserted else { return false }
+      var units = Set<String>()
+      for estimate in estimates {
+        guard let value = estimate.objectValue, hasText(value, ["basis"]),
+              ["elapsed_ms", "tokens", "cost_micros", "network_bytes", "tool_calls"].contains(value.string("unit")),
+              units.insert(value.string("unit")).inserted else { return false }
+        switch (value.string("status"), value["value"]) {
+        case ("unknown", nil), ("unknown", .some(.null)): break
+        case ("estimated", .some(.int(let number))) where number >= 0: break
+        case ("estimated", .some(.double(let number))) where number.isFinite && number >= 0: break
+        default: return false
+        }
+      }
+    }
+    return true
+  }
+
+  private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
   }
 }
 
