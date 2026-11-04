@@ -53,7 +53,6 @@ class HealthCaptureActivity : Activity() {
     private var dirty = false
     private var pendingCamera = ""
     private var exportId = ""
-    private var cropId = ""
     private var preview: android.app.Dialog? = null
     private var sourceView: HealthReviewSourceView? = null
     private var sourceBitmap: Bitmap? = null
@@ -101,7 +100,7 @@ class HealthCaptureActivity : Activity() {
         pickOnStart = state == null && intent.getBooleanExtra("health_pick_files", false)
         if (state == null) firstEntry = HealthCaptureEntry.entries.firstOrNull { it.name == intent.getStringExtra("health_capture_entry") }
         pendingCamera = state?.getString("camera") ?: getSharedPreferences("health_capture_pending", MODE_PRIVATE).getString("token", "").orEmpty()
-        exportId = state?.getString("export").orEmpty(); cropId = state?.getString("crop").orEmpty()
+        exportId = state?.getString("export").orEmpty()
         fun restore(key: String) = state?.getStringArrayList(key).orEmpty().mapNotNull { value ->
             val parts = value.split('|'); val time = parts.firstOrNull()?.toLongOrNull()
             if (parts.size == 2 && time != null && runCatching { UUID.fromString(parts[1]) }.isSuccess) time to parts[1] else null
@@ -152,7 +151,7 @@ class HealthCaptureActivity : Activity() {
         out.putString("review_selection_job", reviewSelectionJob)
         out.putStringArrayList("review_selection", ArrayList(reviewSelection.values.map { it.encode() }))
         out.putBoolean("original_only", originalOnly)
-        out.putString("camera", pendingCamera); out.putString("export", exportId); out.putString("crop", cropId)
+        out.putString("camera", pendingCamera); out.putString("export", exportId)
         out.putStringArrayList("job_pages", ArrayList(jobPages.map { "${it.first}|${it.second}" }))
         out.putStringArrayList("record_pages", ArrayList(recordPages.map { "${it.measuredAt}|${it.id}" }))
         out.putStringArrayList("stack", ArrayList(stack.map { "${it.first}|${it.second}|${it.third}" }))
@@ -693,8 +692,9 @@ class HealthCaptureActivity : Activity() {
                 main.post { if (active) result.fold({ Toast.makeText(this, R.string.health_original_saved, Toast.LENGTH_LONG).show() }, { showFailure("save_failed") }) }
             }
         } else if (requestCode == CROP && resultCode == RESULT_OK) {
-            val items = data?.getStringExtra(ComposerAttachmentEditorActivity.ITEMS)?.let { ComposerAttachmentItem.decode(it) }.orEmpty()
-            items.singleOrNull()?.let { importSource(Uri.parse(it.uri)) }
+            val job = data?.getStringExtra(HEALTH_CROP_RESULT)?.takeIf(HealthProfilePolicy::uuid) ?: return
+            if (names.fixture == null) HealthImportScheduler.enqueue(applicationContext, job)
+            jobPages.clear(); route = "capture"; generation++; refresh()
         }
     }
     private fun importSource(uri: Uri, cameraToken: String = "", originalOnly: Boolean = this.originalOnly) {
@@ -743,11 +743,11 @@ class HealthCaptureActivity : Activity() {
             .setType(original.mime.ifBlank { "application/octet-stream" }).putExtra(Intent.EXTRA_TITLE, original.name), EXPORT)
     }
     private fun crop(original: HealthOriginal) {
-        cropId = original.id
-        val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id).toString(), original.name, original.mime, original.size, sendOriginal = true)
+        val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id, names.fixture).toString(), original.name, original.mime, original.size, sendOriginal = true)
         startActivityForResult(Intent(this, ComposerAttachmentEditorActivity::class.java)
             .putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(listOf(item)))
-            .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id), CROP)
+            .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id)
+            .putExtra(HEALTH_CROP_MODE, mode).putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal), CROP)
     }
     private fun jobState(job: HealthImportJob, table: HealthTableBatch? = null): String = when {
         job.state == HealthImportState.TABLE_REVIEW && table != null -> healthTableTaskLabel(this, table)
