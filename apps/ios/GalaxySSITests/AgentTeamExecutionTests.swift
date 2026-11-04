@@ -1538,6 +1538,42 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope))
   }
 
+  func testMailboxMigratesWithoutEvictingOldPendingMessages() throws {
+    let suite = "team-mailbox-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let key = "mailbox"
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("mailbox.sqlite3")
+    let legacy = (1...5_001).map { index in
+      AgentTeamMessageEnvelope(messageId: "message-\(index)", teamId: "team", conversationId: "group",
+        supervisorRunId: "run", fromInstanceId: "author", toInstanceId: "reviewer",
+        kind: .review, text: "Review", sequence: Int64(index), state: index == 1 ? .pending : .acknowledged)
+    }
+    XCTAssertTrue(GalaxySSIEncryptedUserDefaultsStore.write(try JSONEncoder().encode(legacy),
+      defaults: defaults, key: key, secrets: secrets))
+    let mailbox = UserDefaultsAgentTeamMailbox(defaults: defaults, key: key, secrets: secrets, fileURL: file)
+    XCTAssertEqual(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").map(\.sequence), [1])
+    XCTAssertNil(defaults.data(forKey: key + ".encrypted.v1"))
+    let reopened = UserDefaultsAgentTeamMailbox(defaults: defaults, key: key, secrets: secrets, fileURL: file)
+    XCTAssertEqual(try reopened.append(legacy[0]).sequence, 1)
+    XCTAssertEqual(reopened.acknowledge(messageId: "message-1", atMillis: 1)?.state, .acknowledged)
+    XCTAssertTrue(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").isEmpty)
+    XCTAssertEqual(mailbox.messages(supervisorRunId: "run", instanceId: "reviewer", afterSequence: 5_000).count, 1)
+    XCTAssertEqual(mailbox.messages(supervisorRunId: "run", instanceId: "unrelated", afterSequence: 0).count, 0)
+    var added = legacy[0]
+    added.messageId = "new-request"
+    var invalid = added
+    invalid.messageId = "invalid-request"
+    invalid.text = ""
+    XCTAssertThrowsError(try reopened.appendAll([added, invalid]))
+    XCTAssertTrue(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").isEmpty)
+    let batch = try reopened.appendAll([legacy[0], added, added])
+    XCTAssertEqual(batch.map(\.sequence), [1, 5_002, 5_002])
+    XCTAssertEqual(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").map(\.messageId), ["new-request"])
+  }
+
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {
     AgentTeamExecutionSnapshot(supervisorRunId: run, teamId: "team", conversationId: "conversation",
       taskId: "turn", primaryAgentId: "primary", state: .running,

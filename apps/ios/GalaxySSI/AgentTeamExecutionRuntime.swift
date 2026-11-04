@@ -493,11 +493,10 @@ final class AgentTeamExecutionRuntime {
       childRequest.context["team_role"] = .string(String(member.role.prefix(80)))
       childRequest.context["team_visibility"] = .string(normalizedDefinition.visibilityMode.rawValue.lowercased())
       childRequest.context["team_instance_id"] = .string(member.memberId)
-      let queuedMessages = mailbox.messages(
+      let queuedMessages = mailbox.pendingMessages(
         supervisorRunId: request.runId,
-        instanceId: member.memberId,
-        afterSequence: 0
-      ).filter { $0.state == .pending }
+        instanceId: member.memberId
+      )
       if !queuedMessages.isEmpty {
         childRequest.context["team_messages"] = .array(queuedMessages.map { message in
           .object([

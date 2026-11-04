@@ -27,15 +27,27 @@ internal data class HealthLibraryPage(val originals: List<HealthOriginal>, val n
 internal enum class HealthOriginalExportState { SELECTING, REVIEW, QUEUED, GENERATING, GENERATED, SAVED, FAILED, CANCELLED }
 internal data class HealthOriginalExportSession(val id: String, val state: HealthOriginalExportState, val createdAt: Long,
     val count: Long = 0, val sourceBytes: Long = 0, val missing: Long = 0, val completed: Long = 0,
-    val attempt: String = "", val archiveBytes: Long = 0, val sha256: String = "", val error: String = "", val dispatch: String = "") {
+    val attempt: String = "", val archiveBytes: Long = 0, val sha256: String = "", val error: String = "", val dispatch: String = "",
+    val pendingSave: String = "", val verifiedSaveAt: Long = 0, val saveFailed: Boolean = false) {
     fun json() = org.json.JSONObject().put("id", id).put("state", state.name).put("created", createdAt).put("count", count)
         .put("source_bytes", sourceBytes).put("missing", missing).put("completed", completed).put("attempt", attempt)
         .put("archive_bytes", archiveBytes).put("sha256", sha256).put("error", error).put("dispatch", dispatch)
+        .put("pending_save", pendingSave).put("verified_save_at", verifiedSaveAt).put("save_failed", saveFailed)
     companion object {
         fun from(j: org.json.JSONObject) = HealthOriginalExportSession(j.getString("id"), HealthOriginalExportState.valueOf(j.getString("state")),
             j.getLong("created"), j.getLong("count"), j.getLong("source_bytes"), j.getLong("missing"), j.getLong("completed"),
-            j.getString("attempt"), j.getLong("archive_bytes"), j.getString("sha256"), j.getString("error"), j.optString("dispatch"))
+            j.getString("attempt"), j.getLong("archive_bytes"), j.getString("sha256"), j.getString("error"), j.optString("dispatch"),
+            j.optString("pending_save"), j.optLong("verified_save_at"), j.optBoolean("save_failed"))
     }
+}
+
+internal fun HealthOriginalExportSession.title() = when (state) {
+    HealthOriginalExportState.REVIEW -> R.string.health_library_confirm
+    HealthOriginalExportState.QUEUED, HealthOriginalExportState.GENERATING -> R.string.health_library_generating
+    HealthOriginalExportState.GENERATED -> R.string.health_library_generated
+    HealthOriginalExportState.SAVED -> if (verifiedSaveAt > 0) R.string.health_library_saved else R.string.health_library_legacy_save
+    HealthOriginalExportState.CANCELLED -> R.string.health_import_cancelled
+    else -> R.string.health_library_failed
 }
 internal object HealthOriginalArchiveNames {
     fun entry(original: HealthOriginal): String {

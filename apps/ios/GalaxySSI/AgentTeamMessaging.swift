@@ -166,9 +166,16 @@ struct AgentTeamMessageEnvelope: Codable, Equatable, Identifiable {
 protocol AgentTeamMailbox: AnyObject {
   func append(_ message: AgentTeamMessageEnvelope) throws -> AgentTeamMessageEnvelope
   func messages(supervisorRunId: String, instanceId: String, afterSequence: Int64) -> [AgentTeamMessageEnvelope]
+  func pendingMessages(supervisorRunId: String, instanceId: String) -> [AgentTeamMessageEnvelope]
   func markDelivered(messageId: String, atMillis: Int64) -> AgentTeamMessageEnvelope?
   func acknowledge(messageId: String, atMillis: Int64) -> AgentTeamMessageEnvelope?
   func clear(supervisorRunId: String)
+}
+
+extension AgentTeamMailbox {
+  func pendingMessages(supervisorRunId: String, instanceId: String) -> [AgentTeamMessageEnvelope] {
+    messages(supervisorRunId: supervisorRunId, instanceId: instanceId, afterSequence: 0).filter { $0.state == .pending }
+  }
 }
 
 final class InMemoryAgentTeamMailbox: AgentTeamMailbox {
@@ -329,46 +336,45 @@ enum AgentCollaborationDirectedRequests {
 
 final class UserDefaultsAgentTeamMailbox: AgentTeamMailbox {
   static let defaultKey = "galaxyssi_agent_team_mailbox_v1"
-  static let maxMessages = 5_000
+  private static let processLock = NSRecursiveLock()
+  private static var defaultFileURL: URL {
+    AgentTeamHistoryDatabase.defaultFileURL().deletingLastPathComponent().appendingPathComponent("team-mailbox.sqlite3")
+  }
 
   private let defaults: UserDefaults
   private let key: String
   private let secrets: GalaxySSISecretStore
-  private static let lock = NSRecursiveLock()
-  private let encoder = JSONEncoder()
-  private let decoder = JSONDecoder()
+  private let fileURL: URL
+  private var database: AgentTeamHistoryDatabase?
 
   init(
     defaults: UserDefaults = .standard,
     key: String = UserDefaultsAgentTeamMailbox.defaultKey,
-    secrets: GalaxySSISecretStore = KeychainSecretStore.shared
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
+    fileURL: URL? = nil
   ) {
     self.defaults = defaults
     self.key = key
     self.secrets = secrets
+    self.fileURL = fileURL ?? Self.defaultFileURL
   }
 
   func append(_ message: AgentTeamMessageEnvelope) throws -> AgentTeamMessageEnvelope {
-    let results = try appendAll([message])
-    guard let result = results.first else { throw AgentTeamMessageError.invalid("Team message could not be queued") }
-    return result
+    guard let appended = try appendAll([message]).first else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return appended
   }
 
   func appendAll(_ messages: [AgentTeamMessageEnvelope]) throws -> [AgentTeamMessageEnvelope] {
     guard !messages.isEmpty else { return [] }
-    Self.lock.lock()
-    defer { Self.lock.unlock() }
-    let mailbox = loadLocked()
-    let before = mailbox.snapshot()
-    let appended = try messages.map { try mailbox.append($0) }
-    let after = mailbox.snapshot()
-    if before != after {
-      let retained = Set(after.suffix(Self.maxMessages).map(\.messageId))
-      guard appended.allSatisfy({ retained.contains($0.messageId) }), saveLocked(after) else {
-        throw AgentTeamMessageError.invalid("Team messages could not be saved")
+    return try access { database in
+      try messages.map { message in
+        var appended = try message.validated()
+        if let existing = try database.mailboxMessage(id: appended.messageId) { return existing }
+        appended.sequence = try database.nextMailboxSequence(runId: appended.supervisorRunId)
+        try database.putMailboxMessage(appended)
+        return appended
       }
     }
-    return appended
   }
 
   func messages(
@@ -376,29 +382,25 @@ final class UserDefaultsAgentTeamMailbox: AgentTeamMailbox {
     instanceId: String,
     afterSequence: Int64
   ) -> [AgentTeamMessageEnvelope] {
-    Self.lock.lock()
-    defer { Self.lock.unlock() }
-    return loadLocked().messages(
-      supervisorRunId: supervisorRunId,
-      instanceId: instanceId,
-      afterSequence: afterSequence
-    )
+    (try? access { try $0.mailboxMessages(runId: supervisorRunId, recipient: instanceId,
+      after: afterSequence, pendingOnly: false) }) ?? []
+  }
+
+  func pendingMessages(supervisorRunId: String, instanceId: String) -> [AgentTeamMessageEnvelope] {
+    (try? access { try $0.mailboxMessages(runId: supervisorRunId, recipient: instanceId,
+      after: 0, pendingOnly: true) }) ?? []
   }
 
   func markDelivered(messageId: String, atMillis: Int64) -> AgentTeamMessageEnvelope? {
-    mutate { $0.markDelivered(messageId: messageId, atMillis: atMillis) }
+    mutate(messageId: messageId) { $0.markDelivered(messageId: messageId, atMillis: atMillis) }
   }
 
   func acknowledge(messageId: String, atMillis: Int64) -> AgentTeamMessageEnvelope? {
-    mutate { $0.acknowledge(messageId: messageId, atMillis: atMillis) }
+    mutate(messageId: messageId) { $0.acknowledge(messageId: messageId, atMillis: atMillis) }
   }
 
   func clear(supervisorRunId: String) {
-    Self.lock.lock()
-    let mailbox = loadLocked()
-    mailbox.clear(supervisorRunId: supervisorRunId)
-    saveLocked(mailbox.snapshot())
-    Self.lock.unlock()
+    _ = try? access { try $0.clearMailbox(runId: supervisorRunId.isBlank ? nil : supervisorRunId) }
   }
 
   static func destroy(
@@ -406,32 +408,48 @@ final class UserDefaultsAgentTeamMailbox: AgentTeamMailbox {
     key: String = UserDefaultsAgentTeamMailbox.defaultKey,
     secrets: GalaxySSISecretStore = KeychainSecretStore.shared
   ) {
-    GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
+    let mailbox = UserDefaultsAgentTeamMailbox(defaults: defaults, key: key, secrets: secrets)
+    _ = try? mailbox.access { try $0.clearMailbox(runId: nil) }
   }
 
   private func mutate(
-    _ mutation: (InMemoryAgentTeamMailbox) -> AgentTeamMessageEnvelope?
+    messageId: String, _ mutation: (InMemoryAgentTeamMailbox) -> AgentTeamMessageEnvelope?
   ) -> AgentTeamMessageEnvelope? {
-    Self.lock.lock()
-    defer { Self.lock.unlock() }
-    let mailbox = loadLocked()
-    let updated = mutation(mailbox)
-    if updated != nil { saveLocked(mailbox.snapshot()) }
-    return updated
-  }
-
-  private func loadLocked() -> InMemoryAgentTeamMailbox {
-    guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, secrets: secrets),
-      let messages = try? decoder.decode([AgentTeamMessageEnvelope].self, from: data) else {
-      return InMemoryAgentTeamMailbox()
+    try? access { database in
+      guard let row = try database.mailboxMessage(id: messageId),
+            let updated = mutation(InMemoryAgentTeamMailbox(initialMessages: [row])) else { return nil }
+      try database.putMailboxMessage(updated, updating: true)
+      return updated
     }
-    return InMemoryAgentTeamMailbox(initialMessages: Array(messages.suffix(Self.maxMessages)))
   }
 
-  @discardableResult
-  private func saveLocked(_ messages: [AgentTeamMessageEnvelope]) -> Bool {
-    guard let data = try? encoder.encode(Array(messages.suffix(Self.maxMessages))) else { return false }
-    return GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: key, secrets: secrets)
+  private func access<T>(_ operation: (AgentTeamHistoryDatabase) throws -> T) throws -> T {
+    Self.processLock.lock()
+    defer { Self.processLock.unlock() }
+    if database == nil {
+      let opened = try AgentTeamHistoryDatabase(fileURL: fileURL, storageKey: "team-mailbox:" + key, secrets: secrets)
+      try opened.prepareMailbox()
+      database = opened
+    }
+    guard let database else { throw AgentTeamHistoryDatabase.Failure.unavailable }
+    let result = try database.transaction {
+      if try !database.initialized() {
+        if let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, secrets: secrets) {
+          for row in try JSONDecoder().decode([AgentTeamMessageEnvelope].self, from: data) {
+            guard row.sequence > 0, try row.validated() == row else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+            try database.putMailboxMessage(row)
+          }
+        } else if defaults.object(forKey: key + ".encrypted.v1") != nil || defaults.object(forKey: key) != nil {
+          throw AgentTeamHistoryDatabase.Failure.corrupt
+        }
+        try database.markInitialized()
+      }
+      return try operation(database)
+    }
+    if defaults.object(forKey: key + ".encrypted.v1") != nil {
+      GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
+    }
+    return result
   }
 }
 

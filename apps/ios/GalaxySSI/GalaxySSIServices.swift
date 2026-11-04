@@ -6459,10 +6459,10 @@ final class MessageCoordinator: ObservableObject {
       )
       let mailbox = UserDefaultsAgentTeamMailbox()
       let recipient = AgentTeamProgressPolicy.stableCollaborationMemberId(member.memberId)
-      let directedRequests = isCollaboration ? mailbox.messages(supervisorRunId: spec.supervisorRunId,
-        instanceId: recipient, afterSequence: 0).filter {
+      let directedRequests = isCollaboration ? mailbox.pendingMessages(supervisorRunId: spec.supervisorRunId,
+        instanceId: recipient).filter {
           $0.conversationId == outgoing.conversationId && $0.toInstanceId == recipient &&
-            $0.state == .pending && $0.metadata[AgentCollaborationDirectedRequests.marker] == "true"
+            $0.metadata[AgentCollaborationDirectedRequests.marker] == "true"
         } : []
       memberPrompt += AgentCollaborationDirectedRequests.prompt(directedRequests)
       if isCollaboration, member.deliveryMode == .observe {
