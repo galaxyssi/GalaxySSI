@@ -7,6 +7,14 @@
 "galaxyssi.health.discard" = "丢弃草稿";
 "galaxyssi.health.discard_draft" = "丢弃这份草稿？";
 "galaxyssi.health.recent" = "最近测量";
+"galaxyssi.health.overview" = "测量概览";
+"galaxyssi.health.derive_overview" = "显示本机测量摘要";
+"galaxyssi.health.overview_permission_error" = "无法更新摘要设置。";
+"galaxyssi.health.coverage" = "过去 7 天已记录 %lld / %lld 项测量";
+"galaxyssi.health.fresh" = "近期";
+"galaxyssi.health.stale_reading" = "较早";
+"galaxyssi.health.manual_source" = "手动录入";
+"galaxyssi.health.missing_reading" = "未记录";
 "galaxyssi.health.empty" = "暂无测量记录";
 "galaxyssi.health.more" = "查看更多";
 "galaxyssi.health.retry" = "重新加载记录";

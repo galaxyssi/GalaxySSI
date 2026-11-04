@@ -5,11 +5,14 @@ struct GalaxySSIHealthCenterView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.locale) private var locale
+  @Environment(\.calendar) private var calendar
+  @Environment(\.timeZone) private var timeZone
   let records: GalaxySSIHealthRecords
   @State private var archive: GalaxySSIHealthRecords.Archive?
   @State private var editor: GalaxySSIHealthDraft?
   @State private var alert: Notice?
   @State private var limit = 30
+  @State private var overviewPermissionFailed = false
 
   private enum Notice: String, Identifiable {
     case unavailable, invalid, stale, duplicate, delete, discardDraft
@@ -28,6 +31,21 @@ struct GalaxySSIHealthCenterView: View {
           } else {
             Button { editor = GalaxySSIHealthDraft() } label: {
               Label(t("manual", "Record measurement"), systemImage: "plus.circle")
+            }
+          }
+        }
+        if !current.isEmpty {
+          Section(t("overview", "Measurement overview")) {
+            Toggle(t("derive_overview", "Show local measurement summary"), isOn: Binding(
+              get: { self.archive?.derivesOverview == true }, set: setOverviewPermission))
+            if overviewPermissionFailed {
+              Text(t("overview_permission_error", "Could not update the summary setting."))
+                .foregroundColor(.secondary)
+            }
+            if archive.derivesOverview == true {
+              TimelineView(.everyMinute) { context in
+                overview(current, now: context.date)
+              }
             }
           }
         }
@@ -62,6 +80,7 @@ struct GalaxySSIHealthCenterView: View {
         editor = nil
         alert = nil
         archive = nil
+        overviewPermissionFailed = false
       }
     }
     .sheet(item: $editor) { _ in
@@ -69,6 +88,51 @@ struct GalaxySSIHealthCenterView: View {
         .navigationViewStyle(.stack)
         .interactiveDismissDisabled()
         .alert(item: $alert, content: editorAlert)
+    }
+  }
+
+  private func overview(_ current: [GalaxySSIHealthReading], now: Date) -> some View {
+    var local = calendar
+    local.timeZone = timeZone
+    let overview = GalaxySSIHealthOverview(current: current, now: now, calendar: local)
+    return VStack(alignment: .leading, spacing: 12) {
+      Text(String(format: t("coverage", "%lld of %lld tracked metrics recorded in the last 7 days"),
+                  locale: locale, Int64(overview.recentCount), Int64(overview.metrics.count)))
+        .font(.footnote).foregroundColor(.secondary)
+      ForEach(overview.metrics) { item in
+        if let reading = item.reading {
+          Button { edit(reading) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(title(item.metric)).foregroundColor(.primary)
+              Text(summary(reading))
+              Text(item.freshness == .recent ? t("fresh", "Recent") : t("stale_reading", "Older"))
+                .foregroundColor(.secondary)
+              Text(t("manual_source", "Entered manually")).foregroundColor(.secondary)
+              Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened))
+                .foregroundColor(.secondary)
+            }
+          }
+          .buttonStyle(.borderless)
+          .disabled(archive?.draft != nil)
+        } else {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(title(item.metric))
+            Text(t("missing_reading", "Not recorded")).foregroundColor(.secondary)
+          }
+        }
+      }
+    }
+  }
+
+  private func setOverviewPermission(_ enabled: Bool) {
+    guard scenePhase == .active else { return }
+    do {
+      try records.setOverviewPermission(enabled)
+      overviewPermissionFailed = false
+      reload()
+    } catch {
+      overviewPermissionFailed = true
+      if !enabled { archive?.derivesOverview = false }
     }
   }
 
