@@ -299,19 +299,21 @@ final class AgentTeamExecutionHistoryStore {
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
               draft.baseRevision >= 0, draft.baseRevision < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-        let objectId = draft.objectId ?? AgentMcpJSONCodec.sha256([
+        guard draft.observations?.isEmpty != false else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let existingId = draft.objectId.flatMap { $0.isBlank ? nil : $0 }
+        let objectId = existingId ?? AgentMcpJSONCodec.sha256([
           "group": .string(conversationId), "author": .string(memberId), "id": .string(draft.id)
         ])
         guard objectIds.insert(objectId).inserted else { throw AgentTeamHistoryDatabase.Failure.stale }
         let head = try database.researchRecord(AgentCollaborationResearchRevision.self,
           conversationId: conversationId, key: "object:" + objectId)
         if let head {
-          guard draft.objectId != nil, head.authorId == memberId, head.draft.kind == draft.kind,
+          guard existingId != nil, head.authorId == memberId, head.draft.kind == draft.kind,
                 head.reference.revision == draft.baseRevision else { throw AgentTeamHistoryDatabase.Failure.stale }
         } else {
-          guard draft.objectId == nil, draft.baseRevision == 0 else { throw AgentTeamHistoryDatabase.Failure.stale }
+          guard existingId == nil, draft.baseRevision == 0 else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
-        for parent in draft.parents {
+        for parent in draft.parents + (draft.resolves ?? []) {
           guard let existing = try database.researchRecord(AgentCollaborationResearchRevision.self,
             conversationId: conversationId, key: "object:" + parent.objectId, revision: parent.revision),
             existing.reference == parent,
