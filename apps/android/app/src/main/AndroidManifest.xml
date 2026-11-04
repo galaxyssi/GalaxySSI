@@ -234,6 +234,7 @@
         <activity android:name=".HealthDataFilesActivity" android:exported="false" />
         <activity android:name=".HealthProfileActivity" android:exported="false" />
         <activity android:name=".HealthPrivacyActivity" android:exported="false" />
+        <activity android:name=".HealthReminderActivity" android:exported="false" />
         <activity android:name=".HealthBackgroundActivity" android:exported="false" />
         <activity android:name=".HealthOriginalExportActivity" android:exported="false" />
         <provider android:name=".HealthOriginalContentProvider" android:authorities="${applicationId}.health-originals"
@@ -278,6 +279,14 @@
         <receiver
             android:name=".AgentWorkflowAlarmReceiver"
             android:exported="false" />
+        <receiver android:name=".HealthReminderReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <receiver
             android:name=".AgentAndroidDownloadReceiver"
             android:exported="false">
