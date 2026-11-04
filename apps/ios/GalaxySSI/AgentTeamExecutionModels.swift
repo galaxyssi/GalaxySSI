@@ -60,6 +60,12 @@ enum AgentTeamProgressPolicy {
   }
 }
 
+enum AgentTeamMemberDispatchCheckpoint: String, Codable {
+  case notStarted = "not_started"
+  case dispatching
+  case accepted
+}
+
 struct AgentTeamMemberSnapshot: Codable, Equatable {
   static let maxErrorCharacters = 1_000
 
@@ -74,6 +80,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var sourceMessageId: String
   var richOutputJson: String
   var replyContent: String?
+  var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
+  var displayName: String?
 
   var memberId: String { instanceId.ifBlank(agentId) }
 
@@ -88,7 +96,9 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     instanceId: String = "",
     sourceMessageId: String = "",
     richOutputJson: String = "",
-    replyContent: String? = nil
+    replyContent: String? = nil,
+    dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint? = nil,
+    displayName: String? = nil
   ) {
     self.agentId = agentId
     self.role = role
@@ -101,6 +111,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.sourceMessageId = sourceMessageId
     self.richOutputJson = richOutputJson
     self.replyContent = replyContent
+    self.dispatchCheckpoint = dispatchCheckpoint
+    self.displayName = displayName.map { String($0.prefix(256)) }
   }
 
   enum CodingKeys: String, CodingKey {
@@ -115,6 +127,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case sourceMessageId = "source_message_id"
     case richOutputJson = "rich_output_json"
     case replyContent = "reply_content"
+    case dispatchCheckpoint = "dispatch_checkpoint"
+    case displayName = "display_name"
   }
 
   init(from decoder: Decoder) throws {
@@ -131,7 +145,9 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId,
       sourceMessageId: try container.decodeIfPresent(String.self, forKey: .sourceMessageId) ?? "",
       richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? "",
-      replyContent: try container.decodeIfPresent(String.self, forKey: .replyContent)
+      replyContent: try container.decodeIfPresent(String.self, forKey: .replyContent),
+      dispatchCheckpoint: try container.decodeIfPresent(AgentTeamMemberDispatchCheckpoint.self, forKey: .dispatchCheckpoint),
+      displayName: try container.decodeIfPresent(String.self, forKey: .displayName)
     )
   }
 }

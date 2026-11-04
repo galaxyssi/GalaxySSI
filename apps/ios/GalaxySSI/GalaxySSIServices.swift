@@ -1,5 +1,6 @@
 import AVFoundation
 import BackgroundTasks
+import Combine
 import Foundation
 import Network
 import SwiftUI
@@ -6289,13 +6290,16 @@ final class MessageCoordinator: ObservableObject {
         deliveryMode: $0.deliveryMode, status: .pending, instanceId: $0.memberId,
         sourceMessageId: AgentControlPlaneActionExecutor.stableRunId(
           conversationId: outgoing.conversationId, turnId: homeTurnId,
-          actionId: action.id, agentId: $0.memberId)) },
+          actionId: action.id, agentId: $0.memberId),
+        dispatchCheckpoint: isCollaboration ? .notStarted : nil,
+        displayName: $0.context["_galaxyssi_member_name"]) },
       createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
       primaryInstanceId: spec.definition.primaryMemberId)
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
       !$0.privateMode && !$0.trackingPaused
     } ?? false
-    guard !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
+    guard (!isCollaboration || saveTeamHistory),
+          !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
       throw GalaxySSIError.invalidPayload("The original Agent team identity could not be saved")
     }
     agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
@@ -6339,6 +6343,13 @@ final class MessageCoordinator: ObservableObject {
       )
 
       do {
+        if isCollaboration {
+          guard AgentTeamExecutionHistoryStore.shared.advanceDispatchCheckpoint(runId: spec.supervisorRunId,
+            conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
+            sourceMessageId: sourceMessageId, to: .dispatching, now: AgentControlPlaneClock.nowMillis()) else {
+            throw GalaxySSIError.invalidPayload("The collaboration member dispatch checkpoint could not be saved")
+          }
+        }
         if target.id == "local-llm" {
           let profile = LocalModelRuntimeSettings.selectedProfile()
           guard LocalModelRuntimeSettings.isProfileEnabled(profile),
@@ -6418,8 +6429,21 @@ final class MessageCoordinator: ObservableObject {
           memberContact.trustState == .verified else {
           throw GalaxySSIError.invalidPayload("The selected Agent target cannot receive this request")
         }
+        if isCollaboration {
+          try await waitForCollaborationTransport(conversationId: outgoing.conversationId,
+            profileIdentity: profileIdentity)
+          try Task.checkCancellation()
+          guard let current = store.contact(id: member.agentId), current.trustState == .verified,
+                current.deliveryMode.isGalaxySSILinkFamily, current.type.caseInsensitiveCompare("agent") == .orderedSame,
+                current.desktopId == memberContact.desktopId,
+                current.connectorAgentId == memberContact.connectorAgentId else {
+            throw GalaxySSIError.invalidPayload("The collaboration Agent changed while waiting for a connection")
+          }
+          memberContact = current
+        }
         let slotOwnerId = try acquireAgentSlot(target: target, sourceMessageId: sourceMessageId)
         do {
+          try Task.checkCancellation()
           try await publishRequestedLinkTarget(
             memberPrompt,
             contact: memberContact,
@@ -6433,6 +6457,11 @@ final class MessageCoordinator: ObservableObject {
             ownerId: slotOwnerId,
             sourceMessageId: sourceMessageId
           )
+          if isCollaboration {
+            AgentTeamExecutionHistoryStore.shared.advanceDispatchCheckpoint(runId: spec.supervisorRunId,
+              conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
+              sourceMessageId: sourceMessageId, to: .accepted, now: AgentControlPlaneClock.nowMillis())
+          }
         } catch {
           UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slotOwnerId)
           throw error
@@ -6466,6 +6495,37 @@ final class MessageCoordinator: ObservableObject {
       label: "\(spec.definition.members.count) Agents"
     )
     return primaryPublished
+  }
+
+  private func waitForCollaborationTransport(conversationId: String, profileIdentity: String) async throws {
+    func validateScope() throws {
+      try Task.checkCancellation()
+      guard store.profile.identityFingerprint == profileIdentity,
+            store.activeAgentConversationId == conversationId,
+            let session = store.agentSession(id: conversationId), session.id == conversationId,
+            session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+            !session.privateMode, !session.trackingPaused else { throw CancellationError() }
+    }
+    try validateScope()
+    if transportConnected { return }
+
+    var signal: AsyncStream<Void>.Continuation?
+    let updates = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
+    guard let signal else { throw CancellationError() }
+    let connection = $transportConnected.sink { _ in signal.yield(()) }
+    let conversation = store.$activeAgentConversationId.sink { _ in signal.yield(()) }
+    let settings = store.$agentConversations.sink { _ in signal.yield(()) }
+    defer {
+      connection.cancel()
+      conversation.cancel()
+      settings.cancel()
+      signal.finish()
+    }
+    for await _ in updates {
+      try validateScope()
+      if transportConnected { return }
+    }
+    throw CancellationError()
   }
 
   private func waitForCollaborationObserver(runId: String, memberId: String,
