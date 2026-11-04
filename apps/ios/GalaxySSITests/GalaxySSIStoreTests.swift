@@ -4,6 +4,30 @@ import SQLite3
 @testable import GalaxySSI
 
 final class AgentConversationActivityTests: XCTestCase {
+  func testCollaborationRosterRoundTripsAndKeepsIdentityWhenResourceChanges() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("groups.sqlite")
+    let secrets = InMemorySecretStore()
+    let first = AgentCollaborationRoster.Member(name: "Review", resourceId: "provider")
+    let second = AgentCollaborationRoster.Member(name: "Research", resourceId: "provider")
+    var roster = AgentCollaborationRoster(members: [first, second], coordinatorId: first.id, independentReview: true)
+    XCTAssertTrue(roster.isValid)
+    XCTAssertNotEqual(first.id, second.id)
+    roster.members[1].resourceId = "other-provider"
+    XCTAssertEqual(roster.members[1].id, second.id)
+    let session = AgentConversation(id: "group", title: "Group", createdAt: 1, updatedAt: 1,
+      collaborationRoster: roster)
+    do {
+      let db = AgentConversationDatabase(fileURL: file, secrets: secrets)
+      XCTAssertTrue(db.upsert(session))
+    }
+    let reopened = AgentConversationDatabase(fileURL: file, secrets: secrets)
+    XCTAssertEqual(reopened.read("group")?.collaborationRoster, roster)
+    roster.coordinatorId = UUID()
+    XCTAssertFalse(roster.isValid)
+  }
+
   func testLegacyTableUpgradeCanReopenWithoutLosingConversations() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
