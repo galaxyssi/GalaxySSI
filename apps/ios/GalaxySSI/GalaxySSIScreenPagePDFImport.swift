@@ -16,16 +16,29 @@ struct GalaxySSIScreenPagePDFImporter: View {
 struct GalaxySSIScreenAnalysisLinkPicker: View {
   @Environment(\.dismiss) private var dismiss
   @State private var value = ""
+  @State private var pdfTask: Task<Void, Never>?
+  @State private var pdfStatus = ""
   var t: (String, String) -> String
+  var weChatOnly: Bool
   var onAdd: (String) -> Void
   @State private var weChatBrowserPresented = false
 
   private var link: String? {
+    Self.validatedLink(value, weChatOnly: weChatOnly)
+  }
+
+  static func validatedLink(_ value: String, weChatOnly: Bool) -> String? {
     let input = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard input.utf8.count <= 4_096, !input.contains(where: { $0.isWhitespace }),
           let parts = URLComponents(string: input), parts.scheme?.lowercased() == "https",
           parts.host?.isEmpty == false, parts.user == nil, parts.password == nil,
           parts.url != nil else { return nil }
+    if weChatOnly {
+      guard parts.host?.lowercased() == "mp.weixin.qq.com",
+            parts.port == nil || parts.port == 443,
+            parts.path == "/s" || (parts.path.hasPrefix("/s/") && parts.path.count > 3)
+      else { return nil }
+    }
     return input
   }
 
@@ -44,8 +57,31 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
             Label(t("galaxyssi.screen_page.wechat_browser", "WeChat Article Browser"), systemImage: "safari")
           }
         }
+        if let article = AgentIOSWeChatArticlePDF.articleURL(value) {
+          Button {
+            saveArticle(article)
+          } label: {
+            Label(t("galaxyssi.screen_page.wechat_pdf", "Save WeChat Article PDF"), systemImage: "arrow.down.doc")
+          }
+          .disabled(pdfTask != nil)
+          if pdfTask != nil { ProgressView() }
+          if !pdfStatus.isEmpty { Text(pdfStatus).font(.footnote).foregroundColor(.secondary) }
+        }
+        if weChatOnly {
+          if #available(iOS 16.0, *) {
+            PasteButton(payloadType: String.self) { values in
+              if let first = values.first { value = first }
+            }
+          }
+          if !value.isEmpty, link == nil {
+            Text(t("galaxyssi.screen_page.wechat_invalid", "Enter a valid WeChat public article link."))
+              .foregroundColor(.secondary)
+          }
+        }
       }
-      .navigationTitle(t("galaxyssi.screen_page.link", "Link"))
+      .navigationTitle(weChatOnly
+        ? t("galaxyssi.screen_page.wechat_link", "WeChat Article Link")
+        : t("galaxyssi.screen_page.link", "Link"))
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(t("galaxyssi.common.cancel", "Cancel")) { dismiss() }
@@ -62,6 +98,34 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
     .sheet(isPresented: $weChatBrowserPresented) {
       if let article = GalaxySSIWeChatBrowserSession.articleURL(value) {
         GalaxySSIWeChatArticleBrowser(url: article, t: t)
+      }
+    }
+    .onDisappear { pdfTask?.cancel() }
+  }
+
+  private func saveArticle(_ url: URL) {
+    guard pdfTask == nil else { return }
+    pdfStatus = ""
+    let missingImage = t("galaxyssi.screen_page.wechat_pdf_image", "[Image unavailable]")
+    let worker = Task.detached(priority: .userInitiated) {
+      try AgentIOSWeChatArticlePDF.save(url: url, missingImage: missingImage)
+    }
+    pdfTask = Task { @MainActor in
+      defer { pdfTask = nil }
+      do {
+        let (file, missing) = try await withTaskCancellationHandler(operation: { try await worker.value },
+          onCancel: { worker.cancel() })
+        guard !Task.isCancelled else { return }
+        pdfStatus = String(format: t("galaxyssi.screen_page.wechat_pdf_saved",
+          "Saved in Files: GalaxySSI / Downloads / GongZhongHao / %@"), file.lastPathComponent)
+        if missing > 0 {
+          pdfStatus += "\n" + String(format: t("galaxyssi.screen_page.wechat_pdf_missing",
+            "%d images could not be saved."), missing)
+        }
+      } catch {
+        guard !Task.isCancelled else { return }
+        pdfStatus = t("galaxyssi.screen_page.wechat_pdf_failed",
+          "Could not save this article. Open it in WeChat and check whether verification is required.")
       }
     }
   }
@@ -128,7 +192,12 @@ extension AgentHomeView {
   }
 
   func beginScreenAnalysisLink() {
+    beginScreenAnalysisLink(weChatOnly: false)
+  }
+
+  func beginScreenAnalysisLink(weChatOnly: Bool) {
     cancelScreenPagePDFImport()
+    screenLinkWeChatOnly = weChatOnly
     screenLinkConversationID = store.activeAgentConversationId
     screenLinkPickerPresented = !screenLinkConversationID.isEmpty
   }

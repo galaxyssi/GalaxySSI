@@ -13,6 +13,37 @@ final class AgentIOSPhonePublicHTMLAttachmentTests: XCTestCase {
     XCTAssertFalse(GalaxySSIWeChatBrowserSession.allows(URL(string: "file:///test"), mainFrame: false))
   }
 
+  func testWeChatPDFKeepsImageOrderAndRejectsVerificationPage() throws {
+    let url = try XCTUnwrap(AgentIOSWeChatArticlePDF.articleURL("https://mp.weixin.qq.com/s/example"))
+    let source = """
+    <h1 id="activity-name">Article</h1><div id="js_content"><p>Before</p>
+    <img data-src="https://mmbiz.qpic.cn/example"><p>After</p></div>
+    """
+    let (title, blocks) = try XCTUnwrap(AgentIOSPublicArticleParser.weChatPDFBlocks(url: url, source: source))
+    XCTAssertEqual(title, "Article")
+    XCTAssertEqual(blocks.count, 3)
+    guard case .text("Before") = blocks.first,
+          case .image("https://mmbiz.qpic.cn/example") = blocks.dropFirst().first,
+          case .text("After") = blocks.last else { return XCTFail("Unexpected article block order") }
+    XCTAssertNil(AgentIOSPublicArticleParser.weChatPDFBlocks(url: url, source: "<div id='js_verify'>Verify</div>"))
+    XCTAssertNil(AgentIOSWeChatArticlePDF.articleURL("https://mp.weixin.qq.com.example.org/s/example"))
+  }
+
+  @MainActor
+  func testScreenSourceValidatesWeChatArticleLinksWithoutRewritingQuery() {
+    let url = "https://mp.weixin.qq.com/s?__biz=abc&mid=123&sn=xyz"
+    XCTAssertEqual(GalaxySSIScreenAnalysisLinkPicker.validatedLink(" \(url)\n", weChatOnly: true), url)
+    XCTAssertNotNil(GalaxySSIScreenAnalysisLinkPicker.validatedLink(
+      "https://mp.weixin.qq.com/s/articleID", weChatOnly: true))
+    for invalid in ["http://mp.weixin.qq.com/s/a", "https://mp.weixin.qq.com.evil.test/s/a",
+      "https://user@mp.weixin.qq.com/s/a", "https://mp.weixin.qq.com:8443/s/a",
+      "https://mp.weixin.qq.com/not-an-article"] {
+      XCTAssertNil(GalaxySSIScreenAnalysisLinkPicker.validatedLink(invalid, weChatOnly: true))
+    }
+    XCTAssertNotNil(GalaxySSIScreenAnalysisLinkPicker.validatedLink(
+      "https://example.com/article", weChatOnly: false))
+  }
+
   func testSourceArchivePreservesBytesWithoutPublishingExecutableHTML() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

@@ -7,6 +7,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var topic: String
   var wirePayload: String
   var wirePayloadFile: String?
+  var deferredTaskPayload: String?
   var status: String
   var attempts: Int
   var nextAttemptAt: Date
@@ -55,6 +56,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     case topic
     case wirePayload
     case wirePayloadFile = "wire_payload_file"
+    case deferredTaskPayload = "deferred_task_payload"
     case status
     case attempts
     case nextAttemptAt
@@ -73,6 +75,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     topic = try container.decode(String.self, forKey: .topic)
     wirePayload = try container.decodeIfPresent(String.self, forKey: .wirePayload) ?? ""
     wirePayloadFile = try container.decodeIfPresent(String.self, forKey: .wirePayloadFile)
+    deferredTaskPayload = try container.decodeIfPresent(String.self, forKey: .deferredTaskPayload)
     status = try container.decode(String.self, forKey: .status)
     attempts = try container.decode(Int.self, forKey: .attempts)
     nextAttemptAt = try container.decode(Date.self, forKey: .nextAttemptAt)
@@ -345,6 +348,58 @@ final class GalaxySSILinkDeliveryStore {
     if save() { return true }
     state = previous
     return false
+  }
+
+  func enqueueDeferredAttachmentTask(_ task: LinkDeliveryEnqueueRequest, payload: String,
+                                     attachments: [LinkDeliveryEnqueueRequest], now: Date = Date()) -> Bool {
+    let dependencies = PendingLinkMessage.normalizedTransferIds(task.blockedByAttachmentTransferIds)
+    let requests = attachments + [task]
+    let ids = Set(requests.map(\.messageId))
+    guard journal != nil, journalHealthy, !payload.isEmpty, payload.utf8.count <= 2 * 1024 * 1024,
+          !dependencies.isEmpty, !attachments.isEmpty, task.wirePayload.isEmpty,
+          ids.count == requests.count, !ids.contains(""),
+          requests.allSatisfy({ $0.topic == task.topic && $0.recoverableEnvelope.isEmpty }),
+          attachments.allSatisfy({ !$0.wirePayload.isEmpty && dependencies.contains($0.attachmentTransferId) }),
+          Set(attachments.map(\.attachmentTransferId)) == Set(dependencies),
+          !state.outbox.contains(where: { ids.contains($0.messageId) }) else { return false }
+    let previous = state
+    for request in requests {
+      var item = PendingLinkMessage(messageId: request.messageId, topic: request.topic,
+        wirePayload: request.wirePayload, status: "queued", attempts: 0, nextAttemptAt: now,
+        createdAt: now, updatedAt: now, requiresValidatedNetwork: request.requiresValidatedNetwork,
+        blockedByAttachmentTransferIds: request.blockedByAttachmentTransferIds,
+        attachmentTransferId: request.attachmentTransferId, clientSourceMessageId: request.clientSourceMessageId,
+        contactId: request.contactId)
+      if request.messageId == task.messageId { item.deferredTaskPayload = payload }
+      state.outbox.append(item)
+    }
+    if save() { return true }
+    state = previous
+    return false
+  }
+
+  func commitDeferredTaskCiphertext(_ item: PendingLinkMessage, wirePayload: String) -> Bool {
+    guard journal != nil, journalHealthy, !wirePayload.isEmpty,
+          let index = state.outbox.firstIndex(where: { $0.messageId == item.messageId }),
+          state.outbox[index] == item, item.deferredTaskPayload != nil,
+          item.blockedByAttachmentTransferIds.isEmpty else { return false }
+    let previous = state
+    state.outbox[index].wirePayload = wirePayload
+    state.outbox[index].deferredTaskPayload = nil
+    if save() { return true }
+    state = previous
+    return false
+  }
+
+  func canPrepareDeferredTask(_ item: PendingLinkMessage) -> Bool {
+    journalHealthy && item.deferredTaskPayload != nil && item.blockedByAttachmentTransferIds.isEmpty &&
+      state.outbox.contains(item)
+  }
+
+  func postponeDeferredTask(_ item: PendingLinkMessage, now: Date = Date()) {
+    guard let index = state.outbox.firstIndex(where: { $0 == item }), item.deferredTaskPayload != nil else { return }
+    state.outbox[index].nextAttemptAt = now.addingTimeInterval(2)
+    save()
   }
 
   @discardableResult
@@ -932,6 +987,7 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   private func resolvedMessage(_ item: PendingLinkMessage) -> PendingLinkMessage? {
+    if item.deferredTaskPayload != nil { return item }
     let wirePayload = payloadStore.resolve(
       inline: item.wirePayload,
       fileName: item.wirePayloadFile
@@ -943,7 +999,7 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   private func hasWirePayload(_ item: PendingLinkMessage) -> Bool {
-    !payloadStore.resolve(
+    item.deferredTaskPayload != nil || !payloadStore.resolve(
       inline: item.wirePayload,
       fileName: item.wirePayloadFile
     ).isEmpty

@@ -4841,6 +4841,13 @@
 "galaxyssi.screen_page.wechat_browser_save" = "将已加载的文章保存为 PDF";
 "galaxyssi.screen_page.wechat_browser_saved" = "已保存到文件：GalaxySSI / Downloads / GongZhongHao / %@";
 "galaxyssi.screen_page.wechat_browser_failed" = "无法保存文章。如需验证，请完成后重试。";
+"galaxyssi.screen_page.wechat_pdf" = "保存公众号文章 PDF";
+"galaxyssi.screen_page.wechat_pdf_image" = "［图片不可用］";
+"galaxyssi.screen_page.wechat_pdf_saved" = "已保存到文件：GalaxySSI / Downloads / GongZhongHao / %@";
+"galaxyssi.screen_page.wechat_pdf_missing" = "有 %d 张图片未能保存。";
+"galaxyssi.screen_page.wechat_pdf_failed" = "无法保存文章。请在微信中打开，检查是否需要验证。";
+"galaxyssi.screen_page.wechat_link" = "公众号文章链接";
+"galaxyssi.screen_page.wechat_invalid" = "请输入有效的微信公众号文章链接。";
 "galaxyssi.screen_page.file_prompt" = "请分析这个文件。";
 "galaxyssi.screen_page.link_prompt" = "请分析这个页面。";
 "galaxyssi.screen_page.collecting" = "正在提取页面…";
@@ -4858,6 +4865,8 @@
 "galaxyssi.screen_assistant.close" = "关闭屏幕助手";
 "galaxyssi.screen_assistant.collapse" = "收起屏幕助手";
 "galaxyssi.screen_assistant.restore" = "恢复屏幕助手";
+"galaxyssi.screen_assistant.tools" = "屏幕助手工具";
+"galaxyssi.screen_assistant.analysis_action" = "打开屏幕分析";
 "galaxyssi.screen_assistant.ready" = "就绪";
 "galaxyssi.screen_assistant.completed" = "已完成";
 "galaxyssi.screen_assistant.processing" = "处理中";

@@ -21,6 +21,39 @@ struct AgentIOSPublicArticleImage {
 enum AgentIOSPublicArticleParser {
   private static let weChatArticleHost = "mp.weixin.qq.com"
 
+  enum PDFBlock {
+    case text(String)
+    case image(String?)
+  }
+
+  static func weChatPDFBlocks(url: URL, source: String) -> (String, [PDFBlock])? {
+    guard url.host?.lowercased() == weChatArticleHost,
+          let body = element(withID: "js_content", in: source),
+          let article = parse(url: url, source: source),
+          !article.title.isEmpty else { return nil }
+    let clean = body.replacingOccurrences(of: #"(?is)<!--.*?-->|<(script|style)[^>]*>.*?</\1>"#,
+      with: "", options: .regularExpression)
+    guard let tags = try? NSRegularExpression(pattern: #"<img\b[^>]*>"#, options: .caseInsensitive) else {
+      return nil
+    }
+    var blocks: [PDFBlock] = []
+    var start = clean.startIndex
+    func appendText(_ text: Substring) {
+      let value = plainText(String(text))
+      if !value.isEmpty { blocks.append(.text(value)) }
+    }
+    for match in tags.matches(in: clean, range: fullRange(clean)) {
+      guard let range = Range(match.range, in: clean) else { continue }
+      appendText(clean[start..<range.lowerBound])
+      blocks.append(.image(images(in: String(clean[range]), baseURL: url, limit: 1).first?.url))
+      start = range.upperBound
+    }
+    appendText(clean[start...])
+    guard !blocks.isEmpty else { return nil }
+    if !article.author.isEmpty { blocks.insert(.text(article.author), at: 0) }
+    return (article.title, blocks)
+  }
+
   static func parse(url: URL, source: String) -> AgentIOSPublicArticle? {
     if url.host?.lowercased() != weChatArticleHost {
       return AgentIOSGenericArticleParser.parse(url: url, source: source)

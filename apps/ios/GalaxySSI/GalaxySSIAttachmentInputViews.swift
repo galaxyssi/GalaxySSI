@@ -228,6 +228,8 @@ extension AgentHomeView {
   var screenAssistantRestoreControl: some View {
     if screenAssistantLauncherVisible {
       GalaxySSIScreenAssistantBubble(
+        toolsLabel: t("galaxyssi.screen_assistant.tools", "Screen assistant tools"),
+        analyzeLabel: t("galaxyssi.screen_assistant.analysis_action", "Open screen analysis"),
         restoreLabel: t("galaxyssi.screen_assistant.restore", "Restore screen assistant"),
         closeLabel: t("galaxyssi.screen_assistant.close", "Close screen assistant"),
         stopLabel: t("galaxyssi.screen_assistant.stop", "Stop analysis"),
@@ -235,6 +237,14 @@ extension AgentHomeView {
         statusLabel: screenAssistantConversationID == store.activeAgentConversationId
           ? screenAssistantBubbleStatusLabel : t("galaxyssi.screen_assistant.ready", "Ready"),
         onRestore: restoreScreenAssistantPresentation,
+        onAnalyze: {
+          guard !screenAssistantStopping else { return }
+          if screenAssistantRunID != nil {
+            restoreScreenAssistantPresentation()
+          } else {
+            presentScreenCaptureSources()
+          }
+        },
         onClose: {
           store.updateDisplaySettings { $0.screenAssistantEnabled = false }
         },
@@ -302,12 +312,15 @@ struct GalaxySSIScreenAssistantBubble: View {
   @GestureState private var translation = CGSize.zero
   @State private var menuPresented = false
   @State private var screenCaptured = UIScreen.main.isCaptured
+  var toolsLabel: String
+  var analyzeLabel: String
   var restoreLabel: String
   var closeLabel: String
   var stopLabel: String
   var phase: AgentPhase?
   var statusLabel: String
   var onRestore: () -> Void
+  var onAnalyze: () -> Void
   var onClose: () -> Void
   var onStop: (() -> Void)? = nil
 
@@ -327,7 +340,7 @@ struct GalaxySSIScreenAssistantBubble: View {
       let current = Self.clamp(CGPoint(x: anchor.x + translation.width,
         y: anchor.y + translation.height), in: geometry.size)
       ZStack(alignment: .topLeading) {
-        if menuPresented {
+        if menuPresented && translation == .zero {
           Color.clear.contentShape(Rectangle())
             .onTapGesture { menuPresented = false }
           let rect = Self.menuRect(near: current, in: geometry.size, rows: onStop == nil ? 2 : 3)
@@ -345,10 +358,6 @@ struct GalaxySSIScreenAssistantBubble: View {
           .position(x: rect.midX, y: rect.midY)
           .accessibilityIdentifier("ios.screen-assistant.menu")
         }
-      Button {
-        menuPresented = false
-        onRestore()
-      } label: {
         ZStack {
           Circle().fill(Color(red: 85 / 255, green: 89 / 255, blue: 94 / 255))
             .overlay(Circle().stroke(Color(red: 133 / 255, green: 137 / 255, blue: 141 / 255), lineWidth: 0.696))
@@ -373,28 +382,47 @@ struct GalaxySSIScreenAssistantBubble: View {
         }
         .opacity(0.5)
         .contentShape(Circle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(restoreLabel)
+      .accessibilityLabel(toolsLabel)
+      .accessibilityAddTraits(.isButton)
       .accessibilityValue(statusLabel)
       .accessibilityIdentifier("ios.screen-assistant.bubble")
-      .help(restoreLabel)
-      .onLongPressGesture { menuPresented.toggle() }
+      .help(toolsLabel)
+      .accessibilityAction { menuPresented.toggle() }
+      .accessibilityAction(named: Text(analyzeLabel), openAnalysis)
       .accessibilityAction(named: Text(closeLabel)) { menuPresented = false; onClose() }
       .accessibilityAction(named: Text(stopLabel)) { menuPresented = false; onStop?() }
-      .highPriorityGesture(DragGesture(minimumDistance: 4)
-        .updating($translation) { value, state, _ in state = value.translation }
+      .gesture(LongPressGesture(minimumDuration: 0.5, maximumDistance: 4)
+        .exclusively(before: DragGesture(minimumDistance: 4)
+          .exclusively(before: TapGesture()))
+        .updating($translation) { value, state, _ in
+          if case .second(.first(let drag)) = value { state = drag.translation }
+        }
         .onEnded { value in
-          let end = Self.clamp(CGPoint(x: anchor.x + value.translation.width,
-            y: anchor.y + value.translation.height), in: geometry.size)
-          positionX = Double(end.x / max(geometry.size.width, 1))
-          positionY = Double(end.y / max(geometry.size.height, 1))
+          switch value {
+          case .second(.first(let drag)):
+            menuPresented = false
+            let end = Self.clamp(CGPoint(x: anchor.x + drag.translation.width,
+              y: anchor.y + drag.translation.height), in: geometry.size)
+            positionX = Double(end.x / max(geometry.size.width, 1))
+            positionY = Double(end.y / max(geometry.size.height, 1))
+          case .first(true):
+            openAnalysis()
+          case .first(false):
+            break
+          case .second(.second):
+            menuPresented.toggle()
+          }
         })
       .position(current)
       .zIndex(1)
       }
       .onChange(of: geometry.size) { _ in menuPresented = false }
     }
+  }
+
+  private func openAnalysis() {
+    menuPresented = false
+    onAnalyze()
   }
 
   private func menuAction(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
