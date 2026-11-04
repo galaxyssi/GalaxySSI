@@ -4935,4 +4935,5 @@
 "galaxyssi.collaboration.stage_recheck" = "复核";
 "galaxyssi.collaboration.stage_deliver" = "交付";
 "galaxyssi.collaboration.no_results" = "暂无成员结果。";
+"galaxyssi.collaboration.results_unavailable" = "无法读取成员结果。";
 "galaxyssi.collaboration.older_results" = "更早的结果";

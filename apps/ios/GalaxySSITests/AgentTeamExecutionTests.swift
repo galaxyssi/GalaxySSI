@@ -1106,7 +1106,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(restored.members[index].elapsedExecutionMillis(now: 100, team: restored), 30)
   }
 
-  func testCollaborationResultsStayInTheirConversationAfterReopen() {
+  func testCollaborationResultsStayInTheirConversationAfterReopen() throws {
     let suite = "team-results-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -1123,10 +1123,14 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(history.upsert(other))
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
-    let scoped = reopened.collaborationResults(conversationId: first.conversationId, limit: 20)
+    let scoped = try reopened.readCollaborationResults(conversationId: first.conversationId, limit: 20)
     XCTAssertEqual(scoped.map(\.supervisorRunId), ["first"])
     XCTAssertEqual(scoped.first?.members.first?.displayName, "Original member name")
     XCTAssertTrue(reopened.collaborationResults(conversationId: "", limit: 20).isEmpty)
+    XCTAssertTrue(try reopened.readCollaborationResults(conversationId: "empty", limit: 20).isEmpty)
+    let unavailable = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root)
+    XCTAssertThrowsError(try unavailable.readCollaborationResults(conversationId: first.conversationId, limit: 20))
   }
 
   func testObserverRecoveryPersistsFullFailureAndRejectsPreviewOnlyDuplicateProof() throws {
