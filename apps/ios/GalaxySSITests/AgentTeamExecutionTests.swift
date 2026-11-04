@@ -324,6 +324,46 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testCapabilityDirectoryReturnsExactCandidateWithoutExposingSameTurnPeer() throws {
+    let suite = "capability-directory-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite3"))
+    var team = durableTeamSnapshot("capability-author")
+    team.members[0].status = .succeeded
+    XCTAssertTrue(history.upsert(team))
+    let raw = """
+    {"purpose":"Verify evidence","domain":"Research","bottleneck":"Errors","change_rationale":"Check",
+     "applies_when":"Comparable","avoid_when":"Unsafe","risks":"Delay","expected_gain":"Accuracy","falsifier":"No gain",
+     "dimensions":["verification"],"roles":["worker"],"inputs":[],
+     "steps":[{"id":"check","role":"worker","stage":"VERIFY","assignment":"Check input"}]}
+    """
+    let method = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let author = team.members[0]
+    let publication = try history.publishResearchObjects([
+      .init(id: "method", objectId: nil, baseRevision: 0, kind: .workflowMethod,
+        title: "Evidence method", body: ["workflow_method": .object(method)], parents: [])
+    ], runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+      memberId: author.memberId, sourceId: author.sourceMessageId)
+    var later = durableTeamSnapshot("capability-reader")
+    later.taskId = "later"
+    XCTAssertTrue(history.upsert(later))
+    func read(_ team: AgentTeamExecutionSnapshot) throws -> AgentMcpJSONObject {
+      let peer = team.members[1]
+      return try history.recallCollaborationOriginal(["mode": .string("capabilities"), "query": .string("EVIDENCE research")],
+        scope: .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+          memberId: peer.memberId, sourceId: peer.sourceMessageId))
+    }
+    XCTAssertEqual(try read(team)["capabilities"], .array([]))
+    let result = try read(later)
+    let entry = try XCTUnwrap(result["capabilities"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(entry.string("sha256"), publication.references.first?.sha256)
+    XCTAssertEqual(entry.string("state"), "unverified_candidate")
+    XCTAssertEqual(result["grants_permissions"], .bool(false))
+  }
+
   func testPublicationRecoveryFindsSavedReplyAndSkipsCommittedReplay() throws {
     let suite = "publication-recovery-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

@@ -335,6 +335,7 @@ final class AgentTeamExecutionHistoryStore {
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
+    if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
     if mode == "goal" {
       guard Set(input.keys).isSubset(of: ["mode", "section", "offset", "sha256"]),
             case .int(let offset) = input["offset"] ?? .int(0), let start = Int(exactly: offset),
@@ -427,6 +428,58 @@ final class AgentTeamExecutionHistoryStore {
       )
     }
     return result
+  }
+
+  private func recallCapabilities(_ input: AgentMcpJSONObject,
+                                  scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    guard Set(input.keys).isSubset(of: ["mode", "query", "cursor"]),
+          case .string(let query) = input["query"] ?? .string(""), query.utf8.count <= 512,
+          case .string(let cursor) = input["cursor"] ?? .string(""),
+          cursor.isEmpty || (cursor.utf8.count == 64 &&
+            cursor.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }) else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
+    guard terms.count <= 12 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let keys = try database.researchObjectKeys(conversationId: scope.conversationId, after: cursor, limit: 33)
+      var entries: [AgentMcpJSONValue] = []
+      var scanned = 0
+      for key in keys.prefix(32) {
+        scanned += 1
+        guard let head = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: scope.conversationId, key: key),
+              key == "object:" + head.reference.objectId else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        guard head.turnId != scope.turnId || (head.runId == scope.runId && head.authorId == scope.memberId) else { continue }
+        let kind = head.draft.kind.rawValue
+        guard ["workflow_method", "executable_tool", "failure_experience", "capability_lesson"].contains(kind),
+              let body = head.draft.body[kind]?.objectValue else { continue }
+        let text = ([head.draft.title, kind] + ["purpose", "domain", "applies_when", "observed_issue", "rationale"]
+          .map { body.string($0) }).joined(separator: "\n")
+        guard terms.allSatisfy({ text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }) else { continue }
+        let state: String
+        switch kind {
+        case "capability_lesson": state = body.string("decision") == "retain" ? "retained_lesson" : "historical_lesson"
+        case "failure_experience": state = "observed_failure"
+        default: state = "unverified_candidate"
+        }
+        entries.append(.object(["object_id": .string(head.reference.objectId), "revision": .int(head.reference.revision),
+          "sha256": .string(head.reference.sha256), "kind": .string(kind), "title": .string(head.draft.title),
+          "state": .string(state)]))
+        if entries.count == 8 { break }
+      }
+      let next = scanned < keys.count && scanned > 0 ? String(keys[scanned - 1].dropFirst("object:".count)) : nil
+      return ["capabilities": .array(entries), "next_cursor": next.map(AgentMcpJSONValue.string) ?? .null,
+        "grants_permissions": .bool(false), "trust": .string("directory_not_execution_authority")]
+    }
   }
 
   private func recallCloudProblems(_ input: AgentMcpJSONObject,
