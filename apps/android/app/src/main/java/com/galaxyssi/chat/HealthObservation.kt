@@ -93,24 +93,31 @@ internal data class HealthObservation(
     val platformOrigin: String = "",
     val deviceReceivedAt: Long? = null,
     val deviceClock: String = "",
+    val bluetoothGroup: String = "",
 ) {
-    fun json() = JSONObject().put("format", 1).put("id", id).put("revision", revision).put("draft", draft.json())
+    init { require(bluetoothGroup.isEmpty() || source == "bluetooth" && isHealthBluetoothGroup(bluetoothGroup)) }
+    fun json(includeDeviceGroup: Boolean = true) = JSONObject().put("format", 1).put("id", id).put("revision", revision).put("draft", draft.json())
         .put("received_at", receivedAt).put("source", source).put("profile_id", profileId)
         .apply { if (platformOrigin.isNotEmpty()) put("platform_origin", platformOrigin) }
         .apply { deviceReceivedAt?.let { put("device_received_at", it) }; if (deviceClock.isNotEmpty()) put("device_clock", deviceClock) }
+        .apply { if (includeDeviceGroup && bluetoothGroup.isNotEmpty()) put("bluetooth_group", bluetoothGroup) }
     fun editable() = draft.copy(recordId = id, revision = revision)
     companion object {
         fun from(json: JSONObject): HealthObservation {
             require(json.getInt("format") == 1)
             return HealthObservation(json.getString("id"), json.getInt("revision"), HealthDraft.from(json.getJSONObject("draft")),
                 json.getLong("received_at"), json.getString("source"), json.getString("profile_id"), json.optString("platform_origin"),
-                json.takeUnless { it.isNull("device_received_at") }?.getLong("device_received_at"), json.optString("device_clock"))
+                json.takeUnless { it.isNull("device_received_at") }?.getLong("device_received_at"), json.optString("device_clock"),
+                json.optString("bluetooth_group"))
                 .also { record -> require(record.draft.reportedValues.all { (field, raw) ->
                     HealthResult.parse(raw, record.draft.metric.form)?.canonical == HealthResult.parse(record.draft.values[field].orEmpty(), record.draft.metric.form)?.canonical
                 }) }
         }
     }
 }
+
+internal fun isHealthBluetoothGroup(value: String): Boolean =
+    value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
 
 internal enum class HealthValidationIssue { MISSING_VALUE, INVALID_NUMBER, INVALID_UNIT, INVALID_TIME, INVALID_CONTEXT, UNCONFIRMED_SOURCE }
 internal data class HealthValidationError(val issue: HealthValidationIssue, val field: String = "")

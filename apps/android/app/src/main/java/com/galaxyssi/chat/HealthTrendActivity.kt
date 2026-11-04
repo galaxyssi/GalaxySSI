@@ -107,9 +107,14 @@ class HealthTrendActivity : Activity() {
                 val summary = HealthTrendRepository.load(store, effective, ::cancelled, { count -> main.post {
                     if (active && token == generation) progress?.text = getString(R.string.health_trend_progress, count)
                 } }, cancellation)
-                val name = if (effective.source.originalId.isBlank()) "" else
-                    HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext))
+                val name = when {
+                    effective.source.bluetoothGroup.isNotEmpty() ->
+                        store.trendBluetoothLabel(effective, effective.source.bluetoothGroup, cancellation).orEmpty()
+                    effective.source.originalId.isNotBlank() ->
+                        HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext))
                         .use { it.original(effective.source.originalId)?.name.orEmpty() }
+                    else -> ""
+                }
                 summary to name
             } } }
             main.post { if (active && token == generation) result.fold({ (summary, name) -> unit = summary.spec.unit; sourceName = name; render(summary) }, {
@@ -155,6 +160,7 @@ class HealthTrendActivity : Activity() {
         ui.add(content, ui.text("$first \u2014 $last \u00b7 ${zone.id}", 12f, muted = true), 8)
         ui.add(content, ui.row(getString(R.string.health_trend_source), when {
             source.manualOnly -> getString(R.string.health_source_manual)
+            source.bluetoothGroup.isNotEmpty() -> healthBluetoothTrendLabel(source.bluetoothGroup, sourceName)
             source.originalId.isBlank() -> getString(R.string.health_trend_all_sources)
             else -> sourceName.ifBlank { getString(R.string.health_trend_original_source, source.originalId.take(8)) }
         }) { chooseSources() }.apply { tag = "health-trend-source" }, 8)
@@ -236,32 +242,50 @@ class HealthTrendActivity : Activity() {
         dialog?.dismiss(); dialog = AlertDialog.Builder(this).setTitle(title).setItems(values.toTypedArray()) { _, index -> selected(index) }
             .setNegativeButton(R.string.common_cancel, null).show()
     }
-    private fun chooseSources() { choose(R.string.health_trend_source, listOf(getString(R.string.health_trend_all_sources), getString(R.string.health_source_manual), getString(R.string.health_trend_choose_original))) { index ->
-        when (index) { 0 -> { source = HealthTrendSource(); sourceName = ""; load() }; 1 -> { source = HealthTrendSource(manualOnly = true); sourceName = ""; load() }; else -> sourcePicker() }
+    private fun chooseSources() { choose(R.string.health_trend_source,
+        listOf(R.string.health_trend_all_sources, R.string.health_source_manual, R.string.health_trend_choose_original,
+            R.string.health_trend_choose_bluetooth).map(::getString)) { index ->
+        when (index) {
+            0 -> { source = HealthTrendSource(); sourceName = ""; load() }
+            1 -> { source = HealthTrendSource(manualOnly = true); sourceName = ""; load() }
+            2 -> sourcePicker()
+            else -> sourcePicker(bluetooth = true)
+        }
     } }
-    private fun sourcePicker(after: String = "", history: List<String> = emptyList()) {
+    private fun sourcePicker(after: String = "", history: List<String> = emptyList(), bluetooth: Boolean = false) {
         val (token, cancellation) = begin(); dialog?.dismiss()
         val wait = AlertDialog.Builder(this).setTitle(R.string.health_trend_source).setMessage(R.string.health_loading).setNegativeButton(R.string.common_cancel, null).create()
         dialog = wait; wait.setOnDismissListener { if (dialog === wait) { dialog = null; if (active) load() } }; wait.show()
         val requested = spec()
         worker.execute {
             val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND_SOURCES, requested), privacyDatabase) { HealthRecordStore(applicationContext, names.records).use { store ->
-                val ids = store.trendSourceIds(requested, after, cancellation)
-                HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)).use { originals -> ids to ids.take(30).map { id ->
-                    (originals.original(id)?.name ?: getString(R.string.health_original_missing)) + " \u00b7 " + id.take(8)
-                } }
+                if (bluetooth) {
+                    val ids = store.trendBluetoothGroups(requested, after, cancellation)
+                    ids to ids.take(30).map { group ->
+                        healthBluetoothTrendLabel(group, store.trendBluetoothLabel(requested, group, cancellation).orEmpty())
+                    }
+                } else {
+                    val ids = store.trendSourceIds(requested, after, cancellation)
+                    HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)).use { originals -> ids to ids.take(30).map { id ->
+                        (originals.original(id)?.name ?: getString(R.string.health_original_missing)) + " \u00b7 " + id.take(8)
+                    } }
+                }
             } } }
             main.post { if (!active || token != generation || dialog !== wait) return@post
                 result.fold({ (ids, labels) ->
                     wait.setOnDismissListener(null); wait.dismiss()
                     val builder = AlertDialog.Builder(this).setTitle(R.string.health_trend_source).setNegativeButton(R.string.common_close, null)
-                    if (labels.isEmpty()) builder.setMessage(R.string.health_trend_no_sources) else builder.setItems(labels.toTypedArray()) { _, index -> source = HealthTrendSource(originalId = ids[index]); sourceName = "" }
+                    if (labels.isEmpty()) builder.setMessage(if (bluetooth) R.string.health_trend_no_bluetooth else R.string.health_trend_no_sources)
+                    else builder.setItems(labels.toTypedArray()) { _, index ->
+                        source = if (bluetooth) HealthTrendSource(bluetoothGroup = ids[index]) else HealthTrendSource(originalId = ids[index])
+                        sourceName = ""
+                    }
                     if (ids.size > 30) builder.setPositiveButton(R.string.health_next_page, null)
                     if (history.isNotEmpty()) builder.setNeutralButton(R.string.health_previous_page, null)
                     val choice = builder.create(); dialog = choice
                     choice.setOnDismissListener { if (dialog === choice) { dialog = null; if (active) load() } }
                     choice.setOnShowListener {
-                        fun page(next: String, previous: List<String>) { choice.setOnDismissListener(null); choice.dismiss(); dialog = null; sourcePicker(next, previous) }
+                        fun page(next: String, previous: List<String>) { choice.setOnDismissListener(null); choice.dismiss(); dialog = null; sourcePicker(next, previous, bluetooth) }
                         if (ids.size > 30) choice.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { page(ids[29], history + after) }
                         if (history.isNotEmpty()) choice.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener { page(history.last(), history.dropLast(1)) }
                     }; choice.show()

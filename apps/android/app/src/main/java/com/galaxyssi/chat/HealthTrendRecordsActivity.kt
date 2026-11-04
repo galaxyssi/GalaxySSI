@@ -115,9 +115,16 @@ class HealthTrendRecordsActivity : Activity() {
                 val point = priorAudit ?: pointField?.let { field ->
                     HealthTrendRepository.point(store, spec, field, before, ::cancelled, cancellation)
                 }
-                val label = if (point == null || spec.source.originalId.isBlank()) "" else if (priorAudit != null) priorSource else
-                    HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext))
-                        .use { it.original(spec.source.originalId)?.name.orEmpty() }
+                val label = when {
+                    point == null -> ""
+                    priorAudit != null -> priorSource
+                    spec.source.bluetoothGroup.isNotEmpty() ->
+                        store.trendBluetoothLabel(spec, spec.source.bluetoothGroup, cancellation).orEmpty()
+                    spec.source.originalId.isNotBlank() ->
+                        HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext))
+                            .use { it.original(spec.source.originalId)?.name.orEmpty() }
+                    else -> ""
+                }
                 val page = store.trendRecords(spec, after, numeric, ::cancelled, cancellation)
                 if (store.metricVersion(spec.metric) != before) throw HealthTrendChangedException()
                 Page(page, before, point, label)
@@ -169,6 +176,7 @@ class HealthTrendRecordsActivity : Activity() {
         }, 6)
         val source = when {
             spec.source.manualOnly -> getString(R.string.health_source_manual)
+            spec.source.bluetoothGroup.isNotEmpty() -> healthBluetoothTrendLabel(spec.source.bluetoothGroup, sourceName)
             spec.source.originalId.isBlank() -> getString(R.string.health_trend_all_sources)
             else -> sourceName.ifBlank { getString(R.string.health_trend_original_source, spec.source.originalId.take(8)) }
         }
@@ -187,7 +195,9 @@ class HealthTrendRecordsActivity : Activity() {
         if (page.records.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_records)), 20)
         page.records.forEach { record ->
             val time = Instant.ofEpochMilli(record.draft.measuredAt).atZone(spec.zone).format(DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm"))
-            ui.add(content, ui.row(healthDisplayValue(record.draft), "$time \u00b7 ${getString(healthRecordSourceResource(record.source))}") {
+            val source = if (record.source == "bluetooth") healthBluetoothTrendLabel(record.bluetoothGroup, record.platformOrigin)
+                else getString(healthRecordSourceResource(record.source))
+            ui.add(content, ui.row(healthDisplayValue(record.draft), "$time \u00b7 $source") {
                 if (numeric || fixedVersion) openRevision(record.id, record.revision)
                 else startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id).putHealthNavigationFixture(names))
             }.apply { tag = "health-trend-record-${record.id}" }, 8)
