@@ -345,6 +345,9 @@
 "galaxyssi.health.table.sheet_row" = "工作表第 %lld 行";
 "galaxyssi.health.table.formula_cache" = "允许使用公式缓存值，不执行公式";
 "galaxyssi.health.table.excel_date" = "Excel 日期序列值";
+"galaxyssi.health.table.date_only_time" = "为只有日期的单元格设置时间";
+"galaxyssi.health.table.date_only_hour" = "小时：%02lld";
+"galaxyssi.health.table.date_only_minute" = "分钟：%02lld";
 "galaxyssi.health.table.workbook_failed" = "无法打开此测量表格。";
 "galaxyssi.health.table.worksheet_failed" = "无法读取此工作表。";
 "galaxyssi.health.table.history" = "已导入的批次";

@@ -141,23 +141,47 @@ struct GalaxySSIHealthTableImportView: View {
           Text(t("excel_date", "Excel date serial")).tag(GalaxySSIHealthTableImport.DateStyle.excel)
         }
       }
-      if mapping.dateStyle != .iso {
+      if mapping.dateStyle != .iso || input.worksheet != nil {
         Picker(t("zone", "Time zone"), selection: $mapping.localZone) {
           Text(TimeZone.current.identifier).tag(TimeZone.current)
           if let utc = TimeZone(identifier: "Etc/UTC"), utc != .current { Text("UTC").tag(utc) }
         }
       }
-      if mapping.metric.units.count > 1 {
-        Picker(t("unit_picker", "Unit"), selection: Binding(
-          get: { mapping.unitOverride ?? mapping.metric.unit }, set: { mapping.unitOverride = $0; mapping.confirmedUnit = false })) {
-          ForEach(mapping.metric.units, id: \.self) { Text($0).tag($0) }
+      Group {
+        if mapping.metric.units.count > 1 {
+          Picker(t("unit_picker", "Unit"), selection: Binding(
+            get: { mapping.unitOverride ?? mapping.metric.unit }, set: { mapping.unitOverride = $0; mapping.confirmedUnit = false })) {
+            ForEach(mapping.metric.units, id: \.self) { Text($0).tag($0) }
+          }
+        }
+        let unit = mapping.unitOverride ?? mapping.metric.unit
+        Toggle(unit.isEmpty ? t("unitless", "The selected results are unitless") :
+          String(format: t("unit", "The selected values use %@"), unit), isOn: $mapping.confirmedUnit)
+        if input.table.isoDates?.contains(where: { $0.contains(mapping.date) }) == true {
+          Toggle(t("date_only_time", "Set time for date-only cells"), isOn: Binding(
+            get: { mapping.dateOnlyMinute != nil }, set: { mapping.dateOnlyMinute = $0 ? 0 : nil }))
+          if mapping.dateOnlyMinute != nil {
+            Stepper(value: dateOnlyPart(hours: true), in: 0...23) {
+              Text(String(format: t("date_only_hour", "Hour: %02lld"), Int64((mapping.dateOnlyMinute ?? 0) / 60)))
+            }
+            Stepper(value: dateOnlyPart(hours: false), in: 0...59) {
+              Text(String(format: t("date_only_minute", "Minute: %02lld"), Int64((mapping.dateOnlyMinute ?? 0) % 60)))
+            }
+          }
         }
       }
-      let unit = mapping.unitOverride ?? mapping.metric.unit
-      Toggle(unit.isEmpty ? t("unitless", "The selected results are unitless") :
-        String(format: t("unit", "The selected values use %@"), unit), isOn: $mapping.confirmedUnit)
       Button(t("review", "Review rows"), action: prepare)
     }
+  }
+
+  private func dateOnlyPart(hours: Bool) -> Binding<Int> {
+    Binding(get: {
+      let time = mapping.dateOnlyMinute ?? 0
+      return hours ? time / 60 : time % 60
+    }, set: { value in
+      let time = mapping.dateOnlyMinute ?? 0
+      mapping.dateOnlyMinute = hours ? value * 60 + time % 60 : time / 60 * 60 + value
+    })
   }
 
   private func review(_ rows: [GalaxySSIHealthTableImport.Row]) -> some View {

@@ -36,6 +36,7 @@ enum GalaxySSIHealthTableImport {
     var rowNumbers: [Int]?
     var formulas: [Set<Int>]?
     var date1904: Bool?
+    var isoDates: [Set<Int>]?
   }
 
   struct Mapping: Equatable {
@@ -50,6 +51,7 @@ enum GalaxySSIHealthTableImport {
     var localZone = TimeZone.current
     var useFormulaCache = false
     var unitOverride: String?
+    var dateOnlyMinute: Int?
 
     var sourceColumns: [String: Int] {
       var result = ["value": value, "measured_at": date, "notes": notes]
@@ -102,7 +104,9 @@ enum GalaxySSIHealthTableImport {
          used.contains(where: { formulas.contains($0) }) { return row(.invalid) }
       guard required.allSatisfy({ !token($0).isEmpty }) else { return row(.missing) }
       let time: Date?
-      if mapping.dateStyle == .iso {
+      if table.isoDates?[index].contains(mapping.date) == true {
+        time = GalaxySSIHealthXLSX.isoDate(rawDate, zone: mapping.localZone, dateOnlyMinute: mapping.dateOnlyMinute)
+      } else if mapping.dateStyle == .iso {
         time = fractional.date(from: rawDate) ?? iso.date(from: rawDate)
       } else if mapping.dateStyle == .excel, let serial = number(rawDate), let date1904 = table.date1904 {
         time = GalaxySSIHealthXLSX.date(serial: serial, date1904: date1904, zone: mapping.localZone)

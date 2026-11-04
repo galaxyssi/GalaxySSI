@@ -411,9 +411,11 @@ struct GalaxySSIHealthCenterView: View {
           TextField(t("catalog.reference", "Report reference interval (optional)"), text: Binding(
             get: { editor?.referenceInterval ?? "" }, set: { editor?.referenceInterval = $0 }))
         }
-        DatePicker(t("time", "Measured at"), selection: field(\.measuredAt, Date()), in: ...Date())
-        TextField(t("conditions", "Conditions"), text: field(\.conditions, ""))
-        TextField(t("notes", "Notes"), text: field(\.notes, ""))
+        Group {
+          DatePicker(t("time", "Measured at"), selection: field(\.measuredAt, Date()), in: ...Date())
+          TextField(t("conditions", "Conditions"), text: field(\.conditions, ""))
+          TextField(t("notes", "Notes"), text: field(\.notes, ""))
+        }
         Button(t("save_draft", "Save draft"), action: saveDraft)
         if archive?.draft?.id == draft.id {
           Button(t("discard", "Discard draft"), role: .destructive) { alert = .discardDraft }
