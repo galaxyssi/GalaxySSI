@@ -38,6 +38,27 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0), body)
     XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "other", descriptor: descriptor, index: 0))
     XCTAssertEqual(request.verifyOriginal([body], descriptor: descriptor), body)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let suite = "desktop-tool-archive-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      fileURL: directory.appendingPathComponent("history.sqlite"))
+    XCTAssertThrowsError(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]))
+    let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
+      conversationId: "group", taskId: "turn", primaryAgentId: "primary", goal: "Research",
+      visibilityMode: .background, state: .running, members: [
+        AgentTeamMemberSnapshot(agentId: "review", deliveryMode: .observe, status: .pending,
+          instanceId: "member", sourceMessageId: source)
+      ], createdAtMillis: 1, updatedAtMillis: 1)
+    XCTAssertTrue(history.upsert(snapshot))
+    XCTAssertEqual(try history.consumeOwnedReply(source: source, conversation: "group", turn: "turn",
+      task: source, contact: "review", content: "Completed", richOutputJson: "", terminal: true,
+      success: true, now: 2, observation: AgentTeamReplyObservation(generation: 2, sequence: 1)), .observerCommitted)
+    let receipt = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body])
+    XCTAssertEqual(receipt.sha256, descriptor.sha256)
+    XCTAssertEqual(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]), receipt)
     var index = response
     index["mode"] = .string("index")
     index["entries"] = .array([.object(response)])

@@ -6,6 +6,16 @@ enum AgentDesktopToolEvidenceWire {
   static let maximumPageBytes = 16 * 1_024
   static let maximumOriginalBytes = 8 * 1_024 * 1_024
 
+  struct ArchiveReceipt: Codable, Equatable {
+    let archiveId: String
+    let desktopId: String
+    let evidenceId: String
+    let sha256: String
+    let generation: Int64
+    let totalBytes: Int
+    let pageCount: Int
+  }
+
   struct Descriptor: Equatable {
     let evidenceId: String
     let sha256: String
