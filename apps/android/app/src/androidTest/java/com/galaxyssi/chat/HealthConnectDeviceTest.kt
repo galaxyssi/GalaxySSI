@@ -106,7 +106,7 @@ class HealthConnectDeviceTest {
                 assertEquals(1, store.importHealthConnect(listOf(bp("external"))) {})
                 assertEquals(0, store.importHealthConnect(listOf(bp("external"))) {})
                 assertEquals(2L, store.count())
-                assertEquals(5, store.tableDatabase.version)
+                assertEquals(HealthRecordStore.SCHEMA_VERSION, store.tableDatabase.version)
             }
         } finally { context.deleteDatabase(name) }
     }

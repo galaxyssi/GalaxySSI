@@ -129,7 +129,7 @@ class HealthTrendStoreDeviceTest {
             val first = seedLegacyHealthObservation(context, name, 3, draft(s, 0))
             HealthRecordStore(context, name).use { reopened ->
                 assertEquals(first, reopened.record(first.id)); assertEquals(1, reopened.history(first.id).size)
-                assertEquals("", reopened.metricVersion(s.metric)); assertEquals(5, reopened.tableDatabase.version)
+                assertEquals("", reopened.metricVersion(s.metric)); assertEquals(HealthRecordStore.SCHEMA_VERSION, reopened.tableDatabase.version)
                 val edit = reopened.save(first.editable().copy(note = "verified"))
                 assertTrue(edit is HealthSaveResult.Saved); assertTrue(reopened.metricVersion(s.metric).isNotBlank())
             }

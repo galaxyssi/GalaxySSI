@@ -235,19 +235,67 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     @Synchronized fun importHealthConnect(rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): Int {
         require(rows.size <= HealthConnectImport.MAX_ROWS)
         val db = helper.writableDatabase
-        var inserted = 0
         db.beginTransaction()
         try {
-            for (row in rows) {
-                ensureActive()
-                val key = AgentMemoryIndexKey.token("$name|health-connect-v1|${row.draft.metric.name}|${row.origin}|${row.id}")
-                if (db.rawQuery("SELECT 1 FROM observations WHERE external_key=?", arrayOf(key)).use { it.moveToFirst() }) continue
-                if (saveWithinTransaction(row.draft, key, HealthLinkedSource("health_connect", row.origin)) is HealthSaveResult.Saved) inserted++
-            }
+            val inserted = insertHealthConnectRows(rows, ensureActive)
             ensureActive()
             db.setTransactionSuccessful()
             return inserted
         } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+
+    private fun insertHealthConnectRows(rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): Int {
+        val db = helper.writableDatabase
+        var inserted = 0
+        for (row in rows) {
+            ensureActive()
+            val key = AgentMemoryIndexKey.token("$name|health-connect-v1|${row.draft.metric.name}|${row.origin}|${row.id}")
+            if (db.rawQuery("SELECT 1 FROM observations WHERE external_key=?", arrayOf(key)).use { it.moveToFirst() }) continue
+            if (saveWithinTransaction(row.draft, key, HealthLinkedSource("health_connect", row.origin)) is HealthSaveResult.Saved) inserted++
+        }
+        return inserted
+    }
+
+    fun healthSyncCheckpoint(scope: HealthConnectScope): HealthSyncCheckpoint = readHealthSync("connect:${scope.name}")?.let {
+        HealthSyncCheckpoint.from(it).also { mark -> check(mark.scope == scope) }
+    } ?: HealthSyncCheckpoint(scope)
+
+    fun saveHealthSyncCheckpoint(mark: HealthSyncCheckpoint) = writeHealthSync("connect:${mark.scope.name}", mark.json())
+
+    @Synchronized fun saveHealthSyncChunk(mark: HealthSyncCheckpoint, rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): HealthSyncCheckpoint {
+        require(rows.isNotEmpty() && rows.size <= HealthConnectImport.MAX_ROWS)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val inserted = insertHealthConnectRows(rows, ensureActive)
+            val next = mark.copy(pendingInserts = Math.addExact(mark.pendingInserts, inserted),
+                latestMeasurement = maxOf(mark.latestMeasurement, rows.maxOf { it.draft.measuredAt }))
+            saveHealthSyncCheckpoint(next)
+            ensureActive()
+            db.setTransactionSuccessful()
+            return next
+        } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+
+    fun lastBluetoothReceipt(): Long = readHealthSync("bluetooth")?.getLong("received") ?: 0L
+
+    private fun readHealthSync(key: String): JSONObject? = helper.readableDatabase.rawQuery(
+        "SELECT payload FROM health_sync_checkpoints WHERE source=?", arrayOf(key)
+    ).use {
+        if (!it.moveToFirst()) null else {
+            val bytes = AgentStorageCipher.decryptBinary(it.getBlob(0), aad("sync:$key", 1))
+            try { JSONObject(String(bytes, Charsets.UTF_8)) } finally { bytes.fill(0) }
+        }
+    }
+
+    private fun writeHealthSync(key: String, json: JSONObject) {
+        val bytes = json.toString().toByteArray(Charsets.UTF_8)
+        val encrypted = try { AgentStorageCipher.encryptBinary(bytes, aad("sync:$key", 1)) } finally { bytes.fill(0) }
+        try {
+            check(helper.writableDatabase.insertWithOnConflict("health_sync_checkpoints", null, ContentValues().apply {
+                put("source", key); put("payload", encrypted)
+            }, SQLiteDatabase.CONFLICT_REPLACE) != -1L)
+        } finally { encrypted.fill(0) }
     }
 
     @Synchronized fun saveBluetooth(receipt: HealthBluetoothReceipt, condition: String, active: () -> Unit): HealthSaveResult {
@@ -260,6 +308,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 .use { if (it.moveToFirst()) it.getString(0) else null }
             val result = if (previous != null) HealthSaveResult.Duplicate(previous)
                 else saveWithinTransaction(receipt.draft(condition), key, HealthLinkedSource("bluetooth", receipt.label, receipt.receivedAt, receipt.clockText))
+            if (result is HealthSaveResult.Saved && receipt.receivedAt > lastBluetoothReceipt())
+                writeHealthSync("bluetooth", JSONObject().put("received", receipt.receivedAt))
             active()
             db.setTransactionSuccessful()
             return result
@@ -362,7 +412,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     fun clearDraft(key: String) { helper.writableDatabase.delete("drafts", "draft_key=?", arrayOf(key)) }
     override fun close() = helper.close()
 
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 5) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, SCHEMA_VERSION) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
@@ -379,9 +429,10 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             HealthTableStore.createSchema(db)
             createClocks(db)
             indexPlatformRecords(db)
+            createSyncCheckpoints(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..4 && newVersion == 5) { "Unsupported health schema upgrade" }
+            check(oldVersion in 1 until SCHEMA_VERSION && newVersion == SCHEMA_VERSION) { "Unsupported health schema upgrade" }
             if (oldVersion < 2) {
                 db.execSQL("ALTER TABLE observations ADD COLUMN original_id TEXT")
                 db.execSQL("ALTER TABLE observations ADD COLUMN evidence_key TEXT")
@@ -390,14 +441,20 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             }
             if (oldVersion < 3) HealthTableStore.createSchema(db)
             createClocks(db)
-            db.execSQL("ALTER TABLE observations ADD COLUMN external_key TEXT")
-            indexPlatformRecords(db)
+            if (oldVersion < 5) {
+                db.execSQL("ALTER TABLE observations ADD COLUMN external_key TEXT")
+                indexPlatformRecords(db)
+            }
+            createSyncCheckpoints(db)
         }
         private fun indexPlatformRecords(db: SQLiteDatabase) =
             db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
+        private fun createSyncCheckpoints(db: SQLiteDatabase) =
+            db.execSQL("CREATE TABLE health_sync_checkpoints(source TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         private fun createClocks(db: SQLiteDatabase) { db.execSQL("CREATE TABLE IF NOT EXISTS health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)") }
     }
     companion object {
+        const val SCHEMA_VERSION = 6
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
         fun draftKey(draft: HealthDraft) = when {

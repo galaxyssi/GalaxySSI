@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_sync_title">Sync and Data Coverage</string>
+    <string name="health_sync_running">Syncing…</string>
+    <string name="health_sync_select">Choose data types in Health Connect authorization first.</string>
+    <string name="health_sync_foreground">Sync runs only while this page is open. This is not live monitoring.</string>
+    <string name="health_sync_permission">Required Health Connect permission was not granted or was revoked.</string>
+    <string name="health_sync_no_success">No completed sync yet.</string>
+    <string name="health_sync_success_time">Last successful metric sync: %1$s</string>
+    <string name="health_sync_coverage">Data Coverage</string>
+    <string name="health_sync_no_coverage">No source data has been synced yet.</string>
+    <string name="health_sync_updated">%1$d new measurements saved</string>
+    <string name="health_sync_latest">Latest source measurement: %1$s</string>
+    <string name="health_sync_attempt">Last attempt: %1$s</string>
+    <string name="health_sync_pending">%1$d measurements saved before interruption</string>
+    <string name="health_sync_source_deleted">Health Connect reported a deletion. Existing local copies were kept.</string>
+    <string name="health_sync_gap">Some older dates are outside the default recovery window. Older coverage could not be verified.</string>
+    <string name="health_sync_ble_disconnected">Bluetooth device disconnected</string>
+    <string name="health_sync_ble_receipt">Last saved Bluetooth receipt: %1$s</string>
+    <string name="health_sync_ble_no_receipt">No Bluetooth receipt recorded by this version yet.</string>
+    <string name="health_sync_retry">Sync Now</string>
+    <string name="health_sync_pause">Pause Sync</string>
+    <string name="health_sync_paused">Sync paused. Saved progress is kept.</string>
+    <string name="health_sync_interrupted">Sync interrupted. Sync again to resume.</string>
+    <string name="health_sync_not_started">Not synced yet</string>
+    <string name="health_sync_no_new">No new measurements</string>
+    <string name="health_sync_unavailable">Health Connect is unavailable.</string>
+    <string name="health_sync_network">Network connection failed. Sync again when connected.</string>
+    <string name="health_sync_transport">Could not reach the Health Connect service.</string>
+    <string name="health_sync_timeout">Health Connect did not respond in time.</string>
+    <string name="health_sync_storage">Could not read or save local sync progress.</string>
+    <string name="health_sync_failed">Could not complete this sync. Saved progress is kept.</string>
+    <string name="health_sync_busy">A sync is already running.</string>
+    <string name="health_sync_confirm">Sync to My Records?</string>
+    <string name="health_sync_confirm_detail">%1$s\n\nConfirm these source measurements belong to you. New records will be saved to your encrypted local archive. The first sync checks recent data; later syncs resume from saved progress. Existing local copies and edits are kept.</string>
+</resources>
