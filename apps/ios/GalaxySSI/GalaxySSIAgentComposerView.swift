@@ -71,6 +71,13 @@ struct GalaxySSIAgentComposerView: View {
   }
 
   private var mentionSuggestions: [AgentCallableTarget] {
+    if let roster = collaborationRoster {
+      return AgentCollaborationMentionText.suggestions(for: draft, roster: roster).map { member in
+        AgentCallableTarget(id: member.id.uuidString,
+          title: member.role.isBlank ? member.name : "\(member.name) · \(member.role)",
+          kind: .agent, status: .available, capabilities: [])
+      }
+    }
     let activeCounts = UserDefaultsAgentGlobalRunSlotStore.shared.activeCounts()
     let registrations = callableTargets.map { target -> AgentRegistration in
       var registration = AgentMentionCandidatePolicy.registration(for: target)
@@ -96,6 +103,10 @@ struct GalaxySSIAgentComposerView: View {
       targets: candidates.compactMap { targetsById[$0.agentId] },
       sortByTitle: false
     )
+  }
+
+  private var collaborationRoster: AgentCollaborationRoster? {
+    store.agentSession(id: store.activeAgentConversationId)?.collaborationRoster
   }
 
   private var voicePreparingSubtitle: String {
@@ -231,7 +242,12 @@ struct GalaxySSIAgentComposerView: View {
       HStack(spacing: 8) {
         ForEach(mentionSuggestions, id: \.id) { target in
           Button {
-            draft = AgentMentionText.inserting(target, into: draft)
+            if let roster = collaborationRoster,
+               let member = roster.members.first(where: { $0.id.uuidString == target.id }) {
+              draft = AgentCollaborationMentionText.inserting(member, into: draft)
+            } else {
+              draft = AgentMentionText.inserting(target, into: draft)
+            }
             inputFocused = true
           } label: {
             HStack(spacing: 6) {
