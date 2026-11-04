@@ -33,6 +33,7 @@ class HealthAssistantActivity : Activity() {
     private var metrics = setOf(HealthMetric.SLEEP_DURATION, HealthMetric.STEPS)
     private var focus = HealthAnalysisFocus.CHANGES
     private var profileFields = emptySet<HealthProfileField>()
+    private var background = emptyMap<String, HealthAnalysisBackgroundChoice>()
     private var active = false
     private var generation = 0
     private var job: Job? = null
@@ -44,12 +45,22 @@ class HealthAssistantActivity : Activity() {
     private var notice: Int? = null
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
-            if (active && (preview != null || job?.isActive == true)) reset(R.string.health_assistant_changed)
+            if (active && (preview != null || job?.isActive == true || dialog?.isShowing == true))
+                reset(R.string.health_assistant_changed)
+        }
+    }
+    private val privacyObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            val scoped = profileFields.isNotEmpty() || background.isNotEmpty()
+            profileFields = emptySet()
+            background = emptyMap()
+            if (active && scoped) reset(R.string.health_assistant_changed)
+            else observer.onChange(selfChange)
         }
     }
     private val profileObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
-            if (!active || profileFields.isEmpty()) return
+            if (!active || (profileFields.isEmpty() && background.isEmpty())) return
             val result = preview
             if (result == null) {
                 if (job?.isActive == true) reset(R.string.health_assistant_profile_changed)
@@ -78,7 +89,7 @@ class HealthAssistantActivity : Activity() {
         super.onResume()
         active = true
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, names.records), false, observer)
-        contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, names.privacy), false, observer)
+        contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, names.privacy), false, privacyObserver)
         contentResolver.registerContentObserver(HealthProfileStore.changes(this, names.profile), false, profileObserver)
         render()
     }
@@ -86,8 +97,10 @@ class HealthAssistantActivity : Activity() {
     override fun onPause() {
         active = false
         contentResolver.unregisterContentObserver(observer)
+        contentResolver.unregisterContentObserver(privacyObserver)
         contentResolver.unregisterContentObserver(profileObserver)
         profileFields = emptySet()
+        background = emptyMap()
         reset()
         body.removeAllViews()
         super.onPause()
@@ -127,6 +140,10 @@ class HealthAssistantActivity : Activity() {
             if (profileFields.isEmpty()) getString(R.string.health_assistant_profile_none)
             else healthAnalysisProfileFields.filter { it in profileFields }.joinToString(", ") { getString(it.titleResource()) }
         ) { chooseProfile() }.apply { tag = "health-assistant-profile" }, 6)
+        ui.add(content, ui.profileRow(getString(R.string.health_assistant_background),
+            if (background.isEmpty()) getString(R.string.health_assistant_profile_none)
+            else getString(R.string.health_assistant_background_count, background.size, healthAnalysisBackgroundLimit)
+        ) { chooseBackground() }.apply { tag = "health-assistant-background" }, 6)
         ui.add(content, ui.text(getString(R.string.health_assistant_local_scope), 13f, muted = true), 8)
         if (preview == null) ui.add(content, ui.command(R.string.health_assistant_calculate) { calculate() }.apply {
             tag = "health-assistant-calculate"
@@ -171,6 +188,19 @@ class HealthAssistantActivity : Activity() {
                     tag = "health-assistant-profile-${field.name}"
                 }, 6)
             }
+            profile.entries.groupBy { it.kind }.toSortedMap().forEach { (kind, entries) ->
+                ui.add(content, ui.text(getString(kind.titleResource()), 14f, bold = true), 10)
+                entries.forEach { entry ->
+                    ui.add(content, ui.text(entry.name, 14f, bold = true).apply {
+                        tag = "health-assistant-background-result-${entry.id}"
+                    }, 6)
+                    if (entry.detail.isNotBlank()) ui.add(content, ui.text(entry.detail, 14f), 4)
+                    if (entry.dose.isNotBlank()) ui.add(content, ui.text(getString(R.string.health_assistant_profile_value,
+                        getString(R.string.health_profile_dose), entry.dose), 14f), 4)
+                    if (entry.timing.isNotBlank()) ui.add(content, ui.text(getString(R.string.health_assistant_profile_value,
+                        getString(R.string.health_profile_timing), entry.timing), 14f), 4)
+                }
+            }
         }
         ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 12)
         val actions = plan?.actions ?: when (focus) {
@@ -195,9 +225,10 @@ class HealthAssistantActivity : Activity() {
         val scope = selection()
         val question = focus
         val fields = profileFields
+        val entries = background.mapValues { it.value.token }
         reset(R.string.health_loading)
         val cancel = CancellationSignal().also { signal = it }
-        work({ HealthAnalysis.prepare(applicationContext, names, scope, question, cancel, fields) }) {
+        work({ HealthAnalysis.prepare(applicationContext, names, scope, question, cancel, fields, entries) }) {
             preview = it
             notice = if (it.hasData) null else R.string.health_assistant_no_data
             render()
@@ -318,6 +349,16 @@ class HealthAssistantActivity : Activity() {
                     reset()
                 }
             }.show()
+    }
+
+    private fun chooseBackground() {
+        dialog = chooseHealthAnalysisBackground(tasks, names, background,
+            blocked = { reset(R.string.health_assistant_profile_blocked) }) { selected ->
+            if (selected != background) {
+                background = selected
+                reset()
+            }
+        }
     }
 
     private fun focusLabel(value: HealthAnalysisFocus) = when (value) {

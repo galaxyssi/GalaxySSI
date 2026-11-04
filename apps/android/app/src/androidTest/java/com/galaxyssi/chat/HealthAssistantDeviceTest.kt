@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.view.inspector.WindowInspector
 import android.widget.Button
 import android.widget.ListView
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -57,6 +58,141 @@ class HealthAssistantDeviceTest {
 
     private fun withProfile(names: HealthOverviewDatabases, vararg fields: HealthProfileField) =
         HealthAnalysis.prepare(context, names, scope, HealthAnalysisFocus.CHANGES, profileFields = fields.toSet())
+
+    private fun withBackground(names: HealthOverviewDatabases, vararg entries: HealthBackgroundEntry) =
+        HealthAnalysis.prepare(context, names, scope, HealthAnalysisFocus.CHANGES,
+            profileEntries = entries.associate { it.id to it.token })
+
+    private fun addBackground(store: HealthProfileStore, kind: HealthBackgroundKind, label: String): HealthBackgroundEntry =
+        store.newEntry(kind).let { draft -> store.saveEntry(draft.copy(entry = draft.entry.copy(name = label))) }
+
+    @Test fun chosenBackgroundRevisionsAreLocalAndAuditOnlyTheCount() = fixture { names ->
+        sleep(names)
+        val chosen = HealthProfileStore(context, names.profile, names.privacy).use { store ->
+            val history = addBackground(store, HealthBackgroundKind.HISTORY, "Fixture history")
+            val medication = addBackground(store, HealthBackgroundKind.MEDICATION, "Fixture medication")
+            val allergy = addBackground(store, HealthBackgroundKind.ALLERGY, "Fixture allergy")
+            val draft = store.editEntry(medication.id)
+            store.draft(draft.copy(entry = draft.entry.copy(name = "Unsaved name")))
+            addBackground(store, HealthBackgroundKind.HISTORY, "Not chosen")
+            listOf(history, medication, allergy)
+        }
+        val defaults = prepare(names)
+        assertNull(defaults.profile)
+        val preview = withBackground(names, *chosen.toTypedArray())
+        assertEquals(chosen.toSet(), preview.profile?.entries?.toSet())
+        assertEquals(HealthAnalysis.payload(defaults).toString(), HealthAnalysis.payload(preview).toString())
+        HealthPrivacyStore(context, names.privacy).use { store ->
+            val access = store.page().entries.single { it.scope.purpose == HealthAccessPurpose.PROFILE_CONTEXT }
+            assertEquals(3L, access.scope.count)
+            assertFalse(access.json().toString().contains("Fixture"))
+            chosen.forEach { assertFalse(access.json().toString().contains(it.id)) }
+        }
+    }
+
+    @Test fun changedSelectionIsRejectedBeforeCaptureAndDuringExchange() = fixture { names ->
+        sleep(names)
+        grant(names, true)
+        HealthProfileStore(context, names.profile, names.privacy).use { store ->
+            val old = addBackground(store, HealthBackgroundKind.ALLERGY, "Fixture old")
+            val other = addBackground(store, HealthBackgroundKind.ALLERGY, "Unselected")
+            val preview = withBackground(names, old)
+            store.deleteEntry(other.id, other.token, store.currentGeneration())
+            HealthAnalysis.requireCurrent(context, names, preview, online = true)
+            val changed = store.editEntry(old.id).let { store.saveEntry(it.copy(entry = it.entry.copy(name = "Fixture changed"))) }
+            assertThrows(HealthAnalysisProfileChanged::class.java) { withBackground(names, old) }
+            assertFalse(HealthAnalysis.profileIsCurrent(context, names, preview))
+            val refreshed = withBackground(names, changed)
+            assertThrows(HealthAnalysisProfileChanged::class.java) {
+                runBlocking {
+                    HealthAnalysis.explain(context, names, refreshed, destination) { _, _ ->
+                        store.deleteEntry(changed.id, changed.token, store.currentGeneration())
+                        reply
+                    }
+                }
+            }
+            assertThrows(HealthAnalysisProfileChanged::class.java) { withBackground(names, changed) }
+        }
+    }
+
+    @Test fun blockedProfilePolicyPreventsBrowsingAndReadingBackground() = fixture { names ->
+        val item = HealthProfileStore(context, names.profile, names.privacy).use {
+            addBackground(it, HealthBackgroundKind.MEDICATION, "Fixture only")
+        }
+        HealthPrivacyStore(context, names.privacy).use {
+            it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version)
+        }
+        assertThrows(HealthAnalysisProfileBlocked::class.java) { HealthAnalysis.backgroundPage(context, names, item.kind, null) }
+        assertThrows(HealthAnalysisProfileBlocked::class.java) { withBackground(names, item) }
+        assertNull(prepare(names).profile)
+    }
+
+    @Test fun nativeBackgroundPickerRetainsCrossPageSelectionAndRemovesADeletedChoice() = fixture { names ->
+        assumeFalse("Health assistant dialog UI requires an unlocked Android 10+ display",
+            android.os.Build.VERSION.SDK_INT < 29 || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        sleep(names)
+        val (recent, older, medication) = HealthProfileStore(context, names.profile, names.privacy).use { store ->
+            repeat(31) { addBackground(store, HealthBackgroundKind.HISTORY, "History fixture $it") }
+            val page = store.page(HealthBackgroundKind.HISTORY)
+            Triple(page.entries.first(), store.page(HealthBackgroundKind.HISTORY, requireNotNull(page.next)).entries.single(),
+                addBackground(store, HealthBackgroundKind.MEDICATION, "Medication fixture"))
+        }
+        val intent = Intent(context, HealthAssistantActivity::class.java).putExtra("health_assistant_test_id", names.fixture)
+        ActivityScenario.launch<HealthAssistantActivity>(intent).use { scenario ->
+            fun tap(tag: String) = scenario.onActivity {
+                assertTrue(requireNotNull(find(it.window.decorView, tag)).performClick())
+            }
+            fun dialogAction(tag: String, action: (View) -> Unit = { assertTrue(it.performClick()) }) {
+                val until = SystemClock.elapsedRealtime() + 10_000
+                do {
+                    var found = false
+                    scenario.onActivity {
+                        WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull { root -> find(root, tag) }?.let {
+                            found = true
+                            action(it)
+                        }
+                    }
+                    if (found) return
+                    SystemClock.sleep(40)
+                } while (SystemClock.elapsedRealtime() < until)
+                fail("Missing dialog view: $tag")
+            }
+            fun choose(entry: HealthBackgroundEntry) = dialogAction("health-assistant-background-choice-${entry.id}")
+            fun category(index: Int) = dialogAction("health-assistant-background-category") { (it as Spinner).setSelection(index) }
+            fun closePicker(buttonId: Int) = scenario.onActivity {
+                val button = WindowInspector.getGlobalWindowViews().mapNotNull { it.findViewById<Button>(buttonId) }.last()
+                assertTrue(button.performClick())
+            }
+            fun result(entry: HealthBackgroundEntry) = "health-assistant-background-result-${entry.id}"
+            tap("health-assistant-background")
+            choose(recent)
+            dialogAction("health-assistant-background-next")
+            choose(older)
+            category(HealthBackgroundKind.MEDICATION.ordinal)
+            choose(medication)
+            closePicker(android.R.id.button1)
+            tap("health-assistant-calculate")
+            listOf(recent, older, medication).forEach { awaitView(scenario, result(it)) }
+            tap("health-assistant-background")
+            category(HealthBackgroundKind.entries.size)
+            choose(recent)
+            closePicker(android.R.id.button2)
+            awaitView(scenario, result(recent))
+            HealthProfileStore(context, names.profile, names.privacy).use {
+                it.deleteEntry(older.id, older.token, it.currentGeneration())
+            }
+            awaitView(scenario, "health-assistant-status")
+            scenario.onActivity { assertNull(find(it.window.decorView, result(older))) }
+            tap("health-assistant-background")
+            category(HealthBackgroundKind.entries.size)
+            choose(older)
+            closePicker(android.R.id.button1)
+            tap("health-assistant-calculate")
+            awaitView(scenario, result(recent))
+            awaitView(scenario, result(medication))
+            scenario.onActivity { assertNull(find(it.window.decorView, result(older))) }
+        }
+    }
 
     @Test fun onlySelectedProfileFieldsAreReadAndNeverIncludedInProviderPayload() = fixture { names ->
         sleep(names)

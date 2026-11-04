@@ -143,9 +143,15 @@ internal class HealthProfileStore(private val context: Context, private val name
         if (entry.token != token) throw HealthProfileConflict()
         db.delete("entries", "id=?", arrayOf(id)); db.delete("drafts", "id=?", arrayOf("edit:$id")); tick("drafts"); tick("category:${entry.kind.name}"); tick("profile"); Unit
     }
-    fun capture(fields: Set<HealthProfileField>, entryIds: Set<String>): HealthProfileContext = HealthPrivacyStore.track(context,
+    fun capture(fields: Set<HealthProfileField>, entryIds: Set<String>, expectedEntries: Map<String, String> = emptyMap()): HealthProfileContext = HealthPrivacyStore.track(context,
         HealthAccessScope(HealthAccessPurpose.PROFILE_CONTEXT, fields = fields, count = entryIds.size.toLong()), privacyDatabase) { transaction {
-        val selected = fields.associateWith(::cell); val entries = entryIds.sorted().map { requireNotNull(entry(it)) }
+        require(entryIds.containsAll(expectedEntries.keys))
+        val selected = fields.associateWith(::cell)
+        val entries = entryIds.sorted().map { id ->
+            val saved = entry(id) ?: throw HealthProfileConflict()
+            if (expectedEntries[id]?.let { it != saved.token } == true) throw HealthProfileConflict()
+            saved
+        }
         HealthProfileContext(selected.mapValues { it.value.value }, entries, HealthProfileStamp(generation(),
             selected.mapKeys { "field:${it.key.name}" }.mapValues { it.value.token } + entries.associate { "entry:${it.id}" to it.token }))
     } }
