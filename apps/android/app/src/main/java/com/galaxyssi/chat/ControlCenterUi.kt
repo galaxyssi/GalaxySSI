@@ -35,6 +35,7 @@ enum class ControlCenterRoute(
     SKILLS_HUB("skills_hub"),
     SAFETY_HUB("safety_hub"),
     PROACTIVE_HUB("proactive_hub"),
+    HEALTH_CENTER("health_center"),
     SCHEDULED_TASKS("scheduled_tasks"),
     OBSIDIAN_HUB("obsidian_hub"),
     STORAGE_HUB("storage_hub"),
@@ -82,7 +83,8 @@ object ControlCenterHomeGrouping {
         ControlCenterHomeGroup.COMMON to listOf(
             ControlCenterRoute.MODEL_HUB, ControlCenterRoute.DEVICE_HUB,
             ControlCenterRoute.VOICE, ControlCenterRoute.SCREEN_ASSISTANT, ControlCenterRoute.MEMORY_HUB,
-            ControlCenterRoute.PROACTIVE_HUB, ControlCenterRoute.SCHEDULED_TASKS, ControlCenterRoute.SKILLS_HUB
+            ControlCenterRoute.PROACTIVE_HUB, ControlCenterRoute.HEALTH_CENTER,
+            ControlCenterRoute.SCHEDULED_TASKS, ControlCenterRoute.SKILLS_HUB
         ),
         ControlCenterHomeGroup.SETTINGS to listOf(
             ControlCenterRoute.SAFETY_HUB, ControlCenterRoute.GENERAL, ControlCenterRoute.ADVANCED

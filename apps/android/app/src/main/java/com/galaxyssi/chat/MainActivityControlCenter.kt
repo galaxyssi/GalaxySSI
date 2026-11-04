@@ -735,6 +735,10 @@ internal fun MainActivity.renderCurrentControlCenterDestination() {
             ControlCenterRoute.SKILLS_HUB -> renderMyAgentSkillsPage()
             ControlCenterRoute.SAFETY_HUB -> renderMyAgentSafetyPage()
             ControlCenterRoute.PROACTIVE_HUB -> renderMyAgentProactivePage()
+            ControlCenterRoute.HEALTH_CENTER -> {
+                startActivity(Intent(this, HealthCenterActivity::class.java))
+                controlCenterDestination = null
+            }
             ControlCenterRoute.SCHEDULED_TASKS -> showScheduledTasksPage()
             ControlCenterRoute.OBSIDIAN_HUB -> renderMyAgentObsidianPage()
             ControlCenterRoute.STORAGE_HUB -> renderMyAgentStoragePage()

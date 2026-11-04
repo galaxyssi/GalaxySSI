@@ -17,6 +17,7 @@ internal fun MainActivity.myAgentHomeRow(route: ControlCenterRoute): ControlCent
         ControlCenterRoute.SCREEN_ASSISTANT -> R.string.screen_assistant_title to R.drawable.ic_agent_screen
         ControlCenterRoute.MEMORY_HUB -> R.string.my_agent_memory to R.drawable.ic_agent_memory
         ControlCenterRoute.PROACTIVE_HUB -> R.string.attention_title to R.drawable.ic_settings_notification
+        ControlCenterRoute.HEALTH_CENTER -> R.string.health_title to R.drawable.ic_health_heart
         ControlCenterRoute.SCHEDULED_TASKS -> R.string.schedule_title to R.drawable.ic_automation_line
         ControlCenterRoute.SKILLS_HUB -> R.string.my_agent_skills to R.drawable.ic_agent_skill
         ControlCenterRoute.SAFETY_HUB -> R.string.my_agent_safety to R.drawable.ic_security_shield
@@ -181,6 +182,9 @@ internal fun MainActivity.renderMyAgentDiagnosticsPage() {
 
 internal fun MainActivity.handleMyAgentDesignAction(action: String): Boolean {
     when {
+        action == routeAction(ControlCenterRoute.HEALTH_CENTER) -> {
+            startActivity(android.content.Intent(this, HealthCenterActivity::class.java))
+        }
         action == routeAction(ControlCenterRoute.PROACTIVE_HUB) -> {
             startActivity(android.content.Intent(this, ProactiveAttentionActivity::class.java).putExtra("settings", true))
         }
