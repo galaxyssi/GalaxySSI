@@ -33,24 +33,39 @@ enum AgentCollaborationNumericTrial {
     var checks: [AgentMcpJSONValue] = []
     var failures = 0
     var domainErrors = 0
+    var greatestError: ReplayDecimal?
+    var worst: AgentMcpJSONObject?
+    var worstError: ReplayDecimal?
+    var firstDomainError: AgentMcpJSONObject?
     for item in cases {
       guard let row = item.objectValue, Set(row.keys) == ["id", "input", "expected", "absolute_tolerance"],
             let id = row["id"]?.strictStringValue, !id.isBlank, id.utf8.count <= 128, ids.insert(id).inserted,
             let inputs = row["input"]?.objectValue, Set(inputs.keys) == variables,
-            let expected = number(row["expected"]), let tolerance = number(row["absolute_tolerance"]), tolerance >= 0
+            let expected = decimal(row["expected"], reference: true),
+            let tolerance = decimal(row["absolute_tolerance"], reference: true), !tolerance.negative
       else { return nil }
       let values = inputs.compactMapValues { number($0) }
       guard values.count == inputs.count else { return nil }
       var check: AgentMcpJSONObject = ["id": .string(id), "passed": .bool(false)]
-      if let actual = expression(values) {
-        let error = abs(actual - expected)
-        let passed = error.isFinite && error <= tolerance
+      if let actual = expression(values), let actualDecimal = ReplayDecimal(String(actual)) {
+        let error = ReplayDecimal.distance(actualDecimal, expected)
+        let passed = !tolerance.isLess(than: error)
         check["actual"] = .double(actual)
-        check["absolute_error"] = error.isFinite ? .double(error) : .null
+        check["absolute_error"] = .string(error.text)
         check["passed"] = .bool(passed)
+        if greatestError?.isLess(than: error) ?? true {
+          greatestError = error
+        }
+        let worstPassed = worst?["passed"] == .bool(true)
+        if worst == nil || (worstPassed && !passed) ||
+           (worstPassed == passed && (worstError?.isLess(than: error) ?? true)) {
+          worst = check
+          worstError = error
+        }
         if !passed { failures += 1 }
       } else {
         check["error"] = .string("nonfinite_expression_result")
+        if firstDomainError == nil { firstDomainError = check }
         failures += 1
         domainErrors += 1
       }
@@ -59,7 +74,10 @@ enum AgentCollaborationNumericTrial {
     return [
       "validator_id": .string(validatorId), "passed": .bool(failures == 0),
       "case_count": .int(Int64(cases.count)), "failed_cases": .int(Int64(failures)),
-      "domain_error_cases": .int(Int64(domainErrors)), "checks": .array(checks),
+      "domain_error_cases": .int(Int64(domainErrors)), "finite_cases": .int(Int64(cases.count - domainErrors)),
+      "checks": .array(checks),
+      "max_absolute_error_on_finite_cases": greatestError.map { .string($0.text) } ?? .null,
+      "worst_case": (firstDomainError ?? worst).map(AgentMcpJSONValue.object) ?? .null,
       "spec_sha256": .string(fingerprint(spec)), "model_sha256": .string(fingerprint(model)),
       "meaning": .string("host_float64_replay_not_reference_truth_or_generalization")
     ]
@@ -79,9 +97,9 @@ enum AgentCollaborationNumericTrial {
       if oldPass && !newPass { transitions["regressed", default: []].append(id) }
       if old["error"] != nil && new["error"] == nil { transitions["domain_recovered", default: []].append(id) }
       if old["error"] == nil && new["error"] != nil { transitions["domain_failed", default: []].append(id) }
-      if let a = number(old["absolute_error"]), let b = number(new["absolute_error"]) {
-        if b < a { transitions["error_reduced", default: []].append(id) }
-        if b > a { transitions["error_increased", default: []].append(id) }
+      if let a = decimal(old["absolute_error"]), let b = decimal(new["absolute_error"]) {
+        if b.isLess(than: a) { transitions["error_reduced", default: []].append(id) }
+        if a.isLess(than: b) { transitions["error_increased", default: []].append(id) }
       }
     }
     var result: AgentMcpJSONObject = ["same_registered_cases": .bool(true),
@@ -124,6 +142,84 @@ enum AgentCollaborationNumericTrial {
     case .some(.int(let n)): return Double(n)
     case .some(.double(let n)): return finite(n)
     default: return nil
+    }
+  }
+
+  private static func decimal(_ value: AgentMcpJSONValue?, reference: Bool = false) -> ReplayDecimal? {
+    let text: String
+    switch value {
+    case .some(.int(let n)): text = String(n)
+    case .some(.double(let n)) where n.isFinite: text = String(n)
+    case .some(.string(let raw)): text = raw
+    default: return nil
+    }
+    guard (!reference || text.utf8.count <= 256), let result = ReplayDecimal(text),
+          !reference || (result.digits.count <= 128 && abs(result.exponent) <= 128) else { return nil }
+    return result
+  }
+
+  private struct ReplayDecimal {
+    let digits: [Int]
+    let exponent: Int
+    let negative: Bool
+
+    init?(_ text: String) {
+      guard text.utf8.count <= 2_500 else { return nil }
+      let parts = text.lowercased().split(separator: "e", omittingEmptySubsequences: false)
+      guard (1...2).contains(parts.count),
+            let power = parts.count == 2 ? Int(parts[1]) : 0, (-1_000...1_000).contains(power) else { return nil }
+      let negative = parts[0].first == "-"
+      let unsigned = negative ? parts[0].dropFirst() : parts[0]
+      let mantissa = unsigned.split(separator: ".", omittingEmptySubsequences: false)
+      let bytes = mantissa.joined().utf8
+      guard (1...2).contains(mantissa.count), !bytes.isEmpty,
+            bytes.allSatisfy({ (48...57).contains($0) }) else { return nil }
+      let fraction = mantissa.count == 2 ? mantissa[1].utf8.count : 0
+      self.init(Array(bytes.map { Int($0) - 48 }.reversed()), exponent: power - fraction, negative: negative)
+    }
+
+    private init(_ raw: [Int], exponent: Int, negative: Bool) {
+      var digits = raw
+      while digits.last == 0 { digits.removeLast() }
+      let trailing = digits.prefix(while: { $0 == 0 }).count
+      self.digits = Array(digits.dropFirst(trailing))
+      self.exponent = digits.isEmpty ? 0 : exponent + trailing
+      self.negative = !digits.isEmpty && negative
+    }
+
+    var text: String {
+      digits.isEmpty ? "0" : digits.reversed().map(String.init).joined() + "e" + String(exponent)
+    }
+
+    private func aligned(to exponent: Int) -> [Int] {
+      guard !digits.isEmpty else { return [] }
+      return Array(repeating: 0, count: self.exponent - exponent) + digits
+    }
+
+    func isLess(than other: Self) -> Bool {
+      let scale = min(exponent, other.exponent)
+      let lhs = aligned(to: scale), rhs = other.aligned(to: scale)
+      return Self.magnitudeLess(lhs, rhs)
+    }
+
+    static func distance(_ lhs: Self, _ rhs: Self) -> Self {
+      let scale = min(lhs.exponent, rhs.exponent)
+      var a = lhs.aligned(to: scale), b = rhs.aligned(to: scale)
+      if magnitudeLess(a, b) { swap(&a, &b) }
+      let add = lhs.negative != rhs.negative
+      var carry = 0
+      for index in a.indices {
+        let right = index < b.count ? b[index] : 0
+        let value = a[index] + (add ? right : -right) + carry
+        carry = value < 0 ? -1 : value / 10
+        a[index] = value - 10 * carry
+      }
+      if carry > 0 { a.append(carry) }
+      return Self(a, exponent: scale, negative: false)
+    }
+
+    private static func magnitudeLess(_ lhs: [Int], _ rhs: [Int]) -> Bool {
+      lhs.count == rhs.count ? lhs.reversed().lexicographicallyPrecedes(rhs.reversed()) : lhs.count < rhs.count
     }
   }
 

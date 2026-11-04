@@ -653,6 +653,22 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentCollaborationForecastIntake.brierScore(probability: .infinity, occurred: true))
   }
 
+  func testNumericTrialUsesExactDecimalToleranceAtFloatBoundary() throws {
+    let raw = """
+    {"purpose":"Replay","reference_basis":"Supplied","limitations":"Finite cases",
+     "validator":{"id":"numeric_model_cases.v1","variables":["x"],"cases":[
+       {"id":"boundary","input":{"x":0.4},"expected":0.1,"absolute_tolerance":0.3},
+       {"id":"strict","input":{"x":0.4},"expected":0.1,"absolute_tolerance":"0.2999999999999999999"},
+       {"id":"opposite","input":{"x":-0.4},"expected":0.1,"absolute_tolerance":"0.5"}]},
+     "computation":{"validator_id":"numeric_model_cases.v1","model":{"variable":"x"}}}
+    """
+    let trial = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let report = try XCTUnwrap(AgentCollaborationNumericTrial.evaluate(trial))
+    let checks = try XCTUnwrap(report["checks"]?.arrayValue).compactMap(\.objectValue)
+    XCTAssertEqual(checks.map { $0["passed"] }, [.bool(true), .bool(false), .bool(true)])
+    XCTAssertEqual(checks.map { $0["absolute_error"] }, [.string("3e-1"), .string("3e-1"), .string("5e-1")])
+  }
+
   func testNumericTrialPersistsCounterexamplesAndComparesIdenticalCases() throws {
     let raw = """
     {"purpose":"Replay","reference_basis":"Supplied","limitations":"Finite cases",
