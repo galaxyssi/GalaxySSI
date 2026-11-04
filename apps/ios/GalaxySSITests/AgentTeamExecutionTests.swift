@@ -257,6 +257,25 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
+    let raw = """
+    {"work_id":"test","executor":"member","horizon":"One test","decision_rationale":"Avoid side effects",
+     "risk_tradeoff":"Delay","information_value":"Compare","revalidate_before_action":"Check input","utility_unit":"points",
+     "selected_action":"defer","events":[{"id":"pass","meaning":"Test passes","unit":"boolean","pointer":"/pass",
+       "expected":true,"utility_if_true":10,"utility_if_false":-2}],
+     "choices":[{"action_id":"probe","reasoning":"Measure","uncertainty":"Known input","resources":"One trial","risk":"Low",
+       "probabilities":{"pass":0.75}},{"action_id":"defer","reasoning":"Wait","uncertainty":"No measure",
+       "resources":"None","risk":"Delay","probabilities":{"pass":0}}]}
+    """
+    let forecast = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    XCTAssertEqual(AgentCollaborationForecastIntake.utilities(forecast, actions: ["probe", "defer"]),
+      ["probe": 7, "defer": -2])
+    XCTAssertNil(AgentCollaborationForecastIntake.utilities(forecast, actions: ["probe", "defer", "act"]))
+    let invalid = raw.replacingOccurrences(of: "0.75", with: "1.25")
+    XCTAssertNil(AgentCollaborationForecastIntake.utilities(
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(invalid.utf8)), actions: ["probe", "defer"]))
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

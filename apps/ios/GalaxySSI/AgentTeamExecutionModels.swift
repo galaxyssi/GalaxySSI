@@ -70,6 +70,8 @@ struct AgentCollaborationResearchDraft: Codable {
     case hypothesis, evidence, counterexample, proposal, experiment, artifact, decision, question
     case acceptanceReview = "acceptance_review"
     case candidate
+    case environmentModel = "task_environment_model"
+    case actionForecast = "action_forecast"
     case candidateEvent = "candidate_event"
   }
   var id: String
@@ -86,6 +88,64 @@ struct AgentCollaborationResearchDraft: Codable {
     case id, kind, title, body, parents, resolves, observations
     case objectId = "object_id"
     case baseRevision = "base_revision"
+  }
+}
+
+enum AgentCollaborationForecastIntake {
+  static func actionIds(_ model: AgentMcpJSONObject) -> Set<String>? {
+    guard let actions = model["actions"]?.arrayValue, (2...32).contains(actions.count) else { return nil }
+    var ids = Set<String>()
+    var canDefer = false
+    for item in actions {
+      guard let action = item.objectValue, hasText(action, ["id", "description", "preconditions",
+        "expected_transition", "side_effects", "reversibility", "authorization"]),
+        ids.insert(action.string("id")).inserted,
+        ["act", "probe", "defer"].contains(action.string("mode")) else { return nil }
+      canDefer = canDefer || action.string("mode") == "defer"
+    }
+    return canDefer ? ids : nil
+  }
+
+  static func utilities(_ forecast: AgentMcpJSONObject, actions: Set<String>) -> [String: Double]? {
+    guard hasText(forecast, ["work_id", "executor", "horizon", "decision_rationale", "risk_tradeoff",
+                            "information_value", "revalidate_before_action", "utility_unit"]),
+          actions.contains(forecast.string("selected_action")),
+          let events = forecast["events"]?.arrayValue, (1...32).contains(events.count),
+          let choices = forecast["choices"]?.arrayValue, choices.count == actions.count else { return nil }
+    var utilities: [String: (Double, Double)] = [:]
+    for item in events {
+      guard let event = item.objectValue, hasText(event, ["id", "meaning", "unit"]),
+            event.string("pointer").hasPrefix("/"),
+            let expected = event["expected"], expected.objectValue == nil, expected.arrayValue == nil,
+            let yes = number(event["utility_if_true"]), let no = number(event["utility_if_false"]),
+            utilities.updateValue((yes, no), forKey: event.string("id")) == nil else { return nil }
+    }
+    var result: [String: Double] = [:]
+    for item in choices {
+      guard let choice = item.objectValue, hasText(choice, ["reasoning", "uncertainty", "resources", "risk"]),
+            choice["expectations"] == nil, actions.contains(choice.string("action_id")),
+            let probabilities = choice["probabilities"]?.objectValue,
+            Set(probabilities.keys) == Set(utilities.keys) else { return nil }
+      var sum = 0.0
+      for id in utilities.keys.sorted() {
+        guard let outcomes = utilities[id], let p = number(probabilities[id]), (0...1).contains(p) else { return nil }
+        sum += p * outcomes.0 + (1 - p) * outcomes.1
+      }
+      guard sum.isFinite, result.updateValue(sum, forKey: choice.string("action_id")) == nil else { return nil }
+    }
+    return result
+  }
+
+  static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
+  }
+
+  private static func number(_ value: AgentMcpJSONValue?) -> Double? {
+    switch value {
+    case .some(.int(let number)): return Double(number)
+    case .some(.double(let number)) where number.isFinite: return number
+    default: return nil
+    }
   }
 }
 
@@ -111,6 +171,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var sourceId: String
   var draft: AgentCollaborationResearchDraft
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
+  var declaredExpectedUtilities: [String: Double]? = nil
 }
 
 struct AgentCollaborationFrozenCloudRead: Codable {
