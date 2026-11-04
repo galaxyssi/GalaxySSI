@@ -277,8 +277,7 @@ class HealthReminderActivity : Activity() {
             ui.add(content, ui.card().apply {
                 addView(ui.line().apply {
                     addView(ui.profileRow(getString(incident.scope.metric.titleResource()), status) {
-                        startActivity(Intent(this@HealthReminderActivity, HealthSyncActivity::class.java)
-                            .putExtra("health_sync_scope", incident.scope.name).putExtra("health_sync_test_id", healthNames.fixture))
+                        startActivity(incident.intent(this@HealthReminderActivity).putExtra("health_sync_test_id", healthNames.fixture))
                     }.apply { tag = "health-sync-reminder-${incident.scope.name}" }, LinearLayout.LayoutParams(0, -2, 1f))
                     if (!incident.handled) addView(ui.icon(R.drawable.ic_more_horizontal, R.string.health_report_review_actions) {
                         show(AlertDialog.Builder(this@HealthReminderActivity).setTitle(R.string.health_report_review_actions)
@@ -324,7 +323,7 @@ class HealthReminderActivity : Activity() {
                         .setItems(arrayOf(getString(R.string.health_report_review_snooze), getString(R.string.health_report_review_handle))) { _, which ->
                             mutate { reports.act(store, report, if (which == 0) HealthReminderAction.SNOOZE else HealthReminderAction.COMPLETE,
                                 System.currentTimeMillis())
-                                if (live) HealthReminderWork.reportSourceChanged(applicationContext)
+                                if (live) HealthReminderWork.sourceRemindersChanged(applicationContext)
                             }
                         }.setNegativeButton(android.R.string.cancel, null).create())
                 }.apply { tag = "health-report-review-actions-${report.id}" }, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)))
