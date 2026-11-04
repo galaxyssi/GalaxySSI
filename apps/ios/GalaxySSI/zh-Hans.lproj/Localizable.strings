@@ -55,6 +55,10 @@
 "galaxyssi.health.originals.remove_confirm" = "移除此原件？";
 "galaxyssi.health.originals.close" = "关闭";
 "galaxyssi.health.pdf_text.title" = "报告 PDF 文本";
+"galaxyssi.health.pdf_text.password" = "PDF 密码";
+"galaxyssi.health.pdf_text.unlock" = "输入 PDF 密码";
+"galaxyssi.health.pdf_text.incorrect_password" = "PDF 密码不正确。";
+"galaxyssi.health.pdf_text.extraction_restricted" = "此 PDF 不允许提取文本。";
 "galaxyssi.health.pdf_text.previous" = "上一页";
 "galaxyssi.health.pdf_text.next" = "下一页";
 "galaxyssi.health.pdf_text.page" = "第 %lld 页，共 %lld 页";

@@ -60,7 +60,7 @@ struct GalaxySSIHealthOriginalStore {
     let fileExtension: String
     if data.starts(with: Data("%PDF-".utf8)),
        let provider = CGDataProvider(data: data as CFData),
-       let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 {
+       let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 || (pdf.isEncrypted && !pdf.isUnlocked) {
       kind = .pdf
       fileExtension = "pdf"
     } else if let image = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(image) > 0,
