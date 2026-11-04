@@ -15,7 +15,7 @@
     <string name="health_library_select_named">选择 %1$s</string>
     <string name="health_library_selected">已选择 %1$d 份原件</string>
     <string name="health_library_export">导出原件</string>
-    <string name="health_library_last_export">最近的导出</string>
+    <string name="health_library_export_history">原件导出历史</string>
     <string name="health_library_confirm">确认原件清单</string>
     <string name="health_library_summary">%1$d 份原件 · 压缩前 %2$s</string>
     <string name="health_library_originals_only">仅包含原始文件与来源清单，不包含测量记录。</string>
@@ -30,6 +30,12 @@
     <string name="health_library_generated">已生成 · 尚未保存</string>
     <string name="health_library_saved">已保存</string>
     <string name="health_library_saving">正在保存 ZIP</string>
+    <string name="health_library_legacy_save">曾保存，未校验</string>
+    <string name="health_library_verified_at">保存校验时间：%1$s</string>
+    <string name="health_library_save_interrupted">上次保存在校验前中断。请选择位置重新保存。</string>
+    <string name="health_library_save_unverified">上次保存未通过校验，仍可从私有 ZIP 重试。</string>
+    <string name="health_library_archive_missing">私有 ZIP 已不可用。原件和此前已校验的保存副本不受影响。</string>
+    <string name="health_library_export_manifest">本次导出的原件</string>
     <string name="health_library_save_zip">保存 ZIP</string>
     <string name="health_library_failed">原件包未能完整生成，请重试或修改选择。</string>
     <string name="health_library_source_changed">确认后原件发生了变化，请重新核对选择。</string>

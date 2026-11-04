@@ -73,7 +73,7 @@ class HealthOriginalLibraryActivity : Activity() {
                 val session = selected.takeIf { it.isNotBlank() }?.let(library::session)?.takeIf { it.state == HealthOriginalExportState.SELECTING }
                     ?: HealthOriginalExportSession(selected.takeIf { it.isNotBlank() && library.session(it) == null } ?: java.util.UUID.randomUUID().toString(), HealthOriginalExportState.SELECTING, System.currentTimeMillis())
                 val page = originals.library(query, after, cancellation)
-                LibrarySnapshot(session.id, page, library.selected(session.id, page.originals), library.count(session.id), library.latest()?.id,
+                LibrarySnapshot(session.id, page, library.selected(session.id, page.originals), library.count(session.id),
                     page.originals.filterNot(originals::present).map { it.id }.toSet())
             } }
             main.post { if (active && token == generation) result.fold({ selection = it.session; render(it, token) }, { body.removeAllViews(); body.addView(ui.text(getString(R.string.health_storage_error))); body.addView(ui.command(R.string.common_retry) { load() }) }) }
@@ -104,7 +104,9 @@ class HealthOriginalLibraryActivity : Activity() {
             if (previous.isNotEmpty()) addView(ui.command(R.string.health_previous_page) { cursor = previous.removeAt(previous.lastIndex); scrollY = 0; load() }, LinearLayout.LayoutParams(0, -2, 1f))
             data.page.next?.let { next -> addView(ui.command(R.string.health_next_page) { previous += cursor; cursor = next; scrollY = 0; load() }, LinearLayout.LayoutParams(0, -2, 1f)) }
         }, 16)
-        data.lastExport?.let { id -> ui.add(content, ui.row(getString(R.string.health_library_last_export)) { openExport(id) }, 16) }
+        ui.add(content, ui.row(getString(R.string.health_library_export_history)) {
+            startActivity(Intent(this, HealthOriginalExportHistoryActivity::class.java))
+        }, 16)
         body.addView(ui.column().apply {
             setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(12))
             addView(ui.text(getString(R.string.health_library_selected, data.count), 13f, muted = true).apply { tag = "health-library-count" })
@@ -164,6 +166,6 @@ class HealthOriginalLibraryActivity : Activity() {
             }
         }.setNegativeButton(R.string.common_cancel, null).show()
     }
-    private data class LibrarySnapshot(val session: String, val page: HealthLibraryPage, val selected: Set<String>, val count: Long, val lastExport: String?, val missing: Set<String>)
+    private data class LibrarySnapshot(val session: String, val page: HealthLibraryPage, val selected: Set<String>, val count: Long, val missing: Set<String>)
 }
 internal fun HealthOriginalKind.title(): Int = when (this) { HealthOriginalKind.IMAGE -> R.string.health_library_images; HealthOriginalKind.PDF -> R.string.health_library_pdf; HealthOriginalKind.TABLE -> R.string.health_library_tables; HealthOriginalKind.OTHER -> R.string.health_library_other }

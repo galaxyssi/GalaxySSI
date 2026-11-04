@@ -27,6 +27,9 @@ class HealthDataFilesActivity : Activity() {
             addView(ui.row(getString(R.string.health_export_records)) { startActivity(Intent(this@HealthDataFilesActivity, HealthRecordExportActivity::class.java)) })
             addView(ui.row(getString(R.string.health_original_library)) { startActivity(Intent(this@HealthDataFilesActivity, HealthOriginalLibraryActivity::class.java)) })
             addView(ui.row(getString(R.string.health_export_history)) { startActivity(Intent(this@HealthDataFilesActivity, HealthRecordExportActivity::class.java).putExtra("export_history", true)) })
+            addView(ui.row(getString(R.string.health_library_export_history)) {
+                startActivity(Intent(this@HealthDataFilesActivity, HealthOriginalExportHistoryActivity::class.java))
+            })
             addView(ui.row(getString(R.string.health_backup_create)) {
                 startActivity(Intent(this@HealthDataFilesActivity, HealthBackupActivity::class.java))
             }.apply { tag = "health-backup-export-entry" })

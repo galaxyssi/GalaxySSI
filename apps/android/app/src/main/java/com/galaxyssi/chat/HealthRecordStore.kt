@@ -655,6 +655,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             if (oldVersion < 6) createSyncCheckpoints(db)
             if (oldVersion < 7) HealthOriginalStore.createSharedSchema(db)
             if (oldVersion < 8) HealthRestoreReceipts.createSchema(db)
+            if (oldVersion >= 7 && oldVersion < 9) HealthOriginalLibraryStore.createHistoryIndex(db)
         }
         private fun indexPlatformRecords(db: SQLiteDatabase) =
             db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
@@ -664,7 +665,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     companion object {
         const val DEFAULT_DB = "health_records_v1.db"
-        const val SCHEMA_VERSION = 8
+        const val SCHEMA_VERSION = 9
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
         fun syncIncidentChanges(context: Context, name: String) = android.net.Uri.parse(
