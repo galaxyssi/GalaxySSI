@@ -33,6 +33,211 @@ extension GalaxySSIStoreTests {
       excludingTurnId: "turn", query: "unmatched").isEmpty)
   }
 
+  func testNativeObservationRequiresExactActiveMemberAndRejectsDeletedGroup() throws {
+    let suite = "native-evidence-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("team.sqlite"))
+    let team = durableTeamSnapshot("native-run")
+    let member = try XCTUnwrap(team.members.first { !$0.status.isTerminal })
+    XCTAssertTrue(history.upsert(team))
+    let result = AgentNativeToolResult(status: .succeeded, output: ["value": .int(1)], message: "",
+      receipt: AgentNativeToolReceipt(invocationId: "invocation", startedAtEpochMillis: 1,
+        finishedAtEpochMillis: 2, durationMillis: 1, status: .succeeded, inputSha256: "input", outputSha256: "output"),
+      provenance: AgentNativeToolProvenance(toolId: "test.tool", toolVersion: "1", location: .phone,
+        executorId: "test", contractVersion: "1"))
+    var observation = AgentCollaborationNativeToolObservation(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, memberId: member.memberId,
+      sourceId: member.sourceMessageId, input: [:], result: result)
+    let receipt = try history.recordNativeObservation(observation)
+    XCTAssertEqual(receipt["origin"], .string("ios_native_tool"))
+    XCTAssertEqual(try history.recordNativeObservation(observation), receipt)
+    observation.sourceId = "foreign"
+    XCTAssertThrowsError(try history.recordNativeObservation(observation))
+    observation.sourceId = member.sourceMessageId
+    history.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try history.recordNativeObservation(observation))
+  }
+
+  func testCloudEvidenceReceiptIsScopedAndRejectsChangedReplay() throws {
+    let suite = "team-cloud-evidence-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let team = durableTeamSnapshot("cloud-team")
+    XCTAssertTrue(history.upsert(team))
+    let member = try XCTUnwrap(team.members.first { !$0.status.isTerminal })
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, memberId: member.memberId,
+      sourceId: member.sourceMessageId)
+    var observation = AgentCollaborationCloudToolEvidence(scope: scope, round: 1,
+      call: AssembledToolCall(callId: "tool-call", index: 0, name: "web_search", argumentsJson: "{}"),
+      output: "{\"hits\":[]}", succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
+    let receipt = try history.recordCloudEvidence(observation)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(try reopened.recordCloudEvidence(observation), receipt)
+    observation.output = "different"
+    XCTAssertThrowsError(try reopened.recordCloudEvidence(observation))
+    observation.scope.conversationId = "other-group"
+    XCTAssertThrowsError(try reopened.recordCloudEvidence(observation))
+    let fallback = CloudConversationStreamEngine.cloudEvidenceOutput("{}", receipt: nil)
+    XCTAssertTrue(fallback.contains("not_durable"))
+    XCTAssertFalse(fallback.contains("galaxyssi_evidence_receipt"))
+  }
+
+  func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
+    XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","summary":"Notes","workspace":[
+      {"id":"note","object_id":"","base_revision":0,"kind":"evidence","title":"Notes","body":{"text":"Source"},"parents":[]}
+    ]}
+    """
+    let drafts = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw))
+    XCTAssertEqual(drafts.map(\.id), ["note"])
+    XCTAssertThrowsError(try AgentCollaborationResearchEnvelope.publication(
+      in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
+  }
+
+  func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
+    let suite = "research-publication-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var first = durableTeamSnapshot("run-1")
+    first.members[0].status = .succeeded
+    let member = first.members[0]
+    XCTAssertTrue(history.upsert(first))
+    let draft = AgentCollaborationResearchDraft(id: "notes", objectId: nil, baseRevision: 0,
+      kind: .evidence, title: "Notes", body: ["text": .string("Initial evidence")], parents: [])
+    func publish(_ drafts: [AgentCollaborationResearchDraft], team: AgentTeamExecutionSnapshot,
+                 store: AgentTeamExecutionHistoryStore) throws -> AgentCollaborationResearchPublication {
+      try store.publishResearchObjects(drafts, runId: team.supervisorRunId,
+        conversationId: team.conversationId, turnId: team.taskId, memberId: team.members[0].memberId,
+        sourceId: team.members[0].sourceMessageId)
+    }
+    let original = try publish([draft], team: first, store: history)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(try publish([draft], team: first, store: reopened).references, original.references)
+    var changed = draft
+    changed.title = "Changed replay"
+    XCTAssertThrowsError(try publish([changed], team: first, store: reopened))
+    var second = first
+    second.supervisorRunId = "run-2"
+    second.taskId = "turn-2"
+    second.members[0].sourceMessageId = "new-source"
+    XCTAssertTrue(reopened.upsert(second))
+    changed.objectId = original.references[0].objectId
+    changed.parents = original.references
+    var new = draft
+    new.id = "other"
+    XCTAssertThrowsError(try publish([new, changed], team: second, store: reopened))
+    changed.baseRevision = 1
+    let updated = try publish([new, changed], team: second, store: reopened)
+    XCTAssertEqual(updated.references.map(\.revision), [1, 2])
+    XCTAssertNotEqual(updated.references.last?.sha256, original.references.first?.sha256)
+  }
+
+  func testGoalCheckpointCompareAndSetRetainsPriorRevisionAfterReopen() {
+    let suite = "goal-checkpoint-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let team = durableTeamSnapshot("goal-run")
+    XCTAssertTrue(history.upsert(team))
+    let first = AgentCollaborationGoalCheckpoint(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, revision: 1, phase: .working,
+      contract: [.init(id: "result", requirement: "Observe the result", verification: .physical,
+        status: .open, evidence_kind: nil, evidence: [])], completedWorkIds: ["explore"])
+    XCTAssertTrue(history.advanceGoalCheckpoint(first, expectedRevision: 0))
+    var next = first
+    next.revision = 2
+    XCTAssertFalse(history.advanceGoalCheckpoint(next, expectedRevision: 1))
+    next.completedWorkIds = ["verify"]
+    XCTAssertTrue(history.advanceGoalCheckpoint(next, expectedRevision: 1))
+    XCTAssertFalse(history.advanceGoalCheckpoint(next, expectedRevision: 1))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(reopened.goalCheckpoint(runId: first.runId, conversationId: first.conversationId,
+      turnId: first.turnId), next)
+    XCTAssertEqual(reopened.goalCheckpoint(runId: first.runId, conversationId: first.conversationId,
+      turnId: first.turnId, revision: 1), first)
+    XCTAssertNil(reopened.goalCheckpoint(runId: first.runId, conversationId: "foreign", turnId: first.turnId))
+    reopened.remove(supervisorRunId: first.runId)
+    XCTAssertTrue(reopened.upsert(team))
+    XCTAssertNil(reopened.goalCheckpoint(runId: first.runId, conversationId: first.conversationId, turnId: first.turnId))
+  }
+
+  func testCollaborationDispatchCheckpointSurvivesReopenAndRejectsDuplicateStart() throws {
+    let suite = "team-checkpoint-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var snapshot = durableTeamSnapshot("run")
+    let index = try XCTUnwrap(snapshot.members.firstIndex { $0.deliveryMode == .observe })
+    snapshot.members[index].dispatchCheckpoint = .notStarted
+    let member = snapshot.members[index]
+    XCTAssertTrue(history.upsert(snapshot))
+    XCTAssertFalse(history.advanceDispatchCheckpoint(runId: "run", conversationId: "foreign",
+      turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
+      to: .dispatching, now: 20))
+    XCTAssertTrue(history.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
+      to: .dispatching, now: 20))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .dispatching)
+    XCTAssertFalse(reopened.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
+      to: .dispatching, now: 30))
+    XCTAssertTrue(reopened.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
+      to: .accepted, now: 30))
+    XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .accepted)
+  }
+
+  func testCollaborationResultsStayInTheirConversationAfterReopen() {
+    let suite = "team-results-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var first = durableTeamSnapshot("first")
+    first.members[0].displayName = "Original member name"
+    var other = durableTeamSnapshot("other")
+    other.conversationId = "other-conversation"
+    XCTAssertTrue(history.upsert(first))
+    XCTAssertTrue(history.upsert(other))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let scoped = reopened.collaborationResults(conversationId: first.conversationId, limit: 20)
+    XCTAssertEqual(scoped.map(\.supervisorRunId), ["first"])
+    XCTAssertEqual(scoped.first?.members.first?.displayName, "Original member name")
+    XCTAssertTrue(reopened.collaborationResults(conversationId: "", limit: 20).isEmpty)
+  }
+
   func testObserverRecoveryPersistsFullFailureAndRejectsPreviewOnlyDuplicateProof() throws {
     let suite = "team-recovery-body-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

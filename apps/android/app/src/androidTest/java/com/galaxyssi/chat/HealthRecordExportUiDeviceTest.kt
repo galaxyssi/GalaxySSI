@@ -40,7 +40,7 @@ class HealthRecordExportUiDeviceTest {
     @Test fun dataHubSeparatesMeasurementOriginalAndHistoryRoutes() {
         unlocked(); ActivityScenario.launch(HealthDataFilesActivity::class.java).use { scenario -> scenario.onActivity { activity ->
             val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>().map { it.text.toString() }
-            for (resource in listOf(R.string.health_export_import_records, R.string.health_export_import_originals, R.string.health_export_records, R.string.health_original_library, R.string.health_export_history))
+            for (resource in listOf(R.string.health_first_import_title, R.string.health_export_import_originals, R.string.health_export_records, R.string.health_original_library, R.string.health_export_history))
                 assertTrue(labels.contains(activity.getString(resource)))
         } }
     }

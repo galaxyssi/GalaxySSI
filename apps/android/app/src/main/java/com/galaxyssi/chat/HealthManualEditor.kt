@@ -33,6 +33,8 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
     private var unitOptions = draft.metric.units
     private var measuredAt = draft.measuredAt
     private var ready = false
+    var hasChanges = false
+        private set
     private val conditions = listOf("unspecified", "resting", "after_exercise", "fasting", "after_meal", "other")
     private val sides = listOf("unspecified", "left", "right")
 
@@ -127,13 +129,15 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
             confirmation = CheckBox(activity).apply {
                 tag = "health-confirm-source"; text = activity.getString(R.string.health_confirm_source)
                 setTextColor(activity.getColor(R.color.text_primary)); textSize = 14f; isChecked = evidence.confirmed
-                setOnCheckedChangeListener { _, _ -> if (ready) activity.draftChanged() }
+                setOnCheckedChangeListener { _, _ -> if (ready) changed() }
             }.also { ui.add(content, it, 16) }
         }
         error = ui.text("", 14f).apply { setTextColor(0xffad342f.toInt()); visibility = View.GONE; tag = "health-validation" }
         ui.add(content, error, 12)
         ui.add(content, ui.text(activity.getString(R.string.health_local_storage), 12f, muted = true), 16)
-        save = ui.command(R.string.health_save) { activity.saveMeasurement(snapshot()) }.apply { tag = "health-save" }
+        save = ui.command(if (activity.stagingOcrReview) R.string.health_review_finish_item else R.string.health_save) {
+            activity.saveMeasurement(snapshot())
+        }.apply { tag = "health-save" }
         activity.body.addView(ui.column().apply {
             setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(12)); addView(save)
         }, LinearLayout.LayoutParams(-1, -2))
@@ -169,7 +173,7 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
         onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (position != previous && ready) { confirmation?.isChecked = false; activity.draftChanged() }
+                if (position != previous && ready) { confirmation?.isChecked = false; changed() }
                 previous = position
                 if (::unit.isInitialized && this@apply === unit && position in unitOptions.indices) unitLabels.forEach { (field, label) ->
                     label.text = if (draft.metric == HealthMetric.BLOOD_PRESSURE && field == "pulse") "bpm" else unitOptions[position]
@@ -179,8 +183,12 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
     }
     private fun watcher() = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { if (ready) { confirmation?.isChecked = false; activity.draftChanged() } }
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { if (ready) { confirmation?.isChecked = false; changed() } }
         override fun afterTextChanged(s: Editable?) = Unit
+    }
+    private fun changed() {
+        hasChanges = true
+        activity.draftChanged()
     }
     fun snapshot() = draft.copy(values = fields.mapValues { it.value.text.toString() }, unit = unitOptions[unit.selectedItemPosition.coerceAtLeast(0)],
         measuredAt = measuredAt, condition = conditions[condition.selectedItemPosition.coerceAtLeast(0)],
@@ -211,7 +219,7 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
         DatePickerDialog(activity, { _, year, month, day ->
             activity.showHealthDialog(TimePickerDialog(activity, { _, hour, minute ->
                 calendar.set(year, month, day, hour, minute, 0); calendar.set(Calendar.MILLISECOND, 0)
-                measuredAt = calendar.timeInMillis; time.text = activity.date(measuredAt); confirmation?.isChecked = false; activity.draftChanged()
+                measuredAt = calendar.timeInMillis; time.text = activity.date(measuredAt); confirmation?.isChecked = false; changed()
             }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(activity)))
         }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).let(activity::showHealthDialog)
     }

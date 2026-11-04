@@ -1,5 +1,6 @@
 import AVFoundation
 import BackgroundTasks
+import Combine
 import Foundation
 import Network
 import SwiftUI
@@ -2348,6 +2349,8 @@ final class MessageCoordinator: ObservableObject {
         observation: AgentTeamReplyObservation(payload: payload))
       guard disposition == .observerCommitted || disposition == .observerDuplicate,
             teamObserverResultIsCommitted(payload, binding: binding), desktopResultRecovery.receipts.insert(receipt) else { return }
+      publishCommittedCollaborationResearch(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
+        turn: binding.identity.turnId, contact: binding.contactId)
       UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
       reconcileSavedTeamParents()
       if desktopReplyRecovery.retire(binding) { desktopReplyRecoverySweepRequested = true }
@@ -6297,13 +6300,16 @@ final class MessageCoordinator: ObservableObject {
         deliveryMode: $0.deliveryMode, status: .pending, instanceId: $0.memberId,
         sourceMessageId: AgentControlPlaneActionExecutor.stableRunId(
           conversationId: outgoing.conversationId, turnId: homeTurnId,
-          actionId: action.id, agentId: $0.memberId)) },
+          actionId: action.id, agentId: $0.memberId),
+        dispatchCheckpoint: isCollaboration ? .notStarted : nil,
+        displayName: $0.context["_galaxyssi_member_name"]) },
       createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
       primaryInstanceId: spec.definition.primaryMemberId)
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
       !$0.privateMode && !$0.trackingPaused
     } ?? false
-    guard !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
+    guard (!isCollaboration || saveTeamHistory),
+          !saveTeamHistory || AgentTeamExecutionHistoryStore.shared.upsert(savedTeam) else {
       throw GalaxySSIError.invalidPayload("The original Agent team identity could not be saved")
     }
     agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
@@ -6349,6 +6355,13 @@ final class MessageCoordinator: ObservableObject {
       )
 
       do {
+        if isCollaboration {
+          guard AgentTeamExecutionHistoryStore.shared.advanceDispatchCheckpoint(runId: spec.supervisorRunId,
+            conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
+            sourceMessageId: sourceMessageId, to: .dispatching, now: AgentControlPlaneClock.nowMillis()) else {
+            throw GalaxySSIError.invalidPayload("The collaboration member dispatch checkpoint could not be saved")
+          }
+        }
         if target.id == "local-llm" {
           let profile = LocalModelRuntimeSettings.selectedProfile()
           guard LocalModelRuntimeSettings.isProfileEnabled(profile),
@@ -6370,7 +6383,14 @@ final class MessageCoordinator: ObservableObject {
                 profile: profile,
                 requestText: memberPrompt,
                 attachments: attachments,
-                outgoing: outgoing
+                outgoing: outgoing,
+                memberSourceId: isCollaboration ? sourceMessageId : nil,
+                nativeObservation: isCollaboration ? { input, result in
+                  try? AgentTeamExecutionHistoryStore.shared.recordNativeObservation(
+                    AgentCollaborationNativeToolObservation(runId: spec.supervisorRunId,
+                      conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
+                      sourceId: sourceMessageId, input: input, result: result))
+                } : nil
               )
               observations.append((member.memberId, result))
               persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
@@ -6412,7 +6432,10 @@ final class MessageCoordinator: ObservableObject {
                 attachments: attachments,
                 outgoing: outgoing,
                 requestId: teamContext.runId,
-                scopeToConversation: isCollaboration
+                scopeToConversation: isCollaboration,
+                collaborationEvidence: isCollaboration ? AgentCollaborationToolEvidenceScope(
+                  runId: spec.supervisorRunId, conversationId: outgoing.conversationId,
+                  turnId: homeTurnId, memberId: member.memberId, sourceId: sourceMessageId) : nil
               )
               observations.append((member.memberId, result))
               persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
@@ -6428,8 +6451,21 @@ final class MessageCoordinator: ObservableObject {
           memberContact.trustState == .verified else {
           throw GalaxySSIError.invalidPayload("The selected Agent target cannot receive this request")
         }
+        if isCollaboration {
+          try await waitForCollaborationTransport(conversationId: outgoing.conversationId,
+            profileIdentity: profileIdentity)
+          try Task.checkCancellation()
+          guard let current = store.contact(id: member.agentId), current.trustState == .verified,
+                current.deliveryMode.isGalaxySSILinkFamily, current.type.caseInsensitiveCompare("agent") == .orderedSame,
+                current.desktopId == memberContact.desktopId,
+                current.connectorAgentId == memberContact.connectorAgentId else {
+            throw GalaxySSIError.invalidPayload("The collaboration Agent changed while waiting for a connection")
+          }
+          memberContact = current
+        }
         let slotOwnerId = try acquireAgentSlot(target: target, sourceMessageId: sourceMessageId)
         do {
+          try Task.checkCancellation()
           try await publishRequestedLinkTarget(
             memberPrompt,
             contact: memberContact,
@@ -6443,6 +6479,11 @@ final class MessageCoordinator: ObservableObject {
             ownerId: slotOwnerId,
             sourceMessageId: sourceMessageId
           )
+          if isCollaboration {
+            AgentTeamExecutionHistoryStore.shared.advanceDispatchCheckpoint(runId: spec.supervisorRunId,
+              conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
+              sourceMessageId: sourceMessageId, to: .accepted, now: AgentControlPlaneClock.nowMillis())
+          }
         } catch {
           UserDefaultsAgentGlobalRunSlotStore.shared.release(ownerId: slotOwnerId)
           throw error
@@ -6476,6 +6517,37 @@ final class MessageCoordinator: ObservableObject {
       label: "\(spec.definition.members.count) Agents"
     )
     return primaryPublished
+  }
+
+  private func waitForCollaborationTransport(conversationId: String, profileIdentity: String) async throws {
+    func validateScope() throws {
+      try Task.checkCancellation()
+      guard store.profile.identityFingerprint == profileIdentity,
+            store.activeAgentConversationId == conversationId,
+            let session = store.agentSession(id: conversationId), session.id == conversationId,
+            session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+            !session.privateMode, !session.trackingPaused else { throw CancellationError() }
+    }
+    try validateScope()
+    if transportConnected { return }
+
+    var signal: AsyncStream<Void>.Continuation?
+    let updates = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
+    guard let signal else { throw CancellationError() }
+    let connection = $transportConnected.sink { _ in signal.yield(()) }
+    let conversation = store.$activeAgentConversationId.sink { _ in signal.yield(()) }
+    let settings = store.$agentConversations.sink { _ in signal.yield(()) }
+    defer {
+      connection.cancel()
+      conversation.cancel()
+      settings.cancel()
+      signal.finish()
+    }
+    for await _ in updates {
+      try validateScope()
+      if transportConnected { return }
+    }
+    throw CancellationError()
   }
 
   private func waitForCollaborationObserver(runId: String, memberId: String,
@@ -6536,6 +6608,15 @@ final class MessageCoordinator: ObservableObject {
       instruction.append(contentsOf: observations.map { instanceId, result in
         "[\(instanceId)] \(String(result.prefix(8_000)))"
       })
+    }
+    if member.deliveryMode == .observe, member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
+      instruction.append("""
+        If your contribution creates a reusable research object, return one JSON object with format
+        "galaxyssi.research-artifact.v1", a public summary, and a workspace array.
+        Each new item needs a stable id, base_revision 0, kind (such as evidence, hypothesis, or proposal),
+        title, a nonempty JSON body, and parents (empty unless you have exact saved references).
+        Do not invent receipt IDs or claim verification.
+        """)
     }
     return goal + "\n\n" + instruction.joined(separator: "\n")
   }
@@ -6732,7 +6813,8 @@ final class MessageCoordinator: ObservableObject {
     attachments: [GalaxySSIDraftAttachment],
     outgoing: ChatMessage,
     requestId: String,
-    scopeToConversation: Bool = false
+    scopeToConversation: Bool = false,
+    collaborationEvidence: AgentCollaborationToolEvidenceScope? = nil
   ) async throws -> String {
     let images = try CloudImagePayloadFactory.prepare(
       attachments,
@@ -6754,13 +6836,15 @@ final class MessageCoordinator: ObservableObject {
     }
     var accumulated = ""
     var completed = false
-    for try await event in cloudStreamEngine.streamConversation(
-      contact: cloudContact,
-      store: store,
-      turns: turns,
-      images: images,
-      requestId: requestId
-    ) {
+    let events: AsyncThrowingStream<ModelStreamEvent, Error>
+    if let engine = cloudStreamEngine as? CloudConversationStreamEngine, let collaborationEvidence {
+      events = engine.streamConversation(contact: cloudContact, store: store, turns: turns, images: images,
+        requestId: requestId, collaborationEvidence: collaborationEvidence)
+    } else {
+      events = cloudStreamEngine.streamConversation(contact: cloudContact, store: store, turns: turns,
+        images: images, requestId: requestId)
+    }
+    for try await event in events {
       try Task.checkCancellation()
       switch event {
       case .textDelta(let delta): accumulated += delta.text
@@ -6778,7 +6862,9 @@ final class MessageCoordinator: ObservableObject {
     profile: LocalModelRuntimeProfile,
     requestText: String,
     attachments: [GalaxySSIDraftAttachment],
-    outgoing: ChatMessage
+    outgoing: ChatMessage,
+    memberSourceId: String? = nil,
+    nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
   ) async throws -> String {
     let prompt = localModelPrompt(
       text: requestText,
@@ -6798,10 +6884,11 @@ final class MessageCoordinator: ObservableObject {
       sessionID: outgoing.conversationId,
       conversationID: outgoing.conversationId,
       turnID: outgoing.turnId,
-      taskID: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      taskID: memberSourceId ?? outgoing.turnId.ifBlank(outgoing.id.uuidString),
       baseSystemPrompt: localModelSystemPrompt,
       registry: localNativeToolRuntime.registry,
-      readOnlyAnalysis: outgoing.readOnlyAnalysis
+      readOnlyAnalysis: outgoing.readOnlyAnalysis,
+      nativeObservation: nativeObservation
     )
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
@@ -6904,6 +6991,7 @@ final class MessageCoordinator: ObservableObject {
     case .observerProgress, .observerDuplicate, .retired: break
     }
     if terminal, tracked, disposition == .observerCommitted || disposition == .observerDuplicate {
+      publishCommittedCollaborationResearch(source: source, conversation: conversation, turn: turn, contact: contact.id)
       acknowledgeTeamObserverResult(payload, link: link)
     }
     if terminal { UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: source) }
@@ -6945,6 +7033,8 @@ final class MessageCoordinator: ObservableObject {
          conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
          task: binding.sourceMessageId, contact: member.agentId, content: text, success: true,
          now: AgentControlPlaneClock.nowMillis()) != nil {
+      publishCommittedCollaborationResearch(source: binding.sourceMessageId, conversation: outgoing.conversationId,
+        turn: outgoing.turnId.ifBlank(outgoing.id.uuidString), contact: member.agentId)
       reconcileSavedTeamParents()
     }
     _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
@@ -6958,6 +7048,23 @@ final class MessageCoordinator: ObservableObject {
       state: .delivered,
       deliveredAtMillis: AgentControlPlaneClock.nowMillis()
     ))
+  }
+
+  private func publishCommittedCollaborationResearch(source: String, conversation: String, turn: String, contact: String) {
+    guard let session = store.agentSession(id: conversation), session.id == conversation,
+          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+          !session.privateMode, !session.trackingPaused else { return }
+    let history = AgentTeamExecutionHistoryStore.shared
+    do {
+      guard let context = try history.recoveryContext(source: source, conversation: conversation, turn: turn, contact: contact),
+            context.member.status == .succeeded, let raw = context.member.replyContent,
+            let drafts = try AgentCollaborationResearchEnvelope.publication(in: raw) else { return }
+      _ = try history.publishResearchObjects(drafts, runId: context.team.supervisorRunId,
+        conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
+    } catch {
+      lastError = localizedReply("galaxyssi.collaboration.publication_failed",
+        fallback: "The original reply was saved, but its research objects could not be published.")
+    }
   }
 
   private func automaticRequestedMembers(

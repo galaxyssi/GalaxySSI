@@ -1,5 +1,96 @@
 import Foundation
 
+struct AgentCollaborationNativeToolObservation: Codable {
+  var runId: String
+  var conversationId: String
+  var turnId: String
+  var memberId: String
+  var sourceId: String
+  var input: AgentMcpJSONObject
+  var result: AgentNativeToolResult
+}
+
+struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
+  var runId: String
+  var conversationId: String
+  var turnId: String
+  var memberId: String
+  var sourceId: String
+}
+
+struct AgentCollaborationCloudToolEvidence: Codable, Equatable {
+  var scope: AgentCollaborationToolEvidenceScope
+  var round: Int
+  var call: AssembledToolCall
+  var output: String
+  var succeeded: Bool
+  var startedAtMillis: Int64
+  var finishedAtMillis: Int64
+}
+
+struct AgentCollaborationResearchReference: Codable, Equatable {
+  var objectId: String
+  var revision: Int64
+  var sha256: String
+
+  enum CodingKeys: String, CodingKey {
+    case objectId = "object_id"
+    case revision, sha256
+  }
+}
+
+struct AgentCollaborationResearchDraft: Codable {
+  enum Kind: String, Codable {
+    case hypothesis, evidence, counterexample, proposal, experiment, artifact, decision, question
+    case acceptanceReview = "acceptance_review"
+    case candidate
+    case candidateEvent = "candidate_event"
+  }
+  var id: String
+  var objectId: String?
+  var baseRevision: Int64
+  var kind: Kind
+  var title: String
+  var body: AgentMcpJSONObject
+  var parents: [AgentCollaborationResearchReference]
+  var resolves: [AgentCollaborationResearchReference]? = nil
+  var observations: [AgentMcpJSONObject]? = nil
+
+  enum CodingKeys: String, CodingKey {
+    case id, kind, title, body, parents, resolves, observations
+    case objectId = "object_id"
+    case baseRevision = "base_revision"
+  }
+}
+
+struct AgentCollaborationResearchEnvelope: Decodable {
+  static let wireFormat = "galaxyssi.research-artifact.v1"
+  var format: String
+  var workspace: [AgentCollaborationResearchDraft]?
+
+  static func publication(in raw: String) throws -> [AgentCollaborationResearchDraft]? {
+    guard raw.utf8.count <= 256_000, raw.contains(wireFormat) else { return nil }
+    let envelope = try JSONDecoder().decode(Self.self, from: Data(raw.utf8))
+    guard envelope.format == wireFormat, let workspace = envelope.workspace, !workspace.isEmpty else { return nil }
+    return workspace
+  }
+}
+
+struct AgentCollaborationResearchRevision: Codable {
+  var reference: AgentCollaborationResearchReference
+  var previousHash: String?
+  var runId: String
+  var turnId: String
+  var authorId: String
+  var sourceId: String
+  var draft: AgentCollaborationResearchDraft
+}
+
+struct AgentCollaborationResearchPublication: Codable {
+  var requestHash: String
+  var references: [AgentCollaborationResearchReference]
+}
+
 enum AgentSubagentStatus: String, Codable, CaseIterable, Identifiable {
   case pending = "PENDING"
   case queued = "QUEUED"
@@ -60,6 +151,12 @@ enum AgentTeamProgressPolicy {
   }
 }
 
+enum AgentTeamMemberDispatchCheckpoint: String, Codable {
+  case notStarted = "not_started"
+  case dispatching
+  case accepted
+}
+
 struct AgentTeamMemberSnapshot: Codable, Equatable {
   static let maxErrorCharacters = 1_000
 
@@ -74,6 +171,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var sourceMessageId: String
   var richOutputJson: String
   var replyContent: String?
+  var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
+  var displayName: String?
 
   var memberId: String { instanceId.ifBlank(agentId) }
 
@@ -88,7 +187,9 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     instanceId: String = "",
     sourceMessageId: String = "",
     richOutputJson: String = "",
-    replyContent: String? = nil
+    replyContent: String? = nil,
+    dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint? = nil,
+    displayName: String? = nil
   ) {
     self.agentId = agentId
     self.role = role
@@ -101,6 +202,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.sourceMessageId = sourceMessageId
     self.richOutputJson = richOutputJson
     self.replyContent = replyContent
+    self.dispatchCheckpoint = dispatchCheckpoint
+    self.displayName = displayName.map { String($0.prefix(256)) }
   }
 
   enum CodingKeys: String, CodingKey {
@@ -115,6 +218,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case sourceMessageId = "source_message_id"
     case richOutputJson = "rich_output_json"
     case replyContent = "reply_content"
+    case dispatchCheckpoint = "dispatch_checkpoint"
+    case displayName = "display_name"
   }
 
   init(from decoder: Decoder) throws {
@@ -131,7 +236,9 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId,
       sourceMessageId: try container.decodeIfPresent(String.self, forKey: .sourceMessageId) ?? "",
       richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? "",
-      replyContent: try container.decodeIfPresent(String.self, forKey: .replyContent)
+      replyContent: try container.decodeIfPresent(String.self, forKey: .replyContent),
+      dispatchCheckpoint: try container.decodeIfPresent(AgentTeamMemberDispatchCheckpoint.self, forKey: .dispatchCheckpoint),
+      displayName: try container.decodeIfPresent(String.self, forKey: .displayName)
     )
   }
 }

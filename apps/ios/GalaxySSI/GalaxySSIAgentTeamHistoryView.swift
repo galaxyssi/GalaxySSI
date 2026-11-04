@@ -62,6 +62,125 @@ struct GalaxySSICollaborationRecallView: View {
   }
 }
 
+struct GalaxySSICollaborationResultsButton: View {
+  let conversationId: String
+  let t: (String, String) -> String
+  @State private var presented = false
+
+  var body: some View {
+    Button {
+      presented = true
+    } label: {
+      Label(t("galaxyssi.collaboration.results", "Member Results"), systemImage: "person.3")
+        .font(.subheadline.weight(.semibold))
+        .frame(minHeight: 44)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .sheet(isPresented: $presented) {
+      GalaxySSICollaborationResultsView(conversationId: conversationId, t: t)
+    }
+  }
+}
+
+private struct GalaxySSICollaborationResultsView: View {
+  let conversationId: String
+  let t: (String, String) -> String
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: GalaxySSIStore
+  @State private var snapshots: [AgentTeamExecutionSnapshot] = []
+  @State private var limit = 20
+
+  var body: some View {
+    NavigationView {
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 16) {
+          if snapshots.isEmpty {
+            Text(t("galaxyssi.collaboration.no_results", "No member results yet."))
+              .foregroundColor(.secondary)
+          }
+          ForEach(snapshots, id: \.supervisorRunId) { snapshot in
+            DisclosureGroup {
+              VStack(alignment: .leading, spacing: 16) {
+                ForEach(snapshot.members.filter { $0.deliveryMode != .ignore }, id: \.memberId) { member in
+                  memberResult(member, snapshot: snapshot)
+                }
+              }
+              .padding(.vertical, 8)
+            } label: {
+              VStack(alignment: .leading, spacing: 4) {
+                Text(snapshot.goal.ifBlank(t("galaxyssi.collaboration.results", "Member Results")))
+                  .lineLimit(2)
+                Text(GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: interfaceLanguage))
+                  .font(.footnote).foregroundColor(.secondary)
+              }
+            }
+          }
+          if snapshots.count == limit && limit < AgentTeamExecutionHistoryStore.maxSnapshots {
+            Button(t("galaxyssi.collaboration.older_results", "Older Results")) {
+              limit += 20
+              refresh()
+            }
+          }
+        }
+        .padding(16)
+      }
+      .navigationTitle(t("galaxyssi.collaboration.results", "Member Results"))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("galaxyssi.common.close", "Close")) { dismiss() }
+        }
+      }
+    }
+    .navigationViewStyle(.stack)
+    .onAppear(perform: refresh)
+    .onChange(of: store.activeAgentConversationId) { _ in refresh() }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIAgentTeamExecutionHistoryDidUpdate)
+      .receive(on: RunLoop.main)) { notification in
+        if let runId = notification.object as? String,
+           !snapshots.contains(where: { $0.supervisorRunId == runId }),
+           AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: runId)?.conversationId != conversationId {
+          return
+        }
+        refresh()
+      }
+  }
+
+  private func refresh() {
+    guard store.activeAgentConversationId == conversationId,
+          let session = store.agentSession(id: conversationId), session.collaborationRoster != nil,
+          !session.privateMode, !session.trackingPaused else {
+      snapshots = []
+      dismiss()
+      return
+    }
+    snapshots = AgentTeamExecutionHistoryStore.shared.collaborationResults(conversationId: conversationId, limit: limit)
+  }
+
+  private func memberResult(_ member: AgentTeamMemberSnapshot, snapshot: AgentTeamExecutionSnapshot) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text((member.displayName ?? "").ifBlank(member.agentId)).font(.subheadline.weight(.semibold))
+      if !member.role.isBlank {
+        Text(member.role).font(.footnote).foregroundColor(.secondary)
+      }
+      if member.status != .succeeded {
+        Text(GalaxySSIAgentTeamPresentation.memberStatusLabel(member.status, language: interfaceLanguage))
+          .font(.footnote).foregroundColor(.secondary)
+      }
+      if !member.errorMessage.isBlank {
+        Text(member.errorMessage).foregroundColor(.red)
+      }
+      if member.deliveryMode == .observe && (!member.output.isBlank || !member.richOutputJson.isBlank) {
+        GalaxySSIRichContentView(content: member.output, richOutputJson: member.richOutputJson,
+          expansionStorageKey: "collaboration:\(snapshot.supervisorRunId):\(member.memberId)")
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .contain)
+  }
+}
+
 enum GalaxySSIAgentTeamPresentation {
   static func stateLabel(_ state: AgentTeamExecutionState, language: String) -> String {
     let key: String
