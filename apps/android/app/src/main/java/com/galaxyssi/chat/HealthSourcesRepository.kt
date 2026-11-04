@@ -3,6 +3,8 @@ package com.galaxyssi.chat
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.health.connect.client.HealthConnectClient
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 
 internal enum class HealthPlatformAvailability { AVAILABLE, INSTALL_OR_UPDATE, UNSUPPORTED, CHECK_FAILED }
 
@@ -16,6 +18,8 @@ internal data class HealthSourcesSnapshot(
     val platform: HealthPlatformAvailability,
     val bluetoothLe: Boolean,
     val local: HealthLocalSources?,
+    val platformScopes: Int?,
+    val lastConfirmedImport: Long,
 )
 
 internal object HealthSourcesRepository {
@@ -42,6 +46,13 @@ internal object HealthSourcesRepository {
             } else 0L
             HealthLocalSources(records.first, records.second, originals)
         }.getOrNull()
-        return HealthSourcesSnapshot(platform(context), context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE), local)
+        val status = platform(context)
+        val scopes = if (status == HealthPlatformAvailability.AVAILABLE) runCatching {
+            runBlocking {
+                withTimeout(5_000) { HealthConnectImport.allowed(HealthConnectScope.entries.toSet(), AndroidHealthConnectReader(context).granted()).size }
+            }
+        }.getOrNull() else null
+        val lastImport = if (names.fixture == null) HealthConnectSettings.lastImport(context) else 0
+        return HealthSourcesSnapshot(status, context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE), local, scopes, lastImport)
     }
 }

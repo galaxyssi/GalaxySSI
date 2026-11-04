@@ -30,9 +30,10 @@ class HealthSourcesDeviceTest {
         assertFalse(context.getDatabasePath(names.originals).exists())
         assertEquals(context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE), sources.bluetoothLe)
         @Suppress("DEPRECATION")
-        val manifest = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS or PackageManager.GET_SERVICES)
-        assertFalse(manifest.requestedPermissions.orEmpty().any { it.startsWith("android.permission.health.") || it.startsWith("androidx.health.permission.") })
-        assertFalse(manifest.services.orEmpty().any { it.name.endsWith(".HealthDataSdkService") })
+        val manifest = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+        val healthPermissions = manifest.requestedPermissions.orEmpty()
+            .filter { it.startsWith("android.permission.health.") || it.startsWith("androidx.health.permission.") }.toSet()
+        assertEquals(HealthConnectScope.entries.map { it.permission }.toSet(), healthPermissions)
     }
 
     @Test fun localSourcesSeparateOriginalsFromConfirmedRowsAndIgnoreFutureManualRows() = fixture { names, now ->

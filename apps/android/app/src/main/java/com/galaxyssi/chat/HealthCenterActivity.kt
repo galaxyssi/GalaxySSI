@@ -308,6 +308,9 @@ class HealthCenterActivity : Activity() {
             ui.add(content, ui.card().apply {
                 addView(ui.text(getString(R.string.health_measured_at), 13f, muted = true)); addView(ui.text(date(record.draft.measuredAt)))
                 ui.add(this, ui.text(source(record), 14f, muted = true), 14)
+                if (record.platformOrigin.isNotBlank()) ui.add(this, ui.text(
+                    if (record.platformOrigin == "health_connect.aggregate") getString(R.string.health_connect_platform_aggregate)
+                    else getString(R.string.health_connect_platform_origin, record.platformOrigin), 13f, muted = true), 4)
                 record.draft.evidence?.let { evidence ->
                     val location = if (evidence.tableSheet.isNotBlank()) getString(R.string.health_xlsx_source_row, evidence.tableSheet, evidence.tableRow)
                         else getString(if (evidence.kind == "table") R.string.health_table_source_row else R.string.health_source_page,

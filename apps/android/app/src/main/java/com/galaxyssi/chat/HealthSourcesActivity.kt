@@ -95,8 +95,13 @@ class HealthSourcesActivity : Activity() {
         body.addView(ui.card().apply {
             tag = "health-sources-ready"
             background = ui.background(color = getColor(R.color.page_bg), stroke = getColor(R.color.separator), radius = 8)
-            addView(sourceRow(R.drawable.ic_protocol_link, getString(R.string.health_sources_summary),
-                getString(R.string.health_sources_summary_detail)))
+            val summary = when {
+                snapshot.platformScopes != null && snapshot.platformScopes > 0 -> getString(R.string.health_connect_scope_count, snapshot.platformScopes)
+                snapshot.platform == HealthPlatformAvailability.AVAILABLE && snapshot.platformScopes == null ->
+                    getString(R.string.health_connect_grant_status_unavailable)
+                else -> getString(R.string.health_sources_summary_detail)
+            }
+            addView(sourceRow(R.drawable.ic_protocol_link, getString(R.string.health_sources_summary), summary))
         })
         ui.add(body, ui.text(getString(R.string.health_sources_platforms), 18f, bold = true), 20)
         val status = when (snapshot.platform) {
@@ -108,7 +113,13 @@ class HealthSourcesActivity : Activity() {
         ui.add(body, ui.card().apply {
             addView(sourceRow(R.drawable.ic_health_heart, getString(R.string.health_sources_platform_name), getString(status))
                 .apply { tag = "health-platform-${snapshot.platform.name}" })
-            ui.add(this, ui.text(getString(R.string.health_sources_no_sync), 13f, muted = true), 6)
+            val last = snapshot.lastConfirmedImport.takeIf { it > 0 }?.let {
+                getString(R.string.health_connect_last_import, DateFormat.getDateTimeInstance().format(Date(it)))
+            } ?: getString(R.string.health_connect_no_import)
+            ui.add(this, ui.text(last, 13f, muted = true), 6)
+            addView(ui.profileRow(getString(R.string.health_connect_authorize)) {
+                openLocal(Intent(this@HealthSourcesActivity, HealthConnectActivity::class.java))
+            }.apply { tag = "health-connect-entry" })
             when (snapshot.platform) {
                 HealthPlatformAvailability.AVAILABLE -> addView(ui.profileRow(getString(R.string.health_sources_system_settings)) {
                     openExternal(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS))

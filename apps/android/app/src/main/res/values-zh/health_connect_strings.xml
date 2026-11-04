@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_connect_authorize">授权数据来源</string>
+    <string name="health_connect_privacy">Health Connect 隐私说明</string>
+    <string name="health_connect_intro">选择要读取的测量类型，汇入本机健康档案。</string>
+    <string name="health_connect_read_only">仅申请读取</string>
+    <string name="health_connect_policy">仅在你主动预览时读取已选择且已授权的测量。不写入 Health Connect，不在后台采集，不将这次导入发送给模型或其他设备。</string>
+    <string name="health_connect_retention">断开连接会停止新读取，已保存的本机副本仍加密保留。可在健康指标目录的记录详情中移除测量，修订历史仍会保留。</string>
+    <string name="health_connect_revocation">你可随时在 Health Connect 的系统设置中撤销授权。</string>
+    <string name="health_connect_scopes">选择要读取的数据</string>
+    <string name="health_connect_scope_granted">%1$s · 系统已授权</string>
+    <string name="health_connect_working">正在检查 Health Connect…</string>
+    <string name="health_connect_check_again">重新检查</string>
+    <string name="health_connect_continue">打开 Android 系统授权</string>
+    <string name="health_connect_select_first">请至少选择一种测量类型。</string>
+    <string name="health_connect_range">读取范围</string>
+    <string name="health_connect_days">最近 %1$d 天</string>
+    <string name="health_connect_hours">最近 %1$d 小时</string>
+    <string name="health_connect_interval_note">步数按已结束的本地自然日汇总；睡眠按来源记录的睡眠时段长度。</string>
+    <string name="health_connect_preview">预览导入</string>
+    <string name="health_connect_no_records">此范围内未找到测量记录。</string>
+    <string name="health_connect_partial">只读取了已选择且获系统授权的类型。</string>
+    <string name="health_connect_preview_count">%1$d 条测量待确认</string>
+    <string name="health_connect_preview_metric">%1$s：%2$d 条 · 最近 %3$s（%4$s）</string>
+    <string name="health_connect_self_confirmation">保存前请确认这些记录属于本人。</string>
+    <string name="health_connect_save">确认保存到本人档案</string>
+    <string name="health_connect_disconnect">断开 Health Connect</string>
+    <string name="health_connect_saved">已保存 %1$d 条测量 · 跳过 %2$d 条已导入记录</string>
+    <string name="health_connect_timeout">Health Connect 未及时响应，请重试。</string>
+    <string name="health_connect_permissions_changed">Health Connect 权限已变化，请重新检查后再读取或保存。</string>
+    <string name="health_connect_too_many">测量数量超过本次预览范围，请缩短时间或减少类型。</string>
+    <string name="health_connect_failed">Health Connect 操作未完成，请重试。</string>
+    <string name="health_connect_scope_count">Health Connect · %1$d 项已授权</string>
+    <string name="health_connect_grant_status_unavailable">无法检查 Health Connect 的授权状态</string>
+    <string name="health_connect_last_import">最近确认导入：%1$s</string>
+    <string name="health_connect_no_import">还没有 Health Connect 导入记录。</string>
+    <string name="health_connect_platform_aggregate">Health Connect 每日汇总</string>
+    <string name="health_connect_platform_origin">来源应用：%1$s</string>
+</resources>

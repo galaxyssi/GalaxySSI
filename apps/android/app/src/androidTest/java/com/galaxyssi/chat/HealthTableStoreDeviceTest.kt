@@ -133,13 +133,22 @@ class HealthTableStoreDeviceTest {
         }
         assertTrue(runCatching { store.page(batch) }.isFailure)
     }
-    @Test fun schemaTwoUpgradeKeepsOriginalObservationsAndAddsStructuredTables() = fixture { name, store ->
-        val batch = prepare(store, listOf(raw(1))); save(store, batch)
-        context.openOrCreateDatabase(name, 0, null).use { db ->
-            db.execSQL("DROP TABLE health_table_rows"); db.execSQL("DROP TABLE health_tables"); db.version = 2
+    @Test fun schemaTwoUpgradeKeepsOriginalObservationsAndAddsStructuredTables() {
+        val name = "health-table-v2-${id()}.db"
+        try {
+            val original = original()
+            val evidence = HealthEvidence(original.id, id(), "row-1", original.sha256, 1, "124/82", confirmed = true, kind = "table", tableRow = 1)
+            val draft = HealthDraft(values = mapOf("systolic" to "124", "diastolic" to "82"),
+                measuredAt = 1_780_000_000_000L, evidence = evidence)
+            val first = seedLegacyHealthObservation(context, name, 2, draft)
+            HealthTableStore(context, name).use { migrated -> assertTrue(migrated.active().isEmpty()) }
+            HealthRecordStore(context, name).use {
+                assertEquals(listOf(first), it.page().records)
+                assertEquals(first.id, it.recordForEvidence(draft)?.id)
+            }
+        } finally {
+            context.deleteDatabase(name)
         }
-        HealthTableStore(context, name).use { migrated -> assertTrue(migrated.active().isEmpty()); assertNull(migrated.batch(batch)) }
-        HealthRecordStore(context, name).use { assertEquals(1L, it.count()); assertEquals("124", it.page().records.single().draft.values["systolic"]) }
     }
     @Test fun allInvalidAndDuplicateOnlyBatchesCannotInventMeasurements() = fixture { name, store ->
         val batch = prepare(store, listOf(raw(1, ""), raw(2, "<120")))

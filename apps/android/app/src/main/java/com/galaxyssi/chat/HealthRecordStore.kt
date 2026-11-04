@@ -62,7 +62,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         while (true) {
             val args = arrayListOf(until.toString())
             val conditions = arrayListOf("deleted=0", "measured_at<=?")
-            if (manual) conditions += "original_id IS NULL"
+            if (manual) conditions += "original_id IS NULL AND external_key IS NULL"
             metric?.let { conditions += "metric=?"; args += it.name }
             after?.let { conditions += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id) }
             val result = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE " +
@@ -174,7 +174,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         val conditions = arrayListOf("deleted=0", "metric=?", "measured_at>=?", "measured_at<?")
         val args = arrayListOf(spec.metric.name, spec.from.toString(), spec.until.toString())
         if (spec.source.originalId.isNotBlank()) { conditions += "original_id=?"; args += spec.source.originalId }
-        if (spec.source.manualOnly) conditions += "original_id IS NULL"
+        if (spec.source.manualOnly) conditions += "original_id IS NULL AND external_key IS NULL"
         if (after != null) { conditions += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(after.measuredAt.toString(), after.measuredAt.toString(), after.id) }
         val rows = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE ${conditions.joinToString(" AND ")} " +
             "ORDER BY measured_at DESC,id DESC LIMIT ${PAGE_SIZE + 1}", args.toTypedArray(), signal).use { cursor -> buildList {
@@ -232,11 +232,39 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return try { saveWithinTransaction(draft).also { database.setTransactionSuccessful() } }
         finally { database.endTransaction(); publishCommittedChanges() }
     }
-    private fun saveWithinTransaction(draft: HealthDraft): HealthSaveResult {
-        val record = HealthObservationPolicy.observation(draft)
-        val encrypted = encode(record)
-        val duplicateKey = dedupe(record)
+    @Synchronized fun importHealthConnect(rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): Int {
+        require(rows.size <= HealthConnectImport.MAX_ROWS)
+        val db = helper.writableDatabase
+        var inserted = 0
+        db.beginTransaction()
+        try {
+            for (row in rows) {
+                ensureActive()
+                val key = AgentMemoryIndexKey.token("$name|health-connect-v1|${row.draft.metric.name}|${row.origin}|${row.id}")
+                if (db.rawQuery("SELECT 1 FROM observations WHERE external_key=?", arrayOf(key)).use { it.moveToFirst() }) continue
+                if (saveWithinTransaction(row.draft, key, row.origin) is HealthSaveResult.Saved) inserted++
+            }
+            ensureActive()
+            db.setTransactionSuccessful()
+            return inserted
+        } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+
+    private fun saveWithinTransaction(draft: HealthDraft, externalKey: String? = null, platformOrigin: String = ""): HealthSaveResult {
         val database = helper.writableDatabase
+        val existingPlatform = if (draft.recordId.isBlank()) null else database.rawQuery(
+            "SELECT id,revision,payload,external_key FROM observations WHERE id=? AND deleted=0 AND external_key IS NOT NULL",
+            arrayOf(draft.recordId)
+        ).use { if (it.moveToFirst()) decode(it) to it.getString(3) else null }
+        val sourceKey = externalKey ?: existingPlatform?.second
+        val normalized = HealthObservationPolicy.observation(draft)
+        val record = if (sourceKey != null) {
+            if (existingPlatform != null && (draft.metric != existingPlatform.first.draft.metric || draft.evidence != null))
+                return HealthSaveResult.Conflict
+            normalized.copy(source = "health_connect", platformOrigin = existingPlatform?.first?.platformOrigin ?: platformOrigin)
+        } else normalized
+        val encrypted = encode(record)
+        val duplicateKey = sourceKey ?: dedupe(record)
         return try {
             val previous = database.rawQuery("SELECT revision,metric FROM observations WHERE id=? AND deleted=0", arrayOf(record.id))
                 .use { if (it.moveToFirst()) it.getInt(0) to HealthMetric.valueOf(it.getString(1)) else null }
@@ -253,6 +281,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 put("deleted", 0)
                 put("original_id", draft.evidence?.originalId)
                 put("evidence_key", evidenceKey(draft))
+                put("external_key", sourceKey)
             }
             if (existing == 0) database.insertOrThrow("observations", null, values)
             else check(database.update("observations", values, "id=? AND revision=? AND deleted=0", arrayOf(record.id, existing.toString())) == 1)
@@ -261,7 +290,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 put("changed_at", record.receivedAt); put("deleted", 0)
             })
             changed(record.draft.metric); previous?.second?.takeIf { it != record.draft.metric }?.let(::changed)
-            database.delete("drafts", "draft_key=?", arrayOf(draftKey(draft)))
+            if (externalKey == null) database.delete("drafts", "draft_key=?", arrayOf(draftKey(draft)))
             HealthSaveResult.Saved(record)
         } finally { encrypted.fill(0) }
     }
@@ -313,12 +342,12 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     fun clearDraft(key: String) { helper.writableDatabase.delete("drafts", "draft_key=?", arrayOf(key)) }
     override fun close() = helper.close()
 
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 4) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 5) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE observations(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,metric TEXT NOT NULL," +
-                "measured_at INTEGER NOT NULL,payload BLOB NOT NULL,dedupe TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,original_id TEXT,evidence_key TEXT)")
+                "measured_at INTEGER NOT NULL,payload BLOB NOT NULL,dedupe TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,original_id TEXT,evidence_key TEXT,external_key TEXT)")
             db.execSQL("CREATE UNIQUE INDEX observation_dedupe ON observations(dedupe) WHERE deleted=0")
             db.execSQL("CREATE INDEX observation_page ON observations(deleted,measured_at DESC,id DESC)")
             db.execSQL("CREATE INDEX observation_metric_page ON observations(metric,deleted,measured_at DESC,id DESC)")
@@ -329,9 +358,10 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             db.execSQL("CREATE TABLE drafts(draft_key TEXT PRIMARY KEY,payload BLOB NOT NULL)")
             HealthTableStore.createSchema(db)
             createClocks(db)
+            indexPlatformRecords(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..3 && newVersion == 4) { "Unsupported health schema upgrade" }
+            check(oldVersion in 1..4 && newVersion == 5) { "Unsupported health schema upgrade" }
             if (oldVersion < 2) {
                 db.execSQL("ALTER TABLE observations ADD COLUMN original_id TEXT")
                 db.execSQL("ALTER TABLE observations ADD COLUMN evidence_key TEXT")
@@ -340,7 +370,11 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             }
             if (oldVersion < 3) HealthTableStore.createSchema(db)
             createClocks(db)
+            db.execSQL("ALTER TABLE observations ADD COLUMN external_key TEXT")
+            indexPlatformRecords(db)
         }
+        private fun indexPlatformRecords(db: SQLiteDatabase) =
+            db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
         private fun createClocks(db: SQLiteDatabase) { db.execSQL("CREATE TABLE IF NOT EXISTS health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)") }
     }
     companion object {
