@@ -53,11 +53,13 @@ struct GalaxySSIHealthBackupView: View {
         if plan != nil || verificationInput != nil {
           passwordForm
         }
-        historySection
-        if saveUnverified { Text(t("save_unverified", "The external file could not be verified.")) }
-        if verifyingSave { ProgressView(t("working", "Processing backup")) }
-        if saveAttempt != nil && !verifyingSave {
-          Button(t("dismiss_save", "Dismiss unverified save")) { finishSave(.failure(CancellationError())) }
+        Group {
+          historySection
+          if saveUnverified { Text(t("save_unverified", "The external file could not be verified.")) }
+          if verifyingSave { ProgressView(t("working", "Processing backup")) }
+          if saveAttempt != nil && !verifyingSave {
+            Button(t("dismiss_save", "Dismiss unverified save")) { finishSave(.failure(CancellationError())) }
+          }
         }
         if let outcome {
           Section(generated != nil ? t("created", "Encrypted backup ready") : t("verified", "Backup verified")) {
