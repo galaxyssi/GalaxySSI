@@ -1,3 +1,5 @@
+import CoreBluetooth
+import HealthKit
 import SwiftUI
 
 @MainActor
@@ -21,6 +23,13 @@ struct GalaxySSIHealthCenterView: View {
 
   var body: some View {
     List {
+      Section {
+        NavigationLink {
+          sourceOverview
+        } label: {
+          Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
+        }
+      }
       if scenePhase == .active, let archive {
         let current = archive.current
         Section {
@@ -91,6 +100,45 @@ struct GalaxySSIHealthCenterView: View {
     }
   }
 
+  private var sourceOverview: some View {
+    List {
+      if scenePhase == .active {
+        Section(t("device_sources", "Device sources")) {
+          sourceStatus("HealthKit", detail: HKHealthStore.isHealthDataAvailable()
+            ? t("platform_available", "Available on this device")
+            : t("platform_unavailable", "Not available on this device"))
+          sourceStatus(t("bluetooth_devices", "Bluetooth devices"), detail: bluetoothAuthorization)
+        }
+        Section(t("local_sources", "On this device")) {
+          if let archive {
+            let current = archive.current
+            HStack {
+              Text(t("confirmed_count", "Confirmed measurements"))
+              Spacer()
+              Text(current.count.formatted(.number.locale(locale))).foregroundColor(.secondary)
+            }
+            if let latest = current.first {
+              VStack(alignment: .leading, spacing: 4) {
+                Text(t("latest_manual", "Latest manual measurement"))
+                Text(title(latest.metric)).foregroundColor(.secondary)
+                Text(latest.measuredAt.formatted(date: .abbreviated, time: .shortened))
+                  .foregroundColor(.secondary)
+              }
+            }
+            Button(archive.draft == nil ? t("manual", "Record measurement") : t("resume_draft", "Resume draft")) {
+              editor = archive.draft ?? GalaxySSIHealthDraft()
+            }
+          } else {
+            Text(t("unavailable", "Health records could not be accessed."))
+            Button(t("retry", "Reload records"), action: reload)
+          }
+        }
+      }
+    }
+    .navigationTitle(t("sources", "Devices & Data Sources"))
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
   private func overview(_ current: [GalaxySSIHealthReading], now: Date) -> some View {
     var local = calendar
     local.timeZone = timeZone
@@ -121,6 +169,23 @@ struct GalaxySSIHealthCenterView: View {
           }
         }
       }
+    }
+  }
+
+  private func sourceStatus(_ name: String, detail: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(name)
+      Text(detail).foregroundColor(.secondary)
+      Text(t("source_not_connected", "Not connected to Health Center")).foregroundColor(.secondary)
+    }
+  }
+
+  private var bluetoothAuthorization: String {
+    switch CBManager.authorization {
+    case .allowedAlways: return t("bluetooth_allowed", "System Bluetooth permission granted")
+    case .denied, .restricted: return t("bluetooth_denied", "System Bluetooth permission unavailable")
+    case .notDetermined: return t("bluetooth_not_requested", "System Bluetooth permission not requested")
+    @unknown default: return t("bluetooth_unknown", "System Bluetooth permission unknown")
     }
   }
 
