@@ -338,6 +338,19 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
   }
 
+  func testStructuredOriginalPreviewBoundsDoNotMutateSourceTable() throws {
+    let long = String(repeating: "x", count: 300)
+    let columns = (0..<13).map { "column\($0)" }
+    let rows = Array(repeating: Array(repeating: long, count: 13), count: 31)
+    let table = GalaxySSIHealthTableImport.Table(headers: columns, rows: rows)
+    let sample = GalaxySSIHealthTableSourceSample(table)
+    XCTAssertTrue(sample.limited)
+    XCTAssertEqual(sample.headers.count, 12)
+    XCTAssertEqual(sample.rows.count, 30)
+    XCTAssertEqual(sample.rows.first?.first?.count, 256)
+    XCTAssertEqual(table.rows.first?.first, long)
+  }
+
   func testPaperEdgeSuggestionConvertsOriginAndRejectsClippedOrSmallRectangles() throws {
     let accepted = try XCTUnwrap(GalaxySSIHealthPaperEdges.paddedCrop(
       visionBounds: CGRect(x: 0.15, y: 0.10, width: 0.6, height: 0.5)))
