@@ -43,8 +43,9 @@ extension GalaxySSIStoreTests {
     let suite = "desktop-tool-archive-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
-      fileURL: directory.appendingPathComponent("history.sqlite"))
+    let secrets = InMemorySecretStore()
+    let file = directory.appendingPathComponent("history.sqlite")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: file)
     XCTAssertThrowsError(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]))
     let snapshot = AgentTeamExecutionSnapshot(supervisorRunId: "run", teamId: "team",
       conversationId: "group", taskId: "turn", primaryAgentId: "primary", goal: "Research",
@@ -59,6 +60,16 @@ extension GalaxySSIStoreTests {
     let receipt = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body])
     XCTAssertEqual(receipt.sha256, descriptor.sha256)
     XCTAssertEqual(try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: [body]), receipt)
+    XCTAssertTrue(try history.hasArchivedDesktopEvidence(descriptor, request: request))
+    try history.advanceDesktopEvidenceCursor(request, from: 0, to: 1, final: false)
+    XCTAssertThrowsError(try history.advanceDesktopEvidenceCursor(request, from: 0, to: 2, final: false))
+    try history.advanceDesktopEvidenceCursor(request, from: 1, to: 1, final: true)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, fileURL: file)
+    XCTAssertEqual(try reopened.desktopEvidenceCursor(request), .init(sequence: 1, archiveFinal: true))
+    XCTAssertThrowsError(try reopened.advanceDesktopEvidenceCursor(request, from: 1, to: 2, final: false))
+    let newer = try XCTUnwrap(AgentDesktopToolEvidenceWire.Request(binding: binding, generation: 3, nonce: "new"))
+    XCTAssertEqual(try reopened.desktopEvidenceCursor(newer), .init())
+    XCTAssertFalse(try reopened.hasArchivedDesktopEvidence(descriptor, request: newer))
     var index = response
     index["mode"] = .string("index")
     index["entries"] = .array([.object(response)])

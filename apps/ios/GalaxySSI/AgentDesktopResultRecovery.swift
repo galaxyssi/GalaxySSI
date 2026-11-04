@@ -16,6 +16,11 @@ enum AgentDesktopToolEvidenceWire {
     let pageCount: Int
   }
 
+  struct ImportCursor: Codable, Equatable {
+    var sequence: Int64 = 0
+    var archiveFinal = false
+  }
+
   struct Descriptor: Equatable {
     let evidenceId: String
     let sha256: String
@@ -54,6 +59,21 @@ enum AgentDesktopToolEvidenceWire {
     let binding: AgentDesktopReplyBinding
     let generation: Int64
     let nonce: String
+
+    var archiveScope: AgentMcpJSONObject {
+      var fields = binding.fields.mapValues(AgentMcpJSONValue.string)
+      fields["desktop_id"] = .string(binding.desktopId)
+      fields["execution_generation"] = .int(generation)
+      return fields
+    }
+
+    func archiveId(_ descriptor: Descriptor) -> String {
+      var fields = archiveScope
+      fields["evidence_id"] = .string(descriptor.evidenceId)
+      return AgentMcpJSONCodec.sha256(fields)
+    }
+
+    var cursorKey: String { "desktop-evidence-cursor:" + AgentMcpJSONCodec.sha256(archiveScope) }
 
     init?(binding: AgentDesktopReplyBinding, generation: Int64, nonce: String) {
       guard binding.isValid, binding.teamSource != nil, binding.agentId == "codex",

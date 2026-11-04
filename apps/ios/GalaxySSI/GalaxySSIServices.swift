@@ -2431,7 +2431,11 @@ final class MessageCoordinator: ObservableObject {
         currentTeamObserverRecovery(binding)?.owner.observedGeneration == generation &&
         store.agentSession(id: binding.identity.conversationId)?.collaborationRoster != nil
     }
-    var cursor: Int64 = 0
+    let history = AgentTeamExecutionHistoryStore.shared
+    guard let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
+            nonce: UUID().uuidString),
+          let checkpoint = try? history.desktopEvidenceCursor(scope), !checkpoint.archiveFinal else { return }
+    var cursor = checkpoint.sequence
     let inlineBytes = AgentDesktopToolEvidenceWire.maximumPageBytes
     while isCurrent() {
       guard let request = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
@@ -2442,6 +2446,10 @@ final class MessageCoordinator: ObservableObject {
             let index = request.verifyIndex(response, authenticatedDesktopId: binding.desktopId,
               after: cursor, inlineBytes: inlineBytes) else { return }
       for descriptor in index.entries where descriptor.canImport {
+        guard isCurrent() else { return }
+        do {
+          if try history.hasArchivedDesktopEvidence(descriptor, request: request) { continue }
+        } catch { return }
         var pages: [Data] = []
         if let inline = index.inlineOriginals[descriptor.evidenceId] {
           pages = [inline]
@@ -2459,8 +2467,14 @@ final class MessageCoordinator: ObservableObject {
         }
         guard isCurrent() else { return }
         do {
-          _ = try AgentTeamExecutionHistoryStore.shared.archiveDesktopToolEvidence(
-            request: request, descriptor: descriptor, pages: pages)
+          _ = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: pages)
+        } catch { return }
+      }
+      let final = index.archiveFinal && !index.hasMore
+      if index.nextSequence > cursor || final {
+        guard isCurrent() else { return }
+        do {
+          try history.advanceDesktopEvidenceCursor(request, from: cursor, to: index.nextSequence, final: final)
         } catch { return }
       }
       guard index.hasMore else { return }
