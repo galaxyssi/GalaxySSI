@@ -2,6 +2,36 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCollaborationEvolutionRejectsUnboundOptionsAndUnsupportedNovelty() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"gap","base_revision":0,"kind":"capability_gap","title":"Gap","parents":[],"body":{
+        "capability_gap":{"category":"verification","symptom":"Unstable output","needed_capability":"Repeat checks",
+          "learning_options":[{"id":"repeat","action":"Repeat","expected_gain":"Confidence","cost":"One trial",
+            "goal_relevance":"Check stability","verification":"Compare outputs"}],"chosen_option":"repeat","rationale":"Isolate noise"}}},
+      {"id":"idea","base_revision":0,"kind":"innovation","title":"Idea","parents":[],"body":{
+        "innovation":{"origin":"gap","novelty_scope":"not_checked","hypothesis":"Check twice","mechanism":"Pair trials",
+          "difference":"Same input","prior_art":"Not reviewed","falsifier":"No improvement","domain":"Testing",
+          "applies_when":"Repeatable","risks":"Correlated errors","alternatives":["Independent test"],
+          "predictions":[{"id":"p1","statement":"Detect instability","test":"Repeat on baseline"}]}}}
+    ]}
+    """
+    var drafts = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw))
+    XCTAssertTrue(drafts.allSatisfy(AgentCollaborationEvolutionIntake.validates))
+    var gap = try XCTUnwrap(drafts[0].body["capability_gap"]?.objectValue)
+    gap["chosen_option"] = .string("missing")
+    drafts[0].body["capability_gap"] = .object(gap)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[0]))
+    var idea = try XCTUnwrap(drafts[1].body["innovation"]?.objectValue)
+    idea["origin"] = .string("combination")
+    drafts[1].body["innovation"] = .object(idea)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[1]))
+    idea["origin"] = .string("gap")
+    idea["novelty_scope"] = .string("searched_scope_only")
+    drafts[1].body["innovation"] = .object(idea)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[1]))
+  }
+
   func testRejectedResearchReplyReopensWithExactScopeAndOriginalBytes() throws {
     let suite = "research-rejection-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
@@ -155,8 +185,33 @@ extension GalaxySSIStoreTests {
       call: AssembledToolCall(callId: "tool-call", index: 0, name: "web_search", argumentsJson: "{}"),
       output: String(repeating: "search result ", count: 320), succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
     let receipt = try history.recordCloudEvidence(observation)
+    var failed = observation
+    failed.succeeded = false
+    failed.output = "sensitive failure detail"
+    var failedIds = Set<String>()
+    for round in 20...28 {
+      failed.round = round
+      failedIds.insert(try history.recordCloudEvidence(failed).string("evidence_id"))
+    }
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let directory: AgentMcpJSONObject = ["mode": .string("problems")]
+    let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
+    let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
+    XCTAssertEqual(entries.count, 8)
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains(failed.output))
+    let lastProblems = try reopened.recallCollaborationOriginal(
+      ["mode": .string("problems"), "cursor": .string(firstProblems.string("next_cursor"))], scope: scope)
+    let tail = try XCTUnwrap(lastProblems["problems"]?.arrayValue)
+    XCTAssertEqual(tail.count, 1)
+    XCTAssertEqual(lastProblems["next_cursor"], .null)
+    XCTAssertEqual(Set((entries + tail).compactMap { $0.objectValue?.string("evidence_id") }), failedIds)
+    let other = try XCTUnwrap(team.members.first { $0.memberId != scope.memberId })
+    var otherScope = scope
+    otherScope.memberId = other.memberId
+    otherScope.sourceId = other.sourceMessageId
+    let isolated = try reopened.recallCollaborationOriginal(directory, scope: otherScope)
+    XCTAssertEqual(isolated["problems"], .array([]))
     XCTAssertEqual(try reopened.recordCloudEvidence(observation), receipt)
     let input: AgentMcpJSONObject = [
       "mode": .string("evidence"), "evidence_id": receipt["evidence_id"] ?? .null,
