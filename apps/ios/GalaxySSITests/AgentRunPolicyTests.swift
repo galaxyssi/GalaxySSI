@@ -4,6 +4,51 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testDesktopToolEvidenceRejectsForeignNonceGenerationAndInnerScope() throws {
+    let source = UUID().uuidString.lowercased()
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "member",
+      conversationId: "group", turnId: "turn", sourceMessageId: source, contactId: "review", deliveryMode: .observe)
+    let identity = AgentTaskIdentity(clientRouteId: "route", conversationId: "group", taskId: source, turnId: "turn")
+    let binding = try XCTUnwrap(AgentDesktopReplyBinding.teamObserver(owner: owner,
+      desktopId: "desktop", agentId: "codex", identity: identity))
+    let request = try XCTUnwrap(AgentDesktopToolEvidenceWire.Request(binding: binding, generation: 2, nonce: "nonce"))
+    func digest(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
+    var original = binding.fields.mapValues(AgentMcpJSONValue.string)
+    original["contract"] = .string(AgentDesktopToolEvidenceWire.contract)
+    original["execution_generation"] = .int(2)
+    original["trust"] = .string("execution_observed_not_claim_verified")
+    original["coverage"] = .string("provider_payload_as_received")
+    original["observation"] = .object(["provider": .string("codex"), "thread_id": .string("provider-thread"),
+      "turn_id": .string("provider-turn"), "item": .object(["type": .string("webSearch")])])
+    func page(for body: Data) -> AgentMcpJSONObject {
+      binding.fields.mapValues(AgentMcpJSONValue.string).merging([
+        "type": .string("agent_task_evidence"), "mode": .string("page"), "status": .string("ready"),
+        "request_id": .string("nonce"), "contract": .string(AgentDesktopToolEvidenceWire.contract),
+        "execution_generation": .int(2), "evidence_id": .string(String(repeating: "a", count: 64)),
+        "sha256": .string(digest(body)), "page_sha256": .string(digest(body)),
+        "sequence": .int(1), "page_count": .int(1), "page_index": .int(0),
+        "total_bytes": .int(Int64(body.count)), "data_b64": .string(body.base64EncodedString()),
+        "item_type": .string("webSearch"), "trust": .string("execution_observed_not_claim_verified"),
+        "coverage": .string("provider_payload_as_received")
+      ]) { _, new in new }
+    }
+    let body = Data(AgentMcpJSONCodec.stringify(original).utf8)
+    var response = page(for: body)
+    let descriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(response))
+    XCTAssertEqual(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0), body)
+    XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "other", descriptor: descriptor, index: 0))
+    XCTAssertEqual(request.verifyOriginal([body], descriptor: descriptor), body)
+    response["execution_generation"] = .int(1)
+    XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0))
+    response["execution_generation"] = .int(2)
+    response["request_id"] = .string("different")
+    XCTAssertNil(request.verifyPage(response, authenticatedDesktopId: "desktop", descriptor: descriptor, index: 0))
+    original["conversation_id"] = .string("foreign")
+    let foreign = Data(AgentMcpJSONCodec.stringify(original).utf8)
+    let foreignDescriptor = try XCTUnwrap(AgentDesktopToolEvidenceWire.Descriptor(page(for: foreign)))
+    XCTAssertNil(request.verifyOriginal([foreign], descriptor: foreignDescriptor))
+  }
+
   @MainActor
   func testRecoveryControlSummariesAreExcludedBeforeProgressTruncation() {
     let markers = ["[\"GALAXYSSI_RECOVERY_ACTION_V1\"]",
