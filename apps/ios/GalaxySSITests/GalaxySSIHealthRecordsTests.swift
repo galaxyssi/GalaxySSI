@@ -5,6 +5,34 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testReviewReminderActionsDoNotConfirmAndTableCommitClearsDraft() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let draft = GalaxySSIHealthReviewReminders.TableDraft(id: UUID(), name: "fixture.csv", at: now,
+      data: data, mapping: mapping, worksheet: nil)
+    try records.saveTableReview(draft, replacing: nil)
+    try records.setReviewRemindersEnabled(true)
+    var archive = try records.load()
+    let job = try XCTUnwrap(GalaxySSIHealthReviewReminders.jobs(in: archive).first)
+    try records.updateReviewReminder(job, action: .snoozed(now.addingTimeInterval(60)))
+    archive = try records.load()
+    let state = try XCTUnwrap(archive.reviewReminderState)
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.visible([job], state: state, now: now).isEmpty)
+    XCTAssertEqual(GalaxySSIHealthReviewReminders.visible([job], state: state, now: now.addingTimeInterval(61)), [job])
+    try records.updateReviewReminder(job, action: .handled)
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertEqual(try records.load().tableReview?.id, draft.id)
+    XCTAssertEqual(try records.importTable(data, name: draft.name, json: false, mapping: mapping,
+                                           expected: [.ready], reviewID: draft.id), 1)
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.jobs(in: try records.load()).isEmpty)
+    XCTAssertThrowsError(try records.updateReviewReminder(job, action: .handled))
+  }
+
+  @MainActor
   func testReportReviewBatchIsAtomicAndVersionPinned() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
