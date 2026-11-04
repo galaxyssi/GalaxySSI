@@ -323,7 +323,9 @@ class HealthReminderActivity : Activity() {
                     show(AlertDialog.Builder(this@HealthReminderActivity).setTitle(R.string.health_report_review_actions)
                         .setItems(arrayOf(getString(R.string.health_report_review_snooze), getString(R.string.health_report_review_handle))) { _, which ->
                             mutate { reports.act(store, report, if (which == 0) HealthReminderAction.SNOOZE else HealthReminderAction.COMPLETE,
-                                System.currentTimeMillis()) }
+                                System.currentTimeMillis())
+                                if (live) HealthReminderWork.reportSourceChanged(applicationContext)
+                            }
                         }.setNegativeButton(android.R.string.cancel, null).create())
                 }.apply { tag = "health-report-review-actions-${report.id}" }, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)))
             }, 4)
@@ -339,12 +341,7 @@ class HealthReminderActivity : Activity() {
         page.rows.map { it.disposition.resumeAt }.filter { it > now }.minOrNull()?.let { main.postDelayed(reloadReports, it - now) }
     }
     private fun openReport(report: HealthReportReview) {
-        val intent = when (report.kind) {
-            HealthOverviewReviewKind.OCR -> Intent(this, HealthCaptureActivity::class.java).putExtra("health_job", report.id)
-                .putExtra("health_review_test_id", healthNames.fixture)
-            HealthOverviewReviewKind.TABLE -> Intent(this, HealthTableActivity::class.java).putExtra("health_table", report.id)
-        }
-        startActivity(intent)
+        startActivity(report.intent(this, healthNames.fixture))
     }
     private fun minutes(value: java.math.BigDecimal) = value.setScale(1, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
     private fun renderSleepDetail(sleep: SleepViews) {

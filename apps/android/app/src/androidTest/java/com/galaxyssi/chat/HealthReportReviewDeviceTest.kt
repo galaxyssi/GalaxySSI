@@ -69,6 +69,7 @@ class HealthReportReviewDeviceTest {
         android.database.sqlite.SQLiteDatabase.openDatabase(context.getDatabasePath(names.reminders).path, null,
             android.database.sqlite.SQLiteDatabase.OPEN_READWRITE).use {
             it.execSQL("DROP TABLE report_reviews")
+            it.execSQL("DROP TABLE report_notifications")
             it.version = 2
         }
         HealthReminderStore(context, names.reminders).use {
