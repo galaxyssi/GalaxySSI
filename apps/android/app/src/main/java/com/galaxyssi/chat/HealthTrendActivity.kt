@@ -16,12 +16,14 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.OneShotPreDrawListener
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 
 class HealthTrendActivity : Activity() {
+    private val names by lazy { intent.healthNavigationDatabases() }
     private val ui by lazy { HealthCenterViews(this) }
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -36,7 +38,7 @@ class HealthTrendActivity : Activity() {
     private var notice: TextView? = null; private var retry: TextView? = null; private var version: String? = null
     private var observing = false; private var probing = false; private var probeAgain = false; private var probeSerial = 0
     private val observer = object : android.database.ContentObserver(main) { override fun onChange(selfChange: Boolean) = probeVersion() }
-    private val privacyDatabase by lazy { healthPrivacyDatabaseName() }
+    private val privacyDatabase by lazy { if (names.fixture == null) healthPrivacyDatabaseName() else names.privacy }
     private val privacyObserver = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
             val open = dialog; dialog = null; open?.dismiss(); sourceName = ""; load()
@@ -64,7 +66,7 @@ class HealthTrendActivity : Activity() {
     override fun onStart() {
         super.onStart(); if (!::metric.isInitialized) return
         active = true; zone = ZoneId.systemDefault()
-        contentResolver.registerContentObserver(HealthRecordStore.changes(this), false, observer); observing = true
+        contentResolver.registerContentObserver(HealthRecordStore.changes(this, names.records), false, observer); observing = true
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, privacyDatabase), false, privacyObserver)
         if (preset < 3) { last = LocalDate.now(zone); first = last.minusDays(listOf(7L, 30L, 90L)[preset] - 1) }
         load()
@@ -96,14 +98,16 @@ class HealthTrendActivity : Activity() {
         version = null; render(null)
         worker.execute {
             fun cancelled() { if (token != generation || cancellation.isCanceled) throw CancellationException() }
-            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND, requested), privacyDatabase) { HealthRecordStore(applicationContext).use { store ->
+            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND, requested), privacyDatabase) { HealthRecordStore(applicationContext, names.records).use { store ->
                 cancelled()
                 val effective = if (!autoUnit) requested else requested.copy(unit = store.trendRecords(requested, cancelled = ::cancelled, signal = cancellation)
                     .records.firstOrNull()?.draft?.unit?.takeIf { it in metric.selectableUnits } ?: requested.unit)
                 val summary = HealthTrendRepository.load(store, effective, ::cancelled, { count -> main.post {
                     if (active && token == generation) progress?.text = getString(R.string.health_trend_progress, count)
                 } }, cancellation)
-                val name = if (effective.source.originalId.isBlank()) "" else HealthOriginalStore(applicationContext).use { it.original(effective.source.originalId)?.name.orEmpty() }
+                val name = if (effective.source.originalId.isBlank()) "" else
+                    HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext))
+                        .use { it.original(effective.source.originalId)?.name.orEmpty() }
                 summary to name
             } } }
             main.post { if (active && token == generation) result.fold({ (summary, name) -> unit = summary.spec.unit; sourceName = name; render(summary) }, {
@@ -117,12 +121,14 @@ class HealthTrendActivity : Activity() {
         version = summary?.version
         chart?.clear(); chart = null; body.removeAllViews()
         val content = ui.column().apply { setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(24)) }
-        scroll = ScrollView(this).apply { addView(content) }.also { body.addView(it, LinearLayout.LayoutParams(-1, 0, 1f)) }
+        val currentScroll = ScrollView(this).apply { addView(content); tag = "health-trend-scroll" }
+        scroll = currentScroll.also { body.addView(it, LinearLayout.LayoutParams(-1, 0, 1f)) }
         ui.add(content, ui.card().apply {
             addView(ui.text(getString(R.string.health_trend_latest), 13f, muted = true))
             val record = summary?.latest
             ui.add(this, ui.text(if (summary == null) getString(R.string.health_loading) else record?.let { healthDisplayValue(it.draft) } ?: getString(R.string.health_no_measurement), 23f, bold = true), 8)
             record?.let { observed ->
+                tag = "health-trend-latest-record"
                 val time = java.time.Instant.ofEpochMilli(observed.draft.measuredAt).atZone(zone).format(java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm"))
                 addView(ui.text("$time \u00b7 ${getString(healthRecordSourceResource(observed.source))}", 12f, muted = true))
                 setOnClickListener { openRecord(observed.id, observed.revision) }; isFocusable = true
@@ -176,9 +182,10 @@ class HealthTrendActivity : Activity() {
         retry = ui.command(R.string.health_trend_refresh) { load() }.apply { visibility = View.GONE }.also { ui.add(content, it, 8) }
         ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 12f, muted = true), 12)
         body.addView(ui.column().apply { setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(12)); addView(ui.command(R.string.health_add_measurement) {
-            startActivity(Intent(this@HealthTrendActivity, HealthCenterActivity::class.java).putExtra("health_manual", true).putExtra("health_metric", metric.name))
+            startActivity(Intent(this@HealthTrendActivity, HealthCenterActivity::class.java).putExtra("health_manual", true)
+                .putExtra("health_metric", metric.name).putHealthNavigationFixture(names))
         }) }, LinearLayout.LayoutParams(-1, -2))
-        scroll?.post { if (active) scroll?.scrollTo(0, scrollY) }
+        OneShotPreDrawListener.add(currentScroll) { if (active && scroll === currentScroll) currentScroll.scrollTo(0, scrollY) }
         if (summary != null) probeVersion()
     }
     private fun probeVersion() {
@@ -187,7 +194,7 @@ class HealthTrendActivity : Activity() {
         if (probing) { probeAgain = true; return }
         probing = true; val ticket = ++probeSerial; val token = generation
         worker.execute {
-            val result = runCatching { HealthRecordStore(applicationContext).use { it.metricVersion(metric) } }
+            val result = runCatching { HealthRecordStore(applicationContext, names.records).use { it.metricVersion(metric) } }
             main.post {
                 if (ticket != probeSerial) return@post
                 probing = false
@@ -198,11 +205,15 @@ class HealthTrendActivity : Activity() {
             }
         }
     }
-    private fun openRecord(id: String, revision: Int) { startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putExtra("health_record", id).putExtra("health_revision", revision)) }
+    private fun openRecord(id: String, revision: Int) {
+        startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putExtra("health_record", id)
+            .putExtra("health_revision", revision).putHealthNavigationFixture(names))
+    }
     private fun openPoint(point: HealthTrendPoint) {
         if (point.recordId.isNotBlank()) openRecord(point.recordId, point.recordRevision) else openRecords(spec().copy(first = point.first, last = point.last), true)
     }
     private fun openRecords(spec: HealthTrendSpec, numeric: Boolean) { startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(spec).putExtra("health_numeric", numeric).putExtra("health_privacy_test_db", privacyDatabase).apply {
+        putHealthNavigationFixture(names)
         if (numeric) putExtra("health_version", version)
     }) }
     private fun choose(title: Int, values: List<String>, selected: (Int) -> Unit) {
@@ -218,9 +229,9 @@ class HealthTrendActivity : Activity() {
         dialog = wait; wait.setOnDismissListener { if (dialog === wait) { dialog = null; if (active) load() } }; wait.show()
         val requested = spec()
         worker.execute {
-            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND_SOURCES, requested), privacyDatabase) { HealthRecordStore(applicationContext).use { store ->
+            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND_SOURCES, requested), privacyDatabase) { HealthRecordStore(applicationContext, names.records).use { store ->
                 val ids = store.trendSourceIds(requested, after, cancellation)
-                HealthOriginalStore(applicationContext).use { originals -> ids to ids.take(30).map { id ->
+                HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)).use { originals -> ids to ids.take(30).map { id ->
                     (originals.original(id)?.name ?: getString(R.string.health_original_missing)) + " \u00b7 " + id.take(8)
                 } }
             } } }

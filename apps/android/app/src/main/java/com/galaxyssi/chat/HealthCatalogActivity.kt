@@ -1,7 +1,12 @@
 package com.galaxyssi.chat
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.database.ContentObserver
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +14,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.ArrayAdapter
 import android.widget.AdapterView
 import android.widget.EditText
@@ -18,17 +24,25 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.core.view.OneShotPreDrawListener
 import java.text.DateFormat
 import java.util.Date
 import java.util.concurrent.Executors
 
 /** Static catalog searches never decrypt the complete observation history. Record mode uses keyset pages. */
 class HealthCatalogActivity : Activity() {
+    private data class Position(val row: String?, val offset: Int, val pixels: Int)
     private val ui by lazy { HealthCenterViews(this) }
+    private val names by lazy { intent.healthNavigationDatabases() }
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout
     private lateinit var results: LinearLayout
+    private var scroll: ScrollView? = null
+    private var position: Position? = null
+    private var rendered = false
+    private var openedChild = false
     private var active = false
     @Volatile private var generation = 0
     private var mode = 0
@@ -38,6 +52,17 @@ class HealthCatalogActivity : Activity() {
     private val previous = arrayListOf<HealthPageCursor?>()
     private var search: EditText? = null
     private val pending = Runnable { load() }
+    private val refresh = Runnable { load(keepContent = true) }
+    private val recordsObserver = object : ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) {
+            if (!active || main.hasCallbacks(pending)) return
+            main.removeCallbacks(refresh)
+            main.postDelayed(refresh, 120)
+        }
+    }
+    private val screenOff = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) { clearNavigation() }
+    }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         mode = state?.getInt("mode")?.coerceIn(0, 2) ?: 0
@@ -49,19 +74,40 @@ class HealthCatalogActivity : Activity() {
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { finish() })
             addView(ui.text(getString(R.string.health_catalog_title), 19f, bold = true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
             addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) {
-                startActivity(Intent(this@HealthCatalogActivity, HealthCenterActivity::class.java).putExtra("health_functions", true))
+                openChild(Intent(this@HealthCatalogActivity, HealthCenterActivity::class.java).putExtra("health_functions", true))
             })
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
-        body = ui.column(); root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
+        body = ui.column().apply { isFocusableInTouchMode = true }
+        root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
+        ContextCompat.registerReceiver(this, screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED)
     }
-    override fun onStart() { super.onStart(); active = true; controls(); load() }
+    override fun onStart() {
+        super.onStart()
+        active = true
+        openedChild = false
+        contentResolver.registerContentObserver(HealthRecordStore.changes(this, names.records), false, recordsObserver)
+        controls()
+        load()
+    }
     override fun onStop() {
-        active = false; generation++; main.removeCallbacks(pending); query = ""; search = null
-        resetPage(); if (::results.isInitialized) results.removeAllViews()
+        active = false
+        generation++
+        contentResolver.unregisterContentObserver(recordsObserver)
+        main.removeCallbacks(pending)
+        main.removeCallbacks(refresh)
+        if (!openedChild) clearNavigation()
+        search = null
+        scroll = null
+        rendered = false
+        if (::results.isInitialized) results.removeAllViews()
         if (::body.isInitialized) body.removeAllViews()
         super.onStop()
     }
-    override fun onDestroy() { worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { unregisterReceiver(screenOff); worker.shutdown(); super.onDestroy() }
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) clearNavigation()
+    }
     override fun onSaveInstanceState(state: Bundle) { state.putInt("mode", mode); state.putInt("group", group); super.onSaveInstanceState(state) }
     private fun controls() {
         body.removeAllViews()
@@ -71,7 +117,10 @@ class HealthCatalogActivity : Activity() {
             isSingleLine = true; textSize = 15f; setTextColor(getColor(R.color.text_primary)); minimumHeight = ui.dp(48)
             setBackgroundColor(android.graphics.Color.TRANSPARENT); setPadding(0, ui.dp(4), ui.dp(8), ui.dp(4))
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
             this.filters = arrayOf(android.text.InputFilter.LengthFilter(80))
+            setText(query)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun afterTextChanged(s: Editable?) = Unit
@@ -120,41 +169,115 @@ class HealthCatalogActivity : Activity() {
         })
         body.addView(filters)
         results = ui.column().apply { setPadding(ui.dp(16), 0, ui.dp(16), ui.dp(24)) }
-        body.addView(ScrollView(this).apply { addView(results); isFillViewport = true }, LinearLayout.LayoutParams(-1, 0, 1f))
+        scroll = ScrollView(this).apply {
+            tag = "health-catalog-scroll"
+            addView(results)
+            isFillViewport = true
+        }.also { body.addView(it, LinearLayout.LayoutParams(-1, 0, 1f)) }
+        body.requestFocus()
     }
-    private fun resetPage() { cursor = null; previous.clear() }
-    private fun load() {
+    private fun resetPage() { cursor = null; previous.clear(); position = null; rendered = false; scroll?.scrollTo(0, 0) }
+
+    private fun clearNavigation() {
+        openedChild = false
+        val changed = query.isNotEmpty() || cursor != null || position != null
+        query = ""
+        resetPage()
+        if (active && changed) {
+            search?.setText("")
+            main.removeCallbacks(pending)
+            load()
+        }
+    }
+
+    private fun rememberPosition() {
+        val current = scroll ?: return
+        if (!rendered) return
+        val y = current.scrollY
+        val row = (0 until results.childCount).asSequence().map(results::getChildAt)
+            .firstOrNull { it.tag is String && it.bottom > y }
+        position = Position(row?.tag as? String, y - (row?.top ?: 0), y)
+    }
+
+    private fun restorePosition(token: Int) {
+        val target = position ?: return
+        val current = scroll ?: return
+        OneShotPreDrawListener.add(current) {
+            if (!active || generation != token || scroll !== current) return@add
+            val row = target.row?.let { results.findViewWithTag<View>(it) }
+            current.scrollTo(0, row?.let { it.top + target.offset } ?: target.pixels)
+            position = null
+        }
+    }
+
+    private fun openChild(intent: Intent) {
+        rememberPosition()
+        startActivity(intent.putHealthNavigationFixture(names))
+        openedChild = true
+    }
+
+    private fun movePage(next: HealthPageCursor?) {
+        cursor = next
+        position = null
+        scroll?.scrollTo(0, 0)
+        load()
+    }
+
+    private fun load(keepContent: Boolean = false) {
         if (!active || !::results.isInitialized) return
+        main.removeCallbacks(pending)
+        main.removeCallbacks(refresh)
         val token = ++generation; val recordMode = mode == 2; val pageCursor = cursor
         val entries = HealthMetricCatalog.search(query, when (mode) { 0 -> false; 1 -> true; else -> null }, HealthMetricGroup.entries.getOrNull(group))
-        results.removeAllViews(); results.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
+        val refreshing = keepContent && rendered
+        if (!refreshing) {
+            rendered = false
+            results.removeAllViews()
+            results.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
+        }
         worker.execute {
             if (token != generation) return@execute
-            val data = runCatching { HealthRecordStore(applicationContext).use { store ->
+            val data = runCatching { HealthRecordStore(applicationContext, names.records).use { store ->
                 if (recordMode) emptyMap<HealthMetric, HealthObservation?>() to store.page(after = pageCursor, metrics = entries.map { it.metric }.toSet())
                 else entries.associate { it.metric to store.page(metric = it.metric, limit = 1).records.firstOrNull() } to HealthRecordPage(emptyList(), null)
             } }
             main.post {
                 if (!active || token != generation) return@post
                 data.fold({ (latest, page) ->
+                    if (refreshing) rememberPosition()
                     results.removeAllViews()
                     if (recordMode) {
+                        if (page.records.isEmpty() && previous.isNotEmpty()) {
+                            movePage(previous.removeAt(previous.lastIndex))
+                            return@fold
+                        }
                         page.records.forEach { record -> recordRow(record) }
                         if (page.records.isEmpty()) results.addView(ui.text(getString(R.string.health_no_records), 14f, muted = true))
-                        if (previous.isNotEmpty()) ui.add(results, ui.command(R.string.health_previous_page) { cursor = previous.removeAt(previous.lastIndex); load() }, 12)
-                        page.next?.let { next -> ui.add(results, ui.command(R.string.health_next_page) { previous += cursor; cursor = next; load() }, 12) }
+                        if (previous.isNotEmpty()) ui.add(results, ui.command(R.string.health_previous_page) {
+                            movePage(previous.removeAt(previous.lastIndex))
+                        }.apply { tag = "health-catalog-previous" }, 12)
+                        page.next?.let { next -> ui.add(results, ui.command(R.string.health_next_page) {
+                            previous += cursor; movePage(next)
+                        }.apply { tag = "health-catalog-next" }, 12) }
                     } else {
                         if (entries.isEmpty()) results.addView(ui.text(getString(R.string.health_catalog_no_match), 14f, muted = true))
                         entries.forEach { entry -> catalogRow(entry, latest[entry.metric]) }
                     }
-                }, { Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_LONG).show()
-                    results.removeAllViews(); results.addView(ui.command(R.string.common_retry) { load() }) })
+                    rendered = true
+                    restorePosition(token)
+                }, {
+                    Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_LONG).show()
+                    if (!refreshing) {
+                        results.removeAllViews()
+                        results.addView(ui.command(R.string.common_retry) { load() })
+                    }
+                })
             }
         }
     }
     private fun catalogRow(entry: HealthMetricEntry, latest: HealthObservation?) {
         val row = ui.row(getString(entry.metric.titleResource()), entry.aliases.joinToString(" / ")) {
-            startActivity(Intent(this, HealthTrendActivity::class.java).putExtra("health_metric", entry.metric.name))
+            openChild(Intent(this, HealthTrendActivity::class.java).putExtra("health_metric", entry.metric.name))
         }.apply { tag = "health-catalog-${entry.metric.name}" }
         val text = row.getChildAt(0) as LinearLayout
         val color = when (entry.group) {
@@ -175,8 +298,8 @@ class HealthCatalogActivity : Activity() {
     }
     private fun recordRow(record: HealthObservation) {
         results.addView(ui.row(getString(record.draft.metric.titleResource()), display(record) + "\n" + date(record.draft.measuredAt) + " \u00b7 " + getString(healthRecordSourceResource(record.source))) {
-            startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id))
-        }); separator()
+            openChild(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id))
+        }.apply { tag = "health-catalog-record-${record.id}" }); separator()
     }
     private fun separator() { results.addView(View(this).apply { setBackgroundColor(getColor(R.color.separator)) }, LinearLayout.LayoutParams(-1, ui.dp(1))) }
     private fun date(time: Long) = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))

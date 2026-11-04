@@ -37,11 +37,13 @@ enum GalaxySSIHealthMeasurementExport {
     clock.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     var columns = ["id", "revision", "metric", "measured_at", "value", "unit", "diastolic", "pulse_bpm"]
     if includeNotes { columns += ["conditions", "notes"] }
+    columns += ["result_kind", "reported_notation", "reference_interval"]
     let rows: [[String]] = readings.map { reading in
       var row = [reading.id.uuidString, String(reading.revision), reading.metric.rawValue,
-                 clock.string(from: reading.measuredAt), decimal(reading.value), reading.metric.unit,
+                 clock.string(from: reading.measuredAt), reading.value.map(decimal) ?? reading.reported?.raw ?? "", reading.unit,
                  reading.diastolic.map(decimal) ?? "", reading.pulse.map(decimal) ?? ""]
       if includeNotes { row += [reading.conditions, reading.notes] }
+      row += [reading.resultKind, reading.reportedNotation ?? reading.reported?.raw ?? "", reading.referenceInterval ?? ""]
       return row
     }
     switch format {
@@ -180,14 +182,7 @@ struct GalaxySSIHealthMeasurementExportView: View {
   }
 
   private func metricTitle(_ metric: GalaxySSIHealthMetric) -> String {
-    let label: (String, String)
-    switch metric {
-    case .bloodPressure: label = ("blood_pressure", "Blood pressure")
-    case .glucose: label = ("glucose", "Blood glucose")
-    case .weight: label = ("weight", "Weight")
-    case .heartRate: label = ("heart_rate", "Heart rate")
-    }
-    return GalaxySSILocalization.string("galaxyssi.health." + label.0, fallback: label.1, language: language)
+    metric.title(language: language)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

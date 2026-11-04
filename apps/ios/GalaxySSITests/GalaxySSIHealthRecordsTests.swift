@@ -354,6 +354,29 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.maximum, 69)
   }
 
+  func testHealthCatalogTypedResultsDoNotEnterNumericTrendsOrMixUnits() throws {
+    XCTAssertEqual(GalaxySSIHealthMetric.allCases.count, 27)
+    XCTAssertTrue(GalaxySSIHealthMetric.hemoglobin.matches("HGB g/L"))
+    let bound = try XCTUnwrap(GalaxySSIHealthReportedResult.parse("< 2.50", metric: .glucose))
+    XCTAssertEqual(bound.kind, .comparison)
+    XCTAssertEqual(bound.canonical, "<2.5")
+    XCTAssertEqual(GalaxySSIHealthReportedResult.parse("1 - 4", metric: .glucose)?.kind, .range)
+    XCTAssertNil(GalaxySSIHealthReportedResult.parse("4 - 1", metric: .glucose))
+    let label = try XCTUnwrap(GalaxySSIHealthReportedResult.parse("Negative", metric: .urineProtein))
+    XCTAssertTrue(GalaxySSIHealthReading(metric: .urineProtein, value: nil, reported: label).isValid)
+    XCTAssertFalse(GalaxySSIHealthReading(metric: .urineProtein, value: 0).isValid)
+    XCTAssertTrue(GalaxySSIHealthReading(metric: .steps, value: 0).isValid)
+    XCTAssertFalse(GalaxySSIHealthReading(metric: .steps, value: Decimal(string: "1.5")).isValid)
+    let now = Date()
+    let range = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: nil, reported: bound)
+    let standard = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 6)
+    let otherUnit = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 100, unitOverride: "mg/dL")
+    let trend = GalaxySSIHealthTrend(current: [range, standard, otherUnit], metric: .glucose,
+      component: .value, now: now, dayCount: 7, calendar: .current)
+    XCTAssertEqual(trend.mean, 6)
+    XCTAssertEqual(trend.points.last?.readings.map(\.id), [standard.id])
+  }
+
   @MainActor
   func testStructuredImportKeepsExactSourceAndUndoPreservesEdits() throws {
     let data = Data("value,time,note\r\n60,2025-01-01T12:00:00Z,\"line\r\nnext\"\r\n61,2025-01-02T12:00:00Z,\r\n60,2025-01-01T12:00:00Z,\r\n".utf8)

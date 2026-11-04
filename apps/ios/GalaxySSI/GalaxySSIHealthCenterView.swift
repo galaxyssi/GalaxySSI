@@ -142,6 +142,14 @@ struct GalaxySSIHealthCenterView: View {
       } label: {
         Label(t("trend.title", "Measurement Trends"), systemImage: "chart.xyaxis.line")
       }
+      NavigationLink {
+        GalaxySSIHealthMetricCatalogView(records: records, add: { metric in
+          if let draft = archive?.draft { editor = draft }
+          else { editor = GalaxySSIHealthDraft(metric: metric) }
+        }, edit: edit)
+      } label: {
+        Label(t("catalog.title", "Measurement Catalog"), systemImage: "list.bullet.rectangle")
+      }
     }
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)
@@ -383,19 +391,37 @@ struct GalaxySSIHealthCenterView: View {
   private var editorForm: some View {
     Form {
       if let draft = editor, scenePhase == .active {
-        Picker(t("metric", "Measurement"), selection: field(\.metric, .bloodPressure)) {
+        Picker(t("metric", "Measurement"), selection: Binding(
+          get: { editor?.metric ?? .bloodPressure }, set: { editor?.metric = $0; editor?.unitOverride = nil })) {
           ForEach(GalaxySSIHealthMetric.allCases) { metric in Text(title(metric)).tag(metric) }
         }
         .disabled(draft.existing != nil)
-        TextField(draft.metric == .bloodPressure ? t("systolic", "Systolic (mmHg)") : draft.metric.unit,
-                  text: field(\.value, "")).keyboardType(.decimalPad)
+        let qualitative = GalaxySSIHealthReportedResult.parse(draft.value, metric: draft.metric)?.kind == .qualitative
+        if draft.metric.units.count > 1 && !qualitative {
+          Picker(t("catalog.unit", "Unit"), selection: Binding(
+            get: { editor?.unitOverride ?? draft.metric.unit }, set: { editor?.unitOverride = $0 })) {
+            ForEach(draft.metric.units, id: \.self) { Text($0).tag($0) }
+          }
+          .disabled(draft.existing?.bluetoothReceipt != nil || draft.existing?.tableSource != nil)
+        }
+        let unit = draft.unitOverride ?? draft.metric.unit
+        TextField(draft.metric == .bloodPressure ? t("catalog.systolic", "Systolic") + " (" + unit + ")" :
+                    t("catalog.result", "Reported value"),
+                  text: field(\.value, "")).keyboardType(draft.metric.laboratory ? .default : .decimalPad)
         if draft.metric == .bloodPressure {
-          TextField(t("diastolic", "Diastolic (mmHg)"), text: field(\.diastolic, "")).keyboardType(.decimalPad)
+          TextField(t("catalog.diastolic", "Diastolic") + " (" + unit + ")",
+                    text: field(\.diastolic, "")).keyboardType(.decimalPad)
           TextField(t("pulse", "Pulse (bpm, optional)"), text: field(\.pulse, "")).keyboardType(.decimalPad)
         }
-        DatePicker(t("time", "Measured at"), selection: field(\.measuredAt, Date()), in: ...Date())
-        TextField(t("conditions", "Conditions"), text: field(\.conditions, ""))
-        TextField(t("notes", "Notes"), text: field(\.notes, ""))
+        if draft.metric.laboratory {
+          TextField(t("catalog.reference", "Report reference interval (optional)"), text: Binding(
+            get: { editor?.referenceInterval ?? "" }, set: { editor?.referenceInterval = $0 }))
+        }
+        Group {
+          DatePicker(t("time", "Measured at"), selection: field(\.measuredAt, Date()), in: ...Date())
+          TextField(t("conditions", "Conditions"), text: field(\.conditions, ""))
+          TextField(t("notes", "Notes"), text: field(\.notes, ""))
+        }
         Button(t("save_draft", "Save draft"), action: saveDraft)
         if archive?.draft?.id == draft.id {
           Button(t("discard", "Discard draft"), role: .destructive) { alert = .discardDraft }
@@ -429,8 +455,10 @@ struct GalaxySSIHealthCenterView: View {
 
   private func edit(_ reading: GalaxySSIHealthReading) {
     editor = GalaxySSIHealthDraft(existing: reading, metric: reading.metric, measuredAt: reading.measuredAt,
-                    value: number(reading.value), diastolic: reading.diastolic.map(number) ?? "",
-                    pulse: reading.pulse.map(number) ?? "", conditions: reading.conditions, notes: reading.notes)
+                    value: reading.reported?.raw ?? reading.reportedNotation ?? reading.value.map(number) ?? "",
+                    diastolic: reading.diastolic.map(number) ?? "", pulse: reading.pulse.map(number) ?? "",
+                    conditions: reading.conditions, notes: reading.notes, unitOverride: reading.unitOverride,
+                    referenceInterval: reading.referenceInterval)
   }
 
   private func save(allowDuplicate: Bool = false, deleted: Bool = false) {
@@ -440,7 +468,9 @@ struct GalaxySSIHealthCenterView: View {
         existing.deleted = true
         try records.write(existing, draftId: draft.id)
       } else {
-        guard let value = parse(draft.value) else { throw GalaxySSIHealthRecords.Failure.invalid }
+        let reported = GalaxySSIHealthReportedResult.parse(draft.value, metric: draft.metric)
+        let value = reported == nil ? GalaxySSIHealthReportedResult.number(draft.value) : nil
+        guard value != nil || reported != nil else { throw GalaxySSIHealthRecords.Failure.invalid }
         let pressure = draft.metric == .bloodPressure
         let pulse = pressure ? parse(draft.pulse) : nil
         if pressure && !draft.pulse.trimmingCharacters(in: .whitespaces).isEmpty && pulse == nil {
@@ -449,6 +479,11 @@ struct GalaxySSIHealthCenterView: View {
         var reading = draft.existing ?? GalaxySSIHealthReading(metric: draft.metric, value: value)
         reading.measuredAt = draft.measuredAt
         reading.value = value
+        reading.reported = reported
+        reading.reportedNotation = draft.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        reading.unitOverride = reported?.kind == .qualitative ? "" :
+          (draft.unitOverride?.isEmpty == false ? draft.unitOverride : nil)
+        reading.referenceInterval = draft.metric.laboratory ? draft.referenceInterval : nil
         reading.diastolic = pressure ? parse(draft.diastolic) : nil
         reading.pulse = pulse
         reading.conditions = draft.conditions
@@ -497,17 +532,14 @@ struct GalaxySSIHealthCenterView: View {
   }
 
   private func summary(_ reading: GalaxySSIHealthReading) -> String {
-    let value = number(reading.value) + (reading.diastolic.map { "/" + number($0) } ?? "")
-    return value + " " + reading.metric.unit + (reading.pulse.map { " · " + number($0) + " bpm" } ?? "")
+    let value = (reading.reported?.raw ?? reading.value.map(number) ?? "") +
+      (reading.diastolic.map { "/" + number($0) } ?? "")
+    return value + (reading.unit.isEmpty ? "" : " " + reading.unit) +
+      (reading.pulse.map { " · " + number($0) + " bpm" } ?? "")
   }
 
   private func title(_ metric: GalaxySSIHealthMetric) -> String {
-    switch metric {
-    case .bloodPressure: return t("blood_pressure", "Blood pressure")
-    case .glucose: return t("glucose", "Blood glucose")
-    case .weight: return t("weight", "Weight")
-    case .heartRate: return t("heart_rate", "Heart rate")
-    }
+    metric.title(language: language)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

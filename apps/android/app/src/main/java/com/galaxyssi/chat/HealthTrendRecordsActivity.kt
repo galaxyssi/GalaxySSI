@@ -17,6 +17,7 @@ import java.util.concurrent.Executors
 
 /** An aggregate point opens its own date/unit/source cohort, never a full unfiltered history. */
 class HealthTrendRecordsActivity : Activity() {
+    private val names by lazy { intent.healthNavigationDatabases() }
     private val ui by lazy { HealthCenterViews(this) }
     private val worker = Executors.newSingleThreadExecutor(); private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout; private lateinit var spec: HealthTrendSpec
@@ -25,7 +26,7 @@ class HealthTrendRecordsActivity : Activity() {
     private var signal: CancellationSignal? = null; private var cursor: HealthPageCursor? = null
     private var version: String? = null
     private val previous = arrayListOf<HealthPageCursor?>()
-    private val privacyDatabase by lazy { healthPrivacyDatabaseName() }
+    private val privacyDatabase by lazy { if (names.fixture == null) healthPrivacyDatabaseName() else names.privacy }
     private val privacyObserver = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) { if (active) load() }
     }
@@ -67,7 +68,7 @@ class HealthTrendRecordsActivity : Activity() {
         val token = ++generation; signal?.cancel(); val cancellation = CancellationSignal(); signal = cancellation; val after = cursor
         body.removeAllViews(); body.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
         worker.execute {
-            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND_RECORDS, spec), privacyDatabase) { HealthRecordStore(applicationContext).use { store ->
+            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND_RECORDS, spec), privacyDatabase) { HealthRecordStore(applicationContext, names.records).use { store ->
                 val before = store.metricVersion(spec.metric)
                 if (version != null && version != before) throw HealthTrendChangedException()
                 val page = store.trendRecords(spec, after, numeric, {
@@ -95,8 +96,8 @@ class HealthTrendRecordsActivity : Activity() {
         page.records.forEach { record ->
             val time = Instant.ofEpochMilli(record.draft.measuredAt).atZone(spec.zone).format(DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm"))
             ui.add(content, ui.row(healthDisplayValue(record.draft), "$time \u00b7 ${getString(healthRecordSourceResource(record.source))}") {
-                if (numeric || fixedVersion) startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putExtra("health_record", record.id).putExtra("health_revision", record.revision))
-                else startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id))
+                if (numeric || fixedVersion) startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putExtra("health_record", record.id).putExtra("health_revision", record.revision).putHealthNavigationFixture(names))
+                else startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id).putHealthNavigationFixture(names))
             }.apply { tag = "health-trend-record-${record.id}" }, 8)
         }
         body.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))

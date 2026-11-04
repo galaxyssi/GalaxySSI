@@ -130,10 +130,10 @@ struct GalaxySSIWeeklyHealthReportView: View {
       lines += GalaxySSIHealthMetric.allCases.filter { preview.metrics.contains($0) }.map { coverage($0, preview) }
       if includeRows {
         lines += preview.readings.map { reading in
-          let value = reading.value.formatted(.number.locale(locale))
+          let value = reading.reported?.raw ?? reading.value?.formatted(.number.locale(locale)) ?? ""
           let diastolic = reading.diastolic.map { "/" + $0.formatted(.number.locale(locale)) } ?? ""
           let pulse = reading.pulse.map { " · " + $0.formatted(.number.locale(locale)) + " bpm" } ?? ""
-          return "\(reading.measuredAt.formatted()) · \(metricTitle(reading.metric)) · \(value)\(diastolic) \(reading.metric.unit)\(pulse)"
+          return "\(reading.measuredAt.formatted()) · \(metricTitle(reading.metric)) · \(value)\(diastolic) \(reading.unit)\(pulse)"
         }
       }
       document = WeeklyHealthPDF(data: Self.render(lines))
@@ -169,14 +169,7 @@ struct GalaxySSIWeeklyHealthReportView: View {
   }
 
   private func metricTitle(_ metric: GalaxySSIHealthMetric) -> String {
-    let pair: (String, String)
-    switch metric {
-    case .bloodPressure: pair = ("blood_pressure", "Blood pressure")
-    case .glucose: pair = ("glucose", "Blood glucose")
-    case .weight: pair = ("weight", "Weight")
-    case .heartRate: pair = ("heart_rate", "Heart rate")
-    }
-    return GalaxySSILocalization.string("galaxyssi.health." + pair.0, fallback: pair.1, language: language)
+    metric.title(language: language)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

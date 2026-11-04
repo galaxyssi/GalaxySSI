@@ -25,10 +25,7 @@ class HealthCenterActivity : Activity() {
     private lateinit var root: LinearLayout
     private val worker = Executors.newSingleThreadExecutor()
     internal val main = Handler(Looper.getMainLooper())
-    private val overviewNames by lazy {
-        val fixture = intent.getStringExtra("health_overview_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) }
-        HealthOverviewDatabases(fixture)
-    }
+    private val overviewNames by lazy { intent.healthNavigationDatabases() }
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
     private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
@@ -464,6 +461,6 @@ class HealthCenterActivity : Activity() {
         }
     }
     private fun openCapture() { startActivity(android.content.Intent(this, HealthCaptureActivity::class.java)) }
-    private fun openCatalog() { startActivity(android.content.Intent(this, HealthCatalogActivity::class.java)) }
+    private fun openCatalog() { startActivity(android.content.Intent(this, HealthCatalogActivity::class.java).putHealthNavigationFixture(overviewNames)) }
     private fun source(record: HealthObservation) = getString(healthRecordSourceResource(record.source))
 }
