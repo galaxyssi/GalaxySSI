@@ -6,18 +6,21 @@ import android.graphics.Matrix
 import android.graphics.Rect
 import androidx.exifinterface.media.ExifInterface
 import com.canhub.cropper.CropImageView
+import java.io.InputStream
 
 internal object HealthPhotoInspector {
-    fun decode(store: HealthOriginalStore, original: HealthOriginal, pixels: Long): Bitmap {
+    fun decode(store: HealthOriginalStore, original: HealthOriginal, pixels: Long): Bitmap = decode({ store.input(original) }, pixels)
+
+    private fun decode(open: () -> InputStream, pixels: Long): Bitmap {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        store.input(original).use { BitmapFactory.decodeStream(it, null, options) }
+        open().use { BitmapFactory.decodeStream(it, null, options) }
         if (options.outWidth <= 0 || options.outHeight <= 0) throw HealthImportFailure("image_unsupported")
         var sample = 1
         while (options.outWidth.toLong() * options.outHeight / sample / sample > pixels) sample *= 2
-        val source = store.input(original).use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+        val source = open().use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
             ?: throw HealthImportFailure("image_unsupported")
         try {
-            val orientation = orientation(store, original)
+            val orientation = orientation(open)
             val matrix = Matrix().apply {
                 when (orientation) {
                     ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
@@ -35,19 +38,22 @@ internal object HealthPhotoInspector {
             return upright
         } catch (failure: Throwable) { source.recycle(); throw failure }
     }
-    private fun orientation(store: HealthOriginalStore, original: HealthOriginal) = store.input(original).use {
+    private fun orientation(open: () -> InputStream) = open().use {
         ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
     }
-    fun inspect(store: HealthOriginalStore, original: HealthOriginal, report: Boolean = false): HealthPhotoQuality {
+    fun inspect(store: HealthOriginalStore, original: HealthOriginal, report: Boolean = false): HealthPhotoQuality =
+        inspect({ store.input(original) }, report)
+
+    fun inspect(open: () -> InputStream, report: Boolean): HealthPhotoQuality {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        store.input(original).use { BitmapFactory.decodeStream(it, null, bounds) }
-        val rotation = when (orientation(store, original)) {
+        open().use { BitmapFactory.decodeStream(it, null, bounds) }
+        val rotation = when (orientation(open)) {
             ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_TRANSPOSE -> 90
             ExifInterface.ORIENTATION_ROTATE_180, ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180
             ExifInterface.ORIENTATION_ROTATE_270, ExifInterface.ORIENTATION_TRANSVERSE -> 270
             else -> 0
         }
-        val bitmap = decode(store, original, 1_000_000)
+        val bitmap = decode(open, 1_000_000)
         try {
             if (bitmap.width < 3 || bitmap.height < 3) throw HealthImportFailure("image_unsupported")
             val values = IntArray(bitmap.width * bitmap.height)

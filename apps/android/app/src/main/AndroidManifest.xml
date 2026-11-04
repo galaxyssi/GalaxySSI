@@ -270,6 +270,8 @@
         <activity android:name=".HealthOriginalExportHistoryActivity" android:exported="false" />
         <provider android:name=".HealthOriginalContentProvider" android:authorities="${applicationId}.health-originals"
             android:exported="false" android:grantUriPermissions="true" />
+        <provider android:name=".HealthCropOutputProvider" android:authorities="${applicationId}.health-crop-output"
+            android:exported="false" android:grantUriPermissions="false" />
         <provider android:name=".HealthExportShareProvider" android:authorities="${applicationId}.health-exports"
             android:exported="false" android:grantUriPermissions="true" />
         <service

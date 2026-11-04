@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import XCTest
 @testable import GalaxySSI
 
@@ -193,6 +194,31 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       receivedAt: receipt.receivedAt.addingTimeInterval(600), packet: packet)
     XCTAssertThrowsError(try records.write(replay.reading(conditions: ""), allowDuplicate: true))
     XCTAssertTrue(try records.load().current.isEmpty)
+  }
+
+  @MainActor
+  func testOriginalLibraryKeepsExactBytesAndRejectsTamperedPayload() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "private-test-name.pdf")
+    try store.store(pdf, name: "duplicate.pdf")
+    let originals = try store.list().originals
+    XCTAssertEqual(originals.count, 1)
+    let item = try XCTUnwrap(originals.first)
+    XCTAssertEqual(try store.read(item), pdf)
+    let zip = try store.makeZIP([item])
+    XCTAssertNotNil(zip.range(of: pdf))
+    XCTAssertNotNil(zip.range(of: Data("manifest.json".utf8)))
+    let file = root.appendingPathComponent(item.id.uuidString)
+    var sealed = try Data(contentsOf: file)
+    XCTAssertNil(sealed.range(of: Data(item.name.utf8)))
+    XCTAssertNil(sealed.range(of: pdf))
+    sealed[sealed.count - 1] ^= 1
+    try sealed.write(to: file)
+    XCTAssertThrowsError(try store.makeZIP([item]))
   }
 
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {

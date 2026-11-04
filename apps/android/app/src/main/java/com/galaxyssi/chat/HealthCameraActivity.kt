@@ -31,11 +31,11 @@ class HealthCameraActivity : Activity() {
     private val ui by lazy { HealthCenterViews(this) }
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
-    private val store by lazy {
+    private val names by lazy {
         val fixture = intent.getStringExtra("health_camera_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) }
-        val names = HealthOverviewDatabases(fixture)
-        HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext))
+        HealthOverviewDatabases(fixture)
     }
+    private val store by lazy { HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)) }
     private lateinit var camera: HealthCameraController
     private lateinit var cameraArea: FrameLayout
     private lateinit var pages: LinearLayout
@@ -54,7 +54,6 @@ class HealthCameraActivity : Activity() {
     private var busy = false
     private var pendingId = ""
     private var replacement: String? = null
-    private var editingId = ""
     private var exportId = ""
     private var light = false
     private var generation = 0
@@ -71,7 +70,6 @@ class HealthCameraActivity : Activity() {
         super.onCreate(state)
         batchId = state?.getString("batch") ?: intent.getStringExtra("capture_batch").orEmpty()
         inCamera = state?.getBoolean("camera", false) ?: intent.getBooleanExtra("capture_camera", batchId.isBlank())
-        editingId = state?.getString("editing").orEmpty()
         exportId = state?.getString("export").orEmpty()
         replacement = state?.getString("replacement")
         state?.getIntegerArrayList("page_cursors")?.let(pageCursors::addAll)
@@ -186,7 +184,7 @@ class HealthCameraActivity : Activity() {
         io.shutdown(); super.onDestroy()
     }
     override fun onSaveInstanceState(out: Bundle) {
-        out.putString("batch", batchId); out.putBoolean("camera", inCamera); out.putString("editing", editingId)
+        out.putString("batch", batchId); out.putBoolean("camera", inCamera)
         out.putString("replacement", replacement); out.putString("export", exportId); out.putIntegerArrayList("page_cursors", pageCursors); super.onSaveInstanceState(out)
     }
     @Deprecated("Native camera back dispatch") override fun onBackPressed() = back()
@@ -351,10 +349,10 @@ class HealthCameraActivity : Activity() {
             } }.show()
     }
     private fun crop(id: String, original: HealthOriginal, suggested: HealthReportCrop?) {
-        editingId = id
-        val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id).toString(), original.name, original.mime, original.size, sendOriginal = true)
+        val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id, names.fixture).toString(), original.name, original.mime, original.size, sendOriginal = true)
         startActivityForResult(Intent(this, ComposerAttachmentEditorActivity::class.java).putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(listOf(item)))
             .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id)
+            .putExtra(HEALTH_CROP_BATCH, batchId).putExtra(HEALTH_CROP_PAGE, id)
             .putExtra(HEALTH_REPORT_CROP, suggested?.encode()), CROP)
     }
     @Deprecated("Native picker/crop callback") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -362,11 +360,11 @@ class HealthCameraActivity : Activity() {
         if (resultCode != RESULT_OK) return
         if (requestCode == PICK) {
             val uris = data?.clipData?.let { clip -> (0 until clip.itemCount).map { clip.getItemAt(it).uri } } ?: listOfNotNull(data?.data)
-            uris.distinct().forEach { uri -> collect(uri, null) }
+            uris.distinct().forEach(::collect)
         } else if (requestCode == CROP) {
-            val item = data?.getStringExtra(ComposerAttachmentEditorActivity.ITEMS)?.let(ComposerAttachmentItem::decode)?.singleOrNull()
-            if (item != null && editingId.isNotBlank()) collect(android.net.Uri.parse(item.uri), editingId)
-            editingId = ""
+            if (data?.getStringExtra(HEALTH_CROP_RESULT)?.let(HealthProfilePolicy::uuid) == true) {
+                rendered = ""; load()
+            }
         } else if (requestCode == EXPORT) {
             val uri = data?.data ?: return; val id = exportId
             io.execute {
@@ -384,12 +382,12 @@ class HealthCameraActivity : Activity() {
         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(original.mime)
             .putExtra(Intent.EXTRA_TITLE, original.name), EXPORT)
     }
-    private fun collect(uri: android.net.Uri, replace: String?) {
+    private fun collect(uri: android.net.Uri) {
         io.execute {
             val result = runCatching {
                 runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 val owner = requireNotNull(store.captureBatch(batchId)); val id = UUID.randomUUID().toString()
-                store.addCaptureJob(batchId, HealthImportJob(id, uri.toString(), System.currentTimeMillis(), mode = owner.mode, captureBatch = batchId), replace)
+                store.addCaptureJob(batchId, HealthImportJob(id, uri.toString(), System.currentTimeMillis(), mode = owner.mode, captureBatch = batchId))
                 HealthImportScheduler.enqueue(applicationContext, id, prepareCapture = true)
             }
             main.post { if (active) { result.onFailure { message(R.string.health_photo_changed) }; pageCursors.clear(); rendered = ""; load() } }

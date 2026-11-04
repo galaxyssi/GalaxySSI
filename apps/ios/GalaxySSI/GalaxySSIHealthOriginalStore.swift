@@ -1,0 +1,184 @@
+import CoreGraphics
+import CryptoKit
+import Foundation
+import ImageIO
+import UniformTypeIdentifiers
+
+@MainActor
+struct GalaxySSIHealthOriginalStore {
+  enum Kind: String, Codable, CaseIterable { case image, pdf }
+  struct Original: Codable, Equatable, Identifiable {
+    let id: UUID
+    let name: String
+    let kind: Kind
+    let fileExtension: String
+    let importedAt: Date
+    let bytes: Int
+    let sha256: String
+
+    var entryPath: String { "originals/" + id.uuidString.lowercased() + "." + fileExtension }
+  }
+
+  struct Listing {
+    let originals: [Original]
+    let unavailable: Int
+  }
+
+  enum Failure: Error { case invalid, limit, stale }
+
+  static let maximumFileBytes = 16 * 1024 * 1024
+  private static let maximumZIPBytes = 64 * 1024 * 1024
+  private let maximumHeaderBytes = 4_096
+  let owner: String
+  let secrets: GalaxySSISecretStore
+  var fixtureDirectory: URL? = nil
+
+  func importFile(_ url: URL) throws {
+    let scoped = url.startAccessingSecurityScopedResource()
+    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    let input = try FileHandle(forReadingFrom: url)
+    defer { try? input.close() }
+    let data = try input.read(upToCount: Self.maximumFileBytes + 1) ?? Data()
+    guard data.count <= Self.maximumFileBytes else { throw Failure.limit }
+    try store(data, name: url.lastPathComponent)
+  }
+
+  func store(_ data: Data, name: String) throws {
+    guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
+    let kind: Kind
+    let fileExtension: String
+    if data.starts(with: Data("%PDF-".utf8)),
+       let provider = CGDataProvider(data: data as CFData),
+       let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 {
+      kind = .pdf
+      fileExtension = "pdf"
+    } else if let image = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(image) > 0,
+              let type = CGImageSourceGetType(image), let ext = UTType(type as String)?.preferredFilenameExtension,
+              !ext.isEmpty, ext.utf8.count <= 8,
+              ext.utf8.allSatisfy({ (48...57).contains($0) || (97...122).contains($0) }) {
+      kind = .image
+      fileExtension = ext
+    } else { throw Failure.invalid }
+    let listing = try list()
+    let digest = Self.digest(data)
+    if listing.originals.contains(where: { $0.sha256 == digest }) { return }
+    guard listing.originals.count + listing.unavailable < 500,
+          listing.originals.reduce(data.count, { $0 + $1.bytes }) <= 512 * 1024 * 1024
+    else { throw Failure.limit }
+    let item = Original(id: UUID(), name: String(name.prefix(180)), kind: kind, fileExtension: fileExtension,
+                        importedAt: Date(), bytes: data.count, sha256: digest)
+    let key = try key(create: true)
+    guard let header = try AES.GCM.seal(JSONEncoder().encode(item), using: key,
+                                       authenticating: binding(item.id, "header")).combined,
+          header.count <= maximumHeaderBytes,
+          let payload = try AES.GCM.seal(data, using: key, authenticating: binding(item.id, digest)).combined
+    else { throw Failure.invalid }
+    var length = UInt32(header.count).bigEndian
+    var file = withUnsafeBytes(of: &length) { Data($0) }
+    file.append(header)
+    file.append(payload)
+    try file.write(to: url(item.id), options: [.atomic, .completeFileProtection])
+  }
+
+  func list() throws -> Listing {
+    let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil)
+    let ids = files.compactMap { UUID(uuidString: $0.lastPathComponent) }
+    guard !ids.isEmpty else { return Listing(originals: [], unavailable: 0) }
+    let key = try key(create: false)
+    let items: [Original] = ids.compactMap { id in
+      try? withFile(id) { try readHeader($0, id: id, key: key) }
+    }
+    return Listing(originals: items.sorted { ($0.importedAt, $0.id.uuidString) > ($1.importedAt, $1.id.uuidString) },
+                   unavailable: ids.count - items.count)
+  }
+
+  func read(_ original: Original) throws -> Data {
+    let key = try key(create: false)
+    return try withFile(original.id) { file in
+      guard try readHeader(file, id: original.id, key: key) == original,
+            let payload = try file.read(upToCount: original.bytes + 29), payload.count == original.bytes + 28
+      else { throw Failure.stale }
+      let data = try AES.GCM.open(AES.GCM.SealedBox(combined: payload), using: key,
+                                  authenticating: binding(original.id, original.sha256))
+      guard data.count == original.bytes, Self.digest(data) == original.sha256 else { throw Failure.invalid }
+      return data
+    }
+  }
+
+  func remove(_ original: Original) throws {
+    let key = try key(create: false)
+    guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
+    else { throw Failure.stale }
+    try FileManager.default.removeItem(at: url(original.id))
+  }
+
+  func makeZIP(_ originals: [Original]) throws -> Data {
+    guard !originals.isEmpty, originals.reduce(0, { $0 + $1.bytes }) <= Self.maximumZIPBytes else { throw Failure.limit }
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let manifest = originals.map { ManifestEntry(original: $0, path: $0.entryPath) }
+    var entries = [AgentRuntimeProjectArchiveEntry(path: "manifest.json", data: try encoder.encode(manifest))]
+    for item in originals {
+      entries.append(.init(path: item.entryPath, data: try read(item)))
+    }
+    return AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: entries)
+  }
+
+  private struct ManifestEntry: Encodable { let original: Original; let path: String }
+
+  private func withFile<T>(_ id: UUID, _ body: (FileHandle) throws -> T) throws -> T {
+    let file = try FileHandle(forReadingFrom: url(id))
+    defer { try? file.close() }
+    return try body(file)
+  }
+
+  private func readHeader(_ file: FileHandle, id: UUID, key: SymmetricKey) throws -> Original {
+    guard let prefix = try file.read(upToCount: 4), prefix.count == 4 else { throw Failure.invalid }
+    let size = prefix.reduce(0) { ($0 << 8) | Int($1) }
+    guard (28...maximumHeaderBytes).contains(size), let header = try file.read(upToCount: size),
+          header.count == size else { throw Failure.invalid }
+    let decoded = try AES.GCM.open(AES.GCM.SealedBox(combined: header), using: key,
+                                   authenticating: binding(id, "header"))
+    let item = try JSONDecoder().decode(Original.self, from: decoded)
+    guard item.id == id, (1...Self.maximumFileBytes).contains(item.bytes) else { throw Failure.invalid }
+    return item
+  }
+
+  private func binding(_ id: UUID, _ purpose: String) -> Data {
+    Data("galaxyssi.health.originals.v1:\(owner):\(id.uuidString):\(purpose)".utf8)
+  }
+
+  private func url(_ id: UUID) throws -> URL { try directory().appendingPathComponent(id.uuidString) }
+
+  private func directory() throws -> URL {
+    if let fixtureDirectory { return fixtureDirectory }
+    let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                           appropriateFor: nil, create: true)
+    var root = base.appendingPathComponent("HealthOriginals", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                            attributes: [.protectionKey: FileProtectionType.complete])
+    var resources = URLResourceValues()
+    resources.isExcludedFromBackup = true
+    try root.setResourceValues(resources)
+    let result = root.appendingPathComponent(Self.digest(Data(owner.utf8)), isDirectory: true)
+    try FileManager.default.createDirectory(at: result, withIntermediateDirectories: true,
+                                            attributes: [.protectionKey: FileProtectionType.complete])
+    return result
+  }
+
+  private func key(create: Bool) throws -> SymmetricKey {
+    let account = "health.originals.v1." + owner
+    if let encoded = secrets.string(account: account) {
+      guard let data = Data(base64Encoded: encoded), data.count == 32 else { throw Failure.invalid }
+      return SymmetricKey(data: data)
+    }
+    guard create else { throw Failure.invalid }
+    let key = SymmetricKey(size: .bits256)
+    try secrets.setString(key.withUnsafeBytes { Data($0).base64EncodedString() }, account: account)
+    return key
+  }
+
+  private static func digest(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+}
