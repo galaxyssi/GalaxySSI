@@ -18,7 +18,6 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import java.io.OutputStream
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.CancellationException
@@ -36,10 +35,14 @@ class HealthBackupActivity : Activity() {
     private lateinit var names: HealthOverviewDatabases
     private val repository by lazy { HealthBackupRepository(applicationContext, names) }
     private val verifyOnly by lazy { intent.getBooleanExtra("verify_backup", false) }
+    private val historyOnly by lazy { !verifyOnly && intent.getBooleanExtra("backup_history", false) }
     private var preview: HealthBackupPreview? = null
     private var verification: HealthBackupManifest? = null
-    private var artifact: HealthBackupArtifact? = null
-    private var saved = false
+    private var artifactId: String? = null
+    private var selected: HealthBackupHistoryItem? = null
+    private var historyPage: HealthBackupHistoryPage? = null
+    private var historyCursor: HealthBackupHistoryCursor? = null
+    private val previous = arrayListOf<HealthBackupHistoryCursor?>()
     private var notice: Int? = null
     private var busy: CancellationSignal? = null
     private var dialog: AlertDialog? = null
@@ -50,15 +53,18 @@ class HealthBackupActivity : Activity() {
         names = HealthOverviewDatabases(if (BuildConfig.DEBUG) intent.getStringExtra("health_backup_test_id")
             ?.takeIf(HealthProfilePolicy::uuid) else null)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        body = healthProfileBody(if (verifyOnly) R.string.health_backup_verify else R.string.health_backup_create) { finish() }
-        artifact = state?.getString("artifact")?.let { id ->
-            HealthBackupArtifact(id, state.getLong("size"), state.getString("hash").orEmpty(), state.getInt("missing"))
-        }
-        saved = state?.getBoolean("saved") ?: false
+        body = healthProfileBody(when {
+            verifyOnly -> R.string.health_backup_verify
+            historyOnly -> R.string.health_backup_history
+            else -> R.string.health_backup_create
+        }, ::back)
+        artifactId = state?.getString("artifact")?.takeIf(HealthProfilePolicy::uuid)
+        historyCursor = parseCursor(state?.getString("history_cursor"))
+        previous.addAll(state?.getStringArrayList("history_previous")?.map(::parseCursor).orEmpty())
         worker.launch { withContext(Dispatchers.IO) { repository.cleanup() } }
     }
 
-    override fun onStart() { super.onStart(); started = true; render() }
+    override fun onStart() { super.onStart(); started = true; loadHistory() }
 
     override fun onStop() {
         started = false
@@ -67,6 +73,8 @@ class HealthBackupActivity : Activity() {
         dialog = null
         preview = null
         verification = null
+        selected = null
+        historyPage = null
         body.removeAllViews()
         super.onStop()
     }
@@ -74,12 +82,35 @@ class HealthBackupActivity : Activity() {
     override fun onDestroy() { worker.cancel(); super.onDestroy() }
 
     override fun onSaveInstanceState(state: Bundle) {
-        artifact?.let {
-            state.putString("artifact", it.id); state.putLong("size", it.size)
-            state.putString("hash", it.hash); state.putInt("missing", it.missing)
-            state.putBoolean("saved", saved)
-        }
+        state.putString("artifact", artifactId)
+        fun encode(cursor: HealthBackupHistoryCursor?) = cursor?.let { "${it.created}|${it.id}" }.orEmpty()
+        state.putString("history_cursor", encode(historyCursor))
+        state.putStringArrayList("history_previous", ArrayList(previous.map(::encode)))
         super.onSaveInstanceState(state)
+    }
+
+    private fun parseCursor(value: String?): HealthBackupHistoryCursor? {
+        val created = value?.substringBefore('|')?.toLongOrNull() ?: return null
+        val id = value.substringAfter('|')
+        return if (HealthProfilePolicy.uuid(id)) HealthBackupHistoryCursor(created, id) else null
+    }
+
+    @Deprecated("Native back callback") override fun onBackPressed() = back()
+    private fun back() {
+        if (busy != null) { busy?.cancel(); return }
+        if (historyOnly && artifactId != null) {
+            artifactId = null; selected = null; loadHistory()
+        } else finish()
+    }
+
+    private fun loadHistory() {
+        val id = artifactId
+        when {
+            busy != null -> render()
+            id != null -> work({ signal -> repository.history(id, signal) }) { selected = it }
+            historyOnly -> work({ signal -> repository.historyPage(historyCursor, signal) }) { historyPage = it }
+            else -> render()
+        }
     }
 
     private fun render() {
@@ -102,22 +133,16 @@ class HealthBackupActivity : Activity() {
             }.apply { tag = "health-backup-select" }, 14)
             return
         }
-        artifact?.let { result ->
-            val title = when {
-                result.missing != 0 -> R.string.health_backup_incomplete
-                saved -> R.string.health_backup_saved
-                else -> R.string.health_backup_generated
+        if (artifactId != null) {
+            val item = selected
+            if (item != null) renderReceipt(content, item) else {
+                ui.add(content, ui.text(getString(R.string.health_backup_history_unavailable), 14f), 8)
+                ui.add(content, ui.command(R.string.common_retry, ::loadHistory), 10)
             }
-            content.addView(ui.text(getString(title), 18f, bold = true).apply { tag = "health-backup-generated" })
-            ui.add(content, ui.text(Formatter.formatFileSize(this, result.size), 14f, muted = true), 6)
-            ui.add(content, ui.command(R.string.health_backup_save) {
-                launchPicker(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(MIME)
-                    .putExtra(Intent.EXTRA_TITLE, "GalaxySSI-Health-${result.id.take(8)}.${HealthBackupCodec.EXTENSION}"), SAVE)
-            }.apply { tag = "health-backup-save" }, 14)
-            ui.add(content, ui.profileRow(getString(R.string.health_backup_share)) { share(result) }, 8)
-            ui.add(content, ui.profileRow(getString(R.string.health_backup_discard)) {
-                work({ repository.forget(result) }) { artifact = null; saved = false }
-            }, 8)
+            return
+        }
+        if (historyOnly) {
+            renderHistory(content)
             return
         }
         preview?.let { value ->
@@ -140,8 +165,11 @@ class HealthBackupActivity : Activity() {
                         val scope = HealthAccessScope(HealthAccessPurpose.GENERATE_BACKUP,
                             from = manifest.first, until = if (manifest.records > 0L) manifest.last + 1 else Long.MAX_VALUE,
                             count = manifest.records, format = HealthAccessFormat.GHBACKUP, annotations = true)
-                        HealthPrivacyStore.track(applicationContext, scope, names.privacy) { repository.generate(value, password, signal) }
-                    }, cleanup = { password.fill('\u0000') }) { artifact = it; preview = null }
+                        val result = HealthPrivacyStore.track(applicationContext, scope, names.privacy) { repository.generate(value, password, signal) }
+                        requireNotNull(repository.history(result.id, signal))
+                    }, cleanup = { password.fill('\u0000') }) {
+                        artifactId = it.receipt.id; selected = it; preview = null
+                    }
                 }
             }.apply { isEnabled = false; tag = "health-backup-encrypt" }
             acknowledge.setOnCheckedChangeListener { _, checked -> create.isEnabled = checked }
@@ -157,7 +185,67 @@ class HealthBackupActivity : Activity() {
                 repository.preview(owner, signal)
             }) { preview = it }
         }.apply { tag = "health-backup-preview" }, 14)
+        ui.add(content, ui.profileRow(getString(R.string.health_backup_history)) {
+            startActivity(Intent(this, HealthBackupActivity::class.java).putExtra("backup_history", true)
+                .putExtra("health_backup_test_id", names.fixture))
+        }, 10)
     }
+
+    private fun renderHistory(content: LinearLayout) {
+        val page = historyPage
+        if (page == null) {
+            ui.add(content, ui.command(R.string.common_retry, ::loadHistory), 10)
+            return
+        }
+        if (page.rows.isEmpty()) ui.add(content, ui.text(getString(R.string.health_backup_history_empty), 14f, muted = true), 8)
+        for (item in page.rows) {
+            val receipt = item.receipt
+            val label = getString(receipt.generation.titleResource())
+            ui.add(content, ui.profileRow(date(receipt.created), "$label \u00b7 ${getString(receipt.save.titleResource())}") {
+                artifactId = receipt.id; selected = item; render()
+            }.apply { tag = "health-backup-history-${receipt.id}" }, 4)
+        }
+        if (previous.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) {
+            historyCursor = previous.removeAt(previous.lastIndex); loadHistory()
+        }, 10)
+        page.next?.let { next -> ui.add(content, ui.command(R.string.health_next_page) {
+            previous += historyCursor; historyCursor = next; loadHistory()
+        }, 10) }
+    }
+
+    private fun renderReceipt(content: LinearLayout, item: HealthBackupHistoryItem) {
+        val receipt = item.receipt
+        val title = if (receipt.generation == HealthBackupGeneration.READY && receipt.save == HealthBackupSave.VERIFIED)
+            R.string.health_backup_saved else receipt.generation.titleResource()
+        content.addView(ui.text(getString(title), 18f, bold = true).apply { tag = "health-backup-generated" })
+        ui.add(content, ui.text(date(receipt.created), 14f, muted = true), 6)
+        ui.add(content, ui.text(getString(R.string.health_backup_history_counts, receipt.records, receipt.originals, receipt.missing), 15f), 6)
+        if (receipt.records > 0) ui.add(content, ui.text(getString(R.string.health_backup_dates,
+            date(receipt.first), date(receipt.last)), 14f, muted = true), 6)
+        ui.add(content, ui.text(getString(receipt.save.titleResource()), 14f, muted = true).apply { tag = "health-backup-save-state" }, 8)
+        if (receipt.savedAt > 0) ui.add(content, ui.text(getString(R.string.health_backup_history_last_verified, date(receipt.savedAt)),
+            14f, muted = true), 5)
+        if (receipt.missing > 0) ui.add(content, ui.text(getString(R.string.health_backup_missing), 14f, muted = true), 8)
+        val result = receipt.artifact
+        if (item.available && result != null) {
+            ui.add(content, ui.text(Formatter.formatFileSize(this, result.size), 14f, muted = true), 6)
+            ui.add(content, ui.command(R.string.health_backup_save) {
+                launchPicker(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(MIME)
+                    .putExtra(Intent.EXTRA_TITLE, "GalaxySSI-Health-${result.id.take(8)}.${HealthBackupCodec.EXTENSION}"), SAVE)
+            }.apply { tag = "health-backup-save" }, 14)
+            ui.add(content, ui.profileRow(getString(R.string.health_backup_share)) { share(result) }, 8)
+            ui.add(content, ui.profileRow(getString(R.string.health_backup_discard)) {
+                work({ repository.forget(result); repository.history(result.id) }) { selected = it }
+            }, 8)
+        } else if (receipt.generation == HealthBackupGeneration.READY) {
+            ui.add(content, ui.text(getString(R.string.health_backup_history_local_missing), 14f, muted = true), 8)
+        }
+        if (!historyOnly) ui.add(content, ui.profileRow(getString(R.string.health_backup_create)) {
+            artifactId = null; selected = null; notice = null; render()
+        }, 10)
+    }
+
+    private fun date(time: Long) = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))
 
     private fun manifest(content: LinearLayout, data: HealthBackupManifest) {
         ui.add(content, ui.text(getString(R.string.health_backup_manifest), 18f, bold = true).apply { tag = "health-backup-manifest" }, 10)
@@ -221,6 +309,10 @@ class HealthBackupActivity : Activity() {
                 success(result)
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
+                artifactId?.let { id ->
+                    val refreshed = withContext(Dispatchers.IO) { runCatching { repository.history(id) }.getOrNull() }
+                    if (started && artifactId == id) selected = refreshed
+                }
                 notice = when (failure) {
                     is OperationCanceledException -> R.string.health_backup_cancelled
                     is HealthBackupException -> when (failure.issue) {
@@ -261,29 +353,16 @@ class HealthBackupActivity : Activity() {
                     input.use { HealthBackupCodec.verify(it, password, signal::throwIfCanceled) }
                 }, cleanup = { password.fill('\u0000') }) { verification = it }
             }
-        } else if (requestCode == SAVE) artifact?.let { value ->
-            work({ signal -> saveVerified(value, uri, signal) }) {
-                saved = true
-                notice = if (value.missing == 0) null else R.string.health_backup_saved_partial
+        } else if (requestCode == SAVE) artifactId?.let { id ->
+            work({ signal ->
+                repository.saveVerified(id, signal,
+                    { contentResolver.openOutputStream(uri, "wt") ?: error("Backup destination unavailable") },
+                    { contentResolver.openInputStream(uri) ?: error("Backup read-back unavailable") },
+                    { DocumentsContract.deleteDocument(contentResolver, uri) })
+            }) {
+                selected = it
+                notice = if (it.receipt.missing == 0) null else R.string.health_backup_saved_partial
             }
-        }
-    }
-
-    private fun saveVerified(value: HealthBackupArtifact, uri: Uri, signal: CancellationSignal) {
-        var opened = false
-        try {
-            val destination = contentResolver.openOutputStream(uri, "wt") ?: error("Backup destination unavailable")
-            opened = true
-            destination.use { repository.save(value, it, signal) }
-            val savedBytes = contentResolver.openInputStream(uri) ?: error("Backup read-back unavailable")
-            val sink = object : OutputStream() {
-                override fun write(value: Int) = Unit
-                override fun write(bytes: ByteArray, offset: Int, length: Int) = Unit
-            }
-            HealthPrivateExportFile.copyVerified(savedBytes, sink, HealthExportDigest(value.size, value.hash), signal::throwIfCanceled)
-        } catch (failure: Exception) {
-            if (opened) runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
-            throw failure
         }
     }
 
@@ -306,4 +385,21 @@ class HealthBackupActivity : Activity() {
         private const val OPEN = 71
         private const val SAVE = 72
     }
+}
+
+private fun HealthBackupGeneration.titleResource() = when (this) {
+    HealthBackupGeneration.GENERATING -> R.string.health_backup_working
+    HealthBackupGeneration.READY -> R.string.health_backup_generated
+    HealthBackupGeneration.FAILED -> R.string.health_backup_history_generation_failed
+    HealthBackupGeneration.CANCELLED -> R.string.health_backup_cancelled
+    HealthBackupGeneration.INTERRUPTED -> R.string.health_backup_history_generation_interrupted
+}
+
+private fun HealthBackupSave.titleResource() = when (this) {
+    HealthBackupSave.NONE -> R.string.health_backup_history_unsaved
+    HealthBackupSave.SAVING -> R.string.health_backup_history_saving
+    HealthBackupSave.VERIFIED -> R.string.health_backup_saved
+    HealthBackupSave.FAILED -> R.string.health_backup_history_save_failed
+    HealthBackupSave.CANCELLED -> R.string.health_backup_history_save_cancelled
+    HealthBackupSave.INTERRUPTED -> R.string.health_backup_history_save_interrupted
 }

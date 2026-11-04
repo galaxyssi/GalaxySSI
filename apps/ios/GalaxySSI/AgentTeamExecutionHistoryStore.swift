@@ -406,6 +406,25 @@ final class AgentTeamExecutionHistoryStore {
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
+    if mode == "evolution_rules" {
+      guard Set(input.keys).isSubset(of: ["mode", "topic", "offset"]),
+            case .string(let topic) = input["topic"] ?? .string("all"), topic.utf8.count <= 32,
+            case .int(let offset) = input["offset"] ?? .int(0), let start = Int(exactly: offset), start >= 0 else {
+        throw AgentTeamHistoryDatabase.Failure.corrupt
+      }
+      return try access { database in
+        guard let team = try database.snapshots(runId: scope.runId).first,
+              team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+              team.members.contains(where: { $0.memberId == scope.memberId &&
+                $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+              try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+                key: "native-evidence-revoked", revision: 0) != true,
+              let page = AgentCollaborationRuleTopics.page(topic: topic, offset: start) else {
+          throw AgentTeamHistoryDatabase.Failure.stale
+        }
+        return page
+      }
+    }
     if mode == "goal" {
       guard Set(input.keys).isSubset(of: ["mode", "section", "offset", "sha256"]),
             case .int(let offset) = input["offset"] ?? .int(0), let start = Int(exactly: offset),
