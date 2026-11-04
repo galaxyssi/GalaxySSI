@@ -542,6 +542,13 @@ final class AgentTeamExecutionHistoryStore {
               turnId: turnId, memberId: memberId, sourceId: sourceId)
             frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
           }
+        } else if draft.kind == .workflowMethod {
+          guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
+                let method = draft.body["workflow_method"]?.objectValue,
+                method["previous_method"] == nil, method["feedback"] == nil,
+                AgentCollaborationWorkflowIntake.validates(method) else {
+            throw AgentTeamHistoryDatabase.Failure.corrupt
+          }
         } else if draft.kind == .executableTool || draft.kind == .toolTestPlan {
           guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let spec = draft.body[draft.kind.rawValue]?.objectValue else {
