@@ -10,6 +10,7 @@ internal data class HealthOverviewDatabases(val fixture: String? = null) {
     val reminders get() = fixture?.let { "health-reminder-test-$it.db" } ?: HealthReminderStore.DEFAULT_DB
     val privacy get() = fixture?.let { "health-privacy-test-$it.db" } ?: HealthPrivacyStore.DEFAULT_DB
     val prefs get() = fixture?.let { "health-overview-test-$it" } ?: "health-overview"
+    val backups get() = fixture?.let { "health-backup-history-test-$it.db" } ?: "health_backup_history_v1.db"
     fun originalRoot(context: Context) = File(context.filesDir, fixture?.let { "health-overview-test-$it" } ?: "health-originals-v1")
 }
 

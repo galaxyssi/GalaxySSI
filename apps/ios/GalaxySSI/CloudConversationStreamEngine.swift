@@ -643,7 +643,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
             madeProgress = true
-            if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName {
+            if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName &&
+                !CloudWebToolLoopProgress.isRuleRecall(toolName: outcome.call.name, arguments: arguments) {
               evidenceResults.append((outcome.call.name, output))
             }
           }
@@ -662,7 +663,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           projectionByOriginal[original] = projection
         }
         let promptResults = results.map { call, output in
-          (call, projectionByOriginal[output] ?? evidencePromptLedger.project(output))
+          if let arguments = try? CloudModelStreamJSON.mcpObject(from: call.argumentsJson),
+             CloudWebToolLoopProgress.isRuleRecall(toolName: call.name, arguments: arguments) {
+            return (call, output)
+          }
+          return (call, projectionByOriginal[output] ?? evidencePromptLedger.project(output))
         }
         if usesInlineProtocol {
           prepared.appendInlineToolResults(rawRoundText, results: promptResults)

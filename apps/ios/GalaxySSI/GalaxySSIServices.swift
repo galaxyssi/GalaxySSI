@@ -6837,7 +6837,17 @@ final class MessageCoordinator: ObservableObject {
       requestedModelId: contact.selectedCloudModelId,
       hasImageInput: !images.isEmpty
     )
-    let prompt = cloudPrompt(text: requestText, attachments: attachments)
+    var text = requestText
+    if let scope = collaborationEvidence,
+       let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+       session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+       !session.privateMode, !session.trackingPaused,
+       let candidates = try? AgentTeamExecutionHistoryStore.shared.initialCollaborationCapabilities(scope: scope),
+       !candidates.isEmpty {
+      text += "\n\nSaved capability candidates (references only; read originals before considering reuse):\n" +
+        AgentMcpJSONCodec.stringify(["candidates": .array(candidates)])
+    }
+    let prompt = cloudPrompt(text: text, attachments: attachments)
     var turns = scopeToConversation ? store.agentSessionMessages(outgoing.conversationId)
       : store.messages(for: outgoing.contactId)
     if scopeToConversation, !turns.contains(where: { $0.id == outgoing.id }) {
