@@ -6,6 +6,7 @@
     <string name="health_restore_owner_pair">备份归属：%1$s\n当前档案：%2$s</string>
     <string name="health_restore_record_counts">新增 %1$d 条 · 重复 %2$d 条 · 冲突 %3$d 条</string>
     <string name="health_restore_file_counts">新增原件 %1$d 个 · 复用 %2$d 个 · 补回 %3$d 个 · 缺失 %4$d 个</string>
+    <string name="health_restore_secondary_counts">来源关联：新增 %1$d 条 · 已有 %2$d 条 · 跳过 %3$d 条</string>
     <string name="health_restore_conflicts">核对冲突记录</string>
     <string name="health_restore_keep_existing">保留本机记录，跳过冲突项。</string>
     <string name="health_restore_incoming">备份：%1$s</string>

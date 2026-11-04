@@ -159,7 +159,7 @@ class HealthRestoreActivity : Activity() {
             return
         }
         completed?.let { receipt ->
-            ui.add(content, ui.text(getString(if (receipt.counts.missing != 0 || receipt.counts.conflicts > 0)
+            ui.add(content, ui.text(getString(if (receipt.counts.missing != 0 || receipt.counts.conflicts > 0 || receipt.counts.sourcesSkipped > 0)
                 R.string.health_restore_partial else R.string.health_restore_complete), 19f, bold = true).apply { tag = "health-restore-receipt" }, 8)
             showCounts(content, receipt.counts)
         }
@@ -181,6 +181,9 @@ class HealthRestoreActivity : Activity() {
         ui.add(content, ui.text(getString(R.string.health_restore_record_counts, counts.added, counts.duplicates, counts.conflicts), 15f), 7)
         ui.add(content, ui.text(getString(R.string.health_restore_file_counts, counts.originalsAdded, counts.originalsReused,
             counts.repaired, counts.missing), 14f, muted = true), 4)
+        if (counts.sourcesAdded > 0 || counts.sourcesReused > 0 || counts.sourcesSkipped > 0)
+            ui.add(content, ui.text(getString(R.string.health_restore_secondary_counts, counts.sourcesAdded, counts.sourcesReused,
+                counts.sourcesSkipped), 14f), 4)
     }
 
     private fun pick() {
