@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_review_source_method">On-device OCR · Page %1$d</string>
+    <string name="health_review_source_image">Original page with the selected source region</string>
+    <string name="health_review_unit_unknown">Unit needs review</string>
+    <string name="health_review_focus">Zoom to source region</string>
+    <string name="health_review_full_page">Show full page</string>
+    <string name="health_review_location_unknown">No source coordinates for this item</string>
+    <string name="health_review_source_not_ready">The original preview is not available yet.</string>
+</resources>

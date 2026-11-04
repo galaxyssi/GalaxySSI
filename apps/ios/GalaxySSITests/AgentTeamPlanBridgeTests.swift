@@ -297,6 +297,49 @@ extension GalaxySSIStoreTests {
       roster: roster, mentionedMemberIds: [UUID()], targets: [target], registrations: [registration]))
   }
 
+  func testGoalAssessmentPreservesContractAndRequiresMatchingHostEvidence() throws {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let original = Policy.Criterion(id: "physical-test", requirement: "Observe the physical result",
+      verification: .physical, status: .open, evidence_kind: nil, evidence: [])
+    var current = original
+    current.status = .met
+    current.evidence_kind = .observed
+    current.evidence = ["receipt-1"]
+    var assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "Result",
+      decision: .achieved, criteria: [current], work: [], blockers: [])
+    let verified = ["physical-test": Policy.VerifiedCriterion(requirement: original.requirement,
+      verification: .physical, evidence: ["receipt-1"])]
+    func evaluate(_ receipts: [String: Policy.VerifiedCriterion]) throws -> Policy.Outcome {
+      let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+      return Policy.evaluate(raw, preserving: [original], authorizedMembers: [],
+        completedWork: [], verified: receipts)
+    }
+    XCTAssertEqual(try evaluate([:]), .needsAssessment)
+    XCTAssertEqual(try evaluate(verified), .achieved)
+    assessment.criteria[0].evidence_kind = .simulation
+    XCTAssertEqual(try evaluate(verified), .needsAssessment)
+    assessment.criteria[0].verification = .computational
+    XCTAssertEqual(try evaluate(verified), .needsAssessment)
+    assessment.criteria = []
+    XCTAssertEqual(try evaluate(verified), .needsAssessment)
+  }
+
+  func testGoalAssessmentDoesNotRescheduleCompletedWork() throws {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let criterion = Policy.Criterion(id: "delivery", requirement: "Deliver evidence",
+      verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    let assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "More work",
+      decision: .continue, criteria: [criterion],
+      work: [Policy.Work(id: "check", member: "researcher", assignment: "Check evidence")], blockers: [])
+    let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+    XCTAssertEqual(Policy.evaluate(raw, preserving: [criterion], authorizedMembers: ["researcher"],
+      completedWork: []), .schedule(["check"]))
+    XCTAssertEqual(Policy.evaluate(raw, preserving: [criterion], authorizedMembers: ["researcher"],
+      completedWork: ["check"]), .needsAssessment)
+    XCTAssertEqual(Policy.evaluate(raw, preserving: [criterion], authorizedMembers: [],
+      completedWork: []), .needsAssessment)
+  }
+
   func testRequestedRepeatedAgentCompilesToInstanceScopedTeam() throws {
     let target = teamTarget("codex")
     var registration = teamRegistration(target)

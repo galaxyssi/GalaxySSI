@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_review_source_method">本机文字识别 · 第 %1$d 页</string>
+    <string name="health_review_source_image">显示所选区域的原件页</string>
+    <string name="health_review_unit_unknown">单位待核对</string>
+    <string name="health_review_focus">放大原图对应位置</string>
+    <string name="health_review_full_page">查看整页</string>
+    <string name="health_review_location_unknown">这项没有原图坐标</string>
+    <string name="health_review_source_not_ready">原件预览暂不可用。</string>
+</resources>

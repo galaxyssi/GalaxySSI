@@ -119,6 +119,13 @@ final class AgentTeamExecutionHistoryStore {
           guard current.teamId == incoming.teamId, current.conversationId == incoming.conversationId,
                 current.taskId == incoming.taskId else { throw AgentTeamHistoryDatabase.Failure.stale }
           if current.state.deliverable || current.updatedAtMillis > incoming.updatedAtMillis { return false }
+          for member in current.members where member.dispatchCheckpoint != nil {
+            guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
+                  replacement.sourceMessageId == member.sourceMessageId,
+                  replacement.dispatchCheckpoint == member.dispatchCheckpoint else {
+              throw AgentTeamHistoryDatabase.Failure.stale
+            }
+          }
           for member in current.members where [.succeeded, .failed, .cancelled, .skipped].contains(member.status) {
             guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
                   replacement.sourceMessageId == member.sourceMessageId,
@@ -133,6 +140,37 @@ final class AgentTeamExecutionHistoryStore {
       }
       if changed { notify(incoming.supervisorRunId) }
       return true
+    } catch { return false }
+  }
+
+  @discardableResult
+  func advanceDispatchCheckpoint(runId: String, conversationId: String, turnId: String,
+                                 memberId: String, sourceMessageId: String,
+                                 to checkpoint: AgentTeamMemberDispatchCheckpoint, now: Int64) -> Bool {
+    guard !sourceMessageId.isBlank else { return false }
+    do {
+      return try access { database in
+        guard var snapshot = try database.snapshots(runId: runId).first,
+              snapshot.conversationId == conversationId, snapshot.taskId == turnId,
+              let index = snapshot.members.firstIndex(where: {
+                $0.memberId == memberId && $0.sourceMessageId == sourceMessageId
+              }) else { return false }
+        let previous = snapshot.members[index].dispatchCheckpoint
+        switch checkpoint {
+        case .notStarted:
+          return false
+        case .dispatching:
+          guard previous == .notStarted, !snapshot.state.isTerminal,
+                !snapshot.members[index].status.isTerminal else { return false }
+        case .accepted:
+          if previous == .accepted { return true }
+          guard previous == .dispatching else { return false }
+        }
+        snapshot.members[index].dispatchCheckpoint = checkpoint
+        snapshot.updatedAtMillis = max(snapshot.updatedAtMillis, now)
+        try database.put(snapshot)
+        return true
+      }
     } catch { return false }
   }
 
@@ -319,6 +357,39 @@ final class AgentTeamExecutionHistoryStore {
     guard !run.isEmpty else { return nil }
     do { return newer(try access { try $0.snapshots(runId: run).first }, executionStore.snapshot(supervisorRunId: run)) }
     catch { return nil }
+  }
+
+  func goalCheckpoint(runId: String, conversationId: String, turnId: String,
+                      revision: Int64? = nil) -> AgentCollaborationGoalCheckpoint? {
+    try? access { database -> AgentCollaborationGoalCheckpoint? in
+      guard let snapshot = try database.snapshots(runId: runId).first,
+            snapshot.conversationId == conversationId, snapshot.taskId == turnId,
+            let checkpoint = try database.goalCheckpoints(runId: runId, revision: revision, newestOnly: true).first,
+            checkpoint.conversationId == conversationId, checkpoint.turnId == turnId else { return nil }
+      return checkpoint
+    }
+  }
+
+  func advanceGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64) -> Bool {
+    guard expectedRevision >= 0, expectedRevision < Int64.max, checkpoint.revision == expectedRevision + 1,
+          !checkpoint.contract.isEmpty, Set(checkpoint.contract.map(\.id)).count == checkpoint.contract.count,
+          checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank }),
+          checkpoint.completedWorkIds.allSatisfy({ !$0.isBlank }) else { return false }
+    do {
+      return try access { database in
+        guard let snapshot = try database.snapshots(runId: checkpoint.runId).first,
+              snapshot.conversationId == checkpoint.conversationId, snapshot.taskId == checkpoint.turnId,
+              !snapshot.state.deliverable else { return false }
+        let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
+        guard (prior.first?.revision ?? 0) == expectedRevision,
+              prior.allSatisfy({
+                $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
+                  $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
+              }) else { return false }
+        try database.insertGoalCheckpoint(checkpoint)
+        return true
+      }
+    } catch { return false }
   }
 
   func remove(supervisorRunId: String) {

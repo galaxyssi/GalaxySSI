@@ -21,6 +21,7 @@ final class AgentTeamHistoryDatabase {
     sqlite3_busy_timeout(database, 5_000)
     try execute("PRAGMA journal_mode = WAL")
     try execute("PRAGMA synchronous = FULL")
+    try execute("PRAGMA foreign_keys = ON")
     try execute("PRAGMA fullfsync = ON")
     try execute("""
       CREATE TABLE IF NOT EXISTS team_history (
@@ -31,6 +32,12 @@ final class AgentTeamHistoryDatabase {
     try execute("CREATE INDEX IF NOT EXISTS team_history_recent ON team_history(namespace,updated_at,run_key)")
     try execute("CREATE INDEX IF NOT EXISTS team_history_pending ON team_history(namespace,conversation_key,finished,updated_at)")
     try execute("CREATE INDEX IF NOT EXISTS team_history_recovery ON team_history(namespace,finished,run_key)")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS collaboration_goal_checkpoints (
+        namespace TEXT NOT NULL, run_key TEXT NOT NULL, revision INTEGER NOT NULL,
+        encrypted_payload BLOB NOT NULL, PRIMARY KEY(namespace,run_key,revision),
+        FOREIGN KEY(namespace,run_key) REFERENCES team_history(namespace,run_key) ON DELETE CASCADE)
+      """)
     try execute("CREATE TABLE IF NOT EXISTS team_history_migrations(namespace TEXT PRIMARY KEY)")
     try execute("""
       CREATE TABLE IF NOT EXISTS collaboration_research_records (
@@ -135,6 +142,48 @@ final class AgentTeamHistoryDatabase {
     _ = encrypted.withUnsafeBytes { sqlite3_bind_blob(statement, 6, $0.baseAddress, Int32($0.count), Self.transient) }
     try finish(statement)
     try recordReplyOwners(snapshot)
+  }
+
+  func goalCheckpoints(runId: String, revision: Int64? = nil, newestOnly: Bool = false) throws
+    -> [AgentCollaborationGoalCheckpoint] {
+    let key = Self.digest(runId)
+    let statement = try prepare("SELECT revision,encrypted_payload FROM collaboration_goal_checkpoints " +
+      "WHERE namespace=? AND run_key=?" + (revision == nil ? "" : " AND revision=?") +
+      " ORDER BY revision DESC" + (newestOnly ? " LIMIT 1" : ""))
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(key, at: 2, to: statement)
+    if let revision { sqlite3_bind_int64(statement, 3, revision) }
+    var result: [AgentCollaborationGoalCheckpoint] = []
+    while true {
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { return result }
+      guard status == SQLITE_ROW, let blob = sqlite3_column_blob(statement, 1) else { throw Failure.corrupt }
+      let rowRevision = sqlite3_column_int64(statement, 0)
+      let payload = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 1)))
+      let checkpoint = try JSONDecoder().decode(AgentCollaborationGoalCheckpoint.self,
+        from: cipher.decrypt(payload, purpose: goalPurpose(key, revision: rowRevision)))
+      guard checkpoint.runId == runId, checkpoint.revision == rowRevision else { throw Failure.corrupt }
+      result.append(checkpoint)
+    }
+  }
+
+  func insertGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint) throws {
+    let key = Self.digest(checkpoint.runId)
+    let data = try JSONEncoder().encode(checkpoint)
+    guard data.count <= 256_000 else { throw Failure.corrupt }
+    let encrypted = try cipher.encrypt(data, purpose: goalPurpose(key, revision: checkpoint.revision))
+    let statement = try prepare("INSERT INTO collaboration_goal_checkpoints VALUES(?,?,?,?)")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(key, at: 2, to: statement)
+    sqlite3_bind_int64(statement, 3, checkpoint.revision)
+    _ = encrypted.withUnsafeBytes { sqlite3_bind_blob(statement, 4, $0.baseAddress, Int32($0.count), Self.transient) }
+    try finish(statement)
+  }
+
+  private func goalPurpose(_ key: String, revision: Int64) -> String {
+    "collaboration-goal:\(namespace):\(key):\(revision)"
   }
 
   func remove(runId: String? = nil, preserveOwners: Bool = false) throws {
