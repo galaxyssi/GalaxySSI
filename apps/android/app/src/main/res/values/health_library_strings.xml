@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_library_type">File type</string>
+    <string name="health_library_all">All types</string>
+    <string name="health_library_images">Images</string>
+    <string name="health_library_pdf">PDF</string>
+    <string name="health_library_tables">Tables</string>
+    <string name="health_library_other">Other files</string>
+    <string name="health_library_dates">Imported date</string>
+    <string name="health_library_all_dates">All dates</string>
+    <string name="health_library_grid">Thumbnails</string>
+    <string name="health_library_list">List</string>
+    <string name="health_library_select_page">Select this page</string>
+    <string name="health_library_clear_selection">Clear selection</string>
+    <string name="health_library_select_named">Select %1$s</string>
+    <string name="health_library_selected">%1$d originals selected</string>
+    <string name="health_library_export">Export originals</string>
+    <string name="health_library_last_export">Latest export</string>
+    <string name="health_library_confirm">Confirm original files</string>
+    <string name="health_library_summary">%1$d originals · %2$s before compression</string>
+    <string name="health_library_originals_only">Original files and source manifest only. Measurement records are not included.</string>
+    <string name="health_library_missing_count">%1$d original files are missing. Change the selection before generating.</string>
+    <string name="health_library_plain_consent">I understand that the saved ZIP is not password-protected and may contain private health information.</string>
+    <string name="health_library_plain_warning">The saved ZIP is not encrypted. Choose a private destination.</string>
+    <string name="health_library_consent_required">Confirm the unencrypted ZIP export first.</string>
+    <string name="health_library_generate">Generate ZIP</string>
+    <string name="health_library_edit_selection">Change selection</string>
+    <string name="health_library_generating">Preparing original archive</string>
+    <string name="health_library_progress">%1$d / %2$d originals completed</string>
+    <string name="health_library_generated">Generated · not saved</string>
+    <string name="health_library_saved">Saved</string>
+    <string name="health_library_saving">Saving ZIP</string>
+    <string name="health_library_save_zip">Save ZIP</string>
+    <string name="health_library_failed">Archive could not be completed. Retry or change the selection.</string>
+    <string name="health_library_source_changed">An original changed after confirmation. Review the selection again.</string>
+    <string name="health_library_background_failed">Background export could not start. Return to the app and retry.</string>
+</resources>

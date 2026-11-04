@@ -45,7 +45,6 @@ class HealthCaptureActivity : Activity() {
     private var preview: HealthOriginalPreview? = null
     private var rawDialog: AlertDialog? = null
     private var actionDialog: AlertDialog? = null
-    private val libraryPages = arrayListOf<Pair<Long, String>>()
     private val jobPages = arrayListOf<Pair<Long, String>>()
     private val recordPages = arrayListOf<HealthPageCursor>()
     private var renderedKey = ""
@@ -78,7 +77,7 @@ class HealthCaptureActivity : Activity() {
             val parts = value.split('|'); val time = parts.firstOrNull()?.toLongOrNull()
             if (parts.size == 2 && time != null && runCatching { UUID.fromString(parts[1]) }.isSuccess) time to parts[1] else null
         }
-        libraryPages.addAll(restore("library_pages")); jobPages.addAll(restore("job_pages"))
+        jobPages.addAll(restore("job_pages"))
         recordPages.addAll(restore("record_pages").map { HealthPageCursor(it.first, it.second) })
         state?.getStringArrayList("stack")?.forEach { value ->
             val parts = value.split('|'); if (parts.size == 3) stack.addLast(Triple(parts[0], parts[1], parts[2].toInt()))
@@ -110,7 +109,6 @@ class HealthCaptureActivity : Activity() {
         out.putString("route", route); out.putString("selected", selectedId); out.putInt("page", page); out.putString("mode", mode)
         out.putInt("candidate_offset", candidateOffset)
         out.putString("camera", pendingCamera); out.putString("export", exportId); out.putString("crop", cropId)
-        out.putStringArrayList("library_pages", ArrayList(libraryPages.map { "${it.first}|${it.second}" }))
         out.putStringArrayList("job_pages", ArrayList(jobPages.map { "${it.first}|${it.second}" }))
         out.putStringArrayList("record_pages", ArrayList(recordPages.map { "${it.measuredAt}|${it.id}" }))
         out.putStringArrayList("stack", ArrayList(stack.map { "${it.first}|${it.second}|${it.third}" }))
@@ -123,6 +121,7 @@ class HealthCaptureActivity : Activity() {
         generation++; refresh()
     }
     private fun open(next: String, id: String = "", number: Int = 1) {
+        if (next == "library") { startActivity(Intent(this, HealthOriginalLibraryActivity::class.java)); return }
         if (next == "original" && selectedId != id) recordPages.clear()
         stack.addLast(Triple(route, selectedId, page)); route = next; selectedId = id; page = number; candidateOffset = 0; generation++; refresh()
     }
@@ -134,16 +133,16 @@ class HealthCaptureActivity : Activity() {
     }
     private fun refresh() {
         if (!active) return
+        if (route == "library") { route = "capture"; startActivity(Intent(this, HealthOriginalLibraryActivity::class.java)); return }
         if (querying) { dirty = true; return }
         querying = true
         val token = generation
         val currentRoute = route; val id = selectedId; val number = page; val offset = candidateOffset
         val cameraToken = pendingCamera
-        val fileCursor = libraryPages.lastOrNull(); val taskCursor = jobPages.lastOrNull(); val recordCursor = recordPages.lastOrNull()
+        val taskCursor = jobPages.lastOrNull(); val recordCursor = recordPages.lastOrNull()
         worker.execute {
             val result = runCatching {
                 when (currentRoute) {
-                    "library" -> CaptureSnapshot(files = originals.originals(fileCursor))
                     "original" -> {
                         val original = originals.original(id)
                         val records = HealthRecordStore(applicationContext).use { it.page(after = recordCursor, originalId = id) }
@@ -205,7 +204,6 @@ class HealthCaptureActivity : Activity() {
         })
         val content = content()
         when (screen) {
-            "library" -> renderLibrary(content, data.files)
             "original" -> renderOriginal(content, data.original, data.available, data.saved, data.recordsNext)
             "review" -> renderReview(content, data)
             else -> renderCapture(content, data.jobs, data.pendingPhoto, data.tableJobs)
@@ -250,14 +248,6 @@ class HealthCaptureActivity : Activity() {
         }
         if (jobPages.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { jobPages.removeAt(jobPages.lastIndex); generation++; refresh() }, 16)
         if (jobs.size == 30) ui.add(content, ui.command(R.string.health_next_page) { jobs.last().let { jobPages += it.createdAt to it.id }; generation++; refresh() }, 16)
-    }
-    private fun renderLibrary(content: LinearLayout, files: List<HealthOriginal>) {
-        ui.add(content, ui.row(getString(R.string.health_choose_files)) { choose(false) })
-        if (files.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_originals), 15f, muted = true), 12)
-        files.forEach { original -> ui.add(content, ui.row(original.name,
-            "${original.mime} \u00b7 ${android.text.format.Formatter.formatShortFileSize(this, original.size)}") { open("original", original.id) }, 8) }
-        if (libraryPages.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { libraryPages.removeAt(libraryPages.lastIndex); generation++; refresh() }, 16)
-        if (files.size == 30) ui.add(content, ui.command(R.string.health_next_page) { files.last().let { libraryPages += it.importedAt to it.id }; generation++; refresh() }, 16)
     }
     private fun renderOriginal(content: LinearLayout, original: HealthOriginal?, available: Boolean, saved: List<HealthObservation>, next: HealthPageCursor?) {
         if (original == null) { content.addView(ui.text(getString(R.string.health_original_missing))); return }
@@ -494,7 +484,7 @@ class HealthCaptureActivity : Activity() {
         "table_row" -> R.string.health_table_row_error
         else -> if (code.startsWith("xlsx_")) healthXlsxErrorResource(code) else R.string.health_import_failed
     }
-    private data class CaptureSnapshot(val jobs: List<HealthImportJob> = emptyList(), val files: List<HealthOriginal> = emptyList(),
+    private data class CaptureSnapshot(val jobs: List<HealthImportJob> = emptyList(),
         val job: HealthImportJob? = null, val original: HealthOriginal? = null, val page: HealthOcrPage? = null, val saved: List<HealthObservation> = emptyList(),
         val suggestions: List<HealthDraft> = emptyList(), val hasMore: Boolean = false, val available: Boolean = true, val pendingPhoto: Boolean = false,
         val recordsNext: HealthPageCursor? = null, val tableJobs: Map<String, HealthTableBatch> = emptyMap())

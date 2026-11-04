@@ -229,6 +229,8 @@
             android:authorities="${applicationId}.local-attachments"
             android:exported="false"
             android:grantUriPermissions="true" />
+        <activity android:name=".HealthOriginalLibraryActivity" android:exported="false" />
+        <activity android:name=".HealthOriginalExportActivity" android:exported="false" />
         <provider android:name=".HealthOriginalContentProvider" android:authorities="${applicationId}.health-originals"
             android:exported="false" android:grantUriPermissions="true" />
         <service
