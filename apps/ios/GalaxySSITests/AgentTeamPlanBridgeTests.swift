@@ -298,12 +298,14 @@ extension GalaxySSIStoreTests {
   }
 
   func testCollaborationCompilationPreservesRosterIdentityAndRejectsCapacityOverflow() throws {
-    let target = teamTarget("codex")
+    var target = teamTarget("codex")
+    target.adapterType = "codex-app-server-or-cli"
+    target.invocationProfile = AgentInvocationProfile(models: [.init(id: "review-model")], reasoningEfforts: [.xhigh])
     var registration = teamRegistration(target)
     registration.maxParallelRuns = 3
     let coordinator = AgentCollaborationRoster.Member(name: "Lead", role: "Synthesis", resourceId: target.id)
     let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", role: "Evidence review",
-      resourceId: target.id, modelId: "review-model", mentionOnly: true)
+      resourceId: target.id, modelId: "review-model", mentionOnly: true, reasoningEffort: "xhigh")
     let researcher = AgentCollaborationRoster.Member(name: "Researcher", resourceId: target.id)
     let roster = AgentCollaborationRoster(members: [researcher, reviewer, coordinator],
       coordinatorId: coordinator.id, independentReview: true)
@@ -317,6 +319,17 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(spec.definition.members.map(\.memberId), [reviewerId, coordinator.id.uuidString.lowercased()])
     XCTAssertEqual(spec.definition.members.first?.role, "Evidence review")
     XCTAssertEqual(spec.definition.members.first?.context["_galaxyssi_member_model_id"], "review-model")
+    XCTAssertEqual(spec.definition.members.first?.context[AgentCollaborationReasoningSelection.contextKey], "xhigh")
+    XCTAssertNil(spec.definition.members.last?.context[AgentCollaborationReasoningSelection.contextKey])
+    XCTAssertEqual(AgentCollaborationReasoningSelection.invocation(model: "review-model", effort: "xhigh",
+      adapter: target.adapterType, profile: target.invocationProfile),
+      ["model_id": "review-model", "reasoning_effort": "xhigh"])
+    XCTAssertNil(AgentCollaborationReasoningSelection.invocation(model: "review-model", effort: "auto",
+      adapter: target.adapterType, profile: target.invocationProfile))
+    var changedTarget = target
+    changedTarget.invocationProfile.reasoningEfforts = [.high]
+    XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan, roster: roster,
+      mentionedMemberIds: [reviewer.id], targets: [changedTarget], registrations: [registration]))
     XCTAssertEqual(spec.definition.members.last?.dependsOnAgentIds, [reviewerId])
     registration.maxParallelRuns = 1
     XCTAssertNil(AgentTeamPlanCompiler.compileCollaboration(plan: plan,

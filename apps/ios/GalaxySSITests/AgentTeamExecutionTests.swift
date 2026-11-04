@@ -324,6 +324,141 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testModelCallAuditPreservesUnsettledAdmissionAndImmutableTerminalReceipt() throws {
+    let suite = "model-call-audit-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let team = durableTeamSnapshot("audit")
+    XCTAssertTrue(history.upsert(team))
+    let member = try XCTUnwrap(team.members.first)
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let admission = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 0,
+      provider: .openAICompatible, requestedModel: "fixture", startedAtMillis: 1)
+    try history.admitCollaborationModelCall(admission)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertTrue(try reopened.collaborationModelCall(admission).admitted)
+    XCTAssertNil(try reopened.collaborationModelCall(admission).settlement)
+    let completed = AgentCollaborationModelSettlement(state: .completed, finishedAtMillis: 2,
+      reportedUsage: .init(inputTokens: 10, outputTokens: 3, cachedInputTokens: 2), usageComplete: false, costMicros: nil)
+    try reopened.settleCollaborationModelCall(admission, settlement: completed)
+    try reopened.settleCollaborationModelCall(admission, settlement: completed)
+    XCTAssertEqual(try history.collaborationModelCall(admission).settlement, completed)
+    let interrupted = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 1,
+      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3)
+    try reopened.admitCollaborationModelCall(interrupted)
+    let firstPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, limit: 1)
+    let cursor = try XCTUnwrap(firstPage.next)
+    let secondPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, after: cursor, limit: 1)
+    let entries = firstPage.entries + secondPage.entries
+    XCTAssertEqual(Set(entries.map { $0.admission.id }), [admission.id, interrupted.id])
+    XCTAssertEqual(entries.first(where: { $0.admission.id == admission.id })?.settlement, completed)
+    XCTAssertNil(entries.first(where: { $0.admission.id == interrupted.id })?.settlement)
+    XCTAssertNil(secondPage.next)
+    XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: "foreign").entries.isEmpty)
+    XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: .init(
+      state: .failed, finishedAtMillis: 3, reportedUsage: nil, usageComplete: false, costMicros: nil)))
+    reopened.removeResearchObjects(conversationId: scope.conversationId)
+    XCTAssertFalse(try history.collaborationModelCall(admission).admitted)
+    XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: scope.conversationId).entries.isEmpty)
+    XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: completed))
+  }
+
+  func testPublicationRecoveryFindsSavedReplyAndSkipsCommittedReplay() throws {
+    let suite = "publication-recovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertTrue(history.upsert(durableTeamSnapshot("run")))
+    let body = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"note","base_revision":0,"kind":"evidence","title":"Note","body":{"text":"Saved"},"parents":[]}
+    ]}
+    """
+    XCTAssertEqual(try history.consumeOwnedReply(source: "source-review", conversation: "conversation", turn: "turn",
+      task: "source-review", contact: "review", content: body, richOutputJson: "", terminal: true,
+      success: true, now: 20, observation: AgentTeamReplyObservation(generation: 2, sequence: 1)), .observerCommitted)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let pending = try reopened.pendingPublicationRecoveryPage(after: "")
+    let owner = try XCTUnwrap(pending.owners.first)
+    XCTAssertEqual(pending.owners.count, 1)
+    XCTAssertEqual(owner.sourceMessageId, "source-review")
+    let scope = AgentCollaborationToolEvidenceScope(runId: owner.supervisorRunId, conversationId: owner.conversationId,
+      turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceMessageId)
+    try reopened.publishSavedResearchReply(body, scope: scope)
+    XCTAssertTrue(try reopened.pendingPublicationRecoveryPage(after: "").owners.isEmpty)
+    XCTAssertEqual(try reopened.committedResearchRevisions(scope: scope)?.count, 1)
+  }
+
+  func testExperimentRegistrationRequiresMeasurableTargetAndUniqueCases() {
+    var item: AgentMcpJSONObject = ["id": .string("target"), "metric": .string("accuracy"),
+      "prediction": .string("Improves"), "purpose": .string("target"), "direction": .string("maximize"),
+      "minimum_gain": .int(1), "tolerance": .int(0), "repetitions": .int(2)]
+    XCTAssertTrue(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item), .object(item)]))
+    item["purpose"] = .string("regression")
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    item["purpose"] = .string("feasibility")
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    item["threshold"] = .int(3)
+    XCTAssertTrue(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+  }
+
+  func testExperimentMeasurementKeepsPartialAndRejectsDuplicateOrOverBudgetTrials() throws {
+    func decode(_ raw: String) throws -> AgentMcpJSONObject {
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    }
+    let spec = try decode("""
+      {"innovation":{"object_id":"idea","revision":1,"sha256":"new"},
+       "baseline":{"object_id":"baseline","revision":1,"sha256":"old"},
+       "environment":"fixture","budget_unit":"calls","budget_limit":1,
+       "cases":[{"id":"target","purpose":"target","direction":"maximize","metric":"score",
+        "prediction":"Gain","minimum_gain":1,"tolerance":0,"repetitions":1}]}
+      """)
+    let plan = AgentCollaborationResearchRevision(reference: .init(objectId: "plan", revision: 1, sha256: "hash"),
+      previousHash: nil, runId: "run", turnId: "turn", authorId: "author", sourceId: "source",
+      draft: .init(id: "plan", objectId: nil, baseRevision: 0, kind: .experimentPlan,
+        title: "Plan", body: ["experiment_plan": .object(spec)], parents: []))
+    let raw = """
+      {"format":"galaxyssi.experiment-measurements.v1","plan_sha256":"hash","environment":"fixture","budget_unit":"calls",
+       "measurements":[
+        {"case_id":"target","variant":"baseline","variant_sha256":"old","metric":"score","repetition":1,"value":2,"budget_used":1},
+        {"case_id":"target","variant":"candidate","variant_sha256":"new","metric":"score","repetition":1,"value":4,"budget_used":1}]}
+      """
+    let report = try decode(raw)
+    let complete = AgentCollaborationExperimentPlanIntake.measure([report], plan: plan)
+    XCTAssertEqual(complete?.first?.state, "passed")
+    XCTAssertEqual(complete?.first?.gain, 2)
+    var partial = report
+    partial["measurements"] = .array(Array(try XCTUnwrap(report["measurements"]?.arrayValue).prefix(1)))
+    XCTAssertEqual(AgentCollaborationExperimentPlanIntake.measure([partial], plan: plan)?.first?.state, "incomplete")
+    XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([report, report], plan: plan))
+    let costly = try decode(raw.replacingOccurrences(of: "\"budget_used\":1", with: "\"budget_used\":2"))
+    XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([costly], plan: plan))
+  }
+
+  func testCapabilityRetentionRequiresPassingTargetAndRegression() {
+    let target = AgentCollaborationMeasuredCase(id: "target", purpose: "target", state: "passed")
+    var regression = AgentCollaborationMeasuredCase(id: "regression", purpose: "regression", state: "passed")
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target]))
+    XCTAssertTrue(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+    regression.state = "not_met"
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+    regression.state = "incomplete"
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+  }
+
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
     let raw = """
     {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",
@@ -526,6 +661,26 @@ extension GalaxySSIStoreTests {
     option["decision"] = .string("select")
     option["assignment"] = .string("Repeat a different check")
     XCTAssertFalse(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
+  }
+
+  func testLearningPrioritiesOnlyReorderReadySlotsInSameAgendaAfterReopen() throws {
+    let raw = """
+    {"format":"galaxyssi.work-expansion.v1","work":[
+      {"id":"later","member":"member","assignment":"Later","depends_on":[],
+       "learning":{"agenda":{"object_id":"agenda","revision":1,"sha256":"exact"},"option_id":"later"}},
+      {"id":"ordinary","member":"member","assignment":"Ordinary","depends_on":[]},
+      {"id":"first","member":"member","assignment":"First","depends_on":[],
+       "learning":{"agenda":{"object_id":"agenda","revision":1,"sha256":"exact"},"option_id":"first"}},
+      {"id":"blocked","member":"member","assignment":"Blocked","depends_on":["ordinary"],
+       "learning":{"agenda":{"object_id":"agenda","revision":1,"sha256":"exact"},"option_id":"blocked"}}
+    ]}
+    """
+    let graph = try XCTUnwrap(AgentCollaborationLiveGraph().appending(raw, authorizedMembers: ["member"],
+      historicalAuthors: [:], settled: [:])).pinningLearningPriorities(["later": 3, "first": 2, "blocked": 1])
+    let reopened = try JSONDecoder().decode(AgentCollaborationLiveGraph.self, from: JSONEncoder().encode(graph))
+    XCTAssertEqual(reopened.ready(settled: [:], active: []).map(\.id), ["first", "ordinary", "later"])
+    XCTAssertEqual(reopened.ready(settled: [:], active: ["first"]).map(\.id), ["later", "ordinary"])
+    XCTAssertEqual(reopened.ready(settled: ["ordinary": .succeeded], active: []).map(\.id), ["blocked", "first", "later"])
   }
 
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {

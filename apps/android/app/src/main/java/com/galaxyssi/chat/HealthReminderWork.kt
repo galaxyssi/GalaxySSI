@@ -24,6 +24,7 @@ internal object HealthReminderWork {
     private const val TAG = "health-record-reminder:"
     private const val SLEEP_TAG = "health-sleep-change:"
     private const val REPORT_TAG = "health-report-review:"
+    private const val SYNC_TAG = "health-sync-incident:"
     private const val ID = 1
     @Volatile private var sleepEnabled: Boolean? = null
 
@@ -45,10 +46,10 @@ internal object HealthReminderWork {
         if (waiting) enqueue(context).result.get(10, TimeUnit.SECONDS)
     }
 
-    fun reportSourceChanged(context: Context) {
+    fun sourceRemindersChanged(context: Context) {
         if (context.getDatabasePath(HealthReminderStore.DEFAULT_DB).exists()) {
             runCatching { enqueue(context) }.onFailure {
-                android.util.Log.w("HealthReminder", "Report reconciliation enqueue failed: ${it.javaClass.simpleName}")
+                android.util.Log.w("HealthReminder", "Source reminder enqueue failed: ${it.javaClass.simpleName}")
             }
         }
     }
@@ -59,6 +60,13 @@ internal object HealthReminderWork {
     fun systemAllowed(context: Context): Boolean {
         val manager = context.getSystemService(NotificationManager::class.java)
         return manager.areNotificationsEnabled() && manager.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
+    }
+
+    fun syncDeliveryEnabled(context: Context): Boolean {
+        if (!context.getDatabasePath(HealthReminderStore.DEFAULT_DB).exists()) return false
+        return runCatching {
+            HealthReminderStore(context).use { it.settings().notifications } && systemAllowed(context)
+        }.getOrDefault(false)
     }
 
     @Synchronized fun save(context: Context, store: HealthReminderStore, candidate: HealthReminderSettings, live: Boolean) {
@@ -112,7 +120,10 @@ internal object HealthReminderWork {
         val reportNext = runCatching { reconcileReports(context, store, settings, alerts, now, zone) }
             .onFailure { android.util.Log.w("HealthReminder", "Report reconciliation failed: ${it.javaClass.simpleName}") }
             .getOrNull()
-        val next = listOfNotNull(nextDaily, nextSnooze, defer, sleepWake, sleepQuiet, nextSleepDay, reportNext).minOrNull()
+        val syncNext = runCatching { reconcileSync(context, settings, alerts, now, zone) }
+            .onFailure { android.util.Log.w("HealthReminder", "Sync reconciliation failed: ${it.javaClass.simpleName}") }
+            .getOrNull()
+        val next = listOfNotNull(nextDaily, nextSnooze, defer, sleepWake, sleepQuiet, nextSleepDay, reportNext, syncNext).minOrNull()
         if (next == null) scheduler.cancel(alarm(context))
         else scheduler.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, alarm(context))
         // Remove obsolete visible alerts without altering the persisted handling state.
@@ -154,24 +165,45 @@ internal object HealthReminderWork {
 
     private fun reconcileReports(context: Context, store: HealthReminderStore, settings: HealthReminderSettings,
         manager: NotificationManager, now: Long, zone: ZoneId): Long? {
-        val visible = manager.activeNotifications.mapNotNull {
-            val tag = it.tag ?: return@mapNotNull null
-            if (!tag.startsWith(REPORT_TAG)) return@mapNotNull null
-            val id = tag.removePrefix(REPORT_TAG)
-            if (!HealthProfilePolicy.uuid(id)) return@mapNotNull null
-            id to (it.notification.visibility == Notification.VISIBILITY_PRIVATE)
-        }.toMap()
+        val visible = activeSourceNotices(manager, REPORT_TAG)
         val repository = HealthReportReviewRepository(context, HealthOverviewDatabases())
         return HealthReportNotificationDelivery.reconcile(store, settings, now, zone, systemAllowed(context), visible,
             lookup = { repository.byId(store, it) }, post = { report ->
-                try {
-                    post(context, manager, REPORT_TAG + report.id, report.intent(context)
-                        .setData(android.net.Uri.parse("galaxyssi://health/report-review/${report.id}")), 0,
-                        R.string.health_report_review_notice, settings)
-                    true
-                } catch (_: SecurityException) { false }
+                postSourceNotice(context, manager, REPORT_TAG + report.id, report.intent(context)
+                    .setData(android.net.Uri.parse("galaxyssi://health/report-review/${report.id}")),
+                    R.string.health_report_review_notice, settings)
             }, cancel = { manager.cancel(REPORT_TAG + it, ID) })
     }
+
+    private fun reconcileSync(context: Context, settings: HealthReminderSettings, manager: NotificationManager,
+        now: Long, zone: ZoneId): Long? {
+        val visible = activeSourceNotices(manager, SYNC_TAG)
+        if (!context.getDatabasePath(HealthRecordStore.DEFAULT_DB).exists()) {
+            visible.keys.forEach { manager.cancel(SYNC_TAG + it, ID) }
+            return null
+        }
+        return HealthRecordStore(context).use { records ->
+            HealthSyncNotificationDelivery.reconcile(records, settings, HealthConnectSettings.selection(context),
+                now, zone, systemAllowed(context), visible,
+                post = { postSourceNotice(context, manager, SYNC_TAG + it.id, it.intent(context), R.string.health_sync_reminder_notice, settings) },
+                cancel = { manager.cancel(SYNC_TAG + it, ID) })
+        }
+    }
+
+    private fun activeSourceNotices(manager: NotificationManager, prefix: String): Map<String, Boolean> =
+        manager.activeNotifications.mapNotNull {
+            val tag = it.tag ?: return@mapNotNull null
+            if (!tag.startsWith(prefix)) return@mapNotNull null
+            val id = tag.removePrefix(prefix)
+            if (!HealthProfilePolicy.uuid(id)) return@mapNotNull null
+            id to (it.notification.visibility == Notification.VISIBILITY_PRIVATE)
+        }.toMap()
+
+    private fun postSourceNotice(context: Context, manager: NotificationManager, tag: String, intent: Intent, title: Int,
+        settings: HealthReminderSettings): Boolean = try {
+        post(context, manager, tag, intent, 0, title, settings)
+        true
+    } catch (_: SecurityException) { false }
 
     private fun visibility(settings: HealthReminderSettings) =
         if (settings.hideOnLock) Notification.VISIBILITY_PRIVATE else Notification.VISIBILITY_PUBLIC

@@ -53,7 +53,7 @@ class HealthCaptureActivity : Activity() {
     private var pendingCamera = ""
     private var exportId = ""
     private var cropId = ""
-    private var preview: HealthOriginalPreview? = null
+    private var preview: android.app.Dialog? = null
     private var sourceView: HealthReviewSourceView? = null
     private var sourceBitmap: Bitmap? = null
     private var sourceDialog: HealthReviewSourceDialog? = null
@@ -325,8 +325,12 @@ class HealthCaptureActivity : Activity() {
         }
         ui.add(content, ui.row(getString(R.string.health_open_original)) {
             preview?.dismiss()
-            preview = HealthOriginalPreview(this, original, if (original.reviewOnly) null else ({ export(original) })).also { it.show() }
-        }, 14)
+            val save: (() -> Unit)? = if (original.reviewOnly) null else ({ export(original) })
+            val dialog = if (HealthTableParser.format(original.name, original.mime) != null)
+                HealthStructuredOriginalPreview(this, original, names, save)
+            else HealthOriginalPreview(this, original, save)
+            preview = dialog.also { it.show() }
+        }.apply { tag = "health-open-original" }, 14)
         if (!original.reviewOnly) {
             if (original.mime.startsWith("image/")) ui.add(content, ui.row(getString(R.string.composer_crop)) { crop(original) })
             original.source.takeIf { it.startsWith("crop:") }?.substringAfter("crop:")?.let { parent ->

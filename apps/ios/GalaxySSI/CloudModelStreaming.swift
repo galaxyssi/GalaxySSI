@@ -276,6 +276,7 @@ struct ModelStreamCompleted: Codable, Equatable {
   var requestId: String
   var finishReason: String?
   var completedAtElapsedMs: Int64
+  var reportedModel: String? = nil
 }
 
 struct ModelStreamFailed: Codable, Equatable {
