@@ -253,6 +253,22 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(selection.goal.contains("@codex"))
   }
 
+  func testCollaborationMentionUsesMemberIDAndIgnoresUntrustedEvidence() {
+    let first = AgentCollaborationRoster.Member(name: "Same", resourceId: "codex")
+    let second = AgentCollaborationRoster.Member(name: "Same", resourceId: "codex")
+    var roster = AgentCollaborationRoster(members: [first, second], coordinatorId: first.id)
+    let draft = AgentCollaborationMentionText.inserting(second, into: "Review @Sa") + "the report"
+    let evidence = AgentUntrustedEvidenceBoundary.textMarker + "\n" +
+      AgentCollaborationMentionText.inserting(first, into: "@")
+    roster.members[1].name = "Renamed"
+    let result = AgentCollaborationMentionText.parse(draft + "\n\n" + evidence, roster: roster)
+    XCTAssertEqual(result.memberIds, [second.id])
+    XCTAssertTrue(result.goal.contains("the report"))
+    XCTAssertTrue(result.displayText.contains("@Renamed"))
+    XCTAssertFalse(result.goal.contains(second.id.uuidString.lowercased()))
+    XCTAssertTrue(result.goal.contains(first.id.uuidString.lowercased()))
+  }
+
   func testCollaborationCompilationPreservesRosterIdentityAndRejectsCapacityOverflow() throws {
     let target = teamTarget("codex")
     var registration = teamRegistration(target)

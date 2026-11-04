@@ -2969,7 +2969,11 @@ final class MessageCoordinator: ObservableObject {
       apiKey: { store.apiKey(for: $0) }
     )
     let groupSession = contact.id == "hermes" ? store.agentSession(id: store.activeAgentConversationId) : nil
-    let mentionSelection = contact.id == "hermes" && groupSession?.collaborationRoster == nil
+    let groupRoster = groupSession?.collaborationRoster
+    let groupMentions = groupRoster.map {
+      AgentCollaborationMentionText.parse(trimmed, roster: $0)
+    }
+    let mentionSelection = contact.id == "hermes" && groupRoster == nil
       ? AgentMentionText.parse(trimmed, targets: callableTargets)
       : AgentMentionSelection(goal: trimmed, requestedMembers: [])
     let requestedMembers = !mentionSelection.requestedMembers.isEmpty
@@ -3016,10 +3020,11 @@ final class MessageCoordinator: ObservableObject {
         return false
       }
     }
-    let displayText = trimmed.ifBlank(GalaxySSIAttachmentPayloadBuilder.messageLabel(for: sendAttachments))
+    let displayText = (groupMentions?.displayText ?? trimmed)
+      .ifBlank(GalaxySSIAttachmentPayloadBuilder.messageLabel(for: sendAttachments))
     var requestText = agentGoalOverride
       .trimmingCharacters(in: .whitespacesAndNewlines)
-      .ifBlank(displayText)
+      .ifBlank(groupMentions?.goal ?? displayText)
     if agentGoalOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
          !requestedMembers.isEmpty,
        !mentionSelection.goal.isEmpty {
@@ -3037,10 +3042,11 @@ final class MessageCoordinator: ObservableObject {
     if let session = groupSession,
        let roster = session.collaborationRoster {
       guard !session.privateMode, !session.trackingPaused, !readOnlyAnalysis, taskExecutionMode == .autoComplete,
+            !requestText.isBlank,
             let first = roster.members.first(where: { $0.id == roster.coordinatorId }),
             let plan = requestedAgentPlan(goal: requestText,
               requestedMembers: [AgentRequestedMember(agentId: first.resourceId, displayName: first.name)],
-              targets: callableTargets, roster: roster),
+              targets: callableTargets, roster: roster, mentionedMemberIds: groupMentions?.memberIds ?? []),
             let spec = plan.actions.first.flatMap({
               AgentTeamDispatchSpecCodec.decode($0.parameters[agentTeamSpecParameter] ?? "")
             }), spec.definition.members.allSatisfy({ member in
@@ -6183,7 +6189,8 @@ final class MessageCoordinator: ObservableObject {
     goal: String,
     requestedMembers: [AgentRequestedMember],
     targets: [AgentCallableTarget],
-    roster: AgentCollaborationRoster? = nil
+    roster: AgentCollaborationRoster? = nil,
+    mentionedMemberIds: Set<UUID> = []
   ) -> AgentPlan? {
     guard let first = requestedMembers.first,
       let primary = targets.first(where: { $0.id == first.agentId && $0.status == .available }) else {
@@ -6219,7 +6226,7 @@ final class MessageCoordinator: ObservableObject {
     )
     let basePlan = AgentPlanFactory.singleAction(request: request, action: baseAction)
     if let roster {
-      return AgentTeamPlanCompiler.compileCollaboration(plan: basePlan, roster: roster,
+      return AgentTeamPlanCompiler.compileCollaboration(plan: basePlan, roster: roster, mentionedMemberIds: mentionedMemberIds,
         targets: targets, registrations: callableAgentRegistrations())
     }
     let compiled = AgentTeamPlanCompiler.compile(
