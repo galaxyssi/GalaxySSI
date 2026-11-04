@@ -45,9 +45,11 @@ internal class HealthPrivacyStore(private val context: Context, private val name
         }
         return next
     }
-    private fun begin(scope: HealthAccessScope): HealthAccessEvent = transaction {
+    private fun begin(scope: HealthAccessScope, expected: String? = null): HealthAccessEvent = transaction {
         val policy = policy()
-        val allowed = scope.purpose.permission?.let(policy::enabled) != false
+        val allowed = scope.purpose.permission?.let(policy::enabled) != false &&
+            (scope.purpose != HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE || policy.metrics) &&
+            (expected == null || expected == policy.version)
         val event = HealthAccessEvent(UUID.randomUUID().toString(), System.currentTimeMillis(), scope,
             if (allowed) HealthAccessOutcome.STARTED else HealthAccessOutcome.BLOCKED, policy.version)
         db.insertOrThrow("access_log", null, ContentValues().apply {
@@ -66,17 +68,31 @@ internal class HealthPrivacyStore(private val context: Context, private val name
         val event = begin(scope)
         if (event.outcome == HealthAccessOutcome.BLOCKED) throw HealthAccessBlocked()
         val result = try { operation() } catch (failure: Exception) {
-            val outcome = when (failure) {
-                is HealthAccessBlocked -> HealthAccessOutcome.BLOCKED
-                is CancellationException, is android.os.OperationCanceledException -> HealthAccessOutcome.CANCELLED
-                else -> HealthAccessOutcome.FAILED
-            }
-            runCatching { finish(event, outcome) }.exceptionOrNull()?.let(failure::addSuppressed)
+            finishFailure(event, failure)
             throw failure
         }
         // Check the revision and record the outcome in one transaction, including off/on ABA.
         if (finish(event, HealthAccessOutcome.COMPLETE) == HealthAccessOutcome.BLOCKED) throw HealthAccessBlocked()
         return result
+    }
+    suspend fun <T> trackOnlineAnalysis(scope: HealthAccessScope, expected: String, operation: suspend () -> T): T {
+        require(scope.purpose == HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE && expected.isNotBlank())
+        val event = begin(scope, expected)
+        if (event.outcome == HealthAccessOutcome.BLOCKED) throw HealthAccessBlocked()
+        val result = try { operation() } catch (failure: Exception) {
+            finishFailure(event, failure)
+            throw failure
+        }
+        if (finish(event, HealthAccessOutcome.COMPLETE) == HealthAccessOutcome.BLOCKED) throw HealthAccessBlocked()
+        return result
+    }
+    private fun finishFailure(event: HealthAccessEvent, failure: Exception) {
+        val outcome = when (failure) {
+            is HealthAccessBlocked -> HealthAccessOutcome.BLOCKED
+            is CancellationException, is android.os.OperationCanceledException -> HealthAccessOutcome.CANCELLED
+            else -> HealthAccessOutcome.FAILED
+        }
+        runCatching { finish(event, outcome) }.exceptionOrNull()?.let(failure::addSuppressed)
     }
     fun page(after: HealthAccessCursor? = null): HealthAccessPage {
         val where = if (after == null) "" else "WHERE time<? OR (time=? AND id<?)"

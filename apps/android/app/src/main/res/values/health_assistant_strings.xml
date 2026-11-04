@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_assistant_title">AI Health Assistant</string>
+    <string name="health_assistant_online_audit">Online health summary</string>
+    <string name="health_assistant_scope">Analysis scope</string>
+    <string name="health_assistant_baseline">Sleep comparison: %1$s to %2$s</string>
+    <string name="health_assistant_question">Question</string>
+    <string name="health_assistant_changes">What changed recently?</string>
+    <string name="health_assistant_coverage">What records are missing?</string>
+    <string name="health_assistant_next_records">What should I record next?</string>
+    <string name="health_assistant_local_scope">Only your confirmed measurements are used. No photos, notes, or profile details.</string>
+    <string name="health_assistant_calculate">Analyze on this device</string>
+    <string name="health_assistant_changed">Records or permissions changed. Run the analysis again.</string>
+    <string name="health_assistant_result">On-device results</string>
+    <string name="health_assistant_no_data">Not enough usable measurements in this date range.</string>
+    <string name="health_assistant_source_recent">Source record · %1$s</string>
+    <string name="health_assistant_source_baseline">Comparison source · %1$s</string>
+    <string name="health_assistant_online">Explain with an online model</string>
+    <string name="health_assistant_sending">Preparing online analysis…</string>
+    <string name="health_assistant_consent">Confirm online disclosure</string>
+    <string name="health_assistant_disclosure">Destination: %1$s\n\nOnly the summary below will be sent. No original records, identifiers, notes, photos, or conversation history are included.\n\n%2$s</string>
+    <string name="health_assistant_send">Confirm and send summary</string>
+    <string name="health_assistant_verified">Model selections verified against on-device results.</string>
+    <string name="health_assistant_blocked">Access to confirmed health measurements is disabled.</string>
+    <string name="health_assistant_online_blocked">Online health analysis is not authorized for this request.</string>
+    <string name="health_assistant_no_model">The selected online model is unavailable.</string>
+    <string name="health_assistant_invalid">The model returned selections that could not be verified. On-device results are unchanged.</string>
+    <string name="health_assistant_network_error">The online request failed. On-device results are unchanged.</string>
+</resources>

@@ -129,6 +129,7 @@ class HealthPrivacyActivity : Activity() {
         scope.format?.takeUnless { it == HealthAccessFormat.ORIGINAL }?.let { add(it.name) }
         if (scope.annotations) add(getString(R.string.health_privacy_scope_notes))
         if (scope.reportRecords) add(getString(R.string.health_weekly_raw))
+        if (scope.destination.isNotEmpty()) add(scope.destination)
         scope.baselineFrom?.let { start ->
             val zone = ZoneId.of(scope.zone)
             add(getString(R.string.health_weekly_baseline_range, Instant.ofEpochMilli(start).atZone(zone).toLocalDate(),
@@ -147,6 +148,8 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.OVERVIEW -> R.string.health_overview_title
     HealthAccessPurpose.WEEKLY_REPORT -> R.string.health_weekly_title
     HealthAccessPurpose.SAVE_WEEKLY_REPORT -> R.string.health_weekly_save
+    HealthAccessPurpose.HEALTH_ANALYSIS -> R.string.health_assistant_title
+    HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE -> R.string.health_assistant_online_audit
     HealthAccessPurpose.SAVE_RECORDS -> R.string.health_privacy_save_records
     HealthAccessPurpose.SAVE_ORIGINALS -> R.string.health_privacy_save_originals
     HealthAccessPurpose.DELETE_PROFILE -> R.string.health_privacy_delete_profile
