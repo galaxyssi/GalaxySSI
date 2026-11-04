@@ -592,6 +592,41 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(graph(#","review_targets":["artifact"]"#, independent: false))
   }
 
+  func testHypothesisForecastScoresInformationAndRejectsInconsistentMarginals() throws {
+    let input = """
+    {
+      "selected_action":"probe",
+      "events":[{"id":"yes","pointer":"/result","expected":true},{"id":"no","pointer":"/result","expected":false}],
+      "choices":[{"action_id":"probe","probabilities":{"yes":0.5,"no":0.5}},
+        {"action_id":"defer","probabilities":{"yes":0.5,"no":0.5}}],
+      "hypothesis_test":{"question":"Which case?","assumptions":"Two cases","likelihood_basis":"Declared",
+        "misspecification_check":"Unexpected output",
+        "hypotheses":[{"id":"a","claim":"A","prior":0.5},{"id":"b","claim":"B","prior":0.5}],
+        "event_ids":["yes","no"],"likelihoods":{
+          "probe":{"a":{"yes":1,"no":0},"b":{"yes":0,"no":1}},
+          "defer":{"a":{"yes":0.5,"no":0.5},"b":{"yes":0.5,"no":0.5}}}}
+    }
+    """
+    let decode = { (raw: String) in try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)) }
+    let scores = try XCTUnwrap(AgentCollaborationForecastIntake.hypothesisInformation(decode(input)))
+    XCTAssertEqual(scores, ["probe": 1, "defer": 0])
+    let forecast = try decode(input)
+    let observed = try XCTUnwrap(AgentCollaborationForecastIntake.hypothesisFeedback(forecast,
+      observed: .bool(true), withinValidity: true))
+    XCTAssertEqual(observed.string("state"), "updated_from_observation")
+    XCTAssertEqual(observed["posterior"], .object(["a": .double(1), "b": .double(0)]))
+    XCTAssertEqual(observed["information_gain_bits"], .double(1))
+    XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisFeedback(forecast,
+      observed: .bool(true), withinValidity: false)?.string("state"), "stale_observation")
+    XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisFeedback(forecast,
+      observed: nil, withinValidity: true)?.string("state"), "incomplete_observation")
+    XCTAssertEqual(AgentCollaborationForecastIntake.hypothesisFeedback(forecast,
+      observed: .string("unknown"), withinValidity: true)?.string("state"), "unmodeled_outcome")
+    let invalid = input.replacingOccurrences(of: #""probabilities":{"yes":0.5,"no":0.5}"#,
+      with: #""probabilities":{"yes":0.75,"no":0.25}"#)
+    XCTAssertNil(AgentCollaborationForecastIntake.hypothesisInformation(try decode(invalid)))
+  }
+
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
     let raw = """
     {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",

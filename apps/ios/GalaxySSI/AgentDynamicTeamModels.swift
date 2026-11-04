@@ -86,6 +86,10 @@ enum AgentCollaborationRuleTopics {
     capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
     innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.
+    An action_forecast may declare hypothesis_test with hypotheses (id, claim, prior), event_ids, and likelihoods
+    keyed by action, hypothesis, and event. Use a single report field and include every action, including defer.
+    A prediction_outcome binds an exact forecast parent and one fully recalled original cloud tool observation
+    from its executor. The host computes any posterior; declared probabilities are assumptions, not calibration.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
