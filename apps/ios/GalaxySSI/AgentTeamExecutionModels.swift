@@ -26,6 +26,28 @@ struct AgentCollaborationCloudToolEvidence: Codable, Equatable {
   var succeeded: Bool
   var startedAtMillis: Int64
   var finishedAtMillis: Int64
+
+  var observedFailure: Bool {
+    !succeeded || Self.reportsFailure(output)
+  }
+
+  static func reportsFailure(_ output: String) -> Bool {
+    guard let fields = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(output.utf8)) else { return false }
+    if fields["success"] == .bool(false) || fields["ok"] == .bool(false) || fields["isError"] == .bool(true) {
+      return true
+    }
+    if ["failed", "error", "cancelled", "timed_out", "unavailable", "rejected",
+        "verification_failed"].contains(fields.string("status")) { return true }
+    switch fields["error"] {
+    case .some(.bool(let value)): return value
+    case .some(.int(let value)): return value != 0
+    case .some(.double(let value)): return value != 0
+    case .some(.string(let value)): return !value.isBlank
+    case .some(.object(let value)): return !value.isEmpty
+    case .some(.array(let value)): return !value.isEmpty
+    default: return false
+    }
+  }
 }
 
 struct AgentCollaborationReadCoverage: Codable, Equatable {
@@ -70,6 +92,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case innovationOpportunity = "innovation_opportunity"
     case hypothesis, evidence, counterexample, proposal, experiment, artifact, decision, question
     case acceptanceReview = "acceptance_review"
+    case failureExperience = "failure_experience"
     case learningAgenda = "learning_agenda"
     case candidate
     case transferStudy = "transfer_study"
@@ -77,6 +100,16 @@ struct AgentCollaborationResearchDraft: Codable {
     case teamExchange = "team_exchange"
     case capabilityGap = "capability_gap"
     case innovation
+  }
+
+  var validFailureExperience: Bool {
+    guard kind == .failureExperience, objectId?.isBlank != false, baseRevision == 0,
+          let value = body["failure_experience"]?.objectValue,
+          ["observed_issue", "interpretation", "uncertainty", "applies_when", "avoid_repetition", "reconsider_when"]
+            .allSatisfy({ value[$0]?.stringValue?.isBlank == false }),
+          let options = value["recovery_options"]?.arrayValue, (1...32).contains(options.count)
+    else { return false }
+    return options.allSatisfy { $0.stringValue?.isBlank == false }
   }
   var id: String
   var objectId: String?
