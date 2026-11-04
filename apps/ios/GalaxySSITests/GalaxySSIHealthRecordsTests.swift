@@ -311,6 +311,32 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthPaperEdges.paddedCrop(visionBounds: CGRect(x: 0, y: 0.1, width: 0.6, height: 0.5)))
     XCTAssertNil(GalaxySSIHealthPaperEdges.paddedCrop(visionBounds: CGRect(x: 0.2, y: 0.2, width: 0.2, height: 0.2)))
   }
+
+  @MainActor
+  func testEncryptedReportCropKeepsOriginalAndRejectsStaleReplacement() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let png = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 80), format: format).pngData { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 100, height: 80))
+    }
+    try store.store(png, name: "fixture.png")
+    let original = try XCTUnwrap(store.list().originals.first)
+    let output = try GalaxySSIHealthCropEncoder.encode(png, bounds: CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
+    XCTAssertEqual(output.width, 50)
+    XCTAssertEqual(output.height, 40)
+    let saved = try store.saveCrop(output, for: original, replacing: nil)
+    XCTAssertEqual(try store.readCrop(for: original)?.metadata, saved)
+    XCTAssertEqual(try store.readCrop(for: original)?.png, output.png)
+    XCTAssertThrowsError(try store.saveCrop(output, for: original, replacing: nil))
+    XCTAssertEqual(try store.read(original), png)
+    let sealed = root.appendingPathComponent("report-crops-v1").appendingPathComponent(original.id.uuidString)
+    XCTAssertNil(try Data(contentsOf: sealed).range(of: output.png))
+  }
 }
 
 private final class HealthFixtureSecrets: GalaxySSISecretStore {
