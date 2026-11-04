@@ -129,6 +129,7 @@ struct GalaxySSIHealthRecords {
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
+    var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -338,6 +339,44 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return tombstones.count
+  }
+
+  @discardableResult
+  func reconcileSleepReminders(at now: Date, calendar: Calendar) throws -> GalaxySSIHealthSleepReminder.Ledger {
+    var archive = try load()
+    let before = archive.sleepReminders ?? .init()
+    var ledger = before
+    ledger.reconcile(current: archive.current, allowed: archive.derivesOverview == true, now: now, calendar: calendar)
+    if before != ledger { archive.sleepReminders = ledger; try persist(archive) }
+    return ledger
+  }
+
+  func setSleepPreferences(_ preferences: GalaxySSIHealthSleepReminder.Preferences) throws {
+    guard GalaxySSIHealthSleepReminder.thresholds.contains(preferences.threshold),
+          (0..<24).contains(preferences.quietStart), (0..<24).contains(preferences.quietEnd) else { throw Failure.invalid }
+    var archive = try load()
+    var ledger = archive.sleepReminders ?? .init()
+    ledger.preferences = preferences
+    if !preferences.enabled, let active = ledger.episodes.firstIndex(where: { !$0.closed }) { ledger.close(active) }
+    archive.sleepReminders = ledger
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func updateSleepEpisode(version: UUID, completion: Bool = false, snooze: Date? = nil, delivered: Date? = nil) throws {
+    var archive = try load()
+    guard archive.derivesOverview == true, var ledger = archive.sleepReminders, ledger.preferences.enabled,
+          let index = ledger.episodes.firstIndex(where: { $0.version == version && !$0.closed }),
+          !ledger.episodes[index].completed else { throw Failure.stale }
+    if completion { ledger.episodes[index].completed = true }
+    if let snooze {
+      ledger.episodes[index].snoozedUntil = snooze
+      ledger.episodes[index].deliveredAt = nil
+    }
+    if let delivered { ledger.episodes[index].deliveredAt = delivered }
+    ledger.episodes[index].version = UUID()
+    archive.sleepReminders = ledger
+    try persist(archive)
   }
 
   private func persist(_ archive: Archive) throws {
