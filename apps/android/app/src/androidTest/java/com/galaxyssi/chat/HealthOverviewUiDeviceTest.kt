@@ -80,8 +80,42 @@ class HealthOverviewUiDeviceTest {
         await(scenario, "health-overview-review-OCR")
         scenario.onActivity {
             assertNotNull(find(it, "health-overview-first"))
-            assertNotNull(find(it, "health-overview-BLOOD_PRESSURE-MISSING"))
+            assertNotNull(find(it, "health-first-no-analysis"))
+            assertNull(find(it, "health-overview-BLOOD_PRESSURE-MISSING"))
             assertNull(find(it, "health-overview-BLOOD_PRESSURE-RECENT"))
+        }
+    }
+    @Test fun firstUseOffersOptionalSourcesAndReturnsFromTheImportCenterAfterRecreation() = screen { scenario, _ ->
+        await(scenario, "health-first-existing")
+        scenario.onActivity {
+            listOf("health-overview-photo", "health-overview-manual", "health-overview-import", "health-overview-sources",
+                "health-first-add", "health-first-existing").forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
+            assertEquals(View.GONE, views(it.window.decorView).single { view -> view.tag == "health-reminders" }.visibility)
+            assertTrue(requireNotNull(find(it, "health-first-existing")).performClick())
+            assertNotNull(find(it, "health-import-center"))
+            listOf("health-import-camera", "health-import-report", "health-import-table", "health-import-restore")
+                .forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
+        }
+        scenario.recreate()
+        await(scenario, "health-import-restore")
+        scenario.onActivity { it.onBackPressed() }
+        await(scenario, "health-overview-first")
+        scenario.onActivity {
+            assertNotNull(find(it, "health-first-no-analysis"))
+            assertNull(find(it, "health-import-center"))
+        }
+    }
+    @Test fun firstConfirmedRecordReplacesOnboardingWithoutReopeningThePage() = screen { scenario, names ->
+        await(scenario, "health-overview-first")
+        HealthRecordStore(context, names.records).use {
+            it.save(HealthDraft(values = mapOf("systolic" to "120", "diastolic" to "80"), measuredAt = System.currentTimeMillis() - 1000))
+        }
+        await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
+        scenario.onActivity {
+            assertNull(find(it, "health-overview-first"))
+            assertEquals(View.VISIBLE, views(it.window.decorView).single { view -> view.tag == "health-reminders" }.visibility)
+            assertTrue(requireNotNull(find(it, "health-overview-import")).performClick())
+            assertNotNull(find(it, "health-import-restore"))
         }
     }
     @Test fun revocationClearsVisibleDerivedAlertButKeepsRawRecordCard() = screen(seed = ::seedSleep) { scenario, names ->
