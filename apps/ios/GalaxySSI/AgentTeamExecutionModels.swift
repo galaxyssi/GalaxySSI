@@ -19,12 +19,14 @@ struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
 }
 
 struct AgentCollaborationModelAdmission: Codable, Equatable {
+  enum Route: String, Codable { case streaming, compatibility }
   let id: UUID
   let scope: AgentCollaborationToolEvidenceScope
   let round: Int
   let provider: ModelStreamProvider
   let requestedModel: String?
   let startedAtMillis: Int64
+  var route: Route? = nil
 }
 
 struct AgentCollaborationModelSettlement: Codable, Equatable {

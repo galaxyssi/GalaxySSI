@@ -253,20 +253,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var roundFailure: ModelStreamFailed?
         var observedUsage: ModelUsage?
         var reportedModel: String?
-        var audit: AgentCollaborationModelAdmission?
-        if let scope = collaborationModelAudit {
-          let candidate = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: currentRound,
-            provider: roundRequest.provider,
-            requestedModel: (try? CloudModelStreamJSON.object(from: roundRequest.bodyJson))?["model"] as? String,
-            startedAtMillis: AgentControlPlaneClock.nowMillis())
-          let saved = await MainActor.run {
-            guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
-                  session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
-                  !session.privateMode, !session.trackingPaused else { return false }
-            return (try? AgentTeamExecutionHistoryStore.shared.admitCollaborationModelCall(candidate)) != nil
-          }
-          if saved { audit = candidate }
-        }
+        var audit = await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
+          request: roundRequest, route: .streaming, store: store)
         func finishAudit() {
           guard let admission = audit else { return }
           audit = nil
@@ -364,6 +352,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             )))
           }
           if !emittedText && failure.error.code == "STREAM_UNSUPPORTED" {
+            let fallbackAudit = await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
+              request: roundRequest, route: .compatibility, store: store)
             await emitLegacyConversation(
               contact: contact,
               store: store,
@@ -372,6 +362,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               requestId: requestId,
               sequence: &emittedSequence,
               ticket: ticket,
+              audit: fallbackAudit,
               continuation: continuation
             )
           } else {
@@ -698,6 +689,23 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     continuation.finish()
   }
 
+  private func beginCollaborationAudit(scope: AgentCollaborationToolEvidenceScope?, round: Int,
+    request: ModelStreamRequest, route: AgentCollaborationModelAdmission.Route,
+    store: GalaxySSIStore) async -> AgentCollaborationModelAdmission? {
+    guard let scope else { return nil }
+    let candidate = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: round,
+      provider: request.provider,
+      requestedModel: route == .streaming ? (try? CloudModelStreamJSON.object(from: request.bodyJson))?["model"] as? String : nil,
+      startedAtMillis: AgentControlPlaneClock.nowMillis(), route: route)
+    return await MainActor.run {
+      guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+            session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+            !session.privateMode, !session.trackingPaused,
+            (try? AgentTeamExecutionHistoryStore.shared.admitCollaborationModelCall(candidate)) != nil else { return nil }
+      return candidate
+    }
+  }
+
   private func emitLegacyConversation(
     contact: GalaxySSIContact,
     store: GalaxySSIStore,
@@ -706,9 +714,19 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     requestId: String,
     sequence: inout Int64,
     ticket: AgentDisclosureTicket,
+    audit: AgentCollaborationModelAdmission?,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
+    var auditState: AgentCollaborationModelSettlement.State = .interrupted
+    defer {
+      if let audit {
+        try? AgentTeamExecutionHistoryStore.shared.settleCollaborationModelCall(audit, settlement: .init(
+          state: auditState, finishedAtMillis: max(audit.startedAtMillis, AgentControlPlaneClock.nowMillis()),
+          reportedUsage: nil, usageComplete: false, costMicros: nil))
+      }
+    }
     do {
+      try Task.checkCancellation()
       let text = try await legacySender.send(
         contact: contact,
         store: store,
@@ -719,6 +737,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       guard !cleanText.isEmpty else {
         throw GalaxySSIError.unsupportedResponse
       }
+      try Task.checkCancellation()
+      auditState = .completed
       sequence += 1
       let now = elapsedMillis()
       continuation.yield(
@@ -742,6 +762,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         )
       )
     } catch {
+      auditState = error is CancellationError || Task.isCancelled ? .cancelled : .failed
       let streamError = Self.streamError(from: error, partialResponse: false)
       AgentDataDisclosureLedger.update(
         store: disclosureStore,
