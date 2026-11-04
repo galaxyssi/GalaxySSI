@@ -160,11 +160,13 @@ internal class HealthRecordExportStore(private val context: Context, private val
         val now = requireNotNull(session(s.id)); check(now.attempt == s.attempt && now.state in listOf(HealthRecordExportState.GENERATED, HealthRecordExportState.SAVED)); put(now.copy(state = HealthRecordExportState.SAVED))
     }
     fun artifactAad(s: HealthRecordExportSession) = aad("artifact", "${s.id}:${s.attempt}")
-    fun input(s: HealthRecordExportSession): java.io.InputStream {
+    fun input(s: HealthRecordExportSession) = withArtifactKey(s) { artifacts.input(s.id, s.attempt, it, artifactAad(s)) }
+    fun readChannel(s: HealthRecordExportSession) = withArtifactKey(s) { artifacts.readChannel(s.id, s.attempt, it, artifactAad(s)) }
+    private fun <T> withArtifactKey(s: HealthRecordExportSession, read: (ByteArray) -> T): T {
         check(s.state in listOf(HealthRecordExportState.GENERATED, HealthRecordExportState.SAVED))
         val encrypted = db.rawQuery("SELECT key_payload FROM exports WHERE id=? AND attempt=?", arrayOf(s.id, s.attempt)).use { check(it.moveToFirst()); it.getBlob(0) }
         val key = AgentStorageCipher.decryptBinary(encrypted, aad("key", "${s.id}:${s.attempt}"))
-        return try { artifacts.input(s.id, s.attempt, key, artifactAad(s)) } finally { key.fill(0) }
+        return try { read(key) } finally { key.fill(0) }
     }
     override fun close() = helper.close()
     private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 2) {

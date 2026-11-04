@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import java.io.File
-import java.io.InputStream
 import java.security.SecureRandom
 import java.util.UUID
 
@@ -132,11 +131,13 @@ internal class HealthOriginalLibraryStore(private val context: Context, private 
         return artifacts.file(s.id, s.attempt, partial)
     }
     fun aad(s: HealthOriginalExportSession) = "health-original-export-v1|${s.id}|${s.attempt}".toByteArray(Charsets.UTF_8)
-    fun input(s: HealthOriginalExportSession): InputStream {
+    fun input(s: HealthOriginalExportSession) = withArtifactKey(s) { artifacts.input(s.id, s.attempt, it, aad(s)) }
+    fun readChannel(s: HealthOriginalExportSession) = withArtifactKey(s) { artifacts.readChannel(s.id, s.attempt, it, aad(s)) }
+    private fun <T> withArtifactKey(s: HealthOriginalExportSession, read: (ByteArray) -> T): T {
         check(s.state in listOf(HealthOriginalExportState.GENERATED, HealthOriginalExportState.SAVED))
         val encrypted = db.rawQuery("SELECT key_payload FROM library_exports WHERE id=? AND attempt=?", arrayOf(s.id, s.attempt)).use { check(it.moveToFirst()); it.getBlob(0) }
         val key = AgentStorageCipher.decryptBinary(encrypted, originals.libraryKeyAad("${s.id}:${s.attempt}"))
-        return try { artifacts.input(s.id, s.attempt, key, aad(s)) } finally { key.fill(0) }
+        return try { read(key) } finally { key.fill(0) }
     }
     fun cleanupAbandoned(s: HealthOriginalExportSession) {
         artifacts.cleanup(s.id, s.attempt)
