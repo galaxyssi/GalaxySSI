@@ -50,7 +50,7 @@ class ModelDirectedSearchTests(unittest.TestCase):
         evidence = response["contentItems"][0]["text"]
         self.assertIn("Article evidence from the Desktop.", evidence)
         self.assertIn("https://mmbiz.qpic.cn/article/image.png", evidence)
-        self.assertEqual(10 * 1024 * 1024, calls[0][1]["max_bytes"])
+        self.assertEqual(2 * 1024 * 1024, calls[0][1]["max_bytes"])
         self.assertEqual("model_selected_direct_web_read", calls[0][2]["source"])
 
     def test_dynamic_fetch_strips_prose_after_an_explicit_url(self):

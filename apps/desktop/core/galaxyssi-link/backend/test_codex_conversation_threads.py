@@ -776,6 +776,35 @@ class CodexConversationThreadTests(unittest.TestCase):
         replan.assert_not_called()
         self.assertEqual({}, run.failure_counts)
 
+    def test_web_read_failure_diagnostics_follow_the_same_progress_item(self):
+        server, run, events = self._event_server()
+        common = {"thread_id": run.thread_id, "turn_id": run.turn_id}
+        tool = codex_app_server.CODEX_DYNAMIC_FETCH_TOOL
+        failures = [{"host": "school.example", "code": "http_status", "http_status": 403}]
+        replies = []
+        server._write_server_response = lambda request_id, result: replies.append(result)
+        with patch.object(codex_app_server, "execute_codex_dynamic_fetch", return_value={
+            "success": False, "contentItems": [{"type": "inputText", "text": "HTTP 403"}],
+            "_galaxyssi_read_failures": failures,
+        }):
+            server._execute_dynamic_tool_call(run.task_id, {"id": "request"}, {
+                "tool": tool, "callId": "call-403", "arguments": {"urls": ["https://school.example/"]},
+            }, common)
+        self.assertNotIn("_galaxyssi_read_failures", replies[0])
+        server._emit_item_progress(run.task_id, common, {
+            "type": "dynamicToolCall", "tool": tool, "id": "unrelated", "status": "failed",
+        }, completed=True)
+        self.assertNotIn("web_read_failures", events[-1][1]["progress_event"]["metadata"])
+        server._emit_item_progress(run.task_id, common, {
+            "type": "dynamicToolCall", "tool": tool, "id": "call-403", "status": "failed",
+        }, completed=True)
+        event = events[-1][1]
+        self.assertEqual("running", event["status"])
+        self.assertEqual("Checking other sources", event["current_step"])
+        self.assertEqual("failed", event["progress_event"]["status"])
+        self.assertEqual(failures, event["progress_event"]["metadata"]["web_read_failures"])
+        self.assertFalse(run.web_read_failures)
+
     def test_outer_supervisor_cannot_renew_a_silent_turn(self):
         server, run, _events = self._event_server()
         with patch.object(server, "_attempt_replan", return_value=True) as replan:

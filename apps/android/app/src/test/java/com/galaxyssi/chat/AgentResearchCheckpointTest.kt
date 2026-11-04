@@ -67,4 +67,14 @@ class AgentResearchCheckpointTest {
         assertFalse(AgentResearchCheckpoint.isInternalProgress(progress.put("status", "completed").put("kind", "narration")))
         assertFalse(AgentResearchCheckpoint.isInternalProgress(progress.put("kind", "tool").put("detail", "another_tool")))
     }
+
+    @Test fun aSourceReadFailureIsDistinctFromOtherToolFailuresAndFinishedReads() {
+        val event = JSONObject().put("kind", "tool").put("status", "failed")
+            .put("metadata", JSONObject().put("code", "dynamic_tool"))
+        assertTrue(event.put("detail", "galaxyssi_fetch_public_pages").isRemoteResearchToolFailure())
+        assertTrue(event.put("detail", "desktop.galaxyssi_parallel_web_search").isRemoteResearchToolFailure())
+        assertFalse(event.put("detail", "galaxyssi_office_preview").isRemoteResearchToolFailure())
+        assertTrue(event.put("code", "web_search").isRemoteResearchToolFailure())
+        assertFalse(event.put("status", "completed").isRemoteResearchToolFailure())
+    }
 }

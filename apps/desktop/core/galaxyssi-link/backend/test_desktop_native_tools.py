@@ -28,6 +28,8 @@ from desktop_native_tools import (
     _digest,
 )
 from web_intelligence import TOOL_OPERATIONS as WEB_INTELLIGENCE_OPERATIONS
+from web_intelligence import MAX_DESKTOP_TOOL_FETCH_BYTES, WebIntelligenceError
+from model_directed_search import FETCH_TOOL_ID, execute_codex_dynamic_fetch, execute_codex_dynamic_search
 
 
 class DesktopNativeToolRegistryTests(unittest.TestCase):
@@ -117,6 +119,63 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         self.assertEqual("galaxyssi.web-intelligence.v1", result["output"]["protocol"])
         self.assertEqual([("search", {"query": "GalaxySSI", "limit": 5})], calls)
         self.assertEqual("passed", result["verification"]["status"])
+
+    def test_both_research_read_paths_use_real_registry_validation_and_keep_source_errors(self):
+        official = "https://school.example/tuition"
+        alternate = "https://catalog.school.example/tuition"
+        content = "School tuition information and published fees. " * 4
+        read_limits = []
+        blocked = {official}
+
+        class WebFixture:
+            def invoke(self, operation, arguments):
+                if operation == "search":
+                    return {"status": "completed", "results": [
+                        {"title": "School tuition", "url": url, "excerpt": "School tuition figures"}
+                        for url in (official, alternate)
+                    ]}
+                read_limits.append(arguments["max_bytes"])
+                url = arguments["url"]
+                if url in blocked:
+                    raise WebIntelligenceError("http_status", "untrusted response body",
+                                               details={"status": 403, "url": url})
+                return {"status": "completed", "documents": [
+                    {"url": url, "title": "School tuition", "content": content},
+                ]}
+
+        self.registry.web_intelligence = WebFixture()
+        direct = execute_codex_dynamic_fetch({"urls": [alternate]}, "direct", registry=self.registry)
+        self.assertTrue(direct["success"])
+        self.assertIn(content.strip(), direct["contentItems"][0]["text"])
+
+        recovered = execute_codex_dynamic_search({"query": "school tuition"}, "fallback", registry=self.registry)
+        self.assertTrue(recovered["success"])
+        self.assertIn("HTTP 403: website denied access", recovered["contentItems"][0]["text"])
+        self.assertNotIn("untrusted response body", recovered["contentItems"][0]["text"])
+        self.assertTrue(any(item["url"] == alternate and item["evidence_level"] == "retrieved_body"
+                            for item in recovered["_galaxyssi_evidence_pack"]["items"]))
+
+        blocked.add(alternate)
+        unavailable = execute_codex_dynamic_fetch({"urls": [official, alternate]}, "unavailable",
+                                                  registry=self.registry)
+        self.assertFalse(unavailable["success"])
+        self.assertNotIn("_galaxyssi_evidence_pack", unavailable)
+        self.assertEqual([403, 403], [item["http_status"] for item in unavailable["_galaxyssi_read_failures"]])
+        self.assertIn("could not be verified", unavailable["contentItems"][0]["text"])
+        self.assertNotIn("authenticated browser", unavailable["contentItems"][0]["text"])
+        snippets = execute_codex_dynamic_search({"query": "school tuition"}, "snippets", registry=self.registry)
+        self.assertTrue(snippets["success"])
+        self.assertIn("relies only on a search snippet", snippets["contentItems"][0]["text"])
+        self.assertFalse(any(item["evidence_level"] == "retrieved_body"
+                             for item in snippets["_galaxyssi_evidence_pack"]["items"]))
+        self.assertEqual([MAX_DESKTOP_TOOL_FETCH_BYTES] * 7, read_limits)
+
+    def test_web_fetch_rejection_reports_exact_input_range_before_dispatch(self):
+        result = self.invoke(FETCH_TOOL_ID, {"url": "https://school.example/tuition", "max_bytes": 10 * 1024 * 1024})
+        self.assertEqual("invalid_input", result["error"]["code"])
+        self.assertEqual({"field": "$.max_bytes", "actual": 10 * 1024 * 1024,
+                          "minimum": 1024, "maximum": MAX_DESKTOP_TOOL_FETCH_BYTES},
+                         result["error"]["details"])
 
     def test_search_launch_and_browser_tools_are_bounded(self):
         source = self.workspace() / "release-notes.md"
