@@ -21,6 +21,11 @@ struct GalaxySSIHealthCenterView: View {
 
   var body: some View {
     List {
+      NavigationLink {
+        GalaxySSIHealthBodyView { bloodPressureRecords }
+      } label: {
+        Label(GalaxySSIHealthBodyText.string("title", language: language), systemImage: "figure.stand")
+      }
       if scenePhase == .active, let archive {
         let current = archive.current
         Section {
@@ -89,6 +94,30 @@ struct GalaxySSIHealthCenterView: View {
         .interactiveDismissDisabled()
         .alert(item: $alert, content: editorAlert)
     }
+  }
+
+  private var bloodPressureRecords: some View {
+    List {
+      if scenePhase == .active, let archive {
+        let pressure = archive.current.filter { $0.metric == .bloodPressure }
+        if pressure.isEmpty { Text(t("empty", "No measurements yet")) }
+        ForEach(pressure.prefix(limit)) { reading in
+          Button { edit(reading) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(summary(reading))
+              Text(reading.measuredAt, style: .date).foregroundColor(.secondary)
+            }
+          }
+          .disabled(archive.draft != nil)
+        }
+        if pressure.count > limit { Button(t("more", "Show more")) { limit += 30 } }
+        if archive.draft == nil {
+          Button(t("manual", "Record measurement")) { editor = GalaxySSIHealthDraft(metric: .bloodPressure) }
+        }
+      }
+    }
+    .navigationTitle(t("blood_pressure", "Blood pressure"))
+    .navigationBarTitleDisplayMode(.inline)
   }
 
   private func overview(_ current: [GalaxySSIHealthReading], now: Date) -> some View {
