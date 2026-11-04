@@ -547,6 +547,7 @@ enum AgentCollaborationForecastIntake {
           let likelihoods = spec["likelihoods"]?.objectValue?[forecast.string("selected_action")]?.objectValue,
           let events = forecast["events"]?.arrayValue?.compactMap(\.objectValue) else { return nil }
     var feedback: AgentMcpJSONObject = ["state": .string("incomplete_observation"), "posterior": .null,
+      "brier_scores": .null,
       "information_gain_bits": .null, "probabilities_are_assumptions": .bool(true), "causality_proven": .bool(false)]
     guard withinValidity else { feedback["state"] = .string("stale_observation"); return feedback }
     guard let observed else { return feedback }
@@ -558,6 +559,16 @@ enum AgentCollaborationForecastIntake {
     guard matches.count == 1, let event = matches.first?.string("id") else {
       feedback["state"] = .string("unmodeled_outcome")
       return feedback
+    }
+    if let choice = forecast["choices"]?.arrayValue?.compactMap(\.objectValue).first(where: {
+      $0.string("action_id") == forecast.string("selected_action")
+    }), let probabilities = choice["probabilities"]?.objectValue {
+      var scores: AgentMcpJSONObject = [:]
+      for id in ids {
+        guard let p = number(probabilities[id]), let score = brierScore(probability: p, occurred: id == event) else { return nil }
+        scores[id] = .string(score)
+      }
+      feedback["brier_scores"] = .object(scores)
     }
     var weights: [(String, Double, Double)] = []
     for hypothesis in hypotheses {
@@ -586,6 +597,42 @@ enum AgentCollaborationForecastIntake {
     feedback["posterior"] = .object(posterior)
     feedback["information_gain_bits"] = .double(max(0, gain))
     return feedback
+  }
+
+  static func brierScore(probability: Double, occurred: Bool) -> String? {
+    guard probability.isFinite, (0...1).contains(probability) else { return nil }
+    if probability == 0 { return occurred ? "1" : "0" }
+    if probability == 1 { return occurred ? "0" : "1" }
+    let notation = String(probability).split(separator: "e")
+    let parts = notation[0].split(separator: ".")
+    let exponent = notation.count == 2 ? (Int(notation[1]) ?? 0) : 0
+    let scale = (parts.count == 2 ? parts[1].count : 0) - exponent
+    let digits = parts.joined().utf8.map { Int($0) - 48 }
+    guard scale > 0 else { return nil }
+    // Square the decimal numerator without imposing the input type's exponent range on the result.
+    var error = Array(digits.reversed())
+    while error.last == 0 { error.removeLast() }
+    if occurred {
+      error += Array(repeating: 0, count: max(0, scale - error.count))
+      var borrow = 0
+      for index in error.indices {
+        let diff = -error[index] - borrow
+        borrow = diff < 0 ? 1 : 0
+        error[index] = diff + 10 * borrow
+      }
+    }
+    while error.last == 0 { error.removeLast() }
+    var square = Array(repeating: 0, count: 2 * scale + 1)
+    for i in error.indices {
+      for j in error.indices { square[i + j] += error[i] * error[j] }
+    }
+    for index in 0..<(square.count - 1) {
+      square[index + 1] += square[index] / 10
+      square[index] %= 10
+    }
+    let fraction = square.dropLast().reversed().map(String.init).joined()
+    let trimmed = String(fraction.reversed().drop(while: { $0 == "0" }).reversed())
+    return trimmed.isEmpty ? "0" : "0." + trimmed
   }
 
   static func sameHypothesisQuestion(_ old: AgentMcpJSONObject, _ new: AgentMcpJSONObject) -> Bool {

@@ -616,6 +616,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(observed.string("state"), "updated_from_observation")
     XCTAssertEqual(observed["posterior"], .object(["a": .double(1), "b": .double(0)]))
     XCTAssertEqual(observed["information_gain_bits"], .double(1))
+    XCTAssertEqual(observed["brier_scores"], .object(["yes": .string("0.25"), "no": .string("0.25")]))
     var chained = forecast
     var next = try XCTUnwrap(chained["hypothesis_test"]?.objectValue)
     let previous = next
@@ -641,6 +642,15 @@ extension GalaxySSIStoreTests {
     let invalid = input.replacingOccurrences(of: #""probabilities":{"yes":0.5,"no":0.5}"#,
       with: #""probabilities":{"yes":0.75,"no":0.25}"#)
     XCTAssertNil(AgentCollaborationForecastIntake.hypothesisInformation(try decode(invalid)))
+  }
+
+  func testBrierScoreRetainsTinyNonzeroDerivedValues() {
+    XCTAssertEqual(AgentCollaborationForecastIntake.brierScore(probability: 1e-200, occurred: false),
+      "0." + String(repeating: "0", count: 399) + "1")
+    XCTAssertEqual(AgentCollaborationForecastIntake.brierScore(probability: 0.01, occurred: true), "0.9801")
+    XCTAssertEqual(AgentCollaborationForecastIntake.brierScore(probability: 0.99, occurred: true), "0.0001")
+    XCTAssertEqual(AgentCollaborationForecastIntake.brierScore(probability: 1, occurred: false), "1")
+    XCTAssertNil(AgentCollaborationForecastIntake.brierScore(probability: .infinity, occurred: true))
   }
 
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
