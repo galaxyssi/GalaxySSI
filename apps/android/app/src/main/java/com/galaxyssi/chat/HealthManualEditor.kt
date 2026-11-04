@@ -25,6 +25,7 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
     private lateinit var condition: Spinner
     private var side: Spinner? = null
     private lateinit var note: EditText
+    private var reference: EditText? = null
     private lateinit var time: TextView
     private lateinit var error: TextView
     private lateinit var save: TextView
@@ -85,8 +86,8 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
             ui.add(card, pair, 20)
             ui.add(card, valueField("pulse", 18f), 18)
         } else ui.add(card, valueField(draft.metric.fields.first(), 29f), 20)
-        unitOptions = if (draft.unit.isBlank()) listOf("") + draft.metric.units else draft.metric.units
-        unit = spinner(unitOptions.map { it.ifBlank { activity.getString(R.string.health_choose_unit) } }, unitOptions.indexOf(draft.unit))
+        unitOptions = draft.metric.selectableUnits.let { if (draft.unit.isBlank() && "" !in it) listOf("") + it else it }
+        unit = spinner(unitOptions.map { it.ifBlank { activity.getString(if (draft.metric.form in listOf(HealthResultForm.QUALITATIVE, HealthResultForm.LABORATORY)) R.string.health_unit_not_applicable else R.string.health_choose_unit) } }, unitOptions.indexOf(draft.unit))
         if (unitOptions.size > 1) {
             ui.add(card, ui.text(activity.getString(R.string.health_unit), 13f, muted = true), 16)
             card.addView(unit)
@@ -113,6 +114,15 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
             setText(draft.note); addTextChangedListener(watcher())
         }
         card.addView(note)
+        if (HealthMetricCatalog.entries.single { it.metric == draft.metric }.laboratory || draft.reference.isNotBlank()) {
+            ui.add(card, ui.text(activity.getString(R.string.health_report_reference), 13f, muted = true), 16)
+            reference = EditText(activity).apply {
+                tag = "health-reference"; isSaveEnabled = false; textSize = 16f; isSingleLine = true
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                filters = arrayOf(InputFilter.LengthFilter(200)); setTextColor(activity.getColor(R.color.text_primary))
+                setText(draft.reference); addTextChangedListener(watcher())
+            }.also(card::addView)
+        }
         draft.evidence?.let { evidence ->
             confirmation = CheckBox(activity).apply {
                 tag = "health-confirm-source"; text = activity.getString(R.string.health_confirm_source)
@@ -137,13 +147,18 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
             textSize = size; setSingleLine(true); minimumHeight = ui.dp(62)
             setTextColor(activity.getColor(R.color.text_primary)); setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
             background = ui.background(stroke = activity.getColor(R.color.separator), radius = 10)
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            filters = arrayOf(InputFilter.LengthFilter(20)); setText(draft.values[field].orEmpty()); addTextChangedListener(watcher())
+            inputType = when (draft.metric.form) {
+                HealthResultForm.LABORATORY, HealthResultForm.QUALITATIVE -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                HealthResultForm.COUNT -> InputType.TYPE_CLASS_NUMBER
+                else -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            }
+            filters = arrayOf(InputFilter.LengthFilter(HealthResult.MAX_LENGTH)); setText(draft.reportedValues[field] ?: draft.values[field].orEmpty()); addTextChangedListener(watcher())
         }
         fields[field] = input
         ui.add(this, input, 8)
         if (draft.metric.units.size == 1 || draft.metric == HealthMetric.BLOOD_PRESSURE) ui.add(this, ui.text(draft.unitFor(field), 12f, muted = true).apply {
-            tag = "health-unit-$field"; unitLabels[field] = this
+            tag = "health-unit-$field"; if (draft.metric.form == HealthResultForm.QUALITATIVE) text = activity.getString(R.string.health_unit_not_applicable)
+            unitLabels[field] = this
         }, 5)
     }
     private fun spinner(labels: List<String>, selected: Int) = Spinner(activity).apply {
@@ -170,13 +185,19 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
     fun snapshot() = draft.copy(values = fields.mapValues { it.value.text.toString() }, unit = unitOptions[unit.selectedItemPosition.coerceAtLeast(0)],
         measuredAt = measuredAt, condition = conditions[condition.selectedItemPosition.coerceAtLeast(0)],
         side = side?.selectedItemPosition?.let { sides[it.coerceAtLeast(0)] } ?: "unspecified", note = note.text.toString(),
-        evidence = draft.evidence?.copy(confirmed = confirmation?.isChecked == true))
+        evidence = draft.evidence?.copy(confirmed = confirmation?.isChecked == true), reference = reference?.text?.toString() ?: draft.reference)
     fun setSaving(value: Boolean) { save.isEnabled = !value; save.alpha = if (value) .5f else 1f }
     fun showError(value: HealthValidationError) {
         val label = if (value.field.isBlank()) "" else activity.getString(healthFieldResource(value.field))
         error.text = activity.getString(when (value.issue) {
             HealthValidationIssue.MISSING_VALUE -> R.string.health_missing_value
-            HealthValidationIssue.INVALID_NUMBER -> R.string.health_invalid_number
+            HealthValidationIssue.INVALID_NUMBER -> when (draft.metric.form) {
+                HealthResultForm.LABORATORY -> R.string.health_invalid_result
+                HealthResultForm.QUALITATIVE -> R.string.health_invalid_qualitative
+                HealthResultForm.COUNT -> R.string.health_invalid_count
+                HealthResultForm.NONNEGATIVE -> R.string.health_invalid_nonnegative
+                else -> R.string.health_invalid_number
+            }
             HealthValidationIssue.INVALID_UNIT -> R.string.health_invalid_unit
             HealthValidationIssue.INVALID_TIME -> R.string.health_invalid_time
             HealthValidationIssue.INVALID_CONTEXT -> R.string.health_invalid_context

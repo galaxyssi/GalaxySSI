@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_catalog_title">指标与报告</string>
+    <string name="health_catalog_search">搜索名称、别名或单位</string>
+    <string name="health_catalog_daily">日常指标</string>
+    <string name="health_catalog_laboratory">检验报告</string>
+    <string name="health_catalog_all_groups">全部分类</string>
+    <string name="health_catalog_no_match">没有匹配的指标</string>
+    <string name="health_result_label">结果</string>
+    <string name="health_unit_not_applicable">无单位 · 定性结果</string>
+    <string name="health_report_reference">报告所列参考范围 · 可选</string>
+    <string name="health_invalid_result">请核对%1$s，保留报告上的数值、比较符号、范围或定性结果。</string>
+    <string name="health_invalid_qualitative">请核对%1$s，填写报告所列的定性结果。</string>
+    <string name="health_invalid_count">请核对%1$s，填写不带分隔符的非负整数。</string>
+    <string name="health_invalid_nonnegative">请核对%1$s，填写零或正数。</string>
+    <string name="health_metric_resting_heart_rate">静息心率</string>
+    <string name="health_metric_sleep">睡眠时长</string>
+    <string name="health_metric_steps">步数</string>
+    <string name="health_metric_temperature">体温</string>
+    <string name="health_metric_spo2">血氧饱和度</string>
+    <string name="health_metric_height">身高</string>
+    <string name="health_metric_waist">腰围</string>
+    <string name="health_metric_body_fat">体脂率</string>
+    <string name="health_metric_ldl">低密度脂蛋白胆固醇 · LDL</string>
+    <string name="health_metric_hdl">高密度脂蛋白胆固醇 · HDL</string>
+    <string name="health_metric_triglycerides">甘油三酯</string>
+    <string name="health_metric_hba1c">糖化血红蛋白 · HbA1c</string>
+    <string name="health_metric_wbc">白细胞计数</string>
+    <string name="health_metric_platelets">血小板计数</string>
+    <string name="health_metric_alt">丙氨酸氨基转移酶 · ALT</string>
+    <string name="health_metric_ast">天门冬氨酸氨基转移酶 · AST</string>
+    <string name="health_metric_creatinine">肌酐</string>
+    <string name="health_metric_uric_acid">尿酸</string>
+    <string name="health_metric_crp">C反应蛋白 · CRP</string>
+    <string name="health_metric_tsh">促甲状腺激素 · TSH</string>
+    <string name="health_metric_urine_protein">尿蛋白 · 定性</string>
+    <string name="health_group_cardiovascular">心血管</string>
+    <string name="health_group_metabolic">代谢</string>
+    <string name="health_group_sleep">睡眠</string>
+    <string name="health_group_activity">活动</string>
+    <string name="health_group_body">身体测量</string>
+    <string name="health_group_blood">血液检验</string>
+    <string name="health_group_liver">肝功能</string>
+    <string name="health_group_kidney">肾功能</string>
+    <string name="health_group_thyroid">甲状腺</string>
+    <string name="health_group_urine">尿液检验</string>
+</resources>

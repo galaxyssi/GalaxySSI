@@ -63,6 +63,27 @@ internal fun HealthMetric.titleResource(): Int = when (this) {
     HealthMetric.HEART_RATE -> R.string.health_heart_rate
     HealthMetric.CHOLESTEROL -> R.string.health_cholesterol
     HealthMetric.HEMOGLOBIN -> R.string.health_hemoglobin
+    HealthMetric.RESTING_HEART_RATE -> R.string.health_metric_resting_heart_rate
+    HealthMetric.SLEEP_DURATION -> R.string.health_metric_sleep
+    HealthMetric.STEPS -> R.string.health_metric_steps
+    HealthMetric.TEMPERATURE -> R.string.health_metric_temperature
+    HealthMetric.OXYGEN_SATURATION -> R.string.health_metric_spo2
+    HealthMetric.HEIGHT -> R.string.health_metric_height
+    HealthMetric.WAIST -> R.string.health_metric_waist
+    HealthMetric.BODY_FAT -> R.string.health_metric_body_fat
+    HealthMetric.LDL -> R.string.health_metric_ldl
+    HealthMetric.HDL -> R.string.health_metric_hdl
+    HealthMetric.TRIGLYCERIDES -> R.string.health_metric_triglycerides
+    HealthMetric.HBA1C -> R.string.health_metric_hba1c
+    HealthMetric.WHITE_BLOOD_CELLS -> R.string.health_metric_wbc
+    HealthMetric.PLATELETS -> R.string.health_metric_platelets
+    HealthMetric.ALT -> R.string.health_metric_alt
+    HealthMetric.AST -> R.string.health_metric_ast
+    HealthMetric.CREATININE -> R.string.health_metric_creatinine
+    HealthMetric.URIC_ACID -> R.string.health_metric_uric_acid
+    HealthMetric.CRP -> R.string.health_metric_crp
+    HealthMetric.TSH -> R.string.health_metric_tsh
+    HealthMetric.URINE_PROTEIN -> R.string.health_metric_urine_protein
 }
 
 internal fun healthFieldResource(field: String): Int = when (field) {
@@ -72,7 +93,21 @@ internal fun healthFieldResource(field: String): Int = when (field) {
     "glucose" -> R.string.health_glucose
     "cholesterol" -> R.string.health_cholesterol
     "hemoglobin" -> R.string.health_hemoglobin
-    else -> R.string.health_weight
+    "weight" -> R.string.health_weight
+    else -> HealthMetric.entries.firstOrNull { field in it.fields }?.titleResource() ?: R.string.health_result_label
+}
+
+internal fun HealthMetricGroup.titleResource(): Int = when (this) {
+    HealthMetricGroup.CARDIOVASCULAR -> R.string.health_group_cardiovascular
+    HealthMetricGroup.METABOLIC -> R.string.health_group_metabolic
+    HealthMetricGroup.SLEEP -> R.string.health_group_sleep
+    HealthMetricGroup.ACTIVITY -> R.string.health_group_activity
+    HealthMetricGroup.BODY -> R.string.health_group_body
+    HealthMetricGroup.BLOOD -> R.string.health_group_blood
+    HealthMetricGroup.LIVER -> R.string.health_group_liver
+    HealthMetricGroup.KIDNEY -> R.string.health_group_kidney
+    HealthMetricGroup.THYROID -> R.string.health_group_thyroid
+    HealthMetricGroup.URINE -> R.string.health_group_urine
 }
 
 internal fun healthContextResource(value: String): Int = when (value) {

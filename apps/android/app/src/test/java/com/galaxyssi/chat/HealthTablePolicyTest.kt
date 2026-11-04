@@ -91,7 +91,7 @@ class HealthTablePolicyTest {
             val h = listOf("time") + metric.fields
             val m = HealthTablePolicy.suggest(h, metric).copy(unit = metric.units.first(), zone = "UTC")
             val b = batch(m).copy(headers = h)
-            val cells = metric.fields.associateWith { "50" } + ("time" to "2026-09-01T08:00:00Z")
+            val cells = metric.fields.associateWith { if (metric.form == HealthResultForm.QUALITATIVE) "negative" else "50" } + ("time" to "2026-09-01T08:00:00Z")
             assertEquals(metric.name, HealthTableRowState.VALID, HealthTablePolicy.evaluate(b, HealthTableRow(1, cells)).state)
         }
     }

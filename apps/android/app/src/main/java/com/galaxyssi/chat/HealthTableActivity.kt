@@ -299,11 +299,14 @@ class HealthTableActivity : Activity() {
             m.metric.fields.forEach { field -> ui.add(this, mappingLine(getString(healthFieldResource(field)), m.columns[field].orEmpty()) {
                 column(batch, m.columns[field].orEmpty()) { m.copy(columns = m.columns + (field to it)) }
             }, 10) }
-            addView(ui.row(getString(R.string.health_table_unit), m.unitColumn.ifBlank { m.unit }.ifBlank { getString(R.string.health_choose_unit) }) {
-                val values = m.metric.units + getString(R.string.health_table_unit_column)
+            addView(ui.row(getString(R.string.health_table_unit), m.unitColumn.ifBlank { m.unit }.ifBlank {
+                getString(if (m.metric.form in listOf(HealthResultForm.QUALITATIVE, HealthResultForm.LABORATORY)) R.string.health_unit_not_applicable else R.string.health_choose_unit)
+            }) {
+                val units = m.metric.selectableUnits
+                val values = units.map { it.ifBlank { getString(R.string.health_unit_not_applicable) } } + getString(R.string.health_table_unit_column)
                 choose(R.string.health_choose_unit, values, m.unit) { index ->
-                    if (index == m.metric.units.size) column(batch, m.unitColumn) { m.copy(unitColumn = it, unit = "") }
-                    else mapping(batch, m.copy(unit = m.metric.units[index], unitColumn = ""))
+                    if (index == units.size) column(batch, m.unitColumn) { m.copy(unitColumn = it, unit = "") }
+                    else mapping(batch, m.copy(unit = units[index], unitColumn = ""))
                 }
             })
             addView(ui.row(getString(R.string.health_table_date), if (m.date == HealthTableDate.EXCEL) getString(R.string.health_xlsx_date_format) else m.date.pattern.replace("uuuu", "yyyy")) {
@@ -336,6 +339,9 @@ class HealthTableActivity : Activity() {
             })
             addView(ui.row(getString(R.string.health_note), m.noteColumn.ifBlank { getString(R.string.health_table_unmapped) }) {
                 column(batch, m.noteColumn) { m.copy(noteColumn = it) }
+            })
+            addView(ui.row(getString(R.string.health_report_reference), m.referenceColumn.ifBlank { getString(R.string.health_table_unmapped) }) {
+                column(batch, m.referenceColumn) { m.copy(referenceColumn = it) }
             })
         }, 10)
     }
