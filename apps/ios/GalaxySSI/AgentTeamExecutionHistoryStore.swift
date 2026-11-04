@@ -1468,10 +1468,14 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func collaborationResults(conversationId: String, limit: Int) -> [AgentTeamExecutionSnapshot] {
+    (try? readCollaborationResults(conversationId: conversationId, limit: limit)) ?? []
+  }
+
+  func readCollaborationResults(conversationId: String, limit: Int) throws -> [AgentTeamExecutionSnapshot] {
     guard !conversationId.isBlank, limit > 0 else { return [] }
-    return (try? access {
+    return try access {
       try $0.snapshots(conversation: conversationId, limit: min(limit, Self.maxSnapshots))
-    }) ?? []
+    }
   }
 
   func latestCollaborationRun(conversationId: String) -> AgentTeamExecutionSnapshot? {

@@ -391,6 +391,12 @@ final class UserDefaultsAgentTeamMailbox: AgentTeamMailbox {
       after: 0, pendingOnly: true) }) ?? []
   }
 
+  func recentMessages(supervisorRunId: String, conversationId: String, limit: Int = 20) throws -> [AgentTeamMessageEnvelope] {
+    guard !supervisorRunId.isBlank, !conversationId.isBlank, limit > 0 else { return [] }
+    return try access { try $0.recentMailboxMessages(runId: supervisorRunId, conversationId: conversationId,
+      limit: min(limit, 100)) }
+  }
+
   func markDelivered(messageId: String, atMillis: Int64) -> AgentTeamMessageEnvelope? {
     mutate(messageId: messageId) { $0.markDelivered(messageId: messageId, atMillis: atMillis) }
   }
