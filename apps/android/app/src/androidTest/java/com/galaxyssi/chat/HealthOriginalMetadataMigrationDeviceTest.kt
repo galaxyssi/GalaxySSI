@@ -64,7 +64,7 @@ class HealthOriginalMetadataMigrationDeviceTest {
             val db = it.tableDatabase
             db.beginTransaction()
             try {
-                listOf("health_original_metadata_migration", "library_export_items", "library_exports", "capture_pages",
+                listOf("health_restore_batches", "health_original_metadata_migration", "library_export_items", "library_exports", "capture_pages",
                     "capture_batches", "pages", "jobs", "imports", "originals").forEach { table ->
                     db.execSQL("DROP TABLE $table")
                 }
@@ -74,7 +74,7 @@ class HealthOriginalMetadataMigrationDeviceTest {
             measurement
         }
         HealthRecordStore(context, names.records).use { records ->
-            assertEquals(7, records.tableDatabase.version)
+            assertEquals(HealthRecordStore.SCHEMA_VERSION, records.tableDatabase.version)
             assertEquals(measurement, records.record(measurement.id))
             shared(names, records).use { originals ->
                 assertSame(records.tableDatabase, originals.libraryDatabase)

@@ -113,7 +113,9 @@ internal object HealthBackupCodec {
     // Visitors must stage data only. The package is verified only after the authenticated EOF.
     fun verify(input: InputStream, password: CharArray, active: () -> Unit = {},
         onOriginal: (HealthBackupOriginal) -> OutputStream? = { null },
-        onRecord: (HealthObservation) -> Unit = {}): HealthBackupManifest {
+        onRecord: (HealthObservation) -> Unit = {},
+        onManifest: (HealthBackupManifest) -> Unit = {},
+        onMissingOriginal: (HealthBackupOriginal) -> Unit = {}): HealthBackupManifest {
         val raw = DataInputStream(input)
         val actualMagic = ByteArray(magic.size)
         try { raw.readFully(actualMagic) } catch (_: EOFException) { fail(HealthBackupIssue.FORMAT) }
@@ -132,11 +134,13 @@ internal object HealthBackupCodec {
             val stream = parse { DataInputStream(HealthPrivateExportFile.primitive(streamKey).newDecryptingStream(raw, header)) }
             stream.use {
                 val manifest = parse { HealthBackupManifest.from(frame(stream)) }
+                onManifest(manifest)
                 val counter = Counter(manifest)
                 repeat(manifest.originals) {
                     active()
                     val original = parse { HealthBackupOriginal.from(frame(stream)).also(counter::original) }
                     if (original.present) onOriginal(original).use { output -> verifiedOriginal(stream, original, output, active) }
+                    else onMissingOriginal(original)
                 }
                 var seen = 0L
                 while (seen < manifest.records) {
@@ -226,8 +230,35 @@ internal object HealthBackupCodec {
         val size = stream.readInt()
         require(size in 1..MAX_FRAME)
         val bytes = ByteArray(size)
-        return try { stream.readFully(bytes); JSONObject(String(bytes, Charsets.UTF_8)) }
+        return try {
+            stream.readFully(bytes)
+            val text = String(bytes, Charsets.UTF_8)
+            requireSafeNesting(text)
+            val reader = org.json.JSONTokener(text)
+            val result = reader.nextValue() as? JSONObject ?: error("Expected backup object")
+            require(reader.nextClean() == '\u0000')
+            result
+        }
         finally { bytes.fill(0) }
+    }
+
+    internal fun requireSafeNesting(text: String) {
+        var depth = 0
+        var quoted = false
+        var escaped = false
+        for (character in text) {
+            if (quoted) {
+                if (escaped) escaped = false
+                else if (character == '\\') escaped = true
+                else if (character == '"') quoted = false
+            } else when (character) {
+                '"' -> quoted = true
+                '{', '[' -> { depth++; require(depth <= 64) }
+                '}', ']' -> { depth--; require(depth >= 0) }
+                '\'', '/', '#' -> error("Nonstandard JSON syntax")
+            }
+        }
+        require(!quoted && depth == 0)
     }
 
     private inline fun <T> keys(password: CharArray, salt: ByteArray, block: (ByteArray, ByteArray) -> T): T {

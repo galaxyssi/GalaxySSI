@@ -76,6 +76,57 @@ internal class HealthOriginalStore(
         return target
     }
     fun present(original: HealthOriginal) = file(original).isFile
+
+    internal fun restorationState(item: HealthBackupOriginal): HealthRestoreOriginalState {
+        val token = AgentMemoryIndexKey.token("$databaseName|health-original-digest|${item.sha256}")
+        val duplicate = helper.readableDatabase.rawQuery("SELECT id,payload FROM originals WHERE digest_token=?", arrayOf(token)).use {
+            if (it.moveToFirst()) decodeOriginal(it.getString(0), it.getBlob(1)) else null
+        }
+        if (duplicate != null) check(duplicate.sha256 == item.sha256 && duplicate.size == item.bytes)
+        return HealthRestoreOriginalState(duplicate, duplicate?.let(::present) == true, original(item.id))
+    }
+
+    internal fun prepareRestoredOriginal(batch: String, item: HealthBackupOriginal, id: String,
+        previous: HealthOriginal?): Pair<HealthRestorePreparedOriginal, OutputStream?> {
+        require(validId(batch) && validId(id))
+        val streamId = UUID.randomUUID().toString()
+        val original = HealthOriginal(id, streamId, previous?.name ?: item.name, previous?.mime ?: item.mime,
+            item.bytes, item.sha256, previous?.importedAt ?: item.importedAt, "restore/$batch/$streamId.ghealth", previous?.source ?: item.source)
+        val key = ByteArray(32).also(SecureRandom()::nextBytes)
+        try {
+            val staged = HealthRestorePreparedOriginal(original, AgentStorageCipher.encryptBinary(key, aad("key", id)), item.present)
+            if (!item.present) return staged to null
+            val target = file(original)
+            val raw = FileOutputStream(target)
+            val encrypted = try { primitive(key).newEncryptingStream(HealthPrivateExportFile.borrowed(raw), aad("stream", streamId)) }
+                catch (failure: Throwable) { raw.close(); throw failure }
+            val stream = object : java.io.FilterOutputStream(encrypted) {
+                override fun write(bytes: ByteArray, offset: Int, length: Int) = out.write(bytes, offset, length)
+                override fun close() {
+                    raw.use {
+                        out.close()
+                        raw.fd.sync()
+                    }
+                }
+            }
+            return staged to stream
+        } finally { key.fill(0) }
+    }
+
+    internal fun publishRestoredOriginal(value: HealthRestorePreparedOriginal, previous: HealthOriginal?) {
+        val db = helper.writableDatabase
+        val original = value.original
+        check(db.inTransaction() && (previous == null || previous.id == original.id) && present(original) == value.present)
+        val fields = ContentValues().apply {
+            put("id", original.id); put("imported_at", original.importedAt); put("kind", HealthOriginalKind.of(original).name)
+            put("digest_token", AgentMemoryIndexKey.token("$databaseName|health-original-digest|${original.sha256}"))
+            put("payload", pack("original", original.id, original.json())); put("key_payload", value.wrappedKey)
+        }
+        if (previous == null) db.insertOrThrow("originals", null, fields)
+        else check(db.update("originals", fields, "id=?", arrayOf(previous.id)) == 1)
+    }
+
+    internal fun notifyRestored() { runCatching { notifyChanged("originals") } }
     private fun decodeOriginal(id: String, bytes: ByteArray) = HealthOriginal.from(unpack("original", id, bytes)).also {
         check(it.id == id && it.size > 0 && it.sha256.matches(Regex("[0-9a-f]{64}")))
         file(it)

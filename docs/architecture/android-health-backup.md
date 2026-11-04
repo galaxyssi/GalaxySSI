@@ -35,10 +35,7 @@ Sharing opens the system chooser only after a separate user action.
 
 ## Restoration Boundary
 
-The verifier is read-only. Its streaming callbacks are available for a future
-restore staging area; callbacks alone are not proof that the entire file is
-valid. The merge path must verify authenticated EOF before writing any live
-data. The restore batch, per-conflict choices, alternate profiles, historical
-revisions, durable task history and crash rollback are not implemented by the
-portable export increment. Do not claim successful recovery from successful
-backup verification.
+The verifier remains read-only. The separate
+[restore flow](android-health-restore.md) stages encrypted data, verifies
+authenticated EOF and previews conflicts before it can write to the live
+database. Backup verification alone is not successful recovery.
