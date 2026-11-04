@@ -370,7 +370,7 @@ final class AgentTeamExecutionHistoryStore {
       let complete = coverage.contiguousEnd == slice.total
       return (slice, [
         "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
-        "tool": .string(record.call.name), "status": .string(record.succeeded ? "succeeded" : "failed")
+        "tool": .string(record.call.name), "status": .string(record.observedFailure ? "failed" : "succeeded")
       ], [
         "complete": .bool(complete), "total_characters": .int(slice.total),
         "first_missing_offset": complete ? .null : .int(coverage.contiguousEnd),
@@ -403,12 +403,14 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func freezeCloudReads(_ references: [AgentMcpJSONObject], scope: AgentCollaborationToolEvidenceScope,
-                                       database: AgentTeamHistoryDatabase) throws -> [AgentCollaborationFrozenCloudRead] {
+                                       database: AgentTeamHistoryDatabase,
+                                       requireFailure: Bool = false) throws -> [AgentCollaborationFrozenCloudRead] {
     guard references.count <= 32 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     var seen = Set<String>()
-    return try references.map { reference in
+    var foundFailure = false
+    let reads = try references.map { reference in
       let id = reference.string("evidence_id")
       let hash = reference.string("sha256")
       guard Set(reference.keys) == Set(["evidence_id", "sha256"]),
@@ -428,8 +430,14 @@ final class AgentTeamExecutionHistoryStore {
             let coverage = try database.researchRecord(AgentCollaborationReadCoverage.self,
               conversationId: scope.conversationId, key: key, revision: 0),
             coverage.contiguousEnd == total else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if requireFailure {
+        guard !original.call.name.lowercased().contains("recall") else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        foundFailure = foundFailure || original.observedFailure
+      }
       return AgentCollaborationFrozenCloudRead(evidenceId: id, sha256: hash, totalCharacters: total)
     }
+    guard !requireFailure || foundFailure else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return reads
   }
 
   func recoverable(conversationId: String) -> [AgentTeamExecutionSnapshot] {
@@ -480,6 +488,11 @@ final class AgentTeamExecutionHistoryStore {
               turnId: turnId, memberId: memberId, sourceId: sourceId)
             frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
           }
+        } else if draft.kind == .failureExperience {
+          guard draft.validFailureExperience, !references.isEmpty else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+            turnId: turnId, memberId: memberId, sourceId: sourceId)
+          frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database, requireFailure: true)
         } else if !references.isEmpty {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
@@ -625,7 +638,7 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          guard revision.draft.kind == .acceptanceReview, let reads = revision.frozenCloudReads,
+          guard [.acceptanceReview, .failureExperience].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
                 reads.count == citations.count,
                 zip(reads, citations).allSatisfy({ pair in
                   pair.0.evidenceId == pair.1.string("evidence_id") &&
