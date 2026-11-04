@@ -18,6 +18,21 @@ final class AgentIOSPhonePublicHTMLAttachmentTests: XCTestCase {
     XCTAssertNil(AgentIOSWeChatArticlePDF.articleURL("https://mp.weixin.qq.com.example.org/s/example"))
   }
 
+  @MainActor
+  func testScreenSourceValidatesWeChatArticleLinksWithoutRewritingQuery() {
+    let url = "https://mp.weixin.qq.com/s?__biz=abc&mid=123&sn=xyz"
+    XCTAssertEqual(GalaxySSIScreenAnalysisLinkPicker.validatedLink(" \(url)\n", weChatOnly: true), url)
+    XCTAssertNotNil(GalaxySSIScreenAnalysisLinkPicker.validatedLink(
+      "https://mp.weixin.qq.com/s/articleID", weChatOnly: true))
+    for invalid in ["http://mp.weixin.qq.com/s/a", "https://mp.weixin.qq.com.evil.test/s/a",
+      "https://user@mp.weixin.qq.com/s/a", "https://mp.weixin.qq.com:8443/s/a",
+      "https://mp.weixin.qq.com/not-an-article"] {
+      XCTAssertNil(GalaxySSIScreenAnalysisLinkPicker.validatedLink(invalid, weChatOnly: true))
+    }
+    XCTAssertNotNil(GalaxySSIScreenAnalysisLinkPicker.validatedLink(
+      "https://example.com/article", weChatOnly: false))
+  }
+
   func testSourceArchivePreservesBytesWithoutPublishingExecutableHTML() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

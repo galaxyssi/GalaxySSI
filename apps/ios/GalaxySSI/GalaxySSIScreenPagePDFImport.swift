@@ -19,14 +19,25 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
   @State private var pdfTask: Task<Void, Never>?
   @State private var pdfStatus = ""
   var t: (String, String) -> String
+  var weChatOnly: Bool
   var onAdd: (String) -> Void
 
   private var link: String? {
+    Self.validatedLink(value, weChatOnly: weChatOnly)
+  }
+
+  static func validatedLink(_ value: String, weChatOnly: Bool) -> String? {
     let input = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard input.utf8.count <= 4_096, !input.contains(where: { $0.isWhitespace }),
           let parts = URLComponents(string: input), parts.scheme?.lowercased() == "https",
           parts.host?.isEmpty == false, parts.user == nil, parts.password == nil,
           parts.url != nil else { return nil }
+    if weChatOnly {
+      guard parts.host?.lowercased() == "mp.weixin.qq.com",
+            parts.port == nil || parts.port == 443,
+            parts.path == "/s" || (parts.path.hasPrefix("/s/") && parts.path.count > 3)
+      else { return nil }
+    }
     return input
   }
 
@@ -48,8 +59,21 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
           if pdfTask != nil { ProgressView() }
           if !pdfStatus.isEmpty { Text(pdfStatus).font(.footnote).foregroundColor(.secondary) }
         }
+        if weChatOnly {
+          if #available(iOS 16.0, *) {
+            PasteButton(payloadType: String.self) { values in
+              if let first = values.first { value = first }
+            }
+          }
+          if !value.isEmpty, link == nil {
+            Text(t("galaxyssi.screen_page.wechat_invalid", "Enter a valid WeChat public article link."))
+              .foregroundColor(.secondary)
+          }
+        }
       }
-      .navigationTitle(t("galaxyssi.screen_page.link", "Link"))
+      .navigationTitle(weChatOnly
+        ? t("galaxyssi.screen_page.wechat_link", "WeChat Article Link")
+        : t("galaxyssi.screen_page.link", "Link"))
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(t("galaxyssi.common.cancel", "Cancel")) { dismiss() }
@@ -155,7 +179,12 @@ extension AgentHomeView {
   }
 
   func beginScreenAnalysisLink() {
+    beginScreenAnalysisLink(weChatOnly: false)
+  }
+
+  func beginScreenAnalysisLink(weChatOnly: Bool) {
     cancelScreenPagePDFImport()
+    screenLinkWeChatOnly = weChatOnly
     screenLinkConversationID = store.activeAgentConversationId
     screenLinkPickerPresented = !screenLinkConversationID.isEmpty
   }
