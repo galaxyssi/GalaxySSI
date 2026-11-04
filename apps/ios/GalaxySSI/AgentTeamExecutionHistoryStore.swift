@@ -21,7 +21,7 @@ struct AgentTeamReplyObservation: Equatable {
     valid = valid && (rawGeneration == nil || generation != nil) && (rawSequence == nil || sequence != nil)
   }
 
-  private static func integer(_ value: Any?) -> Int64? {
+  static func integer(_ value: Any?) -> Int64? {
     if let text = value as? String { return Int64(text) }
     guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
           number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 9_007_199_254_740_991,

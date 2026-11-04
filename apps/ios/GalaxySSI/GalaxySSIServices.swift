@@ -2303,6 +2303,72 @@ final class MessageCoordinator: ObservableObject {
     return currentTeamObserverRecovery(binding)?.owner.accepts(AgentTeamReplyObservation(payload: item)) == true
   }
 
+  private func handleDesktopCollaborationArchiveRecall(_ payload: [String: Any], link: ServerLink) async {
+    let route = AgentDesktopCollaborationArchiveRecall.self
+    let now = AgentControlPlaneClock.nowMillis()
+    let requestId = payload.string("request_id")
+    let source = payload.string("source_message_id")
+    let contact = payload.string("contact_id")
+    guard link.paired, payload.string("client_route_id") == link.routes.clientRouteId,
+          payload.string("agent_id") == "codex", payload.string("contract") == route.contract,
+          payload.string("phase") == "read", payload["delivery"] == nil,
+          (1...128).contains(requestId.utf8.count),
+          let expiry = AgentTeamReplyObservation.integer(payload["expires_at"]),
+          expiry > now, expiry - now <= 60_000,
+          let generation = AgentTeamReplyObservation(payload: payload).generation,
+          AgentRemoteOutcomePolicy.validGeneration(generation),
+          let arguments = payload["arguments"] as? [String: Any],
+          let bytes = try? JSONSerialization.data(withJSONObject: arguments), bytes.count <= 4_096,
+          let input = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes),
+          let selector = route.selector(input),
+          let identity = taskIdentityStore.identity(contactId: contact, sourceMessageId: source),
+          let owner = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source,
+            conversation: identity.conversationId, turn: identity.turnId, contact: contact)?.owner,
+          let binding = AgentDesktopReplyBinding.teamObserver(owner: owner, desktopId: link.desktopId,
+            agentId: "codex", identity: identity), binding.matches(payload),
+          let context = currentTeamObserverRecovery(binding), context.owner.observedGeneration == generation,
+          context.team.state == .running, !context.member.status.isTerminal,
+          let session = store.agentSession(id: identity.conversationId), session.id == identity.conversationId,
+          session.mergedIntoConversationId.isBlank, let roster = session.collaborationRoster,
+          let person = context.member.memberId.split(separator: ":").first, let personId = UUID(uuidString: String(person)),
+          roster.members.contains(where: { $0.id == personId }),
+          let parent = store.agentTask(id: context.team.taskId),
+          parent.phase == .executing || parent.phase == .waitingResponse
+    else { return }
+
+    let history = AgentTeamExecutionHistoryStore.shared
+    let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
+      conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
+    var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
+    if let dependency = context.member.dispatchDependencyMemberIds?.first(where: {
+      route.recordId(memberId: $0) == selector.recordId
+    }) {
+      var query: AgentMcpJSONObject = ["mode": .string("dependency"), "member_id": .string(dependency)]
+      if let first = try? history.recallCollaborationOriginal(query, scope: scope) {
+        query["offset"] = .int(selector.offset)
+        query["sha256"] = first["sha256"]
+        if var page = selector.offset == 0 ? first : (try? history.recallCollaborationOriginal(query, scope: scope)) {
+          page.removeValue(forKey: "member_id")
+          page["record_id"] = .string(selector.recordId)
+          page["success"] = .bool(true)
+          page["status"] = .string("returned")
+          result = page
+        }
+      }
+    }
+    var response = binding.fields.mapValues(AgentMcpJSONValue.string)
+    response["type"] = .string(route.responseType)
+    response["contract"] = .string(route.contract)
+    response["request_id"] = .string(requestId)
+    response["phase"] = .string("read")
+    response["execution_generation"] = .int(generation)
+    response["result"] = .object(result)
+    guard AgentControlPlaneClock.nowMillis() < expiry,
+          let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(response).utf8)) as? [String: Any],
+          let wire = try? linkWirePayload(object, link: link) else { return }
+    _ = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
+  }
+
   private func discoverTeamObserverReplies(now: Int64) {
     guard now < teamObserverDiscoveryAt || now - teamObserverDiscoveryAt >= 30_000 else { return }
     teamObserverDiscoveryAt = now
@@ -6657,10 +6723,11 @@ final class MessageCoordinator: ObservableObject {
           return "[\(instanceId)] \(preview)"
         }
         let truncated = preview.utf8.count < result.utf8.count
-        return "[\(instanceId) output_truncated=\(truncated)] \(preview)"
+        let record = truncated ? " archive_record_id=\(AgentDesktopCollaborationArchiveRecall.recordId(memberId: instanceId))" : ""
+        return "[\(instanceId) output_truncated=\(truncated)\(record)] \(preview)"
       })
       if member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
-        instruction.append("For truncated dependency output, use scoped recall with mode=dependency and member_id when available. A preview is not an original.")
+        instruction.append("For truncated output, use mode=dependency and member_id, or Desktop mode=archive with archive_record_id as record_id. Follow next_offset and join decoded data_b64 bytes. A preview is not an original.")
       }
     }
     if member.deliveryMode == .observe, member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
@@ -11214,6 +11281,14 @@ final class MessageCoordinator: ObservableObject {
              let manifest = desktopResultRecovery.receiveInline(page, record: record,
                queryNonce: appPayload.string("request_id")) { _ = desktopReplyRecovery.attachManifest(manifest, to: record) }
           Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+        }
+      }
+      return
+    }
+    if appPayload.string("type") == AgentDesktopCollaborationArchiveRecall.requestType {
+      if object.string("scheme") == "signal", let link {
+        Task { @MainActor [weak self] in
+          await self?.handleDesktopCollaborationArchiveRecall(appPayload, link: link)
         }
       }
       return
