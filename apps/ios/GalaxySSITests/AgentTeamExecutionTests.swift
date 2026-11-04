@@ -419,8 +419,8 @@ extension GalaxySSIStoreTests {
     try reopened.settleCollaborationModelCall(admission, settlement: completed)
     try reopened.settleCollaborationModelCall(admission, settlement: completed)
     XCTAssertEqual(try history.collaborationModelCall(admission).settlement, completed)
-    let interrupted = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 1,
-      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3)
+    let interrupted = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 0,
+      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3, route: .compatibility)
     try reopened.admitCollaborationModelCall(interrupted)
     let firstPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, limit: 1)
     let cursor = try XCTUnwrap(firstPage.next)
@@ -429,6 +429,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(Set(entries.map { $0.admission.id }), [admission.id, interrupted.id])
     XCTAssertEqual(entries.first(where: { $0.admission.id == admission.id })?.settlement, completed)
     XCTAssertNil(entries.first(where: { $0.admission.id == interrupted.id })?.settlement)
+    XCTAssertEqual(entries.first(where: { $0.admission.id == interrupted.id })?.admission.route, .compatibility)
     XCTAssertNil(secondPage.next)
     XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: "foreign").entries.isEmpty)
     XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: .init(
