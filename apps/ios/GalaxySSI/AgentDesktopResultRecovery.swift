@@ -13,6 +13,7 @@ enum AgentDesktopToolEvidenceWire {
     let totalBytes: Int
     let pageCount: Int
     let itemType: String
+    var canImport: Bool { totalBytes <= AgentDesktopToolEvidenceWire.maximumOriginalBytes }
 
     init?(_ object: AgentMcpJSONObject) {
       evidenceId = object.string("evidence_id")
@@ -23,13 +24,20 @@ enum AgentDesktopToolEvidenceWire {
       itemType = object.string("item_type")
       guard AgentDesktopToolEvidenceWire.isDigest(evidenceId), AgentDesktopToolEvidenceWire.isDigest(sha256),
             (1...9_007_199_254_740_991).contains(sequence),
-            totalBytes > 0, totalBytes <= AgentDesktopToolEvidenceWire.maximumOriginalBytes,
-            pageCount == (totalBytes + AgentDesktopToolEvidenceWire.maximumPageBytes - 1) /
-              AgentDesktopToolEvidenceWire.maximumPageBytes,
+            totalBytes > 0,
+            pageCount == (totalBytes - 1) / AgentDesktopToolEvidenceWire.maximumPageBytes + 1,
             ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch"].contains(itemType),
             object.string("trust") == "execution_observed_not_claim_verified",
             object.string("coverage") == "provider_payload_as_received" else { return nil }
     }
+  }
+
+  struct IndexPage {
+    let entries: [Descriptor]
+    let nextSequence: Int64
+    let hasMore: Bool
+    let archiveFinal: Bool
+    let inlineOriginals: [String: Data]
   }
 
   struct Request {
@@ -47,7 +55,7 @@ enum AgentDesktopToolEvidenceWire {
     }
 
     func pageRequest(_ descriptor: Descriptor, index: Int) -> AgentMcpJSONObject? {
-      guard (0..<descriptor.pageCount).contains(index) else { return nil }
+      guard descriptor.canImport, (0..<descriptor.pageCount).contains(index) else { return nil }
       var payload = request(mode: "page")
       payload["evidence_id"] = .string(descriptor.evidenceId)
       payload["sha256"] = .string(descriptor.sha256)
@@ -55,10 +63,12 @@ enum AgentDesktopToolEvidenceWire {
       return payload
     }
 
-    func indexRequest(after sequence: Int64) -> AgentMcpJSONObject? {
-      guard (0...9_007_199_254_740_991).contains(sequence) else { return nil }
+    func indexRequest(after sequence: Int64, inlineBytes: Int = 0) -> AgentMcpJSONObject? {
+      guard (0...9_007_199_254_740_991).contains(sequence),
+            (0...AgentDesktopToolEvidenceWire.maximumPageBytes).contains(inlineBytes) else { return nil }
       var payload = request(mode: "index")
       payload["after_sequence"] = .int(sequence)
+      if inlineBytes > 0 { payload["inline_page_bytes"] = .int(Int64(inlineBytes)) }
       return payload
     }
 
@@ -74,13 +84,64 @@ enum AgentDesktopToolEvidenceWire {
 
     func verifyPage(_ response: AgentMcpJSONObject, authenticatedDesktopId: String,
                     descriptor: Descriptor, index: Int) -> Data? {
-      guard authenticatedDesktopId == binding.desktopId,
-            response.string("type") == "agent_task_evidence",
-            response.string("contract") == AgentDesktopToolEvidenceWire.contract,
-            response.string("mode") == "page", response.string("status") == "ready",
-            response.string("request_id") == nonce,
-            response["execution_generation"] == .int(generation),
-            binding.fields.allSatisfy({ response[$0.key] == .string($0.value) }),
+      guard matches(response, authenticatedDesktopId: authenticatedDesktopId, mode: "page") else { return nil }
+      return verifyPageBody(response, descriptor: descriptor, index: index)
+    }
+
+    private func matches(_ response: AgentMcpJSONObject, authenticatedDesktopId: String, mode: String) -> Bool {
+      authenticatedDesktopId == binding.desktopId &&
+        response.string("type") == "agent_task_evidence" &&
+        response.string("contract") == AgentDesktopToolEvidenceWire.contract &&
+        response.string("mode") == mode && response.string("status") == "ready" &&
+        response.string("request_id") == nonce && response["execution_generation"] == .int(generation) &&
+        binding.fields.allSatisfy { response[$0.key] == .string($0.value) }
+    }
+
+    func verifyIndex(_ response: AgentMcpJSONObject, authenticatedDesktopId: String,
+                     after sequence: Int64, inlineBytes: Int = 0) -> IndexPage? {
+      guard indexRequest(after: sequence, inlineBytes: inlineBytes) != nil,
+            matches(response, authenticatedDesktopId: authenticatedDesktopId, mode: "index"),
+            response["provider_history_complete"] == .bool(false),
+            response.string("coverage") == "observed_completed_items_only",
+            response.string("projection") == "external_execution_observations",
+            case .bool(let hasMore)? = response["has_more"],
+            case .bool(let archiveFinal)? = response["archive_final"],
+            case .int(let nextSequence)? = response["next_sequence"],
+            let raw = response["entries"]?.arrayValue, raw.count <= 20 else { return nil }
+      var entries: [Descriptor] = []
+      var byId: [String: Descriptor] = [:]
+      var cursor = sequence
+      for value in raw {
+        guard let object = value.objectValue, let item = Descriptor(object),
+              item.sequence > cursor, byId[item.evidenceId] == nil,
+              object["phone_import"] != .bool(false) else { return nil }
+        cursor = item.sequence
+        byId[item.evidenceId] = item
+        entries.append(item)
+      }
+      guard cursor == nextSequence, !hasMore || !entries.isEmpty else { return nil }
+      let inline: [AgentMcpJSONValue]
+      if let value = response["inline_pages"] {
+        guard let pages = value.arrayValue, pages.count <= entries.count else { return nil }
+        inline = pages
+      } else { inline = [] }
+      var remaining = inlineBytes
+      var originals: [String: Data] = [:]
+      for value in inline {
+        guard let page = value.objectValue, let descriptor = byId[page.string("evidence_id")],
+              descriptor.pageCount == 1, descriptor.totalBytes <= remaining,
+              originals[descriptor.evidenceId] == nil,
+              let bytes = verifyPageBody(page, descriptor: descriptor, index: 0),
+              let original = verifyOriginal([bytes], descriptor: descriptor) else { return nil }
+        originals[descriptor.evidenceId] = original
+        remaining -= bytes.count
+      }
+      return IndexPage(entries: entries, nextSequence: nextSequence, hasMore: hasMore,
+        archiveFinal: archiveFinal, inlineOriginals: originals)
+    }
+
+    private func verifyPageBody(_ response: AgentMcpJSONObject, descriptor: Descriptor, index: Int) -> Data? {
+      guard descriptor.canImport, response.string("status") == "ready",
             Descriptor(response) == descriptor,
             (0..<descriptor.pageCount).contains(index), response["page_index"] == .int(Int64(index)) else { return nil }
       let encoded = response.string("data_b64")
@@ -93,7 +154,7 @@ enum AgentDesktopToolEvidenceWire {
     }
 
     func verifyOriginal(_ pages: [Data], descriptor: Descriptor) -> Data? {
-      guard pages.count == descriptor.pageCount else { return nil }
+      guard descriptor.canImport, pages.count == descriptor.pageCount else { return nil }
       var body = Data()
       body.reserveCapacity(descriptor.totalBytes)
       let size = AgentDesktopToolEvidenceWire.maximumPageBytes
