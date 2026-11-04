@@ -187,8 +187,8 @@ enum AgentTeamDispatchIds {
     var source = "galaxyssi-agent-team\u{001f}\(conversationId)\u{001f}\(turnId)\u{001f}\(plan.planId)\u{001f}"
     for action in actions {
       source += "\(action.id):\(action.parameters["connector_id"] ?? "")\u{001f}"
-      if let effort = action.parameters[AgentCollaborationReasoningSelection.contextKey] {
-        let model = action.parameters["_galaxyssi_member_model_id"] ?? ""
+      if let model = action.parameters["_galaxyssi_member_model_id"] {
+        let effort = action.parameters[AgentCollaborationReasoningSelection.contextKey] ?? ""
         source += "\(model.utf8.count):\(model):\(effort)\u{001f}"
       }
     }
@@ -361,9 +361,10 @@ enum AgentTeamPlanCompiler {
       var identity = template
       identity.id = member.memberId
       identity.parameters["connector_id"] = member.agentId
-      if let effort = member.context[AgentCollaborationReasoningSelection.contextKey] {
-        identity.parameters[AgentCollaborationReasoningSelection.contextKey] = effort
-        identity.parameters["_galaxyssi_member_model_id"] = member.context["_galaxyssi_member_model_id"]
+      if available[member.agentId]?.adapterType == "codex-app-server-or-cli",
+         let model = member.context["_galaxyssi_member_model_id"], !model.isBlank {
+        identity.parameters["_galaxyssi_member_model_id"] = model
+        identity.parameters[AgentCollaborationReasoningSelection.contextKey] = member.context[AgentCollaborationReasoningSelection.contextKey]
       }
       return identity
     }
