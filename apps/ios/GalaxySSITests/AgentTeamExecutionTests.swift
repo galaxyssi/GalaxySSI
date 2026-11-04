@@ -34,6 +34,29 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .accepted)
   }
 
+  func testCollaborationResultsStayInTheirConversationAfterReopen() {
+    let suite = "team-results-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var first = durableTeamSnapshot("first")
+    first.members[0].displayName = "Original member name"
+    var other = durableTeamSnapshot("other")
+    other.conversationId = "other-conversation"
+    XCTAssertTrue(history.upsert(first))
+    XCTAssertTrue(history.upsert(other))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let scoped = reopened.collaborationResults(conversationId: first.conversationId, limit: 20)
+    XCTAssertEqual(scoped.map(\.supervisorRunId), ["first"])
+    XCTAssertEqual(scoped.first?.members.first?.displayName, "Original member name")
+    XCTAssertTrue(reopened.collaborationResults(conversationId: "", limit: 20).isEmpty)
+  }
+
   func testObserverRecoveryPersistsFullFailureAndRejectsPreviewOnlyDuplicateProof() throws {
     let suite = "team-recovery-body-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

@@ -20,7 +20,9 @@ class HealthDataFilesActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
         root.addView(ScrollView(this).apply { addView(ui.column().apply {
             setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(24))
-            addView(ui.row(getString(R.string.health_export_import_records)) { startActivity(Intent(this@HealthDataFilesActivity, HealthCaptureActivity::class.java).putExtra("health_pick_files", true)) })
+            addView(ui.row(getString(R.string.health_first_import_title)) {
+                startActivity(Intent(this@HealthDataFilesActivity, HealthCenterActivity::class.java).putExtra("health_import_center", true))
+            })
             addView(ui.row(getString(R.string.health_export_import_originals)) { startActivity(Intent(this@HealthDataFilesActivity, HealthCaptureActivity::class.java).putExtra("health_pick_files", true).putExtra("health_original_only", true)) })
             addView(ui.row(getString(R.string.health_export_records)) { startActivity(Intent(this@HealthDataFilesActivity, HealthRecordExportActivity::class.java)) })
             addView(ui.row(getString(R.string.health_original_library)) { startActivity(Intent(this@HealthDataFilesActivity, HealthOriginalLibraryActivity::class.java)) })

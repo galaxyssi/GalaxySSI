@@ -265,6 +265,13 @@ final class AgentTeamExecutionHistoryStore {
     return (try? access { try $0.snapshots(conversation: conversationId, recoverableOnly: true) }) ?? []
   }
 
+  func collaborationResults(conversationId: String, limit: Int) -> [AgentTeamExecutionSnapshot] {
+    guard !conversationId.isBlank, limit > 0 else { return [] }
+    return (try? access {
+      try $0.snapshots(conversation: conversationId, limit: min(limit, Self.maxSnapshots))
+    }) ?? []
+  }
+
   func deliverableSnapshots() -> [AgentTeamExecutionSnapshot] {
     (try? access { try $0.snapshots(deliverableOnly: true, limit: Self.maxSnapshots) }) ?? []
   }
