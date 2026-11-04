@@ -41,6 +41,11 @@ struct GalaxySSIHealthCenterView: View {
         } label: {
           Label(t("originals.title", "Health Originals"), systemImage: "doc.on.doc")
         }
+        NavigationLink {
+          GalaxySSIHealthProfileView(records: records)
+        } label: {
+          Label(t("profile.title", "Health Profile"), systemImage: "person.text.rectangle")
+        }
       }
       if scenePhase == .active, let archive {
         let current = archive.current
@@ -91,6 +96,11 @@ struct GalaxySSIHealthCenterView: View {
       } else if scenePhase == .active {
         Text(t("unavailable", "Health records could not be accessed."))
         Button(t("retry", "Reload records"), action: reload)
+      }
+      NavigationLink {
+        GalaxySSIHealthMeasurementExportView(records: records)
+      } label: {
+        Label(t("export.title", "Export Measurements"), systemImage: "square.and.arrow.up")
       }
       NavigationLink {
         GalaxySSIWeeklyHealthReportView(records: records)

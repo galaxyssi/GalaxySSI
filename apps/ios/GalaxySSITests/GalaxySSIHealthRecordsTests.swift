@@ -4,6 +4,49 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
+    var reading = GalaxySSIHealthReading(metric: .bloodPressure, value: 120, diastolic: 80, pulse: 65)
+    reading.conditions = " =2+2"
+    reading.notes = "a\r\nb\nc\rd,\"quoted\""
+    let csv = String(decoding: try GalaxySSIHealthMeasurementExport.encode([reading], as: .csv, includeNotes: true),
+                     as: UTF8.self)
+    XCTAssertTrue(csv.contains("\"120\",\"mmHg\",\"80\",\"65\""))
+    XCTAssertTrue(csv.contains("\"' =2+2\""))
+    XCTAssertTrue(csv.contains("\"a\r\nb\nc\rd,\"\"quoted\"\"\""))
+    let json = try GalaxySSIHealthMeasurementExport.encode([reading], as: .json, includeNotes: false)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+    let row = try XCTUnwrap((object["measurements"] as? [[String: String]])?.first)
+    XCTAssertEqual(row["diastolic"], "80")
+    XCTAssertNil(row["conditions"])
+    XCTAssertNil(row["notes"])
+  }
+
+  @MainActor
+  func testProfileIsSeparateAndStaleDraftCannotRestoreClearedFacts() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let profileFile = file.appendingPathExtension("profile")
+    defer {
+      try? FileManager.default.removeItem(at: file)
+      try? FileManager.default.removeItem(at: profileFile)
+    }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.write(.init(metric: .weight, value: 65))
+    var profile = try records.loadProfile()
+    profile.name = "private profile marker"
+    profile.background = [.init(kind: .allergy, title: "fixture", notes: "")]
+    try records.writeProfile(profile)
+    XCTAssertNil(String(decoding: try Data(contentsOf: profileFile), as: UTF8.self).range(of: profile.name))
+    let stale = try records.loadProfile()
+    XCTAssertEqual(stale.background.count, 1)
+    var cleared = GalaxySSIHealthProfile()
+    cleared.revision = stale.revision
+    try records.writeProfile(cleared)
+    XCTAssertThrowsError(try records.writeProfile(stale))
+    XCTAssertTrue(try records.loadProfile().name.isEmpty)
+    XCTAssertTrue(try records.loadProfile().background.isEmpty)
+    XCTAssertEqual(try records.load().current.count, 1)
+  }
+
   @MainActor
   func testPrivacyEventsRecordOnlyEffectiveScopedChanges() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

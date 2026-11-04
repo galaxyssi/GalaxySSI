@@ -132,20 +132,51 @@ struct GalaxySSIHealthRecords {
   private var context: Data { Data("galaxyssi.health.records.v1:\(owner)".utf8) }
   private var account: String { "health.records.v1." + owner }
   private var file: URL {
-    get throws {
-      if let isolatedFile { return isolatedFile }
-      let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                             appropriateFor: nil, create: true)
-      let directory = base.appendingPathComponent("HealthRecords", isDirectory: true)
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
-                                              attributes: [.protectionKey: FileProtectionType.complete])
-      var excludedDirectory = directory
-      var resources = URLResourceValues()
-      resources.isExcludedFromBackup = true
-      try excludedDirectory.setResourceValues(resources)
-      let name = SHA256.hash(data: context).map { String(format: "%02x", $0) }.joined()
-      return directory.appendingPathComponent(name)
+    get throws { try storageFile(context: context, fixtureExtension: nil) }
+  }
+
+  private func storageFile(context: Data, fixtureExtension: String?) throws -> URL {
+    if let isolatedFile {
+      return fixtureExtension.map { isolatedFile.appendingPathExtension($0) } ?? isolatedFile
     }
+    let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                           appropriateFor: nil, create: true)
+    let directory = base.appendingPathComponent("HealthRecords", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                            attributes: [.protectionKey: FileProtectionType.complete])
+    var excludedDirectory = directory
+    var resources = URLResourceValues()
+    resources.isExcludedFromBackup = true
+    try excludedDirectory.setResourceValues(resources)
+    let name = SHA256.hash(data: context).map { String(format: "%02x", $0) }.joined()
+    return directory.appendingPathComponent(name)
+  }
+
+  private var profileContext: Data { Data("galaxyssi.health.profile.v1:\(owner)".utf8) }
+  private var profileAccount: String { "health.profile.v1." + owner }
+
+  func loadProfile() throws -> GalaxySSIHealthProfile {
+    let file = try storageFile(context: profileContext, fixtureExtension: "profile")
+    let data: Data
+    do { data = try Data(contentsOf: file) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+      return GalaxySSIHealthProfile()
+    }
+    let box = try AES.GCM.SealedBox(combined: data)
+    let payload = try AES.GCM.open(box, using: key(create: false, account: profileAccount), authenticating: profileContext)
+    return try JSONDecoder().decode(GalaxySSIHealthProfile.self, from: payload)
+  }
+
+  func writeProfile(_ input: GalaxySSIHealthProfile) throws {
+    guard input.isValid else { throw Failure.invalid }
+    guard try loadProfile().revision == input.revision else { throw Failure.stale }
+    var updated = input
+    updated.revision = UUID()
+    let payload = try JSONEncoder().encode(updated)
+    guard let sealed = try AES.GCM.seal(payload, using: key(create: true, account: profileAccount),
+                                        authenticating: profileContext).combined else { throw Failure.unavailable }
+    try sealed.write(to: storageFile(context: profileContext, fixtureExtension: "profile"),
+                     options: [.atomic, .completeFileProtection])
   }
 
   func load() throws -> Archive {
@@ -240,7 +271,8 @@ struct GalaxySSIHealthRecords {
     try sealed.write(to: file, options: [.atomic, .completeFileProtection])
   }
 
-  private func key(create: Bool) throws -> SymmetricKey {
+  private func key(create: Bool, account override: String? = nil) throws -> SymmetricKey {
+    let account = override ?? self.account
     if let encoded = secrets.string(account: account) {
       guard let data = Data(base64Encoded: encoded), data.count == 32 else { throw Failure.unavailable }
       return SymmetricKey(data: data)
