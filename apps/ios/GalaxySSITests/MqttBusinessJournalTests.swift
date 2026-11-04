@@ -99,6 +99,26 @@ final class MqttBusinessJournalTests: XCTestCase {
     XCTAssertEqual(try inbox.pending().map(\.messageID), ["message"])
   }
 
+  func testCompletedHistoryDoesNotConsumePendingCapacityAfterReopen() throws {
+    let fixture = try ChunkFixture()
+    let limits = MqttBusinessInbox.Limits(records: 1, peerRecords: 1, pendingBytes: 4096, peerPendingBytes: 4096)
+    let peer = try identity()
+    let original = try inbox(fixture, limits: limits)
+    _ = try accept(original, peer: peer)
+    XCTAssertTrue(try original.complete(identity: peer, messageID: "message"))
+    let reopened = try inbox(fixture, limits: limits)
+    let secondCipher = String(repeating: "e", count: 64)
+    XCTAssertEqual(try accept(reopened, peer: peer, message: "second", ciphertext: secondCipher).stage, .stored)
+    XCTAssertEqual(try reopened.replay(identity: peer, ciphertextDigest: cipher)?.stage, .completed)
+    XCTAssertThrowsError(try accept(reopened, peer: peer, message: "third", ciphertext: String(repeating: "f", count: 64)))
+    XCTAssertTrue(try reopened.complete(identity: peer, messageID: "second"))
+    fixture.clock.value += MqttBusinessStorage.retention + 1
+    XCTAssertEqual(try accept(reopened, peer: peer, message: "third", ciphertext: String(repeating: "f", count: 64)).stage, .stored)
+    XCTAssertNil(try reopened.replay(identity: peer, ciphertextDigest: cipher))
+    XCTAssertNil(try reopened.replay(identity: peer, ciphertextDigest: secondCipher))
+    XCTAssertEqual(try reopened.pending().map(\.messageID), ["third"])
+  }
+
   func testIncomingTransactionRollsBackWhenCipherIndexWriteFails() throws {
     let fixture = try ChunkFixture()
     let inbox = try inbox(fixture)

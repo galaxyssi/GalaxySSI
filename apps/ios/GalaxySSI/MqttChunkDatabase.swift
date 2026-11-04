@@ -94,6 +94,8 @@ final class MqttChunkDatabase {
         """)
       try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_pending ON mqtt_business_inbox(completed,record_key)")
       try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_scope ON mqtt_business_inbox(binding_digest)")
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_pending_scope ON mqtt_business_inbox(binding_digest,payload_bytes) WHERE completed=0")
+      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_expiry ON mqtt_business_inbox(retain_until) WHERE completed=1")
       try execute("""
         CREATE TABLE IF NOT EXISTS mqtt_business_ciphertexts (
           binding_digest TEXT NOT NULL, ciphertext_digest TEXT NOT NULL, record_key TEXT NOT NULL,
