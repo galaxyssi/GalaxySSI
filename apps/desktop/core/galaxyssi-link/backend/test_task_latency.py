@@ -401,6 +401,20 @@ class TaskLatencyTests(unittest.TestCase):
         self.assertEqual({"query": "release notes"}, payload["events"][0]["metadata"]["parameter_preview"])
         self.assertNotIn("internal_secret", payload["events"][0]["metadata"])
 
+    def test_terminal_replay_retains_research_source_failure_details(self):
+        failures = [{"code": "http_status", "http_status": 403, "host": "school.example"}]
+        payload = _agent_task_payload({
+            "task_id": "task-research", "status": "completed", "events": [
+                {"event_id": "source-read", "kind": "tool", "status": "failed",
+                 "title": "Checking other sources", "detail": "galaxyssi_fetch_public_pages",
+                 "metadata": {"web_read_failures": failures}},
+            ],
+        }, [], resolved_desktop_id="desktop-1", resolved_desktop_name="Desktop")
+        self.assertEqual("completed", payload["task_status"])
+        self.assertEqual("source-read", payload["events"][0]["event_id"])
+        self.assertEqual("dynamic_tool", payload["events"][0]["code"])
+        self.assertEqual(failures, payload["events"][0]["metadata"]["web_read_failures"])
+
     def test_terminal_failure_is_not_throttled(self):
         gate = _TaskProgressEventGate(heartbeat_interval_ms=15_000)
 

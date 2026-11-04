@@ -36,6 +36,7 @@ from desktop_perception import DesktopPerceptionError, DesktopPerceptionService
 from desktop_runtime import DesktopRuntimeManager, desktop_runtime_manager
 from tool_call_audit import ToolCallAuditStore, desktop_tool_call_audit_store
 from web_intelligence import (
+    MAX_DESKTOP_TOOL_FETCH_BYTES,
     TOOL_OPERATIONS as WEB_INTELLIGENCE_OPERATIONS,
     WebIntelligenceError,
     WebIntelligenceService,
@@ -486,7 +487,7 @@ def _web_intelligence_specs() -> tuple[DesktopToolSpec, ...]:
                 **common,
                 "url": url,
                 "timeout_seconds": _integer(1, 120),
-                "max_bytes": _integer(1_024, 2 * 1024 * 1024),
+                "max_bytes": _integer(1_024, MAX_DESKTOP_TOOL_FETCH_BYTES),
                 "cache_ttl_seconds": _integer(60, 30 * 24 * 60 * 60),
                 "force": {"type": "boolean"},
             }, ("url",)),
@@ -660,7 +661,12 @@ def _validate(schema: Mapping[str, Any], value: Any, path: str = "$") -> None:
         if isinstance(value, bool) or not isinstance(value, int):
             raise DesktopNativeToolError("invalid_input", f"{path} must be an integer")
         if value < int(schema.get("minimum", value)) or value > int(schema.get("maximum", value)):
-            raise DesktopNativeToolError("invalid_input", f"{path} is outside its allowed range")
+            minimum, maximum = schema.get("minimum"), schema.get("maximum")
+            raise DesktopNativeToolError(
+                "invalid_input",
+                f"{path}: received {value}; allowed range {minimum} to {maximum}",
+                details={"field": path, "actual": value, "minimum": minimum, "maximum": maximum},
+            )
         return
     if expected == "boolean" and not isinstance(value, bool):
         raise DesktopNativeToolError("invalid_input", f"{path} must be a boolean")
@@ -1495,6 +1501,8 @@ class DesktopNativeToolRegistry:
         invocation_id = str(context.get("invocation_id") or "")
         if invocation_id and self._is_cancelled(invocation_id):
             raise DesktopNativeToolError("cancelled", "Web intelligence task was cancelled")
+        if operation == "fetch":
+            arguments.setdefault("max_bytes", MAX_DESKTOP_TOOL_FETCH_BYTES)
         try:
             output = self.web_intelligence.invoke(operation, arguments)
         except WebIntelligenceError as exc:

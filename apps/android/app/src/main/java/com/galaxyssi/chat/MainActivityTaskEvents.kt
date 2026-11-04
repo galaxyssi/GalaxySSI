@@ -407,7 +407,11 @@ internal fun MainActivity.handleAgentTaskEvent(envelope: JSONObject?): Boolean {
     }
     val elapsedSeconds = envelope.optLong("elapsed_ms", 0L) / 1000L
     val currentStep = envelope.optString("current_step").trim()
-    val statusLabel = if (currentStep.isNotBlank() && status in setOf("starting", "running", "waiting_input", "waiting_approval")) {
+    val checkingOtherSources = status == "running" &&
+        envelope.optJSONObject("progress_event")?.isRemoteResearchToolFailure() == true
+    val statusLabel = if (checkingOtherSources) {
+        getString(R.string.agent_trace_research_checking_other_sources)
+    } else if (currentStep.isNotBlank() && status in setOf("starting", "running", "waiting_input", "waiting_approval")) {
         currentStep
     } else if (status == "running" && elapsedSeconds > 0L) {
         getString(R.string.agent_task_status_running_elapsed, elapsedSeconds)
@@ -1330,6 +1334,8 @@ internal fun MainActivity.syncRemoteTaskEvents(
         if (rendered.isBlank()) continue
         val contentKind = if (kind in setOf("narration", "reasoning", "plan")) {
             "REASONING_SUMMARY"
+        } else if (event.optJSONObject("metadata")?.optJSONArray("web_read_failures") != null) {
+            "TOOL_EVENT"
         } else {
             kind.ifBlank { "TOOL" }.uppercase(Locale.ROOT)
         }
@@ -1391,6 +1397,32 @@ internal fun android.content.Context.connectorProgressText(progress: JSONObject)
     }
     val status = progress.optString("status").ifBlank { "completed" }
     val metadata = progress.optJSONObject("metadata")
+    val readFailures = metadata?.optJSONArray("web_read_failures")
+    if (progress.isRemoteResearchToolFailure() || (readFailures != null && readFailures.length() > 0)) {
+        val reasons = buildList {
+            if (readFailures != null) {
+                for (index in 0 until minOf(4, readFailures.length())) {
+                    val failure = readFailures.optJSONObject(index) ?: continue
+                    val httpStatus = failure.optInt("http_status")
+                    val reason = when {
+                        httpStatus == 403 -> getString(R.string.agent_trace_research_source_forbidden)
+                        httpStatus in 100..599 -> "HTTP $httpStatus"
+                        failure.optString("field") == "max_bytes" &&
+                            failure.has("actual") && failure.has("maximum") ->
+                            getString(R.string.agent_trace_research_source_size_limit,
+                                failure.optLong("actual"), failure.optLong("maximum"))
+                        failure.optString("code") == "no_readable_body" ->
+                            getString(R.string.agent_trace_research_source_no_body)
+                        else -> failure.optString("code").take(64)
+                    }
+                    val host = failure.optString("host").take(100)
+                    if (reason.isNotBlank()) add(listOf(host, reason).filter(String::isNotBlank).joinToString(" · "))
+                }
+            }
+        }
+        val summary = getString(R.string.agent_trace_research_source_unavailable)
+        return (listOf(summary) + reasons).joinToString("\n").take(MAX_CONNECTOR_PROGRESS_TEXT_CHARACTERS)
+    }
     if (kind == "mcp" && metadata?.optString("kind") == "mcp_tool_call") {
         val connectionName = metadata.optString("connection_name")
             .ifBlank { metadata.optString("connection_id") }
@@ -1469,6 +1501,14 @@ internal fun android.content.Context.connectorProgressText(progress: JSONObject)
         operation,
         suffix
     )
+}
+
+internal fun JSONObject.isRemoteResearchToolFailure(): Boolean {
+    if (optString("kind") != "tool" || optString("status") != "failed") return false
+    val code = optString("code").ifBlank { optJSONObject("metadata")?.optString("code").orEmpty() }
+    return code == "web_search" || (code == "dynamic_tool" &&
+        optString("detail").trim().substringAfterLast('.') in
+        setOf("galaxyssi_fetch_public_pages", "galaxyssi_parallel_web_search"))
 }
 
 internal fun MainActivity.markDesktopDomainAvailable(contactId: String) {
