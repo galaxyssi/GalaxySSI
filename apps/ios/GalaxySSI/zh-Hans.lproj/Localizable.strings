@@ -317,6 +317,14 @@
 "galaxyssi.health.assistant.step_review" = "查看来源记录";
 "galaxyssi.health.assistant.step_collect" = "查看缺少记录的时段";
 "galaxyssi.health.assistant.step_compare" = "比较另一时段";
+"galaxyssi.health.assistant.compare_previous" = "在报告中与上一时段比较";
+"galaxyssi.health.assistant.open_weekly_report" = "按此范围打开周报";
+"galaxyssi.health.weekly.linked_stale" = "关联分析的数据已变更，请刷新此范围后再查看或导出。";
+"galaxyssi.health.weekly.comparison" = "上一时段";
+"galaxyssi.health.weekly.contributors" = "参与计算的记录";
+"galaxyssi.health.weekly.more" = "显示更多";
+"galaxyssi.health.weekly.revision" = "修订版本 %lld";
+"galaxyssi.health.weekly.close" = "关闭";
 "galaxyssi.health.trend.unavailable" = "趋势不可用";
 "galaxyssi.health.trend.refresh" = "刷新";
 "galaxyssi.health.trend.permission" = "请在健康隐私中开启本机测量摘要后查看趋势。";

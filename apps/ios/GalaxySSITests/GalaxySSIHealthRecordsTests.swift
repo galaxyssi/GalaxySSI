@@ -142,6 +142,29 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testWeeklyReportLinkPinsHistoricalCalendarAndComparisonRevisions() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 8)))
+    let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 2, to: start))
+    let prior = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: start))
+    let recent = GalaxySSIHealthReading(revision: 1, metric: .weight, measuredAt: start, value: 65)
+    var baseline = GalaxySSIHealthReading(revision: 1, metric: .weight, measuredAt: prior, value: 66)
+    let other = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: start, value: 6)
+    let link = GalaxySSIWeeklyHealthReport.Link(interval: DateInterval(start: start, end: end),
+      metrics: [.weight], calendar: calendar, compare: true, current: [recent, baseline, other])
+    XCTAssertEqual(link.calendar.timeZone.identifier, "America/New_York")
+    XCTAssertEqual(link.comparison?.end, start)
+    XCTAssertTrue(link.isCurrent([baseline, recent]))
+    let report = GalaxySSIWeeklyHealthReport(current: [recent, baseline, other], interval: link.interval,
+      metrics: link.metrics, through: end, comparison: link.comparison)
+    XCTAssertEqual(report.readings.map(\.id), [recent.id])
+    XCTAssertEqual(report.comparisonReadings.map(\.id), [baseline.id])
+    baseline.revision += 1
+    XCTAssertFalse(link.isCurrent([recent, baseline]))
+  }
+
+  @MainActor
   func testWeeklyExportRequiresPermissionAndUnchangedSelectedRevisions() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

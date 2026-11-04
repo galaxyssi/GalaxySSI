@@ -24,6 +24,9 @@ struct GalaxySSIHealthAssistantView: View {
   @State private var requestID: UUID?
   @State private var error = false
   @State private var stale = false
+  @State private var compare = false
+  @State private var reportScope: GalaxySSIWeeklyHealthReport.Link?
+  @State private var presentedReport: GalaxySSIWeeklyHealthReport.Link?
 
   private struct Consent {
     let contactID: String
@@ -60,6 +63,7 @@ struct GalaxySSIHealthAssistantView: View {
     .onChange(of: from) { _ in clear() }
     .onChange(of: to) { _ in clear() }
     .onChange(of: metrics) { _ in clear() }
+    .onChange(of: compare) { _ in clear() }
     .onChange(of: modelContactID) { _ in cancelRequest(); recommendation = nil }
     .onDisappear { clear() }
     .onChange(of: scene) {
@@ -76,6 +80,15 @@ struct GalaxySSIHealthAssistantView: View {
         Text(consent.endpoint.absoluteString + "\n" + consent.model.modelId + "\n" +
           t("disclosure", "Only metric aggregates and coverage are sent. No records, dates, notes, profile or chat history."))
       }
+    }
+    .sheet(item: $presentedReport) { report in
+      NavigationView {
+        GalaxySSIWeeklyHealthReportView(records: records, link: report)
+          .toolbar { ToolbarItem(placement: .cancellationAction) {
+            Button(t("close", "Close")) { presentedReport = nil }
+          } }
+      }
+      .navigationViewStyle(.stack)
     }
     .sheet(item: $evidence) { item in
       NavigationView {
@@ -108,6 +121,7 @@ struct GalaxySSIHealthAssistantView: View {
     Section(t("scope", "Analysis scope")) {
       DatePicker(t("from", "From"), selection: $from, in: ...Date(), displayedComponents: .date)
       DatePicker(t("to", "Through"), selection: $to, in: ...Date(), displayedComponents: .date)
+      Toggle(t("compare_previous", "Compare with the previous period in the report"), isOn: $compare)
       DisclosureGroup(t("metrics", "Measurements")) {
         ForEach(GalaxySSIHealthMetric.allCases) { metric in
           Toggle(metric.title(language: language), isOn: Binding(get: { metrics.contains(metric) }, set: {
@@ -122,6 +136,9 @@ struct GalaxySSIHealthAssistantView: View {
 
   private func analysisSection(_ analysis: GalaxySSIHealthAnalysis) -> some View {
     Section(t("local", "Local results")) {
+      if let reportScope {
+        Button(t("open_weekly_report", "Open scoped weekly report")) { presentedReport = reportScope }
+      }
       ForEach(analysis.evidence) { item in
         let aggregate = item.aggregate
         VStack(alignment: .leading, spacing: 4) {
@@ -178,6 +195,8 @@ struct GalaxySSIHealthAssistantView: View {
       else { error = true; return }
       let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: first, end: end), metrics: metrics)
       analysis = GalaxySSIHealthAnalysis(scope: scope, current: archive.current, calendar: local)
+      reportScope = .init(interval: scope.interval, metrics: scope.metrics, calendar: local,
+                          compare: compare, current: archive.current)
     } catch { error = true }
   }
 
@@ -260,6 +279,7 @@ struct GalaxySSIHealthAssistantView: View {
   private func clear() {
     cancelRequest()
     analysis = nil; evidence = nil; recommendation = nil; stale = false; error = false
+    reportScope = nil
   }
 
   private func sourceValue(_ component: String, reading: GalaxySSIHealthReading) -> Decimal? {
