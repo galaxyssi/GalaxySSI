@@ -91,6 +91,105 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
+  func prepareMailbox() throws {
+    try execute("""
+      CREATE TABLE IF NOT EXISTS team_mailbox (
+        namespace TEXT NOT NULL, message_key TEXT NOT NULL, run_key TEXT NOT NULL, recipient_key TEXT NOT NULL,
+        sequence INTEGER NOT NULL, pending INTEGER NOT NULL, payload BLOB NOT NULL,
+        PRIMARY KEY(namespace, message_key), UNIQUE(namespace, run_key, sequence)
+      )
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS team_mailbox_pending ON team_mailbox(namespace,run_key,sequence) WHERE pending=1")
+    try execute("CREATE INDEX IF NOT EXISTS team_mailbox_pending_recipient ON team_mailbox(namespace,run_key,recipient_key,sequence) WHERE pending=1")
+  }
+
+  func mailboxMessage(id: String) throws -> AgentTeamMessageEnvelope? {
+    let key = Self.digest(id)
+    let statement = try prepare("SELECT message_key,payload FROM team_mailbox WHERE namespace=? AND message_key=?")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(key, at: 2, to: statement)
+    switch sqlite3_step(statement) {
+    case SQLITE_ROW: return try decodeMailboxMessage(statement)
+    case SQLITE_DONE: return nil
+    default: throw Failure.unavailable
+    }
+  }
+
+  func nextMailboxSequence(runId: String) throws -> Int64 {
+    let statement = try prepare("SELECT sequence FROM team_mailbox WHERE namespace=? AND run_key=? ORDER BY sequence DESC LIMIT 1")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(Self.digest(runId), at: 2, to: statement)
+    switch sqlite3_step(statement) {
+    case SQLITE_ROW:
+      let last = sqlite3_column_int64(statement, 0)
+      guard last < Int64.max else { throw Failure.corrupt }
+      return last + 1
+    case SQLITE_DONE: return 1
+    default: throw Failure.unavailable
+    }
+  }
+
+  func putMailboxMessage(_ message: AgentTeamMessageEnvelope, updating: Bool = false) throws {
+    let key = Self.digest(message.messageId)
+    let blob = try cipher.encrypt(JSONEncoder().encode(message), purpose: "team-mailbox:\(namespace):\(key)")
+    let statement = try prepare("""
+      INSERT INTO team_mailbox(namespace,message_key,run_key,recipient_key,sequence,pending,payload)
+      VALUES(?,?,?,?,?,?,?)
+      """ + (updating ? " ON CONFLICT(namespace,message_key) DO UPDATE SET pending=excluded.pending,payload=excluded.payload" : ""))
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(key, at: 2, to: statement)
+    bind(Self.digest(message.supervisorRunId), at: 3, to: statement)
+    bind(message.isBroadcast ? "" : Self.digest(message.toInstanceId), at: 4, to: statement)
+    sqlite3_bind_int64(statement, 5, message.sequence)
+    sqlite3_bind_int(statement, 6, message.state == .pending ? 1 : 0)
+    _ = blob.withUnsafeBytes { sqlite3_bind_blob(statement, 7, $0.baseAddress, Int32($0.count), Self.transient) }
+    try finish(statement)
+  }
+
+  func mailboxMessages(runId: String, recipient: String, after: Int64, pendingOnly: Bool) throws -> [AgentTeamMessageEnvelope] {
+    let statement = try prepare("SELECT message_key,payload FROM team_mailbox WHERE namespace=? AND run_key=? AND sequence>?" +
+      (pendingOnly ? " AND pending=1" : "") + (recipient.isEmpty ? "" : " AND recipient_key IN ('',?)") + " ORDER BY sequence")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(Self.digest(runId), at: 2, to: statement)
+    sqlite3_bind_int64(statement, 3, after)
+    if !recipient.isEmpty { bind(Self.digest(recipient), at: 4, to: statement) }
+    var rows: [AgentTeamMessageEnvelope] = []
+    while true {
+      switch sqlite3_step(statement) {
+      case SQLITE_ROW:
+        let row = try decodeMailboxMessage(statement)
+        guard row.supervisorRunId == runId, row.sequence > after,
+              recipient.isEmpty || row.isBroadcast || row.toInstanceId == recipient,
+              !pendingOnly || row.state == .pending else { throw Failure.corrupt }
+        rows.append(row)
+      case SQLITE_DONE: return rows
+      default: throw Failure.unavailable
+      }
+    }
+  }
+
+  func clearMailbox(runId: String?) throws {
+    let statement = try prepare("DELETE FROM team_mailbox WHERE namespace=?" + (runId == nil ? "" : " AND run_key=?"))
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    if let runId { bind(Self.digest(runId), at: 2, to: statement) }
+    try finish(statement)
+  }
+
+  private func decodeMailboxMessage(_ statement: OpaquePointer) throws -> AgentTeamMessageEnvelope {
+    guard let rawKey = sqlite3_column_text(statement, 0), let blob = sqlite3_column_blob(statement, 1) else { throw Failure.corrupt }
+    let key = String(cString: rawKey)
+    let bytes = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 1)))
+    let row = try JSONDecoder().decode(AgentTeamMessageEnvelope.self,
+      from: cipher.decrypt(bytes, purpose: "team-mailbox:\(namespace):\(key)"))
+    guard Self.digest(row.messageId) == key else { throw Failure.corrupt }
+    return row
+  }
+
   func markInitialized() throws {
     let statement = try prepare("INSERT OR IGNORE INTO team_history_migrations(namespace) VALUES(?)")
     defer { sqlite3_finalize(statement) }
