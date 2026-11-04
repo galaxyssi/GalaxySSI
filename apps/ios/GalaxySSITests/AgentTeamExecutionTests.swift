@@ -737,6 +737,16 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(accepted.phase, .completed)
     XCTAssertEqual(accepted.result, "Original answer")
     XCTAssertNil(accepted.teamRecoveryRunId)
+    let receiverStore = makeStore()
+    receiverStore.upsertAgentTask(parent)
+    var cancelledReceiver = parent
+    cancelledReceiver.phase = .cancelled
+    receiverStore.upsertAgentTask(cancelledReceiver)
+    XCTAssertFalse(receiverStore.replaceAgentTaskForRecovery(expected: parent, updated: accepted))
+    XCTAssertEqual(receiverStore.agentTask(id: parent.taskId)?.phase, .cancelled)
+    receiverStore.upsertAgentTask(parent)
+    XCTAssertTrue(receiverStore.replaceAgentTaskForRecovery(expected: parent, updated: accepted))
+    XCTAssertFalse(receiverStore.replaceAgentTaskForRecovery(expected: parent, updated: accepted))
     XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(accepted, saved: saved, failureText: "Failed", now: 20))
     var foreign = saved
     foreign.conversationId = "other"

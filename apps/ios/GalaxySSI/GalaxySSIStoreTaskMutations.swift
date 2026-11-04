@@ -1,6 +1,13 @@
 import Foundation
 
 extension GalaxySSIStore {
+  func replaceAgentTaskForRecovery(expected: AgentTaskRecord, updated: AgentTaskRecord) -> Bool {
+    guard updated.taskId == expected.taskId, updated.sessionId == expected.sessionId,
+          agentTask(id: expected.taskId) == expected else { return false }
+    upsertAgentTask(updated)
+    return true
+  }
+
   @discardableResult
   func upsertAgentTask(_ record: AgentTaskRecord) -> AgentTaskRecord {
     let clean = record.taskId.trimmingCharacters(in: .whitespacesAndNewlines)

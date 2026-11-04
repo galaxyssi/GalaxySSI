@@ -2352,7 +2352,7 @@ final class MessageCoordinator: ObservableObject {
       publishCommittedCollaborationResearch(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
         turn: binding.identity.turnId, contact: binding.contactId)
       UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
-      reconcileSavedTeamParents()
+      if let runId = binding.teamSource?.supervisorRunId { reconcileSavedTeamParents(runId: runId) }
       if desktopReplyRecovery.retire(binding) { desktopReplyRecoverySweepRequested = true }
     } catch { lastError = localizedReply("galaxyssi.team.reply_commit_failed", fallback: "The Agent team reply could not be saved. It will not be shown as a normal message.") }
   }
@@ -2372,7 +2372,7 @@ final class MessageCoordinator: ObservableObject {
           contact: binding.contactId, content: detail, richOutputJson: "", terminal: true, success: false, now: now,
           observation: AgentTeamReplyObservation(generation: context.owner.observedGeneration, sequence: context.owner.observedSequence))) == .observerCommitted else { return false }
         UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
-        reconcileSavedTeamParents()
+        reconcileSavedTeamParents(runId: context.team.supervisorRunId)
       }
       _ = desktopReplyRecovery.retire(binding)
       return false
@@ -6896,14 +6896,18 @@ final class MessageCoordinator: ObservableObject {
     return text
   }
 
-  private func reconcileSavedTeamParents() {
-    for saved in AgentTeamExecutionHistoryStore.shared.deliverableSnapshots() {
-      guard let session = store.agentSession(id: saved.conversationId), !session.privateMode, !session.trackingPaused,
+  private func reconcileSavedTeamParents(runId: String? = nil) {
+    let history = AgentTeamExecutionHistoryStore.shared
+    let snapshots = runId.map { id in history.snapshot(supervisorRunId: id).map { [$0] } ?? [] }
+      ?? history.deliverableSnapshots()
+    for saved in snapshots where saved.state.deliverable {
+      guard let session = store.agentSession(id: saved.conversationId), session.id == saved.conversationId,
+            session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused,
             let parent = store.agentTask(id: saved.taskId),
             let updated = AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved,
               failureText: localizedReply("galaxyssi.team.recovery.failed", fallback: "The original Agent team did not complete successfully."),
-              now: AgentControlPlaneClock.nowMillis()) else { continue }
-      store.upsertAgentTask(updated)
+              now: AgentControlPlaneClock.nowMillis()),
+            store.replaceAgentTaskForRecovery(expected: parent, updated: updated) else { continue }
       if AgentSavedTeamReplyPolicy.canContinueAutomatically(updated) {
         Task { @MainActor [weak self] in
           guard let self, self.store.agentTask(id: updated.taskId) == updated else { return }
@@ -6924,7 +6928,7 @@ final class MessageCoordinator: ObservableObject {
             task: binding.sourceMessageId, contact: member.agentId,
             content: error.ifBlank("Agent team member failed"), success: false,
             now: AgentControlPlaneClock.nowMillis()) != nil else { return }
-    reconcileSavedTeamParents()
+    reconcileSavedTeamParents(runId: saved.supervisorRunId)
   }
 
   private func resetVolatileTeamReplyOwnersIfNeeded() {
@@ -6988,7 +6992,11 @@ final class MessageCoordinator: ObservableObject {
       return true
     case .notOwned:
       guard volatile?.deliveryMode == .observe else { return false }
-    case .observerCommitted: reconcileSavedTeamParents()
+    case .observerCommitted:
+      if let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(
+        source: source, conversation: conversation, turn: turn, contact: contact.id) {
+        reconcileSavedTeamParents(runId: context.team.supervisorRunId)
+      }
     case .observerProgress, .observerDuplicate, .retired: break
     }
     if terminal, tracked, disposition == .observerCommitted || disposition == .observerDuplicate {
@@ -7018,7 +7026,7 @@ final class MessageCoordinator: ObservableObject {
             conversation: outgoing.conversationId, turn: turn, task: binding.sourceMessageId,
             contact: member.agentId, content: reply.content, richOutputJson: reply.richOutputJson, success: true,
             now: AgentControlPlaneClock.nowMillis()) != nil else { return }
-    reconcileSavedTeamParents()
+    reconcileSavedTeamParents(runId: saved.supervisorRunId)
   }
 
   private func persistTeamObservation(
@@ -7036,7 +7044,7 @@ final class MessageCoordinator: ObservableObject {
          now: AgentControlPlaneClock.nowMillis()) != nil {
       publishCommittedCollaborationResearch(source: binding.sourceMessageId, conversation: outgoing.conversationId,
         turn: outgoing.turnId.ifBlank(outgoing.id.uuidString), contact: member.agentId)
-      reconcileSavedTeamParents()
+      reconcileSavedTeamParents(runId: saved.supervisorRunId)
     }
     _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
       teamId: spec.definition.teamId,
@@ -11465,7 +11473,7 @@ final class MessageCoordinator: ObservableObject {
           source: appPayload.string("source_message_id"), conversation: responseConversationId,
           turn: responseTurnId, task: responseTaskId, contact: contactId, content: content, richOutputJson: richOutputJson,
           success: !AgentRemoteOutcomePolicy.isFailure(remoteTaskStatus), now: AgentControlPlaneClock.nowMillis()) != nil {
-          reconcileSavedTeamParents()
+          reconcileSavedTeamParents(runId: saved.supervisorRunId)
         }
       }
     }
