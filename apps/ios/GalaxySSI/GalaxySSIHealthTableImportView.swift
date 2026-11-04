@@ -15,20 +15,32 @@ struct GalaxySSIHealthTableImportView: View {
   @State private var limit = 30
   @State private var undo: GalaxySSIHealthTableImport.Batch?
   @State private var message: String?
+  @State private var workbook: WorkbookInput?
+  @State private var sheetID = ""
+  @State private var header = 0
+  @State private var headerChoices: [Int] = []
 
   private struct Input {
     let name: String
     let data: Data
     let json: Bool
     let table: GalaxySSIHealthTableImport.Table
+    var worksheet: GalaxySSIHealthXLSX.Selection?
+  }
+
+  private struct WorkbookInput {
+    let name: String
+    let data: Data
+    let contents: GalaxySSIHealthXLSX
   }
 
   var body: some View {
     List {
       if scene == .active {
         Button { choosing = true } label: {
-          Label(t("choose", "Choose CSV or JSON"), systemImage: "folder")
+          Label(t("choose_formats", "Choose CSV, JSON or XLSX"), systemImage: "folder")
         }
+        if let workbook { workbookSection(workbook) }
         if let input {
           mappingSection(input)
           if let rows { review(rows) }
@@ -63,16 +75,33 @@ struct GalaxySSIHealthTableImportView: View {
     }
     .onDisappear { clear(); batches = []; undo = nil; message = nil }
     .onChange(of: mapping) { _ in rows = nil; owned = false }
-    .fileImporter(isPresented: $choosing, allowedContentTypes: [.commaSeparatedText, .json]) { result in
+    .fileImporter(isPresented: $choosing, allowedContentTypes: [.commaSeparatedText, .json,
+      UTType(filenameExtension: "xlsx") ?? .spreadsheet]) { result in
       guard scene != .background else { return }
       do { try open(result.get()) }
-      catch { clear(); message = t("read_failed", "Could not open this CSV or JSON table.") }
+      catch { clear(); message = t("workbook_failed", "Could not open this measurement table.") }
     }
     .alert(item: $undo) { batch in
       Alert(title: Text(t("undo", "Undo this batch")),
             message: Text(t("undo_scope", "Only unchanged measurements added by this batch will be removed.")),
             primaryButton: .destructive(Text(t("remove", "Remove")), action: { undoBatch(batch.id) }),
             secondaryButton: .cancel())
+    }
+  }
+
+  private func workbookSection(_ workbook: WorkbookInput) -> some View {
+    Section(t("worksheet_options", "Worksheet options")) {
+      Picker(t("worksheet", "Worksheet"), selection: Binding(get: { sheetID }, set: selectSheet)) {
+        ForEach(workbook.contents.sheets) { Text($0.name).tag($0.id) }
+      }
+      if !headerChoices.isEmpty {
+        Picker(t("header", "Header row"), selection: Binding(get: { header }, set: selectHeader)) {
+          ForEach(headerChoices, id: \.self) { row in
+            Text(String(format: t("sheet_row", "Worksheet row %lld"), Int64(row))).tag(row)
+          }
+        }
+      }
+      Toggle(t("formula_cache", "Allow stored formula results; do not calculate formulas"), isOn: $mapping.useFormulaCache)
     }
   }
 
@@ -92,6 +121,9 @@ struct GalaxySSIHealthTableImportView: View {
         Text("ISO 8601").tag(GalaxySSIHealthTableImport.DateStyle.iso)
         Text("yyyy-MM-dd HH:mm:ss").tag(GalaxySSIHealthTableImport.DateStyle.localTime)
         Text("yyyy-MM-dd").tag(GalaxySSIHealthTableImport.DateStyle.day)
+        if input.worksheet != nil {
+          Text(t("excel_date", "Excel date serial")).tag(GalaxySSIHealthTableImport.DateStyle.excel)
+        }
       }
       if mapping.dateStyle != .iso {
         Picker(t("zone", "Time zone"), selection: $mapping.localZone) {
@@ -158,9 +190,46 @@ struct GalaxySSIHealthTableImportView: View {
     let file = try FileHandle(forReadingFrom: url)
     defer { try? file.close() }
     let data = try file.read(upToCount: GalaxySSIHealthTableImport.maximumBytes + 1) ?? Data()
+    if url.pathExtension.lowercased() == "xlsx" {
+      let contents = try GalaxySSIHealthXLSX(data)
+      workbook = WorkbookInput(name: url.lastPathComponent, data: data, contents: contents)
+      if let first = contents.sheets.first { selectSheet(first.id) }
+      return
+    }
     let json = url.pathExtension.lowercased() == "json"
     input = Input(name: url.lastPathComponent, data: data, json: json,
                   table: try GalaxySSIHealthTableImport.parse(data, json: json))
+  }
+
+  private func selectSheet(_ id: String) {
+    guard let workbook else { return }
+    sheetID = id
+    headerChoices = []
+    input = nil
+    rows = nil
+    owned = false
+    do {
+      headerChoices = Array(try workbook.contents.rows(id).dropLast().prefix(30).map(\.number))
+      guard let first = headerChoices.first else { throw GalaxySSIHealthTableImport.Failure.mapping }
+      selectHeader(first)
+    } catch { message = t("worksheet_failed", "This worksheet could not be read.") }
+  }
+
+  private func selectHeader(_ row: Int) {
+    guard let workbook else { return }
+    header = row
+    let selection = GalaxySSIHealthXLSX.Selection(sheet: sheetID, header: row)
+    rows = nil
+    owned = false
+    mapping = .init()
+    do {
+      input = Input(name: workbook.name, data: workbook.data, json: false,
+                    table: try workbook.contents.table(selection), worksheet: selection)
+      message = nil
+    } catch {
+      input = nil
+      message = t("worksheet_failed", "This worksheet could not be read.")
+    }
   }
 
   private func prepare() {
@@ -177,7 +246,7 @@ struct GalaxySSIHealthTableImportView: View {
     guard scene == .active, owned, let input, let rows else { return }
     do {
       let count = try records.importTable(input.data, name: input.name, json: input.json,
-                                          mapping: mapping, expected: rows.map(\.status))
+                                          mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet)
       clear()
       reload()
       message = String(format: t("saved", "%lld measurements saved"), Int64(count))
@@ -204,7 +273,10 @@ struct GalaxySSIHealthTableImportView: View {
     catch { batches = []; message = t("read_failed", "Could not open this CSV or JSON table.") }
   }
 
-  private func clear() { input = nil; rows = nil; owned = false; mapping = .init() }
+  private func clear() {
+    input = nil; rows = nil; owned = false; mapping = .init()
+    workbook = nil; sheetID = ""; header = 0; headerChoices = []
+  }
   private func statusTitle(_ status: GalaxySSIHealthTableImport.Status) -> String {
     switch status {
     case .ready: return t("ready", "Ready")

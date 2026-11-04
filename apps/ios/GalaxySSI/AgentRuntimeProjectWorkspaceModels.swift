@@ -778,7 +778,7 @@ enum AgentRuntimeProjectArchiveBuilder {
     data.append(UInt8((value >> 24) & 0xff))
   }
 
-  private static func crc32(_ data: Data) -> UInt32 {
+  static func crc32(_ data: Data) -> UInt32 {
     var crc: UInt32 = 0xffffffff
     for byte in data {
       let index = Int((crc ^ UInt32(byte)) & 0xff)
