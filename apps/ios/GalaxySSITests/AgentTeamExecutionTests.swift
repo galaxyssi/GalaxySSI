@@ -191,6 +191,10 @@ extension GalaxySSIStoreTests {
     var failedIds = Set<String>()
     for round in 20...28 {
       failed.round = round
+      if round == 28 {
+        failed.succeeded = true
+        failed.output = "{\"success\":false}"
+      }
       failedIds.insert(try history.recordCloudEvidence(failed).string("evidence_id"))
     }
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
@@ -199,7 +203,7 @@ extension GalaxySSIStoreTests {
     let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
     let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
     XCTAssertEqual(entries.count, 8)
-    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains(failed.output))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains("sensitive failure detail"))
     let lastProblems = try reopened.recallCollaborationOriginal(
       ["mode": .string("problems"), "cursor": .string(firstProblems.string("next_cursor"))], scope: scope)
     let tail = try XCTUnwrap(lastProblems["problems"]?.arrayValue)
@@ -338,11 +342,36 @@ extension GalaxySSIStoreTests {
     try reopened.settleCollaborationModelCall(admission, settlement: completed)
     try reopened.settleCollaborationModelCall(admission, settlement: completed)
     XCTAssertEqual(try history.collaborationModelCall(admission).settlement, completed)
+    let interrupted = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 1,
+      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3)
+    try reopened.admitCollaborationModelCall(interrupted)
+    let firstPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, limit: 1)
+    let cursor = try XCTUnwrap(firstPage.next)
+    let secondPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, after: cursor, limit: 1)
+    let entries = firstPage.entries + secondPage.entries
+    XCTAssertEqual(Set(entries.map { $0.admission.id }), [admission.id, interrupted.id])
+    XCTAssertEqual(entries.first(where: { $0.admission.id == admission.id })?.settlement, completed)
+    XCTAssertNil(entries.first(where: { $0.admission.id == interrupted.id })?.settlement)
+    XCTAssertNil(secondPage.next)
+    XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: "foreign").entries.isEmpty)
     XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: .init(
       state: .failed, finishedAtMillis: 3, reportedUsage: nil, usageComplete: false, costMicros: nil)))
     reopened.removeResearchObjects(conversationId: scope.conversationId)
     XCTAssertFalse(try history.collaborationModelCall(admission).admitted)
+    XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: scope.conversationId).entries.isEmpty)
     XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: completed))
+  }
+
+  func testCloudObservationDistinguishesExplicitFailureFromEmptyErrors() {
+    for output in ["{}", "{\"error\":false}", "{\"error\":null}", "{\"error\":{}}",
+                   "{\"error\":[]}", "{\"error\":0}", "{\"error\":\"  \"}",
+                   "{\"success\":\"false\"}", "unstructured error text"] {
+      XCTAssertFalse(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
+    for output in ["{\"success\":false}", "{\"ok\":false}", "{\"isError\":true}",
+                   "{\"error\":{\"code\":\"offline\"}}", "{\"status\":\"timed_out\"}"] {
+      XCTAssertTrue(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
   }
 
   func testInnovationOpportunityCannotReplaceGoalCriterionOrDriverEvidence() throws {

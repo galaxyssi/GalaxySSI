@@ -294,6 +294,26 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
+  func modelCallAdmissionKeys(conversationId: String, after: String, limit: Int) throws -> [String] {
+    let statement = try prepare("""
+      SELECT record_key FROM collaboration_research_records
+      WHERE namespace=? AND group_key=? AND record_key>? AND record_key<'model-call;' AND revision=0
+      ORDER BY record_key LIMIT ?
+      """)
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(Self.digest(conversationId), at: 2, to: statement)
+    bind("model-call:" + after, at: 3, to: statement)
+    sqlite3_bind_int64(statement, 4, Int64(limit))
+    var keys: [String] = []
+    while true {
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { return keys }
+      guard status == SQLITE_ROW, let key = sqlite3_column_text(statement, 0) else { throw Failure.corrupt }
+      keys.append(String(cString: key))
+    }
+  }
+
   func researchRecord<T: Decodable>(_ type: T.Type, conversationId: String, key: String,
                                     revision: Int64? = nil) throws -> T? {
     let group = Self.digest(conversationId)
