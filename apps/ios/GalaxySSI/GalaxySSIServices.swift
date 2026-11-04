@@ -6289,7 +6289,8 @@ final class MessageCoordinator: ObservableObject {
         deliveryMode: $0.deliveryMode, status: .pending, instanceId: $0.memberId,
         sourceMessageId: AgentControlPlaneActionExecutor.stableRunId(
           conversationId: outgoing.conversationId, turnId: homeTurnId,
-          actionId: action.id, agentId: $0.memberId)) },
+          actionId: action.id, agentId: $0.memberId),
+        displayName: $0.context["_galaxyssi_member_name"]) },
       createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
       primaryInstanceId: spec.definition.primaryMemberId)
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
