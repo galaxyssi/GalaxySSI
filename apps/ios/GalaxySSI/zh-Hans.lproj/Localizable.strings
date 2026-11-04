@@ -70,6 +70,13 @@
 "galaxyssi.health.pdf_text.locked" = "此 PDF 受密码保护。";
 "galaxyssi.health.pdf_text.force_ocr" = "用本机 OCR 重新识别";
 "galaxyssi.health.pdf_text.retry" = "重新读取本页";
+"galaxyssi.health.pdf_text.source" = "原始页面";
+"galaxyssi.health.pdf_text.focus" = "打开来源预览";
+"galaxyssi.health.pdf_text.no_location" = "没有可用的来源坐标。";
+"galaxyssi.health.pdf_text.no_preview" = "原始页面预览不可用。";
+"galaxyssi.health.pdf_text.close_source" = "关闭";
+"galaxyssi.health.pdf_text.focused_source" = "局部";
+"galaxyssi.health.pdf_text.full_source" = "整页";
 "galaxyssi.health.originals.date_filter" = "导入日期";
 "galaxyssi.health.originals.any_date" = "不限日期";
 "galaxyssi.health.originals.last_week" = "最近 7 天";

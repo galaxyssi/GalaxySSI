@@ -235,7 +235,21 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let text = try XCTUnwrap(result.regions.first)
     XCTAssertTrue(text.text.contains("Synthetic report"))
     XCTAssertTrue(result.crop.contains(text.bounds))
+    let highlight = try XCTUnwrap(text.highlight)
+    XCTAssertNotNil(result.preview)
+    XCTAssertTrue(CGRect(x: 0, y: 0, width: 1, height: 1).contains(highlight))
+    XCTAssertLessThan(highlight.minY, 0.25)
     XCTAssertThrowsError(try GalaxySSIHealthPDFText.read(data, page: 2))
+  }
+
+  func testHealthPDFHighlightClipsToViewportAndFlipsVerticalAxis() throws {
+    let viewport = CGRect(x: 20, y: 40, width: 100, height: 200)
+    let region = CGRect(x: 10, y: 190, width: 35, height: 40)
+    let highlight = try XCTUnwrap(GalaxySSIHealthPDFText.normalizedTopOrigin(region, in: viewport))
+    XCTAssertEqual(highlight.minX, 0, accuracy: 0.0001)
+    XCTAssertEqual(highlight.minY, 0.05, accuracy: 0.0001)
+    XCTAssertEqual(highlight.width, 0.25, accuracy: 0.0001)
+    XCTAssertNil(GalaxySSIHealthPDFText.normalizedTopOrigin(CGRect(x: 400, y: 0, width: 10, height: 10), in: viewport))
   }
 
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
