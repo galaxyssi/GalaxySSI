@@ -302,6 +302,61 @@ final class AgentTeamExecutionHistoryStore {
     _ = try? access { try $0.removeCloudEvidence(conversationId: conversationId) }
   }
 
+  func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
+                                   scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    let mode = input.string("mode")
+    let hash = input.string("sha256")
+    let idKey = mode == "workspace" ? "object_id" : "evidence_id"
+    let id = input.string(idKey)
+    var allowed: Set<String> = ["mode", "sha256", "offset", idKey]
+    if mode == "workspace" { allowed.insert("revision") }
+    guard ["workspace", "evidence"].contains(mode), Set(input.keys).isSubset(of: allowed),
+          [id, hash].allSatisfy({ $0.utf8.count == 64 &&
+            $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } }),
+          case .int(let offset) = input["offset"] ?? .int(0), offset >= 0 else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let bytes = try access { database -> Data in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      if mode == "workspace" {
+        guard case .int(let revision)? = input["revision"], revision > 0,
+              let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                conversationId: scope.conversationId, key: "object:" + id, revision: revision),
+              record.reference.objectId == id, record.reference.revision == revision,
+              record.reference.sha256 == hash,
+              record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId)
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return try encoder.encode(record)
+      }
+      guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
+            record.scope.conversationId == scope.conversationId,
+            record.scope.turnId != scope.turnId || record.scope == scope else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let data = try encoder.encode(record)
+      guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == hash else {
+        throw AgentTeamHistoryDatabase.Failure.corrupt
+      }
+      return data
+    }
+    let characters = String(decoding: bytes, as: UTF8.self)
+    guard offset <= Int64(characters.count) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let page = String(characters.dropFirst(Int(offset)).prefix(2_000))
+    let next = offset + Int64(page.count)
+    return [
+      idKey: .string(id), "sha256": .string(hash), "content": .string(page),
+      "next_offset": next < Int64(characters.count) ? .int(next) : .null,
+      "trust": .string("untrusted_group_evidence")
+    ]
+  }
+
   func recoverable(conversationId: String) -> [AgentTeamExecutionSnapshot] {
     guard !conversationId.isBlank else { return [] }
     return (try? access { try $0.snapshots(conversation: conversationId, recoverableOnly: true) }) ?? []
@@ -341,6 +396,12 @@ final class AgentTeamExecutionHistoryStore {
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
               draft.baseRevision >= 0, draft.baseRevision < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
         guard draft.observations?.isEmpty != false else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        if draft.kind == .acceptanceReview {
+          let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
+            objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
+          guard AgentCollaborationDocumentaryAcceptance.validReviewPublication(body: draft.body, parents: parents)
+          else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        }
         let existingId = draft.objectId.flatMap { $0.isBlank ? nil : $0 }
         let objectId = existingId ?? AgentMcpJSONCodec.sha256([
           "group": .string(conversationId), "author": .string(memberId), "id": .string(draft.id)
@@ -551,6 +612,8 @@ final class AgentTeamExecutionHistoryStore {
               !snapshot.state.deliverable else { return false }
         let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
         guard (prior.first?.revision ?? 0) == expectedRevision,
+              (prior.first?.liveGraph?.work ?? []).elementsEqual(
+                (checkpoint.liveGraph?.work ?? []).prefix(prior.first?.liveGraph?.work.count ?? 0)),
               prior.allSatisfy({
                 $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
                   $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
@@ -559,6 +622,20 @@ final class AgentTeamExecutionHistoryStore {
         return true
       }
     } catch { return false }
+  }
+
+  func appendCollaborationGraph(_ raw: String, runId: String, conversationId: String, turnId: String,
+                                expectedRevision: Int64, authorizedMembers: Set<String>,
+                                historicalAuthors: [String: String],
+                                settled: [String: AgentCollaborationLiveGraph.Settlement]) -> Bool {
+    guard var checkpoint = goalCheckpoint(runId: runId, conversationId: conversationId, turnId: turnId),
+          checkpoint.revision == expectedRevision, expectedRevision < Int64.max,
+          let graph = (checkpoint.liveGraph ?? .init()).appending(raw, authorizedMembers: authorizedMembers,
+            historicalAuthors: historicalAuthors, settled: settled) else { return false }
+    checkpoint.liveGraph = graph
+    checkpoint.revision += 1
+    checkpoint.completedWorkIds = []
+    return advanceGoalCheckpoint(checkpoint, expectedRevision: expectedRevision)
   }
 
   func remove(supervisorRunId: String) {

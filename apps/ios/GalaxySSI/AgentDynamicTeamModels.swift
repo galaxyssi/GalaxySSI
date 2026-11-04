@@ -9,6 +9,75 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   var phase: Phase
   var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
   var completedWorkIds: Set<String>
+  var liveGraph: AgentCollaborationLiveGraph? = nil
+}
+
+struct AgentCollaborationLiveGraph: Codable, Equatable {
+  enum DependencyPolicy: String, Codable { case success, terminal }
+  enum Settlement: String, Codable { case succeeded, failed, cancelled, skipped }
+
+  struct Work: Codable, Equatable {
+    let id: String
+    let member: String
+    let assignment: String
+    let depends_on: [String]
+    let dependency_policy: DependencyPolicy?
+    let independent_review: Bool?
+  }
+
+  struct Expansion: Decodable {
+    let format: String
+    let work: [Work]
+  }
+
+  private(set) var work: [Work] = []
+
+  func appending(_ raw: String, authorizedMembers: Set<String>,
+                 historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
+    guard raw.utf8.count <= 256_000,
+          let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
+          expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
+    var byId = Dictionary(work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    guard byId.count == work.count else { return nil }
+    for item in expansion.work {
+      guard !item.id.isBlank, item.id.utf8.count <= 160, !item.assignment.isBlank,
+            item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
+            byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
+            Set(item.depends_on).count == item.depends_on.count,
+            !item.depends_on.contains(item.id) else { return nil }
+      byId[item.id] = item
+    }
+    for item in expansion.work {
+      for dependency in item.depends_on {
+        guard byId[dependency] != nil || settled[dependency] != nil else { return nil }
+        if item.independent_review == true {
+          guard let author = byId[dependency]?.member ?? historicalAuthors[dependency],
+                !author.isBlank, author != item.member else { return nil }
+        }
+      }
+    }
+    var resolved = Set(settled.keys)
+    var remaining = work + expansion.work
+    while !remaining.isEmpty {
+      let ready = remaining.filter { Set($0.depends_on).isSubset(of: resolved) }
+      guard !ready.isEmpty else { return nil }
+      let ids = Set(ready.map(\.id))
+      resolved.formUnion(ids)
+      remaining.removeAll { ids.contains($0.id) }
+    }
+    var next = self
+    next.work.append(contentsOf: expansion.work)
+    return next
+  }
+
+  func ready(settled: [String: Settlement], active: Set<String>) -> [Work] {
+    work.filter { item in
+      settled[item.id] == nil && !active.contains(item.id) && item.depends_on.allSatisfy { dependency in
+        guard let state = settled[dependency] else { return false }
+        return item.dependency_policy == .terminal || state == .succeeded
+      }
+    }
+  }
 }
 
 enum AgentCollaborationGoalAssessmentPolicy {
@@ -26,6 +95,17 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var evidence: [String]
     var delivery: AgentCollaborationDocumentaryAcceptance.Reference? = nil
     var review: AgentCollaborationDocumentaryAcceptance.Reference? = nil
+    var required_observations: [RequiredObservation]? = nil
+  }
+
+  struct RequiredObservation: Codable, Hashable {
+    var origin: String
+    var tool: String
+
+    var isValid: Bool {
+      ["ios_cloud_tool", "ios_native_tool", "desktop_codex_tool",
+       "android_cloud_tool", "android_native_tool"].contains(origin) && !tool.isBlank
+    }
   }
 
   struct Work: Codable {
@@ -64,6 +144,7 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var requirement: String
     var verification: Verification
     var evidence: Set<String>
+    var originalObservations: Set<RequiredObservation> = []
   }
 
   enum Outcome: Equatable {
@@ -82,13 +163,15 @@ enum AgentCollaborationGoalAssessmentPolicy {
           assessment.format == "galaxyssi.goal-assessment.v1",
           !assessment.summary.isBlank, !assessment.criteria.isEmpty,
           Set(assessment.criteria.map(\.id)).count == assessment.criteria.count,
-          assessment.criteria.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank }) else {
+          assessment.criteria.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank &&
+            ($0.required_observations ?? []).allSatisfy(\.isValid) }) else {
       return .needsAssessment
     }
     let criteria = Dictionary(uniqueKeysWithValues: assessment.criteria.map { ($0.id, $0) })
     guard contract.allSatisfy({ original in
-      criteria[original.id]?.requirement == original.requirement &&
-        criteria[original.id]?.verification == original.verification
+      guard let current = criteria[original.id] else { return false }
+      return current.requirement == original.requirement && current.verification == original.verification &&
+        Set(original.required_observations ?? []).isSubset(of: Set(current.required_observations ?? []))
     }) else { return .needsAssessment }
     guard assessment.recruit?.isEmpty != false else { return .needsAssessment }
 
@@ -125,7 +208,8 @@ enum AgentCollaborationGoalAssessmentPolicy {
                     !item.evidence.isEmpty, item.evidence.allSatisfy({ !$0.isBlank }),
                     let receipt = verified[item.id], receipt.requirement == item.requirement,
                     receipt.verification == item.verification else { return false }
-              return Set(item.evidence).isSubset(of: receipt.evidence)
+              return Set(item.evidence).isSubset(of: receipt.evidence) &&
+                Set(item.required_observations ?? []).isSubset(of: receipt.originalObservations)
             }) else { return .needsAssessment }
       return .achieved
     }
@@ -133,6 +217,12 @@ enum AgentCollaborationGoalAssessmentPolicy {
 }
 
 enum AgentCollaborationDocumentaryAcceptance {
+  struct OriginalObservation {
+    var origin: String
+    var tool: String
+    var status: String
+    var kind: String
+  }
   struct Reference: Codable, Equatable {
     var objectId: String
     var revision: Int64
@@ -165,10 +255,24 @@ enum AgentCollaborationDocumentaryAcceptance {
     var unresolved: [String]
   }
 
+  static func validReviewPublication(body: AgentMcpJSONObject, parents: [Reference]) -> Bool {
+    guard let raw = body["acceptance_review"]?.objectValue,
+          let review = try? JSONDecoder().decode(Review.self, from: Data(AgentMcpJSONCodec.stringify(raw).utf8)),
+          !review.criterion_id.isBlank, !review.requirement.isBlank, !review.rationale.isBlank,
+          review.target.revision > 0, parents.contains(review.target),
+          ["supported", "refuted", "not_tested"].contains(review.verdict),
+          review.unresolved.allSatisfy({ !$0.isBlank }),
+          review.verdict != "supported" || review.unresolved.isEmpty else { return false }
+    return [review.target.objectId, review.target.sha256].allSatisfy { value in
+      value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+  }
+
   static func evaluate(_ raw: String, preserving contract: [AgentCollaborationGoalAssessmentPolicy.Criterion],
                        conversationId: String, runId: String, turnId: String,
                        readRevision: (String, Int64?) throws -> Revision?,
-                       observationIsSupporting: (String) throws -> Bool)
+                       observationIsSupporting: (String) throws -> Bool,
+                       originalObservation: (String) throws -> OriginalObservation? = { _ in nil })
     -> AgentCollaborationGoalAssessmentPolicy.Outcome {
     typealias Policy = AgentCollaborationGoalAssessmentPolicy
     guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank, raw.utf8.count <= 256_000,
@@ -211,9 +315,19 @@ enum AgentCollaborationDocumentaryAcceptance {
         }
         let observations = delivery.hostObservationIds.union(review.hostObservationIds)
         guard try observations.allSatisfy(observationIsSupporting) else { return .needsAssessment }
+        if let required = criterion.required_observations, !required.isEmpty {
+          let originals = try review.hostObservationIds.compactMap(originalObservation)
+          guard required.allSatisfy({ source in
+            source.isValid && originals.contains {
+              $0.origin == source.origin && $0.tool == source.tool &&
+                $0.status == "returned" && $0.kind == "tool_output_recorded"
+            }
+          }) else { return .needsAssessment }
+        }
         let receipts = observations.union([deliveryRef.objectId, reviewRef.objectId, deliveryRef.sha256, reviewRef.sha256])
         verified[criterion.id] = Policy.VerifiedCriterion(requirement: criterion.requirement,
-          verification: .documentary, evidence: receipts)
+          verification: .documentary, evidence: receipts,
+          originalObservations: Set(criterion.required_observations ?? []))
       }
     } catch { return .needsAssessment }
     return Policy.evaluate(raw, preserving: contract, authorizedMembers: [], completedWork: [], verified: verified)

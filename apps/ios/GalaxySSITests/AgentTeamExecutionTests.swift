@@ -83,6 +83,17 @@ extension GalaxySSIStoreTests {
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     XCTAssertEqual(try reopened.recordCloudEvidence(observation), receipt)
+    let input: AgentMcpJSONObject = [
+      "mode": .string("evidence"), "evidence_id": receipt["evidence_id"] ?? .null,
+      "sha256": receipt["sha256"] ?? .null
+    ]
+    XCTAssertTrue(try reopened.recallCollaborationOriginal(input, scope: scope).string("content").contains("web_search"))
+    var invalidScope = scope
+    invalidScope.memberId = "foreign-member"
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(input, scope: invalidScope))
+    var invalidInput = input
+    invalidInput["sha256"] = .string(String(repeating: "f", count: 64))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(invalidInput, scope: scope))
     observation.output = "different"
     XCTAssertThrowsError(try reopened.recordCloudEvidence(observation))
     observation.scope.conversationId = "other-group"
@@ -196,6 +207,24 @@ extension GalaxySSIStoreTests {
     weakened.goal = "A different goal"
     weakened.updatedAtMillis += 1
     XCTAssertFalse(reopened.upsert(weakened))
+    let expansion = """
+    {"format":"galaxyssi.work-expansion.v1","work":[
+      {"id":"review","member":"reviewer","assignment":"Review the saved result","depends_on":["verify"],"independent_review":true}
+    ]}
+    """
+    XCTAssertFalse(reopened.appendCollaborationGraph(expansion, runId: first.runId,
+      conversationId: first.conversationId, turnId: first.turnId, expectedRevision: 2,
+      authorizedMembers: ["reviewer"], historicalAuthors: ["verify": "reviewer"], settled: ["verify": .succeeded]))
+    XCTAssertTrue(reopened.appendCollaborationGraph(expansion, runId: first.runId,
+      conversationId: first.conversationId, turnId: first.turnId, expectedRevision: 2,
+      authorizedMembers: ["reviewer"], historicalAuthors: ["verify": "author"], settled: ["verify": .succeeded]))
+    XCTAssertFalse(reopened.appendCollaborationGraph(expansion, runId: first.runId,
+      conversationId: first.conversationId, turnId: first.turnId, expectedRevision: 2,
+      authorizedMembers: ["reviewer"], historicalAuthors: ["verify": "author"], settled: ["verify": .succeeded]))
+    let graph = history.goalCheckpoint(runId: first.runId, conversationId: first.conversationId,
+      turnId: first.turnId)?.liveGraph
+    XCTAssertEqual(graph?.ready(settled: ["verify": .succeeded], active: ["unrelated"]).map(\.id), ["review"])
+    XCTAssertEqual(graph?.ready(settled: ["verify": .failed], active: []).count, 0)
     XCTAssertNil(reopened.goalCheckpoint(runId: first.runId, conversationId: "foreign", turnId: first.turnId))
     reopened.remove(supervisorRunId: first.runId)
     XCTAssertTrue(reopened.upsert(team))
