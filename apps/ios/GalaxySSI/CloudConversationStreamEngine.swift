@@ -234,7 +234,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       if collaborationRecallScope != nil {
         prepared.installCollaborationRecall(originalsOnly: collaborationEvidence == nil)
       }
-      if collaborationEvidence != nil { prepared.installCollaborationPublication() }
+      if collaborationRecallScope != nil {
+        prepared.installCollaborationPublication(assessmentOnly: collaborationEvidence == nil)
+      }
       let publishName = CloudModelStreamMutableConversation.collaborationPublishName
       var publishedMilestones = Set<String>()
       var evidenceResults: [(String, String)] = []
@@ -609,9 +611,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               }
             }
           },
-          collaborationPublish: collaborationEvidence.map { scope in
+          collaborationPublish: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
+                guard collaborationEvidence != nil || arguments["mode"] == .string("validate_assessment") else {
+                  return nil
+                }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
                       let roster = session.collaborationRoster,
                       let member = scope.memberId.split(separator: ":").first,
@@ -672,6 +677,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             if arguments["mode"] == .string("publish"),
                let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["rejected_draft_preserved"] == .bool(true),
                progress.requestRepair("collaboration_milestone_publication") { madeProgress = true }
+            if arguments["mode"] == .string("validate_assessment"),
+               progress.requestRepair("collaboration_assessment_preflight") { madeProgress = true }
             continue
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {

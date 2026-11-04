@@ -375,6 +375,24 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(wire.accepts(phase: "receipt", input: ["mode": .string("receipt")]))
     XCTAssertFalse(wire.accepts(phase: "receipt", input: ["mode": .string("publish")]))
     XCTAssertFalse(wire.accepts(phase: "read", input: ["mode": .string("read")]))
+    XCTAssertTrue(wire.accepts(phase: "validate_assessment", input: ["mode": .string("validate_assessment")]))
+  }
+
+  func testAssessmentPreflightIdentifiesFieldAndDoesNotClaimAcceptance() {
+    let raw = """
+    {"format":"galaxyssi.goal-assessment.v1","summary":"Draft","decision":"continue","work":[],"blockers":[],
+      "criteria":[{"id":"one","requirement":"Check source","verification":"documentary","status":"open","evidence":[],
+      "required_observations":[{"origin":"invented","tool":"search"}]}]}
+    """
+    let invalid = AgentCollaborationGoalAssessmentPolicy.preflight(raw, establishedContract: false)
+    XCTAssertEqual(invalid["field_path"], .string("$.criteria[0].required_observations[0].origin"))
+    XCTAssertEqual(invalid["json_valid"], .bool(true))
+    XCTAssertEqual(invalid["acceptance_contract_state"], .string("not_established"))
+    let valid = AgentCollaborationGoalAssessmentPolicy.preflight(
+      raw.replacingOccurrences(of: "invented", with: "ios_cloud_tool"), establishedContract: true)
+    XCTAssertEqual(valid["status"], .string("valid_structure"))
+    XCTAssertEqual(valid["validation_scope"], .string("structure_only_not_admission_or_acceptance"))
+    XCTAssertEqual(valid["acceptance_contract_state"], .string("established"))
   }
 
   func testInterimPublicationReopensWithSameReceiptWithoutCompletingAssignment() throws {

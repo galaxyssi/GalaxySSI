@@ -340,9 +340,10 @@ struct CloudModelStreamMutableConversation {
     appendCollaborationFunction(function, schema: schema)
   }
 
-  mutating func installCollaborationPublication() {
+  mutating func installCollaborationPublication(assessmentOnly: Bool = false) {
+    let modes = assessmentOnly ? ["validate_assessment"] : ["publish", "status", "receipt", "list", "validate_assessment"]
     let properties: [String: Any] = [
-      "mode": ["type": "string", "enum": ["publish", "status", "receipt", "list"]],
+      "mode": ["type": "string", "enum": modes],
       "milestone_id": ["type": "string"], "artifact": ["type": "string"], "artifact_sha256": ["type": "string"],
       "cursor": ["type": "string"]
     ]
@@ -351,7 +352,9 @@ struct CloudModelStreamMutableConversation {
     if request.provider != .gemini { schema["additionalProperties"] = false }
     appendCollaborationFunction([
       "name": Self.collaborationPublishName,
-      "description": "Use status to check availability. Publish interim research with a stable milestone_id and artifact JSON string (format galaxyssi.research-artifact.v1, summary, workspace). Retry identical bytes, or use receipt with milestone_id and artifact_sha256. Use list and follow next_cursor to recover saved IDs. In your final artifact, cite saved IDs in milestones instead of duplicating workspace objects. A receipt does not verify evidence or complete the assignment."
+      "description": assessmentOnly
+        ? "Use validate_assessment with artifact containing the exact goal-assessment JSON. Checks structure only; does not submit or approve the assessment."
+        : "Use status to check availability. Publish interim research with milestone_id and an artifact JSON string. Retry identical bytes, or use receipt with milestone_id and artifact_sha256. Use list with next_cursor to recover saved IDs, then cite them in milestones in your final artifact. Use validate_assessment with artifact to check goal-assessment structure without publishing. Receipts do not verify evidence or complete the assignment."
     ], schema: schema)
   }
 

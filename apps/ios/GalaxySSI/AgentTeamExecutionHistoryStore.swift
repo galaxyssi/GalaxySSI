@@ -1310,6 +1310,22 @@ final class AgentTeamExecutionHistoryStore {
                                      scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     let id = input.string("milestone_id")
+    if mode == "validate_assessment" {
+      guard Set(input.keys) == ["mode", "artifact"], let raw = input["artifact"]?.strictStringValue,
+            raw.utf8.count <= 131_072 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let established = try access { database in
+        guard let team = try database.snapshots(runId: scope.runId).first,
+              team.conversationId == scope.conversationId, team.taskId == scope.turnId, team.state == .running,
+              team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+                $0.deliveryMode != .ignore && !$0.status.isTerminal &&
+                ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) }),
+              try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+                key: "native-evidence-revoked", revision: 0) != true
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first != nil
+      }
+      return AgentCollaborationGoalAssessmentPolicy.preflight(raw, establishedContract: established)
+    }
     if ["status", "receipt", "list"].contains(mode) {
       return try access { database in
         guard let snapshot = try database.snapshots(runId: scope.runId).first,

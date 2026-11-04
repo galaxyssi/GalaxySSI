@@ -2354,7 +2354,7 @@ final class MessageCoordinator: ObservableObject {
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
     if publishing {
-      if context.owner.deliveryMode == .observe {
+      if context.owner.deliveryMode == .observe || phase == "validate_assessment" {
         do {
           result = try history.publishCollaborationMilestone(input, scope: scope)
         } catch AgentTeamHistoryDatabase.Failure.corrupt {
