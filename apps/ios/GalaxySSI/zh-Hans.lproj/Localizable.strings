@@ -32,6 +32,16 @@
 "galaxyssi.health.glucose" = "血糖";
 "galaxyssi.health.weight" = "体重";
 "galaxyssi.health.heart_rate" = "心率";
+"galaxyssi.health.weekly.title" = "健康周报";
+"galaxyssi.health.weekly.permission" = "允许生成本机健康周报";
+"galaxyssi.health.weekly.metrics" = "包含的测量项目";
+"galaxyssi.health.weekly.empty" = "此期间没有已确认的测量。";
+"galaxyssi.health.weekly.include_rows" = "在 PDF 中包含测量数值";
+"galaxyssi.health.weekly.export" = "导出 PDF";
+"galaxyssi.health.weekly.failed" = "周报不可用或数据已更改，请在导出前检查更新后的记录。";
+"galaxyssi.health.weekly.reload" = "重新加载周报";
+"galaxyssi.health.weekly.plain_pdf" = "导出未加密的 PDF？";
+"galaxyssi.health.weekly.coverage" = "%@：%lld 条已确认";
 "galaxyssi.agent.readiness.phone_refresh" = "刷新手机状态";
 "galaxyssi.agent.readiness.phone_updated" = "更新于 %@";
 "galaxyssi.skill_marketplace.title" = "技能市场";
