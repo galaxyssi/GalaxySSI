@@ -296,6 +296,7 @@ final class AgentTeamExecutionHistoryStore {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
       let hash = try SHA256.hash(data: encoder.encode(saved)).map { String(format: "%02x", $0) }.joined()
+      if !saved.succeeded { try database.indexCloudProblem(id: id, scope: scope) }
       return [
         "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
         "trust": .string("execution_observed_not_claim_verified")
@@ -310,6 +311,7 @@ final class AgentTeamExecutionHistoryStore {
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
+    if mode == "problems" { return try recallCloudProblems(input, scope: scope) }
     let hash = input.string("sha256")
     let idKey = mode == "workspace" ? "object_id" : "evidence_id"
     let id = input.string(idKey)
@@ -394,6 +396,39 @@ final class AgentTeamExecutionHistoryStore {
     return result
   }
 
+  private func recallCloudProblems(_ input: AgentMcpJSONObject,
+                                   scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    guard Set(input.keys).isSubset(of: ["mode", "cursor"]),
+          case .string(let cursor) = input["cursor"] ?? .string(""),
+          cursor.isEmpty || (cursor.utf8.count == 64 &&
+            cursor.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }) else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let ids = try database.cloudProblemIds(scope: scope, after: cursor, limit: 9)
+      let page = ids.prefix(8)
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      let entries = try page.map { id -> AgentMcpJSONValue in
+        guard let original = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
+              !original.succeeded, original.scope.conversationId == scope.conversationId,
+              original.scope.turnId != scope.turnId || original.scope == scope else {
+          throw AgentTeamHistoryDatabase.Failure.corrupt
+        }
+        let hash = try SHA256.hash(data: encoder.encode(original)).map { String(format: "%02x", $0) }.joined()
+        return .object(["evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
+          "tool": .string(original.call.name), "status": .string("failed"), "cause": .string("not_diagnosed")])
+      }
+      return ["problems": .array(entries), "next_cursor": ids.count > page.count ? page.last.map(AgentMcpJSONValue.string) ?? .null : .null]
+    }
+  }
+
   private static func cloudReadCoverageKey(scope: AgentCollaborationToolEvidenceScope, id: String, hash: String) -> String {
     "cloud-read-coverage:" + AgentMcpJSONCodec.sha256([
       "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
@@ -476,6 +511,9 @@ final class AgentTeamExecutionHistoryStore {
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
               draft.baseRevision >= 0, draft.baseRevision < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        if draft.kind == .capabilityGap || draft.kind == .innovation {
+          guard AgentCollaborationEvolutionIntake.validates(draft) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        }
         let references = draft.observations ?? []
         var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
         if draft.kind == .acceptanceReview {
