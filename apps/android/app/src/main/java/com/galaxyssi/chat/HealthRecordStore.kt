@@ -21,6 +21,14 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     private val helper = Database(context.applicationContext, name)
     private fun aad(id: String, revision: Int) = "$name|health|$id|$revision".toByteArray(Charsets.UTF_8)
     private fun dedupe(record: HealthObservation) = AgentMemoryIndexKey.token("$name|health-duplicate-v1|${HealthObservationPolicy.duplicateKey(record)}")
+    private fun evidenceKey(draft: HealthDraft): String? = draft.evidence?.let {
+        AgentMemoryIndexKey.token("$name|health-evidence-v1|${it.originalId}|${it.page}|${it.candidateId}|${draft.metric.name}")
+    }
+    fun recordForEvidence(draft: HealthDraft): HealthObservation? {
+        val key = evidenceKey(draft) ?: return null
+        return helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE evidence_key=? AND deleted=0", arrayOf(key))
+            .use { if (it.moveToFirst()) decode(it).also { record -> check(evidenceKey(record.draft) == key) { "Health evidence index mismatch" } } else null }
+    }
     private fun encode(record: HealthObservation): ByteArray {
         val bytes = record.json().toString().toByteArray(Charsets.UTF_8)
         return try { AgentStorageCipher.encryptBinary(bytes, aad(record.id, record.revision)) } finally { bytes.fill(0) }
@@ -43,15 +51,18 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         "SELECT id,revision,payload,metric,measured_at FROM observations WHERE id=? AND deleted=0", arrayOf(id)
     ).use { if (it.moveToFirst()) decode(it) else null }
 
-    fun page(after: HealthPageCursor? = null, metric: HealthMetric? = null, limit: Int = PAGE_SIZE): HealthRecordPage {
+    fun page(after: HealthPageCursor? = null, metric: HealthMetric? = null, limit: Int = PAGE_SIZE, originalId: String? = null): HealthRecordPage {
         require(limit in 1..PAGE_SIZE)
         val args = mutableListOf<String>()
         val conditions = mutableListOf("deleted=0")
         if (metric != null) { conditions += "metric=?"; args += metric.name }
+        if (originalId != null) { conditions += "original_id=?"; args += originalId }
         if (after != null) { conditions += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(after.measuredAt.toString(), after.measuredAt.toString(), after.id) }
         val records = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE " +
             conditions.joinToString(" AND ") + " ORDER BY measured_at DESC,id DESC LIMIT ${limit + 1}", args.toTypedArray()).use {
-            buildList { while (it.moveToNext()) add(decode(it)) }
+            buildList { while (it.moveToNext()) add(decode(it).also { record ->
+                if (originalId != null) check(record.draft.evidence?.originalId == originalId) { "Health original index mismatch" }
+            }) }
         }
         val visible = records.take(limit)
         val next = if (records.size > limit) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null
@@ -68,6 +79,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             val existing = database.rawQuery("SELECT revision FROM observations WHERE id=? AND deleted=0", arrayOf(record.id))
                 .use { if (it.moveToFirst()) it.getInt(0) else 0 }
             if (existing != draft.revision) return HealthSaveResult.Conflict
+            val priorEvidence = recordForEvidence(draft)
+            if (priorEvidence != null && priorEvidence.id != record.id) return HealthSaveResult.Duplicate(priorEvidence.id)
             val duplicate = database.rawQuery("SELECT id FROM observations WHERE dedupe=? AND deleted=0 AND id<>?",
                 arrayOf(duplicateKey, record.id)).use { if (it.moveToFirst()) it.getString(0) else null }
             if (duplicate != null) return HealthSaveResult.Duplicate(duplicate)
@@ -75,6 +88,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 put("id", record.id); put("revision", record.revision); put("metric", draft.metric.name)
                 put("measured_at", draft.measuredAt); put("payload", encrypted); put("dedupe", duplicateKey)
                 put("deleted", 0)
+                put("original_id", draft.evidence?.originalId)
+                put("evidence_key", evidenceKey(draft))
             }
             if (existing == 0) database.insertOrThrow("observations", null, values)
             else check(database.update("observations", values, "id=? AND revision=? AND deleted=0", arrayOf(record.id, existing.toString())) == 1)
@@ -134,23 +149,35 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     fun clearDraft(key: String) { helper.writableDatabase.delete("drafts", "draft_key=?", arrayOf(key)) }
     override fun close() = helper.close()
 
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 1) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 2) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE observations(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,metric TEXT NOT NULL," +
-                "measured_at INTEGER NOT NULL,payload BLOB NOT NULL,dedupe TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)")
+                "measured_at INTEGER NOT NULL,payload BLOB NOT NULL,dedupe TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,original_id TEXT,evidence_key TEXT)")
             db.execSQL("CREATE UNIQUE INDEX observation_dedupe ON observations(dedupe) WHERE deleted=0")
             db.execSQL("CREATE INDEX observation_page ON observations(deleted,measured_at DESC,id DESC)")
             db.execSQL("CREATE INDEX observation_metric_page ON observations(metric,deleted,measured_at DESC,id DESC)")
+            db.execSQL("CREATE INDEX observation_original_page ON observations(original_id,deleted,measured_at DESC,id DESC)")
+            db.execSQL("CREATE UNIQUE INDEX observation_evidence ON observations(evidence_key) WHERE deleted=0 AND evidence_key IS NOT NULL")
             db.execSQL("CREATE TABLE revisions(id TEXT NOT NULL REFERENCES observations(id),revision INTEGER NOT NULL," +
                 "payload BLOB NOT NULL,changed_at INTEGER NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(id,revision))")
             db.execSQL("CREATE TABLE drafts(draft_key TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { error("Unsupported health schema upgrade") }
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            check(oldVersion == 1 && newVersion == 2) { "Unsupported health schema upgrade" }
+            db.execSQL("ALTER TABLE observations ADD COLUMN original_id TEXT")
+            db.execSQL("ALTER TABLE observations ADD COLUMN evidence_key TEXT")
+            db.execSQL("CREATE INDEX observation_original_page ON observations(original_id,deleted,measured_at DESC,id DESC)")
+            db.execSQL("CREATE UNIQUE INDEX observation_evidence ON observations(evidence_key) WHERE deleted=0 AND evidence_key IS NOT NULL")
+        }
     }
     companion object {
         const val PAGE_SIZE = 30
-        fun draftKey(draft: HealthDraft) = if (draft.recordId.isBlank()) "new:${draft.metric.name}" else "edit:${draft.recordId}"
+        fun draftKey(draft: HealthDraft) = when {
+            draft.recordId.isNotBlank() -> "edit:${draft.recordId}"
+            draft.evidence != null -> "ocr:${draft.evidence.jobId}:${draft.evidence.page}:${draft.evidence.candidateId}"
+            else -> "new:${draft.metric.name}"
+        }
     }
 }

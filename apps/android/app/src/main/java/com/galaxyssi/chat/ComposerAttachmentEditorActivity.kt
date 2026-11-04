@@ -365,28 +365,37 @@ class ComposerAttachmentEditorActivity : Activity() {
             showError(IllegalStateException("Crop output is unavailable")); return
         }
         val app = applicationContext
+        val healthParent = intent.getStringExtra("health_original_parent").orEmpty().takeIf {
+            runCatching { UUID.fromString(it).toString() == it }.getOrDefault(false) &&
+                android.net.Uri.parse(current.source).authority == "$packageName.health-originals"
+        }
         val activity = java.lang.ref.WeakReference(this)
         thread(name = "composer-crop-save") {
-            val file = File(app.filesDir, "composer-attachments-v1/${UUID.randomUUID()}.${if (current.mime.equals("image/png", true)) "png" else "jpg"}")
+            val file = if (healthParent == null) File(app.filesDir, "composer-attachments-v1/${UUID.randomUUID()}.${if (current.mime.equals("image/png", true)) "png" else "jpg"}") else null
             val stored = runCatching {
-                AttachmentLocalStore.storeFile(temporary, file)
                 val name = current.name.substringBeforeLast('.', current.name).removeSuffix("-cropped") +
-                    "-cropped.${file.extension}"
-                val mime = if (file.extension == "png") "image/png" else "image/jpeg"
-                current.cropped(LocalAttachmentUris.forFile(app, file, name, mime).toString(), name, file.length(), mime)
+                    "-cropped.${if (current.mime.equals("image/png", true)) "png" else "jpg"}"
+                val mime = if (current.mime.equals("image/png", true)) "image/png" else "image/jpeg"
+                if (healthParent != null) HealthOriginalStore(app).use { store ->
+                    val original = temporary.inputStream().use { store.importOriginal(UUID.randomUUID().toString(), it, name, mime, "crop:$healthParent") }
+                    current.cropped(HealthOriginalContentProvider.uri(app, original.id).toString(), name, original.size, mime)
+                } else {
+                    AttachmentLocalStore.storeFile(temporary, requireNotNull(file))
+                    current.cropped(LocalAttachmentUris.forFile(app, file, name, mime).toString(), name, file.length(), mime)
+                }
             }
             temporary.delete()
             val owner = activity.get()
-            if (owner == null || owner.isFinishing || owner.isDestroyed) { file.delete(); return@thread }
+            if (owner == null || owner.isFinishing || owner.isDestroyed) { file?.delete(); return@thread }
             owner.runOnUiThread {
-                if (owner.isFinishing || owner.isDestroyed) { file.delete(); return@runOnUiThread }
+                if (owner.isFinishing || owner.isDestroyed) { file?.delete(); return@runOnUiThread }
                 saving = false; done.isEnabled = true; title.setText(R.string.composer_crop)
                 pendingCropFile = null
                 stored.onSuccess { item ->
-                    createdFiles.add(file.absolutePath)
+                    file?.let { createdFiles.add(it.absolutePath) }
                     items[selected] = item; cropping = false; fineRotation = 0
                     complete()
-                }.onFailure { file.delete(); showError(it) }
+                }.onFailure { file?.delete(); showError(it) }
             }
         }
     }
