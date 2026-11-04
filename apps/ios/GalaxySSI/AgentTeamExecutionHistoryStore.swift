@@ -1145,11 +1145,22 @@ final class AgentTeamExecutionHistoryStore {
                                 expectedRevision: Int64, authorizedMembers: Set<String>,
                                 historicalAuthors: [String: String],
                                 settled: [String: AgentCollaborationLiveGraph.Settlement]) -> Bool {
-    guard var checkpoint = goalCheckpoint(runId: runId, conversationId: conversationId, turnId: turnId),
-          checkpoint.revision == expectedRevision, expectedRevision < Int64.max,
-          let graph = (checkpoint.liveGraph ?? .init()).appending(raw, authorizedMembers: authorizedMembers,
-            historicalAuthors: historicalAuthors, settled: settled) else { return false }
-    checkpoint.liveGraph = graph
+    guard raw.utf8.count <= 256_000,
+          let expansion = try? JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(raw.utf8)),
+          var checkpoint = goalCheckpoint(runId: runId, conversationId: conversationId, turnId: turnId),
+          checkpoint.revision == expectedRevision, expectedRevision < Int64.max else { return false }
+    let graph = checkpoint.liveGraph ?? .init()
+    guard let updated = try? graph.appending(expansion, authorizedMembers: authorizedMembers,
+      historicalAuthors: historicalAuthors, settled: settled, resolve: { instance in
+        try access { database in
+          guard let snapshot = try database.snapshots(runId: runId).first,
+                snapshot.conversationId == conversationId, snapshot.taskId == turnId, !snapshot.state.isTerminal
+          else { return nil }
+          return try Self.resolveWorkflow(instance, snapshot: snapshot, database: database)
+        }
+      }) else { return false }
+    if updated == graph { return true }
+    checkpoint.liveGraph = updated
     checkpoint.revision += 1
     checkpoint.completedWorkIds = []
     return advanceGoalCheckpoint(checkpoint, expectedRevision: expectedRevision)

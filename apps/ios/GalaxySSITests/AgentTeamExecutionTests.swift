@@ -348,6 +348,27 @@ extension GalaxySSIStoreTests {
     let sameMember = AgentCollaborationWorkflowInstance(execution_id: "run", method: method,
       inputs: [:], roles: ["author": "writer", "reviewer": "writer"])
     XCTAssertNil(sameMember.compile(body))
+    let mixed = """
+    {"format":"galaxyssi.work-expansion.v1","work":[
+      {"id":"ordinary","member":"writer","assignment":"Other work","depends_on":[]},
+      {"workflow_instance":{"execution_id":"run","method":{"object_id":"method","revision":1,"sha256":"exact"},
+        "inputs":{},"roles":{"author":"writer","reviewer":"reviewer"}}}
+    ]}
+    """
+    let expansion = try JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(mixed.utf8))
+    let empty = AgentCollaborationLiveGraph()
+    XCTAssertNil(empty.appending(expansion, authorizedMembers: ["writer", "reviewer"],
+      historicalAuthors: [:], settled: [:]) { _ in nil })
+    let graph = try XCTUnwrap(empty.appending(expansion, authorizedMembers: ["writer", "reviewer"],
+      historicalAuthors: [:], settled: [:]) { $0.compile(body) })
+    XCTAssertEqual(graph.work.map(\.id), ["ordinary"] + steps.map(\.id))
+    XCTAssertEqual(graph.workflowInstances?["run"], instance)
+    let replay = try JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self,
+      from: Data(mixed.replacingOccurrences(of: "{\"id\":\"ordinary\",\"member\":\"writer\",\"assignment\":\"Other work\",\"depends_on\":[]},", with: "").utf8))
+    XCTAssertEqual(graph.appending(replay, authorizedMembers: ["writer", "reviewer"],
+      historicalAuthors: [:], settled: [:]) { _ in nil }, graph)
+    let overridden = mixed.replacingOccurrences(of: "{\"workflow_instance\":", with: "{\"assignment\":\"Override\",\"workflow_instance\":")
+    XCTAssertThrowsError(try JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(overridden.utf8)))
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
       with: "\"assignment\":\"Draft\",\"depends_on\":[\"review\"]")))
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",

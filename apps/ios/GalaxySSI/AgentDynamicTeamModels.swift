@@ -39,6 +39,36 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let work: [Work]
   }
 
+  struct WorkflowExpansion: Decodable {
+    enum Entry: Decodable {
+      case work(Work)
+      case workflow(AgentCollaborationWorkflowInstance)
+
+      init(from decoder: Decoder) throws {
+        let object = try AgentMcpJSONObject(from: decoder)
+        if let raw = object["workflow_instance"] {
+          guard object.count == 1, let instance = raw.objectValue,
+                Set(instance.keys) == Set(["execution_id", "method", "inputs", "roles"]) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "Invalid workflow instance wrapper"))
+          }
+          self = .workflow(try JSONDecoder().decode(AgentCollaborationWorkflowInstance.self,
+            from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
+        } else {
+          let item = try Work(from: decoder)
+          guard item.workflowExecutionId == nil, item.review_targets == nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "Workflow bindings must come from a saved method"))
+          }
+          self = .work(item)
+        }
+      }
+    }
+
+    let format: String
+    let work: [Entry]
+  }
+
   private(set) var work: [Work] = []
   private(set) var workflowInstances: [String: AgentCollaborationWorkflowInstance]? = nil
 
@@ -60,6 +90,33 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var instances = workflowInstances ?? [:]
     instances[instance.execution_id] = instance
     next.workflowInstances = instances
+    return next
+  }
+
+  func appending(_ expansion: WorkflowExpansion, authorizedMembers: Set<String>,
+                 historicalAuthors: [String: String], settled: [String: Settlement],
+                 resolve: (AgentCollaborationWorkflowInstance) throws -> [Work]?) rethrows -> Self? {
+    guard expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
+    var instances = workflowInstances ?? [:]
+    var additions: [Work] = []
+    for entry in expansion.work {
+      switch entry {
+      case .work(let item):
+        additions.append(item)
+      case .workflow(let instance):
+        if let existing = instances[instance.execution_id] {
+          guard existing == instance else { return nil }
+          continue
+        }
+        guard let work = try resolve(instance), !work.isEmpty else { return nil }
+        additions.append(contentsOf: work)
+        instances[instance.execution_id] = instance
+      }
+    }
+    if additions.isEmpty { return self }
+    guard var next = appendingWork(additions, authorizedMembers: authorizedMembers,
+      historicalAuthors: historicalAuthors, settled: settled) else { return nil }
+    next.workflowInstances = instances.isEmpty ? nil : instances
     return next
   }
 
