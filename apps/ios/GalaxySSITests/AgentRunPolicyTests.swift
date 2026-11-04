@@ -305,6 +305,8 @@ extension GalaxySSIStoreTests {
         for y in [0.0, 0.5, 1.0] {
           let center = GalaxySSIScreenAssistantBubble.center(x: x, y: y, in: size)
           let menu = GalaxySSIScreenAssistantBubble.menuRect(near: center, in: size, rows: 3)
+          XCTAssertLessThanOrEqual(menu.width, 190)
+          XCTAssertLessThanOrEqual(menu.width, size.width - 32)
           XCTAssertGreaterThanOrEqual(menu.minX, 0)
           XCTAssertGreaterThanOrEqual(menu.minY, 0)
           XCTAssertLessThanOrEqual(menu.maxX, size.width)
