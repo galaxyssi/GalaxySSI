@@ -134,6 +134,7 @@ struct GalaxySSIHealthRecords {
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
+    var healthOnlinePermission: UUID?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -235,6 +236,14 @@ struct GalaxySSIHealthRecords {
 
   func setOverviewPermission(_ enabled: Bool) throws {
     try setPrivacy(.overview, enabled: enabled)
+  }
+
+  func setHealthOnlinePermission(_ enabled: Bool) throws {
+    var archive = try load()
+    guard (archive.healthOnlinePermission != nil) != enabled else { return }
+    archive.healthOnlinePermission = enabled ? UUID() : nil
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
   func setPrivacy(_ scope: PrivacyScope, enabled: Bool) throws {
