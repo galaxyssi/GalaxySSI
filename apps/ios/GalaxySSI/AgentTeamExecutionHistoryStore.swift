@@ -1393,9 +1393,13 @@ final class AgentTeamExecutionHistoryStore {
         let priorWorkflows = prior.first?.liveGraph?.workflowInstances ?? [:]
         let workflows = checkpoint.liveGraph?.workflowInstances ?? [:]
         let additions = updated.dropFirst(existing.count)
+        let authors = Dictionary(updated.map { ($0.id, $0.member) }, uniquingKeysWith: { first, _ in first })
         guard priorWorkflows.allSatisfy({ workflows[$0.key] == $0.value }),
+              authors.count == updated.count,
               additions.allSatisfy({ item in
-                guard let id = item.workflowExecutionId else { return item.review_targets == nil }
+                guard let id = item.workflowExecutionId else {
+                  return item.review_targets == nil || item.hasIndependentReviewAuthors { authors[$0] }
+                }
                 return priorWorkflows[id] == nil && workflows[id] != nil
               }) else { return false }
         for (id, instance) in workflows where priorWorkflows[id] == nil {
