@@ -3,9 +3,15 @@ import UniformTypeIdentifiers
 
 enum GalaxySSIHealthMeasurementExport {
   enum Format: String, CaseIterable, Identifiable {
-    case csv, json
+    case csv, json, xlsx
     var id: String { rawValue }
-    var contentType: UTType { self == .csv ? .commaSeparatedText : .json }
+    var contentType: UTType {
+      switch self {
+      case .csv: return .commaSeparatedText
+      case .json: return .json
+      case .xlsx: return UTType(filenameExtension: "xlsx") ?? .spreadsheet
+      }
+    }
   }
 
   struct Scope: Equatable {
@@ -46,6 +52,8 @@ enum GalaxySSIHealthMeasurementExport {
       let objects = rows.map { Dictionary(uniqueKeysWithValues: zip(columns, $0)) }
       return try JSONSerialization.data(withJSONObject: ["format": "galaxyssi.ios.health.measurements.v1",
                                                         "measurements": objects], options: [.sortedKeys])
+    case .xlsx:
+      return try GalaxySSIHealthXLSXExport.encode(headers: columns, rows: rows)
     }
   }
 
@@ -188,7 +196,7 @@ struct GalaxySSIHealthMeasurementExportView: View {
 }
 
 private struct HealthMeasurementDocument: FileDocument {
-  static var readableContentTypes: [UTType] { [.commaSeparatedText, .json] }
+  static var readableContentTypes: [UTType] { GalaxySSIHealthMeasurementExport.Format.allCases.map(\.contentType) }
   let data: Data
   let type: UTType
 

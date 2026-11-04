@@ -195,7 +195,9 @@ private final class SheetXML: NSObject, XMLParserDelegate {
     case "c":
       if type == "s" {
         guard let index = Int(text), strings.indices.contains(index) else { parser.abortParsing(); return }
-        cells[column] = strings[index]
+        cells[column] = GalaxySSIHealthXLSXExport.decodeCellEscapes(strings[index])
+      } else if type == "inlineStr" || type == "str" {
+        cells[column] = GalaxySSIHealthXLSXExport.decodeCellEscapes(text)
       } else if type != "e" { cells[column] = text }
       if formula { formulas.insert(column) }
     case "row":

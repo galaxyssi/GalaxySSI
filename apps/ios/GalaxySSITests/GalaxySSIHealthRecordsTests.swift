@@ -21,6 +21,23 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(row["notes"])
   }
 
+  func testMeasurementXLSXUsesLiteralTextAndPreservesExactNotation() throws {
+    var reading = GalaxySSIHealthReading(metric: .weight, value: try XCTUnwrap(Decimal(string: "60.123456789012345678")))
+    reading.notes = "=2+2\r\n<&> _x000D_\u{0000}"
+    let data = try GalaxySSIHealthMeasurementExport.encode([reading], as: .xlsx, includeNotes: true)
+    let workbook = try GalaxySSIHealthXLSX(data)
+    let sheet = try XCTUnwrap(workbook.sheets.first)
+    let rows = try workbook.rows(sheet.id)
+    XCTAssertTrue(try XCTUnwrap(rows.last).formulas.isEmpty)
+    let table = try workbook.table(.init(sheet: sheet.id, header: 1))
+    XCTAssertEqual(table.rows.first?[4], "60.123456789012345678")
+    XCTAssertEqual(table.rows.first?[9], reading.notes)
+    let withoutNotes = try GalaxySSIHealthMeasurementExport.encode([reading], as: .xlsx, includeNotes: false)
+    let privateWorkbook = try GalaxySSIHealthXLSX(withoutNotes)
+    let privateSheet = try XCTUnwrap(privateWorkbook.sheets.first)
+    XCTAssertFalse(try privateWorkbook.table(.init(sheet: privateSheet.id, header: 1)).headers.contains("notes"))
+  }
+
   @MainActor
   func testProfileIsSeparateAndStaleDraftCannotRestoreClearedFacts() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
