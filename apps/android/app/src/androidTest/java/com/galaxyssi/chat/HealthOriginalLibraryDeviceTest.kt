@@ -201,7 +201,7 @@ class HealthOriginalLibraryDeviceTest {
             }
             HealthRecordStore(context, sharedName).use { records ->
                 HealthOriginalStore(context, name, root, records).use { migrated ->
-                    assertEquals(9, records.tableDatabase.version)
+                    assertEquals(HealthRecordStore.SCHEMA_VERSION, records.tableDatabase.version)
                     val history = HealthOriginalLibraryStore(context, migrated, exports)
                     assertEquals(saved, history.history().single())
                     assertTrue(records.tableDatabase.rawQuery("SELECT 1 FROM sqlite_master WHERE name='library_export_history'", null).use { it.moveToFirst() })

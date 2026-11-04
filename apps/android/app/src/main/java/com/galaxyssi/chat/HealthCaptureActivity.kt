@@ -192,7 +192,7 @@ class HealthCaptureActivity : Activity() {
                 when (currentRoute) {
                     "original" -> {
                         val original = originals.original(id)
-                        val records = HealthRecordStore(applicationContext).use { it.page(after = recordCursor, originalId = id) }
+                        val records = HealthRecordStore(applicationContext, names.records).use { it.originalPage(id, after = recordCursor) }
                         CaptureSnapshot(original = original, available = original?.let(originals::present) == true,
                             saved = records.records, recordsNext = records.next)
                     }
