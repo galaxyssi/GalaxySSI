@@ -191,6 +191,10 @@ extension GalaxySSIStoreTests {
     var failedIds = Set<String>()
     for round in 20...28 {
       failed.round = round
+      if round == 28 {
+        failed.succeeded = true
+        failed.output = "{\"success\":false}"
+      }
       failedIds.insert(try history.recordCloudEvidence(failed).string("evidence_id"))
     }
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
@@ -199,7 +203,7 @@ extension GalaxySSIStoreTests {
     let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
     let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
     XCTAssertEqual(entries.count, 8)
-    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains(failed.output))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains("sensitive failure detail"))
     let lastProblems = try reopened.recallCollaborationOriginal(
       ["mode": .string("problems"), "cursor": .string(firstProblems.string("next_cursor"))], scope: scope)
     let tail = try XCTUnwrap(lastProblems["problems"]?.arrayValue)
@@ -310,6 +314,18 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(drafts.map(\.id), ["note"])
     XCTAssertThrowsError(try AgentCollaborationResearchEnvelope.publication(
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
+  }
+
+  func testCloudObservationDistinguishesExplicitFailureFromEmptyErrors() {
+    for output in ["{}", "{\"error\":false}", "{\"error\":null}", "{\"error\":{}}",
+                   "{\"error\":[]}", "{\"error\":0}", "{\"error\":\"  \"}",
+                   "{\"success\":\"false\"}", "unstructured error text"] {
+      XCTAssertFalse(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
+    for output in ["{\"success\":false}", "{\"ok\":false}", "{\"isError\":true}",
+                   "{\"error\":{\"code\":\"offline\"}}", "{\"status\":\"timed_out\"}"] {
+      XCTAssertTrue(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
   }
 
   func testInnovationOpportunityCannotReplaceGoalCriterionOrDriverEvidence() throws {
