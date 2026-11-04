@@ -304,6 +304,34 @@ Visible library/confirmation/SAF acceptance remains pending because the tablet
 relocked; no keyguard bypass or camera capture was used. These focused passes
 do not replace the complete health acceptance ledger.
 
+## Increment 9: Scoped Measurement Files And Data Hub
+
+The native data/file hub separates measurement import/review, original-only
+import, the original library, measurement exports and task history. Confirmed
+self observations can be exported as CSV, JSON or XLSX after intersecting metric,
+calendar-date and optional original-file scope. Missing original bytes do not
+hide linked measurements or block their independent data export.
+
+Preparation builds encrypted 30-row snapshot pages and rejects concurrent metric
+changes. The preview is immutable after preparation, distinguishes observations
+from component rows, discloses source warnings and requires explicit consent to
+unencrypted output. Notes and recognized source text are opt-in. Generation and
+verified SAF saving are separate durable states. Interrupted work uses fresh
+attempt keys; old dispatch failures cannot stop a newer retry. Shared encrypted
+artifact handling retains the original-ZIP cryptographic parameters.
+
+CSV guards formula-like leading text without losing the reversible prefix;
+XLSX writes bounded inline-string rows with worksheet rollover and exact numeric
+notation. JSON streams a documented measurement schema, not a complete-backup
+format. No original bytes or automated sharing are added. See the
+[measurement-export contract](android-health-record-export.md) for the format,
+privacy and acceptance boundaries. Version 0.1.7.24 / Android 1437 is cover-installed
+on Tab Active3. The final offline build passes 230 focused JVM tests; all 191
+non-visual device tests and all 21 unlocked native UI/lifecycle tests pass without
+skips. Native data/file-hub and export-configuration screenshots were inspected.
+Populated confirmation, SAF/provider and foreground/process-death export acceptance,
+complete backups and restore remain separate work.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
@@ -316,8 +344,9 @@ version and focused validation before claiming completion:
 3. Complete native catalog/trend point-and-return acceptance, physical-device
    source cohorts, high-write-rate/large-window trend acceptance and further
    metric definitions.
-4. Original-file library, export configuration, save/share and verified backup
-   restore with transactional merge and attachment integrity checks.
+4. Complete populated original/measurement export and SAF acceptance, explicit
+   sharing, password-protected portable backups and verified transactional restore
+   with record/original link manifests and attachment integrity checks.
 5. Personal profile, scoped health permissions, explicit erase and reminder
    preferences, deduplication/cooldown and notification delivery.
 6. Health platform/BLE adapters with actual capability and synchronization

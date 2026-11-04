@@ -26,6 +26,7 @@ internal object HealthImportScheduler {
     fun recoverAsync(context: Context) {
         kotlin.concurrent.thread(name = "health-import-recovery", isDaemon = true) {
             runCatching { HealthTableScheduler.recover(context) }
+            runCatching { HealthRecordExportScheduler.recover(context) }
             if (context.getDatabasePath("health_originals_v1.db").exists()) runCatching { HealthOriginalExportScheduler.recover(context) }
             if (!context.getDatabasePath("health_originals_v1.db").exists()) return@thread
             runCatching { HealthOriginalStore(context).use { store ->
@@ -87,6 +88,9 @@ internal class HealthImportPipeline(private val context: Context, private val re
                 store.updateJob(id) { it.copy(originalId = original.id, copiedBytes = original.size, totalBytes = original.size,
                     state = HealthImportState.RECOGNIZING) }
                 cancelled()
+                if (initial.originalOnly) {
+                    store.updateJob(id) { it.copy(state = HealthImportState.ORIGINAL_ONLY) }; return HealthImportOutcome.COMPLETE
+                }
                 if (prepareCapture) {
                     if (!mime.startsWith("image/")) throw HealthImportFailure("image_unsupported")
                     val quality = HealthPhotoInspector.inspect(store, original)

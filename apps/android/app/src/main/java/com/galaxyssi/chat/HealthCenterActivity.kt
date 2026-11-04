@@ -208,8 +208,10 @@ class HealthCenterActivity : Activity() {
                 }, 18)
                 ui.add(content, ui.text(getString(R.string.health_no_analysis), 13f, muted = true), 20)
                 ui.add(content, ui.command(R.string.health_add_first) { open("manual") }, 20)
+                ui.add(content, ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this, HealthDataFilesActivity::class.java)) }, 12)
             } else {
                 content.addView(ui.text(getString(R.string.health_your_records), 26f, bold = true))
+                ui.add(content, ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this, HealthDataFilesActivity::class.java)) }, 8)
                 ui.add(content, ui.text(getString(R.string.health_record_count, count), 14f, muted = true), 6)
                 ui.add(content, ui.command(R.string.health_add_measurement) { open("manual") }, 18)
                 ui.add(content, ui.row(getString(R.string.health_photo_record), getString(R.string.health_photo_description)) { openCapture() }, 10)
@@ -251,6 +253,7 @@ class HealthCenterActivity : Activity() {
                 addView(ui.row(getString(R.string.health_manual), getString(R.string.health_measurement_context)) { open("manual") })
                 addView(ui.row(getString(R.string.health_records), getString(R.string.health_record_sources)) { open("records") })
                 addView(ui.row(getString(R.string.health_catalog_title)) { openCatalog() })
+                addView(ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this@HealthCenterActivity, HealthDataFilesActivity::class.java)) })
             }, 14)
         }
     }

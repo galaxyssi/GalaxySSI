@@ -141,6 +141,30 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         val visible = rows.take(PAGE_SIZE)
         return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
+    fun exportChunk(scope: HealthRecordExportScope, after: HealthPageCursor? = null, signal: android.os.CancellationSignal? = null): HealthRecordPage {
+        val args = arrayListOf<String>()
+        fun conditions(metric: HealthMetric?): String {
+            val terms = arrayListOf("deleted=0", "measured_at>=?", "measured_at<?"); args += listOf(scope.from.toString(), scope.until.toString())
+            metric?.let { terms += "metric=?"; args += it.name }
+            if (scope.originalId.isNotEmpty()) { terms += "original_id=?"; args += scope.originalId }
+            after?.let { terms += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id) }
+            return terms.joinToString(" AND ")
+        }
+        val query = if (scope.metrics.size == HealthMetric.entries.size) {
+            "SELECT id,revision,payload,metric,measured_at FROM observations WHERE ${conditions(null)} ORDER BY measured_at DESC,id DESC LIMIT 31"
+        } else {
+            val parts = scope.metrics.sortedBy { it.ordinal }.map { metric -> "SELECT id,measured_at FROM (SELECT id,measured_at FROM observations WHERE ${conditions(metric)} ORDER BY measured_at DESC,id DESC LIMIT 31)" }
+            "SELECT id,revision,payload,metric,measured_at FROM observations WHERE id IN (SELECT id FROM (${parts.joinToString(" UNION ALL ")}) ORDER BY measured_at DESC,id DESC LIMIT 31) ORDER BY measured_at DESC,id DESC LIMIT 31"
+        }
+        val rows = helper.readableDatabase.rawQuery(query, args.toTypedArray(), signal).use { cursor -> buildList {
+            while (cursor.moveToNext()) add(decode(cursor).also {
+                check(it.draft.metric in scope.metrics && it.draft.measuredAt >= scope.from && it.draft.measuredAt < scope.until)
+                if (scope.originalId.isNotEmpty()) check(it.draft.evidence?.originalId == scope.originalId) { "Health export source mismatch" }
+            })
+        } }
+        val visible = rows.take(PAGE_SIZE)
+        return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
+    }
     fun trendRecords(spec: HealthTrendSpec, after: HealthPageCursor? = null, numericOnly: Boolean = false,
                      cancelled: () -> Unit = {}, signal: android.os.CancellationSignal? = null): HealthRecordPage {
         val rows = arrayListOf<HealthObservation>(); var cursor = after
