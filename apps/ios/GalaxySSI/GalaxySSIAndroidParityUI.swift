@@ -246,14 +246,20 @@ struct AgentHomeView: View {
         VStack(spacing: 0) {
           if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty && !screenAssistantCollapsed {
             screenAssistantControls
-            agentOutput.frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
+            agentOutput
+              .frame(maxHeight: screenAssistantCompact ? 260 : .infinity)
+              .clipped()
             if screenAssistantCompact { Spacer(minLength: 0) }
           } else {
             agentOutput
           }
         }
         .frame(maxHeight: .infinity)
-        agentComposer.disabled(screenPageImportTask != nil)
+      }
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        agentComposer
+          .disabled(screenPageImportTask != nil)
+          .background(Color.galaxySSIPageBackground)
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
       .task(id: screenAssistantRecoveryKey) {
