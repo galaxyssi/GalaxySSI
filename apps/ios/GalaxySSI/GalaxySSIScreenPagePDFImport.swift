@@ -184,12 +184,32 @@ extension AgentHomeView {
         if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           draft = t("galaxyssi.screen_page.prompt", "Analyze this captured page.")
         }
-        richActionStatus = String(format: t("galaxyssi.screen_page.added", "%d pages added"), page.pageCount)
+        let added = String(format: t("galaxyssi.screen_page.added", "%d pages added"), page.pageCount)
         if page.truncated {
           attachmentError = t("galaxyssi.screen_page.truncated", "Text extraction was limited; the original PDF is included.")
         } else if page.emptyTextPages > 0 {
           attachmentError = t("galaxyssi.screen_page.image_pages", "Some pages have no selectable text; the original PDF is included.")
         }
+        let pdf = page.attachments.first(where: { $0.mimeType == "application/pdf" })?.data
+        let captureID = page.captureID
+        let export = Task.detached(priority: .utility) {
+          guard let pdf else { throw AgentIOSScreenPagePDFError.invalidDocument }
+          return try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: captureID)
+        }
+        let saved = await withTaskCancellationHandler(operation: { try? await export.value },
+          onCancel: { export.cancel() })
+        guard !Task.isCancelled, screenPageImportRequestID == requestID,
+              screenAssistantRunID == runID, scenePhase == .active,
+              store.activeAgentConversationId == conversationID else { return }
+        let status: String
+        if let saved {
+          status = String(format: t("galaxyssi.screen_page.pdf_saved",
+            "Saved in Files: On My iPhone > GalaxySSI > Downloads > %@"), saved.lastPathComponent)
+        } else {
+          status = t("galaxyssi.screen_page.pdf_save_failed",
+            "Could not save a copy in Files. The original PDF is still attached.")
+        }
+        richActionStatus = added + "\n" + status
       } catch {
         guard !Task.isCancelled, screenPageImportRequestID == requestID else { return }
         let key: String
