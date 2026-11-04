@@ -35,6 +35,7 @@ internal object HealthImportScheduler {
             if (!context.getDatabasePath("health_records_v1.db").exists() &&
                 !context.getDatabasePath(HealthOriginalStore.LEGACY_DATABASE).exists()) return@thread
             runCatching { HealthOriginalExportScheduler.recover(context) }
+            runCatching { HealthOriginalStore(context).use { it.recoverCropWrites() } }
             runCatching { HealthOriginalRetention.recover(context) }
             runCatching { HealthOriginalStore(context).use { store ->
                 var after: Pair<Long, String>? = null

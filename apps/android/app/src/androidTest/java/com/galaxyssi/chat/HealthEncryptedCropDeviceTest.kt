@@ -226,7 +226,10 @@ class HealthEncryptedCropDeviceTest {
             assertEquals(page.job, store.job(page.job.id))
             assertNull(store.job(newId))
             assertNull(store.originalForJob(newId))
-            assertFalse(names.originalRoot(context).walkTopDown().any { it.isFile && it.name.startsWith("$newId-") })
+            val ledger = HealthCropRecovery(names.originalRoot(context))
+            assertFalse(ledger.files(newId).staging.exists())
+            assertFalse(ledger.files(newId).destination.exists())
+            assertFalse(ledger.marker(newId).exists())
             assertArrayEquals(page.bytes, store.input(page.original).use { it.readBytes() })
         } finally {
             bytes.fill(0)
