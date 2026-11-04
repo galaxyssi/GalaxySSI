@@ -10,6 +10,7 @@ struct GalaxySSIWeeklyHealthReport: Equatable {
     let calendar: Calendar
     let comparison: DateInterval?
     let revisions: [String]
+    let allowsRefresh: Bool
 
     init(interval: DateInterval, metrics: Set<GalaxySSIHealthMetric>, calendar: Calendar,
          compare: Bool, current: [GalaxySSIHealthReading]) {
@@ -21,6 +22,17 @@ struct GalaxySSIWeeklyHealthReport: Equatable {
       let comparison = start.map { DateInterval(start: $0, end: interval.start) }
       self.comparison = comparison
       revisions = Self.stamps(current, interval: interval, metrics: metrics, comparison: comparison)
+      allowsRefresh = true
+    }
+
+    init(interval: DateInterval, metrics: Set<GalaxySSIHealthMetric>, calendar: Calendar,
+         comparison: DateInterval, revisions: [String]) {
+      self.interval = interval
+      self.metrics = metrics
+      self.calendar = calendar
+      self.comparison = comparison
+      self.revisions = revisions.sorted()
+      allowsRefresh = false
     }
 
     func isCurrent(_ current: [GalaxySSIHealthReading]) -> Bool {
@@ -100,8 +112,12 @@ struct GalaxySSIWeeklyHealthReportView: View {
       if scenePhase == .active && !exporting {
         Toggle(t("permission", "Allow local weekly reports"), isOn: Binding(get: { allowed }, set: setPermission))
         if allowed && staleLink {
-          Text(t("linked_stale", "The linked analysis has changed. Refresh this scope before reviewing or exporting."))
-          Button(t("reload", "Reload report")) { reload(acceptNewEvidence: true) }
+          if link?.allowsRefresh == true {
+            Text(t("linked_stale", "The linked analysis has changed. Refresh this scope before reviewing or exporting."))
+            Button(t("reload", "Reload report")) { reload(acceptNewEvidence: true) }
+          } else {
+            Text(t("linked_fixed_stale", "The saved evidence no longer matches the contributing records."))
+          }
         } else if allowed, let preview {
           Section(t("metrics", "Included measurements")) {
             ForEach(GalaxySSIHealthMetric.allCases.filter { link?.metrics.contains($0) ?? true }) { metric in
@@ -207,10 +223,11 @@ struct GalaxySSIWeeklyHealthReportView: View {
       allowed = archive.weeklyReportAllowed == true
       if let linked = link {
         guard archive.derivesOverview == true else { allowed = false; preview = nil; return }
-        if !linked.isCurrent(archive.current) && !acceptNewEvidence {
+        let refreshing = acceptNewEvidence && linked.allowsRefresh
+        if !linked.isCurrent(archive.current) && !refreshing {
           staleLink = true; preview = nil; includeRows = false; return
         }
-        if acceptNewEvidence {
+        if refreshing {
           link = .init(interval: linked.interval, metrics: linked.metrics, calendar: linked.calendar,
                        compare: linked.comparison != nil, current: archive.current)
         }

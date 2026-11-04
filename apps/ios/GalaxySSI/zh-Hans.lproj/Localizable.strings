@@ -351,6 +351,17 @@
 "galaxyssi.health.sleep_reminder.snoozed" = "已推迟";
 "galaxyssi.health.sleep_reminder.open" = "待处理";
 "galaxyssi.health.sleep_reminder.min" = "分钟";
+"galaxyssi.health.sleep_reminder.snapshot" = "依据版本";
+"galaxyssi.health.sleep_reminder.recent_records" = "近期来源记录";
+"galaxyssi.health.sleep_reminder.baseline_records" = "基线来源记录";
+"galaxyssi.health.sleep_reminder.sleep_report" = "打开仅含睡眠的周报";
+"galaxyssi.health.sleep_reminder.evidence_stale" = "已保存的依据与来源记录版本不再匹配。";
+"galaxyssi.health.sleep_reminder.close" = "关闭";
+"galaxyssi.health.sleep_reminder.coverage" = "基线 %lld / 14 天 · 近期 %lld / 7 天";
+"galaxyssi.health.sleep_reminder.rule" = "规则 %lld · 阈值 %lld 分钟";
+"galaxyssi.health.sleep_reminder.revision" = "修订版本 %lld";
+"galaxyssi.health.sleep_reminder.more_records" = "显示更多记录";
+"galaxyssi.health.weekly.linked_fixed_stale" = "已保存的依据与来源记录版本不再匹配。";
 "galaxyssi.health.trend.unavailable" = "趋势不可用";
 "galaxyssi.health.trend.refresh" = "刷新";
 "galaxyssi.health.trend.permission" = "请在健康隐私中开启本机测量摘要后查看趋势。";

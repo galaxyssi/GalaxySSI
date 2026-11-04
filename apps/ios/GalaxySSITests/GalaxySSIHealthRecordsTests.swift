@@ -19,6 +19,15 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let episode = try XCTUnwrap(ledger.episodes.first)
     XCTAssertEqual(episode.latest.decrease, 45)
     XCTAssertEqual(episode.latest.days.filter { $0.minutes == nil }.count, 2)
+    let link = try XCTUnwrap(episode.first.reportLink())
+    XCTAssertFalse(link.allowsRefresh)
+    XCTAssertEqual(link.metrics, [.sleepDuration])
+    XCTAssertEqual(episode.first.contributors(readings, baseline: true)?.count, 13)
+    XCTAssertEqual(episode.first.contributors(readings, baseline: false)?.count, 6)
+    var edited = readings
+    edited[0].revision += 1
+    XCTAssertFalse(link.isCurrent(edited))
+    XCTAssertNil(episode.first.contributors(edited, baseline: true))
     ledger.reconcile(current: readings, allowed: true, now: now.addingTimeInterval(60), calendar: calendar)
     XCTAssertEqual(ledger.episodes, [episode])
     ledger.reconcile(current: Array(readings.dropFirst(2)), allowed: true, now: now, calendar: calendar)

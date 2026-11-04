@@ -38,6 +38,23 @@ enum GalaxySSIHealthSleepReminder {
 
     var decrease: Decimal { baselineMean - currentMean }
 
+    func reportLink() -> GalaxySSIWeeklyHealthReport.Link? {
+      guard days.count == 21, let zone = TimeZone(identifier: self.zone),
+            days[0].date < days[14].date, days[14].date < day else { return nil }
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = zone
+      return .init(interval: DateInterval(start: days[14].date, end: day), metrics: [.sleepDuration],
+        calendar: calendar, comparison: DateInterval(start: days[0].date, end: days[14].date),
+        revisions: revisions)
+    }
+
+    func contributors(_ current: [GalaxySSIHealthReading], baseline: Bool) -> [GalaxySSIHealthReading]? {
+      guard let link = reportLink(), link.isCurrent(current),
+            let interval = baseline ? link.comparison : link.interval else { return nil }
+      return current.filter { !$0.deleted && $0.metric == .sleepDuration &&
+        $0.measuredAt >= interval.start && $0.measuredAt < interval.end }
+    }
+
     func matches(_ other: Self) -> Bool {
       day == other.day && zone == other.zone && rule == other.rule && threshold == other.threshold &&
         revisions == other.revisions && days == other.days

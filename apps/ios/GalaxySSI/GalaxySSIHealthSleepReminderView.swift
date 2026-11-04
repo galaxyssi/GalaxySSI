@@ -67,6 +67,15 @@ struct GalaxySSIHealthSleepReminderView: View {
   @State private var ledger = GalaxySSIHealthSleepReminder.Ledger()
   @State private var allowed = false
   @State private var failed = false
+  @State private var showLatest = false
+  @State private var evidenceRoute: EvidenceRoute?
+
+  private struct EvidenceRoute: Identifiable {
+    enum Kind { case baseline, recent, report }
+    let id = UUID()
+    let kind: Kind
+    let evidence: GalaxySSIHealthSleepReminder.Evidence
+  }
 
   var body: some View {
     Form {
@@ -116,8 +125,26 @@ struct GalaxySSIHealthSleepReminderView: View {
   private func detail(_ id: UUID) -> some View {
     List {
       if scene == .active && allowed, let episode = ledger.episodes.first(where: { $0.id == id }) {
-        evidence(t("first", "Initial evidence"), episode.first)
-        if episode.first != episode.latest { evidence(t("latest", "Latest evidence"), episode.latest) }
+        if episode.first != episode.latest {
+          Picker(t("snapshot", "Evidence version"), selection: $showLatest) {
+            Text(t("first", "Initial evidence")).tag(false)
+            Text(t("latest", "Latest evidence")).tag(true)
+          }
+          .pickerStyle(.segmented)
+        }
+        let selected = showLatest ? episode.latest : episode.first
+        evidence(showLatest ? t("latest", "Latest evidence") : t("first", "Initial evidence"), selected)
+        Section {
+          Button(t("recent_records", "Recent contributing records")) {
+            evidenceRoute = .init(kind: .recent, evidence: selected)
+          }
+          Button(t("baseline_records", "Baseline contributing records")) {
+            evidenceRoute = .init(kind: .baseline, evidence: selected)
+          }
+          Button(t("sleep_report", "Open sleep-only weekly report")) {
+            evidenceRoute = .init(kind: .report, evidence: selected)
+          }
+        }
         if !episode.closed && !episode.completed {
           Button(t("complete", "Complete")) { update(episode, complete: true) }
           Button(t("snooze", "Snooze for 24 hours")) { update(episode, complete: false) }
@@ -125,11 +152,35 @@ struct GalaxySSIHealthSleepReminderView: View {
       }
     }
     .navigationTitle(t("evidence", "Sleep Evidence"))
+    .onAppear { showLatest = false }
+    .onChange(of: scene) { if $0 == .background { evidenceRoute = nil } }
+    .sheet(item: $evidenceRoute) { route in
+      NavigationView {
+        Group {
+          if route.kind == .report, let link = route.evidence.reportLink() {
+            GalaxySSIWeeklyHealthReportView(records: records, link: link)
+          } else if route.kind != .report {
+            GalaxySSIHealthSleepContributors(records: records, evidence: route.evidence, baseline: route.kind == .baseline)
+          } else {
+            Text(t("evidence_stale", "The saved evidence no longer matches the contributing records."))
+          }
+        }
+        .toolbar { ToolbarItem(placement: .cancellationAction) {
+          Button(t("close", "Close")) { evidenceRoute = nil }
+        } }
+      }
+      .navigationViewStyle(.stack)
+    }
   }
 
   private func evidence(_ title: String, _ evidence: GalaxySSIHealthSleepReminder.Evidence) -> some View {
     Section(title) {
       Text(t("decrease", "Average decrease") + ": " + minutes(evidence.decrease))
+      let baselineDays = evidence.days.prefix(14).compactMap(\.minutes).count
+      let recentDays = evidence.days.suffix(7).compactMap(\.minutes).count
+      Text(String(format: t("coverage", "%lld of 14 baseline days · %lld of 7 recent days"),
+                  Int64(baselineDays), Int64(recentDays)))
+      Text(String(format: t("rule", "Rule %lld · threshold %lld min"), Int64(evidence.rule), Int64(evidence.threshold)))
       Text(evidence.zone).foregroundColor(.secondary)
       chart(evidence.days)
       ForEach(evidence.days) { day in
@@ -212,5 +263,59 @@ struct GalaxySSIHealthSleepReminderView: View {
   private func t(_ key: String, _ fallback: String) -> String { Self.text(key, fallback, language: language) }
   static func text(_ key: String, _ fallback: String, language: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.sleep_reminder." + key, fallback: fallback, language: language)
+  }
+}
+
+@MainActor
+private struct GalaxySSIHealthSleepContributors: View {
+  @Environment(\.scenePhase) private var scene
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  let records: GalaxySSIHealthRecords
+  let evidence: GalaxySSIHealthSleepReminder.Evidence
+  let baseline: Bool
+  @State private var rows: [GalaxySSIHealthReading]?
+  @State private var limit = 30
+
+  var body: some View {
+    List {
+      if scene == .active {
+        if let rows {
+          ForEach(rows.prefix(limit)) { reading in
+            DisclosureGroup {
+              Text((reading.value?.formatted() ?? "") + " " + reading.unit)
+              Text(String(format: t("revision", "Revision %lld"), Int64(reading.revision)))
+                .foregroundColor(.secondary)
+            } label: {
+              HStack {
+                Text(reading.measuredAt, style: .date)
+                Text(reading.measuredAt, style: .time)
+              }
+            }
+          }
+          if rows.count > limit { Button(t("more_records", "Show more records")) { limit += 30 } }
+        } else {
+          Text(t("evidence_stale", "The saved evidence no longer matches the contributing records."))
+        }
+      }
+    }
+    .environment(\.timeZone, TimeZone(identifier: evidence.zone) ?? .current)
+    .navigationTitle(baseline ? t("baseline_records", "Baseline contributing records") : t("recent_records", "Recent contributing records"))
+    .onAppear(perform: reload)
+    .onChange(of: scene) { if $0 == .active { reload() } else { rows = nil } }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
+      if $0.object as? String == records.owner { reload() }
+    }
+  }
+
+  private func reload() {
+    guard scene == .active, let archive = try? records.load(), archive.derivesOverview == true else {
+      rows = nil
+      return
+    }
+    rows = evidence.contributors(archive.current, baseline: baseline)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthSleepReminderView.text(key, fallback, language: language)
   }
 }
