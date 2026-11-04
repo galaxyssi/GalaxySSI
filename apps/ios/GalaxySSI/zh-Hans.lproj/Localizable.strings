@@ -4837,6 +4837,8 @@
 "galaxyssi.screen_page.pdf" = "整页 PDF";
 "galaxyssi.screen_page.file" = "文件";
 "galaxyssi.screen_page.link" = "链接";
+"galaxyssi.screen_page.wechat_link" = "公众号文章链接";
+"galaxyssi.screen_page.wechat_invalid" = "请输入有效的微信公众号文章链接。";
 "galaxyssi.screen_page.file_prompt" = "请分析这个文件。";
 "galaxyssi.screen_page.link_prompt" = "请分析这个页面。";
 "galaxyssi.screen_page.collecting" = "正在提取页面…";
