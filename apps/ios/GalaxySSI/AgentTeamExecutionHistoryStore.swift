@@ -360,8 +360,12 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  func recoveryContext(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyRecoveryContext? {
+  func recoveryContext(source: String, conversation: String, turn: String, contact: String,
+                       requireResearchAccess: Bool = false) throws -> AgentTeamReplyRecoveryContext? {
     try access { database in
+      if requireResearchAccess,
+         try database.researchRecord(Bool.self, conversationId: conversation,
+           key: "native-evidence-revoked", revision: 0) == true { return nil }
       guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact),
             let team = try database.snapshots(runId: owner.supervisorRunId).first,
             team.conversationId == conversation, team.taskId == turn,

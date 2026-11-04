@@ -45,6 +45,7 @@ final class MessageCoordinator: ObservableObject {
   private var teamObserverDiscoveryCursor = ""
   private var teamObserverDiscoveryAt: Int64 = 0
   private lazy var desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
+  private var desktopCollaborationResponseReplay = AgentDesktopCollaborationResponseReplay()
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
   private var desktopReplyRecoveryTask: Task<Void, Never>?
   private var desktopReplyRecoverySweepInFlight = false
@@ -2329,7 +2330,7 @@ final class MessageCoordinator: ObservableObject {
           store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
             $0.routes.clientRouteId == identity.clientRouteId }),
           let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source,
-            conversation: identity.conversationId, turn: identity.turnId, contact: contact),
+            conversation: identity.conversationId, turn: identity.turnId, contact: contact, requireResearchAccess: true),
           context.owner.permitsRecall(generation: generation),
           context.owner.deliveryMode == .observe || context.owner.deliveryMode == .respond,
           context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted,
@@ -2346,8 +2347,26 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
       conversationId: identity.conversationId, turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
+    guard desktopCollaborationResponseReplay.begin(desktopId: link.desktopId) else { return }
+    defer { desktopCollaborationResponseReplay.end(desktopId: link.desktopId) }
+    let key = AgentMcpJSONCodec.sha256(["desktop": .string(link.desktopId), "request": .string(requestId)])
+    let fingerprint = AgentMcpJSONCodec.sha256([
+      "profile": .string(store.profile.identityFingerprint), "pair": .string(link.desktopFingerprint),
+      "route": .string(identity.clientRouteId), "contact": .string(contact), "run": .string(scope.runId),
+      "group": .string(scope.conversationId), "turn": .string(scope.turnId), "member": .string(scope.memberId),
+      "source": .string(scope.sourceId), "generation": .int(generation), "expires_at": .int(expiry),
+      "contract": .string(route.contract), "phase": .string("read"), "arguments": .object(input)
+    ])
+    let cached: AgentMcpJSONObject?
+    switch desktopCollaborationResponseReplay.lookup(key: key, fingerprint: fingerprint, now: now) {
+    case .identityMismatch: return
+    case .missing: cached = nil
+    case .response(let response): cached = response
+    }
     var result: AgentMcpJSONObject = ["success": .bool(false), "status": .string("unavailable")]
-    if let query = route.goalSelector(input, scope: scope, generation: generation),
+    if let cached {
+      result = cached
+    } else if let query = route.goalSelector(input, scope: scope, generation: generation),
        var page = try? history.recallCollaborationOriginal(query, scope: scope) {
       let next = page.removeValue(forKey: "next_offset")?.intValue
       let hash = page.string("sha256")
@@ -2375,6 +2394,10 @@ final class MessageCoordinator: ObservableObject {
           result = page
         }
       }
+    }
+    if cached == nil {
+      desktopCollaborationResponseReplay.remember(result, key: key, fingerprint: fingerprint,
+        expiresAt: expiry, now: AgentControlPlaneClock.nowMillis())
     }
     var response: AgentMcpJSONObject = [
       "client_route_id": .string(identity.clientRouteId), "conversation_id": .string(identity.conversationId),
