@@ -325,6 +325,50 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(savedReview.frozenCloudReads?.first?.evidenceId, source["evidence_id"]?.stringValue)
   }
 
+  func testCommittedPredictionOutcomeRecoveryRequiresMatchingFrozenObservation() throws {
+    let suite = "prediction-recovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    for matches in [true, false] {
+      var team = durableTeamSnapshot("prediction-\(matches)")
+      team.members[1].status = .succeeded
+      XCTAssertTrue(history.upsert(team))
+      let member = team.members[1]
+      let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+        turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+      let reference = AgentCollaborationResearchReference(objectId: "outcome-\(matches)", revision: 1, sha256: "revision")
+      let draft = AgentCollaborationResearchDraft(id: "outcome", objectId: nil, baseRevision: 0, kind: .predictionOutcome,
+        title: "Outcome", body: [:], parents: [],
+        observations: [["evidence_id": .string("original"), "sha256": .string("expected")]])
+      let revision = AgentCollaborationResearchRevision(reference: reference, previousHash: nil, runId: scope.runId,
+        turnId: scope.turnId, authorId: scope.memberId, sourceId: scope.sourceId, draft: draft,
+        frozenCloudReads: [.init(evidenceId: "original", sha256: matches ? "expected" : "changed", totalCharacters: 10)])
+      let key = "publication:" + AgentMcpJSONCodec.sha256([
+        "run": .string(scope.runId), "member": .string(scope.memberId), "source": .string(scope.sourceId)
+      ])
+      try database.transaction {
+        try database.insertResearchRecord(revision, conversationId: scope.conversationId,
+          key: "object:" + reference.objectId, revision: reference.revision)
+        try database.insertResearchRecord(AgentCollaborationResearchPublication(requestHash: "request", references: [reference]),
+          conversationId: scope.conversationId, key: key, revision: 0)
+      }
+      let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+        executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+      if matches {
+        XCTAssertEqual(try reopened.committedResearchRevisions(scope: scope)?.first?.reference, reference)
+      } else {
+        XCTAssertThrowsError(try reopened.committedResearchRevisions(scope: scope))
+      }
+    }
+  }
+
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
     XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
     let raw = """
