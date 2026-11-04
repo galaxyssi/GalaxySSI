@@ -106,7 +106,7 @@ internal object HealthObservationPolicy {
         require(validate(draft, now) == null)
         val normalized = normalize(draft)
         return HealthObservation(draft.recordId.ifBlank { UUID.randomUUID().toString() }, draft.revision + 1,
-            normalized.copy(recordId = "", revision = 0), now, source = if (draft.evidence == null) "manual" else "ocr")
+            normalized.copy(recordId = "", revision = 0), now, source = draft.evidence?.let { if (it.kind == "table") "table" else "ocr" } ?: "manual")
     }
 
     fun duplicateKey(record: HealthObservation): String {

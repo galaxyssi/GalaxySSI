@@ -172,6 +172,9 @@ class HealthCaptureActivity : Activity() {
         }
     }
     private fun render(screen: String, data: CaptureSnapshot) {
+        if (screen == "review" && data.job?.state == HealthImportState.TABLE_REVIEW) {
+            startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", data.job.id)); back(); return
+        }
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
             "review" -> "review|$selectedId|$page|$candidateOffset|${data.page?.page}|${data.saved.joinToString { "${it.id}:${it.revision}" }}"
@@ -231,7 +234,9 @@ class HealthCaptureActivity : Activity() {
         jobs.forEach { job ->
             val view = HealthImportTaskView(this, ui,
                 { value -> worker.execute { HealthImportScheduler.cancel(applicationContext, value.id) } }, ::retry,
-                { open("review", it.id) }, { open("original", it.originalId) }, { value ->
+                { value -> if (value.state == HealthImportState.TABLE_REVIEW) {
+                    startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", value.id))
+                } else open("review", value.id) }, { open("original", it.originalId) }, { value ->
                     startActivity(Intent(this, HealthCameraActivity::class.java).putExtra("capture_batch", value.captureBatch))
                 })
             view.bind(job, jobState(job)); taskViews[job.id] = view; ui.add(content, view, 12)
@@ -445,12 +450,14 @@ class HealthCaptureActivity : Activity() {
     }
     private fun jobState(job: HealthImportJob): String = when {
         job.captureBatch.isNotBlank() && !job.captureSubmitted && job.state == HealthImportState.RECOGNIZING -> getString(R.string.health_photo_inspecting)
+        job.state == HealthImportState.RECOGNIZING && HealthTableParser.format(job.name, job.mime) != null -> getString(R.string.health_import_preparing)
         else -> when (job.state) {
         HealthImportState.QUEUED -> getString(R.string.health_import_queued)
         HealthImportState.COPYING -> if (job.totalBytes > 0) getString(R.string.health_import_copy_percent, (job.copiedBytes * 100 / job.totalBytes).coerceIn(0, 100))
             else getString(R.string.health_import_copying)
         HealthImportState.RECOGNIZING -> getString(R.string.health_import_recognizing, job.nextPage + 1, job.pageCount.coerceAtLeast(1))
         HealthImportState.REVIEW -> getString(R.string.health_import_review_ready, job.nextPage)
+        HealthImportState.TABLE_REVIEW -> getString(R.string.health_table_queue_ready)
         HealthImportState.ORIGINAL_ONLY -> getString(R.string.health_import_original_only)
         HealthImportState.CANCELLED -> getString(R.string.health_import_cancelled)
         HealthImportState.CAPTURE_READY -> getString(R.string.health_photo_arrange)
@@ -470,6 +477,13 @@ class HealthCaptureActivity : Activity() {
         "storage_full" -> R.string.health_import_storage_full
         "page_complexity" -> R.string.health_import_complexity
         "memory_pressure" -> R.string.health_import_memory_pressure
+        "table_size" -> R.string.health_table_size_error
+        "table_empty" -> R.string.health_table_empty_error
+        "table_headers", "table_columns" -> R.string.health_table_headers_error
+        "table_json" -> R.string.health_table_json_error
+        "table_csv" -> R.string.health_table_csv_error
+        "table_cell" -> R.string.health_table_cell_error
+        "table_row" -> R.string.health_table_row_error
         else -> R.string.health_import_failed
     }
     private data class CaptureSnapshot(val jobs: List<HealthImportJob> = emptyList(), val files: List<HealthOriginal> = emptyList(),

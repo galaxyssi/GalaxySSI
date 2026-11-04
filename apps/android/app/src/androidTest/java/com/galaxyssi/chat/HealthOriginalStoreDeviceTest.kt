@@ -192,7 +192,7 @@ class HealthOriginalStoreDeviceTest {
         try {
             file.parentFile!!.mkdirs(); file.writeBytes(bytes(400))
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-            val job = HealthImportJob(id(), uri.toString(), 1, name = "records.csv", mime = "text/csv")
+            val job = HealthImportJob(id(), uri.toString(), 1, name = "records.bin", mime = "application/octet-stream")
             store.createJob(job)
             assertEquals(HealthImportOutcome.COMPLETE, HealthImportPipeline(context).run(store, job.id))
             val saved = store.job(job.id)!!

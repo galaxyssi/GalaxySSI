@@ -83,7 +83,7 @@ class HealthEvidenceStoreDeviceTest {
                 assertEquals(listOf(record), store.history(record.id)); assertEquals(1L, store.count())
                 assertTrue(store.save(draft()) is HealthSaveResult.Saved); assertEquals(2L, store.count())
             }
-            context.openOrCreateDatabase(name, 0, null).use { assertEquals(2, it.version) }
+            context.openOrCreateDatabase(name, 0, null).use { assertEquals(3, it.version) }
         } finally { encoded.fill(0); draftBytes.fill(0); context.deleteDatabase(name) }
     }
 }

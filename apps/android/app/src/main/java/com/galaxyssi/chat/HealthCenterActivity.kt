@@ -282,7 +282,8 @@ class HealthCenterActivity : Activity() {
                 addView(ui.text(getString(R.string.health_measured_at), 13f, muted = true)); addView(ui.text(date(record.draft.measuredAt)))
                 ui.add(this, ui.text(source(record), 14f, muted = true), 14)
                 record.draft.evidence?.let { evidence ->
-                    ui.add(this, ui.row(getString(R.string.health_view_original), getString(R.string.health_source_page, evidence.page)) {
+                    ui.add(this, ui.row(getString(R.string.health_view_original), getString(if (evidence.kind == "table") R.string.health_table_source_row else R.string.health_source_page,
+                        if (evidence.kind == "table") evidence.tableRow else evidence.page.toLong())) {
                         startActivity(android.content.Intent(this@HealthCenterActivity, HealthCaptureActivity::class.java).putExtra("original", evidence.originalId))
                     }, 12)
                     ui.add(this, ui.text(evidence.rawText, 13f, muted = true), 8)
@@ -373,5 +374,7 @@ class HealthCenterActivity : Activity() {
         }
     }
     private fun openCapture() { startActivity(android.content.Intent(this, HealthCaptureActivity::class.java)) }
-    private fun source(record: HealthObservation) = getString(if (record.source == "ocr") R.string.health_source_ocr else R.string.health_source_manual)
+    private fun source(record: HealthObservation) = getString(when (record.source) {
+        "ocr" -> R.string.health_source_ocr; "table" -> R.string.health_source_table; else -> R.string.health_source_manual
+    })
 }
