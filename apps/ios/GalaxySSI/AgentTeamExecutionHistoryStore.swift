@@ -370,9 +370,7 @@ final class AgentTeamExecutionHistoryStore {
       return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
     let requestHash = try digest(drafts)
-    let publicationKey = "publication:" + AgentMcpJSONCodec.sha256([
-      "run": .string(runId), "member": .string(memberId), "source": .string(sourceId)
-    ])
+    let publicationKey = Self.researchPublicationKey(runId: runId, memberId: memberId, sourceId: sourceId)
     return try access { database in
       guard let snapshot = try database.snapshots(runId: runId).first,
             snapshot.conversationId == conversationId, snapshot.taskId == turnId,
@@ -433,6 +431,34 @@ final class AgentTeamExecutionHistoryStore {
         references: revisions.map(\.reference))
       try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
       return receipt
+    }
+  }
+
+  private static func researchPublicationKey(runId: String, memberId: String, sourceId: String) -> String {
+    "publication:" + AgentMcpJSONCodec.sha256([
+      "run": .string(runId), "member": .string(memberId), "source": .string(sourceId)
+    ])
+  }
+
+  func committedResearchRevisions(scope: AgentCollaborationToolEvidenceScope) throws -> [AgentCollaborationResearchRevision]? {
+    try access { database in
+      guard let snapshot = try database.snapshots(runId: scope.runId).first,
+            snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
+            snapshot.state != .cancelled, snapshot.members.contains(where: {
+              $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId && $0.status == .succeeded
+            }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let key = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+      guard let receipt = try database.researchRecord(AgentCollaborationResearchPublication.self,
+        conversationId: scope.conversationId, key: key, revision: 0) else { return nil }
+      return try receipt.references.map { reference in
+        guard let revision = try database.researchRecord(AgentCollaborationResearchRevision.self,
+          conversationId: scope.conversationId, key: "object:" + reference.objectId, revision: reference.revision),
+          revision.reference == reference, revision.runId == scope.runId, revision.turnId == scope.turnId,
+          revision.authorId == scope.memberId, revision.sourceId == scope.sourceId else {
+          throw AgentTeamHistoryDatabase.Failure.corrupt
+        }
+        return revision
+      }
     }
   }
 

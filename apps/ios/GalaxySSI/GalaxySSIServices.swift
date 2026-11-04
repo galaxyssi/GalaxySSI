@@ -7057,7 +7057,11 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     do {
       guard let context = try history.recoveryContext(source: source, conversation: conversation, turn: turn, contact: contact),
-            context.member.status == .succeeded, let raw = context.member.replyContent,
+            context.member.status == .succeeded else { return }
+      let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
+        conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
+      guard try history.committedResearchRevisions(scope: scope) == nil,
+            let raw = context.member.replyContent,
             let drafts = try AgentCollaborationResearchEnvelope.publication(in: raw) else { return }
       _ = try history.publishResearchObjects(drafts, runId: context.team.supervisorRunId,
         conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
