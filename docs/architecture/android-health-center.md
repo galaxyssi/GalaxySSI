@@ -382,6 +382,13 @@ Its version-bound review supports selective PDF export and optional
 measurement rows. See the [weekly report contract](android-health-weekly-report.md)
 for calculation rules, privacy gates, and export boundaries.
 
+## Sleep Change Reminders
+
+The reminder center now shows opt-in, coverage-gated sleep changes beside
+daily recording tasks. Details include the revision-bound trigger,
+gap-aware chart, source ranges, and handling actions. See the
+[sleep change contract](android-health-sleep-alerts.md).
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new

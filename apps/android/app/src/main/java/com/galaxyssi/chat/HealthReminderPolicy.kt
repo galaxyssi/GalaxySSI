@@ -7,7 +7,7 @@ import java.util.UUID
 import org.json.JSONObject
 
 internal enum class HealthReminderTarget { SLEEP, MEASUREMENTS }
-internal enum class HealthReminderState { PENDING, SNOOZED, COMPLETE, DISABLED }
+internal enum class HealthReminderState { PENDING, SNOOZED, COMPLETE, DISABLED, STALE }
 internal enum class HealthReminderDelivery { WAITING, POSTED, IN_APP_ONLY }
 internal enum class HealthReminderFilter { PENDING, HANDLED, ALL }
 internal enum class HealthReminderAction { COMPLETE, SNOOZE, DISABLE }
@@ -23,22 +23,28 @@ internal data class HealthReminderSettings(
     val hideOnLock: Boolean = true,
     val pauseUntil: Long = 0,
     val effectiveAt: Long = 0,
-    val revision: String = ""
+    val revision: String = "",
+    val sleepChanges: Boolean = false,
+    val sleepDecrease: Int = 45,
+    val mergeSleepChanges: Boolean = true
 ) {
     init {
         require(minute in 0..1439 && quietStart in 0..1439 && quietEnd in 0..1439 && quietStart != quietEnd)
         require(pauseUntil >= 0 && effectiveAt >= 0)
+        require(sleepDecrease in HealthSleepAlertPolicy.thresholds)
     }
 
     fun json() = JSONObject().put("enabled", enabled).put("minute", minute).put("target", target.name)
         .put("notifications", notifications).put("quiet", quiet).put("quietStart", quietStart).put("quietEnd", quietEnd)
         .put("hideOnLock", hideOnLock).put("pauseUntil", pauseUntil).put("effectiveAt", effectiveAt).put("revision", revision)
+        .put("sleepChanges", sleepChanges).put("sleepDecrease", sleepDecrease).put("mergeSleepChanges", mergeSleepChanges)
 
     companion object {
         fun from(j: JSONObject) = HealthReminderSettings(j.getBoolean("enabled"), j.getInt("minute"),
             HealthReminderTarget.valueOf(j.getString("target")), j.getBoolean("notifications"), j.getBoolean("quiet"),
             j.getInt("quietStart"), j.getInt("quietEnd"), j.getBoolean("hideOnLock"), j.getLong("pauseUntil"),
-            j.getLong("effectiveAt"), j.getString("revision"))
+            j.getLong("effectiveAt"), j.getString("revision"), j.optBoolean("sleepChanges", false),
+            j.optInt("sleepDecrease", 45), j.optBoolean("mergeSleepChanges", true))
     }
 }
 

@@ -20,6 +20,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.math.RoundingMode
 import java.util.concurrent.Executors
 
 class HealthReminderActivity : Activity() {
@@ -32,6 +33,12 @@ class HealthReminderActivity : Activity() {
             HealthProfilePolicy.uuid(name.removePrefix("health-reminder-test-").removeSuffix(".db"))) name else HealthReminderStore.DEFAULT_DB
     }
     private val live get() = database == HealthReminderStore.DEFAULT_DB
+    private val privacy by lazy { healthPrivacyDatabaseName() }
+    private val recordsName by lazy {
+        val name = intent.getStringExtra("health_sleep_test_records").orEmpty()
+        if (live) "health_records_v1.db" else if (BuildConfig.DEBUG && name.startsWith("health-weekly-test-") && name.endsWith(".db") &&
+            HealthProfilePolicy.uuid(name.removePrefix("health-weekly-test-").removeSuffix(".db"))) name else null
+    }
     private val store by lazy { HealthReminderStore(applicationContext, database) }
     private lateinit var body: LinearLayout
     private lateinit var title: TextView
@@ -41,6 +48,11 @@ class HealthReminderActivity : Activity() {
     private var settingsOpen = false
     private var draft: HealthReminderSettings? = null
     private var detail: LocalDate? = null
+    private var sleepId: String? = null
+    private var sleepAfter: HealthSleepCursor? = null
+    private val sleepPrevious = arrayListOf<HealthSleepCursor?>()
+    private var watchSleep = false
+    private var sleepEvaluationOk = true
     private var filter = HealthReminderFilter.PENDING
     private var after: LocalDate? = null
     private val previous = arrayListOf<LocalDate?>()
@@ -48,10 +60,20 @@ class HealthReminderActivity : Activity() {
     private val observer = object : ContentObserver(main) {
         override fun onChange(selfChange: Boolean) { if (!busy && !settingsOpen) load() }
     }
+    private val changes = object : ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) {
+            if (active && watchSleep && !busy && !settingsOpen) {
+                body.removeAllViews()
+                load(refresh = true)
+            }
+        }
+    }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         settingsOpen = state?.getBoolean("settings") ?: false
         detail = parse(if (state == null) intent.getStringExtra("health_reminder_day") else state.getString("day"))
+        sleepId = (if (state == null) intent.getStringExtra("health_sleep_alert_id") else state.getString("sleep")).orEmpty()
+            .takeIf(HealthProfilePolicy::uuid)
         filter = state?.getString("filter")?.let(HealthReminderFilter::valueOf) ?: filter
         after = parse(state?.getString("after")); previous.addAll(state?.getStringArrayList("previous")?.map(::parse).orEmpty())
         body = healthProfileBody(R.string.health_reminder_title) { back() }
@@ -61,16 +83,20 @@ class HealthReminderActivity : Activity() {
     private fun parse(value: String?) = value?.takeIf(String::isNotBlank)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     override fun onSaveInstanceState(out: Bundle) {
         out.putBoolean("settings", settingsOpen); out.putString("day", detail?.toString()); out.putString("filter", filter.name)
+        out.putString("sleep", sleepId)
         out.putString("after", after?.toString()); out.putStringArrayList("previous", ArrayList(previous.map { it?.toString().orEmpty() }))
         super.onSaveInstanceState(out)
     }
     override fun onStart() {
         super.onStart(); active = true
         contentResolver.registerContentObserver(HealthReminderStore.changes(this, database), false, observer)
+        contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, privacy), false, changes)
+        recordsName?.let { contentResolver.registerContentObserver(HealthRecordStore.changes(this, it), false, changes) }
         load(refresh = true)
     }
     override fun onStop() {
         active = false; generation++; contentResolver.unregisterContentObserver(observer)
+        contentResolver.unregisterContentObserver(changes)
         dialog?.dismiss(); dialog = null; body.removeAllViews(); super.onStop()
     }
     override fun onDestroy() { io.execute { store.close() }; io.shutdown(); super.onDestroy() }
@@ -79,6 +105,7 @@ class HealthReminderActivity : Activity() {
         if (busy) return
         when {
             settingsOpen -> { settingsOpen = false; draft = null; load() }
+            sleepId != null -> { sleepId = null; load() }
             detail != null -> { detail = null; load() }
             else -> finish()
         }
@@ -86,24 +113,44 @@ class HealthReminderActivity : Activity() {
     private fun load(refresh: Boolean = false) {
         if (!active) return
         val token = ++generation; val day = detail; val cursor = after; val selected = filter
-        val preferences = settingsOpen
-        title.setText(when { preferences -> R.string.health_reminder_preferences; day != null -> R.string.health_reminder_detail; else -> R.string.health_reminder_title })
+        val preferences = settingsOpen; val selectedSleep = sleepId; val sleepCursor = sleepAfter
+        title.setText(when { preferences -> R.string.health_reminder_preferences; day != null || selectedSleep != null -> R.string.health_reminder_detail; else -> R.string.health_reminder_title })
         io.execute {
             val result = runCatching {
-                if (refresh) HealthReminderWork.refresh(applicationContext, store, live)
-                Snapshot(store.settings(), if (!preferences && day == null) store.page(selected, cursor) else null, day?.let(store::occurrence))
+                if (refresh) {
+                    sleepEvaluationOk = if (live) HealthReminderWork.refresh(applicationContext, store, true)
+                    else {
+                        HealthReminderWork.refresh(applicationContext, store, false)
+                        recordsName?.let { HealthSleepAlertEngine.evaluate(applicationContext, store, System.currentTimeMillis(), ZoneId.systemDefault(), it, privacy) } ?: true
+                    }
+                }
+                val settings = store.settings()
+                val hasSleep = settings.sleepChanges || store.hasSleepHistory()
+                val center = !preferences && day == null && selectedSleep == null
+                val sleep = if (!preferences && day == null && hasSleep) HealthPrivacyStore(applicationContext, privacy).use { access ->
+                    val policy = access.policy()
+                    val views = if (!policy.metrics) SleepViews(blocked = true) else if (!sleepEvaluationOk && settings.sleepChanges) SleepViews(unavailable = true) else SleepViews(
+                        page = if (center) store.sleepPage(selected, sleepCursor) else null, alert = selectedSleep?.let(store::sleepAlert))
+                    if (access.policy().version != policy.version) SleepViews(blocked = true) else views
+                } else SleepViews()
+                Snapshot(settings, if (center) store.page(selected, cursor) else null, day?.let(store::occurrence), sleep, hasSleep)
             }
             main.post {
                 if (!active || token != generation) return@post
                 result.fold({ snapshot ->
+                    watchSleep = snapshot.hasSleep
                     if (preferences) { if (draft == null) draft = snapshot.settings; renderPreferences() }
+                    else if (selectedSleep != null) renderSleepDetail(snapshot.sleep)
                     else if (day != null) renderDetail(snapshot.event)
-                    else renderCenter(snapshot.settings, requireNotNull(snapshot.page))
+                    else renderCenter(snapshot.settings, requireNotNull(snapshot.page), snapshot.sleep, snapshot.hasSleep)
                 }, { renderError() })
             }
         }
     }
-    private data class Snapshot(val settings: HealthReminderSettings, val page: HealthReminderPage?, val event: HealthReminderOccurrence?)
+    private data class SleepViews(val page: HealthSleepPage? = null, val alert: HealthSleepAlert? = null,
+        val blocked: Boolean = false, val unavailable: Boolean = false)
+    private data class Snapshot(val settings: HealthReminderSettings, val page: HealthReminderPage?, val event: HealthReminderOccurrence?,
+        val sleep: SleepViews, val hasSleep: Boolean)
 
     private fun button(label: Int, tag: String, primary: Boolean = false, action: () -> Unit) = ui.command(label, action).apply {
         this.tag = tag
@@ -113,7 +160,7 @@ class HealthReminderActivity : Activity() {
         }
         setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
     }
-    private fun renderCenter(settings: HealthReminderSettings, page: HealthReminderPage) {
+    private fun renderCenter(settings: HealthReminderSettings, page: HealthReminderPage, sleep: SleepViews, hasSleep: Boolean) {
         val content = healthProfileContent(body)
         content.addView(ui.line().apply {
             HealthReminderFilter.entries.forEach { item ->
@@ -122,11 +169,31 @@ class HealthReminderActivity : Activity() {
                     isSelected = item == filter; isFocusable = true; setPadding(ui.dp(4), 0, ui.dp(4), 0)
                     background = ui.background(if (item == filter) getColor(R.color.surface_bg) else getColor(R.color.page_bg),
                         if (item == filter) getColor(R.color.separator) else null, radius = 8)
-                    setOnClickListener { filter = item; after = null; previous.clear(); load() }
+                    setOnClickListener { filter = item; after = null; previous.clear(); sleepAfter = null; sleepPrevious.clear(); load() }
                 }
                 addView(segment, LinearLayout.LayoutParams(0, -2, 1f))
             }
         })
+        if (hasSleep) {
+            ui.add(content, ui.text(getString(R.string.health_sleep_alert_group), 18f, bold = true), 20)
+            if (sleep.blocked) ui.add(content, ui.profileRow(getString(R.string.health_privacy_trend_blocked)) { startActivity(healthPrivacyIntent()) }, 8)
+            else if (sleep.unavailable) ui.add(content, ui.profileRow(getString(R.string.health_storage_error)) { load(refresh = true) }, 8)
+            else {
+                if (sleep.page?.rows.isNullOrEmpty()) ui.add(content, ui.text(getString(R.string.health_sleep_alert_empty), 15f, muted = true), 10)
+                sleep.page?.rows.orEmpty().forEach { alert ->
+                    val detail = if (alert.actionable) getString(R.string.health_sleep_alert_decrease, minutes(alert.evidence.decrease))
+                        else getString(alert.state.titleResource())
+                    ui.add(content, ui.profileRow(getString(R.string.health_sleep_alert_title), detail) { sleepId = alert.id; load(refresh = true) }
+                        .apply { tag = "health-sleep-alert" }, 4)
+                }
+                if (sleepPrevious.isNotEmpty()) ui.add(content, button(R.string.health_previous_page, "health-sleep-prev") {
+                    sleepAfter = sleepPrevious.removeAt(sleepPrevious.lastIndex); load()
+                }, 8)
+                sleep.page?.next?.let { next -> ui.add(content, button(R.string.health_next_page, "health-sleep-next") {
+                    sleepPrevious += sleepAfter; sleepAfter = next; load()
+                }, 8) }
+            }
+        }
         ui.add(content, ui.text(getString(R.string.health_reminder_record_group), 18f, bold = true), 20)
         if (page.rows.isEmpty()) ui.add(content, ui.text(getString(R.string.health_reminder_empty), 15f, muted = true), 16)
         page.rows.forEach { event ->
@@ -143,6 +210,75 @@ class HealthReminderActivity : Activity() {
         ui.add(content, ui.text(if (next == null) getString(R.string.health_reminder_plan_off)
             else getString(R.string.health_reminder_next_due, format(next, ZoneId.systemDefault().id)), 14f, muted = true), 20)
         ui.add(content, button(R.string.health_reminder_preferences, "health-reminder-settings") { settingsOpen = true; load() }, 12)
+    }
+    private fun minutes(value: java.math.BigDecimal) = value.setScale(1, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+    private fun renderSleepDetail(sleep: SleepViews) {
+        val content = healthProfileContent(body)
+        if (sleep.blocked) {
+            content.addView(ui.text(getString(R.string.health_privacy_trend_blocked)))
+            ui.add(content, button(R.string.health_privacy_title, "health-sleep-blocked") { startActivity(healthPrivacyIntent()) }, 12)
+            return
+        }
+        if (sleep.unavailable) { renderError(); return }
+        val alert = sleep.alert ?: run { content.addView(ui.text(getString(R.string.health_sleep_alert_empty))); return }
+        val evidence = alert.evidence
+        val zone = ZoneId.of(evidence.zone)
+        ui.add(content, ui.column().apply {
+            background = ui.background(stroke = getColor(R.color.separator), radius = 8)
+            setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
+            addView(ui.text(getString(R.string.health_sleep_alert_tag), 13f, bold = true).apply { setTextColor(0xff9d660c.toInt()) })
+            ui.add(this, ui.text(getString(R.string.health_sleep_alert_title), 22f, bold = true), 6)
+            ui.add(this, ui.text(getString(R.string.health_sleep_alert_opened, format(alert.openedAt, alert.trigger.zone)), 13f, muted = true), 6)
+            ui.add(this, ui.text(getString(alert.state.titleResource()), 14f, bold = true).apply { tag = "health-sleep-state-${alert.state.name}" }, 6)
+        })
+        ui.add(content, ui.text(getString(R.string.health_sleep_alert_basis), 18f, bold = true), 20)
+        val spec = HealthTrendSpec(HealthMetric.SLEEP_DURATION, evidence.first, evidence.end, zone, "min")
+        var prior = -2
+        val points = evidence.daily.mapIndexedNotNull { i, value ->
+            value?.let {
+                val day = evidence.first.plusDays(i.toLong())
+                HealthTrendPoint(i, "sleep_duration", day, day, it, 1, "", prior + 1 != i).also { prior = i }
+            }
+        }
+        val chart = HealthTrendChart(this) { point -> openSleepRecords(evidence, point.first, point.last) }
+        chart.bind(HealthTrendSummary(spec, evidence.records, evidence.records, 0, 0, evidence.recentDays, evidence.recentDays,
+            points, null, evidence.metricVersion, evidence.computedAt))
+        content.addView(chart.apply { tag = "health-sleep-chart" }, LinearLayout.LayoutParams(-1, ui.dp(168)).apply { topMargin = ui.dp(10) })
+        ui.add(content, ui.text(getString(R.string.health_weekly_compare, minutes(evidence.recent), minutes(evidence.baseline), "-${minutes(evidence.decrease)}")), 8)
+        ui.add(content, ui.text(getString(R.string.health_weekly_compare_coverage, evidence.recentDays, evidence.baselineDays), 14f, muted = true), 8)
+        ui.add(content, ui.text(getString(R.string.health_weekly_baseline_range, evidence.baselineFirst, evidence.baselineLast), 13f, muted = true), 6)
+        ui.add(content, ui.text(getString(R.string.health_sleep_alert_rule, evidence.rule, evidence.threshold), 13f, muted = true), 6)
+        if (alert.trigger != evidence) ui.add(content, ui.text(getString(R.string.health_sleep_alert_trigger,
+            alert.trigger.first, alert.trigger.end, minutes(alert.trigger.decrease)), 13f, muted = true), 8)
+        ui.add(content, ui.profileRow(getString(R.string.health_sleep_alert_source)) { openSleepRecords(evidence, evidence.first, evidence.end) }, 6)
+        ui.add(content, ui.profileRow(getString(R.string.health_weekly_baseline_records)) { openSleepRecords(evidence, evidence.baselineFirst, evidence.baselineLast) })
+        ui.add(content, ui.text(getString(R.string.health_sleep_alert_record_note), 14f), 12)
+        ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 8)
+        ui.add(content, ui.text(getString(alert.delivery.titleResource()), 13f, muted = true), 8)
+        if (alert.handledAt != 0L) ui.add(content, ui.text(getString(R.string.health_sleep_alert_handled,
+            format(alert.handledAt, evidence.zone)), 13f, muted = true), 6)
+        if (alert.actionable) {
+            if (alert.state == HealthReminderState.SNOOZED) ui.add(content, ui.text(getString(R.string.health_reminder_snoozed_until,
+                format(alert.resumeAt, ZoneId.systemDefault().id)), 13f, muted = true), 6)
+            ui.add(content, button(R.string.health_reminder_open_record, "health-sleep-add-record") {
+                startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_manual", true).putExtra("health_metric", HealthMetric.SLEEP_DURATION.name))
+            }, 12)
+            ui.add(content, button(R.string.health_reminder_complete, "health-sleep-complete", true) { actSleep(alert, HealthReminderAction.COMPLETE) }, 10)
+            ui.add(content, button(R.string.health_reminder_snooze, "health-sleep-snooze") { actSleep(alert, HealthReminderAction.SNOOZE) }, 8)
+            ui.add(content, button(R.string.health_sleep_alert_disable, "health-sleep-disable") {
+                show(AlertDialog.Builder(this).setMessage(R.string.health_sleep_alert_disable_confirm).setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.health_sleep_alert_disable) { _, _ -> actSleep(alert, HealthReminderAction.DISABLE) }.create())
+            }, 8)
+        }
+    }
+    private fun openSleepRecords(evidence: HealthSleepAlertEvidence, first: LocalDate, last: LocalDate) {
+        if (!live) return
+        val spec = HealthTrendSpec(HealthMetric.SLEEP_DURATION, first, last, ZoneId.of(evidence.zone), "min")
+        startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(spec)
+            .putExtra("health_fixed_version", true).putExtra("health_version", evidence.metricVersion))
+    }
+    private fun actSleep(alert: HealthSleepAlert, action: HealthReminderAction) = mutate {
+        HealthReminderWork.actSleep(applicationContext, store, alert, action, live)
     }
     private fun renderDetail(event: HealthReminderOccurrence?) {
         val content = healthProfileContent(body)
@@ -173,7 +309,18 @@ class HealthReminderActivity : Activity() {
     private fun renderPreferences() {
         val value = draft ?: return
         val content = healthProfileContent(body)
-        content.addView(ui.text(getString(R.string.health_reminder_plan), 18f, bold = true))
+        content.addView(ui.text(getString(R.string.health_sleep_alert_group), 18f, bold = true))
+        toggle(content, R.string.health_sleep_alert_setting, "health-sleep-enabled", value.sleepChanges) { draft = draft?.copy(sleepChanges = it) }
+        ui.add(content, ui.profileRow(getString(R.string.health_sleep_alert_threshold), getString(R.string.health_sleep_alert_threshold_value, value.sleepDecrease)) {
+            val thresholds = HealthSleepAlertPolicy.thresholds
+            show(AlertDialog.Builder(this).setTitle(R.string.health_sleep_alert_threshold)
+                .setSingleChoiceItems(thresholds.map { getString(R.string.health_sleep_alert_threshold_value, it) }.toTypedArray(),
+                    thresholds.indexOf(value.sleepDecrease)) { d, index -> d.dismiss(); edit { copy(sleepDecrease = thresholds[index]) } }
+                .setNegativeButton(android.R.string.cancel, null).create())
+        })
+        toggle(content, R.string.health_sleep_alert_merge, "health-sleep-merge", value.mergeSleepChanges) { draft = draft?.copy(mergeSleepChanges = it) }
+        ui.add(content, ui.text(getString(R.string.health_sleep_alert_note), 13f, muted = true), 8)
+        ui.add(content, ui.text(getString(R.string.health_reminder_plan), 18f, bold = true), 24)
         toggle(content, R.string.health_reminder_daily, "health-reminder-enabled", value.enabled) { draft = draft?.copy(enabled = it) }
         ui.add(content, ui.profileRow(getString(R.string.health_reminder_time), time(value.minute)) {
             pick(R.string.health_reminder_time, value.minute) { edit { copy(minute = it) } }
@@ -244,7 +391,7 @@ class HealthReminderActivity : Activity() {
                 if (active) {
                     result.exceptionOrNull()?.let { Toast.makeText(this, if (it is HealthReminderConflict) R.string.health_reminder_conflict
                         else R.string.health_storage_error, Toast.LENGTH_LONG).show() }
-                    load()
+                    load(refresh = true)
                 }
             }
         }
@@ -274,6 +421,7 @@ private fun HealthReminderState.titleResource() = when (this) {
     HealthReminderState.SNOOZED -> R.string.health_reminder_snoozed
     HealthReminderState.COMPLETE -> R.string.health_reminder_done
     HealthReminderState.DISABLED -> R.string.health_reminder_disabled
+    HealthReminderState.STALE -> R.string.health_sleep_alert_stale
 }
 private fun HealthReminderDelivery.titleResource() = when (this) {
     HealthReminderDelivery.WAITING -> R.string.health_reminder_not_posted

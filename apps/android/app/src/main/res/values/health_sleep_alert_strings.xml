@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_sleep_alert_group">Health changes</string>
+    <string name="health_sleep_alert_tag">Trend reminder</string>
+    <string name="health_sleep_alert_title">Sleep duration below your baseline</string>
+    <string name="health_sleep_alert_empty">No sleep trend reminders in this view</string>
+    <string name="health_sleep_alert_setting">Sleep duration change reminders</string>
+    <string name="health_sleep_alert_threshold">Decrease required to remind</string>
+    <string name="health_sleep_alert_threshold_value">%1$d minutes</string>
+    <string name="health_sleep_alert_merge">Merge reminders for the same change</string>
+    <string name="health_sleep_alert_note">Compares 7 completed days with the preceding 14 days. The selected decrease is a reminder preference, not a clinical threshold.</string>
+    <string name="health_sleep_alert_decrease">%1$s min below the baseline</string>
+    <string name="health_sleep_alert_opened">First generated %1$s</string>
+    <string name="health_sleep_alert_handled">Handled %1$s</string>
+    <string name="health_sleep_alert_basis">Why this reminder appeared</string>
+    <string name="health_sleep_alert_rule">Personal change rule v%1$d · Reminder threshold %2$d min</string>
+    <string name="health_sleep_alert_trigger">First trigger: %1$s to %2$s · %3$s min below baseline</string>
+    <string name="health_sleep_alert_source">View records for these seven days</string>
+    <string name="health_sleep_alert_record_note">You can add bedtimes, wake times, and how you felt to your record notes.</string>
+    <string name="health_sleep_alert_stale">No longer current</string>
+    <string name="health_sleep_alert_disable">Turn off sleep change reminders</string>
+    <string name="health_sleep_alert_disable_confirm">Turn off sleep change reminders? The daily recording plan is unchanged.</string>
+</resources>

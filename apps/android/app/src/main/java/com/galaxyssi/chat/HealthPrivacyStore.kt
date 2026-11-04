@@ -39,7 +39,10 @@ internal class HealthPrivacyStore(private val context: Context, private val name
                 check(db.update("policy", ContentValues().apply { put("payload", pack("policy", value.json())) }, "id=1", null) == 1)
             }
         }
-        if (next.version != expected) context.contentResolver.notifyChange(changes(context, name), null)
+        if (next.version != expected) {
+            context.contentResolver.notifyChange(changes(context, name), null)
+            if (name == DEFAULT_DB && option == HealthPrivacyOption.CONFIRMED_METRICS) HealthReminderWork.sleepRecordsChanged(context)
+        }
         return next
     }
     private fun begin(scope: HealthAccessScope): HealthAccessEvent = transaction {
