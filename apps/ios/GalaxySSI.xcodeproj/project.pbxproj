@@ -147,6 +147,8 @@
     A10000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift */; };
     A10000000000000000001441 /* GalaxySSIQRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001441 /* GalaxySSIQRCodeScannerView.swift */; };
     A10000000000000000001434 /* GalaxySSISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001434 /* GalaxySSISettingsView.swift */; };
+    A10000000000000000009801 /* GalaxySSIHealthRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009801 /* GalaxySSIHealthRecords.swift */; };
+    A10000000000000000009802 /* GalaxySSIHealthCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */; };
     A10000000000000000001501 /* GalaxySSIAgentModelSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001501 /* GalaxySSIAgentModelSelectionView.swift */; };
     A10000000000000000001503 /* AgentExecutionTargetStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001503 /* AgentExecutionTargetStatus.swift */; };
     A10000000000000000001436 /* GalaxySSIContactKindPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001436 /* GalaxySSIContactKindPresentation.swift */; };
@@ -488,6 +490,7 @@
     A10000000000000000000670 /* AgentAttachmentRecoveryProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000670 /* AgentAttachmentRecoveryProtocolTests.swift */; };
     A10000000000000000000494 /* AgentOcrLayoutAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000494 /* AgentOcrLayoutAnalyzer.swift */; };
     A10000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift */; };
+    A10000000000000000009803 /* GalaxySSIHealthRecordsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009803 /* GalaxySSIHealthRecordsTests.swift */; };
     A10000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift */; };
     A10000000000000000000496 /* GlobalEventPublisherPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000496 /* GlobalEventPublisherPolicy.swift */; };
     A10000000000000000000497 /* GlobalConversationEventPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000497 /* GlobalConversationEventPolicyTests.swift */; };
@@ -1213,6 +1216,8 @@
     A20000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIMyContactQRCodeView.swift; sourceTree = "<group>"; };
     A20000000000000000001441 /* GalaxySSIQRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIQRCodeScannerView.swift; sourceTree = "<group>"; };
     A20000000000000000001434 /* GalaxySSISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSISettingsView.swift; sourceTree = "<group>"; };
+    A20000000000000000009801 /* GalaxySSIHealthRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthRecords.swift; sourceTree = "<group>"; };
+    A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001501 /* GalaxySSIAgentModelSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentModelSelectionView.swift; sourceTree = "<group>"; };
     A20000000000000000001503 /* AgentExecutionTargetStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionTargetStatus.swift; sourceTree = "<group>"; };
     A20000000000000000001436 /* GalaxySSIContactKindPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactKindPresentation.swift; sourceTree = "<group>"; };
@@ -1556,6 +1561,7 @@
     A20000000000000000000670 /* AgentAttachmentRecoveryProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentRecoveryProtocolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000494 /* AgentOcrLayoutAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOcrLayoutAnalyzer.swift; sourceTree = "<group>"; };
     A20000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOcrLayoutAnalyzerTests.swift; sourceTree = "<group>"; };
+    A20000000000000000009803 /* GalaxySSIHealthRecordsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthRecordsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOfficeDocumentExtractorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000496 /* GlobalEventPublisherPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalEventPublisherPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000497 /* GlobalConversationEventPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalConversationEventPolicyTests.swift; sourceTree = "<group>"; };
@@ -2817,6 +2823,8 @@
         A20000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift */,
         A20000000000000000001441 /* GalaxySSIQRCodeScannerView.swift */,
         A20000000000000000001434 /* GalaxySSISettingsView.swift */,
+        A20000000000000000009801 /* GalaxySSIHealthRecords.swift */,
+        A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */,
         A20000000000000000001436 /* GalaxySSIContactKindPresentation.swift */,
         A20000000000000000000990 /* GalaxySSIAddContactView.swift */,
         A20000000000000000000991 /* GalaxySSICloudModelOnboardingView.swift */,
@@ -3182,6 +3190,7 @@
         A20000000000000000000487 /* AgentIdentityPresentationTests.swift */,
         E22626000000000000000002 /* AgentGlobalRunSlotsTests.swift */,
         A20000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift */,
+        A20000000000000000009803 /* GalaxySSIHealthRecordsTests.swift */,
         A20000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift */,
         A20000000000000000000489 /* AgentPreferenceModeTests.swift */,
         A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */,
@@ -4023,6 +4032,8 @@
         A10000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift in Sources */,
         A10000000000000000001441 /* GalaxySSIQRCodeScannerView.swift in Sources */,
         A10000000000000000001434 /* GalaxySSISettingsView.swift in Sources */,
+        A10000000000000000009801 /* GalaxySSIHealthRecords.swift in Sources */,
+        A10000000000000000009802 /* GalaxySSIHealthCenterView.swift in Sources */,
         A10000000000000000001436 /* GalaxySSIContactKindPresentation.swift in Sources */,
         A10000000000000000000990 /* GalaxySSIAddContactView.swift in Sources */,
         A10000000000000000000991 /* GalaxySSICloudModelOnboardingView.swift in Sources */,
@@ -4388,6 +4399,7 @@
         A10000000000000000000487 /* AgentIdentityPresentationTests.swift in Sources */,
         E12626000000000000000002 /* AgentGlobalRunSlotsTests.swift in Sources */,
         A10000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift in Sources */,
+        A10000000000000000009803 /* GalaxySSIHealthRecordsTests.swift in Sources */,
         A10000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift in Sources */,
         A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */,
         A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */,
