@@ -3,6 +3,38 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testOverviewUsesConfirmedLatestReadingsAndLocalDayBoundary() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 10, hour: 12)))
+    let boundary = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 4)))
+    let weight = GalaxySSIHealthReading(metric: .weight, measuredAt: boundary, value: 65)
+    let older = GalaxySSIHealthReading(metric: .weight, measuredAt: boundary.addingTimeInterval(-1), value: 60)
+    let stale = GalaxySSIHealthReading(metric: .heartRate, measuredAt: boundary.addingTimeInterval(-1), value: 65)
+    let future = GalaxySSIHealthReading(metric: .weight, measuredAt: now.addingTimeInterval(1), value: 90)
+    let deleted = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 5, deleted: true)
+    let overview = GalaxySSIHealthOverview(current: [older, weight, stale, future, deleted],
+                                          now: now, calendar: calendar)
+    XCTAssertEqual(overview.recentCount, 1)
+    XCTAssertEqual(overview.metrics.first { $0.metric == .weight }?.reading?.id, weight.id)
+    XCTAssertEqual(overview.metrics.first { $0.metric == .heartRate }?.freshness, .stale)
+    XCTAssertEqual(overview.metrics.first { $0.metric == .glucose }?.freshness, .missing)
+  }
+
+  @MainActor
+  func testOverviewPermissionIsOptInAndSurvivesReopening() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertNil(try records.load().derivesOverview)
+    try records.setOverviewPermission(true)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.load().derivesOverview, true)
+    try reopened.setOverviewPermission(false)
+    XCTAssertEqual(try records.load().derivesOverview, false)
+  }
+
   @MainActor
   func testWeeklyExportRequiresPermissionAndUnchangedSelectedRevisions() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
