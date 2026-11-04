@@ -1,9 +1,28 @@
+import CryptoKit
 import Foundation
+
+enum AgentIOSOriginalHTMLSourceArchive {
+  static func save(_ source: Data, documents: URL? = nil) throws -> URL {
+    guard !source.isEmpty, source.count <= Int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes) else {
+      throw CocoaError(.fileWriteUnknown)
+    }
+    let root = try documents ?? FileManager.default.url(for: .documentDirectory,
+      in: .userDomainMask, appropriateFor: nil, create: true)
+    let directory = root.appendingPathComponent("Downloads", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let digest = SHA256.hash(data: source).map { String(format: "%02x", $0) }.joined()
+    // Use a text extension so the original, unsanitized markup is not opened as an active page.
+    let destination = directory.appendingPathComponent("original-page-\(digest).html.txt")
+    try source.write(to: destination, options: [.atomic, .completeFileProtection])
+    return destination
+  }
+}
 
 struct AgentIOSPhonePublicHTMLPreparation {
   var attachment: GalaxySSIDraftAttachment
   var sourceURL: String
   var export: AgentIOSPhonePublicHTMLExport?
+  var originalSourceArchiveName: String? = nil
 }
 
 struct AgentIOSPhonePublicHTMLExport: Equatable {
@@ -107,12 +126,16 @@ enum AgentIOSPhonePublicHTMLAttachment {
           cancellationRequested: { false },
           progressReporter: { _, _ in }
         )
-        let result = provider.invoke(
-          operation: .fetch,
-          input: input,
-          invocation: invocation
-        )
-        guard let preparation = Self.preparation(
+        var originalHTML: Data?
+        let result: AgentNativeToolExecutionResult
+        if let networkProvider = provider as? AgentIOSURLSessionWebIntelligenceProvider {
+          result = networkProvider.fetchCapturingHTML(input: input, invocation: invocation) {
+            originalHTML = $0
+          }
+        } else {
+          result = provider.invoke(operation: .fetch, input: input, invocation: invocation)
+        }
+        guard var preparation = Self.preparation(
           result: result,
           requestedURL: requestedURL,
           turnId: cleanTurnID,
@@ -120,6 +143,10 @@ enum AgentIOSPhonePublicHTMLAttachment {
           interfaceLanguage: interfaceLanguage
         ) else {
           return
+        }
+        if let originalHTML {
+          preparation.originalSourceArchiveName = try? AgentIOSOriginalHTMLSourceArchive
+            .save(originalHTML).lastPathComponent
         }
         accumulator.set(preparation, at: index)
       }

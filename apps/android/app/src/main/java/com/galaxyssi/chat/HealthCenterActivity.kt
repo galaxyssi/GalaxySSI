@@ -270,6 +270,9 @@ class HealthCenterActivity : Activity() {
             }.apply { tag = "health-profile-entry" }, 8)
             ui.add(this, ui.profileRow(getString(R.string.health_privacy_title)) { startActivity(healthPrivacyIntent()) }.apply { tag = "health-privacy-entry" }, 8)
             ui.add(this, ui.profileRow(getString(R.string.health_reminder_title)) { openReminders() }, 8)
+            ui.add(this, ui.profileRow(getString(R.string.health_body_title), getString(R.string.health_body_entry)) {
+                startActivity(android.content.Intent(this@HealthCenterActivity, HealthBodyExplorationActivity::class.java))
+            }.apply { tag = "health-body-entry" }, 8)
         }
     }
     private fun openReminders() = startActivity(android.content.Intent(this, HealthReminderActivity::class.java))

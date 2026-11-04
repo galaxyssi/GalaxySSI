@@ -581,11 +581,21 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     }
   }
 
+  func openCapturingHTML(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation,
+    capture: @escaping (Data) -> Void
+  ) -> AgentNativeToolExecutionResult {
+    executeWeb(operation: .webOpen, input: input, invocation: invocation, method: .get,
+      captureHTML: capture)
+  }
+
   private func executeWeb(
     operation: AgentIOSWebMediaOperation,
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation,
-    method: AgentIOSURLSessionWebRequest.Method
+    method: AgentIOSURLSessionWebRequest.Method,
+    captureHTML: ((Data) -> Void)? = nil
   ) -> AgentNativeToolExecutionResult {
     do {
       let url = try validatedPublicHTTPSURL(urlString(input))
@@ -615,6 +625,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           output["text"] = .string(boundedText(decode(resource.body, charset: charset), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes))
         }
       case .webOpen, .browserRender:
+        let mediaType = resource.contentType.split(separator: ";").first?
+          .trimmingCharacters(in: .whitespaces).lowercased()
+        if !resolution.dynamicRendered, (200..<300).contains(resource.statusCode),
+           mediaType == "text/html" || mediaType == "application/xhtml+xml" {
+          captureHTML?(resource.body)
+        }
         let html = decode(resource.body, charset: charset)
         let article = AgentIOSPublicArticleParser.parse(url: URL(string: resource.finalURL) ?? url, source: html)
         output["text"] = .string(article?.content ?? boundedText(
