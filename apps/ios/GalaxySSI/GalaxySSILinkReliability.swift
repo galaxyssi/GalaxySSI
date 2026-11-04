@@ -523,6 +523,10 @@ final class GalaxySSILinkDeliveryStore {
     discard(messageId: messageId)
   }
 
+  func containsOutboxMessage(_ messageId: String) -> Bool {
+    state.outbox.contains { $0.messageId == messageId }
+  }
+
   func discard(messageId: String) {
     guard !messageId.isEmpty else { return }
     let before = state.outbox.count
@@ -746,7 +750,8 @@ final class GalaxySSILinkDeliveryStore {
     now: Date = Date(),
     allowValidatedNetworkMessages: Bool = true,
     maxAttempts: Int = Int.max,
-    attachmentMaxAttempts: Int? = nil
+    attachmentMaxAttempts: Int? = nil,
+    minimumDelay: (PendingLinkMessage) -> TimeInterval = { _ in 0 }
   ) -> TimeInterval? {
     let attachmentLimit = max(maxAttempts, attachmentMaxAttempts ?? maxAttempts)
     return state.outbox
@@ -760,7 +765,7 @@ final class GalaxySSILinkDeliveryStore {
           ) &&
           !(item.requiresValidatedNetwork && !allowValidatedNetworkMessages)
       }
-      .map { max(0, $0.nextAttemptAt.timeIntervalSince(now)) }
+      .map { max(minimumDelay($0), $0.nextAttemptAt.timeIntervalSince(now)) }
       .min()
   }
 
