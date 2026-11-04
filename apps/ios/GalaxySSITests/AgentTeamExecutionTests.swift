@@ -2,6 +2,38 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCollaborationDispatchCheckpointSurvivesReopenAndRejectsDuplicateStart() throws {
+    let suite = "team-checkpoint-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var snapshot = durableTeamSnapshot("run")
+    let index = try XCTUnwrap(snapshot.members.firstIndex { $0.deliveryMode == .observe })
+    snapshot.members[index].dispatchCheckpoint = .notStarted
+    let member = snapshot.members[index]
+    XCTAssertTrue(history.upsert(snapshot))
+    XCTAssertFalse(history.advanceDispatchCheckpoint(runId: "run", conversationId: "foreign",
+      turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
+      to: .dispatching, now: 20))
+    XCTAssertTrue(history.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
+      to: .dispatching, now: 20))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .dispatching)
+    XCTAssertFalse(reopened.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
+      to: .dispatching, now: 30))
+    XCTAssertTrue(reopened.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
+      to: .accepted, now: 30))
+    XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .accepted)
+  }
+
   func testCollaborationResultsStayInTheirConversationAfterReopen() {
     let suite = "team-results-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
