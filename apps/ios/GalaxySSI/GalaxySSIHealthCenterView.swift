@@ -51,6 +51,11 @@ struct GalaxySSIHealthCenterView: View {
         } label: {
           Label(t("profile.title", "Health Profile"), systemImage: "person.text.rectangle")
         }
+        NavigationLink {
+          GalaxySSIHealthReportCropView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
+        } label: {
+          Label(t("report_crop.title", "Report Crop Preview"), systemImage: "crop")
+        }
       }
       if scenePhase == .active, let archive {
         let current = archive.current
