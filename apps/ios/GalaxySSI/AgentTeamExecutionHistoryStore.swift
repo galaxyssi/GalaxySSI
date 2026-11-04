@@ -1056,12 +1056,64 @@ final class AgentTeamExecutionHistoryStore {
               }) else { return false }
         let existing = prior.first?.liveGraph?.work ?? []
         let updated = checkpoint.liveGraph?.work ?? []
+        let priorWorkflows = prior.first?.liveGraph?.workflowInstances ?? [:]
+        let workflows = checkpoint.liveGraph?.workflowInstances ?? [:]
+        let additions = updated.dropFirst(existing.count)
+        guard priorWorkflows.allSatisfy({ workflows[$0.key] == $0.value }),
+              additions.allSatisfy({ item in
+                guard let id = item.workflowExecutionId else { return item.review_targets == nil }
+                return priorWorkflows[id] == nil && workflows[id] != nil
+              }) else { return false }
+        for (id, instance) in workflows where priorWorkflows[id] == nil {
+          guard id == instance.execution_id,
+                let compiled = try Self.resolveWorkflow(instance, snapshot: snapshot, database: database),
+                compiled == additions.filter({ $0.workflowExecutionId == id }) else { return false }
+        }
         guard try Self.validateLearningAdmissions(updated, existingCount: existing.count,
           snapshot: snapshot, database: database) else { return false }
         try database.insertGoalCheckpoint(checkpoint)
         return true
       }
     } catch { return false }
+  }
+
+  func appendSavedCollaborationWorkflow(_ instance: AgentCollaborationWorkflowInstance,
+    runId: String, conversationId: String, turnId: String, expectedRevision: Int64,
+    historicalAuthors: [String: String], settled: [String: AgentCollaborationLiveGraph.Settlement]) -> Bool {
+    guard var checkpoint = goalCheckpoint(runId: runId, conversationId: conversationId, turnId: turnId),
+          let snapshot = snapshot(supervisorRunId: runId), snapshot.conversationId == conversationId,
+          snapshot.taskId == turnId, !snapshot.state.isTerminal else { return false }
+    let graph = checkpoint.liveGraph ?? .init()
+    if let existing = graph.workflowInstances?[instance.execution_id] { return existing == instance }
+    guard checkpoint.revision == expectedRevision, expectedRevision < Int64.max,
+          let compiled = try? access({ try Self.resolveWorkflow(instance, snapshot: snapshot, database: $0) }),
+          let expanded = graph.appendingWorkflow(instance, compiled: compiled,
+            authorizedMembers: Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId)),
+            historicalAuthors: historicalAuthors, settled: settled) else { return false }
+    checkpoint.liveGraph = expanded
+    checkpoint.revision += 1
+    checkpoint.completedWorkIds = []
+    return advanceGoalCheckpoint(checkpoint, expectedRevision: expectedRevision)
+  }
+
+  private static func resolveWorkflow(_ instance: AgentCollaborationWorkflowInstance, snapshot: AgentTeamExecutionSnapshot,
+    database: AgentTeamHistoryDatabase) throws -> [AgentCollaborationLiveGraph.Work]? {
+    let assigned = Set(instance.roles.values)
+    guard assigned.isSubset(of: Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))) else { return nil }
+    func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision? {
+      guard let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+        conversationId: snapshot.conversationId, key: "object:" + ref.objectId), saved.reference == ref else { return nil }
+      return saved
+    }
+    guard let method = try current(instance.method), method.draft.kind == .workflowMethod,
+          method.turnId != snapshot.taskId ||
+            (method.runId == snapshot.supervisorRunId && method.authorId == snapshot.primaryMemberId),
+          let body = method.draft.body["workflow_method"]?.objectValue else { return nil }
+    for input in instance.inputs.values {
+      guard let saved = try current(input), saved.turnId != snapshot.taskId ||
+        (saved.runId == snapshot.supervisorRunId && assigned == [saved.authorId]) else { return nil }
+    }
+    return instance.compile(body)
   }
 
   private static func validateLearningAdmissions(_ work: [AgentCollaborationLiveGraph.Work], existingCount: Int,

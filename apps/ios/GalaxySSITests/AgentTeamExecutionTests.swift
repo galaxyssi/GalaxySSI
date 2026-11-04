@@ -337,6 +337,17 @@ extension GalaxySSIStoreTests {
       AgentCollaborationWorkflowIntake.validates(try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(input.utf8)))
     }
     XCTAssertTrue(try validates(raw))
+    let body = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let method = AgentCollaborationResearchReference(objectId: "method", revision: 1, sha256: "exact")
+    let instance = AgentCollaborationWorkflowInstance(execution_id: "run", method: method,
+      inputs: [:], roles: ["author": "writer", "reviewer": "reviewer"])
+    let steps = try XCTUnwrap(instance.compile(body))
+    XCTAssertEqual(steps.map(\.stage), ["EXPLORE", "VERIFY"])
+    XCTAssertEqual(steps.last?.depends_on, [try XCTUnwrap(steps.first?.id)])
+    XCTAssertEqual(instance.compile(body), steps)
+    let sameMember = AgentCollaborationWorkflowInstance(execution_id: "run", method: method,
+      inputs: [:], roles: ["author": "writer", "reviewer": "writer"])
+    XCTAssertNil(sameMember.compile(body))
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
       with: "\"assignment\":\"Draft\",\"depends_on\":[\"review\"]")))
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",

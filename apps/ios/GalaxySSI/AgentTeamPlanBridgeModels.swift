@@ -213,7 +213,7 @@ enum AgentTeamDispatchIds {
     return Int64(value | sourceIdNamespaceBit)
   }
 
-  private static func nameBasedUUID(_ value: String) -> UUID {
+  static func nameBasedUUID(_ value: String) -> UUID {
     var bytes = Array(Insecure.MD5.hash(data: Data(value.utf8)))
     bytes[6] = (bytes[6] & 0x0f) | 0x30
     bytes[8] = (bytes[8] & 0x3f) | 0x80
