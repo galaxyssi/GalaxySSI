@@ -62,7 +62,92 @@ struct GalaxySSICollaborationRecallView: View {
   }
 }
 
-struct GalaxySSICollaborationResultsButton: View {
+struct GalaxySSICollaborationTeamPanel: View {
+  let session: AgentConversation
+  let roster: AgentCollaborationRoster
+  let t: (String, String) -> String
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State private var snapshot: AgentTeamExecutionSnapshot?
+  @State private var expanded = false
+  @State private var settingsPresented = false
+  @State private var historyPresented = false
+  @State private var refreshRevision = 0
+
+  var body: some View {
+    DisclosureGroup(isExpanded: $expanded) {
+      LazyVStack(alignment: .leading, spacing: 8) {
+        if let snapshot {
+          ForEach(snapshot.members.filter { $0.deliveryMode != .ignore }, id: \.memberId) { member in
+            VStack(alignment: .leading, spacing: 3) {
+              Text((member.displayName ?? "").ifBlank(member.agentId)).font(.subheadline.weight(.semibold))
+              if !member.role.isBlank { Text(member.role).font(.footnote) }
+              Text(GalaxySSIAgentTeamPresentation.memberStatusLabel(member.status, language: language))
+                .font(.footnote).foregroundColor(.secondary)
+              if !member.errorMessage.isBlank {
+                Text(member.errorMessage).font(.footnote).foregroundColor(.secondary).lineLimit(2)
+              }
+            }
+            .accessibilityElement(children: .combine)
+          }
+        } else {
+          ForEach(roster.members) { member in
+            VStack(alignment: .leading, spacing: 3) {
+              Text(member.name).font(.subheadline.weight(.semibold))
+              if !member.role.isBlank { Text(member.role).font(.footnote).foregroundColor(.secondary) }
+            }
+          }
+        }
+        GalaxySSICollaborationResultsButton(conversationId: session.id, t: t)
+        Button { historyPresented = true } label: {
+          Label(t("galaxyssi.collaboration.history", "Search Group History"), systemImage: "magnifyingglass")
+            .frame(minHeight: 44)
+        }
+        Button { settingsPresented = true } label: {
+          Label(t("galaxyssi.collaboration.settings", "Collaboration Members"), systemImage: "gearshape")
+            .frame(minHeight: 44)
+        }
+      }
+      .padding(.vertical, 8)
+    } label: {
+      VStack(alignment: .leading, spacing: 3) {
+        HStack {
+          Label(t("galaxyssi.collaboration.settings", "Collaboration Members"), systemImage: "person.3")
+          Text(roster.members.count, format: .number).monospacedDigit()
+        }
+        .font(.subheadline.weight(.semibold))
+        if let snapshot {
+          Text(GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: language))
+            .font(.footnote).foregroundColor(.secondary)
+        }
+      }
+      .frame(minHeight: 44)
+    }
+    .task(id: refreshRevision) {
+      let id = session.id
+      let current = await Task.detached(priority: .userInitiated) {
+        AgentTeamExecutionHistoryStore.shared.latestCollaborationRun(conversationId: id)
+      }.value
+      if !Task.isCancelled { snapshot = current }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIAgentTeamExecutionHistoryDidUpdate)
+      .receive(on: RunLoop.main)) { notification in
+      guard let runId = notification.object as? String else { refreshRevision &+= 1; return }
+      if runId == snapshot?.supervisorRunId ||
+          AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: runId)?.conversationId == session.id {
+        refreshRevision &+= 1
+      }
+    }
+    .sheet(isPresented: $settingsPresented) {
+      AgentCollaborationRosterEditor(session: session, t: t)
+    }
+    .sheet(isPresented: $historyPresented) {
+      GalaxySSICollaborationRecallView(conversationId: session.id, t: t)
+    }
+  }
+
+}
+
+private struct GalaxySSICollaborationResultsButton: View {
   let conversationId: String
   let t: (String, String) -> String
   @State private var presented = false
