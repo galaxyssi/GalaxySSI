@@ -59,7 +59,8 @@ extension MessageCoordinator {
         ])
         continue
       }
-      deliveryStore.markAttempt(messageId: item.messageId)
+      let reservedAt = Date()
+      deliveryStore.markAttempt(messageId: item.messageId, now: reservedAt)
       let result = await mqttClient.publishDurable(
         topic: item.topic,
         payload: Data(item.wirePayload.utf8),
@@ -77,6 +78,9 @@ extension MessageCoordinator {
       }
       if result.accepted {
         activeMessageIds.insert(item.messageId)
+      } else if result == .deferred {
+        _ = deliveryStore.deferUnadmittedAttempt(messageId: item.messageId,
+          reservedAttempts: item.attempts + 1, reservedAt: reservedAt)
       }
     }
   }
