@@ -2,6 +2,32 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttBrokerPoolTests: XCTestCase {
+  func testDurableCapacityRefusalDoesNotOwnAnotherPacket() async throws {
+    let local = String(repeating: "a", count: 64)
+    let remote = String(repeating: "b", count: 64)
+    let secret = try GalaxySSILinkProtocol.deriveIdentityBoundLinkSecret(sharedSecret: Data(repeating: 7, count: 32),
+      firstFingerprint: local, secondFingerprint: remote)
+    let routeID = try GalaxySSILinkProtocol.deriveIdentityBoundRouteId(linkSecret: secret,
+      firstFingerprint: local, secondFingerprint: remote)
+    let routes = GalaxySSILinkRoutes(clientRouteId: routeID, linkSecret: secret,
+      localFingerprint: local, remoteFingerprint: remote)
+    let client = GalaxySSIMqttClient(maximumDurableQueuedPackets: 1)
+    client.updateSubscriptions(serverLinks: [], phoneRoutes: [routes])
+    let payload = Data("{\"type\":\"test\"}".utf8)
+    let first = await client.publishDurable(topic: routes.upTopic, payload: payload, messageId: "first") { _ in
+      XCTFail("Offline packets cannot receive a broker acknowledgement")
+    }
+    let second = await client.publishDurable(topic: routes.upTopic, payload: payload, messageId: "second") { _ in
+      XCTFail("Unadmitted packets cannot receive a broker acknowledgement")
+    }
+    XCTAssertEqual(first, .queued)
+    XCTAssertEqual(second, .deferred)
+    XCTAssertFalse(second.accepted)
+    let outstanding = await client.outstandingDurableMessageIds()
+    XCTAssertEqual(outstanding, ["first"])
+    await client.disconnectAndWait()
+  }
+
   private let topics: Set<String> = ["incoming", "control"]
 
   func testNativeClientStopRejectsAllLegacyPublishEntrypoints() async throws {
@@ -35,7 +61,7 @@ final class MqttBrokerPoolTests: XCTestCase {
     }
     let pairing = await client.publishPairing(topic: routes.upTopic, secret: secret, payload: payload)
     XCTAssertEqual(ordinary, .failed)
-    XCTAssertEqual(durable, .failed)
+    XCTAssertEqual(durable, .deferred)
     XCTAssertEqual(receipt, .failed)
     XCTAssertEqual(pairing, .failed)
     let finalPending = await client.outstandingDurableMessageIds()

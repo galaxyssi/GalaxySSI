@@ -18,6 +18,12 @@ enum MqttPublishResult: Equatable {
   }
 }
 
+enum MqttDurablePublishResult: Equatable {
+  case published, queued, deferred, failed
+
+  var accepted: Bool { self == .published || self == .queued }
+}
+
 enum AgentTransportTimingKind: String, Codable, CaseIterable {
   case durableQueueWait = "durable_queue_wait"
   case brokerPublishAck = "broker_publish_ack"
@@ -149,12 +155,17 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   private var fragmentInflight = 0
   private var mqttInflightPacketIds: Set<UInt16> = []
   private var connected = false
+  private let maximumDurableQueuedPackets: Int
+  private let maximumDurableQueuedBytes: Int
   private var clientId = GalaxySSIMqttClientId.opaque(from: "galaxyssi-ios")
 
   init(endpoint: MqttBrokerEndpoint = MqttBrokerEndpoint.catalog[0],
-       diagnosticLedger: GalaxySSILinkDiagnosticLedger = GalaxySSILinkTransportDiagnostics.runtimeLedger()) {
+       diagnosticLedger: GalaxySSILinkDiagnosticLedger = GalaxySSILinkTransportDiagnostics.runtimeLedger(),
+       maximumDurableQueuedPackets: Int = 4_096, maximumDurableQueuedBytes: Int = 8_388_608) {
     self.endpoint = endpoint
     self.diagnosticLedger = diagnosticLedger
+    self.maximumDurableQueuedPackets = min(4_096, max(1, maximumDurableQueuedPackets))
+    self.maximumDurableQueuedBytes = min(8_388_608, max(1, maximumDurableQueuedBytes))
   }
 
   func configurePath(_ configuration: MqttBrokerPathConfiguration) {
@@ -344,19 +355,24 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     payload: Data,
     messageId: String,
     brokerAcknowledged: @escaping (@escaping () -> Void) -> Void
-  ) async -> MqttPublishResult {
+  ) async -> MqttDurablePublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
         guard !self.intentionallyDisconnected,
-              let secret = self.relationshipSecret(forSendingTopic: topic),
-              self.sendWirePayload(
+              let secret = self.relationshipSecret(forSendingTopic: topic) else {
+          continuation.resume(returning: .deferred)
+          return
+        }
+        var deferred = false
+        guard self.sendWirePayload(
                 topic: topic,
                 payload: payload,
                 secret: secret,
                 durableMessageId: messageId,
-                durableBrokerAcknowledged: brokerAcknowledged
+                durableBrokerAcknowledged: brokerAcknowledged,
+                admissionDeferred: { deferred = true }
               ) else {
-          continuation.resume(returning: .failed)
+          continuation.resume(returning: deferred ? .deferred : .failed)
           return
         }
         continuation.resume(returning: self.connected ? .published : .queued)
@@ -534,14 +550,12 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     durableMessageId: String = "",
     brokerAcknowledged: (() -> Void)? = nil,
     durableBrokerAcknowledged: ((@escaping () -> Void) -> Void)? = nil,
-    pathGate: MqttPathPublication? = nil
+    pathGate: MqttPathPublication? = nil,
+    admissionDeferred: (() -> Void)? = nil
   ) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
     let logicalMessageId = Self.logicalMessageId(payload)
     let enqueuedAtMillis = Self.nowMillis()
-    if !logicalMessageId.isEmpty {
-      peerReceiptStartedAt[logicalMessageId] = enqueuedAtMillis
-    }
     guard let packets = try? GalaxySSIMqttWireChunking.encode(wirePayload: wirePayload) else {
       return false
     }
@@ -554,13 +568,19 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     }) else {
       return false
     }
-    if pathGate != nil {
+    if pathGate != nil || !durableMessageId.isEmpty {
       let queuedBytes = pendingPacketPublishes.reduce(0) { $0 + $1.payload.count } +
         inFlightPublishes.values.reduce(0) { $0 + $1.payload.count }
-      guard sealedPackets.allSatisfy({ $0.count + topic.utf8.count + 8 <= MqttRouteProtocol.packetBytes }),
-            sealedPackets.count + pendingPacketPublishes.count + inFlightPublishes.count <= 4_096,
-            queuedBytes + sealedPackets.reduce(0, { $0 + $1.count }) <= 8_388_608 else { return false }
+      guard sealedPackets.allSatisfy({ $0.count + topic.utf8.count + 8 <= MqttRouteProtocol.packetBytes }) else { return false }
+      let packetLimit = pathGate == nil ? maximumDurableQueuedPackets : 4_096
+      let byteLimit = pathGate == nil ? maximumDurableQueuedBytes : 8_388_608
+      guard sealedPackets.count + pendingPacketPublishes.count + inFlightPublishes.count <= packetLimit,
+            queuedBytes + sealedPackets.reduce(0, { $0 + $1.count }) <= byteLimit else {
+        admissionDeferred?()
+        return false
+      }
     }
+    if !logicalMessageId.isEmpty { peerReceiptStartedAt[logicalMessageId] = enqueuedAtMillis }
     let acknowledgements = MqttPublishAckGroup(packetCount: sealedPackets.count)
     pendingPacketPublishes.append(contentsOf: sealedPackets.enumerated().map { index, packet in
       PendingPublish(
