@@ -333,6 +333,28 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthPDFText.normalizedTopOrigin(CGRect(x: 400, y: 0, width: 10, height: 10), in: viewport))
   }
 
+  func testTrendAuditPinsContributorsAndExtremumRevision() throws {
+    let now = Date()
+    let readings = (0..<34).map {
+      GalaxySSIHealthReading(revision: $0 + 1, metric: .glucose, measuredAt: now,
+        value: Decimal(40 - $0))
+    }
+    let excluded = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 1, unitOverride: "mg/dL")
+    func point(_ inputs: [GalaxySSIHealthReading]) throws -> GalaxySSIHealthTrend.Point {
+      try XCTUnwrap(GalaxySSIHealthTrend(current: inputs, metric: .glucose, component: .value,
+        now: now, dayCount: 7, calendar: .current, source: .manual).points.last)
+    }
+    let original = try point(readings + [excluded])
+    XCTAssertEqual(original.readings.count, 34)
+    XCTAssertEqual(original.value(.min, component: .value), 7)
+    XCTAssertEqual(original.value(.max, component: .value), 40)
+    XCTAssertEqual(original.extremum(.min, component: .value)?.revision, 34)
+    XCTAssertEqual(original.revisions, try point(Array(readings.reversed())).revisions)
+    var revised = readings
+    revised[33].revision += 1
+    XCTAssertNotEqual(original.revisions, try point(revised).revisions)
+  }
+
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
