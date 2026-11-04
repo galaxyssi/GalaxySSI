@@ -125,7 +125,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     turns: [ChatMessage],
     images: [CloudImagePayload],
     requestId: String,
-    collaborationEvidence: AgentCollaborationToolEvidenceScope?
+    collaborationEvidence: AgentCollaborationToolEvidenceScope?,
+    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
     return AsyncThrowingStream { continuation in
@@ -137,6 +138,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           images: images,
           requestId: conversationRequestId,
           collaborationEvidence: collaborationEvidence,
+          collaborationModelAudit: collaborationModelAudit ?? collaborationEvidence,
           continuation: continuation
         )
       }
@@ -173,6 +175,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     images: [CloudImagePayload],
     requestId: String,
     collaborationEvidence: AgentCollaborationToolEvidenceScope?,
+    collaborationModelAudit: AgentCollaborationToolEvidenceScope?,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
@@ -251,7 +254,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var observedUsage: ModelUsage?
         var reportedModel: String?
         var audit: AgentCollaborationModelAdmission?
-        if let scope = collaborationEvidence {
+        if let scope = collaborationModelAudit {
           let candidate = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: currentRound,
             provider: roundRequest.provider,
             requestedModel: (try? CloudModelStreamJSON.object(from: roundRequest.bodyJson))?["model"] as? String,
