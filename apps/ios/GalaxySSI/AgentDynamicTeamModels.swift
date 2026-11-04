@@ -38,6 +38,13 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   }
 
   private(set) var work: [Work] = []
+  private(set) var learningPriorities: [String: Int64]? = nil
+
+  func pinningLearningPriorities(_ ranks: [String: Int64]) -> Self {
+    var next = self
+    next.learningPriorities = ranks.isEmpty ? nil : ranks
+    return next
+  }
 
   func appending(_ raw: String, authorizedMembers: Set<String>,
                  historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
@@ -78,12 +85,28 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
   }
 
   func ready(settled: [String: Settlement], active: Set<String>) -> [Work] {
-    work.filter { item in
+    var ready = work.filter { item in
       settled[item.id] == nil && !active.contains(item.id) && item.depends_on.allSatisfy { dependency in
         guard let state = settled[dependency] else { return false }
         return item.dependency_policy == .terminal || state == .succeeded
       }
     }
+    guard let learningPriorities else { return ready }
+    var slots: [String: [Int]] = [:]
+    for (index, item) in ready.enumerated() {
+      if let binding = item.learning, learningPriorities[item.id] != nil {
+        slots[binding.agenda.objectId, default: []].append(index)
+      }
+    }
+    for indices in slots.values {
+      let ordered = indices.map { ($0, ready[$0]) }.sorted { left, right in
+        let a = learningPriorities[left.1.id] ?? Int64.max
+        let b = learningPriorities[right.1.id] ?? Int64.max
+        return a == b ? left.0 < right.0 : a < b
+      }
+      for (index, entry) in zip(indices, ordered) { ready[index] = entry.1 }
+    }
+    return ready
   }
 }
 

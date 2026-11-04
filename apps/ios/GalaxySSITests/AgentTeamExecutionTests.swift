@@ -85,6 +85,14 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(snapshot.members.first?.output, "original")
   }
 
+  func testCollaborationReviewerIdentityCannotChangeWithResearchStage() {
+    let rosterId = UUID().uuidString
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":revise"), rosterId.lowercased())
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":recheck"), rosterId.lowercased())
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":unknown"), rosterId + ":unknown")
+    XCTAssertNotEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(UUID().uuidString + ":revise"), rosterId.lowercased())
+  }
+
   func testCollaborationTimingUsesRecordedExecutionBounds() throws {
     var snapshot = durableTeamSnapshot("timed-run")
     snapshot.state = .running
@@ -191,6 +199,10 @@ extension GalaxySSIStoreTests {
     var failedIds = Set<String>()
     for round in 20...28 {
       failed.round = round
+      if round == 28 {
+        failed.succeeded = true
+        failed.output = "{\"success\":false}"
+      }
       failedIds.insert(try history.recordCloudEvidence(failed).string("evidence_id"))
     }
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
@@ -199,7 +211,7 @@ extension GalaxySSIStoreTests {
     let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
     let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
     XCTAssertEqual(entries.count, 8)
-    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains(failed.output))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains("sensitive failure detail"))
     let lastProblems = try reopened.recallCollaborationOriginal(
       ["mode": .string("problems"), "cursor": .string(firstProblems.string("next_cursor"))], scope: scope)
     let tail = try XCTUnwrap(lastProblems["problems"]?.arrayValue)
@@ -312,6 +324,189 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testPublicationRecoveryFindsSavedReplyAndSkipsCommittedReplay() throws {
+    let suite = "publication-recovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertTrue(history.upsert(durableTeamSnapshot("run")))
+    let body = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"note","base_revision":0,"kind":"evidence","title":"Note","body":{"text":"Saved"},"parents":[]}
+    ]}
+    """
+    XCTAssertEqual(try history.consumeOwnedReply(source: "source-review", conversation: "conversation", turn: "turn",
+      task: "source-review", contact: "review", content: body, richOutputJson: "", terminal: true,
+      success: true, now: 20, observation: AgentTeamReplyObservation(generation: 2, sequence: 1)), .observerCommitted)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let pending = try reopened.pendingPublicationRecoveryPage(after: "")
+    let owner = try XCTUnwrap(pending.owners.first)
+    XCTAssertEqual(pending.owners.count, 1)
+    XCTAssertEqual(owner.sourceMessageId, "source-review")
+    let scope = AgentCollaborationToolEvidenceScope(runId: owner.supervisorRunId, conversationId: owner.conversationId,
+      turnId: owner.turnId, memberId: owner.memberId, sourceId: owner.sourceMessageId)
+    try reopened.publishSavedResearchReply(body, scope: scope)
+    XCTAssertTrue(try reopened.pendingPublicationRecoveryPage(after: "").owners.isEmpty)
+    XCTAssertEqual(try reopened.committedResearchRevisions(scope: scope)?.count, 1)
+  }
+
+  func testExperimentRegistrationRequiresMeasurableTargetAndUniqueCases() {
+    var item: AgentMcpJSONObject = ["id": .string("target"), "metric": .string("accuracy"),
+      "prediction": .string("Improves"), "purpose": .string("target"), "direction": .string("maximize"),
+      "minimum_gain": .int(1), "tolerance": .int(0), "repetitions": .int(2)]
+    XCTAssertTrue(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item), .object(item)]))
+    item["purpose"] = .string("regression")
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    item["purpose"] = .string("feasibility")
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    item["threshold"] = .int(3)
+    XCTAssertTrue(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+  }
+
+  func testExperimentMeasurementKeepsPartialAndRejectsDuplicateOrOverBudgetTrials() throws {
+    func decode(_ raw: String) throws -> AgentMcpJSONObject {
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    }
+    let spec = try decode("""
+      {"innovation":{"object_id":"idea","revision":1,"sha256":"new"},
+       "baseline":{"object_id":"baseline","revision":1,"sha256":"old"},
+       "environment":"fixture","budget_unit":"calls","budget_limit":1,
+       "cases":[{"id":"target","purpose":"target","direction":"maximize","metric":"score",
+        "prediction":"Gain","minimum_gain":1,"tolerance":0,"repetitions":1}]}
+      """)
+    let plan = AgentCollaborationResearchRevision(reference: .init(objectId: "plan", revision: 1, sha256: "hash"),
+      previousHash: nil, runId: "run", turnId: "turn", authorId: "author", sourceId: "source",
+      draft: .init(id: "plan", objectId: nil, baseRevision: 0, kind: .experimentPlan,
+        title: "Plan", body: ["experiment_plan": .object(spec)], parents: []))
+    let raw = """
+      {"format":"galaxyssi.experiment-measurements.v1","plan_sha256":"hash","environment":"fixture","budget_unit":"calls",
+       "measurements":[
+        {"case_id":"target","variant":"baseline","variant_sha256":"old","metric":"score","repetition":1,"value":2,"budget_used":1},
+        {"case_id":"target","variant":"candidate","variant_sha256":"new","metric":"score","repetition":1,"value":4,"budget_used":1}]}
+      """
+    let report = try decode(raw)
+    let complete = AgentCollaborationExperimentPlanIntake.measure([report], plan: plan)
+    XCTAssertEqual(complete?.first?.state, "passed")
+    XCTAssertEqual(complete?.first?.gain, 2)
+    var partial = report
+    partial["measurements"] = .array(Array(try XCTUnwrap(report["measurements"]?.arrayValue).prefix(1)))
+    XCTAssertEqual(AgentCollaborationExperimentPlanIntake.measure([partial], plan: plan)?.first?.state, "incomplete")
+    XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([report, report], plan: plan))
+    let costly = try decode(raw.replacingOccurrences(of: "\"budget_used\":1", with: "\"budget_used\":2"))
+    XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([costly], plan: plan))
+  }
+
+  func testCapabilityRetentionRequiresPassingTargetAndRegression() {
+    let target = AgentCollaborationMeasuredCase(id: "target", purpose: "target", state: "passed")
+    var regression = AgentCollaborationMeasuredCase(id: "regression", purpose: "regression", state: "passed")
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target]))
+    XCTAssertTrue(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+    regression.state = "not_met"
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+    regression.state = "incomplete"
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+  }
+
+  func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
+    let raw = """
+    {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",
+     "applies_when":"Comparable","avoid_when":"Unsafe","risks":"Delay","expected_gain":"Accuracy","falsifier":"No gain",
+     "dimensions":["verification"],"roles":["author","reviewer"],"inputs":[],
+     "steps":[{"id":"draft","role":"author","stage":"EXPLORE","assignment":"Draft"},
+       {"id":"review","role":"reviewer","stage":"VERIFY","assignment":"Review",
+        "depends_on":["draft"],"independent_review":true}]}
+    """
+    func validates(_ input: String) throws -> Bool {
+      AgentCollaborationWorkflowIntake.validates(try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(input.utf8)))
+    }
+    XCTAssertTrue(try validates(raw))
+    XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
+      with: "\"assignment\":\"Draft\",\"depends_on\":[\"review\"]")))
+    XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
+      with: "\"assignment\":\"Draft\",\"tool_id\":\"override\"")))
+    XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"role\":\"reviewer\"", with: "\"role\":\"author\"")))
+  }
+
+  func testToolTestRegistrationUsesSkillParameterContract() throws {
+    let tool = """
+    {"language":"python","name":"Check","purpose":"Validate","applies_when":"Input","avoid_when":"None",
+     "environment":"python","dependencies":"None","side_effects":"None","source":"def run(parameters): return parameters",
+     "input_schema":{"type":"object","required":["value"],"properties":{"value":{"type":"integer"}}}}
+    """
+    let plan = """
+    {"environment":"python","purpose":"Validate","coverage_gaps":"None known","oracle_basis":"Identity",
+     "cases":[{"id":"target","purpose":"target","reason":"Typical","input":{"value":1},"expected":1},
+       {"id":"regression","purpose":"regression","reason":"Zero","input":{"value":0},"expected":null}]}
+    """
+    func decode(_ raw: String) throws -> AgentMcpJSONObject {
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    }
+    let spec = try decode(tool)
+    XCTAssertTrue(AgentCollaborationToolRegistration.validatesTestPlan(try decode(plan), tool: spec))
+    XCTAssertFalse(AgentCollaborationToolRegistration.validatesTestPlan(
+      try decode(plan.replacingOccurrences(of: "\"value\":0", with: "\"value\":\"0\"")), tool: spec))
+    XCTAssertFalse(AgentCollaborationToolRegistration.validatesTestPlan(
+      try decode(plan.replacingOccurrences(of: ",\"expected\":null", with: "")), tool: spec))
+  }
+
+  func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
+    let raw = """
+    {"work_id":"test","executor":"member","horizon":"One test","decision_rationale":"Avoid side effects",
+     "risk_tradeoff":"Delay","information_value":"Compare","revalidate_before_action":"Check input","utility_unit":"points",
+     "selected_action":"defer","events":[{"id":"pass","meaning":"Test passes","unit":"boolean","pointer":"/pass",
+       "expected":true,"utility_if_true":10,"utility_if_false":-2}],
+     "choices":[{"action_id":"probe","reasoning":"Measure","uncertainty":"Known input","resources":"One trial","risk":"Low",
+       "probabilities":{"pass":0.75}},{"action_id":"defer","reasoning":"Wait","uncertainty":"No measure",
+       "resources":"None","risk":"Delay","probabilities":{"pass":0}}]}
+    """
+    let forecast = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    XCTAssertEqual(AgentCollaborationForecastIntake.utilities(forecast, actions: ["probe", "defer"]),
+      ["probe": 7, "defer": -2])
+    XCTAssertNil(AgentCollaborationForecastIntake.utilities(forecast, actions: ["probe", "defer", "act"]))
+    let invalid = raw.replacingOccurrences(of: "0.75", with: "1.25")
+    XCTAssertNil(AgentCollaborationForecastIntake.utilities(
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(invalid.utf8)), actions: ["probe", "defer"]))
+  }
+
+  func testCloudObservationDistinguishesExplicitFailureFromEmptyErrors() {
+    for output in ["{}", "{\"error\":false}", "{\"error\":null}", "{\"error\":{}}",
+                   "{\"error\":[]}", "{\"error\":0}", "{\"error\":\"  \"}",
+                   "{\"success\":\"false\"}", "unstructured error text"] {
+      XCTAssertFalse(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
+    for output in ["{\"success\":false}", "{\"ok\":false}", "{\"isError\":true}",
+                   "{\"error\":{\"code\":\"offline\"}}", "{\"status\":\"timed_out\"}"] {
+      XCTAssertTrue(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
+  }
+
+  func testInnovationOpportunityCannotReplaceGoalCriterionOrDriverEvidence() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"opportunity","kind":"innovation_opportunity","title":"Opportunity","base_revision":0,
+       "parents":[{"object_id":"gap","revision":1,"sha256":"exact"}],
+       "body":{"innovation_opportunity":{"goal_sha256":"pinned","criterion_id":"accuracy","requirement":"Preserve accuracy",
+        "question":"Reduce noise?","unmet_need":"Unstable responses","expected_benefit":"Repeatability","constraints":"Same budget",
+        "null_hypothesis":"No change","discriminating_test":"Compare trials","uncertainty":"Sample size",
+        "alternative_routes":["Keep baseline"],"drivers":[{"id":"one","kind":"knowledge_gap","why":"Observed gap",
+          "what_would_change":"Better checks","sources":[{"object_id":"gap","revision":1,"sha256":"exact"}]}]}}}
+    ]}
+    """
+    let draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    let criterion = AgentCollaborationGoalAssessmentPolicy.Criterion(id: "accuracy", requirement: "Preserve accuracy",
+      verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    XCTAssertTrue(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: [criterion]) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "changed", contract: [criterion]) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: []) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: [criterion]) { _ in "proposal" })
+  }
+
   func testTransferStudyRequiresCurrentFailureAndDistinctTargetDomain() throws {
     let raw = """
     {"format":"galaxyssi.research-artifact.v1","workspace":[
@@ -388,6 +583,26 @@ extension GalaxySSIStoreTests {
     option["decision"] = .string("select")
     option["assignment"] = .string("Repeat a different check")
     XCTAssertFalse(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
+  }
+
+  func testLearningPrioritiesOnlyReorderReadySlotsInSameAgendaAfterReopen() throws {
+    let raw = """
+    {"format":"galaxyssi.work-expansion.v1","work":[
+      {"id":"later","member":"member","assignment":"Later","depends_on":[],
+       "learning":{"agenda":{"object_id":"agenda","revision":1,"sha256":"exact"},"option_id":"later"}},
+      {"id":"ordinary","member":"member","assignment":"Ordinary","depends_on":[]},
+      {"id":"first","member":"member","assignment":"First","depends_on":[],
+       "learning":{"agenda":{"object_id":"agenda","revision":1,"sha256":"exact"},"option_id":"first"}},
+      {"id":"blocked","member":"member","assignment":"Blocked","depends_on":["ordinary"],
+       "learning":{"agenda":{"object_id":"agenda","revision":1,"sha256":"exact"},"option_id":"blocked"}}
+    ]}
+    """
+    let graph = try XCTUnwrap(AgentCollaborationLiveGraph().appending(raw, authorizedMembers: ["member"],
+      historicalAuthors: [:], settled: [:])).pinningLearningPriorities(["later": 3, "first": 2, "blocked": 1])
+    let reopened = try JSONDecoder().decode(AgentCollaborationLiveGraph.self, from: JSONEncoder().encode(graph))
+    XCTAssertEqual(reopened.ready(settled: [:], active: []).map(\.id), ["first", "ordinary", "later"])
+    XCTAssertEqual(reopened.ready(settled: [:], active: ["first"]).map(\.id), ["later", "ordinary"])
+    XCTAssertEqual(reopened.ready(settled: ["ordinary": .succeeded], active: []).map(\.id), ["blocked", "first", "later"])
   }
 
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {

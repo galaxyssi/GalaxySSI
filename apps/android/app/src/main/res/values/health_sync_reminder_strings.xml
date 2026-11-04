@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="health_sync_reminder_group">Data connections</string>
+    <string name="health_sync_reminder_notice">A data connection needs attention.</string>
     <string name="health_sync_reminder_failed_at">Last failed attempt: %1$s</string>
     <string name="health_sync_reminder_resolved">Sync recovered: %1$s</string>
     <string name="health_sync_reminder_retention">Sync issues do not describe your health. Saved records remain available.</string>
