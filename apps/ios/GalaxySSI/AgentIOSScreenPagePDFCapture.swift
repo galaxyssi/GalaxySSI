@@ -2,11 +2,29 @@ import Foundation
 import PDFKit
 
 struct AgentIOSScreenPagePDFResult {
+  let captureID: UUID
   var attachments: [GalaxySSIDraftAttachment]
   var pageCount: Int
   var extractedPages: Int
   var emptyTextPages: Int
   var truncated: Bool
+}
+
+enum AgentIOSScreenPagePDFDownloads {
+  static func save(pdf: Data, captureID: UUID, documents: URL? = nil) throws -> URL {
+    try Task.checkCancellation()
+    guard pdf.starts(with: Data("%PDF-".utf8)) else {
+      throw AgentIOSScreenPagePDFError.invalidDocument
+    }
+    let root = try documents ?? FileManager.default.url(for: .documentDirectory,
+      in: .userDomainMask, appropriateFor: nil, create: true)
+    let directory = root.appendingPathComponent("Downloads", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let target = directory.appendingPathComponent("article-\(captureID.uuidString.lowercased()).pdf")
+    try Task.checkCancellation()
+    try pdf.write(to: target, options: [.atomic, .completeFileProtection])
+    return target
+  }
 }
 
 enum AgentIOSScreenPagePDFError: Error, Equatable {
@@ -87,9 +105,10 @@ enum AgentIOSScreenPagePDFCapture {
     <title>Captured page</title><style>body{font:16px system-ui;max-width:960px;margin:24px auto;padding:0 16px;letter-spacing:0}pre{white-space:pre-wrap;overflow-wrap:anywhere}section{border-top:1px solid #ddd;break-after:page}</style>
     </head><body><h1>Captured page</h1><p>\(escapeHTML(note))</p>\(sections)</body></html>
     """
-    let id = UUID().uuidString
+    let captureID = UUID()
+    let id = captureID.uuidString
     let source = "screen-page:\(id)"
-    return AgentIOSScreenPagePDFResult(attachments: [
+    return AgentIOSScreenPagePDFResult(captureID: captureID, attachments: [
       GalaxySSIDraftAttachment(id: id + "-pdf", displayName: "captured-page.pdf", mimeType: "application/pdf", data: data, sourceDescription: source),
       GalaxySSIDraftAttachment(id: id + "-text", displayName: "captured-page.txt", mimeType: "text/plain", data: Data(text.utf8), sourceDescription: source),
       GalaxySSIDraftAttachment(id: id + "-html", displayName: "captured-page.html", mimeType: "text/html", data: Data(html.utf8), sourceDescription: source)
