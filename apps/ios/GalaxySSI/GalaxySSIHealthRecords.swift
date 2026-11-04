@@ -26,6 +26,7 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var conditions = ""
   var notes = ""
   var deleted = false
+  var bluetoothReceipt: GalaxySSIHealthBluetoothReceipt?
 
   var isValid: Bool {
     func positive(_ number: Decimal) -> Bool {
@@ -256,6 +257,13 @@ struct GalaxySSIHealthRecords {
     let latest = archive.revisions.last { $0.id == input.id }
     guard (latest?.revision ?? 0) == input.revision, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
+    if let latest {
+      guard latest.bluetoothReceipt == input.bluetoothReceipt else { throw Failure.invalid }
+    } else if let receipt = input.bluetoothReceipt, archive.revisions.contains(where: {
+      $0.bluetoothReceipt.map { receipt.isReplay(of: $0) } == true
+    }) {
+      throw Failure.duplicate
+    }
     if !input.deleted && !allowDuplicate &&
         archive.current.contains(where: { $0.id != input.id && $0.sameMeasurement(as: input) }) {
       throw Failure.duplicate
