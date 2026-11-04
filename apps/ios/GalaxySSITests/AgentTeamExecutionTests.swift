@@ -257,6 +257,27 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testInnovationOpportunityCannotReplaceGoalCriterionOrDriverEvidence() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"opportunity","kind":"innovation_opportunity","title":"Opportunity","base_revision":0,
+       "parents":[{"object_id":"gap","revision":1,"sha256":"exact"}],
+       "body":{"innovation_opportunity":{"goal_sha256":"pinned","criterion_id":"accuracy","requirement":"Preserve accuracy",
+        "question":"Reduce noise?","unmet_need":"Unstable responses","expected_benefit":"Repeatability","constraints":"Same budget",
+        "null_hypothesis":"No change","discriminating_test":"Compare trials","uncertainty":"Sample size",
+        "alternative_routes":["Keep baseline"],"drivers":[{"id":"one","kind":"knowledge_gap","why":"Observed gap",
+          "what_would_change":"Better checks","sources":[{"object_id":"gap","revision":1,"sha256":"exact"}]}]}}}
+    ]}
+    """
+    let draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    let criterion = AgentCollaborationGoalAssessmentPolicy.Criterion(id: "accuracy", requirement: "Preserve accuracy",
+      verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    XCTAssertTrue(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: [criterion]) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "changed", contract: [criterion]) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: []) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: [criterion]) { _ in "proposal" })
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

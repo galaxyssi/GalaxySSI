@@ -67,6 +67,7 @@ struct AgentCollaborationResearchReference: Codable, Equatable {
 
 struct AgentCollaborationResearchDraft: Codable {
   enum Kind: String, Codable {
+    case innovationOpportunity = "innovation_opportunity"
     case hypothesis, evidence, counterexample, proposal, experiment, artifact, decision, question
     case acceptanceReview = "acceptance_review"
     case candidate
@@ -86,6 +87,55 @@ struct AgentCollaborationResearchDraft: Codable {
     case id, kind, title, body, parents, resolves, observations
     case objectId = "object_id"
     case baseRevision = "base_revision"
+  }
+}
+
+enum AgentCollaborationOpportunityIntake {
+  static func validates(_ draft: AgentCollaborationResearchDraft, goalHash: String,
+                        contract: [AgentCollaborationGoalAssessmentPolicy.Criterion],
+                        exactKind: (AgentCollaborationResearchReference) throws -> String?) rethrows -> Bool {
+    guard draft.kind == .innovationOpportunity, draft.objectId?.isBlank != false, draft.baseRevision == 0,
+          let value = draft.body["innovation_opportunity"]?.objectValue,
+          value.string("goal_sha256") == goalHash,
+          contract.contains(where: { $0.id == value.string("criterion_id") && $0.requirement == value.string("requirement") }),
+          hasText(value, ["question", "unmet_need", "expected_benefit", "constraints", "null_hypothesis",
+                          "discriminating_test", "uncertainty"]),
+          let routes = value["alternative_routes"]?.arrayValue, (1...32).contains(routes.count),
+          routes.allSatisfy({ $0.stringValue?.isBlank == false }),
+          let drivers = value["drivers"]?.arrayValue, (1...32).contains(drivers.count) else { return false }
+    var ids = Set<String>()
+    for item in drivers {
+      guard let driver = item.objectValue, hasText(driver, ["id", "why", "what_would_change"]),
+            ids.insert(driver.string("id")).inserted,
+            let sources = driver["sources"]?.arrayValue, (1...32).contains(sources.count) else { return false }
+      var kinds = Set<String>()
+      for item in sources {
+        guard let source = item.objectValue, Set(source.keys) == Set(["object_id", "revision", "sha256"]),
+              case .int(let version)? = source["revision"], version > 0 else { return false }
+        let reference = AgentCollaborationResearchReference(objectId: source.string("object_id"),
+          revision: version, sha256: source.string("sha256"))
+        guard draft.parents.contains(reference), let kind = try exactKind(reference),
+              ["artifact", "evidence", "counterexample", "proposal", "question", "innovation",
+               "capability_gap", "capability_diagnosis", "failure_experience", "transfer_study"].contains(kind)
+        else { return false }
+        kinds.insert(kind)
+      }
+      switch driver.string("kind") {
+      case "knowledge_gap":
+        guard kinds.contains("capability_gap") || kinds.contains("capability_diagnosis") else { return false }
+      case "contradiction":
+        guard hasText(driver, ["claim_a", "claim_b"]), driver.string("claim_a") != driver.string("claim_b") else { return false }
+      case "cross_domain":
+        guard kinds.contains("transfer_study") else { return false }
+      case "limitation": break
+      default: return false
+      }
+    }
+    return true
+  }
+
+  private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
   }
 }
 
