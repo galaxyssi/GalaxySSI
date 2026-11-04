@@ -12,7 +12,7 @@ acceptance, and no global completion claim follows from the first imports.
 | --- | --- | --- |
 | h01 Common entry | Native Health Center route and prior entry/manual device checks | Final navigation/layout regression with the complete feature set |
 | h02 Page navigation | Native function page, grid entry, data/file hub, personal-profile, privacy and reminder entries, Activity returns, no bottom tabs | Final deep-return matrix |
-| h03 Overview | Real confirmed-record counts/latest observations; no fabricated score | Freshness/missing/unverified separation, versioned attention cards and preference/severity ordering |
+| h03 Overview | Native freshness/coverage/missing states, revision-bound links, authorized weekly sleep summary, current sleep attention and recent OCR/table review shortcuts, persisted category/recency ordering; 290 JVM, 252 non-visual and 46 native UI tests pass on 0.1.7.30 | Final populated visual/source-navigation acceptance and future connected-source attention; no invented clinical severity |
 | h04 First use | Actual empty state and local photo/manual/file entry | Backup restore entry and complete first-use acceptance |
 | h05 Record Center | Native capture/file queue, encrypted drafts, edit/delete and recovery foundations | Changes must invalidate affected analyses once analysis exists; full multi-format UI matrix |
 | h06 Capture | Native Camera2, ordered multi-page drafts, EXIF orientation, quality hints, retake/crop/manual fallback | Authorized hardware focus/light/rotation/photo matrix, automatic paper boundaries, unlocked UI acceptance |

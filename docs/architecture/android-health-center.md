@@ -389,6 +389,13 @@ daily recording tasks. Details include the revision-bound trigger,
 gap-aware chart, source ranges, and handling actions. See the
 [sleep change contract](android-health-sleep-alerts.md).
 
+## Health Overview
+
+The overview now distinguishes confirmed measurements, older or missing
+records, pending review work, and current authorized sleep reminders.
+Its entry points open the relevant record revision or action without
+inventing a score. See the [overview contract](android-health-overview.md).
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new

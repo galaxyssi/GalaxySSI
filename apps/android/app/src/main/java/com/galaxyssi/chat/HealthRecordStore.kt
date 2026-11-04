@@ -52,6 +52,34 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     fun count(): Long = helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM observations WHERE deleted=0", null)
         .use { it.moveToFirst(); it.getLong(0) }
+    fun overviewLatestSelf(metric: HealthMetric?, until: Long): HealthObservation? {
+        var after: HealthPageCursor? = null
+        while (true) {
+            val args = arrayListOf(until.toString())
+            val conditions = arrayListOf("deleted=0", "measured_at<=?")
+            metric?.let { conditions += "metric=?"; args += it.name }
+            after?.let { conditions += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id) }
+            val result = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE " +
+                conditions.joinToString(" AND ") + " ORDER BY measured_at DESC,id DESC LIMIT 30", args.toTypedArray()).use { cursor ->
+                var last: HealthPageCursor? = null
+                while (cursor.moveToNext()) {
+                    val row = decode(cursor)
+                    if (row.profileId == "self") return row
+                    last = HealthPageCursor(row.draft.measuredAt, row.id)
+                }
+                last
+            }
+            if (result == null) return null
+            after = result
+        }
+    }
+    fun overviewHasOriginalHistory(id: String): Boolean = helper.readableDatabase.rawQuery(
+        "SELECT 1 FROM observations WHERE original_id=? LIMIT 1", arrayOf(id)).use { it.moveToFirst() }
+    fun overviewHasOcrDraft(job: String): Boolean {
+        val prefix = "ocr:$job:"
+        return helper.readableDatabase.rawQuery("SELECT 1 FROM drafts WHERE draft_key>=? AND draft_key<? LIMIT 1",
+            arrayOf(prefix, prefix + "\uffff")).use { it.moveToFirst() }
+    }
     fun metricVersion(metric: HealthMetric): String = helper.readableDatabase.rawQuery("SELECT token FROM health_metric_clocks WHERE metric=?", arrayOf(metric.name))
         .use { if (it.moveToFirst()) it.getString(0) else "" }
     fun metricVersions(metrics: Set<HealthMetric>): Map<HealthMetric, String> {
