@@ -55,6 +55,14 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(snapshot.members.first?.output, "original")
   }
 
+  func testCollaborationReviewerIdentityCannotChangeWithResearchStage() {
+    let rosterId = UUID().uuidString
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":revise"), rosterId.lowercased())
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":recheck"), rosterId.lowercased())
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":unknown"), rosterId + ":unknown")
+    XCTAssertNotEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(UUID().uuidString + ":revise"), rosterId.lowercased())
+  }
+
   func testCollaborationTimingUsesRecordedExecutionBounds() throws {
     var snapshot = durableTeamSnapshot("timed-run")
     snapshot.state = .running
