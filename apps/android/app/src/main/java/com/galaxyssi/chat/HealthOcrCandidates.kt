@@ -28,7 +28,8 @@ internal object HealthOcrCandidates {
             val key = try { java.security.MessageDigest.getInstance("SHA-256").digest(identity).take(20).joinToString("") { "%02x".format(it) } }
                 finally { identity.fill(0) }
             val evidence = HealthEvidence(original.id, job.id, "${metric.name.lowercase(java.util.Locale.ROOT)}-$key", original.sha256, page.page,
-                lines.joinToString("\n") { it.text }.take(8000), lines.map { it.box }.filter { it.size == 4 }, documentPage = job.documentPage)
+                lines.joinToString("\n") { it.text }.take(8000), lines.map { it.box }.filter { it.size == 4 },
+                documentPage = job.documentPage, recognition = page.recognition)
             drafts += HealthDraft(metric, values, unit, measuredAt = 0, evidence = evidence)
         }
         val pressureLines = page.lines.mapIndexedNotNull { index, line ->

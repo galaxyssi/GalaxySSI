@@ -110,9 +110,11 @@ internal class HealthImportPipeline(private val context: Context, private val re
                 HealthOcrEngine().use { engine ->
                     val current = store.job(id) ?: throw HealthImportFailure("job_missing")
                     if (mime == "application/pdf") {
-                        engine.pdf(store, original, current.nextPage, ::cancelled,
-                            { count -> store.updateJob(id) { it.copy(pageCount = count) } },
-                            { page -> cancelled(); store.savePage(id, page) })
+                        HealthPdfTextReader.open(context, store, original, ::cancelled).use { text ->
+                            engine.pdf(store, original, current.nextPage, ::cancelled,
+                                { count -> store.updateJob(id) { it.copy(pageCount = count) } },
+                                { page -> cancelled(); store.savePage(id, page) }, text)
+                        }
                     } else if (current.nextPage == 0) {
                         store.updateJob(id) { it.copy(pageCount = 1) }
                         val page = engine.image(store, original)

@@ -41,36 +41,45 @@ internal data class HealthOcrLine(val text: String, val box: List<Int> = emptyLi
         fun from(j: JSONObject) = HealthOcrLine(j.getString("text"), j.getJSONArray("box").let { a -> (0 until a.length()).map(a::getInt) })
     }
 }
-internal data class HealthOcrPage(val page: Int, val width: Int, val height: Int, val lines: List<HealthOcrLine>, val blurry: Boolean = false) {
+internal enum class HealthRecognition { OCR, PDF_TEXT }
+
+internal data class HealthOcrPage(val page: Int, val width: Int, val height: Int, val lines: List<HealthOcrLine>,
+    val blurry: Boolean = false, val recognition: HealthRecognition = HealthRecognition.OCR) {
     fun json() = JSONObject().put("page", page).put("width", width).put("height", height).put("lines", JSONArray(lines.map { it.json() }))
-        .put("blurry", blurry)
+        .put("blurry", blurry).put("recognition", recognition.name)
     companion object {
         fun from(j: JSONObject) = HealthOcrPage(j.getInt("page"), j.getInt("width"), j.getInt("height"),
-            j.getJSONArray("lines").let { a -> (0 until a.length()).map { HealthOcrLine.from(a.getJSONObject(it)) } }, j.getBoolean("blurry"))
+            j.getJSONArray("lines").let { a -> (0 until a.length()).map { HealthOcrLine.from(a.getJSONObject(it)) } }, j.getBoolean("blurry"),
+            HealthRecognition.valueOf(j.optString("recognition", "OCR")))
     }
 }
 
 internal data class HealthEvidence(
     val originalId: String, val jobId: String, val candidateId: String, val sha256: String, val page: Int,
     val rawText: String, val boxes: List<List<Int>> = emptyList(), val confirmed: Boolean = false, val documentPage: Int = 0,
-    val kind: String = "ocr", val tableRow: Long = 0, val tableSheet: String = ""
+    val kind: String = "ocr", val tableRow: Long = 0, val tableSheet: String = "",
+    val recognition: HealthRecognition = HealthRecognition.OCR
 ) {
     fun json() = JSONObject().put("original", originalId).put("job", jobId).put("candidate", candidateId)
         .put("sha256", sha256).put("page", page).put("text", rawText).put("boxes", JSONArray(boxes.map { JSONArray(it) }))
         .put("confirmed", confirmed)
         .put("document_page", documentPage)
         .put("kind", kind).put("table_row", tableRow)
-        .put("table_sheet", tableSheet)
+        .put("table_sheet", tableSheet).apply {
+            if (recognition != HealthRecognition.OCR) put("recognition", recognition.name)
+        }
     fun valid(): Boolean = listOf(originalId, jobId).all { runCatching { java.util.UUID.fromString(it).toString() == it }.getOrDefault(false) } &&
         candidateId.matches(Regex("[a-zA-Z0-9_-]{1,80}")) && sha256.matches(Regex("[0-9a-f]{64}")) &&
         page > 0 && documentPage >= 0 && rawText.length <= 8000 && tableSheet.length <= 200 &&
-        (kind == "ocr" && tableRow == 0L && tableSheet.isBlank() || kind == "table" && tableRow > 0 && documentPage == 0 && boxes.isEmpty()) &&
+        (kind == "ocr" && tableRow == 0L && tableSheet.isBlank() ||
+            kind == "table" && tableRow > 0 && documentPage == 0 && boxes.isEmpty() && recognition == HealthRecognition.OCR) &&
         boxes.all { it.size == 4 && it.all { value -> value in 0..1000 } && it[0] <= it[2] && it[1] <= it[3] }
     companion object {
         fun from(j: JSONObject) = HealthEvidence(j.getString("original"), j.getString("job"), j.getString("candidate"), j.getString("sha256"),
             j.getInt("page"), j.getString("text"), j.getJSONArray("boxes").let { a -> (0 until a.length()).map { i ->
                 val box = a.getJSONArray(i); (0 until box.length()).map(box::getInt)
-            } }, j.getBoolean("confirmed"), j.optInt("document_page"), j.optString("kind", "ocr"), j.optLong("table_row"), j.optString("table_sheet"))
+            } }, j.getBoolean("confirmed"), j.optInt("document_page"), j.optString("kind", "ocr"), j.optLong("table_row"), j.optString("table_sheet"),
+            HealthRecognition.valueOf(j.optString("recognition", "OCR")))
     }
 }
 

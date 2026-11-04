@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="health_review_source_method">On-device OCR · Page %1$d</string>
+    <string name="health_review_pdf_text_method">PDF text layer · Page %1$d</string>
     <string name="health_review_source_image">Original page with the selected source region</string>
     <string name="health_review_unit_unknown">Unit needs review</string>
     <string name="health_review_focus">Zoom to source region</string>

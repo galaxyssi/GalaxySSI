@@ -356,7 +356,7 @@ class HealthCaptureActivity : Activity() {
         }
         val updateFooter: () -> Unit = if (rows.any { it.saved == null } || reviewSelection.isNotEmpty())
             reviewFooter(job, original) else ({})
-        content.addView(ui.text(getString(R.string.health_review_source_method, displayedPage), 14f, muted = true))
+        content.addView(ui.text(getString(scanned.recognition.label(), displayedPage), 14f, muted = true))
         val selected = rows.mapNotNull { it.draft.evidence }.let { candidates ->
             candidates.firstOrNull { it.candidateId == selectedCandidate } ?: candidates.firstOrNull()
         }
@@ -412,7 +412,8 @@ class HealthCaptureActivity : Activity() {
         }
         ui.add(content, ui.row(getString(R.string.health_unmatched_manual)) {
             val evidence = HealthEvidence(original.id, job.id, "manual", original.sha256, scanned.page,
-                scanned.lines.take(15).joinToString("\n") { it.text }.take(8000), scanned.lines.take(15).map { it.box }.filter { it.size == 4 })
+                scanned.lines.take(15).joinToString("\n") { it.text }.take(8000), scanned.lines.take(15).map { it.box }.filter { it.size == 4 },
+                documentPage = job.documentPage, recognition = scanned.recognition)
             chooseManualMetric(evidence)
         }, 14)
         ui.add(content, ui.row(getString(R.string.health_show_raw_text)) {
