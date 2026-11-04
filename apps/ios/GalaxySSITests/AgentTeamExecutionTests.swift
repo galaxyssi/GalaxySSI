@@ -2,6 +2,23 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCollaborationTimingUsesRecordedExecutionBounds() throws {
+    var snapshot = durableTeamSnapshot("timed-run")
+    snapshot.state = .running
+    XCTAssertNil(snapshot.elapsedExecutionMillis(now: 5_000))
+    snapshot.executionStartedAtMillis = 1_000
+    XCTAssertEqual(snapshot.elapsedExecutionMillis(now: 5_000), 4_000)
+    snapshot.state = .succeeded
+    XCTAssertNil(snapshot.elapsedExecutionMillis(now: 5_000))
+    snapshot.executionEndedAtMillis = 6_000
+    let restored = try JSONDecoder().decode(AgentTeamExecutionSnapshot.self, from: JSONEncoder().encode(snapshot))
+    XCTAssertEqual(restored.elapsedExecutionMillis(now: 20_000), 5_000)
+    snapshot.state = .interrupted
+    snapshot.executionEndedAtMillis = nil
+    snapshot.interruptedAtMillis = 4_000
+    XCTAssertEqual(snapshot.elapsedExecutionMillis(now: 20_000), 3_000)
+  }
+
   func testCollaborationRecallExcludesCurrentTurnPendingRunsAndOtherGroups() {
     let suite = "collaboration-recall-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

@@ -111,8 +111,18 @@ private struct GalaxySSICollaborationResultsView: View {
               VStack(alignment: .leading, spacing: 4) {
                 Text(snapshot.goal.ifBlank(t("galaxyssi.collaboration.results", "Member Results")))
                   .lineLimit(2)
-                Text(GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: interfaceLanguage))
-                  .font(.footnote).foregroundColor(.secondary)
+                HStack {
+                  Text(GalaxySSIAgentTeamPresentation.stateLabel(snapshot.state, language: interfaceLanguage))
+                  if snapshot.executionEndedAtMillis == nil && (snapshot.state == .running || snapshot.state == .waitingResponse),
+                     snapshot.executionStartedAtMillis != nil {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                      elapsedLabel(snapshot, now: Int64(context.date.timeIntervalSince1970 * 1_000))
+                    }
+                  } else {
+                    elapsedLabel(snapshot, now: 0)
+                  }
+                }
+                .font(.footnote).foregroundColor(.secondary)
               }
             }
           }
@@ -160,7 +170,12 @@ private struct GalaxySSICollaborationResultsView: View {
 
   private func memberResult(_ member: AgentTeamMemberSnapshot, snapshot: AgentTeamExecutionSnapshot) -> some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text((member.displayName ?? "").ifBlank(member.agentId)).font(.subheadline.weight(.semibold))
+      HStack(alignment: .firstTextBaseline) {
+        Text((member.displayName ?? "").ifBlank(member.agentId)).font(.subheadline.weight(.semibold))
+        if member.status == .succeeded, member.updatedAtMillis > 0 {
+          Text(replyTime(member.updatedAtMillis)).font(.footnote).foregroundColor(.secondary)
+        }
+      }
       if !member.role.isBlank {
         Text(member.role).font(.footnote).foregroundColor(.secondary)
       }
@@ -178,6 +193,38 @@ private struct GalaxySSICollaborationResultsView: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .contain)
+  }
+
+  private func replyTime(_ millis: Int64) -> String {
+    let date = Date(timeIntervalSince1970: Double(millis) / 1_000)
+    let calendar = Calendar.current
+    let now = Date()
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: interfaceLanguage)
+    if calendar.isDate(date, inSameDayAs: now) {
+      formatter.setLocalizedDateFormatFromTemplate("jm")
+    } else {
+      formatter.setLocalizedDateFormatFromTemplate(calendar.isDate(date, equalTo: now, toGranularity: .year)
+        ? "MMMdjm" : "yMMMdjm")
+    }
+    return formatter.string(from: date)
+  }
+
+  @ViewBuilder
+  private func elapsedLabel(_ snapshot: AgentTeamExecutionSnapshot, now: Int64) -> some View {
+    if let millis = snapshot.elapsedExecutionMillis(now: now) {
+      let seconds = millis / 1_000
+      Text(DurationLabel.clock(seconds)).monospacedDigit()
+    }
+  }
+}
+
+private enum DurationLabel {
+  static func clock(_ seconds: Int64) -> String {
+    if seconds >= 3_600 {
+      return String(format: "%lld:%02lld:%02lld", seconds / 3_600, (seconds / 60) % 60, seconds % 60)
+    }
+    return String(format: "%lld:%02lld", seconds / 60, seconds % 60)
   }
 }
 

@@ -955,7 +955,9 @@ private extension AgentTeamExecutionRecord {
       createdAtMillis: request.createdAtMillis,
       updatedAtMillis: max(updatedAtMillis, events.map(\.timestampMillis).max() ?? 0),
       interruptedAtMillis: interruptedAtMillis,
-      primaryInstanceId: definition.primaryMemberId
+      primaryInstanceId: definition.primaryMemberId,
+      executionStartedAtMillis: events.first { $0.kind == AgentSubagentEventKinds.supervisorStarted }?.timestampMillis,
+      executionEndedAtMillis: terminal?.timestampMillis
     )
   }
 }
