@@ -529,6 +529,7 @@ final class AgentTeamExecutionHistoryStore {
         }
         let references = draft.observations ?? []
         var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
+        var expectedUtilities: [String: Double]? = nil
         if draft.kind == .acceptanceReview {
           let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
             objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
@@ -539,6 +540,69 @@ final class AgentTeamExecutionHistoryStore {
               turnId: turnId, memberId: memberId, sourceId: sourceId)
             frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
           }
+        } else if draft.kind == .environmentModel || draft.kind == .actionForecast {
+          guard draft.objectId?.isBlank != false, draft.baseRevision == 0,
+                let value = draft.body[draft.kind.rawValue]?.objectValue,
+                let pinned = try database.goalCheckpoints(runId: runId, revision: 1, newestOnly: true).first,
+                pinned.conversationId == conversationId, pinned.turnId == turnId
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          let model: AgentMcpJSONObject
+          if draft.kind == .environmentModel {
+            model = value
+            guard model["previous_model"] == nil, model["feedback"] == nil,
+                  AgentCollaborationForecastIntake.hasText(model, ["domain", "environment", "scope", "mechanism",
+                    "uncertainty", "valid_when", "refresh_when"]),
+                  let confounders = model["confounders"]?.arrayValue, !confounders.isEmpty,
+                  confounders.allSatisfy({ $0.stringValue?.isBlank == false }),
+                  let basis = model["basis"]?.arrayValue, !basis.isEmpty,
+                  let states = model["state"]?.arrayValue, (1...32).contains(states.count)
+            else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+            for item in basis {
+              guard let reference = Self.forecastReference(item), draft.parents.contains(reference),
+                    let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                      conversationId: conversationId, key: "object:" + reference.objectId),
+                    saved.reference == reference,
+                    [.artifact, .evidence, .proposal, .counterexample].contains(saved.draft.kind)
+              else { throw AgentTeamHistoryDatabase.Failure.stale }
+            }
+            var stateIds = Set<String>()
+            for item in states {
+              guard let state = item.objectValue, AgentCollaborationForecastIntake.hasText(state, ["id", "value", "basis"]),
+                    stateIds.insert(state.string("id")).inserted,
+                    ["observed", "assumed", "unknown"].contains(state.string("epistemic_status")),
+                    state.string("epistemic_status") != "observed" ||
+                      state["observation"]?.objectValue.map({ references.contains($0) }) == true
+              else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+            }
+            if !references.isEmpty {
+              let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+                turnId: turnId, memberId: memberId, sourceId: sourceId)
+              frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
+            }
+          } else {
+            guard references.isEmpty, let reference = Self.forecastReference(value["task_environment_model"]),
+                  draft.parents.contains(reference),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + reference.objectId),
+                  saved.reference == reference, saved.draft.kind == .environmentModel,
+                  let savedModel = saved.draft.body["task_environment_model"]?.objectValue,
+                  case .int(let deadline)? = value["valid_until"], deadline >= AgentControlPlaneClock.nowMillis(),
+                  let source = value["source"]?.objectValue, source.string("origin") == "ios_cloud_tool",
+                  !source.string("tool").isBlank, !source.string("tool").lowercased().contains("recall"),
+                  let pointer = value["report_pointer"]?.stringValue, pointer.isEmpty || pointer.hasPrefix("/"),
+                  snapshot.members.contains(where: { $0.memberId == value.string("executor") && $0.deliveryMode != .ignore }),
+                  let actions = AgentCollaborationForecastIntake.actionIds(savedModel),
+                  let utilities = AgentCollaborationForecastIntake.utilities(value, actions: actions)
+            else { throw AgentTeamHistoryDatabase.Failure.stale }
+            model = savedModel
+            expectedUtilities = utilities
+          }
+          let goalHash = SHA256.hash(data: Data(snapshot.goal.utf8)).map { String(format: "%02x", $0) }.joined()
+          guard model.string("goal_sha256") == goalHash,
+                pinned.contract.contains(where: {
+                  $0.id == model.string("criterion_id") && $0.requirement == model.string("requirement")
+                }), AgentCollaborationForecastIntake.actionIds(model) != nil
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
         } else if draft.kind == .teamExchange {
           let valid = try AgentCollaborationTeamExchangeIntake.validates(draft, author: memberId) { reference in
             guard !drafts.contains(where: { $0.objectId == reference.objectId }),
@@ -633,7 +697,7 @@ final class AgentTeamExecutionHistoryStore {
         var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
-          frozenCloudReads: frozenReads)
+          frozenCloudReads: frozenReads, declaredExpectedUtilities: expectedUtilities)
         revision.reference.sha256 = try digest(revision)
         revisions.append(revision)
       }
@@ -646,6 +710,12 @@ final class AgentTeamExecutionHistoryStore {
       try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
       return receipt
     }
+  }
+
+  private static func forecastReference(_ value: AgentMcpJSONValue?) -> AgentCollaborationResearchReference? {
+    guard let object = value?.objectValue, Set(object.keys) == Set(["object_id", "revision", "sha256"]),
+          case .int(let revision)? = object["revision"], revision > 0 else { return nil }
+    return .init(objectId: object.string("object_id"), revision: revision, sha256: object.string("sha256"))
   }
 
   private static func researchPublicationKey(runId: String, memberId: String, sourceId: String) -> String {
@@ -751,7 +821,7 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          guard [.acceptanceReview, .teamExchange, .failureExperience, .innovationOpportunity].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
+          guard [.acceptanceReview, .environmentModel, .teamExchange, .failureExperience, .innovationOpportunity].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
                 reads.count == citations.count,
                 zip(reads, citations).allSatisfy({ pair in
                   pair.0.evidenceId == pair.1.string("evidence_id") &&
