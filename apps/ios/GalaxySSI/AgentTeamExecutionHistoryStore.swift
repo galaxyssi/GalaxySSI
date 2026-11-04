@@ -726,6 +726,7 @@ final class AgentTeamExecutionHistoryStore {
         let references = draft.observations ?? []
         var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
         var expectedUtilities: [String: Double]? = nil
+        var expectedInformation: [String: Double]? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
         var trialAuthors: [String]? = nil
         if draft.kind == .acceptanceReview {
@@ -827,6 +828,12 @@ final class AgentTeamExecutionHistoryStore {
             else { throw AgentTeamHistoryDatabase.Failure.stale }
             model = savedModel
             expectedUtilities = utilities
+            if value["hypothesis_test"] != nil {
+              guard let information = AgentCollaborationForecastIntake.hypothesisInformation(value) else {
+                throw AgentTeamHistoryDatabase.Failure.corrupt
+              }
+              expectedInformation = information
+            }
           }
           let goalHash = SHA256.hash(data: Data(snapshot.goal.utf8)).map { String(format: "%02x", $0) }.joined()
           guard model.string("goal_sha256") == goalHash,
@@ -977,6 +984,7 @@ final class AgentTeamExecutionHistoryStore {
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
           frozenCloudReads: frozenReads, declaredExpectedUtilities: expectedUtilities,
+          expectedInformationGainBits: expectedInformation,
           registeredAtMillis: draft.kind == .experimentPlan ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors)
         revision.reference.sha256 = try digest(revision)

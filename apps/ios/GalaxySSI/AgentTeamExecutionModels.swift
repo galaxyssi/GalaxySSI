@@ -474,6 +474,65 @@ enum AgentCollaborationForecastIntake {
     return result
   }
 
+  static func hypothesisInformation(_ forecast: AgentMcpJSONObject) -> [String: Double]? {
+    guard let spec = forecast["hypothesis_test"]?.objectValue, spec["prior_outcome"] == nil,
+          hasText(spec, ["question", "assumptions", "likelihood_basis", "misspecification_check"]),
+          let hypotheses = spec["hypotheses"]?.arrayValue, (2...32).contains(hypotheses.count),
+          let rawIds = spec["event_ids"]?.arrayValue, (2...32).contains(rawIds.count),
+          let matrix = spec["likelihoods"]?.objectValue,
+          let choices = forecast["choices"]?.arrayValue, let events = forecast["events"]?.arrayValue else { return nil }
+    let ids = rawIds.compactMap(\.strictStringValue)
+    guard ids.count == rawIds.count, Set(ids).count == ids.count else { return nil }
+    let categorical = events.compactMap(\.objectValue).filter { ids.contains($0.string("id")) }
+    guard categorical.count == ids.count, Set(categorical.map { $0.string("id") }) == Set(ids),
+          let pointer = categorical.first?.string("pointer"), pointer.hasPrefix("/"),
+          pointer.range(of: "~(?![01])", options: .regularExpression) == nil,
+          categorical.allSatisfy({ $0.string("pointer") == pointer }) else { return nil }
+    var labels: [AgentMcpJSONValue] = []
+    for event in categorical {
+      guard let value = event["expected"], value.objectValue == nil, value.arrayValue == nil,
+            !labels.contains(where: { previous in
+              if let a = number(previous), let b = number(value) { return a == b }
+              return previous == value
+            }) else { return nil }
+      labels.append(value)
+    }
+    var weights: AgentMcpJSONObject = [:]
+    for hypothesis in hypotheses {
+      guard let row = hypothesis.objectValue, hasText(row, ["id", "claim"]), let prior = row["prior"],
+            weights.updateValue(prior, forKey: row.string("id")) == nil else { return nil }
+    }
+    let keys = weights.keys.sorted()
+    func distribution(_ row: AgentMcpJSONObject, keys: [String]) -> [Double]? {
+      guard Set(row.keys) == Set(keys) else { return nil }
+      let values = keys.compactMap { number(row[$0]) }
+      let total = values.reduce(0, +)
+      guard values.count == keys.count, values.allSatisfy({ (0...1).contains($0) }),
+            abs(total - 1) <= 1e-12 else { return nil }
+      return values.map { $0 / total }
+    }
+    func entropy(_ p: [Double]) -> Double {
+      p.filter { $0 > 0 }.reduce(0) { $0 - $1 * log2($1) }
+    }
+    guard let prior = distribution(weights, keys: keys) else { return nil }
+    var result: [String: Double] = [:]
+    for raw in choices {
+      guard let choice = raw.objectValue, let rows = matrix[choice.string("action_id")]?.objectValue,
+            Set(rows.keys) == Set(keys), let probabilities = choice["probabilities"]?.objectValue else { return nil }
+      let distributions = keys.compactMap { rows[$0]?.objectValue.flatMap { distribution($0, keys: ids) } }
+      guard distributions.count == keys.count else { return nil }
+      var expected = 0.0
+      for (index, event) in ids.enumerated() {
+        let joint = zip(prior, distributions).map { $0.0 * $0.1[index] }
+        let mass = joint.reduce(0, +)
+        guard let declared = number(probabilities[event]), abs(declared - mass) <= 1e-12 else { return nil }
+        if mass > 0 { expected += mass * entropy(joint.map { $0 / mass }) }
+      }
+      guard result.updateValue(max(0, entropy(prior) - expected), forKey: choice.string("action_id")) == nil else { return nil }
+    }
+    return Set(matrix.keys) == Set(result.keys) ? result : nil
+  }
+
   static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
     fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
   }
@@ -709,6 +768,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var draft: AgentCollaborationResearchDraft
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
+  var expectedInformationGainBits: [String: Double]? = nil
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil
