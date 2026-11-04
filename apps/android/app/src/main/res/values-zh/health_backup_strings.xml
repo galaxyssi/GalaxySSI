@@ -25,6 +25,7 @@
     <string name="health_backup_owner">档案归属：%1$s</string>
     <string name="health_backup_self">本人（未填写姓名）</string>
     <string name="health_backup_counts">%1$d 条记录 · %2$d 个原件\n%3$d 条关联记录 · %4$d 个缺失原件</string>
+    <string name="health_backup_secondary_count">%1$d 条附加来源关联</string>
     <string name="health_backup_dates">测量范围：%1$s 至 %2$s</string>
     <string name="health_backup_password">备份密码</string>
     <string name="health_backup_repeat">再次输入备份密码</string>

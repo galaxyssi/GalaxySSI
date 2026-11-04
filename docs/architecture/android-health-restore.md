@@ -11,7 +11,7 @@ the current self profile.
 ## Review
 
 Original bytes stream directly into app-encrypted, uniquely named private
-files. Staged record and conflict rows are encrypted individually in a
+files. Staged record, conflict and secondary source rows are encrypted individually in a
 temporary database. No original or record metadata becomes visible to the
 live health views until commit. App cancellation or leaving the screen
 discards uncommitted staging; startup cleanup removes abandoned batch
@@ -23,18 +23,21 @@ values, including differing notes. Existing and deleted record IDs are
 preserved. Missing originals are explicit and require confirmation. A known
 missing original may be repaired from verified bytes without changing its
 local ID; identical intact originals are reused. Incoming references are
-remapped by verified digest when needed.
+remapped by verified digest when needed. Additional source links are counted
+separately as new, already present, or skipped. A link can be attached to a
+new or exactly equivalent measurement; a conflicting or deleted target is
+never changed. Link conflicts are reported as a partial restore.
 
 ## Commit
 
 The original staging files and their directory entries are synchronized
-before the SQLite write transaction. Selected metadata and record revisions,
-metric-version clocks, and the encrypted restore receipt are committed in
+before the SQLite write transaction. Selected metadata, record revisions,
+secondary links, metric-version clocks, and the encrypted restore receipt are committed in
 the same database transaction. If the observed local data or profile changes
 after the preview, the previous plan cannot be committed. A late write
 failure leaves no partial live observations, originals, or receipt. The
 receipt records the package ID, date range, result counts and time; reopening
-the same package does not duplicate restored records.
+the same package does not duplicate restored records or source links.
 
 The restore operation does not overwrite conflicted measurements or
 resurrect records deleted on this device. Import into a separate profile,

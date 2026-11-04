@@ -24,13 +24,16 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     internal val tableDatabase: SQLiteDatabase get() = helper.writableDatabase
     private fun aad(id: String, revision: Int) = "$name|health|$id|$revision".toByteArray(Charsets.UTF_8)
     private fun dedupe(record: HealthObservation) = AgentMemoryIndexKey.token("$name|health-duplicate-v1|${HealthObservationPolicy.duplicateKey(record)}")
-    private fun evidenceKey(draft: HealthDraft): String? = draft.evidence?.let {
-        AgentMemoryIndexKey.token("$name|health-evidence-v1|${it.originalId}|${it.page}|${it.candidateId}|${draft.metric.name}")
-    }
+    private fun evidenceKey(draft: HealthDraft): String? = draft.evidence?.let { evidenceKey(it, draft.metric) }
+    private fun evidenceKey(evidence: HealthEvidence, metric: HealthMetric): String =
+        AgentMemoryIndexKey.token("$name|health-evidence-v1|${evidence.originalId}|${evidence.page}|${evidence.candidateId}|${metric.name}")
     private fun ocrLinkKey(evidence: HealthEvidence): String =
         AgentMemoryIndexKey.token("$name|health-ocr-link-v1|${evidence.originalId}|${evidence.page}|${evidence.candidateId}")
     fun recordForEvidence(draft: HealthDraft): HealthObservation? {
         val key = evidenceKey(draft) ?: return null
+        return recordForEvidenceKey(key)
+    }
+    private fun recordForEvidenceKey(key: String): HealthObservation? {
         return helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE evidence_key=? AND deleted=0", arrayOf(key))
             .use { if (it.moveToFirst()) decode(it).also { record -> check(evidenceKey(record.draft) == key) { "Health evidence index mismatch" } } else null }
     }
@@ -83,10 +86,15 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     fun overviewHasOriginalHistory(id: String): Boolean = helper.readableDatabase.rawQuery(
         "SELECT 1 FROM observations WHERE original_id=? LIMIT 1", arrayOf(id)).use { it.moveToFirst() }
-    fun hasSelfOriginalLink(id: String): Boolean = helper.readableDatabase.rawQuery(
-        "SELECT id,revision,payload FROM observations WHERE original_id=? AND deleted=0", arrayOf(id)).use { rows ->
-        while (rows.moveToNext()) if (decode(rows).profileId == "self") return@use true
-        false
+    fun hasSelfOriginalLink(id: String): Boolean {
+        val db = helper.readableDatabase
+        fun self(query: String) = db.rawQuery(query, arrayOf(id)).use { rows ->
+            while (rows.moveToNext()) if (decode(rows).profileId == "self") return@use true
+            false
+        }
+        return self("SELECT id,revision,payload FROM observations WHERE original_id=? AND deleted=0") ||
+            self("SELECT o.id,o.revision,o.payload FROM health_source_links l JOIN observations o " +
+                "ON o.id=l.record_id AND o.revision=l.revision AND o.measured_at=l.measured_at WHERE l.original_id=? AND o.deleted=0")
     }
     fun overviewHasOcrDraft(job: String): Boolean {
         val prefix = "ocr:$job:"
@@ -147,6 +155,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 else compare(decode(row))
         }
         recordForEvidence(candidate.draft)?.let { return compare(it) }
+        recordForOcrLink(candidate.draft)?.let { return HealthRestoreMatch(HealthRestoreKind.CONFLICT, record(it.id)) }
         db.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE dedupe=? AND deleted=0",
             arrayOf(dedupe(candidate))).use { if (it.moveToFirst()) return compare(decode(it)) }
         if (candidate.source in setOf("health_connect", "bluetooth")) {
@@ -165,6 +174,66 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
 
     internal fun restoreDedupeKey(record: HealthObservation) = dedupe(record)
     internal fun restoreEvidenceKey(record: HealthObservation) = evidenceKey(record.draft)
+
+    internal fun backupSourceLinks(record: HealthObservation, signal: android.os.CancellationSignal): Sequence<HealthEvidence> = sequence {
+        var after = listOf("", "", "")
+        while (true) {
+            signal.throwIfCanceled()
+            val rows = helper.readableDatabase.rawQuery(
+                "SELECT original_id,job_id,evidence_key,payload FROM health_source_links WHERE record_id=? AND revision=? AND measured_at=? " +
+                    "AND (original_id,job_id,evidence_key)>(?,?,?) ORDER BY original_id,job_id,evidence_key LIMIT 30",
+                (listOf(record.id, record.revision.toString(), record.draft.measuredAt.toString()) + after).toTypedArray(), signal
+            ).use { cursor -> buildList {
+                while (cursor.moveToNext()) {
+                    val key = (0..2).map(cursor::getString)
+                    add(key to readSourceLink(record, key[0], key[1], key[2], cursor.getBlob(3)))
+                }
+            } }
+            if (rows.isEmpty()) break
+            for ((_, evidence) in rows) yield(evidence)
+            after = rows.last().first
+        }
+    }
+
+    internal fun restorePrimarySourceKey(link: HealthRestoreSourceLink): String? =
+        link.evidence.takeIf { it.kind == "ocr" }?.let { evidenceKey(it, link.metric) }
+
+    internal fun restoreSourceSlot(link: HealthRestoreSourceLink): String = with(link) {
+        if (evidence.kind == "ocr") ocrLinkKey(evidence)
+        else AgentMemoryIndexKey.token("$name|health-restore-table-link|$recordId|$revision|${evidence.originalId}|${evidence.jobId}")
+    }
+
+    internal fun restoreSourceMatch(link: HealthRestoreSourceLink): HealthRestoreKind = with(link) {
+        if (evidence.kind == "ocr") {
+            recordForEvidenceKey(requireNotNull(restorePrimarySourceKey(this)))?.let {
+                return@with if (it.id == recordId && it.revision == revision) HealthRestoreKind.DUPLICATE else HealthRestoreKind.CONFLICT
+            }
+            linkedOcrRecord(evidence)?.let {
+                return@with if (it.id == recordId && it.revision == revision && it.draft.evidence == evidence)
+                    HealthRestoreKind.DUPLICATE else HealthRestoreKind.CONFLICT
+            }
+        } else {
+            helper.readableDatabase.rawQuery(
+                "SELECT payload FROM health_source_links WHERE original_id=? AND record_id=? AND revision=? AND job_id=? AND evidence_key=''",
+                arrayOf(evidence.originalId, recordId, revision.toString(), evidence.jobId)
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val target = requireNotNull(record(recordId))
+                    val saved = readSourceLink(target, evidence.originalId, evidence.jobId, "", cursor.getBlob(0))
+                    return@with if (saved == evidence) HealthRestoreKind.DUPLICATE else HealthRestoreKind.CONFLICT
+                }
+            }
+        }
+        HealthRestoreKind.NEW
+    }
+
+    internal fun insertRestoredSource(link: HealthRestoreSourceLink) {
+        val record = record(link.recordId) ?: throw HealthRestoreChanged()
+        if (record.revision != link.revision || record.draft.metric != link.metric || record.profileId != "self" ||
+            record.source != link.evidence.kind || restoreSourceMatch(link) != HealthRestoreKind.NEW ||
+            !insertSourceLink(record, link.evidence, if (link.evidence.kind == "ocr") ocrLinkKey(link.evidence) else ""))
+            throw HealthRestoreChanged()
+    }
 
     internal fun insertRestored(record: HealthObservation) {
         val db = helper.writableDatabase
@@ -348,6 +417,10 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
 
     private fun recordForOcrLink(draft: HealthDraft): HealthObservation? {
         val source = draft.evidence?.takeIf { it.kind == "ocr" } ?: return null
+        return linkedOcrRecord(source)
+    }
+
+    private fun linkedOcrRecord(source: HealthEvidence): HealthObservation? {
         val originalId = source.originalId
         val key = ocrLinkKey(source)
         return helper.readableDatabase.rawQuery(
@@ -809,6 +882,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             db.execSQL("CREATE INDEX IF NOT EXISTS health_source_job ON health_source_links(job_id)")
             db.execSQL("CREATE INDEX IF NOT EXISTS health_source_page ON health_source_links(original_id,measured_at DESC,record_id DESC)")
             db.execSQL("CREATE INDEX IF NOT EXISTS health_source_evidence ON health_source_links(evidence_key) WHERE evidence_key<>''")
+            db.execSQL("CREATE INDEX IF NOT EXISTS health_source_record ON health_source_links(record_id,revision,original_id,job_id,evidence_key)")
         }
         private fun indexPlatformRecords(db: SQLiteDatabase) =
             db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
@@ -818,7 +892,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     companion object {
         const val DEFAULT_DB = "health_records_v1.db"
-        const val SCHEMA_VERSION = 11
+        const val SCHEMA_VERSION = 12
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
         fun syncIncidentChanges(context: Context, name: String) = android.net.Uri.parse(

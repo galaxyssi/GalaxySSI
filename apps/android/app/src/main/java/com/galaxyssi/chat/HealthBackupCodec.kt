@@ -41,25 +41,26 @@ internal data class HealthBackupOriginal(
 
 internal data class HealthBackupManifest(
     val id: String, val createdAt: Long, val owner: String, val records: Long, val originals: Int, val missing: Int,
-    val linked: Long, val originalBytes: Long, val first: Long, val last: Long
+    val linked: Long, val originalBytes: Long, val first: Long, val last: Long, val secondary: Long = 0
 ) {
     init {
         require(HealthProfilePolicy.uuid(id) && createdAt > 0 && owner.length <= 120 && owner.none(Char::isISOControl))
         require(records >= 0 && originals in 0..HealthBackupCodec.MAX_ORIGINALS && missing in 0..originals &&
-            linked in 0..records && originalBytes >= 0 && first >= 0 && last >= first)
+            linked in 0..records && secondary >= 0 && originalBytes >= 0 && first >= 0 && last >= first)
         require(if (records == 0L) first == 0L && last == 0L else first > 0)
+        require(records > 0L || secondary == 0L)
     }
 
     fun json() = JSONObject().put("id", id).put("created_at", createdAt).put("profile", "self").put("owner", owner)
         .put("records", records).put("originals", originals).put("missing", missing).put("linked", linked)
-        .put("original_bytes", originalBytes).put("first", first).put("last", last)
+        .put("original_bytes", originalBytes).put("first", first).put("last", last).put("secondary", secondary)
 
     companion object {
-        fun from(j: JSONObject): HealthBackupManifest {
+        fun from(j: JSONObject, format: Int): HealthBackupManifest {
             if (j.getString("profile") != "self") throw HealthBackupException(HealthBackupIssue.OTHER_PROFILE)
             return HealthBackupManifest(j.getString("id"), j.getLong("created_at"), j.getString("owner"),
                 j.getLong("records"), j.getInt("originals"), j.getInt("missing"), j.getLong("linked"),
-                j.getLong("original_bytes"), j.getLong("first"), j.getLong("last"))
+                j.getLong("original_bytes"), j.getLong("first"), j.getLong("last"), if (format >= 2) j.getLong("secondary") else 0L)
         }
     }
 }
@@ -67,7 +68,8 @@ internal data class HealthBackupManifest(
 private val HEALTH_BACKUP_HASH = Regex("[0-9a-f]{64}")
 
 internal object HealthBackupCodec {
-    const val VERSION = 1
+    const val VERSION = 2
+    private const val FIRST_VERSION = 1
     const val MAX_ORIGINALS = 100_000
     const val EXTENSION = "ghbackup"
     private const val MAX_FRAME = 256 * 1024
@@ -82,16 +84,18 @@ internal object HealthBackupCodec {
 
     fun write(output: OutputStream, password: CharArray, manifest: HealthBackupManifest,
         originals: Sequence<HealthBackupOriginal>, copy: (HealthBackupOriginal, OutputStream) -> Unit,
-        records: Sequence<HealthObservation>, active: () -> Unit = {}) {
-        require(passwordAllowed(password))
+        records: Sequence<HealthObservation>, active: () -> Unit = {},
+        sourceLinks: (HealthObservation) -> Sequence<HealthEvidence> = { emptySequence() }, formatVersion: Int = VERSION) {
+        require(passwordAllowed(password) && formatVersion in FIRST_VERSION..VERSION)
+        require(formatVersion >= 2 || manifest.secondary == 0L)
         val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
-        val header = ByteArrayOutputStream().also { DataOutputStream(it).apply { write(magic); writeInt(VERSION); write(salt) } }.toByteArray()
+        val header = ByteArrayOutputStream().also { DataOutputStream(it).apply { write(magic); writeInt(formatVersion); write(salt) } }.toByteArray()
         keys(password, salt) { proofKey, streamKey ->
             active()
             output.write(header)
             output.write(proof(proofKey, header))
             DataOutputStream(HealthPrivateExportFile.primitive(streamKey).newEncryptingStream(HealthPrivateExportFile.borrowed(output), header)).use { stream ->
-                frame(stream, manifest.json())
+                frame(stream, manifest.json().apply { if (formatVersion == FIRST_VERSION) remove("secondary") })
                 val counter = Counter(manifest)
                 for (original in originals) {
                     active()
@@ -103,6 +107,14 @@ internal object HealthBackupCodec {
                     active()
                     counter.record(record)
                     frame(stream, record.json())
+                    if (formatVersion >= 2) {
+                        for (evidence in sourceLinks(record)) {
+                            active()
+                            counter.link(record, evidence)
+                            frame(stream, evidence.json())
+                        }
+                        stream.writeInt(0)
+                    }
                 }
                 counter.finish()
                 stream.writeInt(END)
@@ -115,13 +127,14 @@ internal object HealthBackupCodec {
         onOriginal: (HealthBackupOriginal) -> OutputStream? = { null },
         onRecord: (HealthObservation) -> Unit = {},
         onManifest: (HealthBackupManifest) -> Unit = {},
-        onMissingOriginal: (HealthBackupOriginal) -> Unit = {}): HealthBackupManifest {
+        onMissingOriginal: (HealthBackupOriginal) -> Unit = {},
+        onSourceLink: (HealthObservation, HealthEvidence) -> Unit = { _, _ -> }): HealthBackupManifest {
         val raw = DataInputStream(input)
         val actualMagic = ByteArray(magic.size)
         try { raw.readFully(actualMagic) } catch (_: EOFException) { fail(HealthBackupIssue.FORMAT) }
         if (!actualMagic.contentEquals(magic)) fail(HealthBackupIssue.FORMAT)
         val version = try { raw.readInt() } catch (_: EOFException) { fail(HealthBackupIssue.DAMAGED) }
-        if (version < VERSION) fail(HealthBackupIssue.OLDER_VERSION)
+        if (version < FIRST_VERSION) fail(HealthBackupIssue.OLDER_VERSION)
         if (version > VERSION) fail(HealthBackupIssue.NEWER_VERSION)
         if (!passwordAllowed(password)) fail(HealthBackupIssue.UNLOCK)
         val salt = ByteArray(SALT_BYTES)
@@ -133,7 +146,7 @@ internal object HealthBackupCodec {
             if (!MessageDigest.isEqual(tag, proof(proofKey, header))) fail(HealthBackupIssue.UNLOCK)
             val stream = parse { DataInputStream(HealthPrivateExportFile.primitive(streamKey).newDecryptingStream(raw, header)) }
             stream.use {
-                val manifest = parse { HealthBackupManifest.from(frame(stream)) }
+                val manifest = parse { HealthBackupManifest.from(frame(stream), version) }
                 onManifest(manifest)
                 val counter = Counter(manifest)
                 repeat(manifest.originals) {
@@ -145,7 +158,17 @@ internal object HealthBackupCodec {
                 var seen = 0L
                 while (seen < manifest.records) {
                     active()
-                    onRecord(parse { HealthObservation.from(frame(stream)).also(counter::record) })
+                    val record = parse { HealthObservation.from(frame(stream)).also(counter::record) }
+                    onRecord(record)
+                    if (version >= 2) {
+                        while (true) {
+                            active()
+                            val size = parse { stream.readInt() }
+                            if (size == 0) break
+                            val evidence = parse { HealthEvidence.from(frame(stream, size)).also { counter.link(record, it) } }
+                            onSourceLink(record, evidence)
+                        }
+                    }
                     seen++
                 }
                 parse {
@@ -180,6 +203,7 @@ internal object HealthBackupCodec {
         private var previousRecord = ""
         private var missing = 0
         private var linked = 0L
+        private var secondary = 0L
         private var count = 0L
         private var bytes = 0L
         private var first = Long.MAX_VALUE
@@ -209,8 +233,15 @@ internal object HealthBackupCodec {
 
         fun finish() {
             require(byId.size == manifest.originals && missing == manifest.missing && count == manifest.records &&
-                bytes == manifest.originalBytes && linked == manifest.linked && first.takeUnless { count == 0L }.orZero() == manifest.first &&
+                bytes == manifest.originalBytes && linked == manifest.linked && secondary == manifest.secondary &&
+                first.takeUnless { count == 0L }.orZero() == manifest.first &&
                 last == manifest.last)
+        }
+
+        fun link(record: HealthObservation, evidence: HealthEvidence) {
+            require(secondary < manifest.secondary && evidence.valid() && evidence.confirmed && evidence.kind == record.source)
+            if (byId[evidence.originalId] != evidence.sha256) fail(HealthBackupIssue.MISSING_MANIFEST)
+            secondary++
         }
     }
 
@@ -226,8 +257,7 @@ internal object HealthBackupCodec {
         finally { bytes.fill(0) }
     }
 
-    private fun frame(stream: DataInputStream): JSONObject {
-        val size = stream.readInt()
+    private fun frame(stream: DataInputStream, size: Int = stream.readInt()): JSONObject {
         require(size in 1..MAX_FRAME)
         val bytes = ByteArray(size)
         return try {
