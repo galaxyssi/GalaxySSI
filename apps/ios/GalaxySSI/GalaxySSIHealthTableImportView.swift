@@ -6,6 +6,7 @@ struct GalaxySSIHealthTableImportView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let records: GalaxySSIHealthRecords
+  var retainOriginal = true
   @State private var choosing = false
   @State private var input: Input?
   @State private var mapping = GalaxySSIHealthTableImport.Mapping()
@@ -294,7 +295,8 @@ struct GalaxySSIHealthTableImportView: View {
     guard scene == .active, owned, let input, let rows else { return }
     do {
       let count = try records.importTable(input.data, name: input.name, json: input.json,
-                                          mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet)
+                                          mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet,
+                                          retainOriginal: retainOriginal)
       clear()
       reload()
       message = String(format: t("saved", "%lld measurements saved"), Int64(count))
