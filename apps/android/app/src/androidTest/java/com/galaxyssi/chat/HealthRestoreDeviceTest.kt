@@ -184,6 +184,81 @@ class HealthRestoreDeviceTest {
         }
     }
 
+    @Test fun selectedConflictAddsRevisionAndSourcesWithoutChangingUnselectedRecords() = fixture { source, target ->
+        val incoming = save(source, draft(1, note = "Backup note", original = original(source, "Backup primary".toByteArray())))
+        val backupFile = original(source, "Backup secondary".toByteArray())
+        val sourceEvidence = addSource(source, incoming, backupFile, 1)
+        val untouchedIncoming = save(source, draft(2, note = "Another backup note"))
+        val existing = save(target, draft(1, note = "Local note", id = incoming.id, original = original(target, "Local primary".toByteArray())))
+        val untouched = save(target, draft(2, note = "Keep this note", id = untouchedIncoming.id))
+        val file = packageFile(source)
+        val repo = restore(target)
+        prepare(repo, file).use { plan ->
+            assertEquals(2L, plan.counts.conflicts)
+            assertTrue(plan.conflicts().rows.all { it.replaceable })
+            assertEquals(1L, plan.counts.sourcesSkipped)
+            HealthRecordStore(context, target.records).use { records ->
+                records.tableDatabase.execSQL("CREATE TRIGGER fail_replacement_source BEFORE INSERT ON health_source_links BEGIN SELECT RAISE(ABORT,'test failure'); END")
+            }
+            assertTrue(runCatching { plan.commit(CancellationSignal(), setOf(incoming.id)) }.exceptionOrNull() is android.database.sqlite.SQLiteConstraintException)
+            HealthRecordStore(context, target.records).use { records ->
+                assertEquals(existing, records.record(existing.id))
+                assertNull(records.revision(existing.id, existing.revision + 1))
+                assertTrue(records.originalPage(backupFile.id).records.isEmpty())
+                records.tableDatabase.execSQL("DROP TRIGGER fail_replacement_source")
+            }
+            assertTrue(repo.recent().isEmpty())
+            val counts = plan.commit(CancellationSignal(), setOf(incoming.id)).counts
+            assertEquals(1L, counts.replaced)
+            assertEquals(1L, counts.conflicts)
+            assertEquals(1L, counts.sourcesAdded)
+            assertEquals(0L, counts.sourcesSkipped)
+            assertEquals(counts, repo.recent().single().counts)
+        }
+        HealthRecordStore(context, target.records).use { records ->
+            assertEquals(2L, records.count())
+            val current = requireNotNull(records.record(incoming.id))
+            assertEquals(incoming.draft, current.draft)
+            assertEquals(existing.revision + 1, current.revision)
+            assertEquals(existing, records.revision(existing.id, existing.revision))
+            assertEquals(untouched, records.record(untouched.id))
+            assertEquals(sourceEvidence, records.originalPage(backupFile.id).records.single().draft.evidence)
+        }
+        prepare(repo, file).use { plan ->
+            assertEquals(1L, plan.counts.duplicates)
+            assertEquals(1L, plan.counts.sourcesReused)
+            assertEquals(0L, plan.commit(CancellationSignal()).counts.replaced)
+        }
+    }
+
+    @Test fun pendingEditOrDeletedTargetCannotBeReplacedAndNoOtherRecordsAreWritten() = fixture { source, target ->
+        val incoming = save(source, draft(1, note = "Backup"))
+        val deleted = save(source, draft(2))
+        save(source, draft(3))
+        val current = save(target, draft(1, note = "Local", id = incoming.id))
+        val removed = save(target, draft(2, id = deleted.id))
+        HealthRecordStore(context, target.records).use { assertTrue(it.delete(removed.id, removed.revision)) }
+        val file = packageFile(source)
+        val repo = restore(target)
+        prepare(repo, file).use { plan ->
+            val conflicts = plan.conflicts().rows.associateBy { it.record.id }
+            assertTrue(conflicts.getValue(incoming.id).replaceable)
+            assertFalse(conflicts.getValue(deleted.id).replaceable)
+            assertTrue(runCatching { plan.commit(CancellationSignal(), setOf(incoming.id, deleted.id)) }.exceptionOrNull() is HealthRestoreChanged)
+            val edit = current.editable().copy(note = "Unfinished edit")
+            HealthRecordStore(context, target.records).use { it.saveDraft(edit) }
+            assertTrue(runCatching { plan.commit(CancellationSignal(), setOf(incoming.id)) }.exceptionOrNull() is HealthRestoreChanged)
+            HealthRecordStore(context, target.records).use { records ->
+                assertEquals(current, records.record(current.id))
+                assertNull(records.revision(current.id, current.revision + 1))
+                assertEquals(edit, records.draft(HealthRecordStore.draftKey(edit)))
+                assertNull(records.record(deleted.id))
+                assertEquals(1L, records.count())
+            }
+            assertTrue(repo.recent().isEmpty())
+        }
+    }
+
     @Test fun restoresLegacyVersionOneBackup() = fixture { source, target ->
         val record = save(source, draft(1))
         val manifest = HealthBackupRepository(context, source).preview("Fixture Owner", CancellationSignal()).manifest
@@ -346,6 +421,8 @@ class HealthRestoreDeviceTest {
         val record = save(source, draft(1, original = original(source, "UI primary".toByteArray())))
         val secondary = original(source, "UI secondary".toByteArray())
         val evidence = addSource(source, record, secondary, 1)
+        val updated = save(source, draft(2, note = "Backup revision"))
+        val local = save(target, draft(2, note = "Local revision", id = updated.id))
         val packageFile = packageFile(source)
         val folder = File(context.cacheDir, "health-backups").apply { mkdirs() }
         val picked = File(folder, "restore-ui-${id()}.ghbackup")
@@ -372,13 +449,30 @@ class HealthRestoreDeviceTest {
                     scenario.onActivity { ready = find(it.window.decorView, "health-restore-preview") != null }
                     true.takeIf { ready }
                 }
-                assertEquals(0L to 0L, count(target))
+                assertEquals(1L to 0L, count(target))
                 scenario.onActivity {
                     val caption = it.getString(R.string.health_restore_secondary_counts, 1, 0, 0)
                     assertNotNull(findText(it.window.decorView, caption))
+                    assertTrue(requireNotNull(find(it.window.decorView, "health-restore-review-conflicts")).performClick())
+                }
+                awaitValue {
+                    var ready = false
+                    scenario.onActivity { ready = find(it.window.decorView, "health-restore-replace-${updated.id}") != null }
+                    true.takeIf { ready }
+                }
+                scenario.onActivity {
+                    val replace = requireNotNull(find(it.window.decorView, "health-restore-replace-${updated.id}")) as CheckBox
+                    assertFalse(replace.isChecked)
+                    replace.isChecked = true
+                    assertTrue(requireNotNull(find(it.window.decorView, "health-restore-back-preview")).performClick())
+                }
+                HealthRecordStore(context, target.records).use { assertEquals(local, it.record(local.id)) }
+                scenario.onActivity {
                     val commit = requireNotNull(find(it.window.decorView, "health-restore-commit"))
                     assertFalse(commit.isEnabled)
-                    (requireNotNull(find(it.window.decorView, "health-restore-consent")) as CheckBox).isChecked = true
+                    val consent = requireNotNull(find(it.window.decorView, "health-restore-consent")) as CheckBox
+                    assertEquals(it.getString(R.string.health_restore_confirm_replacements, 1), consent.text)
+                    consent.isChecked = true
                     assertTrue(commit.isEnabled)
                     assertTrue(commit.performClick())
                 }
@@ -389,6 +483,7 @@ class HealthRestoreDeviceTest {
                 }
                 assertEquals(1L, restore(target).recent().single().counts.added)
                 assertEquals(1L, restore(target).recent().single().counts.sourcesAdded)
+                assertEquals(1L, restore(target).recent().single().counts.replaced)
                 HealthRecordStore(context, target.records).use { records ->
                     assertEquals(evidence, records.originalPage(secondary.id).records.single().draft.evidence)
                 }
