@@ -34,6 +34,11 @@ struct GalaxySSIHealthCenterView: View {
         } label: {
           Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
         }
+        NavigationLink {
+          GalaxySSIHealthProfileView(records: records)
+        } label: {
+          Label(t("profile.title", "Health Profile"), systemImage: "person.text.rectangle")
+        }
       }
       if scenePhase == .active, let archive {
         let current = archive.current
