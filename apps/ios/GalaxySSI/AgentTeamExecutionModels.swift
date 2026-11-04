@@ -100,6 +100,9 @@ struct AgentCollaborationResearchDraft: Codable {
     case toolTestPlan = "tool_test_plan"
     case environmentModel = "task_environment_model"
     case actionForecast = "action_forecast"
+    case experimentPlan = "experiment_plan"
+    case experimentResult = "experiment_result"
+    case capabilityLesson = "capability_lesson"
     case workflowMethod = "workflow_method"
     case candidateEvent = "candidate_event"
     case teamExchange = "team_exchange"
@@ -457,6 +460,148 @@ enum AgentCollaborationForecastIntake {
   }
 }
 
+enum AgentCollaborationExperimentPlanIntake {
+  static func validates(_ draft: AgentCollaborationResearchDraft,
+                        current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) rethrows -> Bool {
+    guard draft.kind == .experimentPlan, draft.objectId?.isBlank != false, draft.baseRevision == 0,
+          let spec = draft.body["experiment_plan"]?.objectValue,
+          ["retention_suite", "transfer_study", "team_comparison", "workflow_comparison"].allSatisfy({ spec[$0] == nil }),
+          hasText(spec, ["method", "environment", "budget_unit", "prediction_id"]),
+          let pointer = spec["report_pointer"]?.stringValue, pointer.isEmpty || pointer.hasPrefix("/"),
+          let limit = number(spec["budget_limit"]), limit > 0,
+          let source = spec["source"]?.objectValue, source.string("origin") == "ios_cloud_tool",
+          hasText(source, ["tool"]), !source.string("tool").lowercased().contains("recall"),
+          source.string("tool") != "research_evidence_audit",
+          let idea = reference(spec["innovation"]), let baseline = reference(spec["baseline"]),
+          idea.objectId != baseline.objectId, draft.parents.contains(idea), draft.parents.contains(baseline),
+          let savedIdea = try current(idea), savedIdea.draft.kind.rawValue == "innovation",
+          let savedBaseline = try current(baseline),
+          ["proposal", "artifact", "innovation"].contains(savedBaseline.draft.kind.rawValue),
+          let predictions = savedIdea.draft.body["innovation"]?.objectValue?["predictions"]?.arrayValue,
+          predictions.contains(where: { $0.objectValue?.string("id") == spec.string("prediction_id") }),
+          let cases = spec["cases"]?.arrayValue, validatesCases(cases) else { return false }
+    for raw in cases {
+      if let item = raw.objectValue, item["dataset"] != nil {
+        guard let dataset = reference(item["dataset"]), draft.parents.contains(dataset),
+              try current(dataset)?.draft.kind == .artifact else { return false }
+      }
+    }
+    return true
+  }
+
+  static func validatesCases(_ cases: [AgentMcpJSONValue]) -> Bool {
+    guard (1...64).contains(cases.count) else { return false }
+    var ids = Set<String>()
+    var hasTarget = false
+    for raw in cases {
+      guard let item = raw.objectValue, hasText(item, ["id", "metric", "prediction"]),
+            ids.insert(item.string("id")).inserted,
+            ["target", "regression", "transfer", "feasibility"].contains(item.string("purpose")),
+            ["maximize", "minimize"].contains(item.string("direction")),
+            let gain = number(item["minimum_gain"]), gain >= 0,
+            let tolerance = number(item["tolerance"]), tolerance >= 0,
+            case .int(let count)? = item["repetitions"], count > 0,
+            item.string("purpose") != "feasibility" || number(item["threshold"]) != nil else { return false }
+      hasTarget = hasTarget || ["target", "feasibility"].contains(item.string("purpose"))
+    }
+    return hasTarget
+  }
+
+  static func reference(_ value: AgentMcpJSONValue?) -> AgentCollaborationResearchReference? {
+    guard let object = value?.objectValue, Set(object.keys) == Set(["object_id", "revision", "sha256"]),
+          case .int(let revision)? = object["revision"], revision > 0 else { return nil }
+    return .init(objectId: object.string("object_id"), revision: revision, sha256: object.string("sha256"))
+  }
+
+  private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
+  }
+
+  private static func number(_ value: AgentMcpJSONValue?) -> Double? {
+    switch value {
+    case .some(.int(let number)): return Double(number)
+    case .some(.double(let number)) where number.isFinite: return number
+    default: return nil
+    }
+  }
+
+  static func measure(_ reports: [AgentMcpJSONObject], plan: AgentCollaborationResearchRevision)
+    -> [AgentCollaborationMeasuredCase]? {
+    guard let spec = plan.draft.body["experiment_plan"]?.objectValue,
+          let cases = spec["cases"]?.arrayValue, validatesCases(cases),
+          let idea = reference(spec["innovation"]), let baseline = reference(spec["baseline"]),
+          let budget = number(spec["budget_limit"]), budget > 0 else { return nil }
+    let definitions = Dictionary(uniqueKeysWithValues: cases.compactMap(\.objectValue).map { ($0.string("id"), $0) })
+    struct Sample: Hashable { var variant: String; var repetition: Int64 }
+    var values: [String: [Sample: Double]] = [:]
+    for report in reports {
+      guard report.string("format") == "galaxyssi.experiment-measurements.v1",
+            report.string("plan_sha256") == plan.reference.sha256,
+            report.string("environment") == spec.string("environment"),
+            report.string("budget_unit") == spec.string("budget_unit"),
+            let samples = report["measurements"]?.arrayValue, (1...2_048).contains(samples.count) else { return nil }
+      for raw in samples {
+        guard let sample = raw.objectValue, let item = definitions[sample.string("case_id")],
+              ["baseline", "candidate"].contains(sample.string("variant")),
+              sample.string("variant_sha256") == (sample.string("variant") == "baseline" ? baseline.sha256 : idea.sha256),
+              sample.string("metric") == item.string("metric"),
+              item["dataset"] == nil || sample.string("dataset_sha256") == reference(item["dataset"])?.sha256,
+              case .int(let repeatIndex)? = sample["repetition"], repeatIndex > 0,
+              case .int(let count)? = item["repetitions"], repeatIndex <= count,
+              let used = number(sample["budget_used"]), used >= 0, used <= budget,
+              let value = number(sample["value"]) else { return nil }
+        let key = Sample(variant: sample.string("variant"), repetition: repeatIndex)
+        guard values[item.string("id"), default: [:]].updateValue(value, forKey: key) == nil else { return nil }
+      }
+    }
+    var results: [AgentCollaborationMeasuredCase] = []
+    for id in definitions.keys.sorted() {
+      guard let item = definitions[id], case .int(let count)? = item["repetitions"] else { return nil }
+      let samples = values[id] ?? [:]
+      let purpose = item.string("purpose")
+      guard count <= Int64(samples.count / 2), Int64(samples.count) == count * 2 else {
+        results.append(.init(id: id, purpose: purpose, state: "incomplete"))
+        continue
+      }
+      func mean(_ variant: String) -> Double {
+        samples.filter { $0.key.variant == variant }.sorted { $0.key.repetition < $1.key.repetition }
+          .reduce(0) { $0 + $1.value / Double(count) }
+      }
+      let control = mean("baseline")
+      let candidate = mean("candidate")
+      let maximize = item.string("direction") == "maximize"
+      let gain = maximize ? candidate - control : control - candidate
+      guard control.isFinite, candidate.isFinite, gain.isFinite else { return nil }
+      let passed: Bool
+      switch purpose {
+      case "regression": passed = gain >= -(number(item["tolerance"]) ?? 0)
+      case "feasibility":
+        guard let threshold = number(item["threshold"]) else { return nil }
+        passed = maximize ? candidate >= threshold : candidate <= threshold
+      default: passed = gain > 0 && gain >= (number(item["minimum_gain"]) ?? 0)
+      }
+      results.append(.init(id: id, purpose: purpose, state: passed ? "passed" : "not_met",
+        baseline: control, candidate: candidate, gain: gain))
+    }
+    return results
+  }
+}
+
+struct AgentCollaborationMeasuredCase: Codable, Equatable {
+  var id: String
+  var purpose: String
+  var state: String
+  var baseline: Double? = nil
+  var candidate: Double? = nil
+  var gain: Double? = nil
+
+  static func supportsRetention(_ cases: [Self]) -> Bool {
+    cases.contains { $0.purpose == "target" } &&
+      cases.contains { $0.purpose == "regression" } &&
+      cases.allSatisfy { $0.state == "passed" }
+  }
+}
+
 enum AgentCollaborationWorkflowIntake {
   static func validates(_ method: AgentMcpJSONObject) -> Bool {
     guard ["purpose", "domain", "bottleneck", "change_rationale", "applies_when", "avoid_when", "risks",
@@ -537,6 +682,9 @@ struct AgentCollaborationResearchRevision: Codable {
   var draft: AgentCollaborationResearchDraft
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
   var declaredExpectedUtilities: [String: Double]? = nil
+  var registeredAtMillis: Int64? = nil
+  var measuredCases: [AgentCollaborationMeasuredCase]? = nil
+  var trialAuthors: [String]? = nil
 }
 
 struct AgentCollaborationFrozenCloudRead: Codable {

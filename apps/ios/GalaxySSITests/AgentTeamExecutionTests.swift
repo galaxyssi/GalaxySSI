@@ -355,6 +355,64 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(try reopened.committedResearchRevisions(scope: scope)?.count, 1)
   }
 
+  func testExperimentRegistrationRequiresMeasurableTargetAndUniqueCases() {
+    var item: AgentMcpJSONObject = ["id": .string("target"), "metric": .string("accuracy"),
+      "prediction": .string("Improves"), "purpose": .string("target"), "direction": .string("maximize"),
+      "minimum_gain": .int(1), "tolerance": .int(0), "repetitions": .int(2)]
+    XCTAssertTrue(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item), .object(item)]))
+    item["purpose"] = .string("regression")
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    item["purpose"] = .string("feasibility")
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    item["threshold"] = .int(3)
+    XCTAssertTrue(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+  }
+
+  func testExperimentMeasurementKeepsPartialAndRejectsDuplicateOrOverBudgetTrials() throws {
+    func decode(_ raw: String) throws -> AgentMcpJSONObject {
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    }
+    let spec = try decode("""
+      {"innovation":{"object_id":"idea","revision":1,"sha256":"new"},
+       "baseline":{"object_id":"baseline","revision":1,"sha256":"old"},
+       "environment":"fixture","budget_unit":"calls","budget_limit":1,
+       "cases":[{"id":"target","purpose":"target","direction":"maximize","metric":"score",
+        "prediction":"Gain","minimum_gain":1,"tolerance":0,"repetitions":1}]}
+      """)
+    let plan = AgentCollaborationResearchRevision(reference: .init(objectId: "plan", revision: 1, sha256: "hash"),
+      previousHash: nil, runId: "run", turnId: "turn", authorId: "author", sourceId: "source",
+      draft: .init(id: "plan", objectId: nil, baseRevision: 0, kind: .experimentPlan,
+        title: "Plan", body: ["experiment_plan": .object(spec)], parents: []))
+    let raw = """
+      {"format":"galaxyssi.experiment-measurements.v1","plan_sha256":"hash","environment":"fixture","budget_unit":"calls",
+       "measurements":[
+        {"case_id":"target","variant":"baseline","variant_sha256":"old","metric":"score","repetition":1,"value":2,"budget_used":1},
+        {"case_id":"target","variant":"candidate","variant_sha256":"new","metric":"score","repetition":1,"value":4,"budget_used":1}]}
+      """
+    let report = try decode(raw)
+    let complete = AgentCollaborationExperimentPlanIntake.measure([report], plan: plan)
+    XCTAssertEqual(complete?.first?.state, "passed")
+    XCTAssertEqual(complete?.first?.gain, 2)
+    var partial = report
+    partial["measurements"] = .array(Array(try XCTUnwrap(report["measurements"]?.arrayValue).prefix(1)))
+    XCTAssertEqual(AgentCollaborationExperimentPlanIntake.measure([partial], plan: plan)?.first?.state, "incomplete")
+    XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([report, report], plan: plan))
+    let costly = try decode(raw.replacingOccurrences(of: "\"budget_used\":1", with: "\"budget_used\":2"))
+    XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([costly], plan: plan))
+  }
+
+  func testCapabilityRetentionRequiresPassingTargetAndRegression() {
+    let target = AgentCollaborationMeasuredCase(id: "target", purpose: "target", state: "passed")
+    var regression = AgentCollaborationMeasuredCase(id: "regression", purpose: "regression", state: "passed")
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target]))
+    XCTAssertTrue(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+    regression.state = "not_met"
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+    regression.state = "incomplete"
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+  }
+
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
     let raw = """
     {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",
