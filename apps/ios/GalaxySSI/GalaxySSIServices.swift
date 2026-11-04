@@ -439,14 +439,13 @@ final class MessageCoordinator: ObservableObject {
         self.pendingReplyRecoveryWake.connectionChanged(self.mqttClient.isConnected)
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
         Task { await self.refreshBlobArtifactCapabilities() }
-        self.desktopEvidenceJobCursor = ""
-        self.resumeDesktopEvidenceJobs()
       }
     }
     self.mqttClient.onRelationshipSubscriptionReadinessChanged = { [weak self] ready in
       guard let self else { return }
       self.pendingReplyRecoveryWake.connectionChanged(ready)
       self.transportReceiptReadinessChanged(ready)
+      if ready { self.retryDesktopEvidenceJobs() }
     }
   }
 
@@ -2236,6 +2235,9 @@ final class MessageCoordinator: ObservableObject {
     desktopReplyRecoveryTask?.cancel()
     desktopReplyRecoveryTask = Task { @MainActor [weak self] in
       while !Task.isCancelled {
+        if UIApplication.shared.applicationState == .active {
+          self?.retryDesktopEvidenceJobs()
+        }
         await self?.sweepDesktopReplyRecovery()
         do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { break }
       }
@@ -2425,6 +2427,11 @@ final class MessageCoordinator: ObservableObject {
     do {
       try AgentTeamExecutionHistoryStore.shared.enqueueDesktopEvidenceJob(job)
     } catch { return }
+    retryDesktopEvidenceJobs()
+  }
+
+  private func retryDesktopEvidenceJobs() {
+    guard mqttClient.relationshipSubscriptionsReady else { return }
     desktopEvidenceJobCursor = ""
     resumeDesktopEvidenceJobs()
   }
