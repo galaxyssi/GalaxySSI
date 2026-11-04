@@ -19,13 +19,13 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
         if (names.fixture == null) activity.startActivity(Intent(activity, type).apply(extras))
     }
 
-    fun show(content: LinearLayout, snapshot: HealthOverviewSnapshot) {
+    fun show(content: LinearLayout, snapshot: HealthOverviewSnapshot, firstUse: HealthFirstUseView) {
         content.removeAllViews()
         val heading = ui.line().apply {
             addView(ui.text(label(R.string.health_overview_title), 23f, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.icon(R.drawable.ic_chat_shortcut_list, R.string.health_overview_sort) { chooseOrder(content, snapshot) })
+            addView(ui.icon(R.drawable.ic_chat_shortcut_list, R.string.health_overview_sort) { chooseOrder(content, snapshot, firstUse) })
         }
-        content.addView(heading)
+        if (snapshot.hasRecords) content.addView(heading) else firstUse.showIntro(content)
         if (snapshot.hasRecords || snapshot.attention.isNotEmpty() || snapshot.reviewUnavailable || !snapshot.derived.permitted) {
             val section = ui.column().apply { tag = "health-overview-attention" }
             val order = runCatching { HealthOverviewOrder.valueOf(prefs.getString("order", "")!!) }.getOrDefault(HealthOverviewOrder.CHANGES_FIRST)
@@ -41,15 +41,14 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 ui.add(section, ui.text(label(R.string.health_overview_partial), 13f, muted = true), 6)
             ui.add(content, section, 12)
         }
+        if (!snapshot.hasRecords) {
+            firstUse.showActions(content)
+            return
+        }
         val newest = snapshot.metrics.mapNotNull { it.record?.draft?.measuredAt }.maxOrNull()
         val recent = snapshot.metrics.count { it.freshness == HealthOverviewFreshness.RECENT }
-        if (snapshot.hasRecords) {
-            ui.add(content, ui.text(label(R.string.health_overview_coverage, recent, snapshot.metrics.size), 13f, muted = true), 12)
-            newest?.let { ui.add(content, ui.text(label(R.string.health_overview_latest, activity.date(it)), 12f, muted = true), 4) }
-        } else {
-            ui.add(content, ui.text(label(R.string.health_first_title), 19f, bold = true).apply { tag = "health-overview-first" }, 14)
-            ui.add(content, ui.text(label(R.string.health_first_description), 14f, muted = true), 6)
-        }
+        ui.add(content, ui.text(label(R.string.health_overview_coverage, recent, snapshot.metrics.size), 13f, muted = true), 12)
+        newest?.let { ui.add(content, ui.text(label(R.string.health_overview_latest, activity.date(it)), 12f, muted = true), 4) }
         ui.add(content, quicks(), 16)
         ui.add(content, ui.profileRow(label(R.string.health_key_metrics), label(R.string.health_catalog_title)) {
             start(HealthCatalogActivity::class.java)
@@ -75,12 +74,6 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
         ui.add(content, ui.profileRow(label(R.string.health_weekly_title)) { start(HealthWeeklyActivity::class.java) }, 12)
         ui.add(content, ui.profileRow(label(R.string.health_assistant_title)) { start(HealthAssistantActivity::class.java) })
         ui.add(content, ui.profileRow(label(R.string.health_export_data_files)) { start(HealthDataFilesActivity::class.java) })
-        if (!snapshot.hasRecords) {
-            ui.add(content, ui.profileRow(label(R.string.health_profile_title)) { start(HealthProfileActivity::class.java) })
-            ui.add(content, ui.profileRow(label(R.string.health_privacy_title)) {
-                if (names.fixture == null) activity.startActivity(activity.healthPrivacyIntent())
-            })
-        }
     }
 
     private fun attention(item: HealthOverviewAttention) = when (item) {
@@ -94,13 +87,13 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
             else start(HealthTableActivity::class.java) { putExtra("health_table", item.jobId) }
         }.apply { tag = "health-overview-review-${item.kind.name}" }
     }
-    private fun chooseOrder(content: LinearLayout, snapshot: HealthOverviewSnapshot) {
+    private fun chooseOrder(content: LinearLayout, snapshot: HealthOverviewSnapshot, firstUse: HealthFirstUseView) {
         val options = HealthOverviewOrder.entries
         val current = options.indexOfFirst { it.name == prefs.getString("order", null) }.coerceAtLeast(0)
         activity.showHealthDialog(AlertDialog.Builder(activity).setTitle(R.string.health_overview_sort)
             .setSingleChoiceItems(options.map { label(orderLabel(it)) }.toTypedArray(), current) { dialog, index ->
                 prefs.edit().putString("order", options[index].name).apply()
-                dialog.dismiss(); show(content, snapshot)
+                dialog.dismiss(); show(content, snapshot, firstUse)
             }.setNegativeButton(android.R.string.cancel, null).create())
     }
     private fun orderLabel(order: HealthOverviewOrder) = when (order) {
@@ -125,7 +118,7 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
         item(R.drawable.ic_agent_camera, R.string.health_overview_photo, "health-overview-photo") { start(HealthCaptureActivity::class.java) }
         item(R.drawable.ic_health_heart, R.string.health_manual, "health-overview-manual") { activity.open("manual") }
         item(R.drawable.ic_chat_shortcut_file, R.string.health_overview_import, "health-overview-import") {
-            start(HealthCaptureActivity::class.java) { putExtra("health_pick_files", true) }
+            activity.open("import")
         }
         item(R.drawable.ic_protocol_link, R.string.health_sources_quick, "health-overview-sources") { start(HealthSourcesActivity::class.java) }
     }

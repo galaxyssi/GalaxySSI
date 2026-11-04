@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_first_intro">拍一张报告、输入一次测量，建立属于你的健康时间线。</string>
+    <string name="health_first_steps">建立档案，只需几步</string>
+    <string name="health_first_profile">完善基本资料</string>
+    <string name="health_first_profile_note">用于选择适用的指标说明，可稍后填写。</string>
+    <string name="health_first_add">添加第一条记录</string>
+    <string name="health_first_add_note">拍照、手填或导入已有文件。</string>
+    <string name="health_first_sources">选择数据来源</string>
+    <string name="health_first_sources_note">可选连接设备与健康平台。</string>
+    <string name="health_first_no_analysis">目前没有可分析的记录。连接设备和在线 AI 都是可选项。</string>
+    <string name="health_first_privacy">先了解数据如何保存</string>
+    <string name="health_first_existing">从文件或备份导入已有数据</string>
+    <string name="health_first_import_title">导入数据与文件</string>
+    <string name="health_first_import_intro">把已有记录带进来</string>
+    <string name="health_first_import_note">选择导入方式，核对后保存到本人档案。</string>
+    <string name="health_first_capture_note">拍报告或仪器读数，支持连续多页。</string>
+    <string name="health_first_report">从相册或文件导入</string>
+    <string name="health_first_report_note">照片、扫描件、PDF 报告</string>
+    <string name="health_first_table">导入指标数据</string>
+    <string name="health_first_table_note">CSV / XLSX / JSON，支持字段映射</string>
+    <string name="health_first_backup_note">校验并恢复本 App 导出的加密备份包。</string>
+</resources>
