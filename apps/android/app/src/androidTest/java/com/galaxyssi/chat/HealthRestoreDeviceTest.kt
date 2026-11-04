@@ -3,10 +3,18 @@ package com.galaxyssi.chat
 import android.app.Activity
 import android.app.Instrumentation
 import android.app.KeyguardManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.CancellationSignal
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
 import android.os.OperationCanceledException
 import android.os.SystemClock
 import android.view.View
@@ -18,6 +26,10 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.*
 import org.junit.Assume.assumeFalse
 import org.junit.Test
@@ -75,6 +87,95 @@ class HealthRestoreDeviceTest {
     }
 
     private fun stageFolder(names: HealthOverviewDatabases, id: String) = File(names.originalRoot(context), "restore/$id")
+
+    @Test fun previewProcessDeathLeavesNoCommittedRestore() = processDeath("preview", false)
+    @Test fun processDeathInsideCommitRollsBackRecordsFilesAndReceipt() = processDeath("BEFORE_COMMIT", false)
+    @Test fun processDeathAfterCommitKeepsOriginalsAndReceiptWithoutDuplicatingOnRetry() = processDeath("AFTER_COMMIT", true)
+
+    private fun processDeath(phase: String, committed: Boolean) = fixture { source, target ->
+        val bytes = "Encrypted restore process fixture".toByteArray()
+        val photo = original(source, bytes)
+        val record = save(source, draft(1, original = photo))
+        val linkedPhoto = original(source, "Secondary restore fixture".toByteArray())
+        addSource(source, record, linkedPhoto, 2)
+        val backup = packageFile(source)
+        val fixtureFile = File(context.cacheDir, "health-restore-process-${target.fixture}.ghbackup")
+        backup.copyTo(fixtureFile)
+        try {
+            val repo = restore(target)
+            val batch = stopRestoreProcess(target, phase) { active ->
+                val originals = stageFolder(target, active)
+                val stage = File(context.cacheDir, "health-restore-stage-${target.fixture}/$active")
+                val marker = File(target.originalRoot(context), "restore-pending/$active")
+                assertTrue(originals.listFiles().orEmpty().any { it.length() > 0 })
+                assertTrue(stage.isDirectory)
+                assertTrue(marker.isFile)
+                repo.recoverAbandoned()
+                assertTrue("Active cross-process restore must keep its files", originals.isDirectory)
+                assertTrue(stage.isDirectory)
+                assertTrue(marker.isFile)
+            }
+            val stage = File(context.cacheDir, "health-restore-stage-${target.fixture}/$batch")
+            val marker = File(target.originalRoot(context), "restore-pending/$batch")
+            assertTrue("Stopped fixture must leave staging for recovery", stage.isDirectory)
+            assertTrue(marker.isFile)
+            assertEquals(if (committed) (1L to 2L) else (0L to 0L), count(target))
+            assertEquals(if (committed) listOf(batch) else emptyList<String>(), repo.recent().map { it.id })
+            repeat(2) { repo.recoverAbandoned() }
+            assertFalse(stage.exists())
+            assertFalse(marker.exists())
+            assertEquals(committed, stageFolder(target, batch).exists())
+            if (committed) {
+                HealthRecordStore(context, target.records).use { records ->
+                    HealthOriginalStore(context, target.originals, target.originalRoot(context), records).use { originals ->
+                        val restored = requireNotNull(originals.original(photo.id))
+                        assertEquals(photo.sha256, restored.sha256)
+                        assertArrayEquals(bytes, originals.input(restored).use { it.readBytes() })
+                    }
+                    assertEquals(1L, repo.recent().single().counts.sourcesAdded)
+                }
+            }
+            prepare(repo, backup).use { plan ->
+                assertEquals(if (committed) 0L else 1L, plan.counts.added)
+                assertEquals(if (committed) 1L else 0L, plan.counts.duplicates)
+                assertEquals(if (committed) 0L else 1L, plan.commit(CancellationSignal()).counts.sourcesAdded)
+            }
+            assertEquals(1L to 2L, count(target))
+        } finally { fixtureFile.delete() }
+    }
+
+    private fun stopRestoreProcess(names: HealthOverviewDatabases, phase: String, preview: (String) -> Unit): String {
+        val responses = LinkedBlockingQueue<String>()
+        val stopped = CountDownLatch(1)
+        val service = AtomicReference<Messenger>()
+        val listener = Messenger(Handler(Looper.getMainLooper()) { response ->
+            responses.offer(response.data.getString("batch") ?: "ERROR: ${response.data.getString("error")}")
+            true
+        })
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+                val remote = Messenger(binder)
+                if (!service.compareAndSet(null, remote)) return
+                runCatching { remote.send(Message.obtain(null, 1).apply {
+                    replyTo = listener
+                    data = Bundle().apply { putString("fixture", names.fixture); putString("phase", phase) }
+                }) }.onFailure { responses.offer("ERROR: ${it.javaClass.simpleName}") }
+            }
+            override fun onServiceDisconnected(name: ComponentName) { stopped.countDown() }
+            override fun onBindingDied(name: ComponentName) { stopped.countDown() }
+        }
+        val intent = Intent().setClassName(context, "com.galaxyssi.chat.HealthRestoreProcessFixture")
+        assertTrue(context.bindService(intent, connection, Context.BIND_AUTO_CREATE))
+        try {
+            val id = responses.poll(40, TimeUnit.SECONDS) ?: error("Restore fixture did not open a preview")
+            check(HealthProfilePolicy.uuid(id)) { id }
+            preview(id)
+            service.get().send(Message.obtain(null, 2))
+            assertTrue(responses.peek() ?: "Restore fixture did not stop", stopped.await(45, TimeUnit.SECONDS))
+            assertNull(responses.peek())
+            return id
+        } finally { context.unbindService(connection) }
+    }
 
     private fun addSource(names: HealthOverviewDatabases, target: HealthObservation, original: HealthOriginal, index: Int): HealthEvidence {
         val evidence = HealthEvidence(original.id, id(), "association-$index", original.sha256, 2, "Verified source $index",
