@@ -15,6 +15,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.CheckBox
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
@@ -57,6 +58,9 @@ class HealthCaptureActivity : Activity() {
     private var sourceDialog: HealthReviewSourceDialog? = null
     private var sourceEvidence: HealthEvidence? = null
     private var selectedCandidate = ""
+    private val reviewSelection = linkedMapOf<String, HealthOcrReviewSelection>()
+    private var reviewSelectionJob = ""
+    private var savingReview = false
     private var rawDialog: AlertDialog? = null
     private var actionDialog: AlertDialog? = null
     private val jobPages = arrayListOf<Pair<Long, String>>()
@@ -87,6 +91,9 @@ class HealthCaptureActivity : Activity() {
         page = state?.getInt("page", 1) ?: 1
         candidateOffset = state?.getInt("candidate_offset", 0) ?: 0
         selectedCandidate = state?.getString("selected_candidate").orEmpty()
+        reviewSelectionJob = state?.getString("review_selection_job").orEmpty()
+        state?.getStringArrayList("review_selection")?.take(HEALTH_OCR_REVIEW_SELECTION_LIMIT)
+            ?.mapNotNull(HealthOcrReviewSelection::decode)?.forEach { reviewSelection[it.key] = it }
         mode = state?.getString("mode") ?: "report"
         originalOnly = state?.getBoolean("original_only") ?: intent.getBooleanExtra("health_original_only", false)
         pickOnStart = state == null && intent.getBooleanExtra("health_pick_files", false)
@@ -139,6 +146,8 @@ class HealthCaptureActivity : Activity() {
         out.putString("route", route); out.putString("selected", selectedId); out.putInt("page", page); out.putString("mode", mode)
         out.putInt("candidate_offset", candidateOffset)
         out.putString("selected_candidate", selectedCandidate)
+        out.putString("review_selection_job", reviewSelectionJob)
+        out.putStringArrayList("review_selection", ArrayList(reviewSelection.values.map { it.encode() }))
         out.putBoolean("original_only", originalOnly)
         out.putString("camera", pendingCamera); out.putString("export", exportId); out.putString("crop", cropId)
         out.putStringArrayList("job_pages", ArrayList(jobPages.map { "${it.first}|${it.second}" }))
@@ -148,11 +157,13 @@ class HealthCaptureActivity : Activity() {
     }
     @Deprecated("Native activity back callback") override fun onBackPressed() = back()
     private fun back() {
+        if (savingReview) return
         if (stack.isEmpty()) { finish(); return }
         val previous = stack.removeLast(); route = previous.first; selectedId = previous.second; page = previous.third
         generation++; refresh()
     }
     private fun open(next: String, id: String = "", number: Int = 1) {
+        if (savingReview) return
         if (next == "library") { startActivity(Intent(this, HealthOriginalLibraryActivity::class.java)); return }
         if (next == "original" && selectedId != id) recordPages.clear()
         stack.addLast(Triple(route, selectedId, page)); route = next; selectedId = id; page = number; candidateOffset = 0; generation++; refresh()
@@ -188,11 +199,10 @@ class HealthCaptureActivity : Activity() {
                         val scanned = if (job == null) null else originals.page(id, number)
                         val suggestions = if (job == null || original == null || scanned == null) emptyList()
                             else HealthOcrCandidates.suggest(job, original, scanned)
-                        val visible = suggestions.drop(offset).take(20)
-                        val saved = HealthRecordStore(applicationContext, names.records).use { records -> visible.mapNotNull { records.recordForEvidence(it) } }
+                        val visible = suggestions.drop(offset).take(HEALTH_OCR_REVIEW_PAGE_SIZE)
+                        val review = HealthRecordStore(applicationContext, names.records).use { it.prepareOcrReviewPage(visible) }
                         CaptureSnapshot(job = job, original = original, available = original?.let(originals::present) == true,
-                            page = scanned, saved = saved,
-                            suggestions = visible, hasMore = suggestions.size > offset + visible.size)
+                            page = scanned, review = review, hasMore = suggestions.size > offset + visible.size)
                     }
                     else -> {
                         val jobs = originals.jobs(taskCursor)
@@ -217,7 +227,8 @@ class HealthCaptureActivity : Activity() {
         }
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
-            "review" -> "review|$selectedId|$page|$candidateOffset|${data.page?.page}|${data.available}|${data.saved.joinToString { "${it.id}:${it.revision}" }}"
+            "review" -> "review|$selectedId|$page|$candidateOffset|${data.page?.page}|${data.available}|" +
+                data.review.joinToString { row -> row.saved?.let { "${it.id}:${it.revision}" } ?: row.version }
             else -> ""
         }
         if (key.isNotBlank() && key == renderedKey && body.childCount > 0) {
@@ -337,9 +348,16 @@ class HealthCaptureActivity : Activity() {
         val job = data.job; val original = data.original; val scanned = data.page
         if (job == null || original == null || scanned == null) { content.addView(ui.text(getString(R.string.health_review_not_ready))); return }
         val displayedPage = if (job.documentPage > 0) job.documentPage else scanned.page
-        val suggestions = data.suggestions
+        if (reviewSelectionJob != job.id) { reviewSelection.clear(); reviewSelectionJob = job.id }
+        val rows = data.review
+        rows.forEach { row ->
+            val key = HealthRecordStore.draftKey(row.draft)
+            if (key in reviewSelection && reviewSelection[key] != row.selection) reviewSelection.remove(key)
+        }
+        val updateFooter: () -> Unit = if (rows.any { it.saved == null } || reviewSelection.isNotEmpty())
+            reviewFooter(job, original) else ({})
         content.addView(ui.text(getString(R.string.health_review_source_method, displayedPage), 14f, muted = true))
-        val selected = suggestions.mapNotNull { it.evidence }.let { candidates ->
+        val selected = rows.mapNotNull { it.draft.evidence }.let { candidates ->
             candidates.firstOrNull { it.candidateId == selectedCandidate } ?: candidates.firstOrNull()
         }
         selectedCandidate = selected?.candidateId.orEmpty()
@@ -347,22 +365,22 @@ class HealthCaptureActivity : Activity() {
         if (!data.available) ui.add(content, ui.text(getString(R.string.health_original_preview_failed), 14f, muted = true), 8)
         ui.add(content, ui.row(getString(R.string.health_view_original), original.name) { open("original", original.id) }, 8)
         if (scanned.blurry) ui.add(content, ui.text(getString(R.string.health_ocr_quality_warning), 14f), 12)
-        if (suggestions.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_matched_fields), 15f), 12)
-        suggestions.forEach { draft ->
+        if (rows.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_matched_fields), 15f), 12)
+        rows.forEach { row ->
+            val draft = row.draft
             val evidence = requireNotNull(draft.evidence)
-            val previous = data.saved.firstOrNull { it.draft.evidence?.let { saved ->
-                saved.originalId == original.id && saved.page == scanned.page && saved.candidateId == evidence.candidateId
-            } == true }
-            val visibleDraft = previous?.draft ?: draft
+            val previous = row.saved
+            val selection = row.selection
             val located = evidence.hasReviewRegion()
             ui.add(content, ui.card().apply {
                 addView(ui.text(getString(draft.metric.titleResource()), 18f, bold = true))
                 ui.add(this, ui.line().apply {
-                    addView(reviewField(R.string.health_result_label, visibleDraft.values.values.joinToString(" / ")),
+                    addView(reviewField(R.string.health_result_label, draft.metric.fields.mapNotNull { draft.values[it]?.takeIf(String::isNotBlank) }.joinToString(" / ")),
                         LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(8) })
-                    addView(reviewField(R.string.health_unit, visibleDraft.unit.ifBlank { getString(R.string.health_review_unit_unknown) }),
+                    addView(reviewField(R.string.health_unit, draft.unit.ifBlank { getString(R.string.health_review_unit_unknown) }),
                         LinearLayout.LayoutParams(0, -2, 1f))
                 }, 8)
+                if (draft.measuredAt > 0) ui.add(this, ui.text(getString(R.string.health_review_recorded_time, formatTime(draft.measuredAt)), 13f, muted = true), 6)
                 ui.add(this, ui.text(evidence.rawText, 14f, muted = true), 8)
                 if (source != null) ui.add(this, ui.row(getString(if (located) R.string.health_review_focus else R.string.health_view_original),
                     if (located) "" else getString(R.string.health_review_location_unknown)) {
@@ -371,10 +389,25 @@ class HealthCaptureActivity : Activity() {
                     source.mark(evidence.boxes)
                     openReviewSource(evidence, displayedPage)
                 }.apply { tag = "health-review-mark-${evidence.candidateId}" }, 4)
-                ui.add(this, ui.row(getString(if (previous == null) R.string.health_check_fields else R.string.health_already_confirmed)) {
+                ui.add(this, ui.row(getString(if (previous == null) R.string.health_check_fields else R.string.health_review_saved_item)) {
                     if (previous != null) startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", previous.id))
-                    else editSuggestion(draft)
+                    else editSuggestion(draft, stage = true)
                 }, 8)
+                if (selection != null) ui.add(this, CheckBox(this@HealthCaptureActivity).apply {
+                    tag = "health-review-pick-${evidence.candidateId}"
+                    text = getString(R.string.health_review_select_item, getString(draft.metric.titleResource()))
+                    setTextColor(getColor(R.color.text_primary))
+                    isChecked = reviewSelection[selection.key] == selection
+                    setOnClickListener {
+                        if (savingReview || (isChecked && reviewSelection.size >= HEALTH_OCR_REVIEW_SELECTION_LIMIT)) {
+                            isChecked = reviewSelection[selection.key] == selection
+                            if (!savingReview) Toast.makeText(this@HealthCaptureActivity, R.string.health_review_limit, Toast.LENGTH_SHORT).show()
+                        } else {
+                            if (isChecked) reviewSelection[selection.key] = selection else reviewSelection.remove(selection.key)
+                            updateFooter()
+                        }
+                    }
+                })
             }, 12)
         }
         ui.add(content, ui.row(getString(R.string.health_unmatched_manual)) {
@@ -385,14 +418,84 @@ class HealthCaptureActivity : Activity() {
         ui.add(content, ui.row(getString(R.string.health_show_raw_text)) {
             rawText(scanned)
         })
-        if (candidateOffset > 0) ui.add(content, ui.command(R.string.health_previous_candidates) { candidateOffset = (candidateOffset - 20).coerceAtLeast(0); generation++; refresh() }, 16)
-        if (data.hasMore) ui.add(content, ui.command(R.string.health_more_candidates) { candidateOffset += 20; generation++; refresh() }, 16)
-        if (page > 1) ui.add(content, ui.command(R.string.health_previous_page) { page--; candidateOffset = 0; generation++; refresh() }, 16)
+        if (candidateOffset > 0) ui.add(content, ui.command(R.string.health_previous_candidates) {
+            if (!savingReview) { candidateOffset = (candidateOffset - HEALTH_OCR_REVIEW_PAGE_SIZE).coerceAtLeast(0); generation++; refresh() }
+        }, 16)
+        if (data.hasMore) ui.add(content, ui.command(R.string.health_more_candidates) {
+            if (!savingReview) { candidateOffset += HEALTH_OCR_REVIEW_PAGE_SIZE; generation++; refresh() }
+        }, 16)
+        if (page > 1) ui.add(content, ui.command(R.string.health_previous_page) { if (!savingReview) { page--; candidateOffset = 0; generation++; refresh() } }, 16)
         availableReviewPages = job.nextPage
         nextReviewPage = ui.command(R.string.health_next_page) {
-            if (page < availableReviewPages) { page++; candidateOffset = 0; generation++; refresh() }
+            if (!savingReview && page < availableReviewPages) { page++; candidateOffset = 0; generation++; refresh() }
         }.apply { visibility = if (page < availableReviewPages) View.VISIBLE else View.GONE }
         ui.add(content, requireNotNull(nextReviewPage), 16)
+    }
+    private fun formatTime(time: Long): String = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+        .format(java.util.Date(time))
+    private fun reviewFooter(job: HealthImportJob, original: HealthOriginal): () -> Unit {
+        val confirmed = CheckBox(this).apply {
+            tag = "health-review-batch-consent"
+            setTextColor(getColor(R.color.text_primary))
+            isSaveEnabled = false
+        }
+        val button = ui.command(R.string.health_review_batch_idle) {
+            if (confirmed.isChecked) submitReview(job.id, original.id)
+        }.apply { tag = "health-review-batch-save"; setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) }
+        fun updateButton() {
+            button.isEnabled = !savingReview && confirmed.isChecked && reviewSelection.isNotEmpty()
+            button.alpha = if (button.isEnabled) 1f else .5f
+        }
+        fun resetConsent() {
+            val count = reviewSelection.size
+            confirmed.isChecked = false
+            confirmed.isEnabled = count > 0 && !savingReview
+            confirmed.text = if (count > 0) getString(R.string.health_review_batch_consent, count) else getString(R.string.health_review_batch_idle)
+            button.text = getString(R.string.health_review_batch_save, count)
+            updateButton()
+        }
+        confirmed.setOnCheckedChangeListener { _, _ -> updateButton() }
+        resetConsent()
+        body.addView(ui.column().apply {
+            setBackgroundColor(getColor(R.color.surface_bg))
+            setPadding(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(10))
+            addView(confirmed)
+            ui.add(this, button, 4)
+        }, LinearLayout.LayoutParams(-1, -2))
+        return ::resetConsent
+    }
+    private fun submitReview(job: String, original: String) {
+        if (savingReview || reviewSelection.isEmpty() || selectedId != job || reviewSelectionJob != job) return
+        val selected = reviewSelection.values.toList()
+        savingReview = true
+        body.findViewWithTag<View>("health-review-batch-save")?.apply { isEnabled = false; alpha = .5f }
+        body.findViewWithTag<View>("health-review-batch-consent")?.isEnabled = false
+        worker.execute {
+            val result = runCatching { HealthRecordStore(applicationContext, names.records).use { it.saveOcrReviewBatch(job, original, selected) } }
+            main.post {
+                savingReview = false
+                if (isDestroyed) return@post
+                val message = when (val outcome = result.getOrNull()) {
+                    is HealthOcrBatchResult.Saved -> {
+                        selected.forEach { reviewSelection.remove(it.key) }
+                        getString(R.string.health_review_batch_saved, outcome.count)
+                    }
+                    is HealthOcrBatchResult.Duplicate -> {
+                        reviewSelection.remove(outcome.key)
+                        getString(R.string.health_review_batch_duplicate)
+                    }
+                    is HealthOcrBatchResult.Stale -> {
+                        reviewSelection.remove(outcome.key)
+                        getString(R.string.health_review_batch_stale)
+                    }
+                    null -> getString(R.string.health_storage_error)
+                }
+                if (active) {
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                    renderedKey = ""; generation++; refresh()
+                }
+            }
+        }
     }
     private fun reviewField(caption: Int, value: String) = ui.column().apply {
         background = ui.background(stroke = getColor(R.color.separator), radius = 8)
@@ -462,14 +565,16 @@ class HealthCaptureActivity : Activity() {
                 editSuggestion(HealthDraft(metrics[index], unit = "", measuredAt = 0, evidence = evidence.copy(candidateId = "manual-${metrics[index].name}")))
             }.show()
     }
-    private fun editSuggestion(draft: HealthDraft) {
+    private fun editSuggestion(draft: HealthDraft, stage: Boolean = false) {
+        if (savingReview) return
         val key = HealthRecordStore.draftKey(draft)
         worker.execute {
-            val result = runCatching { HealthRecordStore(applicationContext).use { store ->
+            val result = runCatching { HealthRecordStore(applicationContext, names.records).use { store ->
                 if (store.draft(key) == null) store.saveDraft(draft)
             } }
             main.post { if (active) result.fold({
-                startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("review_draft", key))
+                startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("review_draft", key)
+                    .putExtra("health_stage_ocr_review", stage).putExtra("health_overview_test_id", names.fixture))
             }, { showFailure("storage") }) }
         }
     }
@@ -602,7 +707,7 @@ class HealthCaptureActivity : Activity() {
     }
     private data class CaptureSnapshot(val jobs: List<HealthImportJob> = emptyList(),
         val job: HealthImportJob? = null, val original: HealthOriginal? = null, val page: HealthOcrPage? = null, val saved: List<HealthObservation> = emptyList(),
-        val suggestions: List<HealthDraft> = emptyList(), val hasMore: Boolean = false, val available: Boolean = true, val pendingPhoto: Boolean = false,
+        val review: List<HealthOcrReviewRow> = emptyList(), val hasMore: Boolean = false, val available: Boolean = true, val pendingPhoto: Boolean = false,
         val recordsNext: HealthPageCursor? = null, val tableJobs: Map<String, HealthTableBatch> = emptyMap())
     companion object { private const val PICK = 81; private const val CAMERA = 82; private const val EXPORT = 83; private const val CROP = 84; private const val CAMERA_PERMISSION = 85; private const val NATIVE_CAMERA = 86 }
 }

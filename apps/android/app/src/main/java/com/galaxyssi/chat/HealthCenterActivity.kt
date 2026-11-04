@@ -61,6 +61,7 @@ class HealthCenterActivity : Activity() {
     private val backStack = ArrayDeque<Triple<String, HealthMetric, String>>()
     internal var editor: HealthManualEditor? = null
     internal var saving = false
+    internal val stagingOcrReview get() = route == "review" && intent.getBooleanExtra("health_stage_ocr_review", false)
     private val sensitiveDialogs = mutableSetOf<android.app.Dialog>()
     private var nextPage: HealthPageCursor? = null
     private var pageAfter: HealthPageCursor? = null
@@ -170,11 +171,15 @@ class HealthCenterActivity : Activity() {
     }
     internal fun saveDraft() {
         if (saving) return
-        editor?.snapshot()?.let { draft -> worker.execute {
+        val current = editor ?: return
+        if (stagingOcrReview && !current.hasChanges) return
+        val snapshot = current.snapshot()
+        val draft = if (stagingOcrReview) snapshot.copy(evidence = snapshot.evidence?.copy(confirmed = false)) else snapshot
+        worker.execute {
             if (runCatching { records.saveDraft(draft) }.isFailure) main.post {
                 if (active && !isDestroyed) Toast.makeText(this, R.string.health_draft_error, Toast.LENGTH_LONG).show()
             }
-        } }
+        }
     }
     internal fun draftChanged() {
         main.removeCallbacks(savePendingDraft)
@@ -401,6 +406,21 @@ class HealthCenterActivity : Activity() {
         saving = true
         editor?.setSaving(true)
         main.removeCallbacks(savePendingDraft)
+        if (stagingOcrReview) {
+            worker.execute {
+                val result = runCatching { records.saveDraft(draft) }
+                main.post {
+                    saving = false
+                    if (isDestroyed) return@post
+                    if (result.isSuccess) { editor = null; finish() }
+                    else if (active) {
+                        editor?.setSaving(false)
+                        Toast.makeText(this, R.string.health_draft_error, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            return
+        }
         worker.execute {
             val result = runCatching { records.save(draft) }
             main.post {
