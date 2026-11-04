@@ -901,6 +901,11 @@ struct AgentCollaborationFrozenCloudRead: Codable {
   var totalCharacters: Int64
 }
 
+struct AgentCollaborationMilestoneRejection: Codable {
+  var artifact: Data
+  var reason: String
+}
+
 struct AgentCollaborationResearchPublication: Codable {
   var requestHash: String
   var references: [AgentCollaborationResearchReference]

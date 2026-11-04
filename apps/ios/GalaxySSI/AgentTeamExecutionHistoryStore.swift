@@ -1352,25 +1352,69 @@ final class AgentTeamExecutionHistoryStore {
               !id.isBlank, id.utf8.count <= 160, hash.utf8.count == 64,
               hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
         else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-        guard let saved = try database.researchRecord(AgentCollaborationResearchPublication.self,
-          conversationId: scope.conversationId, key: Self.milestoneKey(base, id: id), revision: 0) else {
+        let saved = try database.researchRecord(AgentCollaborationResearchPublication.self,
+          conversationId: scope.conversationId, key: Self.milestoneKey(base, id: id), revision: 0)
+        if let saved, saved.requestHash == hash { return Self.milestoneReceipt(saved, id: id, status: "recorded") }
+        if let rejected = try database.researchRecord(AgentCollaborationMilestoneRejection.self,
+          conversationId: scope.conversationId, key: Self.milestoneRejectionKey(base, id: id, hash: hash), revision: 0) {
+          return Self.milestoneRejectedReceipt(id: id, hash: hash, reason: rejected.reason)
+        }
+        if saved == nil {
           return ["success": .bool(false), "status": .string("not_recorded")]
         }
-        guard saved.requestHash == hash else { throw AgentTeamHistoryDatabase.Failure.stale }
-        return Self.milestoneReceipt(saved, id: id, status: "recorded")
+        throw AgentTeamHistoryDatabase.Failure.stale
       }
     }
     guard !id.isBlank, id.utf8.count <= 160,
           Set(input.keys) == ["mode", "milestone_id", "artifact"], input["mode"] == .string("publish"),
-          let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072,
-          let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
-          !envelope.string("summary").isBlank,
-          let drafts = try AgentCollaborationResearchEnvelope.publication(in: raw)
+          let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072
     else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let hash = Self.replyHash(raw)
-    let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
-      turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash))
-    return Self.milestoneReceipt(receipt, id: id, status: "published")
+    do {
+      guard let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+            !envelope.string("summary").isBlank,
+            let drafts = try? AgentCollaborationResearchEnvelope.publication(in: raw)
+      else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
+        turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash))
+      return Self.milestoneReceipt(receipt, id: id, status: "published")
+    } catch AgentTeamHistoryDatabase.Failure.corrupt {
+      return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "invalid_artifact")
+    } catch AgentTeamHistoryDatabase.Failure.stale {
+      return try retainRejectedMilestone(raw, id: id, hash: hash, scope: scope, reason: "stale_binding_or_revision")
+    }
+  }
+
+  private func retainRejectedMilestone(_ raw: String, id: String, hash: String,
+                                       scope: AgentCollaborationToolEvidenceScope, reason: String) throws -> AgentMcpJSONObject {
+    try access { database in
+      guard let snapshot = try database.snapshots(runId: scope.runId).first,
+            snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
+            let member = snapshot.members.first(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId }),
+            Self.canPublishMilestone(snapshot, member: member),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let base = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+      let key = Self.milestoneRejectionKey(base, id: id, hash: hash)
+      if let saved = try database.researchRecord(AgentCollaborationMilestoneRejection.self,
+        conversationId: scope.conversationId, key: key, revision: 0) {
+        guard saved.artifact == Data(raw.utf8) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        return Self.milestoneRejectedReceipt(id: id, hash: hash, reason: saved.reason)
+      }
+      try database.insertResearchRecord(AgentCollaborationMilestoneRejection(
+        artifact: Data(raw.utf8), reason: reason), conversationId: scope.conversationId, key: key, revision: 0)
+      return Self.milestoneRejectedReceipt(id: id, hash: hash, reason: reason)
+    }
+  }
+
+  private static func milestoneRejectionKey(_ base: String, id: String, hash: String) -> String {
+    base + ":rejected-milestone:" + AgentMcpJSONCodec.sha256(["id": .string(id), "hash": .string(hash)])
+  }
+
+  private static func milestoneRejectedReceipt(id: String, hash: String, reason: String) -> AgentMcpJSONObject {
+    ["success": .bool(false), "status": .string(reason), "milestone_id": .string(id),
+      "artifact_sha256": .string(hash), "rejected_draft_preserved": .bool(true)]
   }
 
   private static func milestoneReceipt(_ receipt: AgentCollaborationResearchPublication, id: String,

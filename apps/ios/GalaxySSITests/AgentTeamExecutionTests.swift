@@ -424,7 +424,17 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].status, team.members[1].status)
     var changed = input
     changed["artifact"] = .string(artifact + " ")
-    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(changed, scope: scope))
+    let stale = try reopened.publishCollaborationMilestone(changed, scope: scope)
+    XCTAssertEqual(stale["status"], .string("stale_binding_or_revision"))
+    var malformed = input
+    malformed["milestone_id"] = .string("invalid")
+    malformed["artifact"] = .string("not JSON")
+    let rejected = try reopened.publishCollaborationMilestone(malformed, scope: scope)
+    XCTAssertEqual(rejected["status"], .string("invalid_artifact"))
+    let rejectionLookup: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("invalid"),
+      "artifact_sha256": try XCTUnwrap(rejected["artifact_sha256"])]
+    XCTAssertEqual(try history.publishCollaborationMilestone(rejectionLookup, scope: scope), rejected)
+    XCTAssertEqual(try history.publishCollaborationMilestone(lookup, scope: scope)["references"], receipt["references"])
     var foreign = scope
     foreign.sourceId = "foreign"
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(input, scope: foreign))

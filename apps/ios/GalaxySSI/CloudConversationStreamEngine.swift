@@ -669,6 +669,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             publicationResults[outcome.call.callId] = output
             if let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["status"] == .string("published"),
                publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
+            if arguments["mode"] == .string("publish"),
+               let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["rejected_draft_preserved"] == .bool(true),
+               progress.requestRepair("collaboration_milestone_publication") { madeProgress = true }
             continue
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
