@@ -7,13 +7,16 @@ enum GalaxySSIHealthTableImport {
   private static let maximumColumns = 64
 
   enum Failure: Error { case malformed, limit, mapping, stale }
-  enum DateStyle: String, CaseIterable { case iso, localTime, day }
+  enum DateStyle: String, CaseIterable { case iso, localTime, day, excel }
   enum Status: String { case ready, duplicate, missing, invalid }
 
   struct Source: Codable, Equatable {
     let batch: UUID
     let row: Int
     let sha256: String
+    var sheet: String?
+    var worksheetPath: String?
+    var columns: [String: Int]?
   }
 
   struct Batch: Codable, Identifiable {
@@ -28,6 +31,11 @@ enum GalaxySSIHealthTableImport {
   struct Table {
     let headers: [String]
     let rows: [[String]]
+    var sheet: String?
+    var sheetPath: String?
+    var rowNumbers: [Int]?
+    var formulas: [Set<Int>]?
+    var date1904: Bool?
   }
 
   struct Mapping: Equatable {
@@ -40,6 +48,13 @@ enum GalaxySSIHealthTableImport {
     var confirmedUnit = false
     var dateStyle = DateStyle.iso
     var localZone = TimeZone.current
+    var useFormulaCache = false
+
+    var sourceColumns: [String: Int] {
+      var result = ["value": value, "measured_at": date, "notes": notes]
+      if metric == .bloodPressure { result["diastolic"] = lower; result["pulse"] = pulse }
+      return result.filter { $0.value >= 0 }
+    }
   }
 
   struct Row: Identifiable {
@@ -61,7 +76,8 @@ enum GalaxySSIHealthTableImport {
     let required = isPressure ? [mapping.value, mapping.date, mapping.lower] : [mapping.value, mapping.date]
     let optional = (isPressure ? [mapping.pulse, mapping.notes] : [mapping.notes]).filter { $0 >= 0 }
     let used = required + optional
-    guard mapping.confirmedUnit, Set(used).count == used.count,
+    guard mapping.confirmedUnit, mapping.dateStyle != .excel || table.date1904 != nil,
+          Set(used).count == used.count,
           used.allSatisfy({ table.headers.indices.contains($0) }) else { throw Failure.mapping }
     let iso = ISO8601DateFormatter()
     let fractional = ISO8601DateFormatter()
@@ -79,13 +95,17 @@ enum GalaxySSIHealthTableImport {
       func token(_ column: Int) -> String { cell(column).trimmingCharacters(in: .whitespacesAndNewlines) }
       let rawValue = token(mapping.value), rawDate = token(mapping.date)
       func row(_ status: Status, _ reading: GalaxySSIHealthReading? = nil) -> Row {
-        Row(id: index + 1, status: status, reading: reading, rawValue: rawValue, rawDate: rawDate)
+        Row(id: table.rowNumbers?[index] ?? index + 1, status: status, reading: reading, rawValue: rawValue, rawDate: rawDate)
       }
+      if !mapping.useFormulaCache, let formulas = table.formulas?[index],
+         used.contains(where: { formulas.contains($0) }) { return row(.invalid) }
       guard required.allSatisfy({ !token($0).isEmpty }) else { return row(.missing) }
       let time: Date?
       if mapping.dateStyle == .iso {
         time = fractional.date(from: rawDate) ?? iso.date(from: rawDate)
-      } else if let parsed = local.date(from: rawDate), local.string(from: parsed) == rawDate {
+      } else if mapping.dateStyle == .excel, let serial = number(rawDate), let date1904 = table.date1904 {
+        time = GalaxySSIHealthXLSX.date(serial: serial, date1904: date1904, zone: mapping.localZone)
+      } else if mapping.dateStyle != .excel, let parsed = local.date(from: rawDate), local.string(from: parsed) == rawDate {
         time = parsed
       } else { time = nil }
       guard let value = number(rawValue), let time, time <= now else { return row(.invalid) }

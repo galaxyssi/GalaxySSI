@@ -336,6 +336,15 @@
 "galaxyssi.health.table.source" = "导入的表格";
 "galaxyssi.health.trend.table" = "来源：导入的表格";
 "galaxyssi.health.table.choose" = "选择 CSV 或 JSON";
+"galaxyssi.health.table.choose_formats" = "选择 CSV、JSON 或 XLSX";
+"galaxyssi.health.table.worksheet_options" = "工作表选项";
+"galaxyssi.health.table.worksheet" = "工作表";
+"galaxyssi.health.table.header" = "表头行";
+"galaxyssi.health.table.sheet_row" = "工作表第 %lld 行";
+"galaxyssi.health.table.formula_cache" = "允许使用公式缓存值，不执行公式";
+"galaxyssi.health.table.excel_date" = "Excel 日期序列值";
+"galaxyssi.health.table.workbook_failed" = "无法打开此测量表格。";
+"galaxyssi.health.table.worksheet_failed" = "无法读取此工作表。";
 "galaxyssi.health.table.history" = "已导入的批次";
 "galaxyssi.health.table.saved" = "已保存 %lld 条测量";
 "galaxyssi.health.table.undone" = "已移除 %lld 条测量";

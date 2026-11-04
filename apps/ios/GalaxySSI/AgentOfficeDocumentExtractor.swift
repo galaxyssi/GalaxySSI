@@ -12,6 +12,13 @@ enum AgentOfficeDocumentExtractionError: LocalizedError, Equatable {
 }
 
 enum AgentOfficeDocumentExtractor {
+  static func readXlsxParts(_ bytes: Data) throws -> [String: Data] {
+    try readEntries(bytes) { name in
+      name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" || name == "xl/sharedStrings.xml" ||
+        (name.hasPrefix("xl/worksheets/") && name.hasSuffix(".xml") && !name.dropFirst("xl/worksheets/".count).contains("/"))
+    }
+  }
+
   static func extractXlsx(_ bytes: Data) throws -> String {
     let entries = try readEntries(bytes) { name in
       name == "xl/sharedStrings.xml" ||
@@ -281,7 +288,7 @@ enum AgentOfficeDocumentExtractor {
     return normalized
   }
 
-  private static func parseXML(_ data: Data, delegate: XMLParserDelegate) throws {
+  static func parseXML(_ data: Data, delegate: XMLParserDelegate) throws {
     guard let xml = String(data: data, encoding: .utf8) else {
       throw AgentOfficeDocumentExtractionError.invalid("Office XML is not valid UTF-8")
     }

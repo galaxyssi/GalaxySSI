@@ -338,6 +338,29 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
   }
 
+  func testXLSXUsesWorksheetRelationshipsPhysicalRowsAndExplicitFormulaConsent() throws {
+    let xml = [
+      "xl/workbook.xml": #"<workbook xmlns:r="urn:test"><workbookPr date1904="1"/><sheets><sheet name="Weight" r:id="rId7"/></sheets></workbook>"#,
+      "xl/_rels/workbook.xml.rels": #"<Relationships><Relationship Id="rId7" Type="urn:test/worksheet" Target="worksheets/sheet3.xml"/></Relationships>"#,
+      "xl/worksheets/sheet3.xml": #"<worksheet><sheetData><row r="3"><c r="A3" t="inlineStr"><is><t>Value</t></is></c><c r="C3" t="inlineStr"><is><t>Time</t></is></c></row><row r="8"><c r="A8"><f>1+60</f><v>61</v></c><c r="C8"><v>1.5</v></c></row></sheetData></worksheet>"#
+    ]
+    let data = AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: xml.map { .init(path: $0.key, data: Data($0.value.utf8)) })
+    let workbook = try GalaxySSIHealthXLSX(data)
+    let table = try workbook.table(.init(sheet: "rId7", header: 3))
+    XCTAssertEqual(table.headers, ["Value", "", "Time"])
+    XCTAssertEqual(table.sheetPath, "xl/worksheets/sheet3.xml")
+    let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    var mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 2,
+                                                     confirmedUnit: true, dateStyle: .excel, localZone: utc)
+    XCTAssertEqual(try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: []).first?.status, .invalid)
+    mapping.useFormulaCache = true
+    let row = try XCTUnwrap(GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: []).first)
+    XCTAssertEqual(row.id, 8)
+    XCTAssertEqual(row.reading?.value, 61)
+    XCTAssertEqual(row.reading?.measuredAt, ISO8601DateFormatter().date(from: "1904-01-02T12:00:00Z"))
+    XCTAssertNil(GalaxySSIHealthXLSX.date(serial: 60, date1904: false, zone: utc))
+  }
+
   func testPaperEdgeSuggestionConvertsOriginAndRejectsClippedOrSmallRectangles() throws {
     let accepted = try XCTUnwrap(GalaxySSIHealthPaperEdges.paddedCrop(
       visionBounds: CGRect(x: 0.15, y: 0.10, width: 0.6, height: 0.5)))
