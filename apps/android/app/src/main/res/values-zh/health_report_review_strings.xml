@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_report_review_group">记录与核对</string>
+    <string name="health_report_review_document">报告核对</string>
+    <string name="health_report_review_table">表格核对</string>
+    <string name="health_report_review_actions">提醒操作</string>
+    <string name="health_report_review_snooze">站内暂缓一小时</string>
+    <string name="health_report_review_handle">将提醒标为已处理</string>
+    <string name="health_report_review_setting">报告核对提醒</string>
+</resources>

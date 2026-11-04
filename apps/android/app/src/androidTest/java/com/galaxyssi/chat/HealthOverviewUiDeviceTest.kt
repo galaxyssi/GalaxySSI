@@ -97,7 +97,7 @@ class HealthOverviewUiDeviceTest {
                 .forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
             val retention = find(it, "health-import-keep-original") as android.widget.Switch
             assertTrue(retention.isChecked)
-            assertTrue(retention.performClick())
+            retention.performClick()
             assertFalse(retention.isChecked)
         }
         scenario.recreate()

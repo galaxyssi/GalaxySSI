@@ -196,6 +196,22 @@ internal class HealthOriginalStore(
             buildList { while (it.moveToNext()) add(decodeJob(it.getString(0), it.getString(1), it.getBlob(2))) }
         }
     }
+    fun reviewJobs(before: HealthReportReviewCursor?): List<HealthImportJob> {
+        val states = listOf(HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW)
+        val args = mutableListOf<String>()
+        val streams = states.joinToString(" UNION ALL ") { state ->
+            args += state.name
+            val clause = if (before == null) "" else {
+                args += listOf(before.createdAt.toString(), before.createdAt.toString(), before.id)
+                " AND (created_at<? OR (created_at=? AND id<?))"
+            }
+            "SELECT id,created_at FROM (SELECT id,created_at FROM jobs WHERE state=?$clause ORDER BY created_at DESC,id DESC LIMIT 30)"
+        }
+        return helper.readableDatabase.rawQuery(
+            "SELECT id,state,payload FROM jobs WHERE id IN (SELECT id FROM ($streams) ORDER BY created_at DESC,id DESC LIMIT 30) ORDER BY created_at DESC,id DESC",
+            args.toTypedArray()
+        ).use { rows -> buildList { while (rows.moveToNext()) add(decodeJob(rows.getString(0), rows.getString(1), rows.getBlob(2))) } }
+    }
     fun pendingJobs(after: Pair<Long, String>? = null): List<HealthImportJob> {
         val cursor = if (after == null) "" else " AND (created_at<? OR (created_at=? AND id<?))"
         val args = after?.let { arrayOf(it.first.toString(), it.first.toString(), it.second) }
@@ -205,6 +221,7 @@ internal class HealthOriginalStore(
 
     @Synchronized fun updateJob(id: String, restartCancelled: Boolean = false, update: (HealthImportJob) -> HealthImportJob): HealthImportJob? {
         val db = helper.writableDatabase
+        var reviewChanged = false
         db.beginTransaction()
         return try {
             val current = job(id) ?: return null
@@ -213,8 +230,13 @@ internal class HealthOriginalStore(
             if (current.state == HealthImportState.CANCELLED && !(restartCancelled && next.state == HealthImportState.QUEUED)) return current
             check(db.update("jobs", jobValues(next), "id=?", arrayOf(id)) == 1)
             db.setTransactionSuccessful()
+            reviewChanged = current.state != next.state && (current.state in REVIEW_STATES || next.state in REVIEW_STATES)
             next
-        } finally { db.endTransaction(); notifyChanged() }
+        } finally {
+            db.endTransaction()
+            notifyChanged()
+            if (reviewChanged) notifyReportReviews(context)
+        }
     }
     fun page(job: String, page: Int): HealthOcrPage? = helper.readableDatabase.rawQuery(
         "SELECT payload FROM pages WHERE job_id=? AND page_number=?", arrayOf(job, page.toString())
@@ -520,6 +542,7 @@ internal class HealthOriginalStore(
         private const val REVIEW_PREFIX = "review:"
         private const val RELEASED_PREFIX = "released:"
         private const val ARCHIVED = "digest_token NOT LIKE 'review:%' AND digest_token NOT LIKE 'released:%'"
+        private val REVIEW_STATES = setOf(HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW)
 
         fun createSharedSchema(db: SQLiteDatabase) {
             createOriginalTables(db)
@@ -543,6 +566,8 @@ internal class HealthOriginalStore(
             db.execSQL("CREATE INDEX capture_page_order ON capture_pages(batch_id,position)")
         }
         fun changesUri(context: Context): Uri = Uri.parse("content://${context.packageName}.health-originals/changes")
+        fun reportChanges(context: Context): Uri = changesUri(context).buildUpon().appendPath("report-reviews").build()
+        fun notifyReportReviews(context: Context) = context.contentResolver.notifyChange(reportChanges(context), null)
         private val reader by lazy { Handler(HandlerThread("health-original-reader").apply { start() }.looper) }
     }
 }
