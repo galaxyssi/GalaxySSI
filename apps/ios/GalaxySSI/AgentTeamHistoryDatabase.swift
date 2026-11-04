@@ -45,6 +45,14 @@ final class AgentTeamHistoryDatabase {
         encrypted_payload BLOB NOT NULL, PRIMARY KEY(namespace,group_key,evidence_id))
       """)
     try execute("""
+      CREATE TABLE IF NOT EXISTS collaboration_cloud_problems (
+        namespace TEXT NOT NULL, group_key TEXT NOT NULL, evidence_id TEXT NOT NULL,
+        turn_key TEXT NOT NULL, scope_key TEXT NOT NULL,
+        PRIMARY KEY(namespace,group_key,evidence_id),
+        FOREIGN KEY(namespace,group_key,evidence_id)
+          REFERENCES collaboration_cloud_evidence(namespace,group_key,evidence_id) ON DELETE CASCADE)
+      """)
+    try execute("""
       CREATE TABLE IF NOT EXISTS collaboration_research_records (
         namespace TEXT NOT NULL, group_key TEXT NOT NULL, record_key TEXT NOT NULL,
         revision INTEGER NOT NULL, encrypted_payload BLOB NOT NULL,
@@ -253,6 +261,44 @@ final class AgentTeamHistoryDatabase {
     bind(namespace, at: 1, to: statement)
     if let conversationId { bind(Self.digest(conversationId), at: 2, to: statement) }
     try finish(statement)
+  }
+
+  private static func cloudProblemScopeKey(_ scope: AgentCollaborationToolEvidenceScope) -> String {
+    AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "group": .string(scope.conversationId), "turn": .string(scope.turnId),
+      "member": .string(scope.memberId), "source": .string(scope.sourceId)
+    ])
+  }
+
+  func indexCloudProblem(id: String, scope: AgentCollaborationToolEvidenceScope) throws {
+    let statement = try prepare("INSERT OR IGNORE INTO collaboration_cloud_problems VALUES(?,?,?,?,?)")
+    defer { sqlite3_finalize(statement) }
+    for (index, value) in [namespace, Self.digest(scope.conversationId), id,
+                           Self.digest(scope.turnId), Self.cloudProblemScopeKey(scope)].enumerated() {
+      bind(value, at: Int32(index + 1), to: statement)
+    }
+    try finish(statement)
+  }
+
+  func cloudProblemIds(scope: AgentCollaborationToolEvidenceScope, after: String, limit: Int) throws -> [String] {
+    let statement = try prepare("""
+      SELECT evidence_id FROM collaboration_cloud_problems
+      WHERE namespace=? AND group_key=? AND evidence_id>? AND (turn_key<>? OR scope_key=?)
+      ORDER BY evidence_id LIMIT ?
+      """)
+    defer { sqlite3_finalize(statement) }
+    for (index, value) in [namespace, Self.digest(scope.conversationId), after,
+                           Self.digest(scope.turnId), Self.cloudProblemScopeKey(scope)].enumerated() {
+      bind(value, at: Int32(index + 1), to: statement)
+    }
+    sqlite3_bind_int64(statement, 6, Int64(limit))
+    var result: [String] = []
+    while true {
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { return result }
+      guard status == SQLITE_ROW, let id = sqlite3_column_text(statement, 0) else { throw Failure.corrupt }
+      result.append(String(cString: id))
+    }
   }
 
   func researchRecord<T: Decodable>(_ type: T.Type, conversationId: String, key: String,

@@ -118,6 +118,7 @@ class HealthSleepAlertDeviceTest {
                 db.execSQL("DROP TABLE sleep_alerts")
                 db.execSQL("DROP TABLE sleep_eval")
                 db.execSQL("DROP TABLE report_reviews")
+                db.execSQL("DROP TABLE report_notifications")
                 db.version = 1
             }
             HealthReminderStore(context, name).use {

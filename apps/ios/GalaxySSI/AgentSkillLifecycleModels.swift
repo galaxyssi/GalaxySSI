@@ -1207,6 +1207,13 @@ enum AgentSkillManifestValidator {
     return AgentSkillValidationResult(issues: issues)
   }
 
+  static func validatesObjectParameterSchema(_ schema: AgentSkillParameterSchema) -> Bool {
+    guard schema.type == .object else { return false }
+    var issues: [AgentSkillValidationIssue] = []
+    validateSchema(schema, path: "$.parameters", depth: 0, issues: &issues)
+    return issues.isEmpty
+  }
+
   static func validateParameters(
     _ schema: AgentSkillParameterSchema,
     value: AgentMcpJSONValue,

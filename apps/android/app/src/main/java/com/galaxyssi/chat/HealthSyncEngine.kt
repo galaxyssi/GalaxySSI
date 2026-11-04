@@ -91,7 +91,7 @@ internal object HealthSyncEngine {
             for (scope in HealthConnectScope.entries.filter { it in selected }) {
                 currentCoroutineContext().ensureActive()
                 var state = store.healthSyncCheckpoint(scope).copy(lastAttempt = now(), outcome = HealthSyncOutcome.RUNNING)
-                store.saveHealthSyncCheckpoint(state)
+                store.startHealthSyncAttempt(state)
                 progress(state)
                 try {
                     if (availability != HealthPlatformAvailability.AVAILABLE || reader == null)
