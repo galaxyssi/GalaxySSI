@@ -226,7 +226,11 @@ struct GalaxySSIHealthReportCropView: View {
 
   private func reload() {
     guard scene == .active else { return }
-    do { files = try store.list().originals.filter { $0.kind == .image }; error = false }
+    do {
+      try store.recoverInterruptedCrops()
+      files = try store.list().originals.filter { $0.kind == .image }
+      error = false
+    }
     catch { files = []; error = true }
   }
 

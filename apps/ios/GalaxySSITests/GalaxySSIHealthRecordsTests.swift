@@ -345,6 +345,19 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try store.read(original), png)
     let sealed = root.appendingPathComponent("report-crops-v1").appendingPathComponent(original.id.uuidString)
     XCTAssertNil(try Data(contentsOf: sealed).range(of: output.png))
+    let cropRoot = sealed.deletingLastPathComponent()
+    let interrupted = cropRoot.appendingPathComponent(UUID().uuidString).appendingPathExtension("pending")
+    let unrelated = cropRoot.appendingPathComponent("unrelated.pending")
+    try Data([1, 2, 3]).write(to: interrupted)
+    try Data([4]).write(to: unrelated)
+    let committed = try Data(contentsOf: sealed)
+    let reopened = GalaxySSIHealthOriginalStore(owner: store.owner, secrets: store.secrets, fixtureDirectory: root)
+    try reopened.recoverInterruptedCrops()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: interrupted.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+    XCTAssertEqual(try Data(contentsOf: sealed), committed)
+    XCTAssertEqual(try reopened.readCrop(for: original)?.metadata, saved)
+    XCTAssertEqual(try reopened.read(original), png)
   }
 }
 
