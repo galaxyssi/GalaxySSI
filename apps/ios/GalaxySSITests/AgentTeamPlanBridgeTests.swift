@@ -340,6 +340,51 @@ extension GalaxySSIStoreTests {
       completedWork: []), .needsAssessment)
   }
 
+  func testDocumentaryAcceptanceRequiresIndependentReviewOfExactCurrentVersion() throws {
+    typealias Gate = AgentCollaborationDocumentaryAcceptance
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let deliveryRef = Gate.Reference(objectId: "delivery", revision: 1, sha256: String(repeating: "a", count: 64))
+    let reviewRef = Gate.Reference(objectId: "review", revision: 1, sha256: String(repeating: "b", count: 64))
+    var delivery = Gate.Revision(reference: deliveryRef, conversationId: "group", runId: "run",
+      turnId: "turn", authorId: "author", kind: "artifact", body: ["content": .string("Report")],
+      parents: [], hostObservationIds: ["observed"])
+    let reviewBody: AgentMcpJSONObject = ["acceptance_review": .object([
+      "criterion_id": .string("report"), "requirement": .string("Deliver report"),
+      "target": .object(["object_id": .string("delivery"), "revision": .int(1), "sha256": .string(deliveryRef.sha256)]),
+      "verdict": .string("supported"), "rationale": .string("Checked report against the requirement"),
+      "unresolved": .array([])
+    ])]
+    var review = Gate.Revision(reference: reviewRef, conversationId: "group", runId: "run",
+      turnId: "turn", authorId: "reviewer", kind: "decision", body: reviewBody,
+      parents: [deliveryRef], hostObservationIds: [])
+    let original = Policy.Criterion(id: "report", requirement: "Deliver report",
+      verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    var met = original
+    met.status = .met
+    met.evidence_kind = .observed
+    met.evidence = ["delivery", "observed"]
+    met.delivery = deliveryRef
+    met.review = reviewRef
+    let assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "Report delivered",
+      decision: .achieved, criteria: [met], work: [], blockers: [])
+    let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+    func check(observationAvailable: Bool = true) -> Policy.Outcome {
+      Gate.evaluate(raw, preserving: [original], conversationId: "group", runId: "run", turnId: "turn",
+        readRevision: { id, _ in id == "delivery" ? delivery : (id == "review" ? review : nil) },
+        observationIsSupporting: { $0 == "observed" && observationAvailable })
+    }
+    XCTAssertEqual(check(), .achieved)
+    XCTAssertEqual(check(observationAvailable: false), .needsAssessment)
+    review.authorId = delivery.authorId
+    XCTAssertEqual(check(), .needsAssessment)
+    review.authorId = "reviewer"
+    delivery.reference.revision = 2
+    XCTAssertEqual(check(), .needsAssessment)
+    delivery.reference = deliveryRef
+    review.turnId = "older-turn"
+    XCTAssertEqual(check(), .needsAssessment)
+  }
+
   func testRequestedRepeatedAgentCompilesToInstanceScopedTeam() throws {
     let target = teamTarget("codex")
     var registration = teamRegistration(target)
