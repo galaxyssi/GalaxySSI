@@ -485,7 +485,8 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   func reconcileInterruptedLocalPlanNodes() -> Int {
     var recoveredTaskCount = 0
-    for var task in store.recentAgentTasks(limit: 500) where task.phase == .executing {
+    for var task in store.recentAgentTasks(limit: 500) where
+      task.phase == .executing || (task.phase == .paused && task.teamRecoveryRunId != nil) {
       guard var plan = task.activePlan else { continue }
       let outgoing = localOutgoingMessage(for: task)
       let teamSpecs = plan.actions.filter { $0.kind == .callConnector }.compactMap {
@@ -505,21 +506,19 @@ final class MessageCoordinator: ObservableObject {
         } ?? false
         let canWait = matches && saved?.state != .interrupted
         let cancelled = matches && saved?.state == .cancelled
-        task.phase = cancelled ? .cancelled : (canWait ? .waitingResponse : .paused)
-        task.blocked = !canWait && !cancelled
-        task.teamRecoveryRunId = !canWait && !cancelled ? spec.supervisorRunId : nil
-        task.verification = GalaxySSILocalization.string(
+        let verification = GalaxySSILocalization.string(
           cancelled ? "galaxyssi.team.recovery.cancelled" : (canWait ? "galaxyssi.team.recovery.waiting" : "galaxyssi.team.recovery.missing"),
           fallback: cancelled ? "The original Agent team was cancelled" : (canWait
             ? "Awaiting validation of the original Agent team outcome"
             : "The original Agent team is unavailable; waiting without redispatch"),
           language: store.languagePolicy.interfaceLanguage)
-        task.executionLog.append("Agent team recovery: retained original team " + spec.supervisorRunId)
-        task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
-        store.upsertAgentTask(task)
+        guard let recovered = AgentSavedTeamReplyPolicy.reconcileRecoveryWait(task, runId: spec.supervisorRunId,
+          cancelled: cancelled, verification: verification, now: AgentControlPlaneClock.nowMillis()) else { continue }
+        store.upsertAgentTask(recovered)
         recoveredTaskCount += 1
         continue
       }
+      guard task.phase == .executing else { continue }
       var recoveredActions: [AgentAction] = []
       var foundJournaledNode = false
       var journalRecoveryFailed = false

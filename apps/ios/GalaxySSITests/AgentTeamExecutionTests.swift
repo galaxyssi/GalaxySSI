@@ -769,7 +769,18 @@ extension GalaxySSIStoreTests {
       members: members.map { AgentTeamMemberSnapshot(agentId: $0.agentId, deliveryMode: $0.deliveryMode,
         status: .succeeded, instanceId: $0.memberId) }, finalOutput: "Original answer", createdAtMillis: 3)
     XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
+    XCTAssertNil(AgentSavedTeamReplyPolicy.reconcileRecoveryWait(parent, runId: "original",
+      cancelled: false, verification: "Waiting", now: 10))
     parent.teamRecoveryRunId = "original"
+    var waiting = try XCTUnwrap(AgentSavedTeamReplyPolicy.reconcileRecoveryWait(parent, runId: "original",
+      cancelled: false, verification: "Waiting", now: 10))
+    XCTAssertEqual(waiting.phase, .waitingResponse)
+    XCTAssertEqual(waiting.teamRecoveryRunId, "original")
+    XCTAssertFalse(waiting.blocked)
+    XCTAssertEqual(waiting.activePlan, parent.activePlan)
+    XCTAssertNotNil(AgentSavedTeamReplyPolicy.settleParent(waiting, saved: saved, failureText: "Failed", now: 10))
+    waiting.teamRecoveryRunId = "replacement"
+    XCTAssertNil(AgentSavedTeamReplyPolicy.settleParent(waiting, saved: saved, failureText: "Failed", now: 10))
     let accepted = try XCTUnwrap(AgentSavedTeamReplyPolicy.settleParent(parent, saved: saved, failureText: "Failed", now: 10))
     XCTAssertEqual(accepted.phase, .completed)
     XCTAssertEqual(accepted.result, "Original answer")
