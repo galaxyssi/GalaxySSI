@@ -42,6 +42,11 @@ struct GalaxySSIHealthCenterView: View {
           Label(t("originals.title", "Health Originals"), systemImage: "doc.on.doc")
         }
         NavigationLink {
+          GalaxySSIHealthPDFTextView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
+        } label: {
+          Label(t("pdf_text.title", "Report PDF Text"), systemImage: "doc.text.magnifyingglass")
+        }
+        NavigationLink {
           GalaxySSIHealthProfileView(records: records)
         } label: {
           Label(t("profile.title", "Health Profile"), systemImage: "person.text.rectangle")
