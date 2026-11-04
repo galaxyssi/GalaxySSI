@@ -71,6 +71,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case acceptanceReview = "acceptance_review"
     case learningAgenda = "learning_agenda"
     case candidate
+    case transferStudy = "transfer_study"
     case candidateEvent = "candidate_event"
     case capabilityGap = "capability_gap"
     case innovation
@@ -186,6 +187,44 @@ enum AgentCollaborationEvolutionIntake {
     guard values.count == items.count, values.allSatisfy({ hasText($0, ["id"] + required) }),
           Set(values.map { $0.string("id") }).count == values.count else { return nil }
     return values
+  }
+}
+
+enum AgentCollaborationTransferIntake {
+  static func validates(_ draft: AgentCollaborationResearchDraft,
+                        exactCurrentKind: (AgentCollaborationResearchReference) throws -> String?) rethrows -> Bool {
+    guard draft.kind == .transferStudy, draft.objectId?.isBlank != false, draft.baseRevision == 0,
+          let study = draft.body["transfer_study"]?.objectValue,
+          hasText(study, ["source_domain", "target_domain", "target_task", "abstract_strategy",
+                          "proposed_method", "rationale", "risks", "falsifier", "limitations"]),
+          ["cross_task", "cross_domain"].contains(study.string("mode")),
+          study.string("mode") != "cross_domain" || study.string("source_domain") != study.string("target_domain"),
+          let source = reference(study["source"]), draft.parents.contains(source),
+          try exactCurrentKind(source) == "failure_experience",
+          let alternatives = study["alternatives"]?.arrayValue, (1...32).contains(alternatives.count),
+          alternatives.allSatisfy({ $0.stringValue?.isBlank == false }),
+          let mappings = study["mappings"]?.arrayValue, (1...32).contains(mappings.count),
+          mappings.allSatisfy({ item in
+            item.objectValue.map { hasText($0, ["source_element", "target_element", "invariant", "adaptation", "breaks_when"]) } == true
+          }),
+          let calibration = study["calibration_data"]?.arrayValue, calibration.count <= 32 else { return false }
+    var seen = Set<String>()
+    for item in calibration {
+      guard let artifact = reference(item), draft.parents.contains(artifact), seen.insert(artifact.objectId).inserted,
+            try exactCurrentKind(artifact) == "artifact" else { return false }
+    }
+    return true
+  }
+
+  private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
+  }
+
+  private static func reference(_ raw: AgentMcpJSONValue?) -> AgentCollaborationResearchReference? {
+    guard let object = raw?.objectValue, Set(object.keys) == Set(["object_id", "revision", "sha256"]),
+          case .int(let revision)? = object["revision"], revision > 0 else { return nil }
+    return AgentCollaborationResearchReference(objectId: object.string("object_id"),
+      revision: revision, sha256: object.string("sha256"))
   }
 }
 
