@@ -127,6 +127,27 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try records.write(duplicate))
     XCTAssertEqual(try Data(contentsOf: file), Data([1, 2, 3]))
   }
+
+  func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 10, hour: 12)))
+    let first = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: now))
+    let one = GalaxySSIHealthReading(revision: 2, metric: .bloodPressure, measuredAt: first,
+                                   value: 120, diastolic: 80, pulse: 64)
+    let two = GalaxySSIHealthReading(revision: 3, metric: .bloodPressure, measuredAt: now,
+                                   value: 124, diastolic: 82, pulse: 69)
+    let missing = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now,
+                                       value: 126, diastolic: 84)
+    let trend = GalaxySSIHealthTrend(current: [two, one, missing], metric: .bloodPressure,
+                                    component: .pulse, now: now, dayCount: 3, calendar: calendar)
+    XCTAssertEqual(trend.validDays, 2)
+    XCTAssertNil(trend.points[1].mean)
+    XCTAssertEqual(trend.points[2].readings.map(\.revision), [3])
+    XCTAssertEqual(trend.mean, Decimal(string: "66.5"))
+    XCTAssertEqual(trend.minimum, 64)
+    XCTAssertEqual(trend.maximum, 69)
+  }
 }
 
 private final class HealthFixtureSecrets: GalaxySSISecretStore {
