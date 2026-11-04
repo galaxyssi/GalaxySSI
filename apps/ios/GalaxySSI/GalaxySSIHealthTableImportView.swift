@@ -125,6 +125,7 @@ struct GalaxySSIHealthTableImportView: View {
       Picker(t("metric", "Measurement"), selection: $mapping.metric) {
         ForEach(GalaxySSIHealthMetric.allCases) { Text(metricTitle($0)).tag($0) }
       }
+      .onChange(of: mapping.metric) { _ in mapping.unitOverride = nil; mapping.confirmedUnit = false }
       column(mapping.metric == .bloodPressure ? t("systolic", "Systolic") : t("value", "Value"), $mapping.value, input)
       if mapping.metric == .bloodPressure {
         column(t("diastolic", "Diastolic"), $mapping.lower, input)
@@ -146,8 +147,15 @@ struct GalaxySSIHealthTableImportView: View {
           if let utc = TimeZone(identifier: "Etc/UTC"), utc != .current { Text("UTC").tag(utc) }
         }
       }
-      Toggle(String(format: t("unit", "The selected values use %@"), mapping.metric.unit), isOn: $mapping.confirmedUnit)
-        .onChange(of: mapping.metric) { _ in mapping.confirmedUnit = false }
+      if mapping.metric.units.count > 1 {
+        Picker(t("unit_picker", "Unit"), selection: Binding(
+          get: { mapping.unitOverride ?? mapping.metric.unit }, set: { mapping.unitOverride = $0; mapping.confirmedUnit = false })) {
+          ForEach(mapping.metric.units, id: \.self) { Text($0).tag($0) }
+        }
+      }
+      let unit = mapping.unitOverride ?? mapping.metric.unit
+      Toggle(unit.isEmpty ? t("unitless", "The selected results are unitless") :
+        String(format: t("unit", "The selected values use %@"), unit), isOn: $mapping.confirmedUnit)
       Button(t("review", "Review rows"), action: prepare)
     }
   }
@@ -185,7 +193,8 @@ struct GalaxySSIHealthTableImportView: View {
     func exact(_ value: Decimal) -> String { NSDecimalNumber(decimal: value).stringValue }
     let pressure = reading.diastolic.map { "/" + exact($0) } ?? ""
     let pulse = reading.pulse.map { " · " + exact($0) + " bpm" } ?? ""
-    return exact(reading.value) + pressure + " " + reading.metric.unit + pulse
+    return (reading.reported?.raw ?? reading.value.map(exact) ?? "") + pressure +
+      (reading.unit.isEmpty ? "" : " " + reading.unit) + pulse
   }
 
   private func column(_ title: String, _ selection: Binding<Int>, _ input: Input) -> some View {
@@ -302,14 +311,7 @@ struct GalaxySSIHealthTableImportView: View {
   }
 
   private func metricTitle(_ metric: GalaxySSIHealthMetric) -> String {
-    let label: (String, String)
-    switch metric {
-    case .bloodPressure: label = ("blood_pressure", "Blood pressure")
-    case .glucose: label = ("glucose", "Blood glucose")
-    case .weight: label = ("weight", "Weight")
-    case .heartRate: label = ("heart_rate", "Heart rate")
-    }
-    return GalaxySSILocalization.string("galaxyssi.health." + label.0, fallback: label.1, language: language)
+    metric.title(language: language)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

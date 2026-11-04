@@ -49,6 +49,7 @@ enum GalaxySSIHealthTableImport {
     var dateStyle = DateStyle.iso
     var localZone = TimeZone.current
     var useFormulaCache = false
+    var unitOverride: String?
 
     var sourceColumns: [String: Int] {
       var result = ["value": value, "measured_at": date, "notes": notes]
@@ -108,13 +109,16 @@ enum GalaxySSIHealthTableImport {
       } else if mapping.dateStyle != .excel, let parsed = local.date(from: rawDate), local.string(from: parsed) == rawDate {
         time = parsed
       } else { time = nil }
-      guard let value = number(rawValue), let time, time <= now else { return row(.invalid) }
+      let reported = GalaxySSIHealthReportedResult.parse(rawValue, metric: mapping.metric)
+      let value = reported == nil ? number(rawValue) : nil
+      guard value != nil || reported != nil, let time, time <= now else { return row(.invalid) }
       let lower = isPressure ? number(token(mapping.lower)) : nil
       let pulseText = isPressure ? token(mapping.pulse) : ""
       let pulse = number(pulseText)
       guard pulseText.isEmpty || pulse != nil else { return row(.invalid) }
       let reading = GalaxySSIHealthReading(metric: mapping.metric, measuredAt: time, value: value,
-                                           diastolic: lower, pulse: pulse, notes: cell(mapping.notes))
+        diastolic: lower, pulse: pulse, notes: cell(mapping.notes), reported: reported, reportedNotation: rawValue,
+        unitOverride: reported?.kind == .qualitative ? "" : mapping.unitOverride)
       guard reading.isValid else { return row(.invalid) }
       guard !accepted.contains(where: { $0.sameMeasurement(as: reading) }) else { return row(.duplicate, reading) }
       accepted.append(reading)
