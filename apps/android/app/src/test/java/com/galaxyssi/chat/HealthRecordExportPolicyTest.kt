@@ -30,6 +30,7 @@ class HealthRecordExportPolicyTest {
     }
     private fun csv(records: List<HealthObservation>, annotations: Boolean = true) = CsvParser(CsvParserSettings().apply {
         isHeaderExtractionEnabled = true; nullValue = ""; emptyValue = ""; ignoreLeadingWhitespaces = false; ignoreTrailingWhitespaces = false
+        isNormalizeLineEndingsWithinQuotes = false; format.setLineSeparator("\r\n")
     }).parseAllRecords(
         StringReader(bytes(HealthRecordExportFormat.CSV, records, annotations).toString(Charsets.UTF_8).removePrefix("\uFEFF")))
     private fun entries(bytes: ByteArray): Map<String, String> = ZipFile(SeekableInMemoryByteChannel(bytes)).use { zip -> buildMap {
@@ -107,6 +108,11 @@ class HealthRecordExportPolicyTest {
     @Test fun csvQuotesCommasNewlinesAndDoubleQuotesWithoutTruncation() {
         val text = "\u8bf4\u660e, one\r\n\"quoted\""; val r = record().copy(draft = record().draft.copy(note = text))
         assertEquals(text, csv(listOf(r)).single().getString("note"))
+    }
+    @Test fun csvPreservesCrLfLfAndLoneCrInTheActualQuotedBytes() {
+        val text = "first\r\nsecond\nthird\rfourth"; val r = record().let { it.copy(draft = it.draft.copy(note = text)) }
+        val raw = bytes(HealthRecordExportFormat.CSV, listOf(r)).toString(Charsets.UTF_8)
+        assertTrue(raw.contains("\"$text\"")); assertEquals(text, csv(listOf(r)).single().getString("note"))
     }
     @Test fun formulaLikeNotesAreLiteralAndTheirOriginalTextCanBeRecovered() {
         val r = record().copy(draft = record().draft.copy(note = "=SUM(A1)")); val row = csv(listOf(r)).single()

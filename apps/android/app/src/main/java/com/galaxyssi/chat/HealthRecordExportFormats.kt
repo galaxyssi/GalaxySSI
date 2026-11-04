@@ -44,7 +44,8 @@ internal object HealthRecordExportFormats {
     private class Csv(output: OutputStream) : HealthRecordExportSink {
         private val writer = CsvWriter(OutputStreamWriter(HealthPrivateExportFile.borrowed(output), Charsets.UTF_8).apply { write('\uFEFF'.code) },
             CsvWriterSettings().apply {
-                setQuoteAllFields(true); setIgnoreLeadingWhitespaces(false); setIgnoreTrailingWhitespaces(false); format.setLineSeparator("\r\n")
+                setQuoteAllFields(true); setIgnoreLeadingWhitespaces(false); setIgnoreTrailingWhitespaces(false)
+                setNormalizeLineEndingsWithinQuotes(false); format.setLineSeparator("\r\n")
             })
         init { writer.writeHeaders(*HealthRecordExportRows.headers.toTypedArray()) }
         override fun append(item: HealthRecordExportItem) { HealthRecordExportRows.rows(item).forEach { writer.writeRow(*HealthRecordExportRows.csv(it).toTypedArray()) } }
