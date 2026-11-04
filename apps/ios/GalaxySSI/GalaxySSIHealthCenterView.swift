@@ -25,6 +25,28 @@ struct GalaxySSIHealthCenterView: View {
 
   var body: some View {
     List {
+      Section {
+        if scenePhase == .active, let archive {
+          if archive.current.isEmpty {
+            Label(t("first_use.title", "No confirmed measurements yet"), systemImage: "heart.text.square")
+              .font(.headline)
+          }
+          if let draft = archive.draft {
+            Button { editor = draft } label: {
+              Label(t("resume_draft", "Resume draft"), systemImage: "doc.text")
+            }
+          } else {
+            Button { editor = GalaxySSIHealthDraft() } label: {
+              Label(t("manual", "Record measurement"), systemImage: "plus.circle")
+            }
+          }
+        }
+        NavigationLink {
+          GalaxySSIHealthImportView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
+        } label: {
+          Label(t("import.title", "Import Health Reports"), systemImage: "square.and.arrow.down")
+        }
+      }
       NavigationLink {
         GalaxySSIHealthBodyView { bloodPressureRecords }
       } label: {
@@ -59,17 +81,6 @@ struct GalaxySSIHealthCenterView: View {
       }
       if scenePhase == .active, let archive {
         let current = archive.current
-        Section {
-          if let draft = archive.draft {
-            Button { editor = draft } label: {
-              Label(t("resume_draft", "Resume draft"), systemImage: "doc.text")
-            }
-          } else {
-            Button { editor = GalaxySSIHealthDraft() } label: {
-              Label(t("manual", "Record measurement"), systemImage: "plus.circle")
-            }
-          }
-        }
         if !current.isEmpty {
           Section(t("overview", "Measurement overview")) {
             Toggle(t("derive_overview", "Show local measurement summary"), isOn: Binding(
@@ -84,23 +95,20 @@ struct GalaxySSIHealthCenterView: View {
               }
             }
           }
-        }
-        Section(t("recent", "Recent measurements")) {
-          if current.isEmpty {
-            Text(t("empty", "No measurements yet")).foregroundColor(.secondary)
-          }
-          ForEach(current.prefix(limit)) { reading in
-            Button { edit(reading) } label: {
-              VStack(alignment: .leading, spacing: 4) {
-                Text(title(reading.metric)).foregroundColor(.primary)
-                Text(summary(reading))
-                Text(reading.measuredAt, style: .date).foregroundColor(.secondary)
+          Section(t("recent", "Recent measurements")) {
+            ForEach(current.prefix(limit)) { reading in
+              Button { edit(reading) } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(title(reading.metric)).foregroundColor(.primary)
+                  Text(summary(reading))
+                  Text(reading.measuredAt, style: .date).foregroundColor(.secondary)
+                }
               }
+              .disabled(archive.draft != nil)
             }
-            .disabled(archive.draft != nil)
-          }
-          if current.count > limit {
-            Button(t("more", "Show more")) { limit += 30 }
+            if current.count > limit {
+              Button(t("more", "Show more")) { limit += 30 }
+            }
           }
         }
       } else if scenePhase == .active {

@@ -25,6 +25,7 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var exportAttempt: GalaxySSIHealthOriginalStore.ExportAttempt?
   @State private var verifying = false
   @State private var receiptFailed = false
+  @State private var preparedForShare = false
   @State private var pending: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var removal: GalaxySSIHealthOriginalStore.Original?
   @State private var error = false
@@ -57,6 +58,10 @@ struct GalaxySSIHealthOriginalsView: View {
           }
           .pickerStyle(.segmented)
           if !selection.isEmpty {
+            Button(action: prepareForSharing) {
+              Label(t("prepare_zip", "Prepare selected ZIP"), systemImage: "archivebox")
+            }
+            .disabled(verifying)
             Button {
               pending = listing?.originals.filter { selection.contains($0.id) } ?? []
               confirming = !pending.isEmpty
@@ -64,6 +69,7 @@ struct GalaxySSIHealthOriginalsView: View {
             .disabled(verifying)
           }
           if verifying { ProgressView(t("verifying", "Verifying saved ZIP")) }
+          if preparedForShare { Text(t("ready_to_share", "ZIP ready in export history.")).foregroundColor(.secondary) }
           if receiptFailed { Text(t("verify_failed", "The destination could not be verified.")).foregroundColor(.secondary) }
         }
         if let listing {
@@ -252,6 +258,16 @@ struct GalaxySSIHealthOriginalsView: View {
     catch { error = true }
   }
 
+  private func prepareForSharing() {
+    guard scene == .active, !verifying, let listing else { return }
+    preparedForShare = false
+    do {
+      _ = try store.prepareExport(listing.originals.filter { selection.contains($0.id) })
+      preparedForShare = true
+      error = false
+    } catch { error = true }
+  }
+
   private func verify(_ url: URL, attempt: GalaxySSIHealthOriginalStore.ExportAttempt) {
     verifying = true
     Task {
@@ -352,6 +368,14 @@ private struct OriginalExportHistory: View {
   @State private var limit = 20
   @State private var scopeLimit = 30
   @State private var unavailable = false
+  @State private var confirmShare = false
+  @State private var shareFailure = false
+  @State private var sharing: SharePayload?
+
+  private struct SharePayload: Identifiable {
+    let id: UUID
+    let data: Data
+  }
 
   var body: some View {
     List {
@@ -363,7 +387,7 @@ private struct OriginalExportHistory: View {
           Text(t("history_empty", "No ZIP export attempts")).foregroundColor(.secondary)
         } else {
           ForEach(history.prefix(limit)) { entry in
-            Button { scopeLimit = 30; selected = entry } label: {
+            Button { scopeLimit = 30; shareFailure = false; selected = entry } label: {
               VStack(alignment: .leading, spacing: 4) {
                 Text(outcome(entry)).foregroundColor(.primary)
                 Text(entry.at.formatted(date: .abbreviated, time: .shortened)).foregroundColor(.secondary)
@@ -380,7 +404,8 @@ private struct OriginalExportHistory: View {
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
     .onChange(of: scene) {
-      if $0 == .active { reload() } else { selected = nil; history = [] }
+      if $0 == .active { reload() }
+      else { selected = nil; history = []; confirmShare = false; sharing = nil }
     }
     .sheet(item: $selected) { entry in
       NavigationView {
@@ -394,6 +419,14 @@ private struct OriginalExportHistory: View {
               ForEach(entry.originals.prefix(scopeLimit)) { item in Text(item.name) }
               if entry.originals.count > scopeLimit { Button(t("more", "Show more")) { scopeLimit += 30 } }
             }
+            if store.hasShareArtifact(entry) {
+              Button { confirmShare = true } label: {
+                Label(t("share_zip", "Share ZIP"), systemImage: "square.and.arrow.up")
+              }
+            } else {
+              Text(t("artifact_unavailable", "The private ZIP is no longer available.")).foregroundColor(.secondary)
+            }
+            if shareFailure { Text(t("share_failed", "Could not open the verified ZIP bytes.")).foregroundColor(.secondary) }
           }
         }
         .navigationTitle(t("export_history", "ZIP export history"))
@@ -401,9 +434,26 @@ private struct OriginalExportHistory: View {
         .toolbar { ToolbarItem(placement: .confirmationAction) {
           Button(t("close", "Close")) { selected = nil }
         } }
+        .confirmationDialog(t("share_plain_zip", "Share this unencrypted ZIP?"), isPresented: $confirmShare,
+                            titleVisibility: .visible) {
+          Button(t("share_zip", "Share ZIP")) { share(entry) }
+        }
+        .sheet(item: $sharing) { payload in
+          if scene == .active {
+            OriginalZIPShareSheet(data: payload.data)
+          }
+        }
       }
       .navigationViewStyle(.stack)
     }
+  }
+
+  private func share(_ attempt: GalaxySSIHealthOriginalStore.ExportAttempt) {
+    guard scene == .active, selected?.id == attempt.id else { return }
+    do {
+      sharing = SharePayload(id: attempt.id, data: try store.readShareArtifact(attempt))
+      shareFailure = false
+    } catch { shareFailure = true }
   }
 
   private func reload() {
@@ -423,6 +473,23 @@ private struct OriginalExportHistory: View {
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.originals." + key, fallback: fallback, language: language)
   }
+}
+
+private struct OriginalZIPShareSheet: UIViewControllerRepresentable {
+  let data: Data
+
+  func makeUIViewController(context: Context) -> UIActivityViewController {
+    let provider = NSItemProvider()
+    provider.suggestedName = "GalaxySSI-Health-Originals.zip"
+    provider.registerDataRepresentation(forTypeIdentifier: UTType.zip.identifier, visibility: .all) { completion in
+      completion(data, nil)
+      return nil
+    }
+    let configuration = UIActivityItemsConfiguration(itemProviders: [provider])
+    return UIActivityViewController(activityItemsConfiguration: configuration)
+  }
+
+  func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 private struct OriginalZIP: FileDocument {
