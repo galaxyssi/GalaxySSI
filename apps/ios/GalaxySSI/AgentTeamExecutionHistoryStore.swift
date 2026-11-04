@@ -231,6 +231,24 @@ final class AgentTeamExecutionHistoryStore {
     (try? access { try $0.snapshots(deliverableOnly: true, limit: Self.maxSnapshots) }) ?? []
   }
 
+  func recallCollaborationResults(conversationId: String, excludingTurnId: String,
+                                  query: String, limit: Int = 12) -> [AgentTeamExecutionSnapshot] {
+    guard !conversationId.isBlank, limit > 0, query.utf8.count <= 1_000,
+          let records = try? access({
+            try $0.snapshots(conversation: conversationId, deliverableOnly: true, limit: Self.maxSnapshots)
+          }) else { return [] }
+    let terms = query.split(whereSeparator: \.isWhitespace).prefix(16)
+    return Array(records.lazy.filter { record in
+      guard record.conversationId == conversationId, record.taskId != excludingTurnId else { return false }
+      let fields = [record.goal, record.finalOutput] + record.members.flatMap {
+        [$0.agentId, $0.role, $0.output]
+      }
+      return terms.allSatisfy { term in
+        fields.contains { $0.localizedCaseInsensitiveContains(String(term)) }
+      }
+    }.prefix(min(limit, 50)))
+  }
+
   func snapshot(supervisorRunId: String) -> AgentTeamExecutionSnapshot? {
     let run = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !run.isEmpty else { return nil }

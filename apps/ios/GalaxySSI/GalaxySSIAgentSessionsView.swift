@@ -173,6 +173,7 @@ struct GalaxySSIAgentSessionsView: View {
   @State private var preparedContent = AgentSessionsPreparedContent()
   @State private var collaborationEditorPresented = false
   @State private var collaborationSession: AgentConversation?
+  @State private var collaborationRecallSession: AgentConversation?
 
   private var visibleSessions: [AgentConversation] {
     let sessions = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -313,6 +314,9 @@ struct GalaxySSIAgentSessionsView: View {
     .navigationBarHidden(true)
     .sheet(isPresented: $collaborationEditorPresented) {
       AgentCollaborationRosterEditor(session: collaborationSession, t: t)
+    }
+    .sheet(item: $collaborationRecallSession) { session in
+      GalaxySSICollaborationRecallView(conversationId: session.id, t: t)
     }
     .sheet(item: $editDraft) { draft in
       AgentSessionTextEditSheet(
@@ -632,6 +636,11 @@ struct GalaxySSIAgentSessionsView: View {
         Button(t("galaxyssi.collaboration.settings", "Collaboration Members")) {
           collaborationSession = session
           collaborationEditorPresented = true
+        }
+        if !session.privateMode, !session.trackingPaused {
+          Button(t("galaxyssi.collaboration.history", "Search Group History")) {
+            collaborationRecallSession = session
+          }
         }
       }
       Button(t("galaxyssi.agent_session.delete_more", "Delete more")) {
