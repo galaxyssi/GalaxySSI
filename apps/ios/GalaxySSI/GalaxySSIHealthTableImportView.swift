@@ -125,16 +125,38 @@ struct GalaxySSIHealthTableImportView: View {
           Text(t("excel_date", "Excel date serial")).tag(GalaxySSIHealthTableImport.DateStyle.excel)
         }
       }
-      if mapping.dateStyle != .iso {
+      if mapping.dateStyle != .iso || input.worksheet != nil {
         Picker(t("zone", "Time zone"), selection: $mapping.localZone) {
           Text(TimeZone.current.identifier).tag(TimeZone.current)
           if let utc = TimeZone(identifier: "Etc/UTC"), utc != .current { Text("UTC").tag(utc) }
+        }
+      }
+      if input.table.isoDates?.contains(where: { $0.contains(mapping.date) }) == true {
+        Toggle(t("date_only_time", "Set time for date-only cells"), isOn: Binding(
+          get: { mapping.dateOnlyMinute != nil }, set: { mapping.dateOnlyMinute = $0 ? 0 : nil }))
+        if mapping.dateOnlyMinute != nil {
+          Stepper(value: dateOnlyPart(hours: true), in: 0...23) {
+            Text(String(format: t("date_only_hour", "Hour: %02lld"), Int64((mapping.dateOnlyMinute ?? 0) / 60)))
+          }
+          Stepper(value: dateOnlyPart(hours: false), in: 0...59) {
+            Text(String(format: t("date_only_minute", "Minute: %02lld"), Int64((mapping.dateOnlyMinute ?? 0) % 60)))
+          }
         }
       }
       Toggle(String(format: t("unit", "The selected values use %@"), mapping.metric.unit), isOn: $mapping.confirmedUnit)
         .onChange(of: mapping.metric) { _ in mapping.confirmedUnit = false }
       Button(t("review", "Review rows"), action: prepare)
     }
+  }
+
+  private func dateOnlyPart(hours: Bool) -> Binding<Int> {
+    Binding(get: {
+      let time = mapping.dateOnlyMinute ?? 0
+      return hours ? time / 60 : time % 60
+    }, set: { value in
+      let time = mapping.dateOnlyMinute ?? 0
+      mapping.dateOnlyMinute = hours ? value * 60 + time % 60 : time / 60 * 60 + value
+    })
   }
 
   private func review(_ rows: [GalaxySSIHealthTableImport.Row]) -> some View {

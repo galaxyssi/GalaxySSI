@@ -16,6 +16,7 @@ struct GalaxySSIHealthXLSX {
     let number: Int
     let cells: [Int: String]
     let formulas: Set<Int>
+    let isoDates: Set<Int>
   }
 
   let sheets: [Sheet]
@@ -69,7 +70,7 @@ struct GalaxySSIHealthXLSX {
       headers: columns.map { header.formulas.contains($0) ? "" : header.cells[$0, default: ""] },
       rows: body.map { row in columns.map { row.cells[$0, default: ""] } },
       sheet: sheet.name, sheetPath: sheet.path, rowNumbers: body.map(\.number),
-      formulas: body.map(\.formulas), date1904: date1904)
+      formulas: body.map(\.formulas), date1904: date1904, isoDates: body.map(\.isoDates))
   }
 
   static func date(serial: Decimal, date1904: Bool, zone: TimeZone) -> Date? {
@@ -88,8 +89,74 @@ struct GalaxySSIHealthXLSX {
     wall.hour = seconds / 3600
     wall.minute = (seconds / 60) % 60
     wall.second = seconds % 60
-    guard wall.isValidDate(in: calendar) else { return nil }
-    return calendar.date(from: wall)
+    return uniqueWallTime(wall, zone: zone)
+  }
+
+  static func isoDate(_ raw: String, zone: TimeZone, dateOnlyMinute: Int?) -> Date? {
+    guard raw.utf8.count <= 40 else { return nil }
+    let fields = raw.split(separator: "T", omittingEmptySubsequences: false)
+    guard fields.count == 1 || fields.count == 2 else { return nil }
+    let day = fields[0].split(separator: "-", omittingEmptySubsequences: false)
+    guard day.count == 3, let year = digits(day[0], width: 4), year > 0,
+          let month = digits(day[1], width: 2), let date = digits(day[2], width: 2) else { return nil }
+    var parts = DateComponents(year: year, month: month, day: date)
+    if fields.count == 1 {
+      guard let minute = dateOnlyMinute, (0..<1440).contains(minute) else { return nil }
+      parts.hour = minute / 60
+      parts.minute = minute % 60
+      parts.second = 0
+      return uniqueWallTime(parts, zone: zone)
+    }
+    var clock = fields[1]
+    var resolvedZone = zone
+    if clock.last == "Z" {
+      clock = clock.dropLast()
+      resolvedZone = TimeZone(secondsFromGMT: 0) ?? zone
+    } else if let offset = clock.firstIndex(where: { $0 == "+" || $0 == "-" }) {
+      let suffix = clock[clock.index(after: offset)...].split(separator: ":", omittingEmptySubsequences: false)
+      guard suffix.count == 2, let hours = digits(suffix[0], width: 2),
+            let minutes = digits(suffix[1], width: 2), minutes < 60,
+            hours < 18 || (hours == 18 && minutes == 0),
+            let fixed = TimeZone(secondsFromGMT: (clock[offset] == "-" ? -1 : 1) * (hours * 3600 + minutes * 60))
+      else { return nil }
+      resolvedZone = fixed
+      clock = clock[..<offset]
+    }
+    let time = clock.split(separator: ":", omittingEmptySubsequences: false)
+    guard time.count == 2 || time.count == 3, let hour = digits(time[0], width: 2), hour < 24,
+          let minute = digits(time[1], width: 2), minute < 60 else { return nil }
+    var seconds = 0
+    var fraction = 0.0
+    if time.count == 3 {
+      let second = time[2].split(separator: ".", omittingEmptySubsequences: false)
+      guard second.count == 1 || second.count == 2, let integer = digits(second[0], width: 2), integer < 60
+      else { return nil }
+      seconds = integer
+      if second.count == 2 {
+        let count = second[1].utf8.count
+        guard (1...9).contains(count), let value = digits(second[1], width: count) else { return nil }
+        fraction = Double(value) / pow(10, Double(count))
+      }
+    }
+    parts.hour = hour
+    parts.minute = minute
+    parts.second = seconds
+    return uniqueWallTime(parts, zone: resolvedZone)?.addingTimeInterval(fraction)
+  }
+
+  private static func digits(_ value: Substring, width: Int) -> Int? {
+    guard value.utf8.count == width, value.utf8.allSatisfy({ (48...57).contains($0) }) else { return nil }
+    return Int(value)
+  }
+
+  private static func uniqueWallTime(_ parts: DateComponents, zone: TimeZone) -> Date? {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = zone
+    guard parts.isValidDate(in: calendar), let tentative = calendar.date(from: parts) else { return nil }
+    let beforeDay = calendar.startOfDay(for: tentative).addingTimeInterval(-1)
+    let first = calendar.nextDate(after: beforeDay, matching: parts, matchingPolicy: .strict, repeatedTimePolicy: .first)
+    let last = calendar.nextDate(after: beforeDay, matching: parts, matchingPolicy: .strict, repeatedTimePolicy: .last)
+    return first == last ? first : nil
   }
 }
 
@@ -152,6 +219,7 @@ private final class SheetXML: NSObject, XMLParserDelegate {
   private var column = -1
   private var cells: [Int: String] = [:]
   private var formulas = Set<Int>()
+  private var isoDates = Set<Int>()
   private var text = ""
   private var type = ""
   private var collecting = false
@@ -169,6 +237,7 @@ private final class SheetXML: NSObject, XMLParserDelegate {
       column = -1
       cells = [:]
       formulas = []
+      isoDates = []
     case "c":
       let next = attrs["r"].flatMap { Self.column($0, row: row) } ?? (attrs["r"] == nil ? column + 1 : -1)
       guard next > column, next < 64 else { parser.abortParsing(); return }
@@ -198,9 +267,10 @@ private final class SheetXML: NSObject, XMLParserDelegate {
         cells[column] = strings[index]
       } else if type != "e" { cells[column] = text }
       if formula { formulas.insert(column) }
+      if type == "d" { isoDates.insert(column) }
     case "row":
       if !cells.isEmpty || !formulas.isEmpty {
-        rows.append(.init(number: row, cells: cells, formulas: formulas))
+        rows.append(.init(number: row, cells: cells, formulas: formulas, isoDates: isoDates))
       }
     default: break
     }

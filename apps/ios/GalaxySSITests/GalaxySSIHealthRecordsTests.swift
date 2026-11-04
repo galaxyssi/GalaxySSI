@@ -365,6 +365,28 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try GalaxySSIHealthXLSX(damaged))
   }
 
+  func testXLSXTypedDatesPreserveOffsetAndRejectAmbiguousWallTimes() throws {
+    let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let expected = ISO8601DateFormatter().date(from: "2025-11-02T05:30:00Z")
+    XCTAssertEqual(GalaxySSIHealthXLSX.isoDate("2025-11-02T01:30:00-04:00", zone: utc, dateOnlyMinute: nil), expected)
+    XCTAssertNil(GalaxySSIHealthXLSX.isoDate("2025-11-02T01:30:00", zone: zone, dateOnlyMinute: nil))
+    XCTAssertNil(GalaxySSIHealthXLSX.isoDate("2025-03-09T02:30:00", zone: zone, dateOnlyMinute: nil))
+    XCTAssertNil(GalaxySSIHealthXLSX.isoDate("2025-02-30T12:00:00Z", zone: utc, dateOnlyMinute: nil))
+    XCTAssertNil(GalaxySSIHealthXLSX.isoDate("2025-11-02", zone: zone, dateOnlyMinute: nil))
+    XCTAssertEqual(GalaxySSIHealthXLSX.isoDate("2025-11-02", zone: zone, dateOnlyMinute: 720),
+                   ISO8601DateFormatter().date(from: "2025-11-02T17:00:00Z"))
+    let table = GalaxySSIHealthTableImport.Table(headers: ["Value", "Time"],
+      rows: [["61", "2025-11-02T01:30:00-04:00"], ["62", "44500"]], rowNumbers: [4, 9],
+      formulas: [[], []], date1904: false, isoDates: [[1], []])
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1,
+      confirmedUnit: true, dateStyle: .excel, localZone: zone)
+    let rows = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: [])
+    XCTAssertEqual(rows.map(\.status), [.ready, .ready])
+    XCTAssertEqual(rows.first?.reading?.measuredAt, expected)
+    XCTAssertEqual(rows.first?.rawDate, "2025-11-02T01:30:00-04:00")
+  }
+
   func testPaperEdgeSuggestionConvertsOriginAndRejectsClippedOrSmallRectangles() throws {
     let accepted = try XCTUnwrap(GalaxySSIHealthPaperEdges.paddedCrop(
       visionBounds: CGRect(x: 0.15, y: 0.10, width: 0.6, height: 0.5)))
