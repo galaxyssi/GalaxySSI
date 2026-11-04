@@ -129,6 +129,7 @@ class HealthPrivacyActivity : Activity() {
             HealthAccessSource.MANUAL -> add(getString(R.string.health_privacy_scope_manual))
             HealthAccessSource.ORIGINAL -> add(getString(R.string.health_privacy_scope_original))
             HealthAccessSource.BLUETOOTH -> add(getString(R.string.health_trend_choose_bluetooth))
+            HealthAccessSource.HEALTH_CONNECT -> add(getString(R.string.health_trend_choose_platform))
             HealthAccessSource.ALL -> Unit
         }
         scope.format?.takeUnless { it == HealthAccessFormat.ORIGINAL }?.let { add(it.name) }

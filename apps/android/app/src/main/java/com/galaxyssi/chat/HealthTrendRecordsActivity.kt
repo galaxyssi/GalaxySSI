@@ -177,6 +177,7 @@ class HealthTrendRecordsActivity : Activity() {
         val source = when {
             spec.source.manualOnly -> getString(R.string.health_source_manual)
             spec.source.bluetoothGroup.isNotEmpty() -> healthBluetoothTrendLabel(spec.source.bluetoothGroup, sourceName)
+            spec.source.platformOrigin.isNotEmpty() -> healthConnectTrendLabel(spec.source.platformOrigin, spec.metric)
             spec.source.originalId.isBlank() -> getString(R.string.health_trend_all_sources)
             else -> sourceName.ifBlank { getString(R.string.health_trend_original_source, spec.source.originalId.take(8)) }
         }
@@ -195,8 +196,11 @@ class HealthTrendRecordsActivity : Activity() {
         if (page.records.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_records)), 20)
         page.records.forEach { record ->
             val time = Instant.ofEpochMilli(record.draft.measuredAt).atZone(spec.zone).format(DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm"))
-            val source = if (record.source == "bluetooth") healthBluetoothTrendLabel(record.bluetoothGroup, record.platformOrigin)
-                else getString(healthRecordSourceResource(record.source))
+            val source = when (record.source) {
+                "bluetooth" -> healthBluetoothTrendLabel(record.bluetoothGroup, record.platformOrigin)
+                "health_connect" -> healthConnectTrendLabel(record.platformOrigin, record.draft.metric)
+                else -> getString(healthRecordSourceResource(record.source))
+            }
             ui.add(content, ui.row(healthDisplayValue(record.draft), "$time \u00b7 $source") {
                 if (numeric || fixedVersion) openRevision(record.id, record.revision)
                 else startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id).putHealthNavigationFixture(names))

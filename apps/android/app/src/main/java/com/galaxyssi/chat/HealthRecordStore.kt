@@ -329,12 +329,17 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return HealthRecordPage(visible, if (records.size > limit) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
 
-    fun trendChunk(spec: HealthTrendSpec, after: HealthPageCursor? = null, signal: android.os.CancellationSignal? = null): HealthRecordPage {
+    fun trendChunk(spec: HealthTrendSpec, after: HealthPageCursor? = null, signal: android.os.CancellationSignal? = null): HealthRecordPage =
+        trendChunk(spec, after, signal, platformCandidates = spec.source.platformOrigin.isNotEmpty())
+
+    private fun trendChunk(spec: HealthTrendSpec, after: HealthPageCursor?, signal: android.os.CancellationSignal?,
+                           platformCandidates: Boolean): HealthRecordPage {
         val conditions = arrayListOf("deleted=0", "metric=?", "measured_at>=?", "measured_at<?")
         val args = arrayListOf(spec.metric.name, spec.from.toString(), spec.until.toString())
         if (spec.source.originalId.isNotBlank()) { conditions += "original_id=?"; args += spec.source.originalId }
         if (spec.source.manualOnly) conditions += "original_id IS NULL AND external_key IS NULL"
         if (spec.source.bluetoothGroup.isNotEmpty()) { conditions += "bluetooth_group=?"; args += spec.source.bluetoothGroup }
+        if (platformCandidates) conditions += "external_key IS NOT NULL AND bluetooth_group IS NULL"
         if (after != null) { conditions += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(after.measuredAt.toString(), after.measuredAt.toString(), after.id) }
         val rows = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE ${conditions.joinToString(" AND ")} " +
             "ORDER BY measured_at DESC,id DESC LIMIT ${PAGE_SIZE + 1}", args.toTypedArray(), signal).use { cursor -> buildList {
@@ -527,6 +532,24 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 it.platformOrigin
             }
         }
+    }
+
+    fun trendPlatformOrigins(spec: HealthTrendSpec, after: String = "", signal: android.os.CancellationSignal? = null): List<String> {
+        val scope = spec.copy(source = HealthTrendSource())
+        val origins = java.util.TreeSet<String>()
+        var cursor: HealthPageCursor? = null
+        do {
+            signal?.throwIfCanceled()
+            val page = trendChunk(scope, cursor, signal, platformCandidates = true)
+            for (record in page.records) {
+                if (record.source != "health_connect" || record.platformOrigin <= after ||
+                    !validHealthTrendPlatformOrigin(record.platformOrigin)) continue
+                origins.add(record.platformOrigin)
+                if (origins.size > PAGE_SIZE + 1) origins.pollLast()
+            }
+            cursor = page.next
+        } while (cursor != null)
+        return origins.toList()
     }
 
     @Synchronized fun save(draft: HealthDraft): HealthSaveResult {

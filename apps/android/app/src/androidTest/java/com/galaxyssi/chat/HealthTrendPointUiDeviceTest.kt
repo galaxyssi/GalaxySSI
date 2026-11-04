@@ -126,22 +126,7 @@ class HealthTrendPointUiDeviceTest {
             choose(trend, "health-trend-source", 3)
             val expected = trend.healthBluetoothTrendLabel(first.bluetoothGroup, first.platformOrigin)
             val excluded = trend.healthBluetoothTrendLabel(other.bluetoothGroup, other.platformOrigin)
-            val end = SystemClock.elapsedRealtime() + 12_000
-            var selected = false
-            do {
-                instrumentation.runOnMainSync {
-                    val list = WindowInspector.getGlobalWindowViews().flatMap(::descendants).filterIsInstance<ListView>().lastOrNull()
-                    if (list != null) {
-                        val choices = (0 until list.count).map { list.adapter.getItem(it).toString() }
-                        if (expected in choices && excluded in choices) {
-                            val index = choices.indexOf(expected)
-                            selected = list.performItemClick(list.getChildAt(index), index, list.adapter.getItemId(index))
-                        }
-                    }
-                }
-                if (!selected) SystemClock.sleep(50)
-            } while (!selected && SystemClock.elapsedRealtime() < end)
-            assertTrue("Both same-name Bluetooth sources should be selectable", selected)
+            chooseSourceLabel(expected, excluded)
             await(trend) { has(it, "health-trend-latest-record") && it.window.decorView.findViewWithTag<View>("health-trend-chart").width > 0 &&
                 descendants(it.window.decorView.findViewWithTag<View>("health-trend-source")).filterIsInstance<TextView>().any { label ->
                     label.text.toString() == expected
@@ -167,6 +152,73 @@ class HealthTrendPointUiDeviceTest {
                 await(trend) { has(it, "health-trend-latest-record") }
             } finally { finish(cohort) }
         }
+    }
+
+    @Test fun healthConnectFilterShowsOnlyTheSelectedApplicationAndItsRevisionSource() = fixture { names ->
+        val date = day
+        val origin = "com.fixture.first"
+        val other = "com.fixture.second"
+        val (wanted, excluded) = HealthRecordStore(context, names.records).use { store ->
+            val entries = listOf(origin, origin, other).mapIndexed { index, app ->
+                HealthConnectMeasurement("sample-$index", app, HealthDraft(HealthMetric.WEIGHT,
+                    mapOf("weight" to "${65 + index}"), "kg", time + (index + 1) * 60_000L))
+            }
+            assertEquals(3, store.importHealthConnect(entries) {})
+            val page = store.page(metric = HealthMetric.WEIGHT).records
+            page.first { it.platformOrigin == origin } to page.first { it.platformOrigin == other }
+        }
+        val intent = Intent(context, HealthTrendActivity::class.java).putExtra("health_metric", HealthMetric.WEIGHT.name)
+            .putHealthNavigationFixture(names)
+        ActivityScenario.launch<HealthTrendActivity>(intent).use { scenario ->
+            lateinit var trend: HealthTrendActivity
+            scenario.onActivity { trend = it }
+            await(trend) { has(it, "health-trend-latest-record") }
+            choose(trend, "health-trend-source", 4)
+            val expected = trend.healthConnectTrendLabel(origin, HealthMetric.WEIGHT)
+            chooseSourceLabel(expected, trend.healthConnectTrendLabel(other, HealthMetric.WEIGHT))
+            await(trend) { has(it, "health-trend-latest-record") && it.window.decorView.findViewWithTag<View>("health-trend-chart").width > 0 &&
+                descendants(it.window.decorView.findViewWithTag<View>("health-trend-source")).filterIsInstance<TextView>().any { label ->
+                    label.text.toString() == expected
+                } }
+            val cohort = open(HealthTrendRecordsActivity::class.java) { tapPoint(trend, date) }
+            try {
+                await(cohort) { has(it, "health-trend-audit-result") }
+                assertEquals(2, contributorCount(cohort))
+                instrumentation.runOnMainSync {
+                    assertEquals(expected, text(cohort, "health-trend-audit-source"))
+                    assertTrue(has(cohort, rowTag(wanted)))
+                    assertFalse(has(cohort, rowTag(excluded)))
+                }
+                val revision = open(HealthRecordRevisionActivity::class.java) { tap(cohort, rowTag(wanted)) }
+                try {
+                    await(revision) { has(it, "health-revision-platform") }
+                    instrumentation.runOnMainSync { assertEquals(expected, text(revision, "health-revision-platform")) }
+                    back(revision)
+                } finally { finish(revision) }
+                await(cohort) { has(it, rowTag(wanted)) }
+                back(cohort)
+                await(trend) { has(it, "health-trend-latest-record") }
+            } finally { finish(cohort) }
+        }
+    }
+
+    private fun chooseSourceLabel(expected: String, other: String) {
+        val end = SystemClock.elapsedRealtime() + 12_000
+        var selected = false
+        do {
+            instrumentation.runOnMainSync {
+                val list = WindowInspector.getGlobalWindowViews().flatMap(::descendants).filterIsInstance<ListView>().lastOrNull()
+                if (list != null) {
+                    val choices = (0 until list.count).map { list.adapter.getItem(it).toString() }
+                    if (expected in choices && other in choices) {
+                        val index = choices.indexOf(expected)
+                        selected = list.performItemClick(list.getChildAt(index), index, list.adapter.getItemId(index))
+                    }
+                }
+            }
+            if (!selected) SystemClock.sleep(50)
+        } while (!selected && SystemClock.elapsedRealtime() < end)
+        assertTrue("Both sources should be selectable", selected)
     }
 
     private fun id() = UUID.randomUUID().toString()

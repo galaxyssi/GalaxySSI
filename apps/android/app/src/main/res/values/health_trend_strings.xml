@@ -10,6 +10,8 @@
     <string name="health_trend_choose_original">Choose an original source</string>
     <string name="health_trend_choose_bluetooth">Bluetooth device</string>
     <string name="health_trend_no_bluetooth">No identified Bluetooth devices in this period</string>
+    <string name="health_trend_choose_platform">Health Connect source</string>
+    <string name="health_trend_no_platform">No Health Connect sources in this period</string>
     <string name="health_trend_bluetooth_label">%1$s · %2$s</string>
     <string name="health_trend_bluetooth_unidentified">%1$s · Device not identified</string>
     <string name="health_trend_original_source">Original · %1$s</string>
