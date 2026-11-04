@@ -325,6 +325,72 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(savedReview.frozenCloudReads?.first?.evidenceId, source["evidence_id"]?.stringValue)
   }
 
+  func testCommittedPredictionOutcomeRecoveryRequiresMatchingFrozenObservation() throws {
+    let suite = "prediction-recovery-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let database = try AgentTeamHistoryDatabase(fileURL: file,
+      storageKey: AgentTeamExecutionHistoryStore.defaultStorageKey, secrets: secrets)
+    for matches in [true, false] {
+      var team = durableTeamSnapshot("prediction-\(matches)")
+      team.members[1].status = .succeeded
+      XCTAssertTrue(history.upsert(team))
+      let member = team.members[1]
+      let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+        turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+      let reference = AgentCollaborationResearchReference(objectId: "outcome-\(matches)", revision: 1, sha256: "revision")
+      let draft = AgentCollaborationResearchDraft(id: "outcome", objectId: nil, baseRevision: 0, kind: .predictionOutcome,
+        title: "Outcome", body: [:], parents: [],
+        observations: [["evidence_id": .string("original"), "sha256": .string("expected")]])
+      let revision = AgentCollaborationResearchRevision(reference: reference, previousHash: nil, runId: scope.runId,
+        turnId: scope.turnId, authorId: scope.memberId, sourceId: scope.sourceId, draft: draft,
+        frozenCloudReads: [.init(evidenceId: "original", sha256: matches ? "expected" : "changed", totalCharacters: 10)])
+      let key = "publication:" + AgentMcpJSONCodec.sha256([
+        "run": .string(scope.runId), "member": .string(scope.memberId), "source": .string(scope.sourceId)
+      ])
+      try database.transaction {
+        try database.insertResearchRecord(revision, conversationId: scope.conversationId,
+          key: "object:" + reference.objectId, revision: reference.revision)
+        try database.insertResearchRecord(AgentCollaborationResearchPublication(requestHash: "request", references: [reference]),
+          conversationId: scope.conversationId, key: key, revision: 0)
+      }
+      let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+        executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+      if matches {
+        XCTAssertEqual(try reopened.committedResearchRevisions(scope: scope)?.first?.reference, reference)
+      } else {
+        XCTAssertThrowsError(try reopened.committedResearchRevisions(scope: scope))
+      }
+    }
+  }
+
+  func testDirectedRequestsKeepLongQuestionsAndSeparateCandidateIdentities() throws {
+    var team = durableTeamSnapshot("run")
+    team.members[1].researchStage = "EXPLORE"
+    let sender = team.members[1]
+    let question = String(repeating: "q", count: 1_300)
+    func request(_ candidate: String, recipient: String = "primary") -> AgentMcpJSONValue {
+      .object(["to": .array([.string(recipient)]), "question": .string(question), "candidate_id": .string(candidate)])
+    }
+    var envelope: AgentMcpJSONObject = ["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+      "requests": .array([request("a"), request("b"), request("a"), request("c")])]
+    let roster: Set<String> = ["primary", "review"]
+    let rows = try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(envelope),
+      team: team, sender: sender, rosterMemberIds: roster)
+    XCTAssertEqual(rows.count, 3)
+    XCTAssertEqual(Set(rows.map(\.messageId)).count, 3)
+    XCTAssertTrue(rows.allSatisfy { $0.text == question && $0.toInstanceId == "primary" })
+    XCTAssertTrue(AgentCollaborationDirectedRequests.prompt(rows).contains(#""candidate_id":"b""#))
+    envelope["requests"] = .array([request("a", recipient: "foreign")])
+    XCTAssertThrowsError(try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(envelope),
+      team: team, sender: sender, rosterMemberIds: roster))
+  }
+
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
     XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
     let raw = """
@@ -1102,7 +1168,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(restored.members[index].elapsedExecutionMillis(now: 100, team: restored), 30)
   }
 
-  func testCollaborationResultsStayInTheirConversationAfterReopen() {
+  func testCollaborationResultsStayInTheirConversationAfterReopen() throws {
     let suite = "team-results-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -1119,10 +1185,14 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(history.upsert(other))
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
-    let scoped = reopened.collaborationResults(conversationId: first.conversationId, limit: 20)
+    let scoped = try reopened.readCollaborationResults(conversationId: first.conversationId, limit: 20)
     XCTAssertEqual(scoped.map(\.supervisorRunId), ["first"])
     XCTAssertEqual(scoped.first?.members.first?.displayName, "Original member name")
     XCTAssertTrue(reopened.collaborationResults(conversationId: "", limit: 20).isEmpty)
+    XCTAssertTrue(try reopened.readCollaborationResults(conversationId: "empty", limit: 20).isEmpty)
+    let unavailable = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root)
+    XCTAssertThrowsError(try unavailable.readCollaborationResults(conversationId: first.conversationId, limit: 20))
   }
 
   func testObserverRecoveryPersistsFullFailureAndRejectsPreviewOnlyDuplicateProof() throws {
@@ -1418,6 +1488,79 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(reopened.snapshot(supervisorRunId: "new"))
   }
 
+  func testPrimaryRecallRequiresCurrentGenerationAndCannotReopenTerminalGeneration() {
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "primary", conversationId: "group",
+      turnId: "turn", sourceMessageId: "source", contactId: "codex", deliveryMode: .respond)
+    XCTAssertFalse(owner.permitsRecall(generation: 1))
+    let first = owner.observingPrimaryRecall(.init(generation: 1, sequence: 10), terminal: false)
+    XCTAssertTrue(first.permitsRecall(generation: 1))
+    let closed = first.observingPrimaryRecall(.init(generation: 1), terminal: true)
+    XCTAssertFalse(closed.permitsRecall(generation: 1))
+    XCTAssertFalse(closed.observingPrimaryRecall(.init(generation: 1, sequence: 11), terminal: false)
+      .permitsRecall(generation: 1))
+    let resumed = closed.observingPrimaryRecall(.init(generation: 2, sequence: 1), terminal: false)
+    XCTAssertFalse(resumed.permitsRecall(generation: 1))
+    XCTAssertTrue(resumed.permitsRecall(generation: 2))
+  }
+
+  func testDesktopGoalRecallCursorBindsOriginalSectionAndAssignment() {
+    let recall = AgentDesktopCollaborationArchiveRecall.self
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group",
+      turnId: "turn", memberId: "review", sourceId: "source")
+    let hash = String(repeating: "a", count: 64)
+    let cursor = recall.goalCursor(scope: scope, generation: 1, section: "criteria", hash: hash, offset: 8_192)
+    var request: AgentMcpJSONObject = ["mode": .string("goal_contract"), "section": .string("criteria"),
+      "cursor": .string(cursor)]
+    XCTAssertEqual(recall.goalSelector(request, scope: scope, generation: 1)?["offset"], .int(8_192))
+    XCTAssertEqual(recall.goalSelector(request, scope: scope, generation: 1)?["sha256"], .string(hash))
+    XCTAssertNil(recall.goalSelector(request, scope: scope, generation: 2))
+    var other = scope
+    other.sourceId = "other"
+    XCTAssertNil(recall.goalSelector(request, scope: other, generation: 1))
+    request["section"] = .string("goal")
+    XCTAssertNil(recall.goalSelector(request, scope: scope, generation: 1))
+  }
+
+  func testDecisionContextPrefersRecentWholeDependencyAndKeepsOriginalSelector() {
+    let long = String(repeating: "\u{1F642}", count: 200)
+    let recent = String(repeating: "r", count: 200)
+    let context = AgentCollaborationDecisionContext.dependencyLines([("old", long), ("recent", recent)], maximumBytes: 400)
+    XCTAssertTrue(context.omitted)
+    XCTAssertTrue(context.lines[0].contains("archive_record_id="))
+    XCTAssertFalse(context.lines[0].contains(long))
+    XCTAssertTrue(context.lines[1].hasSuffix(recent))
+    XCTAssertLessThanOrEqual(context.lines.joined(separator: "\n").utf8.count, 400)
+    let preview = AgentCollaborationDecisionContext.dependencyLines([("old", long)], maximumBytes: 1,
+      recallAvailable: false)
+    XCTAssertTrue(preview.lines[0].hasSuffix(long))
+  }
+
+  func testDesktopObserverRecallCanUseAuthenticatedEventsBeforeText() {
+    let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "observer", conversationId: "group",
+      turnId: "turn", sourceMessageId: "source", contactId: "codex", deliveryMode: .observe)
+    let first = owner.observingRecallEvent(.init(generation: 2, sequence: 4), terminal: false)
+    XCTAssertNil(first.observedGeneration)
+    XCTAssertTrue(first.permitsRecall(generation: 2))
+    XCTAssertFalse(first.observingRecallEvent(.init(generation: 1, sequence: 99), terminal: false)
+      .permitsRecall(generation: 1))
+    let closed = first.observingRecallEvent(.init(generation: 2, sequence: 5), terminal: true)
+    XCTAssertFalse(closed.observingRecallEvent(.init(generation: 2, sequence: 4), terminal: false)
+      .permitsRecall(generation: 2))
+  }
+
+  func testDesktopArchiveRecallAcceptsOnlyScopedRecordSelectors() {
+    let id = AgentDesktopCollaborationArchiveRecall.recordId(memberId: "review")
+    let query: AgentMcpJSONObject = ["mode": .string("archive"), "record_id": .string(id), "offset": .int(8_192)]
+    XCTAssertEqual(AgentDesktopCollaborationArchiveRecall.selector(query)?.recordId, id)
+    XCTAssertEqual(AgentDesktopCollaborationArchiveRecall.selector(query)?.offset, 8_192)
+    var invalid = query
+    invalid["member_id"] = .string("review")
+    XCTAssertNil(AgentDesktopCollaborationArchiveRecall.selector(invalid))
+    invalid = query
+    invalid["offset"] = .int(-1)
+    XCTAssertNil(AgentDesktopCollaborationArchiveRecall.selector(invalid))
+  }
+
   func testDependencyRecallRequiresPinnedDirectDependencyAndExactReply() throws {
     let suite = "team-dependency-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -1451,6 +1594,46 @@ extension GalaxySSIStoreTests {
     input["member_id"] = .string("review")
     history.removeResearchObjects(conversationId: team.conversationId)
     XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope))
+  }
+
+  func testMailboxMigratesWithoutEvictingOldPendingMessages() throws {
+    let suite = "team-mailbox-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let key = "mailbox"
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("mailbox.sqlite3")
+    let legacy = (1...5_001).map { index in
+      AgentTeamMessageEnvelope(messageId: "message-\(index)", teamId: "team", conversationId: "group",
+        supervisorRunId: "run", fromInstanceId: "author", toInstanceId: "reviewer",
+        kind: .review, text: "Review", sequence: Int64(index), state: index == 1 ? .pending : .acknowledged)
+    }
+    XCTAssertTrue(GalaxySSIEncryptedUserDefaultsStore.write(try JSONEncoder().encode(legacy),
+      defaults: defaults, key: key, secrets: secrets))
+    let mailbox = UserDefaultsAgentTeamMailbox(defaults: defaults, key: key, secrets: secrets, fileURL: file)
+    XCTAssertEqual(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").map(\.sequence), [1])
+    XCTAssertNil(defaults.data(forKey: key + ".encrypted.v1"))
+    let reopened = UserDefaultsAgentTeamMailbox(defaults: defaults, key: key, secrets: secrets, fileURL: file)
+    XCTAssertEqual(try reopened.append(legacy[0]).sequence, 1)
+    XCTAssertEqual(reopened.acknowledge(messageId: "message-1", atMillis: 1)?.state, .acknowledged)
+    XCTAssertTrue(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").isEmpty)
+    XCTAssertEqual(mailbox.messages(supervisorRunId: "run", instanceId: "reviewer", afterSequence: 5_000).count, 1)
+    XCTAssertEqual(mailbox.messages(supervisorRunId: "run", instanceId: "unrelated", afterSequence: 0).count, 0)
+    let recent = try reopened.recentMessages(supervisorRunId: "run", conversationId: "group")
+    XCTAssertEqual(recent.map(\.sequence), Array(Int64(4_982)...5_001))
+    XCTAssertThrowsError(try reopened.recentMessages(supervisorRunId: "run", conversationId: "other"))
+    XCTAssertTrue(try reopened.recentMessages(supervisorRunId: "missing", conversationId: "group").isEmpty)
+    var added = legacy[0]
+    added.messageId = "new-request"
+    var invalid = added
+    invalid.messageId = "invalid-request"
+    invalid.text = ""
+    XCTAssertThrowsError(try reopened.appendAll([added, invalid]))
+    XCTAssertTrue(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").isEmpty)
+    let batch = try reopened.appendAll([legacy[0], added, added])
+    XCTAssertEqual(batch.map(\.sequence), [1, 5_002, 5_002])
+    XCTAssertEqual(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").map(\.messageId), ["new-request"])
   }
 
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {

@@ -21,7 +21,7 @@ struct AgentTeamReplyObservation: Equatable {
     valid = valid && (rawGeneration == nil || generation != nil) && (rawSequence == nil || sequence != nil)
   }
 
-  private static func integer(_ value: Any?) -> Int64? {
+  static func integer(_ value: Any?) -> Int64? {
     if let text = value as? String { return Int64(text) }
     guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
           number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 9_007_199_254_740_991,
@@ -40,6 +40,32 @@ struct AgentTeamReplyOwner: Codable, Equatable {
   var deliveryMode: AgentDeliveryMode
   var observedGeneration: Int64? = nil
   var observedSequence: Int64? = nil
+  var closedRecallGeneration: Int64? = nil
+  var recallEventGeneration: Int64? = nil
+
+  func observingPrimaryRecall(_ observation: AgentTeamReplyObservation, terminal: Bool) -> Self {
+    guard deliveryMode == .respond, observation.valid, let generation = observation.generation else { return self }
+    var next = accepts(observation) ? advancing(observation) : self
+    if terminal, max(next.observedGeneration ?? 0, next.recallEventGeneration ?? 0) == generation {
+      next.closedRecallGeneration = generation
+    }
+    return next
+  }
+
+  func permitsRecall(generation: Int64) -> Bool {
+    AgentRemoteOutcomePolicy.validGeneration(generation) &&
+      max(observedGeneration ?? 0, recallEventGeneration ?? 0) == generation && closedRecallGeneration != generation
+  }
+
+  func observingRecallEvent(_ observation: AgentTeamReplyObservation, terminal: Bool) -> Self {
+    guard deliveryMode == .respond || deliveryMode == .observe,
+          observation.valid, let generation = observation.generation,
+          generation >= max(observedGeneration ?? 0, recallEventGeneration ?? 0) else { return self }
+    var next = self
+    next.recallEventGeneration = generation
+    if terminal { next.closedRecallGeneration = generation }
+    return next
+  }
 
   func accepts(_ observation: AgentTeamReplyObservation) -> Bool {
     guard observation.valid else { return false }
@@ -235,7 +261,13 @@ final class AgentTeamExecutionHistoryStore {
       guard let saved = try database.snapshots(runId: owner.supervisorRunId).first,
             let member = saved.members.first(where: { $0.memberId == owner.memberId &&
               $0.sourceMessageId == source && $0.agentId == contact }), saved.state != .cancelled else { return .retired }
-      if owner.deliveryMode == .respond { return .primary }
+      if owner.deliveryMode == .respond {
+        if persistObservation {
+          let next = owner.observingPrimaryRecall(observation, terminal: terminal)
+          if next != owner { try database.updateReplyOwner(next) }
+        }
+        return .primary
+      }
       guard owner.accepts(observation) else { return .observerStale }
       if (member.status.isTerminal && member.status != .interrupted) || saved.state.deliverable {
         let expected = success ? AgentSubagentStatus.succeeded : .failed
@@ -291,6 +323,16 @@ final class AgentTeamExecutionHistoryStore {
         }
       }
       return (owners, page.next)
+    }
+  }
+
+  func observeDesktopRecallEvent(source: String, conversation: String, turn: String, contact: String,
+                                 observation: AgentTeamReplyObservation, terminal: Bool) throws {
+    try access { database in
+      guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact)
+      else { return }
+      let next = owner.observingRecallEvent(observation, terminal: terminal)
+      if next != owner { try database.updateReplyOwner(next) }
     }
   }
 
@@ -1346,7 +1388,9 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          guard [.acceptanceReview, .environmentModel, .teamExchange, .failureExperience, .innovationOpportunity, .experimentResult, .capabilityLesson].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
+          guard [.acceptanceReview, .environmentModel, .teamExchange, .failureExperience, .innovationOpportunity,
+                 .experimentResult, .predictionOutcome, .capabilityLesson].contains(revision.draft.kind),
+                let reads = revision.frozenCloudReads,
                 reads.count == citations.count,
                 zip(reads, citations).allSatisfy({ pair in
                   pair.0.evidenceId == pair.1.string("evidence_id") &&
@@ -1442,10 +1486,14 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func collaborationResults(conversationId: String, limit: Int) -> [AgentTeamExecutionSnapshot] {
+    (try? readCollaborationResults(conversationId: conversationId, limit: limit)) ?? []
+  }
+
+  func readCollaborationResults(conversationId: String, limit: Int) throws -> [AgentTeamExecutionSnapshot] {
     guard !conversationId.isBlank, limit > 0 else { return [] }
-    return (try? access {
+    return try access {
       try $0.snapshots(conversation: conversationId, limit: min(limit, Self.maxSnapshots))
-    }) ?? []
+    }
   }
 
   func latestCollaborationRun(conversationId: String) -> AgentTeamExecutionSnapshot? {

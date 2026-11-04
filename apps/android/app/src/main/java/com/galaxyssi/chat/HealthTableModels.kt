@@ -14,7 +14,7 @@ import org.json.JSONObject
 
 internal enum class HealthTableState { READING, SHEET_SELECTION, MAPPING, VALIDATING, READY, SAVING, SAVED, UNDOING, UNDONE, FAILED }
 internal val HealthTableState.working: Boolean get() = this in listOf(HealthTableState.READING, HealthTableState.VALIDATING, HealthTableState.SAVING, HealthTableState.UNDOING)
-internal enum class HealthTableRowState { PENDING, VALID, DUPLICATE, MISSING, INVALID, SAVED, UNDONE, EDITED }
+internal enum class HealthTableRowState { PENDING, VALID, DUPLICATE, MISSING, INVALID, SAVED, LINKED, UNDONE, UNLINKED, EDITED }
 internal enum class HealthTableDate(val pattern: String) {
     ISO("ISO 8601"), YMD("uuuu-MM-dd HH:mm"), YMD_SECONDS("uuuu-MM-dd HH:mm:ss"),
     SLASH_YMD("uuuu/MM/dd HH:mm"), DMY("dd/MM/uuuu HH:mm"), MDY("MM/dd/uuuu HH:mm"), EXCEL("Excel")
@@ -63,18 +63,19 @@ internal data class HealthTableBatch(
     val headers: List<String> = emptyList(), val rows: Long = 0, val cursor: Long = 0,
     val state: HealthTableState = HealthTableState.READING, val mapping: HealthTableMapping = HealthTableMapping(),
     val mappingRevision: Int = 0, val error: String = "", val sheets: List<HealthXlsxSheet> = emptyList(),
-    val sheetIndex: Int = -1, val headerRow: Int = 1, val date1904: Boolean = false
+    val sheetIndex: Int = -1, val headerRow: Int = 1, val date1904: Boolean = false, val linkDuplicates: Boolean = false
 ) {
     fun json() = JSONObject().put("id", id).put("original", originalId).put("sha256", sha256).put("name", name).put("format", format)
         .put("headers", org.json.JSONArray(headers)).put("rows", rows).put("cursor", cursor).put("state", state.name)
         .put("mapping", mapping.json()).put("revision", mappingRevision).put("error", error)
         .put("sheets", org.json.JSONArray(sheets.map { it.json() })).put("sheet_index", sheetIndex).put("header_row", headerRow).put("date_1904", date1904)
+        .put("link_duplicates", linkDuplicates)
     companion object {
         fun from(j: JSONObject) = HealthTableBatch(j.getString("id"), j.getString("original"), j.getString("sha256"), j.getString("name"),
             j.getString("format"), j.getJSONArray("headers").let { a -> (0 until a.length()).map(a::getString) }, j.getLong("rows"),
             j.getLong("cursor"), HealthTableState.valueOf(j.getString("state")), HealthTableMapping.from(j.getJSONObject("mapping")),
             j.getInt("revision"), j.getString("error"), j.optJSONArray("sheets")?.let { a -> (0 until a.length()).map { HealthXlsxSheet.from(a.getJSONObject(it)) } }.orEmpty(),
-            j.optInt("sheet_index", -1), j.optInt("header_row", 1), j.optBoolean("date_1904"))
+            j.optInt("sheet_index", -1), j.optInt("header_row", 1), j.optBoolean("date_1904"), j.optBoolean("link_duplicates"))
     }
 }
 internal data class HealthTablePreview(val row: HealthTableRow, val state: HealthTableRowState, val issue: String, val recordId: String = "")

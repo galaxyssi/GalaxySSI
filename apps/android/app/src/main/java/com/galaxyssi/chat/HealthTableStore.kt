@@ -106,14 +106,15 @@ internal class HealthTableStore(context: Context, private val name: String = "he
     }
     fun counts(id: String) = HealthTableCounts(db.rawQuery("SELECT state,COUNT(*) FROM health_table_rows WHERE batch_id=? GROUP BY state", arrayOf(id))
         .use { cursor -> buildMap { while (cursor.moveToNext()) put(HealthTableRowState.valueOf(cursor.getString(0)), cursor.getLong(1)) } })
-    fun confirmSave(id: String, expectedRevision: Int) = transaction {
+    fun confirmSave(id: String, expectedRevision: Int, linkDuplicates: Boolean = false) = transaction {
         val batch = requireNotNull(batch(id))
         check(batch.mappingRevision == expectedRevision && batch.state == HealthTableState.READY && batch.cursor == batch.rows)
         require(batch.mapping.valid(batch.headers))
-        put(batch.copy(state = HealthTableState.SAVING, cursor = 0))
+        put(batch.copy(state = HealthTableState.SAVING, cursor = 0, linkDuplicates = linkDuplicates))
     }
     fun undo(id: String) = transaction {
         val batch = requireNotNull(batch(id)); check(batch.state == HealthTableState.SAVED)
+        if (batch.linkDuplicates) records.removeTableSourceLinks(id, batch.mapping.metric)
         put(batch.copy(state = HealthTableState.UNDOING, cursor = 0))
     }
     fun pause(id: String) = transaction {
@@ -150,16 +151,25 @@ internal class HealthTableStore(context: Context, private val name: String = "he
                         if (existing != null || earlier) { state = HealthTableRowState.DUPLICATE; recordId = existing.orEmpty() }
                     }
                 }
-                HealthTableState.SAVING -> if (state == HealthTableRowState.VALID) {
+                HealthTableState.SAVING -> if (state == HealthTableRowState.VALID || state == HealthTableRowState.DUPLICATE && batch.linkDuplicates) {
                     val evaluation = HealthTablePolicy.evaluate(batch, preview.row)
                     val draft = requireNotNull(evaluation.draft)
-                    when (val result = records.save(draft)) {
+                    if (state == HealthTableRowState.DUPLICATE) {
+                        recordId = records.duplicateFor(draft).orEmpty()
+                        if (recordId.isNotEmpty() && records.linkDuplicateTableSource(draft, recordId)) state = HealthTableRowState.LINKED
+                    } else when (val result = records.save(draft)) {
                         is HealthSaveResult.Saved -> { state = HealthTableRowState.SAVED; recordId = result.record.id; created = result.record.revision }
-                        is HealthSaveResult.Duplicate -> { state = HealthTableRowState.DUPLICATE; recordId = result.id }
+                        is HealthSaveResult.Duplicate -> {
+                            recordId = result.id
+                            state = if (batch.linkDuplicates && records.linkDuplicateTableSource(draft, recordId))
+                                HealthTableRowState.LINKED else HealthTableRowState.DUPLICATE
+                        }
                         HealthSaveResult.Conflict -> error("Table observation revision conflict")
                     }
                 }
-                HealthTableState.UNDOING -> if (state == HealthTableRowState.SAVED) {
+                HealthTableState.UNDOING -> if (state == HealthTableRowState.LINKED) {
+                    state = HealthTableRowState.UNLINKED
+                } else if (state == HealthTableRowState.SAVED) {
                     val createdRevision = db.rawQuery("SELECT created_revision FROM health_table_rows WHERE batch_id=? AND number=?",
                         arrayOf(id, preview.row.number.toString())).use { it.moveToFirst(); it.getInt(0) }
                     val record = records.record(recordId)

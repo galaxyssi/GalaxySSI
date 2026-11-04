@@ -267,7 +267,10 @@
         <activity android:name=".HealthWeeklyActivity" android:exported="false" />
         <activity android:name=".HealthBackgroundActivity" android:exported="false" />
         <activity android:name=".HealthOriginalExportActivity" android:exported="false" />
+        <activity android:name=".HealthOriginalExportHistoryActivity" android:exported="false" />
         <provider android:name=".HealthOriginalContentProvider" android:authorities="${applicationId}.health-originals"
+            android:exported="false" android:grantUriPermissions="true" />
+        <provider android:name=".HealthExportShareProvider" android:authorities="${applicationId}.health-exports"
             android:exported="false" android:grantUriPermissions="true" />
         <service
             android:name=".PhoneScreenRecordingService"

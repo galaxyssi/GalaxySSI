@@ -1,6 +1,33 @@
 import Foundation
 import CryptoKit
 
+enum AgentCollaborationDecisionContext {
+  static func dependencyLines(_ observations: [(String, String)], maximumBytes: Int = 12_000,
+                              recallAvailable: Bool = true)
+    -> (lines: [String], omitted: Bool) {
+    guard recallAvailable else {
+      let lines = observations.map { id, text in
+        "[\(id) output_truncated=\(text.count > 8_000)] \(String(text.prefix(8_000)))"
+      }
+      return (lines, false)
+    }
+    let references = observations.map { id, _ in
+      "[\(id) output_truncated=true archive_record_id=\(AgentDesktopCollaborationArchiveRecall.recordId(memberId: id))]"
+    }
+    var lines = references
+    var budget = max(0, maximumBytes - references.reduce(0) { $0 + $1.utf8.count + 1 })
+    for index in observations.indices.reversed() {
+      let (id, text) = observations[index]
+      let full = "[\(id) output_truncated=false] \(text)"
+      let cost = max(0, full.utf8.count - references[index].utf8.count)
+      guard text.count <= 8_000, cost <= budget else { continue }
+      lines[index] = full
+      budget -= cost
+    }
+    return (lines, lines.indices.contains { lines[$0] == references[$0] })
+  }
+}
+
 enum AgentCollaborationInlineOriginals {
   static func source(goal: String, criteria: Data) -> Data {
     let units = Array(goal.utf16)

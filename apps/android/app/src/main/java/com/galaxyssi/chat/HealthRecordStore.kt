@@ -253,11 +253,11 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
     fun exportChunk(scope: HealthRecordExportScope, after: HealthPageCursor? = null, signal: android.os.CancellationSignal? = null): HealthRecordPage {
+        if (scope.originalId.isNotEmpty()) return originalPage(scope.originalId, after, scope, signal)
         val args = arrayListOf<String>()
         fun conditions(metric: HealthMetric?): String {
             val terms = arrayListOf("deleted=0", "measured_at>=?", "measured_at<?"); args += listOf(scope.from.toString(), scope.until.toString())
             metric?.let { terms += "metric=?"; args += it.name }
-            if (scope.originalId.isNotEmpty()) { terms += "original_id=?"; args += scope.originalId }
             after?.let { terms += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id) }
             return terms.joinToString(" AND ")
         }
@@ -270,11 +270,102 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         val rows = helper.readableDatabase.rawQuery(query, args.toTypedArray(), signal).use { cursor -> buildList {
             while (cursor.moveToNext()) add(decode(cursor).also {
                 check(it.draft.metric in scope.metrics && it.draft.measuredAt >= scope.from && it.draft.measuredAt < scope.until)
-                if (scope.originalId.isNotEmpty()) check(it.draft.evidence?.originalId == scope.originalId) { "Health export source mismatch" }
             })
         } }
         val visible = rows.take(PAGE_SIZE)
         return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
+    }
+
+    /** The original-scoped view projects the selected evidence without changing the stored record. */
+    fun originalPage(originalId: String, after: HealthPageCursor? = null, scope: HealthRecordExportScope? = null,
+                     signal: android.os.CancellationSignal? = null): HealthRecordPage {
+        require(HealthProfilePolicy.uuid(originalId) && (scope == null || scope.originalId == originalId))
+        val args = arrayListOf<String>()
+        fun scoped(time: String = "o.measured_at", id: String = "o.id"): String {
+            val conditions = arrayListOf("o.deleted=0")
+            if (scope != null) {
+                conditions += "$time>=? AND $time<?"
+                args += listOf(scope.from.toString(), scope.until.toString())
+                conditions += "o.metric IN (${scope.metrics.joinToString(",") { "?" }})"
+                args += scope.metrics.map { it.name }
+            }
+            if (after != null) {
+                conditions += "($time,$id)<(?,?)"
+                args += listOf(after.measuredAt.toString(), after.id)
+            }
+            return conditions.joinToString(" AND ")
+        }
+        args += originalId
+        val limit = PAGE_SIZE + 1
+        val primary = "SELECT o.id,o.measured_at FROM observations o WHERE o.original_id=? AND ${scoped()} " +
+            "ORDER BY o.measured_at DESC,o.id DESC LIMIT $limit"
+        args += originalId
+        val secondary = "SELECT DISTINCT l.record_id AS id,l.measured_at FROM health_table_source_links l JOIN observations o " +
+            "ON o.id=l.record_id AND o.revision=l.revision AND o.measured_at=l.measured_at " +
+            "WHERE l.original_id=? AND ${scoped("l.measured_at", "l.record_id")} " +
+            "ORDER BY l.measured_at DESC,l.record_id DESC LIMIT $limit"
+        val database = helper.readableDatabase
+        val rows = database.rawQuery("SELECT o.id,o.revision,o.payload,o.metric,o.measured_at,e.job_id,e.payload FROM observations o JOIN " +
+            "(SELECT id FROM (SELECT * FROM ($primary) UNION SELECT * FROM ($secondary)) " +
+            "ORDER BY measured_at DESC,id DESC LIMIT $limit) candidates " +
+            "ON o.id=candidates.id LEFT JOIN health_table_source_links e ON e.rowid=(" +
+            "SELECT l.rowid FROM health_table_source_links l WHERE l.original_id=? AND l.record_id=o.id " +
+            "AND l.revision=o.revision AND l.measured_at=o.measured_at ORDER BY l.job_id LIMIT 1) " +
+            "ORDER BY o.measured_at DESC,o.id DESC", (args + originalId).toTypedArray(), signal).use { cursor -> buildList {
+            while (cursor.moveToNext()) {
+                val record = decode(cursor)
+                val view = if (record.draft.evidence?.originalId == originalId) record else {
+                    check(!cursor.isNull(5) && !cursor.isNull(6)) { "Health source link missing" }
+                    val evidence = tableSource(record, originalId, cursor.getString(5), cursor.getBlob(6))
+                    record.copy(draft = record.draft.copy(evidence = evidence))
+                }
+                check(view.draft.evidence?.originalId == originalId)
+                check(scope == null || view.draft.metric in scope.metrics && view.draft.measuredAt in scope.from until scope.until)
+                add(view)
+            }
+        } }
+        val visible = rows.take(PAGE_SIZE)
+        return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
+    }
+
+    private fun tableSourceAad(record: HealthObservation, originalId: String, jobId: String) =
+        "$name|health-table-source|${record.id}|${record.revision}|$originalId|$jobId".toByteArray(Charsets.UTF_8)
+
+    private fun tableSource(record: HealthObservation, originalId: String, jobId: String, payload: ByteArray): HealthEvidence {
+        val plain = AgentStorageCipher.decryptBinary(payload, tableSourceAad(record, originalId, jobId))
+        try {
+            return HealthEvidence.from(JSONObject(String(plain, Charsets.UTF_8))).also { evidence ->
+                check(evidence.originalId == originalId && evidence.jobId == jobId && evidence.valid() && evidence.confirmed && evidence.kind == "table")
+            }
+        } finally { plain.fill(0) }
+    }
+
+    internal fun linkDuplicateTableSource(draft: HealthDraft, existingId: String): Boolean {
+        val database = helper.writableDatabase
+        check(database.inTransaction())
+        val evidence = draft.evidence?.takeIf { it.confirmed && it.kind == "table" && it.valid() } ?: return false
+        val existing = record(existingId) ?: return false
+        if (existing.draft.evidence?.originalId == evidence.originalId ||
+            HealthObservationPolicy.duplicateKey(existing) != HealthObservationPolicy.duplicateKey(HealthObservationPolicy.observation(draft))) return false
+        val plain = evidence.json().toString().toByteArray(Charsets.UTF_8)
+        val encrypted = try { AgentStorageCipher.encryptBinary(plain, tableSourceAad(existing, evidence.originalId, evidence.jobId)) }
+        finally { plain.fill(0) }
+        val inserted = try { database.insertWithOnConflict("health_table_source_links", null, ContentValues().apply {
+            put("original_id", evidence.originalId)
+            put("record_id", existing.id)
+            put("revision", existing.revision)
+            put("job_id", evidence.jobId)
+            put("measured_at", existing.draft.measuredAt)
+            put("payload", encrypted)
+        }, SQLiteDatabase.CONFLICT_IGNORE) != -1L } finally { encrypted.fill(0) }
+        if (inserted) changed(existing.draft.metric)
+        return inserted
+    }
+
+    internal fun removeTableSourceLinks(jobId: String, metric: HealthMetric) {
+        val database = helper.writableDatabase
+        check(database.inTransaction())
+        if (database.delete("health_table_source_links", "job_id=?", arrayOf(jobId)) > 0) changed(metric)
     }
     fun trendRecords(spec: HealthTrendSpec, after: HealthPageCursor? = null, numericOnly: Boolean = false,
                      cancelled: () -> Unit = {}, signal: android.os.CancellationSignal? = null): HealthRecordPage {
@@ -637,6 +728,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             createSyncCheckpoints(db)
             HealthOriginalStore.createSharedSchema(db)
             HealthRestoreReceipts.createSchema(db)
+            createTableSourceLinks(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             check(oldVersion in 1 until SCHEMA_VERSION && newVersion == SCHEMA_VERSION) { "Unsupported health schema upgrade" }
@@ -655,6 +747,15 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             if (oldVersion < 6) createSyncCheckpoints(db)
             if (oldVersion < 7) HealthOriginalStore.createSharedSchema(db)
             if (oldVersion < 8) HealthRestoreReceipts.createSchema(db)
+            if (oldVersion >= 7 && oldVersion < 9) HealthOriginalLibraryStore.createHistoryIndex(db)
+            if (oldVersion < 10) createTableSourceLinks(db)
+        }
+        private fun createTableSourceLinks(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS health_table_source_links(original_id TEXT NOT NULL,record_id TEXT NOT NULL REFERENCES observations(id)," +
+                "revision INTEGER NOT NULL,job_id TEXT NOT NULL,measured_at INTEGER NOT NULL,payload BLOB NOT NULL," +
+                "PRIMARY KEY(original_id,record_id,revision,job_id))")
+            db.execSQL("CREATE INDEX IF NOT EXISTS health_table_source_job ON health_table_source_links(job_id)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS health_table_source_page ON health_table_source_links(original_id,measured_at DESC,record_id DESC)")
         }
         private fun indexPlatformRecords(db: SQLiteDatabase) =
             db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
@@ -664,7 +765,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     companion object {
         const val DEFAULT_DB = "health_records_v1.db"
-        const val SCHEMA_VERSION = 8
+        const val SCHEMA_VERSION = 10
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
         fun syncIncidentChanges(context: Context, name: String) = android.net.Uri.parse(

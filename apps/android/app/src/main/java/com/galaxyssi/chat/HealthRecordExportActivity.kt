@@ -25,10 +25,8 @@ class HealthRecordExportActivity : Activity() {
     private val fixture by lazy {
         intent.getStringExtra("health_record_export_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) }
     }
-    private val database get() = fixture?.let { "health-record-export-test-$it.db" } ?: "health_record_exports_v1.db"
-    private fun openStore() = fixture?.let {
-        HealthRecordExportStore(applicationContext, database, java.io.File(cacheDir, "health-record-export-test-$it"))
-    } ?: HealthRecordExportStore(applicationContext)
+    private val database get() = HealthExportShare.recordDatabase(fixture)
+    private fun openStore() = HealthExportShare.openRecords(applicationContext, fixture)
     private lateinit var body: LinearLayout; private var mode = "configure"; private var sessionBack = "configure"; private var id = ""; private var active = false; private var generation = 0
     private var scope = HealthRecordExportScope(); private var dialog: AlertDialog? = null; private var saving = false; private var starting = false; private var mutating = false
     private var querying = false; private var dirty = false; private var itemCursor = 0L; private val itemPrevious = arrayListOf<Long>()
@@ -207,13 +205,18 @@ class HealthRecordExportActivity : Activity() {
                 consent(content, s)
             }
             HealthRecordExportState.GENERATED, HealthRecordExportState.SAVED -> {
+                val item = HealthExportShareItem.records(s)
                 ui.add(content, ui.text(android.text.format.Formatter.formatShortFileSize(this, s.artifactBytes), 16f), 16)
                 ui.add(content, ui.text(s.sha256, 11f, muted = true).apply { setTextIsSelectable(true) }, 8)
                 ui.add(content, ui.text(getString(R.string.health_export_plain_warning), 14f, muted = true), 12)
                 ui.add(content, ui.command(R.string.health_export_save) {
-                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(s.scope.mime)
-                        .putExtra(Intent.EXTRA_TITLE, "GalaxySSI-records-${s.createdAt}.${s.scope.extension}"), SAVE)
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(item.mime)
+                        .putExtra(Intent.EXTRA_TITLE, item.name), SAVE)
                 }, 16)
+                ui.add(content, ui.row(getString(R.string.health_export_share)) {
+                    dialog?.dismiss()
+                    dialog = HealthExportShare.confirm(this, item, fixture)
+                }.apply { tag = "health-record-export-share" }, 8)
             }
             else -> {
                 ui.add(content, ui.text(getString(when (s.error) {

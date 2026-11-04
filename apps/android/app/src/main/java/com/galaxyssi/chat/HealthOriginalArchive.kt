@@ -1,12 +1,16 @@
 package com.galaxyssi.chat
 
 import java.io.OutputStream
+import java.io.InputStream
 import java.util.concurrent.CancellationException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 internal enum class HealthOriginalArchiveOutcome { COMPLETE, FAILED, RETRY }
 internal object HealthOriginalArchive {
+    private val saving = ConcurrentHashMap.newKeySet<String>()
+    fun isSaving(id: String) = id in saving
     fun generate(originals: HealthOriginalStore, library: HealthOriginalLibraryStore, id: String, dispatch: String? = null, stopped: () -> Boolean = { false }): HealthOriginalArchiveOutcome {
         val (session, key) = library.claim(id, dispatch) ?: return HealthOriginalArchiveOutcome.COMPLETE
         var completed = false
@@ -58,5 +62,23 @@ internal object HealthOriginalArchive {
     }
     fun save(library: HealthOriginalLibraryStore, session: HealthOriginalExportSession, output: OutputStream, cancelled: () -> Unit = {}): Long {
         return HealthPrivateExportFile.copyVerified(library.input(session), output, HealthExportDigest(session.archiveBytes, session.sha256), cancelled)
+    }
+
+    fun saveVerified(library: HealthOriginalLibraryStore, session: HealthOriginalExportSession, open: () -> OutputStream,
+                     readBack: () -> InputStream, removeIncomplete: () -> Unit): HealthOriginalExportSession {
+        check(saving.add(session.id)) { "Original ZIP save already running" }
+        try {
+            val token = library.beginSave(session)
+            var opened = false
+            try {
+                open().use { opened = true; save(library, session, it) }
+                HealthPrivateExportFile.verify(readBack(), HealthExportDigest(session.archiveBytes, session.sha256))
+            } catch (failure: Exception) {
+                if (opened) runCatching(removeIncomplete)
+                runCatching { library.finishSave(session, token, verified = false) }
+                throw failure
+            }
+            return library.finishSave(session, token, verified = true)
+        } finally { saving.remove(session.id) }
     }
 }
