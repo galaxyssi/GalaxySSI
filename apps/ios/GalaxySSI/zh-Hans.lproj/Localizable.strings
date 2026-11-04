@@ -312,7 +312,9 @@
 "galaxyssi.health.missing_reading" = "未记录";
 "galaxyssi.health.empty" = "暂无测量记录";
 "galaxyssi.health.first_use.title" = "还没有已确认的测量";
-"galaxyssi.health.import.title" = "导入健康报告";
+"galaxyssi.health.import.title" = "导入健康数据";
+"galaxyssi.health.import.tables" = "测量表格";
+"galaxyssi.health.import.choose_table" = "选择 CSV 或 JSON";
 "galaxyssi.health.import.report" = "报告原件";
 "galaxyssi.health.import.files" = "选择 PDF 或图片";
 "galaxyssi.health.import.scan" = "扫描纸质报告";
@@ -364,6 +366,8 @@
 "galaxyssi.health.table.unit" = "所选数值使用 %@";
 "galaxyssi.health.table.review" = "审核数据行";
 "galaxyssi.health.table.row" = "数据行 %lld";
+"galaxyssi.health.table.resolved_time" = "解析后的时间";
+"galaxyssi.health.table.source_time" = "原始时间";
 "galaxyssi.health.table.more" = "查看更多";
 "galaxyssi.health.table.owned" = "这是我的测量，且我已核对数值、单位和时间";
 "galaxyssi.health.table.save" = "保存有效数据行";

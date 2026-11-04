@@ -147,14 +147,30 @@ struct GalaxySSIHealthTableImportView: View {
       ForEach(rows.prefix(limit)) { row in
         VStack(alignment: .leading, spacing: 4) {
           Text(String(format: t("row", "Data row %lld"), Int64(row.id)) + " · " + statusTitle(row.status))
-          Text(row.rawValue).lineLimit(2).foregroundColor(.secondary)
-          Text(row.rawDate).lineLimit(2).foregroundColor(.secondary)
+          if let reading = row.reading {
+            Text(readingSummary(reading)).foregroundColor(.secondary)
+            Text(t("resolved_time", "Resolved time") + ": " + reading.measuredAt.formatted(.iso8601))
+              .foregroundColor(.secondary)
+            if !reading.notes.isEmpty {
+              Text(reading.notes).lineLimit(4).foregroundColor(.secondary)
+            }
+          } else {
+            Text(row.rawValue).lineLimit(2).foregroundColor(.secondary)
+          }
+          Text(t("source_time", "Source time") + ": " + row.rawDate).lineLimit(2).foregroundColor(.secondary)
         }
       }
       if rows.count > limit { Button(t("more", "Show more")) { limit += 30 } }
       Toggle(t("owned", "These measurements are mine and I checked values, units and times"), isOn: $owned)
       Button(t("save", "Save valid rows"), action: save).disabled(!owned || ready == 0)
     }
+  }
+
+  private func readingSummary(_ reading: GalaxySSIHealthReading) -> String {
+    func exact(_ value: Decimal) -> String { NSDecimalNumber(decimal: value).stringValue }
+    let pressure = reading.diastolic.map { "/" + exact($0) } ?? ""
+    let pulse = reading.pulse.map { " · " + exact($0) + " bpm" } ?? ""
+    return exact(reading.value) + pressure + " " + reading.metric.unit + pulse
   }
 
   private func column(_ title: String, _ selection: Binding<Int>, _ input: Input) -> some View {

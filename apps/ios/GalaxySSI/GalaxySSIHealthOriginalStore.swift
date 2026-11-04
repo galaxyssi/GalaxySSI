@@ -1,5 +1,6 @@
 import CoreGraphics
 import CryptoKit
+import Darwin
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -334,7 +335,10 @@ extension GalaxySSIHealthOriginalStore {
   }
 
   func readCrop(for original: Original) throws -> Crop? {
-    let file = try cropURL(original.id)
+    try decodeCrop(at: cropURL(original.id), for: original)
+  }
+
+  private func decodeCrop(at file: URL, for original: Original) throws -> Crop? {
     let data: Data
     do {
       let handle = try FileHandle(forReadingFrom: file)
@@ -364,6 +368,7 @@ extension GalaxySSIHealthOriginalStore {
           let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
           image.width == output.width, image.height == output.height
     else { throw Failure.invalid }
+    try recoverInterruptedCrops()
     _ = try read(original)
     guard try readCrop(for: original)?.metadata.revision == expected else { throw Failure.stale }
     let metadata = CropMetadata(revision: UUID(), originalID: original.id, originalSHA256: original.sha256,
@@ -381,8 +386,40 @@ extension GalaxySSIHealthOriginalStore {
       $0 + (try $1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
     }
     guard otherBytes + sealed.count <= 256 * 1024 * 1024 else { throw Failure.limit }
-    try sealed.write(to: target, options: [.atomic, .completeFileProtection])
+    let staging = target.deletingLastPathComponent().appendingPathComponent(UUID().uuidString).appendingPathExtension("pending")
+    defer { try? FileManager.default.removeItem(at: staging) }
+    try sealed.write(to: staging, options: [.completeFileProtection, .withoutOverwriting])
+    let handle = try FileHandle(forWritingTo: staging)
+    do {
+      try handle.synchronize()
+      try handle.close()
+    } catch {
+      try? handle.close()
+      throw error
+    }
+    guard try decodeCrop(at: staging, for: original)?.metadata == metadata else { throw Failure.invalid }
+    // A single same-directory rename commits the authenticated crop and metadata together.
+    try staging.withUnsafeFileSystemRepresentation { source in
+      try target.withUnsafeFileSystemRepresentation { destination in
+        guard let source, let destination else { throw Failure.invalid }
+        if Darwin.rename(source, destination) != 0 {
+          throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+      }
+    }
     return metadata
+  }
+
+  func recoverInterruptedCrops() throws {
+    let root = try cropDirectory()
+    let files = try FileManager.default.contentsOfDirectory(at: root,
+      includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+    for file in files where file.pathExtension == "pending" &&
+      UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil {
+      let attributes = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+      guard attributes.isRegularFile == true, attributes.isSymbolicLink != true else { continue }
+      try FileManager.default.removeItem(at: file)
+    }
   }
 
   private func cropBinding(_ original: Original) -> Data {
@@ -390,9 +427,13 @@ extension GalaxySSIHealthOriginalStore {
   }
 
   private func cropURL(_ id: UUID) throws -> URL {
+    try cropDirectory().appendingPathComponent(id.uuidString)
+  }
+
+  private func cropDirectory() throws -> URL {
     let root = try directory().appendingPathComponent("report-crops-v1", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
                                             attributes: [.protectionKey: FileProtectionType.complete])
-    return root.appendingPathComponent(id.uuidString)
+    return root
   }
 }
