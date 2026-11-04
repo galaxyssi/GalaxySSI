@@ -66,6 +66,11 @@ struct GalaxySSIHealthCenterView: View {
         } label: {
           Label(t("import.title", "Import Health Data"), systemImage: "square.and.arrow.down")
         }
+        NavigationLink {
+          GalaxySSIHealthReviewReminderView(records: records)
+        } label: {
+          Label(t("review_reminder.title", "Health Review Reminders"), systemImage: "bell")
+        }
       }
       NavigationLink {
         GalaxySSIHealthRecordingReminderView(records: records) { metric in

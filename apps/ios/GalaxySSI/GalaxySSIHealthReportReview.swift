@@ -16,6 +16,7 @@ enum GalaxySSIHealthReportReview {
     let source: Source
     let excerpt: String
     let reading: GalaxySSIHealthReading
+    var stagedAt: Date?
   }
 
   struct Target: Codable, Hashable {
