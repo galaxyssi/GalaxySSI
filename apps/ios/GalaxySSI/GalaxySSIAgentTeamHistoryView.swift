@@ -395,7 +395,7 @@ enum GalaxySSIAgentTeamPresentation {
   }
 
   static func memberCount(_ snapshot: AgentTeamExecutionSnapshot) -> Int {
-    snapshot.members.filter { $0.deliveryMode != .ignore }.count
+    AgentTeamProgressPolicy.currentCollaborationMembers(snapshot).count
   }
 
   static func time(_ millis: Int64, language: String) -> String {
@@ -503,6 +503,14 @@ struct GalaxySSIAgentTeamDetailView: View {
       )
       if !snapshot.taskId.isEmpty {
         detailBlock(t("galaxyssi.agent_team.task", "Task"), snapshot.taskId)
+      }
+      if !snapshot.state.isTerminal {
+        ForEach(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot), id: \.memberId) { member in
+          detailBlock(
+            (member.displayName ?? "").ifBlank(member.agentId),
+            GalaxySSIAgentTeamPresentation.memberStatusLabel(member.status, language: interfaceLanguage)
+          )
+        }
       }
     }
   }

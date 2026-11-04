@@ -2,6 +2,24 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCollaborationMemberProjectionKeepsCurrentWorkAndOriginalAttempts() {
+    var snapshot = durableTeamSnapshot("current-projection")
+    let rosterId = UUID().uuidString.lowercased()
+    let otherId = UUID().uuidString.lowercased()
+    snapshot.members = [
+      .init(agentId: "shared-model", status: .succeeded, output: "original", updatedAtMillis: 100, instanceId: rosterId),
+      .init(agentId: "shared-model", status: .running, updatedAtMillis: 50, instanceId: rosterId + ":revise"),
+      .init(agentId: "shared-model", status: .queued, updatedAtMillis: 60, instanceId: rosterId + ":recheck"),
+      .init(agentId: "shared-model", status: .succeeded, updatedAtMillis: 40, instanceId: otherId)
+    ]
+    XCTAssertEqual(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot).map(\.memberId),
+      [rosterId + ":revise", otherId])
+    snapshot.members[1].status = .succeeded
+    XCTAssertEqual(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot).first?.memberId, rosterId + ":recheck")
+    XCTAssertEqual(snapshot.members.count, 4)
+    XCTAssertEqual(snapshot.members.first?.output, "original")
+  }
+
   func testCollaborationTimingUsesRecordedExecutionBounds() throws {
     var snapshot = durableTeamSnapshot("timed-run")
     snapshot.state = .running
