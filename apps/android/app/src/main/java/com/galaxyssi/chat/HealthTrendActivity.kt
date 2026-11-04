@@ -36,6 +36,12 @@ class HealthTrendActivity : Activity() {
     private var notice: TextView? = null; private var retry: TextView? = null; private var version: String? = null
     private var observing = false; private var probing = false; private var probeAgain = false; private var probeSerial = 0
     private val observer = object : android.database.ContentObserver(main) { override fun onChange(selfChange: Boolean) = probeVersion() }
+    private val privacyDatabase by lazy { healthPrivacyDatabaseName() }
+    private val privacyObserver = object : android.database.ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) {
+            val open = dialog; dialog = null; open?.dismiss(); sourceName = ""; load()
+        }
+    }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         val restored = state?.let { Intent().apply { it.keySet().forEach { key -> when (val value = it.get(key)) {
@@ -59,12 +65,13 @@ class HealthTrendActivity : Activity() {
         super.onStart(); if (!::metric.isInitialized) return
         active = true; zone = ZoneId.systemDefault()
         contentResolver.registerContentObserver(HealthRecordStore.changes(this), false, observer); observing = true
+        contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, privacyDatabase), false, privacyObserver)
         if (preset < 3) { last = LocalDate.now(zone); first = last.minusDays(listOf(7L, 30L, 90L)[preset] - 1) }
         load()
     }
     override fun onStop() {
         active = false; scrollY = scroll?.scrollY ?: scrollY; generation++; signal?.cancel(); signal = null
-        if (observing) { contentResolver.unregisterContentObserver(observer); observing = false }
+        if (observing) { contentResolver.unregisterContentObserver(observer); contentResolver.unregisterContentObserver(privacyObserver); observing = false }
         probeSerial++; probing = false; probeAgain = false; version = null; notice?.text = ""; notice = null; retry = null
         dialog?.dismiss(); dialog = null; chart?.clear(); chart = null; progress?.text = ""; progress = null
         sourceName = ""; scroll = null; if (::body.isInitialized) body.removeAllViews()
@@ -89,7 +96,7 @@ class HealthTrendActivity : Activity() {
         version = null; render(null)
         worker.execute {
             fun cancelled() { if (token != generation || cancellation.isCanceled) throw CancellationException() }
-            val result = runCatching { HealthRecordStore(applicationContext).use { store ->
+            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND, requested), privacyDatabase) { HealthRecordStore(applicationContext).use { store ->
                 cancelled()
                 val effective = if (!autoUnit) requested else requested.copy(unit = store.trendRecords(requested, cancelled = ::cancelled, signal = cancellation)
                     .records.firstOrNull()?.draft?.unit?.takeIf { it in metric.selectableUnits } ?: requested.unit)
@@ -98,10 +105,11 @@ class HealthTrendActivity : Activity() {
                 } }, cancellation)
                 val name = if (effective.source.originalId.isBlank()) "" else HealthOriginalStore(applicationContext).use { it.original(effective.source.originalId)?.name.orEmpty() }
                 summary to name
-            } }
+            } } }
             main.post { if (active && token == generation) result.fold({ (summary, name) -> unit = summary.spec.unit; sourceName = name; render(summary) }, {
-                val message = getString(if (it is HealthTrendChangedException) R.string.health_trend_changed else R.string.health_storage_error)
+                val message = getString(when (it) { is HealthTrendChangedException -> R.string.health_trend_changed; is HealthAccessBlocked -> R.string.health_privacy_trend_blocked; else -> R.string.health_storage_error })
                 chart?.unavailable(message); progress?.text = ""; notice?.text = message; notice?.visibility = View.VISIBLE; retry?.visibility = View.VISIBLE
+                if (it is HealthAccessBlocked) body.addView(ui.command(R.string.health_privacy_title) { startActivity(healthPrivacyIntent()) }.apply { tag = "health-privacy-blocked" })
             }) }
         }
     }
@@ -194,7 +202,7 @@ class HealthTrendActivity : Activity() {
     private fun openPoint(point: HealthTrendPoint) {
         if (point.recordId.isNotBlank()) openRecord(point.recordId, point.recordRevision) else openRecords(spec().copy(first = point.first, last = point.last), true)
     }
-    private fun openRecords(spec: HealthTrendSpec, numeric: Boolean) { startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(spec).putExtra("health_numeric", numeric).apply {
+    private fun openRecords(spec: HealthTrendSpec, numeric: Boolean) { startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(spec).putExtra("health_numeric", numeric).putExtra("health_privacy_test_db", privacyDatabase).apply {
         if (numeric) putExtra("health_version", version)
     }) }
     private fun choose(title: Int, values: List<String>, selected: (Int) -> Unit) {
@@ -210,12 +218,12 @@ class HealthTrendActivity : Activity() {
         dialog = wait; wait.setOnDismissListener { if (dialog === wait) { dialog = null; if (active) load() } }; wait.show()
         val requested = spec()
         worker.execute {
-            val result = runCatching { HealthRecordStore(applicationContext).use { store ->
+            val result = runCatching { HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND_SOURCES, requested), privacyDatabase) { HealthRecordStore(applicationContext).use { store ->
                 val ids = store.trendSourceIds(requested, after, cancellation)
                 HealthOriginalStore(applicationContext).use { originals -> ids to ids.take(30).map { id ->
                     (originals.original(id)?.name ?: getString(R.string.health_original_missing)) + " \u00b7 " + id.take(8)
                 } }
-            } }
+            } } }
             main.post { if (!active || token != generation || dialog !== wait) return@post
                 result.fold({ (ids, labels) ->
                     wait.setOnDismissListener(null); wait.dismiss()
@@ -230,7 +238,7 @@ class HealthTrendActivity : Activity() {
                         if (ids.size > 30) choice.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { page(ids[29], history + after) }
                         if (history.isNotEmpty()) choice.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener { page(history.last(), history.dropLast(1)) }
                     }; choice.show()
-                }, { wait.setMessage(getString(R.string.health_storage_error)) })
+                }, { wait.setMessage(getString(if (it is HealthAccessBlocked) R.string.health_privacy_trend_blocked else R.string.health_storage_error)) })
             }
         }
     }

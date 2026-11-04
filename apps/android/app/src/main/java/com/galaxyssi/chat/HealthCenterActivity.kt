@@ -259,6 +259,7 @@ class HealthCenterActivity : Activity() {
             ui.add(this, ui.profileRow(getString(R.string.health_profile_title), getString(R.string.health_profile_source)) {
                 startActivity(android.content.Intent(this@HealthCenterActivity, HealthProfileActivity::class.java))
             }.apply { tag = "health-profile-entry" }, 8)
+            ui.add(this, ui.profileRow(getString(R.string.health_privacy_title)) { startActivity(healthPrivacyIntent()) }.apply { tag = "health-privacy-entry" }, 8)
         }
     }
     private fun recordRow(record: HealthObservation) = ui.card().apply {

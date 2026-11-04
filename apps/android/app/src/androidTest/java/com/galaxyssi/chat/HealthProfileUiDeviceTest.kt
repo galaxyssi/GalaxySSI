@@ -23,10 +23,12 @@ class HealthProfileUiDeviceTest {
     private fun fixture(test: (String, HealthProfileStore) -> Unit) {
         assumeFalse("Visible health profile acceptance requires an unlocked device", context.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
         val name = "health-profile-test-${UUID.randomUUID()}.db"
-        try { HealthProfileStore(context, name).use { test(name, it) } } finally { context.deleteDatabase(name) }
+        try { HealthProfileStore(context, name, privacyName(name)).use { test(name, it) } }
+        finally { context.deleteDatabase(name); context.deleteDatabase(privacyName(name)) }
     }
+    private fun privacyName(name: String) = name.replace("health-profile-test-", "health-privacy-test-")
     private fun <T : Activity> screen(name: String, type: Class<T>, kind: HealthBackgroundKind? = null, test: (ActivityScenario<T>) -> Unit) {
-        val intent = Intent(context, type).putExtra("health_profile_test_db", name); kind?.let { intent.putExtra("health_background", it.name) }
+        val intent = Intent(context, type).putExtra("health_profile_test_db", name).putExtra("health_privacy_test_db", privacyName(name)); kind?.let { intent.putExtra("health_background", it.name) }
         val scenario = ActivityScenario.launch<T>(intent); lateinit var held: T
         try { scenario.onActivity { held = it }; test(scenario) }
         finally { scenario.close(); (type.getDeclaredField("worker").apply { isAccessible = true }.get(held) as ExecutorService).awaitTermination(10, TimeUnit.SECONDS) }

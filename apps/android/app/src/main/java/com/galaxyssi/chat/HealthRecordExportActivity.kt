@@ -235,11 +235,16 @@ class HealthRecordExportActivity : Activity() {
         if (requestCode != SAVE || resultCode != RESULT_OK) return; val uri = data?.data ?: return
         val selected = id; saving = true; content().addView(ui.text(getString(R.string.health_export_saving)))
         worker.execute {
+            var opened = false; var copied = false
             val result = runCatching { HealthRecordExportStore(applicationContext).use { exports ->
-                val session = requireNotNull(exports.session(selected)); contentResolver.openOutputStream(uri, "wt")?.use { HealthRecordExportPipeline.save(exports, session, it) } ?: error("Export destination unavailable")
+                val session = requireNotNull(exports.session(selected))
+                HealthPrivacyStore.track(applicationContext, HealthAccessScope.records(session)) {
+                    contentResolver.openOutputStream(uri, "wt")?.use { opened = true; HealthRecordExportPipeline.save(exports, session, it) } ?: error("Export destination unavailable")
+                    copied = true
+                }
                 exports.saved(session)
             } }
-            if (result.isFailure) runCatching { android.provider.DocumentsContract.deleteDocument(contentResolver, uri) }
+            if (result.isFailure && opened && !copied) runCatching { android.provider.DocumentsContract.deleteDocument(contentResolver, uri) }
             main.post { saving = false; if (active) { if (result.isFailure) Toast.makeText(this, R.string.health_import_save_failed, Toast.LENGTH_LONG).show(); load() } }
         }
     }

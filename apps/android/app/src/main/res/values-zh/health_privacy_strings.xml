@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_privacy_title">隐私与数据</string>
+    <string name="health_privacy_lead">本机健康资料</string>
+    <string name="health_privacy_uses">分析权限</string>
+    <string name="health_privacy_metrics">已确认指标</string>
+    <string name="health_privacy_metrics_detail">用于本机趋势和指标分析</string>
+    <string name="health_privacy_profile">健康背景</string>
+    <string name="health_privacy_profile_detail">分析时仅使用所选本人自述资料</string>
+    <string name="health_privacy_online">在线健康分析</string>
+    <string name="health_privacy_online_detail">在线健康分析尚未接入，此处不会发送数据。</string>
+    <string name="health_privacy_images">报告原始图片</string>
+    <string name="health_privacy_images_detail">单独授权，在线请求仍需逐次确认</string>
+    <string name="health_privacy_storage">本机数据管理</string>
+    <string name="health_privacy_history">访问记录</string>
+    <string name="health_privacy_export">导出健康记录</string>
+    <string name="health_privacy_manage_profile">管理和删除本人自述资料</string>
+    <string name="health_privacy_trend_blocked">趋势授权已关闭，测量记录仍保留。</string>
+    <string name="health_privacy_conflict">权限已变更，请核对当前设置后重试。</string>
+    <string name="health_privacy_empty">暂无访问记录</string>
+    <string name="health_privacy_trend">计算本机趋势</string>
+    <string name="health_privacy_trend_records">读取趋势明细</string>
+    <string name="health_privacy_trend_sources">查看趋势来源</string>
+    <string name="health_privacy_profile_context">读取所选健康背景</string>
+    <string name="health_privacy_save_records">保存测量数据导出</string>
+    <string name="health_privacy_save_originals">保存原件</string>
+    <string name="health_privacy_delete_profile">删除本人档案</string>
+    <string name="health_privacy_started">未记录完成</string>
+    <string name="health_privacy_complete">已完成</string>
+    <string name="health_privacy_failed">失败或未完成</string>
+    <string name="health_privacy_cancelled">已取消</string>
+    <string name="health_privacy_blocked">权限已阻止</string>
+    <string name="health_privacy_scope_records">选择 %1$d 条测量记录</string>
+    <string name="health_privacy_scope_originals">选择 %1$d 件原件</string>
+    <string name="health_privacy_scope_entries">选择 %1$d 条健康背景</string>
+    <string name="health_privacy_scope_delete">%1$d 项基本资料、%2$d 条健康背景、%3$d 份草稿</string>
+    <string name="health_privacy_scope_manual">手动记录</string>
+    <string name="health_privacy_scope_original">关联所选原件</string>
+    <string name="health_privacy_scope_notes">包含所选备注</string>
+    <string name="health_privacy_scope_all_dates">全部测量日期</string>
+</resources>
