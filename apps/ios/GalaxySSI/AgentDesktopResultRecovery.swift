@@ -21,6 +21,21 @@ enum AgentDesktopToolEvidenceWire {
     var archiveFinal = false
   }
 
+  struct ImportJob: Codable {
+    static let keyPrefix = "desktop-evidence-job:"
+    let binding: AgentDesktopReplyBinding
+    let generation: Int64
+    let profileIdentity: String
+
+    var key: String {
+      var fields = binding.fields.mapValues(AgentMcpJSONValue.string)
+      fields["desktop_id"] = .string(binding.desktopId)
+      fields["execution_generation"] = .int(generation)
+      fields["profile_identity"] = .string(profileIdentity)
+      return Self.keyPrefix + AgentMcpJSONCodec.sha256(fields)
+    }
+  }
+
   struct Descriptor: Equatable {
     let evidenceId: String
     let sha256: String

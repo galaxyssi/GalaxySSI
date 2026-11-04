@@ -47,6 +47,7 @@ final class MessageCoordinator: ObservableObject {
   private lazy var desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
   private var desktopEvidenceRequests: [String: (String, AsyncStream<AgentMcpJSONObject>.Continuation)] = [:]
   private var desktopEvidenceImports: Set<String> = []
+  private var desktopEvidenceJobCursor = ""
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
   private var desktopReplyRecoveryTask: Task<Void, Never>?
   private var desktopReplyRecoverySweepInFlight = false
@@ -437,6 +438,8 @@ final class MessageCoordinator: ObservableObject {
         self.pendingReplyRecoveryWake.connectionChanged(self.mqttClient.isConnected)
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
         Task { await self.refreshBlobArtifactCapabilities() }
+        self.desktopEvidenceJobCursor = ""
+        self.resumeDesktopEvidenceJobs()
       }
     }
     self.mqttClient.onRelationshipSubscriptionReadinessChanged = { [weak self] ready in
@@ -2415,13 +2418,48 @@ final class MessageCoordinator: ObservableObject {
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
           link.connectorCapabilities.contains("desktop_codex_tool_evidence_v1") ||
-            store.contact(id: binding.contactId)?.connectorCapabilities?.contains("desktop_codex_tool_evidence_v1") == true,
-          desktopEvidenceImports.count < 2, desktopEvidenceImports.insert(binding.key).inserted else { return }
-    let profile = store.profile.identityFingerprint
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      defer { self.desktopEvidenceImports.remove(binding.key) }
-      await self.importDesktopEvidence(binding, generation: generation, profile: profile)
+            store.contact(id: binding.contactId)?.connectorCapabilities?.contains("desktop_codex_tool_evidence_v1") == true
+    else { return }
+    let job = AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: generation,
+      profileIdentity: store.profile.identityFingerprint)
+    do {
+      try AgentTeamExecutionHistoryStore.shared.enqueueDesktopEvidenceJob(job)
+    } catch { return }
+    desktopEvidenceJobCursor = ""
+    resumeDesktopEvidenceJobs()
+  }
+
+  private func resumeDesktopEvidenceJobs() {
+    guard GalaxySSISignalEngine.isAvailable, mqttClient.relationshipSubscriptionsReady,
+          desktopEvidenceImports.count < 2 else { return }
+    let history = AgentTeamExecutionHistoryStore.shared
+    while desktopEvidenceImports.count < 2 {
+      guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor),
+            !batch.isEmpty else { return }
+      for job in batch {
+        guard desktopEvidenceImports.count < 2 else { return }
+        desktopEvidenceJobCursor = job.key
+        let binding = job.binding
+        guard store.profile.identityFingerprint == job.profileIdentity,
+              let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
+              context.owner.observedGeneration == job.generation,
+              let session = store.agentSession(id: context.team.conversationId), session.id == context.team.conversationId,
+              session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+              let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: job.generation,
+                nonce: UUID().uuidString),
+              desktopEvidenceImports.insert(job.key).inserted else { continue }
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          defer {
+            self.desktopEvidenceImports.remove(job.key)
+            self.resumeDesktopEvidenceJobs()
+          }
+          await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity)
+          if (try? history.desktopEvidenceCursor(scope))?.archiveFinal == true {
+            history.removeDesktopEvidenceJob(job)
+          }
+        }
+      }
     }
   }
 
@@ -2429,7 +2467,9 @@ final class MessageCoordinator: ObservableObject {
     func isCurrent() -> Bool {
       !Task.isCancelled && store.profile.identityFingerprint == profile &&
         currentTeamObserverRecovery(binding)?.owner.observedGeneration == generation &&
-        store.agentSession(id: binding.identity.conversationId)?.collaborationRoster != nil
+        store.agentSession(id: binding.identity.conversationId).map {
+          $0.id == binding.identity.conversationId && $0.collaborationRoster != nil && $0.mergedIntoConversationId.isBlank
+        } == true
     }
     let history = AgentTeamExecutionHistoryStore.shared
     guard let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,

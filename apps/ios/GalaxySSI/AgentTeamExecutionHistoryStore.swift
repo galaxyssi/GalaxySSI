@@ -462,6 +462,23 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func enqueueDesktopEvidenceJob(_ job: AgentDesktopToolEvidenceWire.ImportJob) throws {
+    try access { database in
+      let conversation = job.binding.identity.conversationId
+      if try database.researchRecord(AgentDesktopToolEvidenceWire.ImportJob.self,
+        conversationId: conversation, key: job.key, revision: 0) != nil { return }
+      try database.insertResearchRecord(job, conversationId: conversation, key: job.key, revision: 0)
+    }
+  }
+
+  func desktopEvidenceJobs(after: String) throws -> [AgentDesktopToolEvidenceWire.ImportJob] {
+    try access { try $0.desktopEvidenceJobs(after: after, limit: 16) }
+  }
+
+  func removeDesktopEvidenceJob(_ job: AgentDesktopToolEvidenceWire.ImportJob) {
+    _ = try? access { try $0.removeDesktopEvidenceJob(job) }
+  }
+
   func hasArchivedDesktopEvidence(_ descriptor: AgentDesktopToolEvidenceWire.Descriptor,
                                   request: AgentDesktopToolEvidenceWire.Request) throws -> Bool {
     try access { database in

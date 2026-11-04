@@ -293,6 +293,44 @@ final class AgentTeamHistoryDatabase {
     try finish(statement)
   }
 
+  func desktopEvidenceJobs(after: String, limit: Int) throws -> [AgentDesktopToolEvidenceWire.ImportJob] {
+    let statement = try prepare("""
+      SELECT group_key,record_key,encrypted_payload FROM collaboration_research_records
+      WHERE namespace=? AND record_key LIKE 'desktop-evidence-job:%' AND record_key>? AND revision=0
+      ORDER BY record_key LIMIT ?
+      """)
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(after, at: 2, to: statement)
+    sqlite3_bind_int64(statement, 3, Int64(limit))
+    var jobs: [AgentDesktopToolEvidenceWire.ImportJob] = []
+    while true {
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { return jobs }
+      guard status == SQLITE_ROW, let group = sqlite3_column_text(statement, 0),
+            let key = sqlite3_column_text(statement, 1),
+            let blob = sqlite3_column_blob(statement, 2) else { throw Failure.corrupt }
+      let groupId = String(cString: group)
+      let recordKey = String(cString: key)
+      let data = Data(bytes: blob, count: Int(sqlite3_column_bytes(statement, 2)))
+      let job = try JSONDecoder().decode(AgentDesktopToolEvidenceWire.ImportJob.self,
+        from: cipher.decrypt(data, purpose: researchPurpose(group: groupId, key: recordKey, revision: 0)))
+      guard job.key == recordKey, Self.digest(job.binding.identity.conversationId) == groupId else {
+        throw Failure.corrupt
+      }
+      jobs.append(job)
+    }
+  }
+
+  func removeDesktopEvidenceJob(_ job: AgentDesktopToolEvidenceWire.ImportJob) throws {
+    let statement = try prepare("DELETE FROM collaboration_research_records WHERE namespace=? AND group_key=? AND record_key=?")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(Self.digest(job.binding.identity.conversationId), at: 2, to: statement)
+    bind(job.key, at: 3, to: statement)
+    try finish(statement)
+  }
+
   private func researchPurpose(group: String, key: String, revision: Int64) -> String {
     "collaboration-research:\(namespace):\(group):\(key):\(revision)"
   }
