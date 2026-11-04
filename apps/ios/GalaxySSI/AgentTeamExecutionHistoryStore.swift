@@ -480,6 +480,17 @@ final class AgentTeamExecutionHistoryStore {
               turnId: turnId, memberId: memberId, sourceId: sourceId)
             frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
           }
+        } else if draft.kind == .experimentPlan {
+          guard references.isEmpty else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          let valid = try AgentCollaborationExperimentPlanIntake.validates(draft) { reference in
+            guard !drafts.contains(where: { $0.objectId == reference.objectId }),
+                  let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + reference.objectId),
+                  record.reference == reference,
+                  record.turnId != turnId || (record.runId == runId && record.authorId == memberId) else { return nil }
+            return record
+          }
+          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         } else if !references.isEmpty {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }

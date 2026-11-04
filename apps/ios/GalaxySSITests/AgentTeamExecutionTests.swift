@@ -257,6 +257,20 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testExperimentRegistrationRequiresMeasurableTargetAndUniqueCases() {
+    var item: AgentMcpJSONObject = ["id": .string("target"), "metric": .string("accuracy"),
+      "prediction": .string("Improves"), "purpose": .string("target"), "direction": .string("maximize"),
+      "minimum_gain": .int(1), "tolerance": .int(0), "repetitions": .int(2)]
+    XCTAssertTrue(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item), .object(item)]))
+    item["purpose"] = .string("regression")
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    item["purpose"] = .string("feasibility")
+    XCTAssertFalse(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+    item["threshold"] = .int(3)
+    XCTAssertTrue(AgentCollaborationExperimentPlanIntake.validatesCases([.object(item)]))
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

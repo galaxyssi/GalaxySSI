@@ -68,6 +68,7 @@ struct AgentCollaborationResearchReference: Codable, Equatable {
 struct AgentCollaborationResearchDraft: Codable {
   enum Kind: String, Codable {
     case hypothesis, evidence, counterexample, proposal, experiment, artifact, decision, question
+    case experimentPlan = "experiment_plan"
     case acceptanceReview = "acceptance_review"
     case candidate
     case candidateEvent = "candidate_event"
@@ -86,6 +87,72 @@ struct AgentCollaborationResearchDraft: Codable {
     case id, kind, title, body, parents, resolves, observations
     case objectId = "object_id"
     case baseRevision = "base_revision"
+  }
+}
+
+enum AgentCollaborationExperimentPlanIntake {
+  static func validates(_ draft: AgentCollaborationResearchDraft,
+                        current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) rethrows -> Bool {
+    guard draft.kind == .experimentPlan, draft.objectId?.isBlank != false, draft.baseRevision == 0,
+          let spec = draft.body["experiment_plan"]?.objectValue,
+          ["retention_suite", "transfer_study", "team_comparison", "workflow_comparison"].allSatisfy({ spec[$0] == nil }),
+          hasText(spec, ["method", "environment", "budget_unit", "prediction_id"]),
+          let pointer = spec["report_pointer"]?.stringValue, pointer.isEmpty || pointer.hasPrefix("/"),
+          let limit = number(spec["budget_limit"]), limit > 0,
+          let source = spec["source"]?.objectValue, source.string("origin") == "ios_cloud_tool",
+          hasText(source, ["tool"]), !source.string("tool").lowercased().contains("recall"),
+          source.string("tool") != "research_evidence_audit",
+          let idea = reference(spec["innovation"]), let baseline = reference(spec["baseline"]),
+          idea.objectId != baseline.objectId, draft.parents.contains(idea), draft.parents.contains(baseline),
+          let savedIdea = try current(idea), savedIdea.draft.kind.rawValue == "innovation",
+          let savedBaseline = try current(baseline),
+          ["proposal", "artifact", "innovation"].contains(savedBaseline.draft.kind.rawValue),
+          let predictions = savedIdea.draft.body["innovation"]?.objectValue?["predictions"]?.arrayValue,
+          predictions.contains(where: { $0.objectValue?.string("id") == spec.string("prediction_id") }),
+          let cases = spec["cases"]?.arrayValue, validatesCases(cases) else { return false }
+    for raw in cases {
+      if let item = raw.objectValue, item["dataset"] != nil {
+        guard let dataset = reference(item["dataset"]), draft.parents.contains(dataset),
+              try current(dataset)?.draft.kind == .artifact else { return false }
+      }
+    }
+    return true
+  }
+
+  static func validatesCases(_ cases: [AgentMcpJSONValue]) -> Bool {
+    guard (1...64).contains(cases.count) else { return false }
+    var ids = Set<String>()
+    var hasTarget = false
+    for raw in cases {
+      guard let item = raw.objectValue, hasText(item, ["id", "metric", "prediction"]),
+            ids.insert(item.string("id")).inserted,
+            ["target", "regression", "transfer", "feasibility"].contains(item.string("purpose")),
+            ["maximize", "minimize"].contains(item.string("direction")),
+            let gain = number(item["minimum_gain"]), gain >= 0,
+            let tolerance = number(item["tolerance"]), tolerance >= 0,
+            case .int(let count)? = item["repetitions"], count > 0,
+            item.string("purpose") != "feasibility" || number(item["threshold"]) != nil else { return false }
+      hasTarget = hasTarget || ["target", "feasibility"].contains(item.string("purpose"))
+    }
+    return hasTarget
+  }
+
+  private static func reference(_ value: AgentMcpJSONValue?) -> AgentCollaborationResearchReference? {
+    guard let object = value?.objectValue, Set(object.keys) == Set(["object_id", "revision", "sha256"]),
+          case .int(let revision)? = object["revision"], revision > 0 else { return nil }
+    return .init(objectId: object.string("object_id"), revision: revision, sha256: object.string("sha256"))
+  }
+
+  private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
+  }
+
+  private static func number(_ value: AgentMcpJSONValue?) -> Double? {
+    switch value {
+    case .some(.int(let number)): return Double(number)
+    case .some(.double(let number)) where number.isFinite: return number
+    default: return nil
+    }
   }
 }
 
