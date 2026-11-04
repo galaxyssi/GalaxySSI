@@ -6346,7 +6346,7 @@ final class MessageCoordinator: ObservableObject {
         sourceMessageId: sourceMessageId,
         executionPolicyPrompt: requestText
       )
-      let memberPrompt = agentTeamMemberPrompt(
+      var memberPrompt = agentTeamMemberPrompt(
         goal: requestText,
         member: member,
         primaryInstanceId: spec.definition.primaryMemberId,
@@ -6361,6 +6361,12 @@ final class MessageCoordinator: ObservableObject {
             conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
             sourceMessageId: sourceMessageId, to: .dispatching, now: AgentControlPlaneClock.nowMillis()) else {
             throw GalaxySSIError.invalidPayload("The collaboration member dispatch checkpoint could not be saved")
+          }
+          let scope = AgentCollaborationToolEvidenceScope(runId: spec.supervisorRunId,
+            conversationId: outgoing.conversationId, turnId: homeTurnId,
+            memberId: member.memberId, sourceId: sourceMessageId)
+          memberPrompt += "\n\n" + AgentCollaborationInlineOriginals.prompt(originalGoalPrefix: requestText) { section in
+            try? AgentTeamExecutionHistoryStore.shared.readPinnedCollaborationGoal(scope: scope, section: section)
           }
         }
         if target.id == "local-llm" {

@@ -1,5 +1,35 @@
 import Foundation
 
+enum AgentCollaborationInlineOriginals {
+  static func prompt(originalGoalPrefix: String, maximumBytes: Int = 12_000,
+                     read: (String) -> AgentMcpJSONObject?) -> String {
+    var sections: [String: AgentMcpJSONValue] = [:]
+    var originals: AgentMcpJSONObject = [:]
+    for section in ["goal", "criteria"] {
+      sections[section] = .string("not_included")
+      guard let page = read(section), page["next_offset"] == .null,
+            page["offset"] == .int(0), page.string("section") == section,
+            let bytes = Data(base64Encoded: page.string("data_b64")), !bytes.isEmpty,
+            page["total_bytes"] == .int(Int64(bytes.count)),
+            let original = String(data: bytes, encoding: .utf8) else { continue }
+      if section == "goal", Data(originalGoalPrefix.utf8) == bytes {
+        sections[section] = .string("complete_in_prompt_prefix")
+        continue
+      }
+      var proposed = originals
+      proposed[section] = .string(original)
+      guard AgentMcpJSONCodec.stringify(proposed).utf8.count <= maximumBytes else { continue }
+      originals = proposed
+      sections[section] = .string("complete_in_originals")
+    }
+    return """
+    Original context availability (host-reported, not evidence validation):
+    \(AgentMcpJSONCodec.stringify(["availability": .object(sections), "originals": .object(originals)]))
+    Use complete originals directly. Retrieve missing relevant sections with scoped goal recall when available.
+    """
+  }
+}
+
 enum AgentCollaborationRuleTopics {
   private struct Topic {
     let id: String

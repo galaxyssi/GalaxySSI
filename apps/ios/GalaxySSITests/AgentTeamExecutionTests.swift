@@ -529,6 +529,28 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
   }
 
+  func testInlineCollaborationOriginalsReportOnlyCompleteSections() {
+    func page(_ section: String, _ text: String, next: AgentMcpJSONValue = .null) -> AgentMcpJSONObject {
+      let bytes = Data(text.utf8)
+      return ["section": .string(section), "offset": .int(0), "next_offset": next,
+        "total_bytes": .int(Int64(bytes.count)), "data_b64": .string(bytes.base64EncodedString())]
+    }
+    let complete = AgentCollaborationInlineOriginals.prompt(originalGoalPrefix: "Exact goal") { section in
+      section == "goal" ? page(section, "Exact goal") : page(section, "Exact criteria")
+    }
+    XCTAssertTrue(complete.contains("complete_in_prompt_prefix"))
+    XCTAssertTrue(complete.contains("complete_in_originals"))
+    XCTAssertTrue(complete.contains("Exact criteria"))
+    XCTAssertFalse(complete.contains("Exact goal"))
+    let limited = AgentCollaborationInlineOriginals.prompt(originalGoalPrefix: "Different", maximumBytes: 10) { section in
+      section == "goal" ? page(section, "Partial original", next: .int(16)) : page(section, "Oversized criteria")
+    }
+    XCTAssertTrue(limited.contains("not_included"))
+    XCTAssertFalse(limited.contains("complete_in"))
+    XCTAssertFalse(limited.contains("Partial original"))
+    XCTAssertFalse(limited.contains("Oversized criteria"))
+  }
+
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
     let raw = """
     {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",
