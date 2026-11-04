@@ -29,6 +29,25 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.load().current.count, 1)
   }
 
+  @MainActor
+  func testPrivacyEventsRecordOnlyEffectiveScopedChanges() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.setOverviewPermission(false)
+    try records.setOverviewPermission(true)
+    try records.setOverviewPermission(true)
+    try records.setWeeklyReportAllowed(true)
+    try records.setOverviewPermission(false)
+    let archive = try records.load()
+    let history = try XCTUnwrap(archive.privacyEvents)
+    XCTAssertEqual(history.map(\.scope), [.overview, .weeklyReport, .overview])
+    XCTAssertEqual(history.map(\.enabled), [true, true, false])
+    XCTAssertEqual(archive.derivesOverview, false)
+    XCTAssertEqual(archive.weeklyReportAllowed, true)
+    XCTAssertNil(String(decoding: try Data(contentsOf: file), as: UTF8.self).range(of: "privacyEvents"))
+  }
+
   func testOverviewUsesConfirmedLatestReadingsAndLocalDayBoundary() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))

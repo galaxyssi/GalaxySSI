@@ -45,6 +45,33 @@ class HealthPhotoDraftStoreDeviceTest {
         assertFalse(store.captureBatch(owner.id)!!.submitted)
         assertTrue(store.present(store.original(prepared.originalId)!!))
     }
+
+    @Test fun inspectionDetectsPaperAfterExifRotationAndSkipsDeviceMode() = fixture { _, root, store ->
+        val bytes = syntheticHealthPaper()
+        val upright = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        val rotated = Bitmap.createBitmap(upright, 0, 0, upright.width, upright.height, android.graphics.Matrix().apply {
+            setRotate(-90f)
+        }, true)
+        val file = File(root, "orientation-fixture.jpg")
+        try {
+            assertTrue(root.isDirectory || root.mkdirs())
+            file.outputStream().use { assertTrue(rotated.compress(Bitmap.CompressFormat.JPEG, 97, it)) }
+            androidx.exifinterface.media.ExifInterface(file).apply {
+                setAttribute(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, "6")
+                saveAttributes()
+            }
+            val original = file.inputStream().use { store.importOriginal(id(), it, "report.jpg", "image/jpeg", "file") }
+            val result = HealthPhotoInspector.inspect(store, original, report = true)
+            assertEquals(90, result.rotation)
+            val crop = requireNotNull(result.suggestedCrop)
+            assertTrue(crop.left in 148..192 && crop.top in 80..123)
+            assertTrue(crop.right in 794..836 && crop.bottom in 872..922)
+            assertFalse(HealthPhotoInspector.inspect(store, original).reportChecked)
+            assertNull(HealthPhotoInspector.inspect(store, original).suggestedCrop)
+        } finally {
+            bytes.fill(0); upright.recycle(); rotated.recycle(); file.delete()
+        }
+    }
     @Test fun ordinaryWorkerCannotBypassTheCaptureReviewGate() = fixture { _, _, store ->
         val owner = batch(store); val entry = job(owner); store.addCaptureJob(owner.id, entry)
         assertEquals(HealthImportOutcome.COMPLETE, HealthImportPipeline(context).run(store, entry.id))
