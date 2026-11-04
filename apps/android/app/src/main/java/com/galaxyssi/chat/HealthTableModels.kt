@@ -1,10 +1,14 @@
 package com.galaxyssi.chat
 
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
+import java.time.temporal.ChronoField
 import java.util.Locale
 import org.json.JSONObject
 
@@ -111,6 +115,16 @@ internal object HealthTablePolicy {
         require(offsets.size == 1) { "Ambiguous or nonexistent local time; use an ISO timestamp with its offset" }
         return time.toInstant(offsets.single()).toEpochMilli()
     }
+    private fun dateOnlyTime(mapping: HealthTableMapping): LocalTime {
+        require(mapping.dateOnlyTime.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")))
+        return LocalTime.parse(mapping.dateOnlyTime)
+    }
+    private fun xlsxDateOnly(raw: String, mapping: HealthTableMapping): Long? = runCatching {
+        val parsed = DateTimeFormatter.ISO_DATE.parse(raw.trim())
+        val local = LocalDate.from(parsed).atTime(dateOnlyTime(mapping))
+        if (parsed.isSupported(ChronoField.OFFSET_SECONDS)) local.toInstant(ZoneOffset.from(parsed)).toEpochMilli()
+        else localTime(local, mapping.zone)
+    }.getOrNull()
     fun evaluate(batch: HealthTableBatch, row: HealthTableRow, now: Long = System.currentTimeMillis()): HealthTableEvaluation {
         fun error(state: HealthTableRowState, issue: String) = HealthTableEvaluation(null, state, issue)
         if (row.issue.isNotBlank()) return error(HealthTableRowState.INVALID, row.issue)
@@ -124,12 +138,14 @@ internal object HealthTablePolicy {
         val values = m.metric.fields.associateWith { field -> m.columns[field].let { row.numbers[it] ?: row.cells[it] }.orEmpty().trim() }
         if (m.metric.requiredFields.any { values[it].isNullOrBlank() } || row.cells[m.timeColumn].isNullOrBlank())
             return error(HealthTableRowState.MISSING, "missing")
-        val time = if (m.date != HealthTableDate.EXCEL) measuredAt(row.cells[m.timeColumn].orEmpty(), m) else runCatching {
+        val rawTime = row.cells[m.timeColumn].orEmpty()
+        val time = if (m.date != HealthTableDate.EXCEL) {
+            measuredAt(rawTime, m) ?: if (batch.format == "xlsx" && m.date == HealthTableDate.ISO) xlsxDateOnly(rawTime, m) else null
+        } else runCatching {
             require(batch.format == "xlsx")
             var local = LocalDateTime.parse(requireNotNull(row.excelDates[m.timeColumn]))
             if (row.cells[m.timeColumn]?.toBigDecimalOrNull()?.remainder(java.math.BigDecimal.ONE)?.signum() == 0) {
-                require(m.dateOnlyTime.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")))
-                local = local.toLocalDate().atTime(java.time.LocalTime.parse(m.dateOnlyTime))
+                local = local.toLocalDate().atTime(dateOnlyTime(m))
             }
             localTime(local, m.zone)
         }.getOrNull()
@@ -143,7 +159,8 @@ internal object HealthTablePolicy {
         val source = (listOf("Row ${row.sourceRow}", "${m.timeColumn}: ${row.cells[m.timeColumn]}") +
             m.metric.fields.mapNotNull { field -> m.columns[field]?.takeIf(String::isNotBlank)?.let { "$it: ${row.cells[it].orEmpty()}" } } +
             listOf("Unit: $rawUnit") + (if (m.referenceColumn.isBlank()) emptyList() else listOf("Reference [${m.referenceColumn}]: ${row.cells[m.referenceColumn].orEmpty()}")) +
-            if (batch.format == "xlsx") listOf("Sheet: $sheet", "Excel epoch: ${if (batch.date1904) 1904 else 1900}",
+            if (batch.format == "xlsx") listOf("Sheet: $sheet",
+                if (m.date == HealthTableDate.EXCEL) "Excel epoch: ${if (batch.date1904) 1904 else 1900}" else "Time format: ${m.date.pattern}",
                 "Interpreted time: ${java.time.Instant.ofEpochMilli(time)}; zone: ${m.zone}") +
                 (if (m.dateOnlyTime.isBlank()) emptyList() else listOf("Confirmed date-only time: ${m.dateOnlyTime}")) +
                 formulas.map { (column, formula) -> "${row.addresses[column].orEmpty()} $column: =$formula; cached=${row.cells[column].orEmpty()} (not recalculated)" }
