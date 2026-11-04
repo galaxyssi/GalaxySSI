@@ -785,7 +785,8 @@ final class AgentTeamExecutionHistoryStore {
 
   func publishResearchObjects(_ drafts: [AgentCollaborationResearchDraft], runId: String,
                               conversationId: String, turnId: String, memberId: String,
-                              sourceId: String) throws -> AgentCollaborationResearchPublication {
+                              sourceId: String, milestone: (id: String, hash: String)? = nil)
+    throws -> AgentCollaborationResearchPublication {
     guard !drafts.isEmpty, drafts.count <= 32, !sourceId.isBlank else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -794,13 +795,18 @@ final class AgentTeamExecutionHistoryStore {
       guard bytes.count <= 256_000 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
-    let requestHash = try digest(drafts)
-    let publicationKey = Self.researchPublicationKey(runId: runId, memberId: memberId, sourceId: sourceId)
+    let draftHash = try digest(drafts)
+    let requestHash = milestone?.hash ?? draftHash
+    let baseKey = Self.researchPublicationKey(runId: runId, memberId: memberId, sourceId: sourceId)
+    let publicationKey = milestone.map { Self.milestoneKey(baseKey, id: $0.id) } ?? baseKey
     return try access { database in
       guard let snapshot = try database.snapshots(runId: runId).first,
             snapshot.conversationId == conversationId, snapshot.taskId == turnId,
             let member = snapshot.members.first(where: { $0.memberId == memberId && $0.sourceMessageId == sourceId }),
-            member.status == .succeeded, snapshot.state != .cancelled else {
+            snapshot.state != .cancelled,
+            milestone == nil ? member.status == .succeeded : Self.canPublishMilestone(snapshot, member: member),
+            try database.researchRecord(Bool.self, conversationId: conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
       if let prior = try database.researchRecord(AgentCollaborationResearchPublication.self,
@@ -1271,6 +1277,34 @@ final class AgentTeamExecutionHistoryStore {
     "publication:" + AgentMcpJSONCodec.sha256([
       "run": .string(runId), "member": .string(memberId), "source": .string(sourceId)
     ])
+  }
+
+  private static func milestoneKey(_ baseKey: String, id: String) -> String {
+    baseKey + ":milestone:" + AgentMcpJSONCodec.sha256(["id": .string(id)])
+  }
+
+  private static func canPublishMilestone(_ snapshot: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot) -> Bool {
+    snapshot.state == .running && member.deliveryMode == .observe && !member.status.isTerminal &&
+      (member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted)
+  }
+
+  func publishCollaborationMilestone(_ input: AgentMcpJSONObject,
+                                     scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    let id = input.string("milestone_id")
+    guard !id.isBlank, id.utf8.count <= 160,
+          Set(input.keys) == ["mode", "milestone_id", "artifact"], input["mode"] == .string("publish"),
+          let raw = input["artifact"]?.strictStringValue, raw.utf8.count <= 131_072,
+          let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8)),
+          !envelope.string("summary").isBlank,
+          let drafts = try AgentCollaborationResearchEnvelope.publication(in: raw)
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let hash = Self.replyHash(raw)
+    let receipt = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId, milestone: (id, hash))
+    return ["success": .bool(true), "status": .string("published"), "milestone_id": .string(id),
+      "artifact_sha256": .string(hash), "references": .array(receipt.references.map {
+        .object(["object_id": .string($0.objectId), "revision": .int($0.revision), "sha256": .string($0.sha256)])
+      })]
   }
 
   func publishSavedResearchReply(_ raw: String, scope: AgentCollaborationToolEvidenceScope) throws {

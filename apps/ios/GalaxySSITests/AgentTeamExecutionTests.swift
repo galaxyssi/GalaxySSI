@@ -369,6 +369,45 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testInterimPublicationReopensWithSameReceiptWithoutCompletingAssignment() throws {
+    let suite = "milestone-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("run")
+    team.members[1].dispatchCheckpoint = .dispatching
+    XCTAssertTrue(history.upsert(team))
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: team.conversationId,
+      turnId: team.taskId, memberId: "review", sourceId: "source-review")
+    let artifact = """
+    {"format":"galaxyssi.research-artifact.v1","summary":"Interim",
+     "workspace":[{"id":"note","base_revision":0,"kind":"artifact","title":"Note","body":{"content":"Original"},"parents":[]}]}
+    """
+    let input: AgentMcpJSONObject = ["mode": .string("publish"), "milestone_id": .string("first"),
+      "artifact": .string(artifact)]
+    let receipt = try history.publishCollaborationMilestone(input, scope: scope)
+    XCTAssertEqual(receipt["success"], .bool(true))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(input, scope: scope), receipt)
+    XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].status, team.members[1].status)
+    var changed = input
+    changed["artifact"] = .string(artifact + " ")
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(changed, scope: scope))
+    var foreign = scope
+    foreign.sourceId = "foreign"
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(input, scope: foreign))
+    team.members[1].status = .succeeded
+    team.updatedAtMillis += 1
+    XCTAssertTrue(reopened.upsert(team))
+    XCTAssertNil(try reopened.committedResearchRevisions(scope: scope))
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(input, scope: scope))
+  }
+
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
     XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
     let raw = """
