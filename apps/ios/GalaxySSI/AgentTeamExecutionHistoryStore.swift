@@ -1370,7 +1370,9 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          guard [.acceptanceReview, .environmentModel, .teamExchange, .failureExperience, .innovationOpportunity, .experimentResult, .capabilityLesson].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
+          guard [.acceptanceReview, .environmentModel, .teamExchange, .failureExperience, .innovationOpportunity,
+                 .experimentResult, .predictionOutcome, .capabilityLesson].contains(revision.draft.kind),
+                let reads = revision.frozenCloudReads,
                 reads.count == citations.count,
                 zip(reads, citations).allSatisfy({ pair in
                   pair.0.evidenceId == pair.1.string("evidence_id") &&
