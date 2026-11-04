@@ -2350,10 +2350,9 @@ final class MessageCoordinator: ObservableObject {
         observation: AgentTeamReplyObservation(payload: payload))
       guard disposition == .observerCommitted || disposition == .observerDuplicate,
             teamObserverResultIsCommitted(payload, binding: binding), desktopResultRecovery.receipts.insert(receipt) else { return }
-      publishCommittedCollaborationResearch(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
-        turn: binding.identity.turnId, contact: binding.contactId)
+      finalizeSavedCollaborationObserver(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
+        turn: binding.identity.turnId, contact: binding.contactId, expectedRunId: binding.teamSource?.supervisorRunId)
       UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
-      if let runId = binding.teamSource?.supervisorRunId { reconcileSavedTeamParents(runId: runId) }
       if desktopReplyRecovery.retire(binding) { desktopReplyRecoverySweepRequested = true }
     } catch { lastError = localizedReply("galaxyssi.team.reply_commit_failed", fallback: "The Agent team reply could not be saved. It will not be shown as a normal message.") }
   }
@@ -6999,15 +6998,10 @@ final class MessageCoordinator: ObservableObject {
       return true
     case .notOwned:
       guard volatile?.deliveryMode == .observe else { return false }
-    case .observerCommitted:
-      if let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(
-        source: source, conversation: conversation, turn: turn, contact: contact.id) {
-        reconcileSavedTeamParents(runId: context.team.supervisorRunId)
-      }
-    case .observerProgress, .observerDuplicate, .retired: break
+    case .observerCommitted, .observerProgress, .observerDuplicate, .retired: break
     }
     if terminal, tracked, disposition == .observerCommitted || disposition == .observerDuplicate {
-      publishCommittedCollaborationResearch(source: source, conversation: conversation, turn: turn, contact: contact.id)
+      finalizeSavedCollaborationObserver(source: source, conversation: conversation, turn: turn, contact: contact.id)
       acknowledgeTeamObserverResult(payload, link: link)
     }
     if terminal { UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: source) }
@@ -7049,9 +7043,8 @@ final class MessageCoordinator: ObservableObject {
          conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
          task: binding.sourceMessageId, contact: member.agentId, content: text, success: true,
          now: AgentControlPlaneClock.nowMillis()) != nil {
-      publishCommittedCollaborationResearch(source: binding.sourceMessageId, conversation: outgoing.conversationId,
-        turn: outgoing.turnId.ifBlank(outgoing.id.uuidString), contact: member.agentId)
-      reconcileSavedTeamParents(runId: saved.supervisorRunId)
+      finalizeSavedCollaborationObserver(source: binding.sourceMessageId, conversation: outgoing.conversationId,
+        turn: outgoing.turnId.ifBlank(outgoing.id.uuidString), contact: member.agentId, expectedRunId: saved.supervisorRunId)
     }
     _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
       teamId: spec.definition.teamId,
@@ -7084,8 +7077,8 @@ final class MessageCoordinator: ObservableObject {
           return
         }
         for owner in page.owners {
-          self.publishCommittedCollaborationResearch(source: owner.sourceMessageId, conversation: owner.conversationId,
-            turn: owner.turnId, contact: owner.contactId, reportFailure: false)
+          self.finalizeSavedCollaborationObserver(source: owner.sourceMessageId, conversation: owner.conversationId,
+            turn: owner.turnId, contact: owner.contactId, expectedRunId: owner.supervisorRunId, reportFailure: false)
           await Task.yield()
           guard !Task.isCancelled, self.store.profile.identityFingerprint == profile else { return }
         }
@@ -7095,15 +7088,19 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func publishCommittedCollaborationResearch(source: String, conversation: String, turn: String, contact: String,
-                                                     reportFailure: Bool = true) {
+  private func finalizeSavedCollaborationObserver(source: String, conversation: String, turn: String,
+    contact: String, expectedRunId: String? = nil, reportFailure: Bool = true) {
     guard let session = store.agentSession(id: conversation), session.id == conversation,
-          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+          session.mergedIntoConversationId.isBlank,
           !session.privateMode, !session.trackingPaused else { return }
     let history = AgentTeamExecutionHistoryStore.shared
     do {
       guard let context = try history.recoveryContext(source: source, conversation: conversation, turn: turn, contact: contact),
-            context.member.status == .succeeded else { return }
+            context.owner.deliveryMode == .observe, context.member.status.isTerminal,
+            context.team.state != .cancelled,
+            expectedRunId == nil || context.team.supervisorRunId == expectedRunId else { return }
+      defer { reconcileSavedTeamParents(runId: context.team.supervisorRunId) }
+      guard session.collaborationRoster != nil, context.member.status == .succeeded else { return }
       let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
         conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
       guard let raw = context.member.replyContent else { return }
