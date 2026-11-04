@@ -42,9 +42,10 @@ struct GalaxySSIHealthCenterView: View {
           }
         }
         NavigationLink {
-          GalaxySSIHealthImportView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
+          GalaxySSIHealthImportView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets),
+                                    records: records)
         } label: {
-          Label(t("import.title", "Import Health Reports"), systemImage: "square.and.arrow.down")
+          Label(t("import.title", "Import Health Data"), systemImage: "square.and.arrow.down")
         }
       }
       NavigationLink {
@@ -119,11 +120,6 @@ struct GalaxySSIHealthCenterView: View {
         GalaxySSIHealthMeasurementExportView(records: records)
       } label: {
         Label(t("export.title", "Export Measurements"), systemImage: "square.and.arrow.up")
-      }
-      NavigationLink {
-        GalaxySSIHealthTableImportView(records: records)
-      } label: {
-        Label(t("table.title", "Import Measurement Table"), systemImage: "tablecells")
       }
       NavigationLink {
         GalaxySSIWeeklyHealthReportView(records: records)
