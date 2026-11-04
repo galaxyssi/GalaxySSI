@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_weekly_title">My weekly health report</string>
+    <string name="health_weekly_range">%1$s to %2$s · %3$s</string>
+    <string name="health_weekly_version">Method %1$d · Data version %2$s · Calculated %3$s</string>
+    <string name="health_weekly_previous">Previous week</string>
+    <string name="health_weekly_next">Next week</string>
+    <string name="health_weekly_metrics">Confirmed measurements</string>
+    <string name="health_weekly_no_values">No usable values</string>
+    <string name="health_weekly_bp_count">%1$d valid readings</string>
+    <string name="health_weekly_minutes">min</string>
+    <string name="health_weekly_steps">steps</string>
+    <string name="health_weekly_coverage">%1$d/%2$d usable days · %3$d recorded days · %4$d records</string>
+    <string name="health_weekly_attention">Sleep comparison</string>
+    <string name="health_weekly_compare_insufficient">Not enough usable days to compare. At least 5 days this week and 10 in the baseline are needed.</string>
+    <string name="health_weekly_compare_coverage">Usable days: %1$d/7 this week · %2$d/14 in the baseline</string>
+    <string name="health_weekly_baseline_range">Baseline: %1$s to %2$s</string>
+    <string name="health_weekly_compare">Daily average: %1$s min this week, %2$s min in the baseline. Difference: %3$s min.</string>
+    <string name="health_weekly_baseline_records">View baseline records</string>
+    <string name="health_weekly_method">Averages use only days with usable values. Steps use the latest daily count. Blood pressure counts valid pairs. Missing days are not zero.</string>
+    <string name="health_weekly_exclusions">Unconfirmed entries, personal profile, notes, and original attachments are not included.</string>
+    <string name="health_weekly_prepare">Preview and export report</string>
+    <string name="health_weekly_options">Report contents</string>
+    <string name="health_weekly_preview">Review report</string>
+    <string name="health_weekly_raw">Include underlying measurement records</string>
+    <string name="health_weekly_raw_count">Underlying records: %1$d</string>
+    <string name="health_weekly_include_comparison">Include sleep baseline comparison</string>
+    <string name="health_weekly_limit">A PDF can include up to %1$d underlying records. Remove them or choose fewer metrics. To export a larger record set, use record export.</string>
+    <string name="health_weekly_confirm">Save an unencrypted PDF containing this selection to a location I choose.</string>
+    <string name="health_weekly_save">Save weekly report PDF</string>
+    <string name="health_weekly_saved">PDF saved</string>
+    <string name="health_weekly_changed">Records changed after this preview. Review the updated report before saving.</string>
+    <string name="health_weekly_review_again">Review updated report</string>
+</resources>

@@ -21,6 +21,7 @@ class HealthTrendRecordsActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor(); private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout; private lateinit var spec: HealthTrendSpec
     private var numeric = false; private var active = false; @Volatile private var generation = 0
+    private var fixedVersion = false
     private var signal: CancellationSignal? = null; private var cursor: HealthPageCursor? = null
     private var version: String? = null
     private val previous = arrayListOf<HealthPageCursor?>()
@@ -31,8 +32,9 @@ class HealthTrendRecordsActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         spec = intent.healthTrendSpec() ?: run { finish(); return }; numeric = intent.getBooleanExtra("health_numeric", false)
+        fixedVersion = intent.getBooleanExtra("health_fixed_version", false)
         version = state?.getString("version") ?: intent.getStringExtra("health_version")
-        if (numeric && version == null) { finish(); return }
+        if ((numeric || fixedVersion) && version == null) { finish(); return }
         state?.getString("cursor_id")?.let { cursor = HealthPageCursor(state.getLong("cursor_time"), it) }
         state?.getStringArrayList("previous")?.forEach { value ->
             previous += if (value.isEmpty()) null else value.split('|').let { HealthPageCursor(it[0].toLong(), it[1]) }
@@ -78,8 +80,8 @@ class HealthTrendRecordsActivity : Activity() {
                 body.removeAllViews()
                 body.addView(ui.text(getString(when (it) { is HealthTrendChangedException -> R.string.health_trend_changed; is HealthAccessBlocked -> R.string.health_privacy_trend_blocked; else -> R.string.health_storage_error }), 14f, muted = true))
                 if (it is HealthAccessBlocked) body.addView(ui.command(R.string.health_privacy_title) { startActivity(healthPrivacyIntent()) }.apply { tag = "health-privacy-blocked" })
-                body.addView(ui.command(if (numeric) R.string.health_trend_return else R.string.health_trend_refresh) {
-                    if (numeric) finish() else { version = null; cursor = null; previous.clear(); load() }
+                body.addView(ui.command(if (numeric || fixedVersion) R.string.health_trend_return else R.string.health_trend_refresh) {
+                    if (numeric || fixedVersion) finish() else { version = null; cursor = null; previous.clear(); load() }
                 })
             }) }
         }
@@ -93,7 +95,7 @@ class HealthTrendRecordsActivity : Activity() {
         page.records.forEach { record ->
             val time = Instant.ofEpochMilli(record.draft.measuredAt).atZone(spec.zone).format(DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm"))
             ui.add(content, ui.row(healthDisplayValue(record.draft), "$time \u00b7 ${getString(healthRecordSourceResource(record.source))}") {
-                if (numeric) startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putExtra("health_record", record.id).putExtra("health_revision", record.revision))
+                if (numeric || fixedVersion) startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putExtra("health_record", record.id).putExtra("health_revision", record.revision))
                 else startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id))
             }.apply { tag = "health-trend-record-${record.id}" }, 8)
         }

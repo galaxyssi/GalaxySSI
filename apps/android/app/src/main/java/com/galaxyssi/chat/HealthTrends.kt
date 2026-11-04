@@ -22,7 +22,7 @@ internal data class HealthTrendSpec(val metric: HealthMetric, val first: LocalDa
     val until = last.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
     val bucketDays = ((days + MAX_POINTS - 1) / MAX_POINTS).toInt()
     init { require(!first.isBefore(LocalDate.of(1970, 1, 1)) && !last.isBefore(first)); require(days in 1..Int.MAX_VALUE.toLong()); require(unit in metric.selectableUnits) }
-    fun matches(record: HealthObservation, numericOnly: Boolean = false): Boolean = record.draft.metric == metric && source.accepts(record) &&
+    fun matches(record: HealthObservation, numericOnly: Boolean = false): Boolean = record.profileId == "self" && record.draft.metric == metric && source.accepts(record) &&
         record.draft.measuredAt >= from && record.draft.measuredAt < until && (!numericOnly || record.draft.unit == unit && exact(record) != null)
     fun exact(record: HealthObservation): Map<String, BigDecimal>? {
         val values = metric.requiredFields.associateWith { field -> HealthResult.parse(record.draft.values[field].orEmpty(), metric.form)?.exactNumber }

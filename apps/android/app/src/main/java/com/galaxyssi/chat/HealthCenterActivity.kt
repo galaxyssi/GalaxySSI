@@ -261,6 +261,7 @@ class HealthCenterActivity : Activity() {
                 addView(ui.row(getString(R.string.health_manual), getString(R.string.health_measurement_context)) { open("manual") })
                 addView(ui.row(getString(R.string.health_records), getString(R.string.health_record_sources)) { open("records") })
                 addView(ui.row(getString(R.string.health_catalog_title)) { openCatalog() })
+                addView(ui.row(getString(R.string.health_weekly_title)) { openWeekly() }.apply { tag = "health-weekly-entry" })
                 addView(ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this@HealthCenterActivity, HealthDataFilesActivity::class.java)) })
             }, 14)
             ui.add(this, ui.text(getString(R.string.health_profile_preferences), 18f, bold = true), 24)
@@ -272,6 +273,7 @@ class HealthCenterActivity : Activity() {
         }
     }
     private fun openReminders() = startActivity(android.content.Intent(this, HealthReminderActivity::class.java))
+    private fun openWeekly() = startActivity(android.content.Intent(this, HealthWeeklyActivity::class.java))
     private fun recordRow(record: HealthObservation) = ui.card().apply {
         addView(ui.text(getString(record.draft.metric.titleResource()), 14f, muted = true))
         ui.add(this, ui.text(value(record), if (value(record).length > 24) 18f else 25f, bold = true), 6)

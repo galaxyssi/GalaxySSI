@@ -25,7 +25,7 @@ acceptance, and no global completion claim follows from the first imports.
 | h13 Health AI | No automatic exposure of health records to a Provider | Explicit data-range consent, computed facts/citations, unavailable/stale analysis, necessary-field-only requests |
 | h14 Reminder detail | Daily recording occurrence with persisted schedule snapshot, separate posting and handling status, editor link, complete/later/disable | Versioned change-rule snapshots, baseline coverage, revision invalidation and cooldown |
 | h15 Reminder center | Native pending/handled/all views, paged daily recording reminders and independent system posting | Data-derived health changes, report-review and sync-error producers, physical delivery acceptance |
-| h16 Weekly report | No generated medical report claimed | Versioned date range/statistics, configurable preview/PDF, no automatic sharing |
+| h16 Weekly report | Native seven-day statistics and coverage, optional measured sleep baseline, revision-bound source links, scoped preview and explicit PDF save; 280 JVM, 242 non-visual and 39 UI tests pass on 0.1.7.28 | Final visual and source-navigation acceptance, real external provider/process-death matrix, and later h13/h14 links |
 | h17 Devices/sources | Manual/file/OCR provenance exists | Actual capability/permission/last-sync source list and distinct disconnect/stop/delete actions |
 | h18 Health platforms | No simulated platform connection | User-selected scopes, actual adapter availability, revocation/background/copy-retention handling |
 | h19 BLE | No simulated peripheral measurements | Real scan/pair/connect/read/disconnect states, ownership, device timestamps/source IDs/deduplication and opt-in trusted autosave |
