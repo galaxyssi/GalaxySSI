@@ -283,6 +283,39 @@ final class AgentTeamExecutionHistoryStore {
     catch { return nil }
   }
 
+  func goalCheckpoint(runId: String, conversationId: String, turnId: String,
+                      revision: Int64? = nil) -> AgentCollaborationGoalCheckpoint? {
+    try? access { database -> AgentCollaborationGoalCheckpoint? in
+      guard let snapshot = try database.snapshots(runId: runId).first,
+            snapshot.conversationId == conversationId, snapshot.taskId == turnId,
+            let checkpoint = try database.goalCheckpoints(runId: runId, revision: revision, newestOnly: true).first,
+            checkpoint.conversationId == conversationId, checkpoint.turnId == turnId else { return nil }
+      return checkpoint
+    }
+  }
+
+  func advanceGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64) -> Bool {
+    guard expectedRevision >= 0, expectedRevision < Int64.max, checkpoint.revision == expectedRevision + 1,
+          !checkpoint.contract.isEmpty, Set(checkpoint.contract.map(\.id)).count == checkpoint.contract.count,
+          checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank }),
+          checkpoint.completedWorkIds.allSatisfy({ !$0.isBlank }) else { return false }
+    do {
+      return try access { database in
+        guard let snapshot = try database.snapshots(runId: checkpoint.runId).first,
+              snapshot.conversationId == checkpoint.conversationId, snapshot.taskId == checkpoint.turnId,
+              !snapshot.state.deliverable else { return false }
+        let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
+        guard (prior.first?.revision ?? 0) == expectedRevision,
+              prior.allSatisfy({
+                $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
+                  $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
+              }) else { return false }
+        try database.insertGoalCheckpoint(checkpoint)
+        return true
+      }
+    } catch { return false }
+  }
+
   func remove(supervisorRunId: String) {
     do {
       try access { try $0.remove(runId: supervisorRunId) }

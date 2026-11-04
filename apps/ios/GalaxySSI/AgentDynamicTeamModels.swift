@@ -1,5 +1,135 @@
 import Foundation
 
+struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
+  enum Phase: String, Codable { case planning, working, waiting }
+  var runId: String
+  var conversationId: String
+  var turnId: String
+  var revision: Int64
+  var phase: Phase
+  var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
+  var completedWorkIds: Set<String>
+}
+
+enum AgentCollaborationGoalAssessmentPolicy {
+  enum Verification: String, Codable { case documentary, computational, physical }
+  enum Decision: String, Codable { case `continue`, achieved, blocked }
+  enum EvidenceKind: String, Codable { case observed, simulation, proposal }
+
+  struct Criterion: Codable, Equatable {
+    enum Status: String, Codable { case met, open }
+    var id: String
+    var requirement: String
+    var verification: Verification
+    var status: Status
+    var evidence_kind: EvidenceKind?
+    var evidence: [String]
+  }
+
+  struct Work: Codable {
+    var id: String
+    var member: String
+    var assignment: String
+  }
+
+  struct Blocker: Codable {
+    enum Kind: String, Codable { case resource, permission, connectivity, provider, capacity }
+    struct Alternative: Codable {
+      enum Status: String, Codable { case unavailable, needs_approval, not_applicable }
+      var option: String
+      var status: Status
+      var result: String
+      var evidence: [String]
+    }
+    var id: String
+    var kind: Kind
+    var reason: String
+    var resume_when: String
+    var alternatives: [Alternative]?
+  }
+
+  struct Assessment: Codable {
+    var format: String
+    var summary: String
+    var decision: Decision
+    var criteria: [Criterion]
+    var work: [Work]
+    var blockers: [Blocker]
+    var recruit: [Work]?
+  }
+
+  struct VerifiedCriterion {
+    var requirement: String
+    var verification: Verification
+    var evidence: Set<String>
+  }
+
+  enum Outcome: Equatable {
+    case needsAssessment
+    case schedule([String])
+    case waiting([String])
+    case achieved
+  }
+
+  static func evaluate(_ raw: String, preserving contract: [Criterion],
+                       authorizedMembers: Set<String>, completedWork: Set<String>,
+                       checkedBlockers: Set<String> = [],
+                       verified: [String: VerifiedCriterion] = [:]) -> Outcome {
+    guard raw.utf8.count <= 256_000,
+          let assessment = try? JSONDecoder().decode(Assessment.self, from: Data(raw.utf8)),
+          assessment.format == "galaxyssi.goal-assessment.v1",
+          !assessment.summary.isBlank, !assessment.criteria.isEmpty,
+          Set(assessment.criteria.map(\.id)).count == assessment.criteria.count,
+          assessment.criteria.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank }) else {
+      return .needsAssessment
+    }
+    let criteria = Dictionary(uniqueKeysWithValues: assessment.criteria.map { ($0.id, $0) })
+    guard contract.allSatisfy({ original in
+      criteria[original.id]?.requirement == original.requirement &&
+        criteria[original.id]?.verification == original.verification
+    }) else { return .needsAssessment }
+    guard assessment.recruit?.isEmpty != false else { return .needsAssessment }
+
+    if !assessment.work.isEmpty {
+      let ids = assessment.work.map(\.id)
+      guard assessment.decision == .continue, Set(ids).count == ids.count,
+            completedWork.isDisjoint(with: ids), assessment.work.allSatisfy({
+              !$0.id.isBlank && !$0.assignment.isBlank && authorizedMembers.contains($0.member)
+            }) else { return .needsAssessment }
+      return .schedule(ids)
+    }
+    switch assessment.decision {
+    case .continue:
+      return .needsAssessment
+    case .blocked:
+      let ids = assessment.blockers.map(\.id)
+      guard !ids.isEmpty, Set(ids).count == ids.count,
+            assessment.blockers.allSatisfy({ blocker in
+              guard !blocker.id.isBlank, !blocker.reason.isBlank, !blocker.resume_when.isBlank else { return false }
+              guard blocker.kind == .resource || blocker.kind == .permission else { return true }
+              guard checkedBlockers.contains(blocker.id), let alternatives = blocker.alternatives,
+                    !alternatives.isEmpty else { return false }
+              return alternatives.allSatisfy {
+                !$0.option.isBlank && !$0.result.isBlank && !$0.evidence.isEmpty &&
+                  $0.evidence.allSatisfy { !$0.isBlank }
+              }
+            }) else { return .needsAssessment }
+      return .waiting(ids)
+    case .achieved:
+      guard !contract.isEmpty, assessment.blockers.isEmpty,
+            assessment.criteria.allSatisfy({ item in
+              guard item.status == .met, let kind = item.evidence_kind, kind != .proposal,
+                    item.verification != .physical || kind == .observed,
+                    !item.evidence.isEmpty, item.evidence.allSatisfy({ !$0.isBlank }),
+                    let receipt = verified[item.id], receipt.requirement == item.requirement,
+                    receipt.verification == item.verification else { return false }
+              return Set(item.evidence).isSubset(of: receipt.evidence)
+            }) else { return .needsAssessment }
+      return .achieved
+    }
+  }
+}
+
 enum AgentDynamicTeamOutcome: String, Codable, CaseIterable, Identifiable {
   case singleAgent = "SINGLE_AGENT"
   case team = "TEAM"

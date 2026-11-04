@@ -2,6 +2,40 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testGoalCheckpointCompareAndSetRetainsPriorRevisionAfterReopen() {
+    let suite = "goal-checkpoint-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let team = durableTeamSnapshot("goal-run")
+    XCTAssertTrue(history.upsert(team))
+    let first = AgentCollaborationGoalCheckpoint(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, revision: 1, phase: .working,
+      contract: [.init(id: "result", requirement: "Observe the result", verification: .physical,
+        status: .open, evidence_kind: nil, evidence: [])], completedWorkIds: ["explore"])
+    XCTAssertTrue(history.advanceGoalCheckpoint(first, expectedRevision: 0))
+    var next = first
+    next.revision = 2
+    XCTAssertFalse(history.advanceGoalCheckpoint(next, expectedRevision: 1))
+    next.completedWorkIds = ["verify"]
+    XCTAssertTrue(history.advanceGoalCheckpoint(next, expectedRevision: 1))
+    XCTAssertFalse(history.advanceGoalCheckpoint(next, expectedRevision: 1))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertEqual(reopened.goalCheckpoint(runId: first.runId, conversationId: first.conversationId,
+      turnId: first.turnId), next)
+    XCTAssertEqual(reopened.goalCheckpoint(runId: first.runId, conversationId: first.conversationId,
+      turnId: first.turnId, revision: 1), first)
+    XCTAssertNil(reopened.goalCheckpoint(runId: first.runId, conversationId: "foreign", turnId: first.turnId))
+    reopened.remove(supervisorRunId: first.runId)
+    XCTAssertTrue(reopened.upsert(team))
+    XCTAssertNil(reopened.goalCheckpoint(runId: first.runId, conversationId: first.conversationId, turnId: first.turnId))
+  }
+
   func testCollaborationDispatchCheckpointSurvivesReopenAndRejectsDuplicateStart() throws {
     let suite = "team-checkpoint-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
