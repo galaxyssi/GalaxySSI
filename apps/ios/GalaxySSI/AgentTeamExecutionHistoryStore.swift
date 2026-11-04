@@ -544,6 +544,28 @@ final class AgentTeamExecutionHistoryStore {
           let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
             turnId: turnId, memberId: memberId, sourceId: sourceId)
           frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database, requireFailure: true)
+        } else if draft.kind == .innovationOpportunity {
+          guard let pinned = try database.goalCheckpoints(runId: runId, revision: 1, newestOnly: true).first,
+                pinned.conversationId == conversationId, pinned.turnId == turnId else {
+            throw AgentTeamHistoryDatabase.Failure.stale
+          }
+          let goalHash = SHA256.hash(data: Data(snapshot.goal.utf8)).map { String(format: "%02x", $0) }.joined()
+          let valid = try AgentCollaborationOpportunityIntake.validates(draft, goalHash: goalHash,
+            contract: pinned.contract) { reference in
+              guard !drafts.contains(where: { $0.objectId == reference.objectId }),
+                    let source = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                      conversationId: conversationId, key: "object:" + reference.objectId),
+                    source.reference == reference,
+                    source.turnId != turnId || (source.runId == runId && source.authorId == memberId)
+              else { return nil }
+              return source.draft.kind.rawValue
+          }
+          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
+          if !references.isEmpty {
+            let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+              turnId: turnId, memberId: memberId, sourceId: sourceId)
+            frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
+          }
         } else if !references.isEmpty {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
@@ -714,7 +736,7 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          guard [.acceptanceReview, .failureExperience].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
+          guard [.acceptanceReview, .failureExperience, .innovationOpportunity].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
                 reads.count == citations.count,
                 zip(reads, citations).allSatisfy({ pair in
                   pair.0.evidenceId == pair.1.string("evidence_id") &&
