@@ -69,6 +69,7 @@ struct AgentCollaborationResearchDraft: Codable {
   enum Kind: String, Codable {
     case hypothesis, evidence, counterexample, proposal, experiment, artifact, decision, question
     case acceptanceReview = "acceptance_review"
+    case workflowMethod = "workflow_method"
     case candidate
     case candidateEvent = "candidate_event"
   }
@@ -86,6 +87,63 @@ struct AgentCollaborationResearchDraft: Codable {
     case id, kind, title, body, parents, resolves, observations
     case objectId = "object_id"
     case baseRevision = "base_revision"
+  }
+}
+
+enum AgentCollaborationWorkflowIntake {
+  static func validates(_ method: AgentMcpJSONObject) -> Bool {
+    guard ["purpose", "domain", "bottleneck", "change_rationale", "applies_when", "avoid_when", "risks",
+           "expected_gain", "falsifier"].allSatisfy({ method[$0]?.stringValue?.isBlank == false }),
+          let dimensions = strings(method["dimensions"]), !dimensions.isEmpty,
+          dimensions.isSubset(of: ["decomposition", "retrieval", "tool_use", "collaboration", "verification"]),
+          let roles = strings(method["roles"]), !roles.isEmpty, strings(method["inputs"]) != nil,
+          let steps = method["steps"]?.arrayValue, (1...1_024).contains(steps.count) else { return false }
+    var graph: [String: (role: String, dependencies: Set<String>, review: Set<String>)] = [:]
+    for raw in steps {
+      guard let step = raw.objectValue,
+            Set(step.keys).isSubset(of: ["id", "role", "stage", "assignment", "depends_on",
+                                        "dependency_policy", "independent_review", "review_targets"]),
+            let id = step["id"]?.stringValue, !id.isBlank, id.utf8.count <= 160, graph[id] == nil,
+            roles.contains(step.string("role")),
+            ["EXECUTE", "EXPLORE", "CHALLENGE", "VERIFY", "REVISE"].contains(step.string("stage")),
+            let assignment = step["assignment"]?.stringValue, !assignment.isBlank, assignment.utf8.count <= 8_000,
+            let dependencies = strings(step["depends_on"] ?? .array([])), !dependencies.contains(id),
+            ["success", "terminal"].contains(step["dependency_policy"]?.stringValue ?? (step["dependency_policy"] == nil ? "success" : "")),
+            step["independent_review"] == nil || step["independent_review"] == .bool(true) || step["independent_review"] == .bool(false)
+      else { return false }
+      let independent = step["independent_review"] == .bool(true)
+      let targets = step["review_targets"] == nil ? (independent ? dependencies : []) : strings(step["review_targets"])
+      guard let targets, targets.isSubset(of: dependencies),
+            independent ? !targets.isEmpty : step["review_targets"] == nil else { return false }
+      graph[id] = (step.string("role"), dependencies, targets)
+    }
+    guard Set(graph.values.map { $0.role }) == roles else { return false }
+    var incoming: [String: Int] = [:]
+    var dependents: [String: [String]] = [:]
+    for (id, step) in graph {
+      incoming[id] = step.dependencies.count
+      for dependency in step.dependencies {
+        guard let source = graph[dependency], !step.review.contains(dependency) || source.role != step.role else { return false }
+        dependents[dependency, default: []].append(id)
+      }
+    }
+    var ready = incoming.compactMap { $0.value == 0 ? $0.key : nil }
+    var visited = 0
+    while let id = ready.popLast() {
+      visited += 1
+      for dependent in dependents[id] ?? [] {
+        incoming[dependent, default: 0] -= 1
+        if incoming[dependent] == 0 { ready.append(dependent) }
+      }
+    }
+    return visited == graph.count
+  }
+
+  private static func strings(_ value: AgentMcpJSONValue?) -> Set<String>? {
+    guard let values = value?.arrayValue else { return nil }
+    let strings = values.compactMap(\.stringValue).filter { !$0.isBlank }
+    let unique = Set(strings)
+    return unique.count == values.count ? unique : nil
   }
 }
 

@@ -257,6 +257,26 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
+    let raw = """
+    {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",
+     "applies_when":"Comparable","avoid_when":"Unsafe","risks":"Delay","expected_gain":"Accuracy","falsifier":"No gain",
+     "dimensions":["verification"],"roles":["author","reviewer"],"inputs":[],
+     "steps":[{"id":"draft","role":"author","stage":"EXPLORE","assignment":"Draft"},
+       {"id":"review","role":"reviewer","stage":"VERIFY","assignment":"Review",
+        "depends_on":["draft"],"independent_review":true}]}
+    """
+    func validates(_ input: String) throws -> Bool {
+      AgentCollaborationWorkflowIntake.validates(try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(input.utf8)))
+    }
+    XCTAssertTrue(try validates(raw))
+    XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
+      with: "\"assignment\":\"Draft\",\"depends_on\":[\"review\"]")))
+    XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
+      with: "\"assignment\":\"Draft\",\"tool_id\":\"override\"")))
+    XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"role\":\"reviewer\"", with: "\"role\":\"author\"")))
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
