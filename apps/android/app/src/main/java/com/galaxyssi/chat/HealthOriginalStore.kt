@@ -521,12 +521,16 @@ internal class HealthOriginalStore(
         } finally { db.endTransaction() }
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String, private val classify: (String, ByteArray) -> String) : SQLiteOpenHelper(context, name, null, 3) {
+    private class Database(context: Context, name: String, private val classify: (String, ByteArray) -> String) : SQLiteOpenHelper(context, name, null, 4) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) = createOriginalTables(db)
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..2 && newVersion == 3)
+            check(oldVersion in 1..3 && newVersion == 4)
+            if (oldVersion == 3) {
+                HealthOriginalLibraryStore.createHistoryIndex(db)
+                return
+            }
             if (oldVersion < 2) captureSchema(db)
             db.execSQL("ALTER TABLE originals ADD COLUMN kind TEXT NOT NULL DEFAULT 'OTHER'")
             db.rawQuery("SELECT id,payload FROM originals", null).use { rows -> while (rows.moveToNext()) {

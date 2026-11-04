@@ -15,7 +15,7 @@
     <string name="health_library_select_named">Select %1$s</string>
     <string name="health_library_selected">%1$d originals selected</string>
     <string name="health_library_export">Export originals</string>
-    <string name="health_library_last_export">Latest export</string>
+    <string name="health_library_export_history">Original export history</string>
     <string name="health_library_confirm">Confirm original files</string>
     <string name="health_library_summary">%1$d originals · %2$s before compression</string>
     <string name="health_library_originals_only">Original files and source manifest only. Measurement records are not included.</string>
@@ -30,6 +30,12 @@
     <string name="health_library_generated">Generated · not saved</string>
     <string name="health_library_saved">Saved</string>
     <string name="health_library_saving">Saving ZIP</string>
+    <string name="health_library_legacy_save">Previously saved without verification</string>
+    <string name="health_library_verified_at">Save verified: %1$s</string>
+    <string name="health_library_save_interrupted">The last save was interrupted before verification. Choose a destination to retry.</string>
+    <string name="health_library_save_unverified">The last save could not be verified. The private ZIP is available to retry.</string>
+    <string name="health_library_archive_missing">The private ZIP is no longer available. This does not remove your original files or any verified saved copy.</string>
+    <string name="health_library_export_manifest">Originals in this export</string>
     <string name="health_library_save_zip">Save ZIP</string>
     <string name="health_library_failed">Archive could not be completed. Retry or change the selection.</string>
     <string name="health_library_source_changed">An original changed after confirmation. Review the selection again.</string>
