@@ -31,6 +31,16 @@
 "galaxyssi.health.originals.selected_count" = "已选择 %lld 份原件";
 "galaxyssi.health.originals.remove_confirm" = "移除此原件？";
 "galaxyssi.health.originals.close" = "关闭";
+"galaxyssi.health.originals.date_filter" = "导入日期";
+"galaxyssi.health.originals.any_date" = "不限日期";
+"galaxyssi.health.originals.last_week" = "最近 7 天";
+"galaxyssi.health.originals.last_month" = "最近 30 天";
+"galaxyssi.health.originals.layout" = "显示方式";
+"galaxyssi.health.originals.list" = "列表";
+"galaxyssi.health.originals.grid" = "缩略图";
+"galaxyssi.health.originals.previous_page" = "上一页";
+"galaxyssi.health.originals.next_page" = "下一页";
+"galaxyssi.health.originals.page" = "第 %lld 页，共 %lld 页";
 "galaxyssi.health.confirmed_count" = "已确认测量";
 "galaxyssi.health.latest_manual" = "最近一次手动测量";
 "galaxyssi.health.body.title" = "人体探索";
