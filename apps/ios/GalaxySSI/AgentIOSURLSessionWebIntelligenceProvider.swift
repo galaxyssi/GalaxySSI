@@ -450,17 +450,26 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     }
   }
 
+  func fetchCapturingHTML(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation,
+    capture: @escaping (Data) -> Void
+  ) -> AgentNativeToolExecutionResult {
+    fetch(input: input, invocation: invocation, operation: .fetch, captureHTML: capture)
+  }
+
   private func fetch(
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation,
-    operation: AgentIOSWebIntelligenceOperation
+    operation: AgentIOSWebIntelligenceOperation,
+    captureHTML: ((Data) -> Void)? = nil
   ) -> AgentNativeToolExecutionResult {
     let url = string(input, "url", limit: 4_096)
     guard !url.isEmpty else {
       return failure("invalid_url", "Web intelligence fetch requires a URL")
     }
     let canonical = canonicalURL(url)
-    let force = input["force"]?.boolValue ?? false
+    let force = captureHTML != nil || (input["force"]?.boolValue ?? false)
     if !force, let cached = fullCachedDocument(url: canonical) {
       return cachedFetchResult(cached, requestedURL: url, invocation: invocation)
     }
@@ -468,11 +477,13 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       if !force, let cached = self.fullCachedDocument(url: canonical) {
         return self.cachedFetchResult(cached, requestedURL: url, invocation: invocation)
       }
-      let webResult = self.webMediaProvider.invoke(
-        operation: .webOpen,
-        input: self.webFetchInput(input, url: canonical, invocation: invocation),
-        invocation: invocation
-      )
+      let fetchInput = self.webFetchInput(input, url: canonical, invocation: invocation)
+      let webResult: AgentNativeToolExecutionResult
+      if let captureHTML, let media = self.webMediaProvider as? AgentIOSURLSessionWebMediaToolProvider {
+        webResult = media.openCapturingHTML(input: fetchInput, invocation: invocation, capture: captureHTML)
+      } else {
+        webResult = self.webMediaProvider.invoke(operation: .webOpen, input: fetchInput, invocation: invocation)
+      }
       guard webResult.isSuccess else { return webResult }
       var result = self.readableFetchResult(
         operation: operation,

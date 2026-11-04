@@ -3559,6 +3559,15 @@ final class MessageCoordinator: ObservableObject {
           ? requestText
           : requestText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: publicPages)
         for publicPage in publicPages {
+          if let archiveName = publicPage.originalSourceArchiveName {
+            store.appendDeliveryTrace(
+              outgoing.id,
+              contactId: agentContact.id,
+              stage: "phone_public_page_source_archived",
+              detail: "Downloads/\(archiveName)",
+              status: .delivered
+            )
+          }
           store.appendDeliveryTrace(
             outgoing.id,
             contactId: agentContact.id,

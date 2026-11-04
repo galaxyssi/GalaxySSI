@@ -2,6 +2,18 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSPhonePublicHTMLAttachmentTests: XCTestCase {
+  func testSourceArchivePreservesBytesWithoutPublishingExecutableHTML() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = Data("<html><script>throw 1</script><p>Original</p></html>".utf8)
+    let file = try AgentIOSOriginalHTMLSourceArchive.save(source, documents: root)
+    XCTAssertEqual(file.pathExtension, "txt")
+    XCTAssertEqual(file.deletingLastPathComponent().lastPathComponent, "Downloads")
+    XCTAssertEqual(try Data(contentsOf: file), source)
+    XCTAssertEqual(try AgentIOSOriginalHTMLSourceArchive.save(source, documents: root), file)
+    XCTAssertThrowsError(try AgentIOSOriginalHTMLSourceArchive.save(Data(), documents: root))
+  }
+
   func testSeparatesASCIIURLFromAdjacentChineseInstruction() {
     let url = "https://mp.weixin.qq.com/s/sRAngxDkA5FNRteEhAUPVQ"
     let instruction = "\u{7406}\u{89e3}\u{548c}\u{603b}\u{7ed3}\u{4e00}\u{4e0b}\u{ff0c}" +
