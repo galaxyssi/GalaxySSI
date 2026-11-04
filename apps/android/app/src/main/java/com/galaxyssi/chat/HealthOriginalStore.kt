@@ -264,6 +264,7 @@ internal class HealthOriginalStore(
     private fun writeOriginal(
         id: String, input: InputStream, name: String, mime: String, source: String,
         checkCancelled: () -> Unit, progress: (Long) -> Unit = {}, privateReview: Boolean? = null,
+        cropFiles: HealthCropFiles? = null,
         inspect: ((() -> InputStream) -> Unit)? = null,
         publish: ((SQLiteDatabase, HealthOriginal) -> Unit)? = null
     ): HealthOriginal {
@@ -275,14 +276,14 @@ internal class HealthOriginalStore(
         val capturedAt = job?.createdAt ?: now
         val reviewOnly = privateReview ?: (job?.let { !it.keepOriginal && !it.originalOnly } == true)
         val folder = SimpleDateFormat("yyyy/MM", Locale.ROOT).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date(capturedAt))
-        val relative = "$folder/$id-$streamId.ghealth"
-        val destination = File(root, relative)
+        val relative = cropFiles?.relativePath ?: "$folder/$id-$streamId.ghealth"
+        val destination = cropFiles?.destination ?: File(root, relative)
         check(destination.parentFile!!.isDirectory || destination.parentFile!!.mkdirs())
         val existing = originalForJob(id)
-        destination.parentFile!!.listFiles().orEmpty().filter {
+        if (cropFiles == null) destination.parentFile!!.listFiles().orEmpty().filter {
             it.name.startsWith("$id-") && it.extension in listOf("partial", "ghealth") && it != existing?.let(::file)
         }.forEach { check(it.delete()) { "Cannot clean interrupted health import" } }
-        val staging = File(destination.parentFile, "$id-$streamId.partial")
+        val staging = cropFiles?.staging ?: File(destination.parentFile, "$id-$streamId.partial")
         val key = ByteArray(32).also(SecureRandom()::nextBytes)
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
@@ -343,7 +344,7 @@ internal class HealthOriginalStore(
                 }
                 if (previous == null) db.insertOrThrow("originals", null, values)
                 else check(db.update("originals", values, "id=?", arrayOf(previous.id)) == 1)
-                Files.move(staging.toPath(), destination.toPath())
+                if (cropFiles == null) Files.move(staging.toPath(), destination.toPath()) else cropFiles.publish()
                 mapImport(db, id, original.id)
                 publish?.invoke(db, original)
                 checkCancelled(); db.setTransactionSuccessful(); committed = true
@@ -357,7 +358,15 @@ internal class HealthOriginalStore(
     }
 
     @Synchronized internal fun saveCrop(id: String, input: InputStream, spec: HealthCropSpec,
-        checkCancelled: () -> Unit = {}): HealthOriginal {
+        checkCancelled: () -> Unit = {}): HealthOriginal =
+        HealthCropRecovery(root).write(id, ::cropReferenced) { files -> saveCrop(id, input, spec, files, checkCancelled) }
+
+    @Synchronized internal fun recoverCropWrites() = HealthCropRecovery(root).recover(::cropReferenced)
+
+    private fun cropReferenced(id: String, relativePath: String) = originalForJob(id)?.relativePath == relativePath
+
+    private fun saveCrop(id: String, input: InputStream, spec: HealthCropSpec, files: HealthCropFiles,
+        checkCancelled: () -> Unit): HealthOriginal {
         check(job(id) == null && originalForJob(id) == null)
         val parent = requireNotNull(original(spec.parentId)).also { check(present(it) && it.mime.startsWith("image/")) }
         val batch = spec.batchId?.let(::editableCapture)
@@ -373,7 +382,8 @@ internal class HealthOriginalStore(
         pageToReplace()
         var quality: HealthPhotoQuality? = null
         val cropped = writeOriginal(id, input, spec.name, spec.mime, "crop:${parent.id}", checkCancelled,
-            privateReview = !keepOriginal, inspect = { open -> quality = HealthPhotoInspector.inspect(open, report = batch != null && mode == "report") },
+            privateReview = !keepOriginal, cropFiles = files,
+            inspect = { open -> quality = HealthPhotoInspector.inspect(open, report = batch != null && mode == "report") },
             publish = { db, derivative ->
                 check(original(parent.id) == parent && present(parent))
                 if (batch != null) check(editableCapture(batch.id) == batch)
