@@ -35,6 +35,7 @@ class HealthCaptureActivity : Activity() {
     private var page = 1
     private var candidateOffset = 0
     private var mode = "report"
+    private var originalOnly = false; private var pickOnStart = false
     private var active = false
     private var generation = 0
     private var querying = false
@@ -55,6 +56,7 @@ class HealthCaptureActivity : Activity() {
     private val observer = object : ContentObserver(main) {
         override fun onChange(selfChange: Boolean) { refresh() }
         override fun onChange(selfChange: Boolean, uri: Uri?) {
+            if (uri?.pathSegments?.getOrNull(1) in listOf("record-exports", "exports")) return
             if (uri?.lastPathSegment != "jobs" || route in listOf("capture", "review")) refresh()
         }
     }
@@ -71,6 +73,8 @@ class HealthCaptureActivity : Activity() {
         page = state?.getInt("page", 1) ?: 1
         candidateOffset = state?.getInt("candidate_offset", 0) ?: 0
         mode = state?.getString("mode") ?: "report"
+        originalOnly = state?.getBoolean("original_only") ?: intent.getBooleanExtra("health_original_only", false)
+        pickOnStart = state == null && intent.getBooleanExtra("health_pick_files", false)
         pendingCamera = state?.getString("camera") ?: getSharedPreferences("health_capture_pending", MODE_PRIVATE).getString("token", "").orEmpty()
         exportId = state?.getString("export").orEmpty(); cropId = state?.getString("crop").orEmpty()
         fun restore(key: String) = state?.getStringArrayList(key).orEmpty().mapNotNull { value ->
@@ -97,6 +101,7 @@ class HealthCaptureActivity : Activity() {
         super.onStart(); active = true
         contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this), true, observer)
         refresh()
+        if (pickOnStart) { pickOnStart = false; choose(false) }
     }
     override fun onStop() {
         active = false; generation++; contentResolver.unregisterContentObserver(observer)
@@ -108,6 +113,7 @@ class HealthCaptureActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         out.putString("route", route); out.putString("selected", selectedId); out.putInt("page", page); out.putString("mode", mode)
         out.putInt("candidate_offset", candidateOffset)
+        out.putBoolean("original_only", originalOnly)
         out.putString("camera", pendingCamera); out.putString("export", exportId); out.putString("crop", cropId)
         out.putStringArrayList("job_pages", ArrayList(jobPages.map { "${it.first}|${it.second}" }))
         out.putStringArrayList("record_pages", ArrayList(recordPages.map { "${it.measuredAt}|${it.id}" }))
@@ -258,6 +264,17 @@ class HealthCaptureActivity : Activity() {
             ui.add(this, ui.text(getString(R.string.health_original_imported_at, java.text.DateFormat.getDateTimeInstance().format(java.util.Date(original.importedAt))), 12f, muted = true), 8)
             ui.add(this, ui.text(original.sha256, 11f, muted = true).apply { setTextIsSelectable(true) }, 12)
         })
+        ui.add(content, ui.row(getString(R.string.health_export_linked_records)) {
+            startActivity(Intent(this, HealthRecordExportActivity::class.java).putExtra("health_original", original.id))
+        }, 12)
+        if (saved.isNotEmpty()) {
+            ui.add(content, ui.text(getString(R.string.health_linked_records), 18f, bold = true), 18)
+            saved.forEach { record -> ui.add(content, ui.row(getString(record.draft.metric.titleResource()), healthDisplayValue(record.draft)) {
+                startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id))
+            }) }
+        }
+        if (recordPages.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { recordPages.removeAt(recordPages.lastIndex); generation++; refresh() }, 16)
+        if (next != null) ui.add(content, ui.command(R.string.health_next_page) { recordPages += next; generation++; refresh() }, 16)
         if (!available) {
             ui.add(content, ui.text(getString(R.string.health_original_missing), 14f), 16)
             ui.add(content, ui.row(getString(R.string.health_choose_files)) { choose(false) }, 12)
@@ -271,17 +288,9 @@ class HealthCaptureActivity : Activity() {
         original.source.takeIf { it.startsWith("crop:") }?.substringAfter("crop:")?.let { parent ->
             ui.add(content, ui.row(getString(R.string.health_view_uncropped)) { open("original", parent) })
         }
-        if (saved.isNotEmpty()) {
-            ui.add(content, ui.text(getString(R.string.health_linked_records), 18f, bold = true), 18)
-            saved.forEach { record -> ui.add(content, ui.row(getString(record.draft.metric.titleResource()), record.draft.values.values.joinToString(" / ") + " " + record.draft.unit) {
-                startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id))
-            }) }
-        }
-        if (recordPages.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { recordPages.removeAt(recordPages.lastIndex); generation++; refresh() }, 16)
-        if (next != null) ui.add(content, ui.command(R.string.health_next_page) { recordPages += next; generation++; refresh() }, 16)
         ui.add(content, ui.row(getString(R.string.health_save_original)) { export(original) })
         ui.add(content, ui.row(getString(R.string.health_recognize_again)) {
-            importSource(HealthOriginalContentProvider.uri(this, original.id))
+            importSource(HealthOriginalContentProvider.uri(this, original.id), originalOnly = false)
         })
         ui.add(content, ui.row(getString(R.string.health_remove_original)) {
             actionDialog = AlertDialog.Builder(this).setTitle(R.string.health_remove_original).setMessage(R.string.health_remove_original_explanation)
@@ -413,13 +422,13 @@ class HealthCaptureActivity : Activity() {
             items.singleOrNull()?.let { importSource(Uri.parse(it.uri)) }
         }
     }
-    private fun importSource(uri: Uri, cameraToken: String = "") {
+    private fun importSource(uri: Uri, cameraToken: String = "", originalOnly: Boolean = this.originalOnly) {
         val selectedMode = mode
         worker.execute {
             runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             val id = cameraToken.ifBlank { UUID.randomUUID().toString() }
             val result = runCatching {
-                if (originals.job(id) == null) originals.createJob(HealthImportJob(id, uri.toString(), System.currentTimeMillis(), selectedMode, cameraToken))
+                if (originals.job(id) == null) originals.createJob(HealthImportJob(id, uri.toString(), System.currentTimeMillis(), selectedMode, cameraToken, originalOnly = originalOnly))
                 HealthImportScheduler.enqueue(applicationContext, id)
                 if (cameraToken.isNotBlank()) getSharedPreferences("health_capture_pending", MODE_PRIVATE).edit().remove("token").apply()
             }
@@ -456,7 +465,7 @@ class HealthCaptureActivity : Activity() {
         HealthImportState.RECOGNIZING -> getString(R.string.health_import_recognizing, job.nextPage + 1, job.pageCount.coerceAtLeast(1))
         HealthImportState.REVIEW -> getString(R.string.health_import_review_ready, job.nextPage)
         HealthImportState.TABLE_REVIEW -> getString(R.string.health_table_queue_ready)
-        HealthImportState.ORIGINAL_ONLY -> getString(R.string.health_import_original_only)
+        HealthImportState.ORIGINAL_ONLY -> getString(if (job.originalOnly) R.string.health_export_original_stored else R.string.health_import_original_only)
         HealthImportState.CANCELLED -> getString(R.string.health_import_cancelled)
         HealthImportState.CAPTURE_READY -> getString(R.string.health_photo_arrange)
         HealthImportState.FAILED -> getString(failureText(job.error))

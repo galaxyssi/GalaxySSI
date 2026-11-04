@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_export_channel">Health data exports</string>
+    <string name="health_export_data_files">Data and files</string>
+    <string name="health_export_records">Export measurements</string>
+    <string name="health_export_self">My confirmed measurements</string>
+    <string name="health_export_period">Measurement dates</string>
+    <string name="health_export_metrics">Metrics</string>
+    <string name="health_export_all_metrics">All metrics</string>
+    <string name="health_export_current_original">Linked to this original</string>
+    <string name="health_export_all_sources">All sources</string>
+    <string name="health_export_format">File format</string>
+    <string name="health_export_annotations">Include notes, report references and recognized source text, which may contain names.</string>
+    <string name="health_export_no_originals">Measurement data only. Photos, PDFs and other originals require a separate original-file export.</string>
+    <string name="health_export_preview">Preview export</string>
+    <string name="health_export_history">Measurement export tasks</string>
+    <string name="health_export_no_history">No measurement exports yet</string>
+    <string name="health_export_new">New export</string>
+    <string name="health_export_preparing">Preparing measurement preview</string>
+    <string name="health_export_confirm">Confirm measurement export</string>
+    <string name="health_export_generating">Generating measurement file</string>
+    <string name="health_export_summary">%1$d measurements · %2$d component results</string>
+    <string name="health_export_estimate">Estimated file size: about %1$s; final size is shown after generation.</string>
+    <string name="health_export_snapshot_time">Snapshot prepared: %1$s</string>
+    <string name="health_export_source_warnings">Originals for %1$d measurements were missing, unreadable or mismatched during preview. Measurement data remains exportable.</string>
+    <string name="health_export_scan_progress">%1$d scoped records checked</string>
+    <string name="health_export_write_progress">%1$d measurements written</string>
+    <string name="health_export_plain_consent">I understand this data file is not password-protected and may contain private health information.</string>
+    <string name="health_export_plain_warning">The saved file is unencrypted. Choose a private destination.</string>
+    <string name="health_export_generate">Generate data file</string>
+    <string name="health_export_save">Save data file</string>
+    <string name="health_export_saving">Saving data file</string>
+    <string name="health_export_records_changed">Measurements changed during preview. Prepare a new preview before confirming.</string>
+    <string name="health_export_no_records">No confirmed measurements match this range.</string>
+    <string name="health_export_failed">The export was not completed. Retry or prepare a new preview.</string>
+    <string name="health_export_repreview">Prepare a new preview</string>
+    <string name="health_export_choose_metric">Select at least one metric.</string>
+    <string name="health_export_import_records">Import and review measurements</string>
+    <string name="health_export_import_originals">Import originals only</string>
+    <string name="health_export_original_stored">Original saved</string>
+    <string name="health_export_linked_records">Export linked measurements</string>
+</resources>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_export_channel">健康数据导出</string>
+    <string name="health_export_data_files">数据与文件</string>
+    <string name="health_export_records">导出测量记录</string>
+    <string name="health_export_self">本人已确认的测量记录</string>
+    <string name="health_export_period">测量日期</string>
+    <string name="health_export_metrics">指标范围</string>
+    <string name="health_export_all_metrics">全部指标</string>
+    <string name="health_export_current_original">关联当前原件</string>
+    <string name="health_export_all_sources">全部来源</string>
+    <string name="health_export_format">文件格式</string>
+    <string name="health_export_annotations">包含备注、报告参考范围和原始识别文字，其中可能含有姓名。</string>
+    <string name="health_export_no_originals">仅包含测量数据，不包含照片、PDF 等原件。原件需单独导出。</string>
+    <string name="health_export_preview">预览导出清单</string>
+    <string name="health_export_history">测量导出任务</string>
+    <string name="health_export_no_history">暂无测量导出任务</string>
+    <string name="health_export_new">新建导出</string>
+    <string name="health_export_preparing">正在核对测量记录</string>
+    <string name="health_export_confirm">确认测量导出清单</string>
+    <string name="health_export_generating">正在生成数据文件</string>
+    <string name="health_export_summary">%1$d 条测量 · %2$d 个组件结果</string>
+    <string name="health_export_estimate">文件预计约 %1$s，实际大小以生成后为准。</string>
+    <string name="health_export_snapshot_time">快照准备时间：%1$s</string>
+    <string name="health_export_source_warnings">预览时有 %1$d 条测量的原件缺失、无法读取或摘要不匹配，测量数据仍可导出。</string>
+    <string name="health_export_scan_progress">已核对 %1$d 条范围内记录</string>
+    <string name="health_export_write_progress">已写入 %1$d 条测量</string>
+    <string name="health_export_plain_consent">我知道此数据文件没有密码保护，可能包含私人健康信息。</string>
+    <string name="health_export_plain_warning">保存的文件未加密，请选择私人保存位置。</string>
+    <string name="health_export_generate">生成数据文件</string>
+    <string name="health_export_save">保存数据文件</string>
+    <string name="health_export_saving">正在保存数据文件</string>
+    <string name="health_export_records_changed">核对期间测量记录发生变化，请重新预览后再确认。</string>
+    <string name="health_export_no_records">当前范围没有已确认的测量记录。</string>
+    <string name="health_export_failed">本次导出未完成，请重试或重新预览。</string>
+    <string name="health_export_repreview">重新核对清单</string>
+    <string name="health_export_choose_metric">请至少选择一项指标。</string>
+    <string name="health_export_import_records">导入并核对测量记录</string>
+    <string name="health_export_import_originals">仅导入原件</string>
+    <string name="health_export_original_stored">原件已保存</string>
+    <string name="health_export_linked_records">导出关联测量数据</string>
+</resources>

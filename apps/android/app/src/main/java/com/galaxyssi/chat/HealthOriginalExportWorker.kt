@@ -1,11 +1,7 @@
 package com.galaxyssi.chat
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
-import androidx.core.app.NotificationCompat
 import androidx.work.ExistingWorkPolicy
-import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
@@ -33,11 +29,7 @@ class HealthOriginalExportWorker(context: Context, params: WorkerParameters) : W
         if (runCatching { java.util.UUID.fromString(id) }.isFailure) return Result.failure()
         val pending = HealthOriginalStore(applicationContext).use { HealthOriginalLibraryStore(applicationContext, it).session(id) }
         if (pending == null || pending.dispatch != dispatch || pending.state !in listOf(HealthOriginalExportState.QUEUED, HealthOriginalExportState.GENERATING)) return Result.success()
-        val manager = applicationContext.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel("health-export", applicationContext.getString(R.string.health_library_export), NotificationManager.IMPORTANCE_LOW))
-        val notification = NotificationCompat.Builder(applicationContext, "health-export").setSmallIcon(R.drawable.ic_rich_file)
-            .setContentTitle(applicationContext.getString(R.string.health_library_generating)).setOngoing(true).setSilent(true).build()
-        try { setForegroundAsync(ForegroundInfo((id.hashCode() and Int.MAX_VALUE).coerceAtLeast(1), notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)).get() }
+        try { setForegroundAsync(HealthExportForeground.info(applicationContext, id, R.string.health_library_generating)).get() }
         catch (_: Exception) { HealthOriginalStore(applicationContext).use { HealthOriginalLibraryStore(applicationContext, it).cannotStart(id, dispatch) }; return Result.failure() }
         return HealthOriginalStore(applicationContext).use { originals ->
             when (HealthOriginalArchive.generate(originals, HealthOriginalLibraryStore(applicationContext, originals), id, dispatch) { isStopped }) {

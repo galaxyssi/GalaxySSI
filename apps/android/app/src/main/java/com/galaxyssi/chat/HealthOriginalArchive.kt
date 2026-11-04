@@ -1,38 +1,20 @@
 package com.galaxyssi.chat
 
-import java.io.FilterOutputStream
 import java.io.OutputStream
-import java.nio.file.Files
-import java.security.DigestOutputStream
-import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 internal enum class HealthOriginalArchiveOutcome { COMPLETE, FAILED, RETRY }
 internal object HealthOriginalArchive {
-    private class Borrowed(output: OutputStream) : FilterOutputStream(output) {
-        override fun write(bytes: ByteArray, offset: Int, length: Int) = out.write(bytes, offset, length)
-        override fun close() = flush()
-    }
-    private class Counted(output: OutputStream) : FilterOutputStream(output) {
-        var bytes = 0L
-        override fun write(value: Int) { out.write(value); bytes++ }
-        override fun write(buffer: ByteArray, offset: Int, length: Int) { out.write(buffer, offset, length); bytes += length }
-    }
     fun generate(originals: HealthOriginalStore, library: HealthOriginalLibraryStore, id: String, dispatch: String? = null, stopped: () -> Boolean = { false }): HealthOriginalArchiveOutcome {
         val (session, key) = library.claim(id, dispatch) ?: return HealthOriginalArchiveOutcome.COMPLETE
-        val partial = library.file(session, true); val destination = library.file(session)
         var completed = false
         try {
-            check(partial.parentFile!!.isDirectory || partial.parentFile!!.mkdirs())
             library.cleanupAbandoned(session)
-            val digest = MessageDigest.getInstance("SHA-256"); var size = 0L
             fun checkActive() { if (stopped() || !library.current(id, session.attempt)) throw CancellationException() }
-            java.io.FileOutputStream(partial).use { raw ->
-                library.primitive(key).newEncryptingStream(Borrowed(raw), library.aad(session)).use { encrypted ->
-                    val counted = Counted(DigestOutputStream(encrypted, digest))
-                    ZipOutputStream(Borrowed(counted), Charsets.UTF_8).use { zip ->
+            val digest = library.artifacts.write(id, session.attempt, key, library.aad(session), ::checkActive) { output ->
+                    ZipOutputStream(output, Charsets.UTF_8).use { zip ->
                         var after = ""; var count = 0L
                         do {
                             checkActive(); val page = library.items(id, after)
@@ -63,12 +45,8 @@ internal object HealthOriginalArchive {
                         } while (after.isNotEmpty())
                         zip.closeEntry()
                     }
-                    size = counted.bytes
-                }
-                raw.fd.sync()
             }
-            checkActive(); Files.move(partial.toPath(), destination.toPath())
-            library.generated(session, size, digest.digest().joinToString("") { "%02x".format(it) }); completed = true
+            library.generated(session, digest.bytes, digest.sha256); completed = true
             return HealthOriginalArchiveOutcome.COMPLETE
         } catch (failure: CancellationException) {
             if (stopped()) { library.interrupted(session); return HealthOriginalArchiveOutcome.RETRY }
@@ -76,18 +54,9 @@ internal object HealthOriginalArchive {
         } catch (failure: Exception) {
             library.failed(session, (failure as? HealthImportFailure)?.code ?: "archive_failed")
             return HealthOriginalArchiveOutcome.FAILED
-        } finally { key.fill(0); partial.delete(); if (!completed) destination.delete() }
+        } finally { key.fill(0); if (!completed) library.file(session).delete() }
     }
     fun save(library: HealthOriginalLibraryStore, session: HealthOriginalExportSession, output: OutputStream, cancelled: () -> Unit = {}): Long {
-        val digest = MessageDigest.getInstance("SHA-256"); var count = 0L
-        library.input(session).use { input ->
-            val buffer = ByteArray(64 * 1024)
-            try { while (true) {
-                cancelled(); val size = input.read(buffer); if (size < 0) break
-                output.write(buffer, 0, size); digest.update(buffer, 0, size); count += size
-            } } finally { buffer.fill(0) }
-        }
-        check(count == session.archiveBytes && digest.digest().joinToString("") { "%02x".format(it) } == session.sha256) { "Export archive integrity check failed" }
-        output.flush(); return count
+        return HealthPrivateExportFile.copyVerified(library.input(session), output, HealthExportDigest(session.archiveBytes, session.sha256), cancelled)
     }
 }

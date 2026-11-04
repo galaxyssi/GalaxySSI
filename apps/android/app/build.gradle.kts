@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1436
-        versionName = "0.1.7.23"
+        versionCode = 1437
+        versionName = "0.1.7.24"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -317,6 +317,7 @@ dependencies {
     implementation("org.jsoup:jsoup:1.23.1")
     implementation("com.univocity:univocity-parsers:2.9.1")
     implementation("org.dhatim:fastexcel-reader:0.20.2")
+    implementation("org.dhatim:fastexcel:0.20.2")
     implementation("javax.xml.stream:stax-api:1.0-2")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("xyz.rementia:openwakeword:0.1.3") {

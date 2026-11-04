@@ -3,7 +3,6 @@ package com.galaxyssi.chat
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import com.google.crypto.tink.subtle.AesGcmHkdfStreaming
 import java.io.File
 import java.io.InputStream
 import java.security.SecureRandom
@@ -13,6 +12,7 @@ import java.util.UUID
 internal class HealthOriginalLibraryStore(private val context: Context, private val originals: HealthOriginalStore,
     private val directory: File = File(context.filesDir, "health-original-exports-v1")) {
     private val db get() = originals.libraryDatabase
+    val artifacts = HealthPrivateExportFile(directory)
     private fun valid(id: String) { require(UUID.fromString(id).toString() == id) }
     private fun <T> transaction(block: () -> T): T {
         db.beginTransaction()
@@ -125,23 +125,17 @@ internal class HealthOriginalLibraryStore(private val context: Context, private 
         put(latest.copy(state = HealthOriginalExportState.SAVED))
     }
     fun file(s: HealthOriginalExportSession, partial: Boolean = false): File {
-        valid(s.id); valid(s.attempt)
-        val root = directory.canonicalFile
-        return File(root, "${s.id}-${s.attempt}.${if (partial) "partial" else "enc"}").canonicalFile.also { check(it.parentFile == root) }
+        return artifacts.file(s.id, s.attempt, partial)
     }
-    fun primitive(key: ByteArray) = AesGcmHkdfStreaming(key, "HmacSha256", 32, 64 * 1024, 0)
     fun aad(s: HealthOriginalExportSession) = "health-original-export-v1|${s.id}|${s.attempt}".toByteArray(Charsets.UTF_8)
     fun input(s: HealthOriginalExportSession): InputStream {
         check(s.state in listOf(HealthOriginalExportState.GENERATED, HealthOriginalExportState.SAVED))
         val encrypted = db.rawQuery("SELECT key_payload FROM library_exports WHERE id=? AND attempt=?", arrayOf(s.id, s.attempt)).use { check(it.moveToFirst()); it.getBlob(0) }
         val key = AgentStorageCipher.decryptBinary(encrypted, originals.libraryKeyAad("${s.id}:${s.attempt}"))
-        val aead = try { primitive(key) } finally { key.fill(0) }
-        val raw = file(s).inputStream()
-        return try { aead.newDecryptingStream(raw, aad(s)) } catch (failure: Throwable) { raw.close(); throw failure }
+        return try { artifacts.input(s.id, s.attempt, key, aad(s)) } finally { key.fill(0) }
     }
     fun cleanupAbandoned(s: HealthOriginalExportSession) {
-        val current = file(s); val partial = file(s, true)
-        directory.listFiles().orEmpty().filter { it.name.startsWith("${s.id}-") && it != current && it != partial && it.extension in listOf("enc", "partial") }.forEach { check(it.canonicalFile.parentFile == directory.canonicalFile); it.delete() }
+        artifacts.cleanup(s.id, s.attempt)
     }
     companion object {
         fun createSchema(db: SQLiteDatabase) {
