@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_weekly_title">我的健康周报</string>
+    <string name="health_weekly_range">%1$s 至 %2$s · %3$s</string>
+    <string name="health_weekly_version">算法 %1$d · 数据版本 %2$s · 计算于 %3$s</string>
+    <string name="health_weekly_previous">上一周</string>
+    <string name="health_weekly_next">下一周</string>
+    <string name="health_weekly_metrics">已确认指标</string>
+    <string name="health_weekly_no_values">暂无可用值</string>
+    <string name="health_weekly_bp_count">%1$d 次有效测量</string>
+    <string name="health_weekly_minutes">分钟</string>
+    <string name="health_weekly_steps">步</string>
+    <string name="health_weekly_coverage">%1$d/%2$d 天可用 · %3$d 天有记录 · %4$d 条记录</string>
+    <string name="health_weekly_attention">睡眠对比</string>
+    <string name="health_weekly_compare_insufficient">可用记录不足，暂不比较。本周至少需要 5 天，此前基线至少需要 10 天。</string>
+    <string name="health_weekly_compare_coverage">可用天数：本周 %1$d/7 天 · 基线 %2$d/14 天</string>
+    <string name="health_weekly_baseline_range">基线：%1$s 至 %2$s</string>
+    <string name="health_weekly_compare">本周日均 %1$s 分钟，此前基线 %2$s 分钟，相差 %3$s 分钟。</string>
+    <string name="health_weekly_baseline_records">查看基线记录</string>
+    <string name="health_weekly_method">均值只计有可用值的天数，步数取当日最后一条累计值，血压只统计有效测量。缺失天不按零计。</string>
+    <string name="health_weekly_exclusions">不包含未核对条目、个人档案、备注和原始附件。</string>
+    <string name="health_weekly_prepare">预览并导出周报</string>
+    <string name="health_weekly_options">选择周报内容</string>
+    <string name="health_weekly_preview">确认周报</string>
+    <string name="health_weekly_raw">包含依据的测量记录</string>
+    <string name="health_weekly_raw_count">依据记录：%1$d 条</string>
+    <string name="health_weekly_include_comparison">包含睡眠基线对比</string>
+    <string name="health_weekly_limit">PDF 最多附带 %1$d 条测量记录。可取消附带或减少指标；需要导出更多记录时，请使用记录导出。</string>
+    <string name="health_weekly_confirm">确认将所选内容保存为未加密 PDF，保存位置由我选择。</string>
+    <string name="health_weekly_save">保存周报 PDF</string>
+    <string name="health_weekly_saved">PDF 已保存</string>
+    <string name="health_weekly_changed">预览后记录已变化，请重新确认周报再保存。</string>
+    <string name="health_weekly_review_again">查看更新后的周报</string>
+</resources>

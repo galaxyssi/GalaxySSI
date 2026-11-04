@@ -54,6 +54,16 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         .use { it.moveToFirst(); it.getLong(0) }
     fun metricVersion(metric: HealthMetric): String = helper.readableDatabase.rawQuery("SELECT token FROM health_metric_clocks WHERE metric=?", arrayOf(metric.name))
         .use { if (it.moveToFirst()) it.getString(0) else "" }
+    fun metricVersions(metrics: Set<HealthMetric>): Map<HealthMetric, String> {
+        require(metrics.isNotEmpty())
+        val names = metrics.map { it.name }.toTypedArray()
+        val placeholders = names.joinToString(",") { "?" }
+        return helper.readableDatabase.rawQuery("SELECT metric,token FROM health_metric_clocks WHERE metric IN ($placeholders)", names).use {
+            val result = metrics.associateWith { "" }.toMutableMap()
+            while (it.moveToNext()) result[HealthMetric.valueOf(it.getString(0))] = it.getString(1)
+            result.toMap()
+        }
+    }
     private fun changed(metric: HealthMetric) {
         val token = java.util.UUID.randomUUID().toString()
         helper.writableDatabase.insertWithOnConflict("health_metric_clocks", null, ContentValues().apply { put("metric", metric.name); put("token", token) }, SQLiteDatabase.CONFLICT_REPLACE)

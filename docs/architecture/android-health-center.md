@@ -374,6 +374,14 @@ daily recording preferences. Plans are opt-in; opening the editor does not
 complete a reminder. See the [reminder contract](android-health-reminders.md)
 for deduplication, scheduling, and notification privacy.
 
+## Weekly Health Report
+
+The native report summarizes confirmed measurements over seven completed
+calendar days, with day coverage and a separately scoped sleep baseline.
+Its version-bound review supports selective PDF export and optional
+measurement rows. See the [weekly report contract](android-health-weekly-report.md)
+for calculation rules, privacy gates, and export boundaries.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new

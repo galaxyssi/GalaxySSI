@@ -128,6 +128,12 @@ class HealthPrivacyActivity : Activity() {
         if (scope.source != HealthAccessSource.ALL) add(getString(if (scope.source == HealthAccessSource.MANUAL) R.string.health_privacy_scope_manual else R.string.health_privacy_scope_original))
         scope.format?.takeUnless { it == HealthAccessFormat.ORIGINAL }?.let { add(it.name) }
         if (scope.annotations) add(getString(R.string.health_privacy_scope_notes))
+        if (scope.reportRecords) add(getString(R.string.health_weekly_raw))
+        scope.baselineFrom?.let { start ->
+            val zone = ZoneId.of(scope.zone)
+            add(getString(R.string.health_weekly_baseline_range, Instant.ofEpochMilli(start).atZone(zone).toLocalDate(),
+                Instant.ofEpochMilli(scope.from - 1).atZone(zone).toLocalDate()))
+        }
     }.joinToString(" \u00b7 ")
     private fun error() { val content = healthProfileContent(body); content.addView(ui.text(getString(R.string.health_storage_error))); ui.add(content, ui.command(R.string.common_retry) { load() }, 16) }
     private data class Snapshot(val policy: HealthPrivacyPolicy? = null, val page: HealthAccessPage? = null)
@@ -137,6 +143,8 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.TREND_RECORDS -> R.string.health_privacy_trend_records
     HealthAccessPurpose.TREND_SOURCES -> R.string.health_privacy_trend_sources
     HealthAccessPurpose.PROFILE_CONTEXT -> R.string.health_privacy_profile_context
+    HealthAccessPurpose.WEEKLY_REPORT -> R.string.health_weekly_title
+    HealthAccessPurpose.SAVE_WEEKLY_REPORT -> R.string.health_weekly_save
     HealthAccessPurpose.SAVE_RECORDS -> R.string.health_privacy_save_records
     HealthAccessPurpose.SAVE_ORIGINALS -> R.string.health_privacy_save_originals
     HealthAccessPurpose.DELETE_PROFILE -> R.string.health_privacy_delete_profile
