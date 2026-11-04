@@ -2431,18 +2431,22 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func retryDesktopEvidenceJobs() {
-    guard mqttClient.relationshipSubscriptionsReady else { return }
-    desktopEvidenceJobCursor = ""
-    resumeDesktopEvidenceJobs()
+    resumeDesktopEvidenceJobs(wrapAtEnd: true)
   }
 
-  private func resumeDesktopEvidenceJobs() {
+  private func resumeDesktopEvidenceJobs(wrapAtEnd: Bool = false) {
     guard GalaxySSISignalEngine.isAvailable, mqttClient.relationshipSubscriptionsReady,
           desktopEvidenceImports.count < 2 else { return }
     let history = AgentTeamExecutionHistoryStore.shared
+    var mayWrap = wrapAtEnd && !desktopEvidenceJobCursor.isEmpty
     while desktopEvidenceImports.count < 2 {
-      guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor),
-            !batch.isEmpty else { return }
+      guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor) else { return }
+      if batch.isEmpty {
+        guard mayWrap else { return }
+        mayWrap = false
+        desktopEvidenceJobCursor = ""
+        continue
+      }
       for job in batch {
         guard desktopEvidenceImports.count < 2 else { return }
         desktopEvidenceJobCursor = job.key
@@ -2455,6 +2459,7 @@ final class MessageCoordinator: ObservableObject {
               let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: job.generation,
                 nonce: UUID().uuidString),
               desktopEvidenceImports.insert(job.key).inserted else { continue }
+        mayWrap = false
         Task { @MainActor [weak self] in
           guard let self else { return }
           defer {
