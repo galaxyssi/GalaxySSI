@@ -231,6 +231,7 @@ final class MessageCoordinator: ObservableObject {
   let mqttClient: GalaxySSIMqttClient
   var outboxRetryTask: Task<Void, Never>?
   var outboxFlushInProgress = false
+  var outboxReceiptWindow = LinkOutboxReceiptWindow()
   var outboxFlushRequested = false
   private var automationSchedulerTask: Task<Void, Never>?
   private var pairingConfirmationTimeoutTask: Task<Void, Never>?
@@ -10570,6 +10571,7 @@ final class MessageCoordinator: ObservableObject {
     ].filter { !$0.isEmpty }
     for messageId in messageIds {
       deliveryStore.acknowledge(messageId: messageId)
+      outboxReceiptWindow.release(messageId)
       guard let uuid = UUID(uuidString: messageId) else { continue }
       store.appendDeliveryTrace(
         uuid,

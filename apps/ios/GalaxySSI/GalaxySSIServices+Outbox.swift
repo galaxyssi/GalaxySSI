@@ -1,5 +1,43 @@
 import Foundation
 
+struct LinkOutboxReceiptWindow {
+  private struct Entry {
+    let topic: String
+    let expiresAt: TimeInterval
+  }
+
+  private var entries: [String: Entry] = [:]
+
+  func delay(topic: String, messageId: String, now: TimeInterval) -> TimeInterval {
+    if let entry = entries[messageId], entry.expiresAt > now {
+      return entry.expiresAt - now
+    }
+    let lane = entries.values.filter { $0.topic == topic && $0.expiresAt > now }
+    guard lane.count >= 8, let first = lane.map(\.expiresAt).min() else { return 0 }
+    return min(1, first - now)
+  }
+
+  mutating func acquire(topic: String, messageId: String, now: TimeInterval) -> Bool {
+    guard delay(topic: topic, messageId: messageId, now: now) == 0 else { return false }
+    entries[messageId] = Entry(topic: topic, expiresAt: now + 30)
+    return true
+  }
+
+  mutating func release(_ messageId: String) {
+    entries.removeValue(forKey: messageId)
+  }
+
+  mutating func reconcile(now: TimeInterval, isPending: (String) -> Bool) {
+    entries = entries.filter { $0.value.expiresAt > now && isPending($0.key) }
+  }
+
+  var messageIds: Set<String> { Set(entries.keys) }
+
+  func nextExpiryDelay(now: TimeInterval) -> TimeInterval? {
+    entries.values.map { max(0, $0.expiresAt - now) }.min()
+  }
+}
+
 @MainActor
 extension MessageCoordinator {
   private func flushPendingOutbox() async {
@@ -24,11 +62,12 @@ extension MessageCoordinator {
     }
     var activeMessageIds = await mqttClient.outstandingDurableMessageIds()
     guard !Task.isCancelled else { return }
+    reconcileOutboxReceiptWindow()
     handleExhaustedDeliveries(
       deliveryStore.discardExhausted(
         maxAttempts: Self.maximumOutboxDeliveryAttempts,
         attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts,
-        activeMessageIds: activeMessageIds
+        activeMessageIds: activeMessageIds.union(outboxReceiptWindow.messageIds)
       )
     )
     let mediaProfile = mediaNetworkProfileProvider()
@@ -41,7 +80,9 @@ extension MessageCoordinator {
     var rejectedSourceIds = Set<String>()
     for item in pending {
       guard !Task.isCancelled else { return }
-      if activeMessageIds.contains(item.messageId) { continue }
+      if activeMessageIds.contains(item.messageId) || !deliveryStore.containsOutboxMessage(item.messageId) {
+        continue
+      }
       let sourceId = item.clientSourceMessageId.ifBlank(item.messageId)
       if rejectedSourceIds.contains(sourceId) { continue }
       if let reason = GalaxySSIMqttWireChunking.permanentRejectionReason(
@@ -59,6 +100,10 @@ extension MessageCoordinator {
         ])
         continue
       }
+      reconcileOutboxReceiptWindow()
+      guard outboxReceiptWindow.acquire(
+        topic: item.topic, messageId: item.messageId, now: ProcessInfo.processInfo.systemUptime
+      ) else { continue }
       let reservedAt = Date()
       deliveryStore.markAttempt(messageId: item.messageId, now: reservedAt)
       let result = await mqttClient.publishDurable(
@@ -79,19 +124,33 @@ extension MessageCoordinator {
       if result.accepted {
         activeMessageIds.insert(item.messageId)
       } else if result == .deferred {
+        outboxReceiptWindow.release(item.messageId)
         _ = deliveryStore.deferUnadmittedAttempt(messageId: item.messageId,
           reservedAttempts: item.attempts + 1, reservedAt: reservedAt)
       }
     }
   }
 
+  private func reconcileOutboxReceiptWindow() {
+    outboxReceiptWindow.reconcile(
+      now: ProcessInfo.processInfo.systemUptime,
+      isPending: deliveryStore.containsOutboxMessage
+    )
+  }
+
   func scheduleOutboxFlushFromStore() {
     let mediaProfile = mediaNetworkProfileProvider()
-    if let delay = deliveryStore.nextRetryDelay(
+    let now = ProcessInfo.processInfo.systemUptime
+    let receiptWindow = outboxReceiptWindow
+    let retryDelay = deliveryStore.nextRetryDelay(
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia,
       maxAttempts: Self.maximumOutboxDeliveryAttempts,
-      attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts
-    ) {
+      attachmentMaxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts,
+      minimumDelay: { item in
+        receiptWindow.delay(topic: item.topic, messageId: item.messageId, now: now)
+      }
+    )
+    if let delay = [retryDelay, receiptWindow.nextExpiryDelay(now: now)].compactMap({ $0 }).min() {
       scheduleOutboxFlush(after: delay)
     }
   }
