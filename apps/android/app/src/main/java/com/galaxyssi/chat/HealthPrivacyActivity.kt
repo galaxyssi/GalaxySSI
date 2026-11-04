@@ -120,7 +120,7 @@ class HealthPrivacyActivity : Activity() {
         }
         if (scope.fields.isNotEmpty()) add(scope.fields.joinToString(", ") { getString(it.titleResource()) })
         scope.count?.let { count -> add(when (scope.purpose) {
-            HealthAccessPurpose.SAVE_RECORDS -> getString(R.string.health_privacy_scope_records, count)
+            HealthAccessPurpose.SAVE_RECORDS, HealthAccessPurpose.GENERATE_BACKUP -> getString(R.string.health_privacy_scope_records, count)
             HealthAccessPurpose.SAVE_ORIGINALS -> getString(R.string.health_privacy_scope_originals, count)
             HealthAccessPurpose.DELETE_PROFILE -> getString(R.string.health_privacy_scope_delete, scope.basicCount, count, scope.drafts)
             else -> getString(R.string.health_privacy_scope_entries, count)
@@ -152,6 +152,7 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE -> R.string.health_assistant_online_audit
     HealthAccessPurpose.SAVE_RECORDS -> R.string.health_privacy_save_records
     HealthAccessPurpose.SAVE_ORIGINALS -> R.string.health_privacy_save_originals
+    HealthAccessPurpose.GENERATE_BACKUP -> R.string.health_backup_create
     HealthAccessPurpose.DELETE_PROFILE -> R.string.health_privacy_delete_profile
 }
 private fun HealthAccessOutcome.title() = when (this) {

@@ -39,11 +39,11 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     SAVE_WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS_ONLINE(HealthPrivacyOption.ONLINE_ANALYSIS),
-    SAVE_RECORDS, SAVE_ORIGINALS, DELETE_PROFILE
+    SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE
 }
 internal enum class HealthAccessOutcome { STARTED, COMPLETE, FAILED, CANCELLED, BLOCKED }
 internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL }
-internal enum class HealthAccessFormat { CSV, JSON, XLSX, ZIP, ORIGINAL, PDF }
+internal enum class HealthAccessFormat { CSV, JSON, XLSX, ZIP, ORIGINAL, PDF, GHBACKUP }
 internal data class HealthAccessScope(
     val purpose: HealthAccessPurpose, val metrics: Set<HealthMetric> = emptySet(),
     val from: Long = 0, val until: Long = Long.MAX_VALUE, val zone: String = "UTC",
@@ -71,6 +71,7 @@ internal data class HealthAccessScope(
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && !reportRecords && format == null)
             HealthAccessPurpose.SAVE_RECORDS -> require(metrics.isNotEmpty() && count != null && format in listOf(HealthAccessFormat.CSV, HealthAccessFormat.JSON, HealthAccessFormat.XLSX))
             HealthAccessPurpose.SAVE_ORIGINALS -> require(count != null && format in listOf(HealthAccessFormat.ZIP, HealthAccessFormat.ORIGINAL))
+            HealthAccessPurpose.GENERATE_BACKUP -> require(count != null && format == HealthAccessFormat.GHBACKUP && fields.isEmpty())
             HealthAccessPurpose.DELETE_PROFILE -> require(count != null && drafts != null && basicCount != null && format == null)
         }
     }

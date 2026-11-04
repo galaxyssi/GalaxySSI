@@ -2,6 +2,7 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="composer_crops" path="composer-crops/" />
     <cache-path name="health_capture" path="health-capture/" />
+    <cache-path name="health_backups" path="health-backups/" />
     <cache-path name="clipboard_images" path="clipboard-images/" />
     <files-path name="composer_camera" path="composer-attachments-v1/camera/" />
     <files-path

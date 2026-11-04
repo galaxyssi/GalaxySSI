@@ -74,6 +74,10 @@ internal class HealthOriginalStore(
     fun originalCount(): Long = helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM originals", null)
         .use { it.moveToFirst(); it.getLong(0) }
 
+    internal fun backupPage(after: String, signal: android.os.CancellationSignal? = null): List<HealthOriginal> =
+        helper.readableDatabase.rawQuery("SELECT id,payload FROM originals WHERE id>? ORDER BY id LIMIT 30", arrayOf(after), signal)
+            .use { rows -> buildList { while (rows.moveToNext()) add(decodeOriginal(rows.getString(0), rows.getBlob(1))) } }
+
     fun originals(before: Pair<Long, String>? = null): List<HealthOriginal> {
         val where = if (before == null) "" else " WHERE imported_at<? OR (imported_at=? AND id<?)"
         val args = before?.let { arrayOf(it.first.toString(), it.first.toString(), it.second) }

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_backup_create">创建健康备份</string>
+    <string name="health_backup_verify">校验健康备份</string>
+    <string name="health_backup_working">正在处理备份…</string>
+    <string name="health_backup_verified">完整性校验通过，未导入任何数据。</string>
+    <string name="health_backup_missing">部分原件缺失，不是完整备份。</string>
+    <string name="health_backup_verify_intro">打开 GalaxySSI 健康备份并校验，不修改本机记录。</string>
+    <string name="health_backup_select">选择备份文件</string>
+    <string name="health_backup_incomplete">已生成不完整备份</string>
+    <string name="health_backup_saved">已保存加密备份</string>
+    <string name="health_backup_generated">加密备份已生成</string>
+    <string name="health_backup_save">保存到文件</string>
+    <string name="health_backup_share">选择分享方式</string>
+    <string name="health_backup_discard">移除临时副本</string>
+    <string name="health_backup_estimate">预计大小：%1$s</string>
+    <string name="health_backup_photos">拍照原件：%1$d · 其他文件：%2$d</string>
+    <string name="health_backup_missing_name">缺失：%1$s</string>
+    <string name="health_backup_more">备份清单另有 %1$d 个原件</string>
+    <string name="health_backup_acknowledge">我已核对备份范围，并会妥善保存密码。</string>
+    <string name="health_backup_encrypt">设置密码并生成</string>
+    <string name="health_backup_preview">核对备份清单</string>
+    <string name="health_backup_export_intro">包含已确认指标、备注、原件和关联。不含待核对草稿、AI 分析，以及姓名标签以外的档案资料。</string>
+    <string name="health_backup_manifest">备份清单</string>
+    <string name="health_backup_owner">档案归属：%1$s</string>
+    <string name="health_backup_self">本人（未填写姓名）</string>
+    <string name="health_backup_counts">%1$d 条记录 · %2$d 个原件\n%3$d 条关联记录 · %4$d 个缺失原件</string>
+    <string name="health_backup_dates">测量范围：%1$s 至 %2$s</string>
+    <string name="health_backup_password">备份密码</string>
+    <string name="health_backup_repeat">再次输入备份密码</string>
+    <string name="health_backup_unlock">解锁健康备份</string>
+    <string name="health_backup_mismatch">两次输入的密码不一致。</string>
+    <string name="health_backup_password_rules">请输入 12–256 个字符，不能全为空格。</string>
+    <string name="health_backup_cancelled">备份操作已取消。</string>
+    <string name="health_backup_bad_format">这不是受支持的 GalaxySSI 健康备份。</string>
+    <string name="health_backup_old">此备份使用暂不支持的旧格式。</string>
+    <string name="health_backup_new">此备份需要更新版本的 GalaxySSI。</string>
+    <string name="health_backup_wrong_password">密码不正确，或备份文件头已损坏。</string>
+    <string name="health_backup_damaged">备份已损坏或截断，未导入任何数据。</string>
+    <string name="health_backup_other_profile">备份属于当前不支持的档案。</string>
+    <string name="health_backup_changed">源数据已变化，请重新核对备份清单。</string>
+    <string name="health_backup_bad_link">记录关联的原件清单缺失或不一致，未生成完整备份。</string>
+    <string name="health_backup_io_error">无法读取、生成或保存备份，请重试。</string>
+    <string name="health_backup_saved_partial">已保存备份，其中仍有缺失原件。</string>
+</resources>
