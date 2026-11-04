@@ -1466,7 +1466,9 @@ final class AgentTeamExecutionHistoryStore {
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             let member = team.members.first(where: { $0.memberId == scope.memberId &&
               $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
-            !team.goal.isBlank else { throw AgentTeamHistoryDatabase.Failure.stale }
+            !team.goal.isBlank,
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
       if section == "goal", member.dispatchCheckpoint != nil { return Data(team.goal.utf8) }
       guard let pinned = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first,
             pinned.conversationId == scope.conversationId, pinned.turnId == scope.turnId,

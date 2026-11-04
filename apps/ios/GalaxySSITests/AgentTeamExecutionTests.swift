@@ -1400,6 +1400,9 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(prefix + suffix, Data(original.utf8))
     input["member_id"] = .string("primary")
     XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope))
+    input["member_id"] = .string("review")
+    history.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope))
   }
 
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {

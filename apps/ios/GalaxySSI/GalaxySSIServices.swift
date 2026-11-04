@@ -6397,8 +6397,12 @@ final class MessageCoordinator: ObservableObject {
                 attachments: attachments,
                 outgoing: outgoing,
                 memberSourceId: isCollaboration ? sourceMessageId : nil,
+                collaborationRecallScope: isCollaboration ? .init(runId: spec.supervisorRunId,
+                  conversationId: outgoing.conversationId, turnId: homeTurnId,
+                  memberId: member.memberId, sourceId: sourceMessageId) : nil,
                 nativeObservation: isCollaboration ? { input, result in
-                  try? AgentTeamExecutionHistoryStore.shared.recordNativeObservation(
+                  guard result.provenance.toolId != AgentIOSLocalModelWebToolRunner.collaborationRecallId else { return nil }
+                  return try? AgentTeamExecutionHistoryStore.shared.recordNativeObservation(
                     AgentCollaborationNativeToolObservation(runId: spec.supervisorRunId,
                       conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
                       sourceId: sourceMessageId, input: input, result: result))
@@ -6905,6 +6909,7 @@ final class MessageCoordinator: ObservableObject {
     attachments: [GalaxySSIDraftAttachment],
     outgoing: ChatMessage,
     memberSourceId: String? = nil,
+    collaborationRecallScope: AgentCollaborationToolEvidenceScope? = nil,
     nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
   ) async throws -> String {
     let prompt = localModelPrompt(
@@ -6918,6 +6923,14 @@ final class MessageCoordinator: ObservableObject {
     guard let localNativeToolRuntime else {
       throw AgentIOSLocalModelWebToolError.unavailable
     }
+    let recall = collaborationRecallScope.flatMap { scope -> AgentCollaborationToolEvidenceScope? in
+      guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+            let roster = session.collaborationRoster,
+            let member = scope.memberId.split(separator: ":").first, let memberId = UUID(uuidString: String(member)),
+            roster.members.contains(where: { $0.id == memberId }),
+            session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
+      return scope
+    }
     let completion = try await AgentIOSLocalModelWebToolRunner.run(
       prompt: prompt,
       profile: profile,
@@ -6929,6 +6942,7 @@ final class MessageCoordinator: ObservableObject {
       baseSystemPrompt: localModelSystemPrompt,
       registry: localNativeToolRuntime.registry,
       readOnlyAnalysis: outgoing.readOnlyAnalysis,
+      collaborationRecallScope: recall,
       nativeObservation: nativeObservation
     )
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
