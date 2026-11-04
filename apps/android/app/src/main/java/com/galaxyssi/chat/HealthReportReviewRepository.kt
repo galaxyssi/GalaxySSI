@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import android.content.Intent
 
 internal data class HealthReportReviewDisposition(val resumeAt: Long = 0, val handledAt: Long = 0)
 internal data class HealthReportReviewCursor(val createdAt: Long, val id: String)
@@ -15,6 +16,12 @@ internal data class HealthReportReview(
     }
 }
 internal data class HealthReportReviewPage(val rows: List<HealthReportReview>, val next: HealthReportReviewCursor?)
+
+internal fun HealthReportReview.intent(context: Context, fixture: String? = null): Intent = when (kind) {
+    HealthOverviewReviewKind.OCR -> Intent(context, HealthCaptureActivity::class.java).putExtra("health_job", id)
+        .putExtra("health_review_test_id", fixture)
+    HealthOverviewReviewKind.TABLE -> Intent(context, HealthTableActivity::class.java).putExtra("health_table", id)
+}
 
 internal class HealthReportReviewRepository(private val context: Context, private val names: HealthOverviewDatabases) {
     fun page(store: HealthReminderStore, filter: HealthReminderFilter, before: HealthReportReviewCursor?, now: Long): HealthReportReviewPage {
@@ -49,6 +56,15 @@ internal class HealthReportReviewRepository(private val context: Context, privat
                 val current = originals.job(expected.id)?.let { review(it, originals, tables, store) }
                 if (current == null || current != expected || current.state(now) == HealthReminderState.COMPLETE) throw HealthReminderConflict()
                 store.actReport(expected.id, expected.disposition, action, now)
+            }
+        }
+    }
+
+    fun byId(store: HealthReminderStore, ids: Set<String>): Map<String, HealthReportReview> {
+        if (ids.isEmpty() || !context.getDatabasePath(names.originals).exists() && !context.getDatabasePath(names.records).exists()) return emptyMap()
+        HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { originals ->
+            HealthTableStore(context, names.records).use { tables ->
+                return ids.mapNotNull { id -> originals.job(id)?.let { review(it, originals, tables, store) } }.associateBy { it.id }
             }
         }
     }
