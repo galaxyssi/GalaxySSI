@@ -369,6 +369,28 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testDirectedRequestsKeepLongQuestionsAndSeparateCandidateIdentities() throws {
+    var team = durableTeamSnapshot("run")
+    team.members[1].researchStage = "EXPLORE"
+    let sender = team.members[1]
+    let question = String(repeating: "q", count: 1_300)
+    func request(_ candidate: String, recipient: String = "primary") -> AgentMcpJSONValue {
+      .object(["to": .array([.string(recipient)]), "question": .string(question), "candidate_id": .string(candidate)])
+    }
+    var envelope: AgentMcpJSONObject = ["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+      "requests": .array([request("a"), request("b"), request("a"), request("c")])]
+    let roster: Set<String> = ["primary", "review"]
+    let rows = try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(envelope),
+      team: team, sender: sender, rosterMemberIds: roster)
+    XCTAssertEqual(rows.count, 3)
+    XCTAssertEqual(Set(rows.map(\.messageId)).count, 3)
+    XCTAssertTrue(rows.allSatisfy { $0.text == question && $0.toInstanceId == "primary" })
+    XCTAssertTrue(AgentCollaborationDirectedRequests.prompt(rows).contains(#""candidate_id":"b""#))
+    envelope["requests"] = .array([request("a", recipient: "foreign")])
+    XCTAssertThrowsError(try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(envelope),
+      team: team, sender: sender, rosterMemberIds: roster))
+  }
+
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
     XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
     let raw = """
