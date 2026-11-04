@@ -232,6 +232,15 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let originals = try store.list().originals
     let output = root.appendingPathComponent("destination.zip")
     let (firstZIP, first) = try store.prepareExport(originals)
+    XCTAssertTrue(store.hasShareArtifact(first))
+    XCTAssertEqual(try store.readShareArtifact(first), firstZIP)
+    XCTAssertEqual(try store.exportHistory().first?.outcome, .prepared)
+    let artifact = root.appendingPathComponent("export-artifacts-v1").appendingPathComponent(first.id.uuidString)
+    var sealedArtifact = try Data(contentsOf: artifact)
+    XCTAssertNil(sealedArtifact.range(of: firstZIP))
+    sealedArtifact[sealedArtifact.count - 1] ^= 1
+    try sealedArtifact.write(to: artifact)
+    XCTAssertThrowsError(try store.readShareArtifact(first))
     try firstZIP.write(to: output)
     XCTAssertTrue(try GalaxySSIHealthOriginalStore.verifyDestination(output, for: first))
     try store.finishExport(id: first.id, verified: true)

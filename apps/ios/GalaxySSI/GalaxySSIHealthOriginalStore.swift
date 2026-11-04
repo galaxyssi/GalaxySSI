@@ -139,9 +139,70 @@ struct GalaxySSIHealthOriginalStore {
     var history = try exportHistory()
     let attempt = ExportAttempt(id: UUID(), at: Date(), originals: originals, bytes: zip.count,
                                 sha256: Self.digest(zip), outcome: .prepared)
-    history.insert(attempt, at: 0)
-    try persistExportHistory(Array(history.prefix(50)))
+    let artifact = try artifactURL(attempt.id)
+    guard let sealed = try AES.GCM.seal(zip, using: key(create: true),
+                                        authenticating: artifactBinding(attempt)).combined else { throw Failure.invalid }
+    try sealed.write(to: artifact, options: [.atomic, .completeFileProtection])
+    do {
+      history.insert(attempt, at: 0)
+      try persistExportHistory(Array(history.prefix(50)))
+    } catch {
+      try? FileManager.default.removeItem(at: artifact)
+      throw error
+    }
+    pruneArtifacts(history)
     return (zip, attempt)
+  }
+
+  func hasShareArtifact(_ attempt: ExportAttempt) -> Bool {
+    guard let url = try? artifactURL(attempt.id) else { return false }
+    return FileManager.default.fileExists(atPath: url.path)
+  }
+
+  func readShareArtifact(_ attempt: ExportAttempt) throws -> Data {
+    guard try exportHistory().contains(where: {
+      $0.id == attempt.id && $0.bytes == attempt.bytes && $0.sha256 == attempt.sha256
+    }), (1...(Self.maximumZIPBytes + 2 * 1024 * 1024)).contains(attempt.bytes) else { throw Failure.stale }
+    let file = try FileHandle(forReadingFrom: artifactURL(attempt.id))
+    defer { try? file.close() }
+    guard let sealed = try file.read(upToCount: attempt.bytes + 29), sealed.count == attempt.bytes + 28
+    else { throw Failure.invalid }
+    let zip = try AES.GCM.open(AES.GCM.SealedBox(combined: sealed), using: key(create: false),
+                                 authenticating: artifactBinding(attempt))
+    guard zip.count == attempt.bytes, Self.digest(zip) == attempt.sha256 else { throw Failure.invalid }
+    return zip
+  }
+
+  private func artifactBinding(_ attempt: ExportAttempt) -> Data {
+    Data("galaxyssi.health.originals.export-artifact.v1:\(owner):\(attempt.id):\(attempt.sha256)".utf8)
+  }
+
+  private func artifactDirectory() throws -> URL {
+    let root = try directory().appendingPathComponent("export-artifacts-v1", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                            attributes: [.protectionKey: FileProtectionType.complete])
+    return root
+  }
+
+  private func artifactURL(_ id: UUID) throws -> URL { try artifactDirectory().appendingPathComponent(id.uuidString) }
+
+  private func pruneArtifacts(_ history: [ExportAttempt]) {
+    guard let root = try? artifactDirectory(),
+          let files = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+    else { return }
+    let available = Set(files.compactMap { UUID(uuidString: $0.lastPathComponent) })
+    var keep = Set<UUID>()
+    var bytes = 0
+    for entry in history where available.contains(entry.id) {
+      if keep.count < 3, bytes + entry.bytes <= 128 * 1024 * 1024 {
+        keep.insert(entry.id)
+        bytes += entry.bytes
+      }
+    }
+    for file in files {
+      guard let id = UUID(uuidString: file.lastPathComponent), !keep.contains(id) else { continue }
+      try? FileManager.default.removeItem(at: file)
+    }
   }
 
   func exportHistory() throws -> [ExportAttempt] {
