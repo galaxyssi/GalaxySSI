@@ -185,8 +185,33 @@ extension GalaxySSIStoreTests {
       call: AssembledToolCall(callId: "tool-call", index: 0, name: "web_search", argumentsJson: "{}"),
       output: String(repeating: "search result ", count: 320), succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
     let receipt = try history.recordCloudEvidence(observation)
+    var failed = observation
+    failed.succeeded = false
+    failed.output = "sensitive failure detail"
+    var failedIds = Set<String>()
+    for round in 20...28 {
+      failed.round = round
+      failedIds.insert(try history.recordCloudEvidence(failed).string("evidence_id"))
+    }
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let directory: AgentMcpJSONObject = ["mode": .string("problems")]
+    let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
+    let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
+    XCTAssertEqual(entries.count, 8)
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains(failed.output))
+    let lastProblems = try reopened.recallCollaborationOriginal(
+      ["mode": .string("problems"), "cursor": .string(firstProblems.string("next_cursor"))], scope: scope)
+    let tail = try XCTUnwrap(lastProblems["problems"]?.arrayValue)
+    XCTAssertEqual(tail.count, 1)
+    XCTAssertEqual(lastProblems["next_cursor"], .null)
+    XCTAssertEqual(Set((entries + tail).compactMap { $0.objectValue?.string("evidence_id") }), failedIds)
+    let other = try XCTUnwrap(team.members.first { $0.memberId != scope.memberId })
+    var otherScope = scope
+    otherScope.memberId = other.memberId
+    otherScope.sourceId = other.sourceMessageId
+    let isolated = try reopened.recallCollaborationOriginal(directory, scope: otherScope)
+    XCTAssertEqual(isolated["problems"], .array([]))
     XCTAssertEqual(try reopened.recordCloudEvidence(observation), receipt)
     let input: AgentMcpJSONObject = [
       "mode": .string("evidence"), "evidence_id": receipt["evidence_id"] ?? .null,
