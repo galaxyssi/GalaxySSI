@@ -141,6 +141,7 @@ final class CloudWebToolLoopProgress {
   private var unavailableResources: [String: String] = [:]
   private var retrievedResources: [String: String] = [:]
   private var requestedRepairs: Set<String> = []
+  private var ruleCoverage: [String: AgentCollaborationReadCoverage] = [:]
   private(set) var finalizationRequested = false
 
   func cached(toolName: String, arguments: AgentMcpJSONObject) -> String? {
@@ -156,6 +157,20 @@ final class CloudWebToolLoopProgress {
     let key = semanticKey(toolName: toolName, arguments: arguments)
     guard outputsByCall[key] == nil else { return false }
     outputsByCall[key] = output
+    if Self.isRuleRecall(toolName: toolName, arguments: arguments) {
+      guard Set(arguments.keys).isSubset(of: ["mode", "topic", "offset"]),
+            case .string(let topic) = arguments["topic"] ?? .string("all"),
+            case .int(let offset) = arguments["offset"] ?? .int(0), let start = Int(exactly: offset), start >= 0,
+            let actual = decode(output), let expected = AgentCollaborationRuleTopics.page(topic: topic, offset: start),
+            actual == expected, actual["trust"] == .string("host_schema_not_execution_authority"),
+            let content = actual["content"]?.stringValue, !content.isEmpty else { return false }
+      let key = actual.string("topic")
+      let previous = ruleCoverage[key] ?? .init()
+      var updated = previous
+      updated.include(start: offset, end: offset + Int64(content.count))
+      ruleCoverage[key] = updated
+      return updated != previous
+    }
     if let root = decode(output),
        ["web_source_timeout", "renderer_unavailable"].contains(root["error_code"]?.stringValue ?? ""),
        let resource = resourceKey(toolName: toolName, arguments: arguments) {
@@ -172,6 +187,10 @@ final class CloudWebToolLoopProgress {
       retrievedResources[resource] = output
     }
     return true
+  }
+
+  static func isRuleRecall(toolName: String, arguments: AgentMcpJSONObject) -> Bool {
+    toolName == CloudModelStreamMutableConversation.collaborationRecallName && arguments["mode"] == .string("evolution_rules")
   }
 
   private func canReuseBody(toolName: String, arguments: AgentMcpJSONObject) -> Bool {
@@ -206,8 +225,13 @@ final class CloudWebToolLoopProgress {
   }
 
   func semanticKey(toolName: String, arguments: AgentMcpJSONObject) -> String {
+    var normalized = arguments
+    if Self.isRuleRecall(toolName: toolName, arguments: arguments) {
+      if normalized["topic"] == nil || normalized["topic"] == .string("") { normalized["topic"] = .string("all") }
+      if normalized["offset"] == nil { normalized["offset"] = .int(0) }
+    }
     let material = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() +
-      "\u{0000}" + canonical(.object(arguments))
+      "\u{0000}" + canonical(.object(normalized))
     return SHA256.hash(data: Data(material.utf8))
       .map { String(format: "%02x", $0) }
       .joined()
