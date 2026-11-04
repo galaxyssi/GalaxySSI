@@ -55,11 +55,20 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
 }
 
 extension AgentHomeView {
+  var screenAssistantHasActiveWork: Bool {
+    guard let phase = screenAssistantBubblePhase else { return false }
+    return [.observing, .planning, .waitingConfirmation, .executing, .verifying, .waitingResponse, .paused].contains(phase)
+  }
+
+  func beginScreenAssistantScreenshot() {
+    cancelScreenPagePDFImport()
+    screenshotPickerPresented = true
+  }
+
   func presentScreenCaptureSources() {
     actionTrayPresented = false
     guard !screenAssistantStopping else { return }
-    if let phase = screenAssistantBubblePhase,
-       [.observing, .planning, .waitingConfirmation, .executing, .verifying, .waitingResponse, .paused].contains(phase) {
+    if screenAssistantHasActiveWork {
       screenAssistantCollapsed = false
       return
     }

@@ -4855,6 +4855,7 @@
 "galaxyssi.screen_assistant.collapse" = "收起屏幕助手";
 "galaxyssi.screen_assistant.restore" = "恢复屏幕助手";
 "galaxyssi.screen_assistant.tools" = "屏幕助手工具";
+"galaxyssi.screen_assistant.article_source" = "公众号文章链接";
 "galaxyssi.screen_assistant.analysis_action" = "打开屏幕分析";
 "galaxyssi.screen_assistant.ready" = "就绪";
 "galaxyssi.screen_assistant.completed" = "已完成";

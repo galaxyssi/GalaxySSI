@@ -230,13 +230,19 @@ extension AgentHomeView {
       GalaxySSIScreenAssistantBubble(
         toolsLabel: t("galaxyssi.screen_assistant.tools", "Screen assistant tools"),
         analyzeLabel: t("galaxyssi.screen_assistant.analysis_action", "Open screen analysis"),
-        restoreLabel: t("galaxyssi.screen_assistant.restore", "Restore screen assistant"),
+        screenshotLabel: t("galaxyssi.screen_page.screenshot", "Screenshot"),
+        pageLabel: t("galaxyssi.screen_page.pdf", "Full-page PDF"),
+        articleLabel: t("galaxyssi.screen_assistant.article_source", "WeChat Article Link"),
         closeLabel: t("galaxyssi.screen_assistant.close", "Close screen assistant"),
         stopLabel: t("galaxyssi.screen_assistant.stop", "Stop analysis"),
         phase: screenAssistantConversationID == store.activeAgentConversationId ? screenAssistantBubblePhase : nil,
         statusLabel: screenAssistantConversationID == store.activeAgentConversationId
           ? screenAssistantBubbleStatusLabel : t("galaxyssi.screen_assistant.ready", "Ready"),
-        onRestore: restoreScreenAssistantPresentation,
+        sourceActionsEnabled: !screenAssistantStopping &&
+          (screenAssistantConversationID != store.activeAgentConversationId || !screenAssistantHasActiveWork),
+        onScreenshot: beginScreenAssistantScreenshot,
+        onPage: beginScreenPagePDFImport,
+        onArticle: beginScreenAnalysisLink,
         onAnalyze: {
           guard !screenAssistantStopping else { return }
           if screenAssistantRunID != nil {
@@ -314,12 +320,17 @@ struct GalaxySSIScreenAssistantBubble: View {
   @State private var screenCaptured = UIScreen.main.isCaptured
   var toolsLabel: String
   var analyzeLabel: String
-  var restoreLabel: String
+  var screenshotLabel: String
+  var pageLabel: String
+  var articleLabel: String
   var closeLabel: String
   var stopLabel: String
   var phase: AgentPhase?
   var statusLabel: String
-  var onRestore: () -> Void
+  var sourceActionsEnabled: Bool
+  var onScreenshot: () -> Void
+  var onPage: () -> Void
+  var onArticle: () -> Void
   var onAnalyze: () -> Void
   var onClose: () -> Void
   var onStop: (() -> Void)? = nil
@@ -343,13 +354,16 @@ struct GalaxySSIScreenAssistantBubble: View {
         if menuPresented && translation == .zero {
           Color.clear.contentShape(Rectangle())
             .onTapGesture { menuPresented = false }
-          let rect = Self.menuRect(near: current, in: geometry.size, rows: onStop == nil ? 2 : 3)
+          let rect = Self.menuRect(near: current, in: geometry.size, rows: 3)
           ScrollView {
             VStack(spacing: 0) {
-              menuAction(restoreLabel, symbol: "arrow.up.left.and.arrow.down.right", action: onRestore)
-              if let onStop { menuAction(stopLabel, symbol: "stop.circle", action: onStop) }
-              menuAction(closeLabel, symbol: "xmark", action: onClose)
+              menuAction(screenshotLabel, symbol: "viewfinder", action: onScreenshot)
+              menuAction(pageLabel, symbol: "doc.on.doc", action: onPage)
+              Divider().padding(.horizontal, 14)
+              menuAction(articleLabel, symbol: "link", action: onArticle)
             }
+            .padding(.vertical, 8)
+            .disabled(!sourceActionsEnabled)
           }
           .frame(width: rect.width, height: rect.height)
           .background(Color.galaxySSISurface)
@@ -431,10 +445,11 @@ struct GalaxySSIScreenAssistantBubble: View {
       action()
     } label: {
       Label(title, systemImage: symbol)
-        .font(.system(size: 14))
+        .font(.subheadline)
         .foregroundColor(.galaxySSITextPrimary)
-        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .padding(.horizontal, 14)
+        .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
   }
@@ -444,8 +459,8 @@ struct GalaxySSIScreenAssistantBubble: View {
     let center = clamp(point, in: size)
     let half = touchDiameter / 2
     let gap: CGFloat = 8
-    let width = min(CGFloat(235), size.width)
-    var height = min(CGFloat(max(1, rows)) * 48, size.height)
+    let width = min(CGFloat(190), max(0, size.width - 32))
+    var height = min(CGFloat(max(1, rows)) * 52 + 17, size.height)
     let left = center.x - half - gap - width
     let right = center.x + half + gap
     let x: CGFloat

@@ -286,8 +286,7 @@ struct AgentHomeView: View {
       .confirmationDialog(t("galaxyssi.screen_page.source", "Page input"),
         isPresented: $screenCaptureSourcePresented, titleVisibility: .visible) {
         Button(t("galaxyssi.screen_page.screenshot", "Screenshot")) {
-          cancelScreenPagePDFImport()
-          screenshotPickerPresented = true
+          beginScreenAssistantScreenshot()
         }
         Button(t("galaxyssi.screen_page.pdf", "Full-page PDF"), action: beginScreenPagePDFImport)
         Button(t("galaxyssi.screen_page.file", "File"), action: beginScreenAnalysisFileImport)
