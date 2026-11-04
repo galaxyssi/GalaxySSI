@@ -2,6 +2,12 @@
 <resources>
     <string name="health_review_finish_item">Finish review and return</string>
     <string name="health_review_saved_item">Saved · View record</string>
+    <string name="health_review_linked_item">Original linked · View record</string>
+    <string name="health_review_view_duplicate">View matching record</string>
+    <string name="health_review_select_link">Link this original to the existing %1$s record</string>
+    <string name="health_review_link_consent">I have checked the selection: %1$d new, %2$d to link.</string>
+    <string name="health_review_save_links">Confirm selection</string>
+    <string name="health_review_batch_linked">Saved %1$d new records and linked %2$d items. Other drafts were kept.</string>
     <string name="health_review_recorded_time">Measured: %1$s</string>
     <string name="health_review_select_item">Select for saving: %1$s</string>
     <string name="health_review_limit">Save or deselect some items before selecting more.</string>

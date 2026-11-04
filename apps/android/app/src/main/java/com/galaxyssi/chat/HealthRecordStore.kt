@@ -27,6 +27,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     private fun evidenceKey(draft: HealthDraft): String? = draft.evidence?.let {
         AgentMemoryIndexKey.token("$name|health-evidence-v1|${it.originalId}|${it.page}|${it.candidateId}|${draft.metric.name}")
     }
+    private fun ocrLinkKey(evidence: HealthEvidence): String =
+        AgentMemoryIndexKey.token("$name|health-ocr-link-v1|${evidence.originalId}|${evidence.page}|${evidence.candidateId}")
     fun recordForEvidence(draft: HealthDraft): HealthObservation? {
         val key = evidenceKey(draft) ?: return null
         return helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE evidence_key=? AND deleted=0", arrayOf(key))
@@ -300,23 +302,23 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         val primary = "SELECT o.id,o.measured_at FROM observations o WHERE o.original_id=? AND ${scoped()} " +
             "ORDER BY o.measured_at DESC,o.id DESC LIMIT $limit"
         args += originalId
-        val secondary = "SELECT DISTINCT l.record_id AS id,l.measured_at FROM health_table_source_links l JOIN observations o " +
+        val secondary = "SELECT DISTINCT l.record_id AS id,l.measured_at FROM health_source_links l JOIN observations o " +
             "ON o.id=l.record_id AND o.revision=l.revision AND o.measured_at=l.measured_at " +
             "WHERE l.original_id=? AND ${scoped("l.measured_at", "l.record_id")} " +
             "ORDER BY l.measured_at DESC,l.record_id DESC LIMIT $limit"
         val database = helper.readableDatabase
-        val rows = database.rawQuery("SELECT o.id,o.revision,o.payload,o.metric,o.measured_at,e.job_id,e.payload FROM observations o JOIN " +
+        val rows = database.rawQuery("SELECT o.id,o.revision,o.payload,o.metric,o.measured_at,e.job_id,e.payload,e.evidence_key FROM observations o JOIN " +
             "(SELECT id FROM (SELECT * FROM ($primary) UNION SELECT * FROM ($secondary)) " +
             "ORDER BY measured_at DESC,id DESC LIMIT $limit) candidates " +
-            "ON o.id=candidates.id LEFT JOIN health_table_source_links e ON e.rowid=(" +
-            "SELECT l.rowid FROM health_table_source_links l WHERE l.original_id=? AND l.record_id=o.id " +
-            "AND l.revision=o.revision AND l.measured_at=o.measured_at ORDER BY l.job_id LIMIT 1) " +
+            "ON o.id=candidates.id LEFT JOIN health_source_links e ON e.rowid=(" +
+            "SELECT l.rowid FROM health_source_links l WHERE l.original_id=? AND l.record_id=o.id " +
+            "AND l.revision=o.revision AND l.measured_at=o.measured_at ORDER BY l.job_id,l.evidence_key LIMIT 1) " +
             "ORDER BY o.measured_at DESC,o.id DESC", (args + originalId).toTypedArray(), signal).use { cursor -> buildList {
             while (cursor.moveToNext()) {
                 val record = decode(cursor)
                 val view = if (record.draft.evidence?.originalId == originalId) record else {
                     check(!cursor.isNull(5) && !cursor.isNull(6)) { "Health source link missing" }
-                    val evidence = tableSource(record, originalId, cursor.getString(5), cursor.getBlob(6))
+                    val evidence = readSourceLink(record, originalId, cursor.getString(5), cursor.getString(7), cursor.getBlob(6))
                     record.copy(draft = record.draft.copy(evidence = evidence))
                 }
                 check(view.draft.evidence?.originalId == originalId)
@@ -328,34 +330,60 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
 
-    private fun tableSourceAad(record: HealthObservation, originalId: String, jobId: String) =
-        "$name|health-table-source|${record.id}|${record.revision}|$originalId|$jobId".toByteArray(Charsets.UTF_8)
+    private fun sourceLinkAad(record: HealthObservation, originalId: String, jobId: String, key: String): ByteArray {
+        val address = "${record.id}|${record.revision}|$originalId|$jobId"
+        return (if (key.isEmpty()) "$name|health-table-source|$address"
+            else "$name|health-ocr-source|$address|$key").toByteArray(Charsets.UTF_8)
+    }
 
-    private fun tableSource(record: HealthObservation, originalId: String, jobId: String, payload: ByteArray): HealthEvidence {
-        val plain = AgentStorageCipher.decryptBinary(payload, tableSourceAad(record, originalId, jobId))
+    private fun readSourceLink(record: HealthObservation, originalId: String, jobId: String, key: String, payload: ByteArray): HealthEvidence {
+        val plain = AgentStorageCipher.decryptBinary(payload, sourceLinkAad(record, originalId, jobId, key))
         try {
             return HealthEvidence.from(JSONObject(String(plain, Charsets.UTF_8))).also { evidence ->
-                check(evidence.originalId == originalId && evidence.jobId == jobId && evidence.valid() && evidence.confirmed && evidence.kind == "table")
+                check(evidence.originalId == originalId && evidence.jobId == jobId && evidence.valid() && evidence.confirmed)
+                check(if (key.isEmpty()) evidence.kind == "table" else evidence.kind == "ocr" && ocrLinkKey(evidence) == key)
             }
         } finally { plain.fill(0) }
     }
 
+    private fun recordForOcrLink(draft: HealthDraft): HealthObservation? {
+        val source = draft.evidence?.takeIf { it.kind == "ocr" } ?: return null
+        val originalId = source.originalId
+        val key = ocrLinkKey(source)
+        return helper.readableDatabase.rawQuery(
+            "SELECT o.id,o.revision,o.payload,o.metric,o.measured_at,l.job_id,l.payload FROM health_source_links l JOIN observations o " +
+                "ON o.id=l.record_id AND o.revision=l.revision AND o.measured_at=l.measured_at " +
+                "WHERE l.evidence_key=? AND l.evidence_key<>'' AND l.original_id=? AND o.deleted=0 LIMIT 1", arrayOf(key, originalId)
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else {
+                val record = decode(cursor)
+                val evidence = readSourceLink(record, originalId, cursor.getString(5), key, cursor.getBlob(6))
+                record.copy(draft = record.draft.copy(evidence = evidence))
+            }
+        }
+    }
+
     internal fun linkDuplicateTableSource(draft: HealthDraft, existingId: String): Boolean {
-        val database = helper.writableDatabase
-        check(database.inTransaction())
         val evidence = draft.evidence?.takeIf { it.confirmed && it.kind == "table" && it.valid() } ?: return false
         val existing = record(existingId) ?: return false
         if (existing.draft.evidence?.originalId == evidence.originalId ||
             HealthObservationPolicy.duplicateKey(existing) != HealthObservationPolicy.duplicateKey(HealthObservationPolicy.observation(draft))) return false
+        return insertSourceLink(existing, evidence, "")
+    }
+
+    private fun insertSourceLink(existing: HealthObservation, evidence: HealthEvidence, key: String): Boolean {
+        val database = helper.writableDatabase
+        check(database.inTransaction())
         val plain = evidence.json().toString().toByteArray(Charsets.UTF_8)
-        val encrypted = try { AgentStorageCipher.encryptBinary(plain, tableSourceAad(existing, evidence.originalId, evidence.jobId)) }
+        val encrypted = try { AgentStorageCipher.encryptBinary(plain, sourceLinkAad(existing, evidence.originalId, evidence.jobId, key)) }
         finally { plain.fill(0) }
-        val inserted = try { database.insertWithOnConflict("health_table_source_links", null, ContentValues().apply {
+        val inserted = try { database.insertWithOnConflict("health_source_links", null, ContentValues().apply {
             put("original_id", evidence.originalId)
             put("record_id", existing.id)
             put("revision", existing.revision)
             put("job_id", evidence.jobId)
             put("measured_at", existing.draft.measuredAt)
+            put("evidence_key", key)
             put("payload", encrypted)
         }, SQLiteDatabase.CONFLICT_IGNORE) != -1L } finally { encrypted.fill(0) }
         if (inserted) changed(existing.draft.metric)
@@ -365,7 +393,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     internal fun removeTableSourceLinks(jobId: String, metric: HealthMetric) {
         val database = helper.writableDatabase
         check(database.inTransaction())
-        if (database.delete("health_table_source_links", "job_id=?", arrayOf(jobId)) > 0) changed(metric)
+        if (database.delete("health_source_links", "job_id=? AND evidence_key=''", arrayOf(jobId)) > 0) changed(metric)
     }
     fun trendRecords(spec: HealthTrendSpec, after: HealthPageCursor? = null, numericOnly: Boolean = false,
                      cancelled: () -> Unit = {}, signal: android.os.CancellationSignal? = null): HealthRecordPage {
@@ -397,14 +425,18 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return try {
             suggestions.map { suggestion ->
                 require(suggestion.evidence?.kind == "ocr" && suggestion.recordId.isBlank() && suggestion.revision == 0)
-                val saved = recordForEvidence(suggestion)
-                if (saved != null) HealthOcrReviewRow(saved.draft, "", saved)
+                val primary = recordForEvidence(suggestion)
+                val linked = if (primary == null) recordForOcrLink(suggestion) else null
+                val saved = primary ?: linked
+                if (saved != null) HealthOcrReviewRow(saved.draft, "", saved, linked = linked != null)
                 else {
                     val key = draftKey(suggestion)
-                    reviewDraft(key) ?: run {
+                    val row = reviewDraft(key) ?: run {
                         saveDraft(suggestion)
                         requireNotNull(reviewDraft(key))
                     }
+                    val target = if (row.selection == null) null else duplicateFor(row.draft)?.let(::record)
+                    row.copy(link = target?.let { HealthOcrLinkTarget(it.id, it.revision) })
                 }
             }.also { db.setTransactionSuccessful() }
         } finally { db.endTransaction() }
@@ -416,22 +448,37 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         db.beginTransaction()
         try {
             val validated = items.map { item ->
-                val draft = reviewDraft(item.key)?.takeIf { it.selection == item }?.draft
+                val draft = reviewDraft(item.key)?.takeIf { it.selection == item.copy(link = null) }?.draft
                     ?: return HealthOcrBatchResult.Stale(item.key)
                 val evidence = draft.evidence
                 if (evidence?.kind != "ocr" || evidence.jobId != jobId || evidence.originalId != originalId ||
                     draft.recordId.isNotBlank() || draft.revision != 0) return HealthOcrBatchResult.Stale(item.key)
                 draft
             }
+            var linked = 0
             validated.forEachIndexed { index, draft ->
-                when (saveWithinTransaction(draft)) {
-                    is HealthSaveResult.Duplicate -> return HealthOcrBatchResult.Duplicate(items[index].key)
-                    HealthSaveResult.Conflict -> return HealthOcrBatchResult.Stale(items[index].key)
-                    is HealthSaveResult.Saved -> Unit
+                val item = items[index]
+                val target = item.link
+                if (target == null) {
+                    when (saveWithinTransaction(draft)) {
+                        is HealthSaveResult.Duplicate -> return HealthOcrBatchResult.Duplicate(item.key)
+                        HealthSaveResult.Conflict -> return HealthOcrBatchResult.Stale(item.key)
+                        is HealthSaveResult.Saved -> Unit
+                    }
+                } else {
+                    val existing = record(target.id)
+                    if (existing == null || existing.revision != target.revision ||
+                        dedupe(existing) != dedupe(HealthObservationPolicy.observation(draft))) return HealthOcrBatchResult.Stale(item.key)
+                    val evidence = requireNotNull(draft.evidence)
+                    if (recordForEvidence(draft) != null || recordForOcrLink(draft) != null ||
+                        !insertSourceLink(existing, evidence, ocrLinkKey(evidence)))
+                        return HealthOcrBatchResult.Duplicate(item.key)
+                    clearDraft(item.key)
+                    linked++
                 }
             }
             db.setTransactionSuccessful()
-            return HealthOcrBatchResult.Saved(items.size)
+            return HealthOcrBatchResult.Saved(items.size - linked, linked)
         } finally { db.endTransaction(); publishCommittedChanges() }
     }
     @Synchronized fun importHealthConnect(rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): Int {
@@ -628,7 +675,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 .use { if (it.moveToFirst()) it.getInt(0) to HealthMetric.valueOf(it.getString(1)) else null }
             val existing = previous?.first ?: 0
             if (existing != draft.revision) return HealthSaveResult.Conflict
-            val priorEvidence = recordForEvidence(draft)
+            val priorEvidence = recordForEvidence(draft) ?: recordForOcrLink(draft)
             if (priorEvidence != null && priorEvidence.id != record.id) return HealthSaveResult.Duplicate(priorEvidence.id)
             val duplicate = database.rawQuery("SELECT id FROM observations WHERE dedupe=? AND deleted=0 AND id<>?",
                 arrayOf(duplicateKey, record.id)).use { if (it.moveToFirst()) it.getString(0) else null }
@@ -728,7 +775,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             createSyncCheckpoints(db)
             HealthOriginalStore.createSharedSchema(db)
             HealthRestoreReceipts.createSchema(db)
-            createTableSourceLinks(db)
+            createSourceLinks(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             check(oldVersion in 1 until SCHEMA_VERSION && newVersion == SCHEMA_VERSION) { "Unsupported health schema upgrade" }
@@ -748,14 +795,20 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             if (oldVersion < 7) HealthOriginalStore.createSharedSchema(db)
             if (oldVersion < 8) HealthRestoreReceipts.createSchema(db)
             if (oldVersion >= 7 && oldVersion < 9) HealthOriginalLibraryStore.createHistoryIndex(db)
-            if (oldVersion < 10) createTableSourceLinks(db)
+            createSourceLinks(db)
+            if (oldVersion == 10) {
+                db.execSQL("INSERT INTO health_source_links(original_id,record_id,revision,job_id,measured_at,payload) " +
+                    "SELECT original_id,record_id,revision,job_id,measured_at,payload FROM health_table_source_links")
+                db.execSQL("DROP TABLE health_table_source_links")
+            }
         }
-        private fun createTableSourceLinks(db: SQLiteDatabase) {
-            db.execSQL("CREATE TABLE IF NOT EXISTS health_table_source_links(original_id TEXT NOT NULL,record_id TEXT NOT NULL REFERENCES observations(id)," +
+        private fun createSourceLinks(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS health_source_links(original_id TEXT NOT NULL,record_id TEXT NOT NULL REFERENCES observations(id)," +
                 "revision INTEGER NOT NULL,job_id TEXT NOT NULL,measured_at INTEGER NOT NULL,payload BLOB NOT NULL," +
-                "PRIMARY KEY(original_id,record_id,revision,job_id))")
-            db.execSQL("CREATE INDEX IF NOT EXISTS health_table_source_job ON health_table_source_links(job_id)")
-            db.execSQL("CREATE INDEX IF NOT EXISTS health_table_source_page ON health_table_source_links(original_id,measured_at DESC,record_id DESC)")
+                "evidence_key TEXT NOT NULL DEFAULT '',PRIMARY KEY(original_id,record_id,revision,job_id,evidence_key))")
+            db.execSQL("CREATE INDEX IF NOT EXISTS health_source_job ON health_source_links(job_id)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS health_source_page ON health_source_links(original_id,measured_at DESC,record_id DESC)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS health_source_evidence ON health_source_links(evidence_key) WHERE evidence_key<>''")
         }
         private fun indexPlatformRecords(db: SQLiteDatabase) =
             db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
@@ -765,7 +818,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     companion object {
         const val DEFAULT_DB = "health_records_v1.db"
-        const val SCHEMA_VERSION = 10
+        const val SCHEMA_VERSION = 11
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
         fun syncIncidentChanges(context: Context, name: String) = android.net.Uri.parse(

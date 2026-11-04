@@ -231,7 +231,8 @@ class HealthCaptureActivity : Activity() {
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
             "review" -> "review|$selectedId|$page|$candidateOffset|${data.page?.page}|${data.available}|" +
-                data.review.joinToString { row -> row.saved?.let { "${it.id}:${it.revision}" } ?: row.version }
+                data.review.joinToString { row -> row.saved?.let { "${it.id}:${it.revision}:${row.linked}" } ?:
+                    "${row.version}:${row.link?.id}:${row.link?.revision}" }
             else -> ""
         }
         if (key.isNotBlank() && key == renderedKey && body.childCount > 0) {
@@ -406,13 +407,23 @@ class HealthCaptureActivity : Activity() {
                     source.mark(evidence.boxes)
                     openReviewSource(evidence, displayedPage)
                 }.apply { tag = "health-review-mark-${evidence.candidateId}" }, 4)
-                ui.add(this, ui.row(getString(if (previous == null) R.string.health_check_fields else R.string.health_review_saved_item)) {
+                ui.add(this, ui.row(getString(when {
+                    previous == null -> R.string.health_check_fields
+                    row.linked -> R.string.health_review_linked_item
+                    else -> R.string.health_review_saved_item
+                })) {
                     if (previous != null) startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", previous.id))
                     else editSuggestion(draft, stage = true)
                 }, 8)
+                row.link?.let { target ->
+                    ui.add(this, ui.row(getString(R.string.health_review_view_duplicate)) {
+                        startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", target.id))
+                    }, 8)
+                }
                 if (selection != null) ui.add(this, CheckBox(this@HealthCaptureActivity).apply {
                     tag = "health-review-pick-${evidence.candidateId}"
-                    text = getString(R.string.health_review_select_item, getString(draft.metric.titleResource()))
+                    text = getString(if (selection.link == null) R.string.health_review_select_item else R.string.health_review_select_link,
+                        getString(draft.metric.titleResource()))
                     setTextColor(getColor(R.color.text_primary))
                     isChecked = reviewSelection[selection.key] == selection
                     setOnClickListener {
@@ -466,10 +477,15 @@ class HealthCaptureActivity : Activity() {
         }
         fun resetConsent() {
             val count = reviewSelection.size
+            val linked = reviewSelection.values.count { it.link != null }
             confirmed.isChecked = false
             confirmed.isEnabled = count > 0 && !savingReview
-            confirmed.text = if (count > 0) getString(R.string.health_review_batch_consent, count) else getString(R.string.health_review_batch_idle)
-            button.text = getString(R.string.health_review_batch_save, count)
+            confirmed.text = when {
+                linked > 0 -> getString(R.string.health_review_link_consent, count - linked, linked)
+                count > 0 -> getString(R.string.health_review_batch_consent, count)
+                else -> getString(R.string.health_review_batch_idle)
+            }
+            button.text = if (linked > 0) getString(R.string.health_review_save_links) else getString(R.string.health_review_batch_save, count)
             updateButton()
         }
         confirmed.setOnCheckedChangeListener { _, _ -> updateButton() }
@@ -497,7 +513,8 @@ class HealthCaptureActivity : Activity() {
                 val message = when (val outcome = result.getOrNull()) {
                     is HealthOcrBatchResult.Saved -> {
                         selected.forEach { reviewSelection.remove(it.key) }
-                        getString(R.string.health_review_batch_saved, outcome.count)
+                        if (outcome.linked > 0) getString(R.string.health_review_batch_linked, outcome.count, outcome.linked)
+                        else getString(R.string.health_review_batch_saved, outcome.count)
                     }
                     is HealthOcrBatchResult.Duplicate -> {
                         reviewSelection.remove(outcome.key)
