@@ -18,6 +18,7 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
   @State private var value = ""
   var t: (String, String) -> String
   var onAdd: (String) -> Void
+  @State private var weChatBrowserPresented = false
 
   private var link: String? {
     let input = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -36,6 +37,13 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
           .accessibilityIdentifier("ios.screen-assistant.link-input")
+        if GalaxySSIWeChatBrowserSession.articleURL(value) != nil {
+          Button {
+            weChatBrowserPresented = true
+          } label: {
+            Label(t("galaxyssi.screen_page.wechat_browser", "WeChat Article Browser"), systemImage: "safari")
+          }
+        }
       }
       .navigationTitle(t("galaxyssi.screen_page.link", "Link"))
       .toolbar {
@@ -51,6 +59,11 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
       }
     }
     .navigationViewStyle(.stack)
+    .sheet(isPresented: $weChatBrowserPresented) {
+      if let article = GalaxySSIWeChatBrowserSession.articleURL(value) {
+        GalaxySSIWeChatArticleBrowser(url: article, t: t)
+      }
+    }
   }
 }
 
