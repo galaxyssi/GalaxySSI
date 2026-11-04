@@ -395,9 +395,20 @@ extension GalaxySSIStoreTests {
     var snapshot = durableTeamSnapshot("run")
     let index = try XCTUnwrap(snapshot.members.firstIndex { $0.deliveryMode == .observe })
     snapshot.members[index].dispatchCheckpoint = .notStarted
+    snapshot.goal = "Preserve the original task"
     snapshot.members[index].researchStage = "EXPLORE"
     let member = snapshot.members[index]
     XCTAssertTrue(history.upsert(snapshot))
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let goal = try history.recallCollaborationOriginal(["mode": .string("goal"), "section": .string("goal")], scope: scope)
+    XCTAssertEqual(Data(base64Encoded: goal.string("data_b64")), Data(snapshot.goal.utf8))
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(
+      ["mode": .string("goal"), "section": .string("criteria")], scope: scope))
+    var changedGoal = snapshot
+    changedGoal.goal = "Do something else"
+    changedGoal.updatedAtMillis += 1
+    XCTAssertFalse(history.upsert(changedGoal))
     XCTAssertFalse(history.advanceDispatchCheckpoint(runId: "run", conversationId: "foreign",
       turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
       to: .dispatching, now: 20))
