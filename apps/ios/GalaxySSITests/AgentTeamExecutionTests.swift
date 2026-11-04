@@ -2,6 +2,34 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testNativeObservationRequiresExactActiveMemberAndRejectsDeletedGroup() throws {
+    let suite = "native-evidence-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("team.sqlite"))
+    let team = durableTeamSnapshot("native-run")
+    let member = try XCTUnwrap(team.members.first { !$0.status.isTerminal })
+    XCTAssertTrue(history.upsert(team))
+    let result = AgentNativeToolResult(status: .succeeded, output: ["value": .int(1)], message: "",
+      receipt: AgentNativeToolReceipt(invocationId: "invocation", startedAtEpochMillis: 1,
+        finishedAtEpochMillis: 2, durationMillis: 1, status: .succeeded, inputSha256: "input", outputSha256: "output"),
+      provenance: AgentNativeToolProvenance(toolId: "test.tool", toolVersion: "1", location: .phone,
+        executorId: "test", contractVersion: "1"))
+    var observation = AgentCollaborationNativeToolObservation(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, memberId: member.memberId,
+      sourceId: member.sourceMessageId, input: [:], result: result)
+    let receipt = try history.recordNativeObservation(observation)
+    XCTAssertEqual(receipt["origin"], .string("ios_native_tool"))
+    XCTAssertEqual(try history.recordNativeObservation(observation), receipt)
+    observation.sourceId = "foreign"
+    XCTAssertThrowsError(try history.recordNativeObservation(observation))
+    observation.sourceId = member.sourceMessageId
+    history.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try history.recordNativeObservation(observation))
+  }
+
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
     XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
     let raw = """

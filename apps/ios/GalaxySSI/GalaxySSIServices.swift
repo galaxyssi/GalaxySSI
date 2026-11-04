@@ -6373,7 +6373,14 @@ final class MessageCoordinator: ObservableObject {
                 profile: profile,
                 requestText: memberPrompt,
                 attachments: attachments,
-                outgoing: outgoing
+                outgoing: outgoing,
+                memberSourceId: isCollaboration ? sourceMessageId : nil,
+                nativeObservation: isCollaboration ? { input, result in
+                  try? AgentTeamExecutionHistoryStore.shared.recordNativeObservation(
+                    AgentCollaborationNativeToolObservation(runId: spec.supervisorRunId,
+                      conversationId: outgoing.conversationId, turnId: homeTurnId, memberId: member.memberId,
+                      sourceId: sourceMessageId, input: input, result: result))
+                } : nil
               )
               observations.append((member.memberId, result))
               persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
@@ -6837,7 +6844,9 @@ final class MessageCoordinator: ObservableObject {
     profile: LocalModelRuntimeProfile,
     requestText: String,
     attachments: [GalaxySSIDraftAttachment],
-    outgoing: ChatMessage
+    outgoing: ChatMessage,
+    memberSourceId: String? = nil,
+    nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
   ) async throws -> String {
     let prompt = localModelPrompt(
       text: requestText,
@@ -6857,10 +6866,11 @@ final class MessageCoordinator: ObservableObject {
       sessionID: outgoing.conversationId,
       conversationID: outgoing.conversationId,
       turnID: outgoing.turnId,
-      taskID: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      taskID: memberSourceId ?? outgoing.turnId.ifBlank(outgoing.id.uuidString),
       baseSystemPrompt: localModelSystemPrompt,
       registry: localNativeToolRuntime.registry,
-      readOnlyAnalysis: outgoing.readOnlyAnalysis
+      readOnlyAnalysis: outgoing.readOnlyAnalysis,
+      nativeObservation: nativeObservation
     )
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }

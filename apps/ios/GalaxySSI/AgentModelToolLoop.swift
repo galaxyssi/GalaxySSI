@@ -6,6 +6,7 @@ final class AgentModelToolLoop {
   private let clock: AgentModelToolLoopClock
   private let idFactory: AgentModelToolLoopIdFactory
   private let journal: AgentModelLoopJournal?
+  private let nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)?
   private let approvalLock = NSLock()
   private var pendingApprovals: [String: PendingApproval] = [:]
 
@@ -14,13 +15,15 @@ final class AgentModelToolLoop {
     toolRegistry: AgentNativeToolRegistry,
     clock: AgentModelToolLoopClock = .system,
     idFactory: AgentModelToolLoopIdFactory = .uuids,
-    journal: AgentModelLoopJournal? = nil
+    journal: AgentModelLoopJournal? = nil,
+    nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
   ) {
     self.modelAdapter = modelAdapter
     self.toolRegistry = toolRegistry
     self.clock = clock
     self.idFactory = idFactory
     self.journal = journal
+    self.nativeObservation = nativeObservation
   }
 
   func run(_ request: AgentModelToolLoopRequest) async -> AgentModelToolLoopOutcome {
@@ -606,7 +609,7 @@ final class AgentModelToolLoop {
     attempt: NativeInvocationAttempt
   ) -> AgentNativeToolResult {
     if let retained = attempt.checkpoint?.result { return retained }
-    let result = toolRegistry.invoke(
+    var result = toolRegistry.invoke(
       attempt.prepared.call.toolId,
       input: attempt.prepared.call.arguments,
       context: attempt.context,
@@ -615,6 +618,17 @@ final class AgentModelToolLoop {
         cancellationRequested: { state.request.cancellationToken.isCancellationRequested }
       )
     )
+    if let nativeObservation {
+      result.metadata.removeValue(forKey: "galaxyssi_evidence_receipt")
+      result.metadata.removeValue(forKey: "galaxyssi_evidence_recording")
+      if let receipt = nativeObservation(attempt.prepared.call.arguments, result) {
+        result.metadata["galaxyssi_evidence_receipt"] = .object(receipt)
+      } else {
+        result.metadata["galaxyssi_evidence_recording"] = .object([
+          "status": .string("not_durable"), "do_not_reexecute": .bool(true)
+        ])
+      }
+    }
     if let checkpoint = attempt.checkpoint {
       state.checkpoint?.recordResult(result, invocation: checkpoint, eventSequence: state.eventSequence)
     }
@@ -759,11 +773,17 @@ final class AgentModelToolLoop {
     result: AgentNativeToolResult,
     retryCount: Int
   ) {
+    var projectedOutput = result.output
+    if nativeObservation != nil {
+      for key in ["galaxyssi_evidence_receipt", "galaxyssi_evidence_recording"] {
+        projectedOutput[key] = result.metadata[key]
+      }
+    }
     state.messages.append(.tool(AgentModelToolResultContent(
       callId: call.callId,
       toolId: call.toolId,
       status: result.status.rawValue,
-      output: result.output,
+      output: projectedOutput,
       message: result.message,
       error: result.error,
       invocationId: result.receipt.invocationId,

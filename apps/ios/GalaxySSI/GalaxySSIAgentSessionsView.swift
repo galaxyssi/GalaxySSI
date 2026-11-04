@@ -33,7 +33,10 @@ private struct AgentCollaborationRosterEditor: View {
           label: contact.displayName + " / " + model.displayName.ifBlank(model.modelId))
       }
     }
-    return agents + cloud
+    let local = LocalModelRuntimeSettings.activeProfiles().first.map {
+      Resource(contactId: "local-llm", modelId: "", label: $0.displayName.ifBlank($0.id))
+    }
+    return agents + cloud + (local.map { [$0] } ?? [])
   }
 
   var body: some View {

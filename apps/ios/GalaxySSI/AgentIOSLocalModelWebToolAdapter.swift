@@ -117,7 +117,8 @@ enum AgentIOSLocalModelWebToolRunner {
     taskID: String,
     baseSystemPrompt: String,
     registry: AgentNativeToolRegistry,
-    readOnlyAnalysis: Bool = false
+    readOnlyAnalysis: Bool = false,
+    nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
     let webRegistry = try registry.subset {
       AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
@@ -143,7 +144,8 @@ enum AgentIOSLocalModelWebToolRunner {
     let outcome = await AgentModelToolLoop(
       modelAdapter: session,
       toolRegistry: webRegistry,
-      journal: EncryptedAgentModelLoopJournal()
+      journal: EncryptedAgentModelLoopJournal(),
+      nativeObservation: nativeObservation
     ).run(
       AgentModelToolLoopRequest(
         sessionId: sessionID.ifBlank(taskID),
