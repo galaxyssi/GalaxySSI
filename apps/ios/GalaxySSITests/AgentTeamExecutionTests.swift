@@ -307,6 +307,7 @@ extension GalaxySSIStoreTests {
     var snapshot = durableTeamSnapshot("run")
     let index = try XCTUnwrap(snapshot.members.firstIndex { $0.deliveryMode == .observe })
     snapshot.members[index].dispatchCheckpoint = .notStarted
+    snapshot.members[index].researchStage = "EXPLORE"
     let member = snapshot.members[index]
     XCTAssertTrue(history.upsert(snapshot))
     XCTAssertFalse(history.advanceDispatchCheckpoint(runId: "run", conversationId: "foreign",
@@ -325,6 +326,13 @@ extension GalaxySSIStoreTests {
       turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
       to: .accepted, now: 30))
     XCTAssertEqual(history.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .accepted)
+    var restored = try XCTUnwrap(history.snapshot(supervisorRunId: "run"))
+    XCTAssertEqual(restored.members[index].researchStage, "EXPLORE")
+    XCTAssertEqual(restored.members[index].executionStartedAtMillis, 20)
+    XCTAssertEqual(restored.members[index].elapsedExecutionMillis(now: 40, team: restored), 20)
+    restored.members[index].status = .succeeded
+    restored.members[index].updatedAtMillis = 50
+    XCTAssertEqual(restored.members[index].elapsedExecutionMillis(now: 100, team: restored), 30)
   }
 
   func testCollaborationResultsStayInTheirConversationAfterReopen() {

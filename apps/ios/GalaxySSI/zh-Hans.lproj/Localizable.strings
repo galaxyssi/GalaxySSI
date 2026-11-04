@@ -4928,5 +4928,11 @@
 "galaxyssi.collaboration.workflow_research" = "分阶段研究";
 "galaxyssi.collaboration.publication_failed" = "原始回复已保存，但未能发布其中的研究对象。";
 "galaxyssi.collaboration.results" = "成员结果";
+"galaxyssi.collaboration.dispatching" = "正在派发";
+"galaxyssi.collaboration.stage_explore" = "探索";
+"galaxyssi.collaboration.stage_challenge" = "质疑";
+"galaxyssi.collaboration.stage_revise" = "修订";
+"galaxyssi.collaboration.stage_recheck" = "复核";
+"galaxyssi.collaboration.stage_deliver" = "交付";
 "galaxyssi.collaboration.no_results" = "暂无成员结果。";
 "galaxyssi.collaboration.older_results" = "更早的结果";

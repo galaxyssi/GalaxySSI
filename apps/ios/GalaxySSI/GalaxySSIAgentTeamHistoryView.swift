@@ -77,12 +77,24 @@ struct GalaxySSICollaborationTeamPanel: View {
     DisclosureGroup(isExpanded: $expanded) {
       LazyVStack(alignment: .leading, spacing: 8) {
         if let snapshot {
-          ForEach(snapshot.members.filter { $0.deliveryMode != .ignore }, id: \.memberId) { member in
+          ForEach(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot), id: \.memberId) { member in
             VStack(alignment: .leading, spacing: 3) {
               Text((member.displayName ?? "").ifBlank(member.agentId)).font(.subheadline.weight(.semibold))
               if !member.role.isBlank { Text(member.role).font(.footnote) }
-              Text(GalaxySSIAgentTeamPresentation.memberStatusLabel(member.status, language: language))
-                .font(.footnote).foregroundColor(.secondary)
+              if let stage = stageLabel(member.researchStage) {
+                Text(stage).font(.footnote).foregroundColor(.secondary)
+              }
+              HStack {
+                Text(memberStatus(member))
+                if member.executionStartedAtMillis != nil && !member.status.isTerminal && !snapshot.state.isTerminal {
+                  TimelineView(.periodic(from: .now, by: 1)) { context in
+                    elapsed(member, team: snapshot, now: Int64(context.date.timeIntervalSince1970 * 1_000))
+                  }
+                } else {
+                  elapsed(member, team: snapshot, now: 0)
+                }
+              }
+              .font(.footnote).foregroundColor(.secondary)
               if !member.errorMessage.isBlank {
                 Text(member.errorMessage).font(.footnote).foregroundColor(.secondary).lineLimit(2)
               }
@@ -142,6 +154,32 @@ struct GalaxySSICollaborationTeamPanel: View {
     }
     .sheet(isPresented: $historyPresented) {
       GalaxySSICollaborationRecallView(conversationId: session.id, t: t)
+    }
+  }
+
+  private func memberStatus(_ member: AgentTeamMemberSnapshot) -> String {
+    if member.status == .pending || member.status == .queued {
+      if member.dispatchCheckpoint == .dispatching { return t("galaxyssi.collaboration.dispatching", "Dispatching") }
+      if member.dispatchCheckpoint == .accepted { return t("galaxyssi.agent_team.state_waiting_response", "Waiting for response") }
+    }
+    return GalaxySSIAgentTeamPresentation.memberStatusLabel(member.status, language: language)
+  }
+
+  private func stageLabel(_ stage: String?) -> String? {
+    switch stage {
+    case "EXPLORE": return t("galaxyssi.collaboration.stage_explore", "Explore")
+    case "CHALLENGE": return t("galaxyssi.collaboration.stage_challenge", "Challenge")
+    case "REVISE": return t("galaxyssi.collaboration.stage_revise", "Revise")
+    case "RECHECK": return t("galaxyssi.collaboration.stage_recheck", "Recheck")
+    case "DELIVER": return t("galaxyssi.collaboration.stage_deliver", "Deliver")
+    default: return nil
+    }
+  }
+
+  @ViewBuilder
+  private func elapsed(_ member: AgentTeamMemberSnapshot, team: AgentTeamExecutionSnapshot, now: Int64) -> some View {
+    if let millis = member.elapsedExecutionMillis(now: now, team: team) {
+      Text(DurationLabel.clock(millis / 1_000)).monospacedDigit()
     }
   }
 
