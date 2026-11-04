@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_backup_create">Create health backup</string>
+    <string name="health_backup_verify">Verify health backup</string>
+    <string name="health_backup_working">Processing backup…</string>
+    <string name="health_backup_verified">Integrity verified. Nothing was imported.</string>
+    <string name="health_backup_missing">Some originals are missing. This is not a complete backup.</string>
+    <string name="health_backup_verify_intro">Open a GalaxySSI health backup and verify it without changing this device’s records.</string>
+    <string name="health_backup_select">Choose backup file</string>
+    <string name="health_backup_incomplete">Incomplete backup generated</string>
+    <string name="health_backup_saved">Encrypted backup saved</string>
+    <string name="health_backup_generated">Encrypted backup ready</string>
+    <string name="health_backup_save">Save to Files</string>
+    <string name="health_backup_share">Choose how to share</string>
+    <string name="health_backup_discard">Remove temporary copy</string>
+    <string name="health_backup_estimate">Estimated size: %1$s</string>
+    <string name="health_backup_photos">Camera originals: %1$d · Other files: %2$d</string>
+    <string name="health_backup_missing_name">Missing: %1$s</string>
+    <string name="health_backup_more">%1$d more originals in the backup manifest</string>
+    <string name="health_backup_acknowledge">I reviewed the scope and will keep the password safe.</string>
+    <string name="health_backup_encrypt">Set password and generate</string>
+    <string name="health_backup_preview">Review backup contents</string>
+    <string name="health_backup_export_intro">Includes confirmed measurements, their notes, originals and links. Excludes drafts, AI results and profile details other than the owner label.</string>
+    <string name="health_backup_manifest">Backup contents</string>
+    <string name="health_backup_owner">Profile owner: %1$s</string>
+    <string name="health_backup_self">Self (unnamed)</string>
+    <string name="health_backup_counts">%1$d records · %2$d originals\n%3$d linked records · %4$d missing originals</string>
+    <string name="health_backup_dates">Measurements: %1$s to %2$s</string>
+    <string name="health_backup_password">Backup password</string>
+    <string name="health_backup_repeat">Repeat backup password</string>
+    <string name="health_backup_unlock">Unlock health backup</string>
+    <string name="health_backup_mismatch">Passwords do not match.</string>
+    <string name="health_backup_password_rules">Use 12–256 characters, not only spaces.</string>
+    <string name="health_backup_cancelled">Backup operation cancelled.</string>
+    <string name="health_backup_bad_format">This is not a supported GalaxySSI health backup.</string>
+    <string name="health_backup_old">This backup uses an older, unsupported format.</string>
+    <string name="health_backup_new">This backup requires a newer version of GalaxySSI.</string>
+    <string name="health_backup_wrong_password">Password is incorrect or the backup header is damaged.</string>
+    <string name="health_backup_damaged">The backup is damaged or incomplete. Nothing was imported.</string>
+    <string name="health_backup_other_profile">The backup belongs to an unsupported profile.</string>
+    <string name="health_backup_changed">Source data changed. Review the backup contents again.</string>
+    <string name="health_backup_bad_link">A record links to missing or inconsistent original metadata. No complete backup was generated.</string>
+    <string name="health_backup_io_error">Could not read, generate, or save the backup. Try again.</string>
+    <string name="health_backup_saved_partial">Saved the backup with missing originals.</string>
+</resources>

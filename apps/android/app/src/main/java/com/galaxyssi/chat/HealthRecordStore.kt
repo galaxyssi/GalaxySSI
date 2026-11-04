@@ -120,6 +120,12 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         "SELECT id,revision,payload,metric,measured_at FROM observations WHERE id=? AND deleted=0", arrayOf(id)
     ).use { if (it.moveToFirst()) decode(it) else null }
 
+    internal fun backupPage(after: String, signal: android.os.CancellationSignal? = null): List<HealthObservation> =
+        helper.readableDatabase.rawQuery(
+            "SELECT id,revision,payload,metric,measured_at FROM observations WHERE id>? AND deleted=0 ORDER BY id LIMIT 30",
+            arrayOf(after), signal
+        ).use { rows -> buildList { while (rows.moveToNext()) add(decode(rows)) } }
+
     fun page(after: HealthPageCursor? = null, metric: HealthMetric? = null, limit: Int = PAGE_SIZE, originalId: String? = null,
              metrics: Set<HealthMetric>? = null): HealthRecordPage {
         require(limit in 1..PAGE_SIZE)
