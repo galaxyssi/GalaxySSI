@@ -536,11 +536,14 @@ extension GalaxySSIStoreTests {
         "total_bytes": .int(Int64(bytes.count)), "data_b64": .string(bytes.base64EncodedString())]
     }
     let complete = AgentCollaborationInlineOriginals.prompt(originalGoalPrefix: "Exact goal") { section in
-      section == "goal" ? page(section, "Exact goal") : page(section, "Exact criteria")
+      ["goal": "Exact goal", "criteria": "Exact criteria", "source": "Exact source"][section].map {
+        page(section, $0)
+      }
     }
     XCTAssertTrue(complete.contains("complete_in_prompt_prefix"))
     XCTAssertTrue(complete.contains("complete_in_originals"))
     XCTAssertTrue(complete.contains("Exact criteria"))
+    XCTAssertTrue(complete.contains("Exact source"))
     XCTAssertFalse(complete.contains("Exact goal"))
     let limited = AgentCollaborationInlineOriginals.prompt(originalGoalPrefix: "Different", maximumBytes: 10) { section in
       section == "goal" ? page(section, "Partial original", next: .int(16)) : page(section, "Oversized criteria")
@@ -549,6 +552,17 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(limited.contains("complete_in"))
     XCTAssertFalse(limited.contains("Partial original"))
     XCTAssertFalse(limited.contains("Oversized criteria"))
+  }
+
+  func testCollaborationSourceMappingPreservesExactUTF16Boundaries() throws {
+    let goal = String(repeating: "a", count: 1_023) + "\u{1F642} Next.  "
+    let bytes = AgentCollaborationInlineOriginals.source(goal: goal, criteria: Data("[]".utf8))
+    let source = try JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes)
+    let segments = try XCTUnwrap(source["segments"]?.arrayValue).compactMap(\.objectValue)
+    XCTAssertEqual(segments.map { $0.string("id") }, ["source-1", "source-2"])
+    XCTAssertEqual(segments.first?.string("text").utf16.count, 1_025)
+    XCTAssertEqual(Data(segments.map { $0.string("text") }.joined().utf8), Data(goal.utf8))
+    XCTAssertNotEqual(bytes, AgentCollaborationInlineOriginals.source(goal: goal, criteria: Data("[1]".utf8)))
   }
 
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {

@@ -1,11 +1,51 @@
 import Foundation
+import CryptoKit
 
 enum AgentCollaborationInlineOriginals {
+  static func source(goal: String, criteria: Data) -> Data {
+    let units = Array(goal.utf16)
+    var segments: [String] = []
+    var start = 0
+    var substantive = false
+    func whitespace(_ unit: UInt16) -> Bool {
+      UnicodeScalar(unit).map { CharacterSet.whitespacesAndNewlines.contains($0) } ?? false
+    }
+    for index in units.indices {
+      let unit = units[index]
+      let end = index + 1
+      substantive = substantive || !whitespace(unit)
+      if end < units.count, (0xD800...0xDBFF).contains(unit),
+         (0xDC00...0xDFFF).contains(units[end]) { continue }
+      let final = end == units.count
+      let punctuation = [0x002E, 0x0021, 0x003F].contains(Int(unit)) && (final || whitespace(units[end]))
+      let separator = [0x000A, 0x003B, 0xFF1B, 0x3002, 0xFF01, 0xFF1F].contains(Int(unit))
+      if substantive && (final || punctuation || separator || end - start >= 1_024) {
+        segments.append(String(decoding: units[start..<end], as: UTF16.self))
+        start = end
+        substantive = false
+      }
+    }
+    if start < units.count, !segments.isEmpty {
+      segments[segments.count - 1] += String(decoding: units[start...], as: UTF16.self)
+    }
+    func digest(_ bytes: Data) -> String {
+      SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+    return Data(AgentMcpJSONCodec.stringify([
+      "format": .string("galaxyssi.ios-goal-coverage-source.v1"),
+      "goal_sha256": .string(digest(Data(goal.utf8))),
+      "criteria_sha256": .string(digest(criteria)),
+      "segments": .array(segments.enumerated().map { index, value in
+        .object(["id": .string("source-\(index + 1)"), "text": .string(value)])
+      })
+    ]).utf8)
+  }
+
   static func prompt(originalGoalPrefix: String, maximumBytes: Int = 12_000,
                      read: (String) -> AgentMcpJSONObject?) -> String {
     var sections: [String: AgentMcpJSONValue] = [:]
     var originals: AgentMcpJSONObject = [:]
-    for section in ["goal", "criteria"] {
+    for section in ["goal", "criteria", "source"] {
       sections[section] = .string("not_included")
       guard let page = read(section), page["next_offset"] == .null,
             page["offset"] == .int(0), page.string("section") == section,
