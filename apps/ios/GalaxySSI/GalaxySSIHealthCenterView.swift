@@ -112,6 +112,11 @@ struct GalaxySSIHealthCenterView: View {
       } label: {
         Label(t("privacy.title", "Health Privacy"), systemImage: "lock.shield")
       }
+      NavigationLink {
+        GalaxySSIHealthTrendView(records: records)
+      } label: {
+        Label(t("trend.title", "Measurement Trends"), systemImage: "chart.xyaxis.line")
+      }
     }
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)
