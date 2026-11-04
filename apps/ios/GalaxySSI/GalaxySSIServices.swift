@@ -4657,7 +4657,9 @@ final class MessageCoordinator: ObservableObject {
     requestText: String,
     attachments: [GalaxySSIDraftAttachment],
     outgoing: ChatMessage,
-    initialPlan: AgentPlan? = nil
+    initialPlan: AgentPlan? = nil,
+    collaborationRecallScope: AgentCollaborationToolEvidenceScope? = nil,
+    hasTruncatedCollaborationDependencies: Bool = false
   ) async throws {
     try Task.checkCancellation()
     let taskId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
@@ -4865,10 +4867,15 @@ final class MessageCoordinator: ObservableObject {
       task.pendingPlanning = nil
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
       store.upsertAgentTask(task)
+      let recall = executionMode != .planOnly && !outgoing.readOnlyAnalysis
+        ? validatedLocalCollaborationRecall(collaborationRecallScope) : nil
       if let modelOutcome {
         switch modelOutcome {
         case let .directResponse(response):
-          _ = completeModelDirectResponse(response, outgoing: outgoing, task: &task)
+          if recall == nil || !hasTruncatedCollaborationDependencies {
+            _ = completeModelDirectResponse(response, outgoing: outgoing, task: &task)
+            return
+          }
         case let .plan(plan):
           if executionMode == .planOnly {
             _ = completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
@@ -4880,8 +4887,8 @@ final class MessageCoordinator: ObservableObject {
               plan: plan
             )
           }
+          return
         }
-        return
       }
       guard let localNativeToolRuntime else {
         throw AgentIOSLocalModelWebToolError.unavailable
@@ -4893,10 +4900,11 @@ final class MessageCoordinator: ObservableObject {
         sessionID: outgoing.conversationId,
         conversationID: outgoing.conversationId,
         turnID: outgoing.turnId,
-        taskID: task.taskId,
+        taskID: recall?.sourceId ?? task.taskId,
         baseSystemPrompt: localModelSystemPrompt,
         registry: localNativeToolRuntime.registry,
-        readOnlyAnalysis: outgoing.readOnlyAnalysis
+        readOnlyAnalysis: outgoing.readOnlyAnalysis,
+        collaborationRecallScope: recall
       )
       let response = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {
@@ -6380,13 +6388,20 @@ final class MessageCoordinator: ObservableObject {
             LocalModelInferenceRuntime.shared.ready(profile: profile) else {
             throw LocalModelInferenceError.modelNotReady
           }
+          let recallScope: AgentCollaborationToolEvidenceScope? = isCollaboration ? .init(runId: spec.supervisorRunId,
+            conversationId: outgoing.conversationId, turnId: homeTurnId,
+            memberId: member.memberId, sourceId: sourceMessageId) : nil
           try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
             if member.deliveryMode == .respond {
               try await receiveLocalModelReply(
                 profile: profile,
                 requestText: memberPrompt,
                 attachments: attachments,
-                outgoing: outgoing
+                outgoing: outgoing,
+                collaborationRecallScope: recallScope,
+                hasTruncatedCollaborationDependencies: isCollaboration && observations.contains {
+                  member.dependsOnAgentIds.contains($0.0) && $0.1.count > 8_000
+                }
               )
               persistSynchronousTeamPrimary(member: member, spec: spec, outgoing: outgoing)
               primaryPublished = true
@@ -6397,9 +6412,7 @@ final class MessageCoordinator: ObservableObject {
                 attachments: attachments,
                 outgoing: outgoing,
                 memberSourceId: isCollaboration ? sourceMessageId : nil,
-                collaborationRecallScope: isCollaboration ? .init(runId: spec.supervisorRunId,
-                  conversationId: outgoing.conversationId, turnId: homeTurnId,
-                  memberId: member.memberId, sourceId: sourceMessageId) : nil,
+                collaborationRecallScope: recallScope,
                 nativeObservation: isCollaboration ? { input, result in
                   guard result.provenance.toolId != AgentIOSLocalModelWebToolRunner.collaborationRecallId else { return nil }
                   return try? AgentTeamExecutionHistoryStore.shared.recordNativeObservation(
@@ -6923,14 +6936,7 @@ final class MessageCoordinator: ObservableObject {
     guard let localNativeToolRuntime else {
       throw AgentIOSLocalModelWebToolError.unavailable
     }
-    let recall = collaborationRecallScope.flatMap { scope -> AgentCollaborationToolEvidenceScope? in
-      guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
-            let roster = session.collaborationRoster,
-            let member = scope.memberId.split(separator: ":").first, let memberId = UUID(uuidString: String(member)),
-            roster.members.contains(where: { $0.id == memberId }),
-            session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
-      return scope
-    }
+    let recall = validatedLocalCollaborationRecall(collaborationRecallScope)
     let completion = try await AgentIOSLocalModelWebToolRunner.run(
       prompt: prompt,
       profile: profile,
@@ -6948,6 +6954,16 @@ final class MessageCoordinator: ObservableObject {
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
     return text
+  }
+
+  private func validatedLocalCollaborationRecall(_ scope: AgentCollaborationToolEvidenceScope?)
+    -> AgentCollaborationToolEvidenceScope? {
+    guard let scope, let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
+          let roster = session.collaborationRoster,
+          let member = scope.memberId.split(separator: ":").first, let memberId = UUID(uuidString: String(member)),
+          roster.members.contains(where: { $0.id == memberId }),
+          session.mergedIntoConversationId.isBlank, !session.privateMode, !session.trackingPaused else { return nil }
+    return scope
   }
 
   private func reconcileSavedTeamParents(runId: String? = nil) {
