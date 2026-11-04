@@ -13,11 +13,15 @@ extension GalaxySSIStoreTests {
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     var prior = durableTeamSnapshot("prior")
     prior.taskId = "past"
+    prior.createdAtMillis = 10
+    prior.updatedAtMillis = 50
     prior.state = .succeeded
     prior.finalOutput = "Verified battery comparison"
     var current = prior
     current.supervisorRunId = "current"
     current.taskId = "turn"
+    current.createdAtMillis = 20
+    current.updatedAtMillis = 30
     var foreign = prior
     foreign.supervisorRunId = "foreign"
     foreign.conversationId = "another-group"
@@ -31,6 +35,7 @@ extension GalaxySSIStoreTests {
       excludingTurnId: "turn", query: "BATTERY comparison").map(\.supervisorRunId), ["prior"])
     XCTAssertTrue(reopened.recallCollaborationResults(conversationId: prior.conversationId,
       excludingTurnId: "turn", query: "unmatched").isEmpty)
+    XCTAssertEqual(reopened.latestCollaborationRun(conversationId: prior.conversationId)?.supervisorRunId, "current")
   }
 
   func testNativeObservationRequiresExactActiveMemberAndRejectsDeletedGroup() throws {

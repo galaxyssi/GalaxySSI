@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct AgentCollaborationRosterEditor: View {
+struct AgentCollaborationRosterEditor: View {
   private struct Resource: Identifiable {
     var contactId: String
     var modelId: String

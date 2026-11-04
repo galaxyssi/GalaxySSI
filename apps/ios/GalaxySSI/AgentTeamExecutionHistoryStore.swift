@@ -556,6 +556,14 @@ final class AgentTeamExecutionHistoryStore {
     }) ?? []
   }
 
+  func latestCollaborationRun(conversationId: String) -> AgentTeamExecutionSnapshot? {
+    collaborationResults(conversationId: conversationId, limit: Self.maxSnapshots).max { lhs, rhs in
+      let left = lhs.createdAtMillis > 0 ? lhs.createdAtMillis : lhs.updatedAtMillis
+      let right = rhs.createdAtMillis > 0 ? rhs.createdAtMillis : rhs.updatedAtMillis
+      return left == right ? lhs.supervisorRunId < rhs.supervisorRunId : left < right
+    }
+  }
+
   func deliverableSnapshots() -> [AgentTeamExecutionSnapshot] {
     (try? access { try $0.snapshots(deliverableOnly: true, limit: Self.maxSnapshots) }) ?? []
   }
