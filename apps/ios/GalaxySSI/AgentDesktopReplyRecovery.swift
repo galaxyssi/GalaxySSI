@@ -119,7 +119,7 @@ enum AgentDesktopCollaborationArchiveRecall {
     -> AgentMcpJSONObject? {
     guard Set(input.keys).isSubset(of: ["mode", "section", "cursor"]), input["mode"] == .string("goal_contract"),
           case .string(let section) = input["section"] ?? .string("goal"),
-          ["goal", "criteria", "source"].contains(section),
+          AgentCollaborationInlineOriginals.recallSections.contains(section),
           case .string(let cursor) = input["cursor"] ?? .string("") else { return nil }
     var query: AgentMcpJSONObject = ["mode": .string("goal"), "section": .string(section)]
     if cursor.isEmpty { return query }

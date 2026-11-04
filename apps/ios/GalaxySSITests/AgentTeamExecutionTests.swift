@@ -1105,11 +1105,24 @@ extension GalaxySSIStoreTests {
     var foreign = scope
     foreign.sourceId = "foreign"
     XCTAssertThrowsError(try history.recordDispatchResourceObservation(observation, scope: foreign))
-    try history.recordDispatchResourceObservation(observation, scope: scope)
+    let originalContext = String(repeating: "x", count: 8_191) + "\u{1F642} end"
+    try history.recordDispatchResourceObservation(observation, scope: scope,
+      sections: ["context:assignment": originalContext])
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .dispatching)
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[index].dispatchResourceObservation, observation)
+    let firstPage = try reopened.readPinnedCollaborationGoal(scope: scope, section: "context:assignment")
+    let next = Int(firstPage.int64("next_offset"))
+    XCTAssertGreaterThan(next, 0)
+    let lastPage = try reopened.readPinnedCollaborationGoal(scope: scope, section: "context:assignment",
+      offset: next, expectedHash: firstPage.string("sha256"))
+    let bytes = try XCTUnwrap(Data(base64Encoded: firstPage.string("data_b64"))) +
+      (try XCTUnwrap(Data(base64Encoded: lastPage.string("data_b64"))))
+    XCTAssertEqual(bytes, Data(originalContext.utf8))
+    XCTAssertThrowsError(try reopened.readPinnedCollaborationGoal(scope: foreign, section: "context:assignment"))
+    XCTAssertThrowsError(try reopened.recordDispatchResourceObservation(observation, scope: scope,
+      sections: ["context:assignment": "Replaced"]))
     XCTAssertNoThrow(try reopened.recordDispatchResourceObservation(observation, scope: scope))
     XCTAssertThrowsError(try reopened.recordDispatchResourceObservation(["observed_at_unix_ms": .int(22)], scope: scope))
     XCTAssertFalse(reopened.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
