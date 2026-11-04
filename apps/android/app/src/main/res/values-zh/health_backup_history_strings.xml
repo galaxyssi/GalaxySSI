@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_backup_history">备份历史</string>
+    <string name="health_backup_history_empty">暂无备份任务。</string>
+    <string name="health_backup_history_unavailable">备份任务不可用。</string>
+    <string name="health_backup_history_counts">%1$d 条记录 · %2$d 个原件 · %3$d 个缺失</string>
+    <string name="health_backup_history_unsaved">尚未验证外部保存</string>
+    <string name="health_backup_history_saving">正在校验保存的副本</string>
+    <string name="health_backup_history_last_verified">上次验证保存：%1$s</string>
+    <string name="health_backup_history_generation_failed">备份生成失败</string>
+    <string name="health_backup_history_generation_interrupted">备份生成中断</string>
+    <string name="health_backup_history_save_failed">上次保存未通过验证</string>
+    <string name="health_backup_history_save_cancelled">上次保存已取消</string>
+    <string name="health_backup_history_save_interrupted">上次保存中断，未验证成功</string>
+    <string name="health_backup_history_local_missing">临时副本已不可用。此前另存的文件不受影响。</string>
+</resources>

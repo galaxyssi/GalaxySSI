@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import android.os.CancellationSignal
+import android.os.OperationCanceledException
 import com.galaxyssi.chat.HealthBackupCodec.toHex
 import java.io.File
 import java.io.FileOutputStream
@@ -10,6 +11,7 @@ import java.nio.file.Files
 import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class HealthBackupPreview(
     val manifest: HealthBackupManifest, val photos: Int, val estimate: Long, val examples: List<HealthBackupOriginal>,
@@ -56,7 +58,33 @@ internal class HealthBackupRepository(private val context: Context, private val 
         HealthBackupPreview(manifest, photos, estimate, examples, originalStamp, versions)
     }
 
-    fun generate(preview: HealthBackupPreview, password: CharArray, signal: CancellationSignal): HealthBackupArtifact = records { records, originals ->
+    fun generate(preview: HealthBackupPreview, password: CharArray, signal: CancellationSignal): HealthBackupArtifact = exclusive(preview.manifest.id) {
+        val manifest = preview.manifest
+        HealthBackupHistoryStore(context, databases.backups).use { history ->
+            require(!path(manifest.id).exists() && !path(manifest.id, partial = true).exists())
+            val prior = history.get(manifest.id)
+            check(prior == null || prior.generation in setOf(HealthBackupGeneration.FAILED, HealthBackupGeneration.CANCELLED, HealthBackupGeneration.INTERRUPTED))
+            val entry = HealthBackupReceipt(manifest.id, System.currentTimeMillis(), manifest.first, manifest.last,
+                manifest.records, manifest.originals, manifest.missing)
+            history.put(entry)
+            try {
+                val result = generateFile(preview, password, signal) { staged ->
+                    history.put(entry.copy(size = staged.size, hash = staged.hash))
+                }
+                history.put(entry.copy(generation = HealthBackupGeneration.READY, size = result.size, hash = result.hash))
+                result
+            } catch (failure: Exception) {
+                if (!path(manifest.id).exists()) recordFailure(failure) {
+                    history.put(entry.copy(generation = if (failure is OperationCanceledException) HealthBackupGeneration.CANCELLED
+                        else HealthBackupGeneration.FAILED))
+                }
+                throw failure
+            }
+        }
+    }
+
+    private fun generateFile(preview: HealthBackupPreview, password: CharArray, signal: CancellationSignal,
+        stage: (HealthBackupArtifact) -> Unit): HealthBackupArtifact = records { records, originals ->
         val manifest = preview.manifest
         val partial = path(manifest.id, partial = true)
         val destination = path(manifest.id)
@@ -80,8 +108,11 @@ internal class HealthBackupRepository(private val context: Context, private val 
             ensureCurrent(records, originals, preview.versions, preview.originalStamp, signal)
             val bytes = partial.length()
             check(bytes > 0)
+            val artifact = HealthBackupArtifact(manifest.id, bytes, digest.digest().toHex(), manifest.missing)
+            stage(artifact)
+            signal.throwIfCanceled()
             Files.move(partial.toPath(), destination.toPath())
-            HealthBackupArtifact(manifest.id, bytes, digest.digest().toHex(), manifest.missing)
+            artifact
         } finally { partial.delete() }
     }
 
@@ -93,11 +124,99 @@ internal class HealthBackupRepository(private val context: Context, private val 
         HealthPrivateExportFile.copyVerified(file(artifact).inputStream(), output,
             HealthExportDigest(artifact.size, artifact.hash), signal::throwIfCanceled)
 
-    fun forget(artifact: HealthBackupArtifact) { path(artifact.id).delete() }
+    fun saveVerified(id: String, signal: CancellationSignal, destination: () -> OutputStream,
+        readBack: () -> java.io.InputStream, discardDestination: () -> Unit): HealthBackupHistoryItem = exclusive(id) {
+        HealthBackupHistoryStore(context, databases.backups).use { history ->
+            val entry = requireNotNull(history.get(id))
+            check(entry.generation == HealthBackupGeneration.READY)
+            val artifact = requireNotNull(entry.artifact)
+            history.put(entry.copy(save = HealthBackupSave.SAVING))
+            var opened = false
+            try {
+                signal.throwIfCanceled()
+                file(artifact)
+                val output = destination()
+                opened = true
+                output.use { save(artifact, it, signal) }
+                HealthPrivateExportFile.copyVerified(readBack(), discard,
+                    HealthExportDigest(artifact.size, artifact.hash), signal::throwIfCanceled)
+            } catch (failure: Exception) {
+                if (opened) recordFailure(failure, discardDestination)
+                recordFailure(failure) { history.put(entry.copy(save = if (failure is OperationCanceledException) HealthBackupSave.CANCELLED
+                    else HealthBackupSave.FAILED)) }
+                throw failure
+            }
+            val saved = entry.copy(save = HealthBackupSave.VERIFIED, savedAt = System.currentTimeMillis())
+            history.put(saved)
+            item(saved)
+        }
+    }
+
+    fun history(id: String, signal: CancellationSignal? = null): HealthBackupHistoryItem? = HealthBackupHistoryStore(context, databases.backups).use { history ->
+        signal?.throwIfCanceled()
+        history.get(id)?.let { item(reconcile(history, it, signal)) }
+    }
+
+    fun historyPage(before: HealthBackupHistoryCursor?, signal: CancellationSignal? = null): HealthBackupHistoryPage = HealthBackupHistoryStore(context, databases.backups).use { history ->
+        signal?.throwIfCanceled()
+        val rows = history.page(before)
+        val page = rows.take(30).map { signal?.throwIfCanceled(); item(reconcile(history, it, signal)) }
+        HealthBackupHistoryPage(page, if (rows.size > 30) page.last().receipt.let { HealthBackupHistoryCursor(it.created, it.id) } else null)
+    }
+
+    private fun item(receipt: HealthBackupReceipt) = HealthBackupHistoryItem(receipt,
+        receipt.generation == HealthBackupGeneration.READY && receipt.artifact?.let { artifact ->
+            path(receipt.id).let { it.isFile && it.length() == artifact.size && it.lastModified() >= System.currentTimeMillis() - CACHE_TTL }
+        } == true)
+
+    private fun reconcile(history: HealthBackupHistoryStore, observed: HealthBackupReceipt, signal: CancellationSignal?): HealthBackupReceipt {
+        if (observed.generation != HealthBackupGeneration.GENERATING && observed.save != HealthBackupSave.SAVING) return observed
+        if (!active.add(observed.id)) return observed
+        try {
+            val entry = history.get(observed.id) ?: return observed
+            val updated = when {
+                entry.generation == HealthBackupGeneration.GENERATING -> {
+                    val published = entry.artifact?.let { artifact ->
+                        try {
+                            HealthPrivateExportFile.copyVerified(file(artifact).inputStream(), discard,
+                                HealthExportDigest(artifact.size, artifact.hash)) { signal?.throwIfCanceled() }
+                            true
+                        } catch (cancelled: OperationCanceledException) { throw cancelled }
+                        catch (_: Exception) { false }
+                    } == true
+                    signal?.throwIfCanceled()
+                    path(entry.id, partial = true).delete()
+                    if (published) entry.copy(generation = HealthBackupGeneration.READY)
+                    else {
+                        path(entry.id).delete()
+                        entry.copy(generation = HealthBackupGeneration.INTERRUPTED, size = 0, hash = "")
+                    }
+                }
+                entry.save == HealthBackupSave.SAVING -> entry.copy(save = HealthBackupSave.INTERRUPTED)
+                else -> return entry
+            }
+            history.put(updated)
+            return updated
+        } finally { active.remove(observed.id) }
+    }
+
+    fun forget(artifact: HealthBackupArtifact) = exclusive(artifact.id) {
+        val file = path(artifact.id)
+        check(!file.exists() || file.delete())
+    }
+
+    private fun <T> exclusive(id: String, block: () -> T): T {
+        check(active.add(id)) { "Backup operation already active" }
+        return try { block() } finally { active.remove(id) }
+    }
+
+    private fun recordFailure(failure: Exception, action: () -> Unit) {
+        runCatching(action).exceptionOrNull()?.let(failure::addSuppressed)
+    }
 
     fun cleanup(now: Long = System.currentTimeMillis()) {
         directory.listFiles().orEmpty().filter { it.isFile && (it.extension == "partial" || it.extension == HealthBackupCodec.EXTENSION) &&
-            it.lastModified() < now - 7 * 86_400_000L }.forEach { it.delete() }
+            it.lastModified() < now - CACHE_TTL }.forEach { it.delete() }
     }
 
     private fun path(id: String, partial: Boolean = false): File {
@@ -185,4 +304,12 @@ internal class HealthBackupRepository(private val context: Context, private val 
 
     private fun changed(): Nothing = throw HealthBackupException(HealthBackupIssue.SOURCE_CHANGED)
 
+    private companion object {
+        const val CACHE_TTL = 7 * 86_400_000L
+        val active = ConcurrentHashMap.newKeySet<String>()
+        val discard = object : OutputStream() {
+            override fun write(value: Int) = Unit
+            override fun write(bytes: ByteArray, offset: Int, length: Int) = Unit
+        }
+    }
 }

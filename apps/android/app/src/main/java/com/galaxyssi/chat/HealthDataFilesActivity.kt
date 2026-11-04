@@ -30,6 +30,9 @@ class HealthDataFilesActivity : Activity() {
             addView(ui.row(getString(R.string.health_backup_create)) {
                 startActivity(Intent(this@HealthDataFilesActivity, HealthBackupActivity::class.java))
             }.apply { tag = "health-backup-export-entry" })
+            addView(ui.row(getString(R.string.health_backup_history)) {
+                startActivity(Intent(this@HealthDataFilesActivity, HealthBackupActivity::class.java).putExtra("backup_history", true))
+            }.apply { tag = "health-backup-history-entry" })
             addView(ui.row(getString(R.string.health_backup_verify)) {
                 startActivity(Intent(this@HealthDataFilesActivity, HealthBackupActivity::class.java).putExtra("verify_backup", true))
             }.apply { tag = "health-backup-verify-entry" })
