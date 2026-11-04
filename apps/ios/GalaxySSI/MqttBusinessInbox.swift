@@ -71,6 +71,7 @@ final class MqttBusinessInbox {
               existing.receiptRequired == receiptRequired else { throw MqttChunkStorageError.corruptState }
       } else {
         try quota(binding: identity.binding, bytes: body.count)
+        _ = try pruneExpiredCompleted(at: at, limit: 16)
       }
       var saved = existing ?? Record(identity: identity, messageID: messageID, contentHash: hash, createdAt: at,
         retainUntil: at + MqttBusinessStorage.retention, completed: false, receiptRequired: receiptRequired, payload: body, aliases: [:])
@@ -158,14 +159,18 @@ final class MqttBusinessInbox {
     guard (1...1024).contains(limit) else { throw MqttRouteError.invalidPayload }
     return try database.transaction {
       let at = try MqttBusinessStorage.timestamp(now())
-      let keys = try database.query("SELECT record_key FROM mqtt_business_inbox WHERE completed=1 AND retain_until<? LIMIT ?",
-        [.number(at), .number(Int64(limit))], maximumRows: limit) { try $0.text(0) }
-      for key in keys {
-        guard let saved = try record(key), saved.completed, saved.retainUntil < at else { throw MqttChunkStorageError.corruptState }
-        try delete(key)
-      }
-      return keys.count
+      return try pruneExpiredCompleted(at: at, limit: limit)
     }
+  }
+
+  private func pruneExpiredCompleted(at: Int64, limit: Int) throws -> Int {
+    let keys = try database.query("SELECT record_key FROM mqtt_business_inbox WHERE completed=1 AND retain_until<? ORDER BY retain_until LIMIT ?",
+      [.number(at), .number(Int64(limit))], maximumRows: limit) { try $0.text(0) }
+    for key in keys {
+      guard let saved = try record(key), saved.completed, saved.retainUntil < at else { throw MqttChunkStorageError.corruptState }
+      try delete(key)
+    }
+    return keys.count
   }
 
   func forget(identity: MqttBusinessIdentity) throws {
@@ -231,7 +236,7 @@ final class MqttBusinessInbox {
   }
   private func quota(binding: String, bytes: Int) throws {
     for (scope, records, maximum) in [("", limits.records, limits.pendingBytes), (binding, limits.peerRecords, limits.peerPendingBytes)] {
-      let condition = scope.isEmpty ? "" : " WHERE binding_digest=?"
+      let condition = scope.isEmpty ? " WHERE completed=0" : " WHERE completed=0 AND binding_digest=?"
       let values: [MqttChunkDatabase.Value] = scope.isEmpty ? [] : [.text(scope)]
       let usage = try database.query("SELECT COUNT(*),COALESCE(SUM(payload_bytes),0) FROM mqtt_business_inbox" + condition,
         values, maximumRows: 1) { (try $0.number(0), try $0.number(1)) }.first
