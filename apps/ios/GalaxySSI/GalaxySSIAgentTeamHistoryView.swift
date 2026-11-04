@@ -508,10 +508,20 @@ struct GalaxySSIAgentTeamSummaryRow: View {
 
 struct GalaxySSIAgentTeamDetailView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: GalaxySSIStore
   var snapshot: AgentTeamExecutionSnapshot
   @State private var messageDraft = ""
   @State private var selectedInstanceId = ""
   @State private var messageStatus = ""
+  @State private var recentMessages: [AgentTeamMessageEnvelope] = []
+  @State private var mailboxLoadFailed = false
+  @State private var mailboxRevision = 0
+
+  private var canReadMailbox: Bool {
+    guard let session = store.agentSession(id: snapshot.conversationId), session.id == snapshot.conversationId,
+          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank else { return false }
+    return !session.privateMode && !session.trackingPaused
+  }
 
   private var visibleMembers: [AgentTeamMemberSnapshot] {
     snapshot.members.filter { $0.deliveryMode != .ignore }
@@ -535,6 +545,7 @@ struct GalaxySSIAgentTeamDetailView: View {
           )
           overview
           membersSection
+          if canReadMailbox { recentMessagesSection }
           if !snapshot.state.isTerminal {
             messageComposer
           }
@@ -552,6 +563,49 @@ struct GalaxySSIAgentTeamDetailView: View {
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .task(id: mailboxRevision) { await loadRecentMessages() }
+    .onChange(of: canReadMailbox) { _ in recentMessages = []; mailboxRevision &+= 1 }
+    .onChange(of: store.profile.identityFingerprint) { _ in recentMessages = []; mailboxRevision &+= 1 }
+    .onChange(of: snapshot.supervisorRunId) { _ in recentMessages = []; mailboxRevision &+= 1 }
+  }
+
+  @ViewBuilder private var recentMessagesSection: some View {
+    if mailboxLoadFailed || !recentMessages.isEmpty {
+      VStack(alignment: .leading, spacing: 8) {
+        GalaxySSISecuritySectionTitle(title: t("galaxyssi.agent_team.recent_messages", "Recent team messages"))
+        if mailboxLoadFailed {
+          Text(t("galaxyssi.agent_team.messages_unavailable", "Team messages could not be loaded."))
+            .foregroundColor(.secondary)
+          Button(t("galaxyssi.common.retry", "Retry")) { mailboxRevision &+= 1 }
+        }
+        ForEach(recentMessages) { message in
+          let sender = visibleMembers.first { $0.memberId == message.fromInstanceId }
+          VStack(alignment: .leading, spacing: 3) {
+            Text((sender?.displayName ?? "").ifBlank(message.fromInstanceId))
+              .font(.footnote.weight(.semibold)).foregroundColor(.secondary)
+            Text(message.text).font(.subheadline)
+          }
+        }
+      }
+    }
+  }
+
+  @MainActor private func loadRecentMessages() async {
+    guard canReadMailbox else { return }
+    let profile = store.profile.identityFingerprint
+    let run = snapshot.supervisorRunId
+    let conversation = snapshot.conversationId
+    let revision = mailboxRevision
+    mailboxLoadFailed = false
+    let result = await Task.detached(priority: .userInitiated) {
+      Result { try UserDefaultsAgentTeamMailbox().recentMessages(supervisorRunId: run, conversationId: conversation) }
+    }.value
+    guard !Task.isCancelled, canReadMailbox, profile == store.profile.identityFingerprint,
+          mailboxRevision == revision, snapshot.supervisorRunId == run else { return }
+    switch result {
+    case .success(let messages): recentMessages = messages
+    case .failure: mailboxLoadFailed = true
+    }
   }
 
   private var overview: some View {
@@ -726,6 +780,7 @@ struct GalaxySSIAgentTeamDetailView: View {
       ))
       messageDraft = ""
       messageStatus = t("galaxyssi.agent_team.message_queued", "Message queued")
+      mailboxRevision &+= 1
     } catch {
       messageStatus = error.localizedDescription.ifBlank(
         t("galaxyssi.agent_team.message_failed", "Message could not be queued")
