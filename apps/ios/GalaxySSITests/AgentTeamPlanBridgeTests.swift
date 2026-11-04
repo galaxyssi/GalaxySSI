@@ -284,9 +284,14 @@ extension GalaxySSIStoreTests {
     let wire = try XCTUnwrap(compiled.actions.first?.parameters[agentTeamSpecParameter])
     let spec = try XCTUnwrap(AgentTeamDispatchSpecCodec.decode(wire))
     let order = try XCTUnwrap(AgentTeamPlanCompiler.collaborationDispatchOrder(spec.definition.members))
-    XCTAssertEqual(order.map { $0.context["_galaxyssi_research_stage"] ?? "" }, ["EXPLORE", "CHALLENGE", "DELIVER"])
+    XCTAssertEqual(order.map { $0.context["_galaxyssi_research_stage"] ?? "" },
+      ["EXPLORE", "CHALLENGE", "REVISE", "RECHECK", "DELIVER"])
     XCTAssertEqual(order[1].dependsOnAgentIds, [order[0].memberId])
     XCTAssertEqual(order[2].dependsOnAgentIds, [order[0].memberId, order[1].memberId])
+    XCTAssertEqual(order[3].dependsOnAgentIds, [order[1].memberId, order[2].memberId])
+    XCTAssertEqual(order[4].dependsOnAgentIds, Set(order.dropLast().map(\.memberId)))
+    XCTAssertEqual(order[0].context["_galaxyssi_roster_member_id"], order[2].context["_galaxyssi_roster_member_id"])
+    XCTAssertNotEqual(order[0].memberId, order[2].memberId)
     var cyclic = order
     cyclic[0].dependsOnAgentIds = [order[2].memberId]
     XCTAssertNil(AgentTeamPlanCompiler.collaborationDispatchOrder(cyclic))
