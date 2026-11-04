@@ -1,26 +1,12 @@
 import CryptoKit
 import Foundation
 
-enum GalaxySSIHealthMetric: String, Codable, CaseIterable, Identifiable {
-  case bloodPressure, glucose, weight, heartRate
-
-  var id: String { rawValue }
-  var unit: String {
-    switch self {
-    case .bloodPressure: return "mmHg"
-    case .glucose: return "mmol/L"
-    case .weight: return "kg"
-    case .heartRate: return "bpm"
-    }
-  }
-}
-
 struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var id = UUID()
   var revision = 0
   var metric: GalaxySSIHealthMetric
   var measuredAt = Date()
-  var value: Decimal
+  var value: Decimal?
   var diastolic: Decimal?
   var pulse: Decimal?
   var conditions = ""
@@ -28,13 +14,35 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var deleted = false
   var bluetoothReceipt: GalaxySSIHealthBluetoothReceipt?
   var tableSource: GalaxySSIHealthTableImport.Source?
+  var reported: GalaxySSIHealthReportedResult?
+  var reportedNotation: String?
+  var unitOverride: String?
+  var referenceInterval: String?
+
+  var unit: String { unitOverride ?? metric.unit }
+  var resultKind: String { reported?.kind.rawValue ?? "number" }
 
   var isValid: Bool {
     func positive(_ number: Decimal) -> Bool {
       !number.isNaN && number > 0
     }
-    guard positive(value), measuredAt.timeIntervalSinceReferenceDate.isFinite,
-          conditions.utf8.count <= 512, notes.utf8.count <= 4096 else { return false }
+    guard measuredAt.timeIntervalSinceReferenceDate.isFinite,
+          conditions.utf8.count <= 512, notes.utf8.count <= 4096,
+          (reportedNotation?.utf8.count ?? 0) <= 128,
+          (referenceInterval?.utf8.count ?? 0) <= 512 else { return false }
+    if let reported {
+      guard value == nil, metric.laboratory, diastolic == nil, pulse == nil,
+            reported == GalaxySSIHealthReportedResult.parse(reported.raw, metric: metric)
+      else { return false }
+      return reported.kind == .qualitative ? unit.isEmpty : metric.units.contains(unit)
+    }
+    guard let value, !value.isNaN, metric.form != .qualitative, metric.units.contains(unit),
+          metric.form == .positive ? value > 0 : value >= 0 else { return false }
+    if metric.form == .count {
+      var decimal = value, whole = Decimal.zero
+      NSDecimalRound(&whole, &decimal, 0, .down)
+      guard whole == value else { return false }
+    }
     if metric == .bloodPressure {
       guard let diastolic, positive(diastolic), value > diastolic else { return false }
       return pulse.map(positive) ?? true
@@ -44,7 +52,8 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
 
   func sameMeasurement(as other: Self) -> Bool {
     metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
-      value == other.value && diastolic == other.diastolic && pulse == other.pulse
+      unit == other.unit && value == other.value && reported?.canonical == other.reported?.canonical &&
+      diastolic == other.diastolic && pulse == other.pulse
   }
 }
 
@@ -58,10 +67,12 @@ struct GalaxySSIHealthDraft: Codable, Identifiable {
   var pulse = ""
   var conditions = ""
   var notes = ""
+  var unitOverride: String?
+  var referenceInterval: String?
 
   var fitsStorageLimits: Bool {
     [value, diastolic, pulse].allSatisfy { $0.utf8.count <= 128 } &&
-      conditions.utf8.count <= 512 && notes.utf8.count <= 4096
+      conditions.utf8.count <= 512 && notes.utf8.count <= 4096 && (referenceInterval?.utf8.count ?? 0) <= 512
   }
 }
 
@@ -86,7 +97,8 @@ struct GalaxySSIHealthOverview {
       if let previous = latest[reading.metric], previous.measuredAt >= reading.measuredAt { continue }
       latest[reading.metric] = reading
     }
-    metrics = GalaxySSIHealthMetric.allCases.map { metric in
+    let overviewMetrics: [GalaxySSIHealthMetric] = [.bloodPressure, .glucose, .weight, .heartRate]
+    metrics = overviewMetrics.map { metric in
       let reading = latest[metric]
       return Metric(metric: metric, reading: reading,
                     freshness: reading.map { $0.measuredAt >= cutoff ? .recent : .stale } ?? .missing)

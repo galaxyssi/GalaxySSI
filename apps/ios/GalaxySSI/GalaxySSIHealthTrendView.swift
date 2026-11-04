@@ -26,12 +26,13 @@ struct GalaxySSIHealthTrend {
   let mean: Decimal?
 
   init(current: [GalaxySSIHealthReading], metric: GalaxySSIHealthMetric, component: Component,
-       now: Date, dayCount: Int, calendar: Calendar) {
+       now: Date, dayCount: Int, calendar: Calendar, unit: String? = nil) {
     let today = calendar.startOfDay(for: now)
     let dates = (0..<max(1, min(dayCount, 90))).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
     let days = Set(dates)
     let scoped = current.filter {
       !$0.deleted && $0.metric == metric && $0.measuredAt <= now &&
+        (component == .pulse || $0.unit == (unit ?? metric.unit)) &&
         days.contains(calendar.startOfDay(for: $0.measuredAt)) && component.value(in: $0) != nil
     }
     let grouped = Dictionary(grouping: scoped) { calendar.startOfDay(for: $0.measuredAt) }
@@ -66,6 +67,7 @@ struct GalaxySSIHealthTrendView: View {
   let records: GalaxySSIHealthRecords
   @State private var metric = GalaxySSIHealthMetric.bloodPressure
   @State private var component = GalaxySSIHealthTrend.Component.value
+  @State private var selectedUnit: String?
   @State private var days = 7
   @State private var allowed = false
   @State private var trend: GalaxySSIHealthTrend?
@@ -91,6 +93,12 @@ struct GalaxySSIHealthTrendView: View {
               Text(t("systolic", "Systolic")).tag(GalaxySSIHealthTrend.Component.value)
               Text(t("diastolic", "Diastolic")).tag(GalaxySSIHealthTrend.Component.diastolic)
               Text(t("pulse", "Pulse")).tag(GalaxySSIHealthTrend.Component.pulse)
+            }
+          }
+          if component != .pulse && metric.units.count > 1 {
+            Picker(t("unit", "Unit"), selection: Binding(
+              get: { selectedUnit ?? metric.unit }, set: { selectedUnit = $0; reload() })) {
+              ForEach(metric.units, id: \.self) { Text($0).tag($0) }
             }
           }
           Picker(t("period", "Period"), selection: $days) {
@@ -131,7 +139,7 @@ struct GalaxySSIHealthTrendView: View {
     .navigationTitle(t("title", "Measurement Trends"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
-    .onChange(of: metric) { _ in component = .value; reload() }
+    .onChange(of: metric) { _ in component = .value; selectedUnit = nil; reload() }
     .onChange(of: component) { _ in reload() }
     .onChange(of: days) { _ in reload() }
     .onChange(of: scene) { phase in
@@ -186,7 +194,7 @@ struct GalaxySSIHealthTrendView: View {
       var local = calendar
       local.timeZone = timeZone
       trend = GalaxySSIHealthTrend(current: archive.current, metric: metric, component: component,
-                                   now: Date(), dayCount: days, calendar: local)
+                                   now: Date(), dayCount: days, calendar: local, unit: selectedUnit)
     } catch { allowed = false; error = true }
   }
 
@@ -217,21 +225,14 @@ struct GalaxySSIHealthTrendView: View {
     .accessibilityHidden(true)
   }
 
-  private var unit: String { metric == .bloodPressure && component == .pulse ? "bpm" : metric.unit }
+  private var unit: String { metric == .bloodPressure && component == .pulse ? "bpm" : (selectedUnit ?? metric.unit) }
   private func number(_ value: Decimal) -> String { value.formatted(.number.locale(locale)) }
   private func statistic(_ title: String, _ value: Decimal) -> some View {
     HStack { Text(title); Spacer(); Text(number(value) + " " + unit).foregroundColor(.secondary) }
   }
 
   private func metricTitle(_ metric: GalaxySSIHealthMetric) -> String {
-    let label: (String, String)
-    switch metric {
-    case .bloodPressure: label = ("blood_pressure", "Blood pressure")
-    case .glucose: label = ("glucose", "Blood glucose")
-    case .weight: label = ("weight", "Weight")
-    case .heartRate: label = ("heart_rate", "Heart rate")
-    }
-    return GalaxySSILocalization.string("galaxyssi.health." + label.0, fallback: label.1, language: language)
+    metric.title(language: language)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
