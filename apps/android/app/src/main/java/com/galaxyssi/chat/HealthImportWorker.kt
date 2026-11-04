@@ -106,7 +106,7 @@ internal class HealthImportPipeline(private val context: Context, private val re
                 }
                 if (prepareCapture) {
                     if (!mime.startsWith("image/")) throw HealthImportFailure("image_unsupported")
-                    val quality = HealthPhotoInspector.inspect(store, original)
+                    val quality = HealthPhotoInspector.inspect(store, original, report = initial.mode == "report")
                     cancelled(); store.inspectCapture(id, quality)
                     return HealthImportOutcome.COMPLETE
                 }
