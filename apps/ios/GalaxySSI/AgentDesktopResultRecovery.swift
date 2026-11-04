@@ -124,7 +124,7 @@ enum AgentDesktopToolEvidenceWire {
       for value in raw {
         guard let object = value.objectValue, let item = Descriptor(object),
               item.sequence > cursor, byId[item.evidenceId] == nil,
-              object["phone_import"] != .bool(false) else { return nil }
+              object["phone_import"] == nil || object["phone_import"] == .bool(true) else { return nil }
         cursor = item.sequence
         byId[item.evidenceId] = item
         entries.append(item)
@@ -182,7 +182,10 @@ enum AgentDesktopToolEvidenceWire {
             let observation = original["observation"]?.objectValue,
             observation.string("provider") == "codex",
             !observation.string("thread_id").isBlank, !observation.string("turn_id").isBlank,
-            observation["item"]?.objectValue?.string("type") == descriptor.itemType else { return nil }
+            let item = observation["item"]?.objectValue,
+            item.string("type") == descriptor.itemType,
+            !(descriptor.itemType == "dynamicToolCall" && item.string("tool") == "collaboration_recall")
+      else { return nil }
       return body
     }
   }
