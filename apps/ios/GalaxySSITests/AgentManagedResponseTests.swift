@@ -2,6 +2,18 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testOfflineUnappliedResponsesDoNotExpire() {
+    var record = AgentManagedResponseRecord(ownerRunId: "member", supervisorRunId: "team",
+      agentId: "observer", deliveryMode: .observe, sourceMessageId: 42, contactId: "observer",
+      createdAtMillis: 1)
+    let now = AgentManagedResponseRecord.maxAgeMillis + 10_000
+    XCTAssertFalse(record.isStale(nowMillis: now))
+    record.state = .completed
+    XCTAssertFalse(record.isStale(nowMillis: now))
+    record.state = .applied
+    XCTAssertTrue(record.isStale(nowMillis: now))
+  }
+
   func testAgentManagedResponseLedgerCompletesAcknowledgesAndPublishesLateResponses() throws {
     let ledger = InMemoryAgentManagedResponseLedger()
     AgentLateManagedResponseBus.shared.clear()
