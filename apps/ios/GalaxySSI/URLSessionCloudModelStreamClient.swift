@@ -178,7 +178,8 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
               ModelStreamCompleted(
                 requestId: request.requestId,
                 finishReason: finishReason,
-                completedAtElapsedMs: elapsedMillis()
+                completedAtElapsedMs: elapsedMillis(),
+                reportedModel: state.reportedModel
               )
             )
           )
@@ -268,6 +269,7 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
         )
       )
     }
+    state.observeReportedModel(frame.reportedModel)
     if let usage = frame.usage {
       continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: usage)))
     }
@@ -281,7 +283,8 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
         ModelStreamCompleted(
           requestId: requestId,
           finishReason: state.finishReason,
-          completedAtElapsedMs: elapsedMillis()
+          completedAtElapsedMs: elapsedMillis(),
+          reportedModel: state.reportedModel
         )
       )
     )
@@ -383,6 +386,18 @@ final class ModelStreamEmissionState {
   var emittedPayload = false
   var sawTerminal = false
   var finishReason: String?
+  private(set) var reportedModel: String?
+  private var reportedModelConflict = false
+
+  func observeReportedModel(_ value: String?) {
+    guard !reportedModelConflict, let value, !value.isBlank, value.utf8.count <= 256 else { return }
+    if let reportedModel, Data(reportedModel.utf8) != Data(value.utf8) {
+      reportedModelConflict = true
+      self.reportedModel = nil
+    } else {
+      reportedModel = value
+    }
+  }
   var lastProviderSequence: Int64?
 
   func nextSequence() -> Int64 {

@@ -324,6 +324,52 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testModelCallAuditPreservesUnsettledAdmissionAndImmutableTerminalReceipt() throws {
+    let suite = "model-call-audit-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let team = durableTeamSnapshot("audit")
+    XCTAssertTrue(history.upsert(team))
+    let member = try XCTUnwrap(team.members.first)
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let admission = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 0,
+      provider: .openAICompatible, requestedModel: "fixture", startedAtMillis: 1)
+    try history.admitCollaborationModelCall(admission)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertTrue(try reopened.collaborationModelCall(admission).admitted)
+    XCTAssertNil(try reopened.collaborationModelCall(admission).settlement)
+    let completed = AgentCollaborationModelSettlement(state: .completed, finishedAtMillis: 2,
+      reportedUsage: .init(inputTokens: 10, outputTokens: 3, cachedInputTokens: 2), usageComplete: false, costMicros: nil)
+    try reopened.settleCollaborationModelCall(admission, settlement: completed)
+    try reopened.settleCollaborationModelCall(admission, settlement: completed)
+    XCTAssertEqual(try history.collaborationModelCall(admission).settlement, completed)
+    let interrupted = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 1,
+      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3)
+    try reopened.admitCollaborationModelCall(interrupted)
+    let firstPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, limit: 1)
+    let cursor = try XCTUnwrap(firstPage.next)
+    let secondPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, after: cursor, limit: 1)
+    let entries = firstPage.entries + secondPage.entries
+    XCTAssertEqual(Set(entries.map { $0.admission.id }), [admission.id, interrupted.id])
+    XCTAssertEqual(entries.first(where: { $0.admission.id == admission.id })?.settlement, completed)
+    XCTAssertNil(entries.first(where: { $0.admission.id == interrupted.id })?.settlement)
+    XCTAssertNil(secondPage.next)
+    XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: "foreign").entries.isEmpty)
+    XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: .init(
+      state: .failed, finishedAtMillis: 3, reportedUsage: nil, usageComplete: false, costMicros: nil)))
+    reopened.removeResearchObjects(conversationId: scope.conversationId)
+    XCTAssertFalse(try history.collaborationModelCall(admission).admitted)
+    XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: scope.conversationId).entries.isEmpty)
+    XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: completed))
+  }
+
   func testPublicationRecoveryFindsSavedReplyAndSkipsCommittedReplay() throws {
     let suite = "publication-recovery-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

@@ -328,6 +328,76 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func admitCollaborationModelCall(_ admission: AgentCollaborationModelAdmission) throws {
+    let scope = admission.scope
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    try access { database in
+      guard admission.round >= 0, admission.startedAtMillis > 0,
+            (admission.requestedModel?.utf8.count ?? 0) <= 256,
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal })
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      try database.insertResearchRecord(admission, conversationId: scope.conversationId, key: key, revision: 0)
+    }
+  }
+
+  func settleCollaborationModelCall(_ admission: AgentCollaborationModelAdmission,
+                                    settlement: AgentCollaborationModelSettlement) throws {
+    let conversation = admission.scope.conversationId
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    try access { database in
+      guard settlement.finishedAtMillis >= admission.startedAtMillis, !settlement.usageComplete,
+            settlement.costMicros == nil, (settlement.reportedModel?.utf8.count ?? 0) <= 256,
+            try database.researchRecord(AgentCollaborationModelAdmission.self,
+              conversationId: conversation, key: key, revision: 0) == admission
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if let existing = try database.researchRecord(AgentCollaborationModelSettlement.self,
+        conversationId: conversation, key: key, revision: 1) {
+        guard existing == settlement else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        try database.insertResearchRecord(settlement, conversationId: conversation, key: key, revision: 1)
+      }
+    }
+  }
+
+  func collaborationModelCall(_ admission: AgentCollaborationModelAdmission)
+    throws -> (admitted: Bool, settlement: AgentCollaborationModelSettlement?) {
+    let conversation = admission.scope.conversationId
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    return try access { database in
+      guard try database.researchRecord(AgentCollaborationModelAdmission.self,
+        conversationId: conversation, key: key, revision: 0) == admission else { return (false, nil) }
+      return (true, try database.researchRecord(AgentCollaborationModelSettlement.self,
+        conversationId: conversation, key: key, revision: 1))
+    }
+  }
+
+  func collaborationModelAuditPage(conversationId: String, after: String = "", limit: Int = 16)
+    throws -> (entries: [AgentCollaborationModelAuditEntry], next: String?) {
+    guard !conversationId.isBlank, (1...32).contains(limit),
+          after.isEmpty || UUID(uuidString: after)?.uuidString.lowercased() == after
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      let keys = try database.modelCallAdmissionKeys(conversationId: conversationId, after: after, limit: limit + 1)
+      let entries = try keys.prefix(limit).map { key in
+        guard let admission = try database.researchRecord(AgentCollaborationModelAdmission.self,
+                conversationId: conversationId, key: key, revision: 0),
+              admission.scope.conversationId == conversationId,
+              key == "model-call:" + admission.id.uuidString.lowercased()
+        else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let settlement = try database.researchRecord(AgentCollaborationModelSettlement.self,
+          conversationId: conversationId, key: key, revision: 1)
+        return AgentCollaborationModelAuditEntry(admission: admission, settlement: settlement)
+      }
+      let next = keys.count > limit ? entries.last?.admission.id.uuidString.lowercased() : nil
+      return (entries, next)
+    }
+  }
+
   func removeCloudEvidence(conversationId: String) {
     _ = try? access { try $0.removeCloudEvidence(conversationId: conversationId) }
   }
