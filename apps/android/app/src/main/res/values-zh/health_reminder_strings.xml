@@ -3,7 +3,7 @@
     <string name="health_reminder_title">提醒中心</string>
     <string name="health_reminder_preferences">提醒偏好</string>
     <string name="health_reminder_detail">健康提醒</string>
-    <string name="health_reminder_record_group">记录与核对</string>
+    <string name="health_reminder_record_group">每日记录</string>
     <string name="health_reminder_empty">这里还没有提醒</string>
     <string name="health_reminder_plan_off">每日记录提醒未开启</string>
     <string name="health_reminder_next_due">下次计划：%1$s</string>

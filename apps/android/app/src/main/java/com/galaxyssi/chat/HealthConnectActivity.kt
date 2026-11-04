@@ -35,7 +35,9 @@ internal object HealthConnectSettings {
     fun selection(context: Context) = prefs(context).getStringSet("scopes", emptySet()).orEmpty()
         .mapNotNull { raw -> HealthConnectScope.entries.firstOrNull { it.name == raw } }.toSet()
     fun setSelection(context: Context, selected: Set<HealthConnectScope>) {
+        val removed = selection(context).any { it !in selected }
         prefs(context).edit().putStringSet("scopes", selected.mapTo(hashSetOf()) { it.name }).apply()
+        if (removed) HealthReminderWork.sourceRemindersChanged(context)
     }
     fun lastImport(context: Context) = prefs(context).getLong("last_confirmed_import", 0L)
     fun markImport(context: Context, time: Long) { prefs(context).edit().putLong("last_confirmed_import", time).apply() }
