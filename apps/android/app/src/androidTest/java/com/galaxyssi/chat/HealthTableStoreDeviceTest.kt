@@ -99,7 +99,7 @@ class HealthTableStoreDeviceTest {
             assertEquals(linked, projected.draft.evidence?.jobId)
             assertEquals(base, records.record(base.id))
             assertEquals(1L, records.count())
-            records.tableDatabase.rawQuery("SELECT payload FROM health_table_source_links", null).use { cursor ->
+            records.tableDatabase.rawQuery("SELECT payload FROM health_source_links", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertFalse(cursor.getBlob(0).toString(Charsets.ISO_8859_1).contains("Systolic"))
             }
@@ -109,6 +109,43 @@ class HealthTableStoreDeviceTest {
             assertEquals(base, records.record(base.id))
             assertTrue(records.originalPage(second.id).records.isEmpty())
         }
+    }
+
+    @Test fun versionTenTableLinkSurvivesUpgradeAndBatchUndo() {
+        val name = "health-v10-links-${UUID.randomUUID()}.db"
+        val primary = original()
+        val secondary = original()
+        try {
+            val batch = HealthTableStore(context, name).use { tables ->
+                save(tables, prepare(tables, listOf(raw(1)), primary))
+                prepare(tables, listOf(raw(1)), secondary).also { id ->
+                    complete(tables, id)
+                    tables.confirmSave(id, tables.batch(id)!!.mappingRevision, linkDuplicates = true)
+                    complete(tables, id)
+                }
+            }
+            val expected = HealthRecordStore(context, name).use { records ->
+                val view = records.originalPage(secondary.id).records.single()
+                records.tableDatabase.apply {
+                    execSQL("CREATE TABLE health_table_source_links(original_id TEXT NOT NULL,record_id TEXT NOT NULL REFERENCES observations(id)," +
+                        "revision INTEGER NOT NULL,job_id TEXT NOT NULL,measured_at INTEGER NOT NULL,payload BLOB NOT NULL," +
+                        "PRIMARY KEY(original_id,record_id,revision,job_id))")
+                    execSQL("INSERT INTO health_table_source_links SELECT original_id,record_id,revision,job_id,measured_at,payload FROM health_source_links")
+                    execSQL("DROP TABLE health_source_links")
+                    version = 10
+                }
+                view
+            }
+            HealthRecordStore(context, name).use { records ->
+                assertEquals(expected, records.originalPage(secondary.id).records.single())
+                assertEquals(HealthRecordStore.SCHEMA_VERSION, records.tableDatabase.version)
+            }
+            HealthTableStore(context, name).use { tables -> tables.undo(batch); complete(tables, batch) }
+            HealthRecordStore(context, name).use { records ->
+                assertTrue(records.originalPage(secondary.id).records.isEmpty())
+                assertEquals(expected.id, records.originalPage(primary.id).records.single().id)
+            }
+        } finally { context.deleteDatabase(name) }
     }
 
     @Test fun sourceLinksCannotAttachToARecordChangedAfterValidation() = fixture { name, store ->

@@ -2,6 +2,12 @@
 <resources>
     <string name="health_review_finish_item">核对完成，返回列表</string>
     <string name="health_review_saved_item">已保存 · 查看记录</string>
+    <string name="health_review_linked_item">已关联原件 · 查看记录</string>
+    <string name="health_review_view_duplicate">查看匹配的记录</string>
+    <string name="health_review_select_link">将此原件关联到已有的%1$s记录</string>
+    <string name="health_review_link_consent">我已核对所选条目：新建 %1$d 条，关联已有记录 %2$d 项。</string>
+    <string name="health_review_save_links">确认所选条目</string>
+    <string name="health_review_batch_linked">已新建 %1$d 条记录，关联 %2$d 项，其余仍是草稿。</string>
     <string name="health_review_recorded_time">采样时间：%1$s</string>
     <string name="health_review_select_item">选择保存：%1$s</string>
     <string name="health_review_limit">请先保存或取消部分选项，再继续选择。</string>
