@@ -394,6 +394,9 @@ extension GalaxySSIStoreTests {
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     XCTAssertEqual(try reopened.publishCollaborationMilestone(input, scope: scope), receipt)
+    let lookup: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("first"),
+      "artifact_sha256": try XCTUnwrap(receipt["artifact_sha256"])]
+    XCTAssertEqual(try reopened.publishCollaborationMilestone(lookup, scope: scope)["references"], receipt["references"])
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].status, team.members[1].status)
     var changed = input
     changed["artifact"] = .string(artifact + " ")
@@ -402,10 +405,37 @@ extension GalaxySSIStoreTests {
     foreign.sourceId = "foreign"
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(input, scope: foreign))
     team.members[1].status = .succeeded
+    let final = #"{"format":"galaxyssi.research-artifact.v1","summary":"Final","milestones":["first"]}"#
+    team.members[1].replyContent = final
     team.updatedAtMillis += 1
     XCTAssertTrue(reopened.upsert(team))
     XCTAssertNil(try reopened.committedResearchRevisions(scope: scope))
     XCTAssertThrowsError(try reopened.publishCollaborationMilestone(input, scope: scope))
+    try reopened.publishSavedResearchReply(final, scope: scope)
+    let linked = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope))
+    XCTAssertEqual(linked.map { $0.draft.id }, ["note"])
+  }
+
+  func testDirectedRequestsKeepLongQuestionsAndSeparateCandidateIdentities() throws {
+    var team = durableTeamSnapshot("run")
+    team.members[1].researchStage = "EXPLORE"
+    let sender = team.members[1]
+    let question = String(repeating: "q", count: 1_300)
+    func request(_ candidate: String, recipient: String = "primary") -> AgentMcpJSONValue {
+      .object(["to": .array([.string(recipient)]), "question": .string(question), "candidate_id": .string(candidate)])
+    }
+    var envelope: AgentMcpJSONObject = ["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+      "requests": .array([request("a"), request("b"), request("a"), request("c")])]
+    let roster: Set<String> = ["primary", "review"]
+    let rows = try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(envelope),
+      team: team, sender: sender, rosterMemberIds: roster)
+    XCTAssertEqual(rows.count, 3)
+    XCTAssertEqual(Set(rows.map(\.messageId)).count, 3)
+    XCTAssertTrue(rows.allSatisfy { $0.text == question && $0.toInstanceId == "primary" })
+    XCTAssertTrue(AgentCollaborationDirectedRequests.prompt(rows).contains(#""candidate_id":"b""#))
+    envelope["requests"] = .array([request("a", recipient: "foreign")])
+    XCTAssertThrowsError(try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(envelope),
+      team: team, sender: sender, rosterMemberIds: roster))
   }
 
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
@@ -1587,6 +1617,16 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(recent.map(\.sequence), Array(Int64(4_982)...5_001))
     XCTAssertThrowsError(try reopened.recentMessages(supervisorRunId: "run", conversationId: "other"))
     XCTAssertTrue(try reopened.recentMessages(supervisorRunId: "missing", conversationId: "group").isEmpty)
+    var added = legacy[0]
+    added.messageId = "new-request"
+    var invalid = added
+    invalid.messageId = "invalid-request"
+    invalid.text = ""
+    XCTAssertThrowsError(try reopened.appendAll([added, invalid]))
+    XCTAssertTrue(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").isEmpty)
+    let batch = try reopened.appendAll([legacy[0], added, added])
+    XCTAssertEqual(batch.map(\.sequence), [1, 5_002, 5_002])
+    XCTAssertEqual(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").map(\.messageId), ["new-request"])
   }
 
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {

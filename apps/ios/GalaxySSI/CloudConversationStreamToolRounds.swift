@@ -342,15 +342,15 @@ struct CloudModelStreamMutableConversation {
 
   mutating func installCollaborationPublication() {
     let properties: [String: Any] = [
-      "mode": ["type": "string", "enum": ["publish"]],
-      "milestone_id": ["type": "string"], "artifact": ["type": "string"]
+      "mode": ["type": "string", "enum": ["publish", "status", "receipt"]],
+      "milestone_id": ["type": "string"], "artifact": ["type": "string"], "artifact_sha256": ["type": "string"]
     ]
     var schema: [String: Any] = ["type": "object", "properties": properties,
-      "required": ["mode", "milestone_id", "artifact"]]
+      "required": ["mode"]]
     if request.provider != .gemini { schema["additionalProperties"] = false }
     appendCollaborationFunction([
       "name": Self.collaborationPublishName,
-      "description": "Save interim research without ending the assignment. Send a stable milestone_id and an artifact JSON string with galaxyssi.research-artifact.v1, a summary, and workspace drafts. Retry with identical bytes. The receipt is not evidence verification or task completion."
+      "description": "Use status to check availability. Publish interim research with a stable milestone_id and artifact JSON string (format galaxyssi.research-artifact.v1, summary, workspace). Retry identical bytes, or use receipt with milestone_id and artifact_sha256. In your final artifact, cite saved IDs in milestones rather than duplicating their workspace objects. A receipt does not verify evidence or complete the assignment."
     ], schema: schema)
   }
 

@@ -667,7 +667,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           if outcome.call.name == publishName {
             publicationResults[outcome.call.callId] = output
-            if let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["success"] == .bool(true),
+            if let receipt = try? CloudModelStreamJSON.mcpObject(from: output), receipt["status"] == .string("published"),
                publishedMilestones.insert(receipt.string("milestone_id")).inserted { madeProgress = true }
             continue
           }

@@ -867,6 +867,7 @@ struct AgentCollaborationResearchEnvelope: Decodable {
   static let wireFormat = "galaxyssi.research-artifact.v1"
   var format: String
   var workspace: [AgentCollaborationResearchDraft]?
+  var milestones: [String]?
 
   static func publication(in raw: String) throws -> [AgentCollaborationResearchDraft]? {
     guard raw.utf8.count <= 256_000, raw.contains(wireFormat) else { return nil }
