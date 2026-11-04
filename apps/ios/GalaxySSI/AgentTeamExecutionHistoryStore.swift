@@ -153,7 +153,7 @@ final class AgentTeamExecutionHistoryStore {
                                  to checkpoint: AgentTeamMemberDispatchCheckpoint, now: Int64) -> Bool {
     guard !sourceMessageId.isBlank else { return false }
     do {
-      return try access { database in
+      let advanced = try access { database in
         guard var snapshot = try database.snapshots(runId: runId).first,
               snapshot.conversationId == conversationId, snapshot.taskId == turnId,
               let index = snapshot.members.firstIndex(where: {
@@ -171,10 +171,15 @@ final class AgentTeamExecutionHistoryStore {
           guard previous == .dispatching else { return false }
         }
         snapshot.members[index].dispatchCheckpoint = checkpoint
+        if checkpoint == .dispatching {
+          snapshot.members[index].executionStartedAtMillis = now
+        }
         snapshot.updatedAtMillis = max(snapshot.updatedAtMillis, now)
         try database.put(snapshot)
         return true
       }
+      if advanced { notify(runId) }
+      return advanced
     } catch { return false }
   }
 

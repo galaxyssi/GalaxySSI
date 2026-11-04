@@ -190,8 +190,8 @@ enum AgentTeamProgressPolicy {
         key = member.memberId
       }
       if let previous = current[key] {
-        let candidateRank = collaborationStatusRank(member.status)
-        let previousRank = collaborationStatusRank(previous.status)
+        let candidateRank = collaborationStatusRank(member)
+        let previousRank = collaborationStatusRank(previous)
         guard candidateRank > previousRank ||
           (candidateRank == previousRank && member.updatedAtMillis >= previous.updatedAtMillis) else { continue }
       } else {
@@ -202,9 +202,12 @@ enum AgentTeamProgressPolicy {
     return keys.compactMap { current[$0] }
   }
 
-  private static func collaborationStatusRank(_ status: AgentSubagentStatus) -> Int {
-    if status == .running { return 2 }
-    return status.isTerminal ? 0 : 1
+  private static func collaborationStatusRank(_ member: AgentTeamMemberSnapshot) -> Int {
+    if member.status.isTerminal { return 0 }
+    if member.status == .running || member.dispatchCheckpoint == .dispatching || member.dispatchCheckpoint == .accepted {
+      return 2
+    }
+    return 1
   }
 
   static func project(_ snapshot: AgentTeamExecutionSnapshot, expanded: Bool) -> AgentTeamProgressProjection {
@@ -241,6 +244,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var replyContent: String?
   var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
   var displayName: String?
+  var researchStage: String?
+  var executionStartedAtMillis: Int64?
 
   var memberId: String { instanceId.ifBlank(agentId) }
 
@@ -257,7 +262,9 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     richOutputJson: String = "",
     replyContent: String? = nil,
     dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint? = nil,
-    displayName: String? = nil
+    displayName: String? = nil,
+    researchStage: String? = nil,
+    executionStartedAtMillis: Int64? = nil
   ) {
     self.agentId = agentId
     self.role = role
@@ -272,6 +279,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.replyContent = replyContent
     self.dispatchCheckpoint = dispatchCheckpoint
     self.displayName = displayName.map { String($0.prefix(256)) }
+    self.researchStage = researchStage
+    self.executionStartedAtMillis = executionStartedAtMillis
   }
 
   enum CodingKeys: String, CodingKey {
@@ -288,6 +297,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case replyContent = "reply_content"
     case dispatchCheckpoint = "dispatch_checkpoint"
     case displayName = "display_name"
+    case researchStage = "research_stage"
+    case executionStartedAtMillis = "execution_started_at_millis"
   }
 
   init(from decoder: Decoder) throws {
@@ -306,8 +317,18 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? "",
       replyContent: try container.decodeIfPresent(String.self, forKey: .replyContent),
       dispatchCheckpoint: try container.decodeIfPresent(AgentTeamMemberDispatchCheckpoint.self, forKey: .dispatchCheckpoint),
-      displayName: try container.decodeIfPresent(String.self, forKey: .displayName)
+      displayName: try container.decodeIfPresent(String.self, forKey: .displayName),
+      researchStage: try container.decodeIfPresent(String.self, forKey: .researchStage),
+      executionStartedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .executionStartedAtMillis)
     )
+  }
+
+  func elapsedExecutionMillis(now: Int64, team: AgentTeamExecutionSnapshot) -> Int64? {
+    guard let start = executionStartedAtMillis, start > 0 else { return nil }
+    let end: Int64? = status.isTerminal ? updatedAtMillis :
+      (team.state == .interrupted ? team.interruptedAtMillis : (team.state.isTerminal ? team.executionEndedAtMillis : now))
+    guard let end, end >= start else { return nil }
+    return end - start
   }
 }
 
