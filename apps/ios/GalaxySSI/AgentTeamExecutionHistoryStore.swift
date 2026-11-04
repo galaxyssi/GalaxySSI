@@ -377,7 +377,44 @@ final class AgentTeamExecutionHistoryStore {
 
   func removeResearchObjects(conversationId: String) {
     guard !conversationId.isBlank else { return }
-    _ = try? access { try $0.removeResearchRecords(conversationId: conversationId) }
+    _ = try? access { database in
+      try database.removeResearchRecords(conversationId: conversationId)
+      try database.insertResearchRecord(true, conversationId: conversationId, key: "native-evidence-revoked", revision: 0)
+    }
+  }
+
+  func recordNativeObservation(_ observation: AgentCollaborationNativeToolObservation) throws -> AgentMcpJSONObject {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let encoded = try encoder.encode(observation)
+    guard !observation.result.receipt.invocationId.isBlank, encoded.count <= 256_000 else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    let hash = SHA256.hash(data: encoded).map { String(format: "%02x", $0) }.joined()
+    let id = AgentMcpJSONCodec.sha256([
+      "run": .string(observation.runId), "source": .string(observation.sourceId),
+      "invocation": .string(observation.result.receipt.invocationId), "sha256": .string(hash)
+    ])
+    return try access { database in
+      guard try database.researchRecord(Bool.self, conversationId: observation.conversationId,
+        key: "native-evidence-revoked", revision: 0) != true,
+        let team = try database.snapshots(runId: observation.runId).first,
+        team.conversationId == observation.conversationId, team.taskId == observation.turnId,
+        !team.state.isTerminal, team.members.contains(where: {
+          $0.memberId == observation.memberId && $0.sourceMessageId == observation.sourceId && !$0.status.isTerminal
+        }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let key = "native-evidence:" + id
+      if let prior = try database.researchRecord(AgentCollaborationNativeToolObservation.self,
+        conversationId: observation.conversationId, key: key, revision: 0) {
+        guard try encoder.encode(prior) == encoded else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        try database.insertResearchRecord(observation, conversationId: observation.conversationId, key: key, revision: 0)
+      }
+      return [
+        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_native_tool"),
+        "trust": .string("execution_observed_not_claim_verified")
+      ]
+    }
   }
 
   func collaborationResults(conversationId: String, limit: Int) -> [AgentTeamExecutionSnapshot] {

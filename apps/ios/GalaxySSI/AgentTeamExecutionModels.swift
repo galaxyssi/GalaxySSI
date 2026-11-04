@@ -1,5 +1,15 @@
 import Foundation
 
+struct AgentCollaborationNativeToolObservation: Codable {
+  var runId: String
+  var conversationId: String
+  var turnId: String
+  var memberId: String
+  var sourceId: String
+  var input: AgentMcpJSONObject
+  var result: AgentNativeToolResult
+}
+
 struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
   var runId: String
   var conversationId: String
