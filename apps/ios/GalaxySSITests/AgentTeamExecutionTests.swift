@@ -78,7 +78,7 @@ extension GalaxySSIStoreTests {
       sourceId: member.sourceMessageId)
     var observation = AgentCollaborationCloudToolEvidence(scope: scope, round: 1,
       call: AssembledToolCall(callId: "tool-call", index: 0, name: "web_search", argumentsJson: "{}"),
-      output: "{\"hits\":[]}", succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
+      output: String(repeating: "search result ", count: 180), succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
     let receipt = try history.recordCloudEvidence(observation)
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
@@ -87,7 +87,20 @@ extension GalaxySSIStoreTests {
       "mode": .string("evidence"), "evidence_id": receipt["evidence_id"] ?? .null,
       "sha256": receipt["sha256"] ?? .null
     ]
-    XCTAssertTrue(try reopened.recallCollaborationOriginal(input, scope: scope).string("content").contains("web_search"))
+    let firstPage = try reopened.recallCollaborationOriginal(input, scope: scope)
+    guard case .object(let source)? = firstPage["source_reference"],
+          case .int(let next)? = firstPage["next_offset"] else {
+      return XCTFail("Expected an original source citation and a second page")
+    }
+    XCTAssertEqual(source["evidence_id"], receipt["evidence_id"])
+    XCTAssertEqual(source["sha256"], receipt["sha256"])
+    XCTAssertEqual(source["tool"], .string("web_search"))
+    var secondInput = input
+    secondInput["offset"] = .int(next)
+    let secondPage = try reopened.recallCollaborationOriginal(secondInput, scope: scope)
+    XCTAssertEqual(secondPage["source_reference"], firstPage["source_reference"])
+    XCTAssertEqual(secondPage["next_offset"], .null)
+    XCTAssertTrue((firstPage.string("content") + secondPage.string("content")).contains("web_search"))
     var invalidScope = scope
     invalidScope.memberId = "foreign-member"
     XCTAssertThrowsError(try reopened.recallCollaborationOriginal(input, scope: invalidScope))

@@ -314,7 +314,7 @@ final class AgentTeamExecutionHistoryStore {
     }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    let bytes = try access { database -> Data in
+    let (bytes, sourceReference) = try access { database -> (Data, AgentMcpJSONObject?) in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
@@ -329,7 +329,7 @@ final class AgentTeamExecutionHistoryStore {
               record.reference.sha256 == hash,
               record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId)
         else { throw AgentTeamHistoryDatabase.Failure.stale }
-        return try encoder.encode(record)
+        return (try encoder.encode(record), nil)
       }
       guard let record = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
             record.scope.conversationId == scope.conversationId,
@@ -340,17 +340,29 @@ final class AgentTeamExecutionHistoryStore {
       guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == hash else {
         throw AgentTeamHistoryDatabase.Failure.corrupt
       }
-      return data
+      return (data, [
+        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
+        "tool": .string(record.call.name), "status": .string(record.succeeded ? "succeeded" : "failed")
+      ])
     }
     let characters = String(decoding: bytes, as: UTF8.self)
     guard offset <= Int64(characters.count) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let page = String(characters.dropFirst(Int(offset)).prefix(2_000))
     let next = offset + Int64(page.count)
-    return [
+    var result: AgentMcpJSONObject = [
       idKey: .string(id), "sha256": .string(hash), "content": .string(page),
       "next_offset": next < Int64(characters.count) ? .int(next) : .null,
       "trust": .string("untrusted_group_evidence")
     ]
+    if let sourceReference {
+      result["source_reference"] = .object(sourceReference)
+      result["citation_guidance"] = .string(
+        "Cite the original observation using source_reference.evidence_id and source_reference.sha256. " +
+        "galaxyssi_evidence_receipt records this read, not the original observation. Follow next_offset until null; " +
+        "reading every page does not verify the claims in the source."
+      )
+    }
+    return result
   }
 
   func recoverable(conversationId: String) -> [AgentTeamExecutionSnapshot] {
