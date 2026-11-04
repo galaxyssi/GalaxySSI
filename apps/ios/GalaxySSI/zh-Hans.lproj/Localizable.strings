@@ -305,6 +305,15 @@
 "galaxyssi.health.manual_source" = "手动录入";
 "galaxyssi.health.missing_reading" = "未记录";
 "galaxyssi.health.empty" = "暂无测量记录";
+"galaxyssi.health.first_use.title" = "还没有已确认的测量";
+"galaxyssi.health.import.title" = "导入健康报告";
+"galaxyssi.health.import.report" = "报告原件";
+"galaxyssi.health.import.files" = "选择 PDF 或图片";
+"galaxyssi.health.import.scan" = "扫描纸质报告";
+"galaxyssi.health.import.library" = "健康原件";
+"galaxyssi.health.import.read_pdf" = "报告 PDF 文本";
+"galaxyssi.health.import.saved" = "原件已存入健康原件库";
+"galaxyssi.health.import.failed" = "无法导入原件，请检查文件或减少扫描页数。";
 "galaxyssi.health.more" = "查看更多";
 "galaxyssi.health.export.title" = "导出测量记录";
 "galaxyssi.health.export.format" = "格式";
