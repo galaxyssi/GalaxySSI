@@ -127,6 +127,7 @@ struct GalaxySSIHealthRecords {
 
   struct Archive: Codable {
     var version = 1
+    var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
     var derivesOverview: Bool?
@@ -134,7 +135,6 @@ struct GalaxySSIHealthRecords {
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
-    var restoreReceipts: Set<UUID>?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
