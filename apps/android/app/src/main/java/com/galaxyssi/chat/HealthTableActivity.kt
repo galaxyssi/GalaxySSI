@@ -314,7 +314,7 @@ class HealthTableActivity : Activity() {
                 fun label(value: HealthTableDate) = if (value == HealthTableDate.EXCEL) getString(R.string.health_xlsx_date_format) else value.pattern.replace("uuuu", "yyyy")
                 choose(R.string.health_table_date, dates.map(::label), label(m.date)) { mapping(batch, m.copy(date = dates[it])) }
             })
-            if (m.date == HealthTableDate.EXCEL) addView(ui.row(getString(R.string.health_xlsx_date_only), m.dateOnlyTime.ifBlank { getString(R.string.health_xlsx_time_required) }) {
+            if (m.date == HealthTableDate.EXCEL || batch.format == "xlsx" && m.date == HealthTableDate.ISO) addView(ui.row(getString(R.string.health_xlsx_date_only), m.dateOnlyTime.ifBlank { getString(R.string.health_xlsx_time_required) }) {
                 val initial = m.dateOnlyTime.split(':').mapNotNull(String::toIntOrNull)
                 dialog = android.app.TimePickerDialog(this@HealthTableActivity, { _, hour, minute ->
                     mapping(batch, m.copy(dateOnlyTime = String.format(java.util.Locale.ROOT, "%02d:%02d", hour, minute)))

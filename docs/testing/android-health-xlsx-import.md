@@ -43,6 +43,12 @@ immediately overwritten.
 - Interpret serial dates only after choosing Excel date format, using the actual
   1900/1904 flag and configured timezone. The fictitious 1900-02-29 is not silently
   changed to March 1. Whole-day serials require an explicitly selected clock time.
+- Native ISO date cells (`t="d"`) are supported by a bounded streaming adapter
+  after archive preflight. Valid values are preserved in previews and evidence.
+  An explicit offset wins over the mapped zone; otherwise ambiguous and
+  nonexistent local times are rejected. ISO date-only values require an explicit
+  clock time, just like date-only serials. Malformed date caches surface as cell
+  errors and cannot be saved as measurements, even with formula-cache consent.
 - Formula caches are untrusted/stale until the user allows them. Missing caches
   stay missing; saved evidence includes the original expression, address and
   cached result and states that it was not recalculated.
@@ -59,11 +65,11 @@ Source and expanded working size are 64 MiB; metadata parts are at most 4 MiB;
 ZIP entries at most 10,000; worksheets/columns at most 256. Original bytes are
 retained on rejection. These are explicit resource errors, not truncation.
 
-Fastexcel's ISO-typed `t="d"` cell representation is not implemented by this
-adapter yet. It is an explicit interoperability gap, not a fabricated conversion
-or a completed-format claim. Numeric Excel dates and text timestamps have
-separate tested paths. This gap and unlocked visible-page acceptance remain in
-the full [screen acceptance ledger](../architecture/android-health-screen-status.md).
+The pinned FastExcel reader does not handle `t="d"` itself. The adapter only
+normalizes verified worksheet XML in transit to the reader; the original
+workbook is never rewritten and no plaintext workbook is created. Visible
+mapping/rotation/background acceptance remains in the full
+[screen acceptance ledger](../architecture/android-health-screen-status.md).
 
 Tests must cover real encrypted-channel reads, both date systems, worksheet/header
 selection, shared strings, formula consent/missing caches, numeric normalization,
@@ -72,6 +78,13 @@ resource bounds and queue labels. All fixtures use isolated databases/roots and
 are removed; no fictional observations belong in the user's health profile.
 
 ## Recorded Results
+
+Version 0.1.7.51 / 1464 was built and cover-installed on Tab Active3
+(SM-T575) with existing data retained. All 63 focused instrumentation tests
+passed, including protected original detail/worksheet switching and ISO
+preview-to-save. The ISO fixtures verify explicit offsets, date-only clock
+selection, DST gaps and overlaps, malformed values, formula consent, and
+byte-exact original recovery. Test observations use isolated databases.
 
 Version 0.1.7.20 / 1433 was built and cover-installed on Galaxy Tab Active3
 (SM-T575), retaining the existing application data. Its APK SHA-256 is

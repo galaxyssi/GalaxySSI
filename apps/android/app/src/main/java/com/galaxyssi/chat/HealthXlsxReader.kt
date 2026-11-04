@@ -24,8 +24,8 @@ internal object HealthXlsxReader {
         if (original.size > HealthTableParser.MAX_BYTES) throw HealthImportFailure("table_size")
         originals.copyVerified(original, discard, cancelled)
         return originals.readChannel(original).use { channel ->
-            try { ZipFile(channel).use { zip ->
-                preflight(zip, cancelled)
+            try { HealthXlsxDateZip(channel, cancelled).use { zip ->
+                zip.dateSheets = preflight(zip, cancelled)
                 HealthXlsxWorkbookFactory.open(zip).use(block)
             } } catch (failure: java.lang.reflect.InvocationTargetException) {
                 val cause = failure.targetException
@@ -108,7 +108,8 @@ internal object HealthXlsxReader {
                     cells[name] = raw
                     cell?.let {
                         addresses[name] = it.address.toString()
-                        if (it.type == CellType.ERROR) errors += name
+                        // FastExcel can label a formula with an error cache as FORMULA instead of ERROR.
+                        if (it.type == CellType.ERROR || it.type == CellType.FORMULA && raw == HealthXlsxDateZip.INVALID_DATE_CACHE) errors += name
                         if (it.formula != null) formulas[name] = it.formula.ifBlank { "(shared or array formula)" }
                         if (it.type in listOf(CellType.NUMBER, CellType.FORMULA) && it.value is BigDecimal) {
                             val decimal = raw.toBigDecimalOrNull()
@@ -133,8 +134,9 @@ internal object HealthXlsxReader {
     }
 
     /** Verify bounded expansion, CRC and XML structure before the spreadsheet library creates cell lists/SSTs. */
-    private fun preflight(zip: ZipFile, cancelled: () -> Unit) {
+    private fun preflight(zip: ZipFile, cancelled: () -> Unit): Set<String> {
         var expanded = 0L
+        val dateSheets = hashSetOf<String>()
         try {
             val seen = hashSetOf<String>(); val entries = zip.entries
             while (entries.hasMoreElements()) {
@@ -169,6 +171,8 @@ internal object HealthXlsxReader {
                                     lastRow = row; column = 0
                                 }
                                 if (sheet && parser.name == "c") {
+                                    if (parser.depth == 4 && HealthXlsxDateZip.worksheetNamespace(parser.namespace) &&
+                                        parser.getAttributeValue(null, "t") == "d") dateSheets += name
                                     val address = parser.getAttributeValue(null, "r")
                                     val next = if (address == null) column + 1 else address(address, row)
                                     if (next <= column || next > MAX_COLUMNS) throw HealthImportFailure("table_columns")
@@ -189,6 +193,7 @@ internal object HealthXlsxReader {
         } catch (failure: HealthImportFailure) { throw failure }
         catch (_: java.util.zip.ZipException) { throw HealthImportFailure("xlsx_format") }
         catch (_: org.xmlpull.v1.XmlPullParserException) { throw HealthImportFailure("xlsx_xml") }
+        return dateSheets
     }
     private fun address(value: String, row: Int): Int {
         val letters = value.takeWhile { it in 'A'..'Z' }

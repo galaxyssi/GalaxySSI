@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
 import java.util.UUID
@@ -203,14 +204,81 @@ class HealthXlsxReaderDeviceTest {
             validate(tables, loaded, true); assertEquals("number", tables.page(loaded.id).single().issue)
         }
     }
-    @Test fun unsupportedIsoTypedDatesProduceAnExplicitErrorAndKeepTheOriginal() {
-        val body = "<row r=\"2\"><c r=\"A2\" t=\"d\"><v>2026-09-01T12:00:00Z</v></c>" +
-            HealthXlsxFixtures.number("B2", "124") + HealthXlsxFixtures.number("C2", "82") + HealthXlsxFixtures.text("D2", "mmHg") + "</row>"
-        fixture(HealthXlsxFixtures.workbook(sheets = listOf("Home" to (HealthXlsxFixtures.headers() + body)))) { originals, original, tables, name ->
-            val error = runCatching { load(originals, original, tables, catalog(originals, original, tables)) }.exceptionOrNull()
-            assertEquals("xlsx_cell_type", (error as HealthImportFailure).code)
-            assertTrue(originals.present(original)); HealthRecordStore(context, name).use { assertEquals(0L, it.count()) }
+    private fun isoReading(row: Int, value: String, formula: String? = null, systolic: String = HealthXlsxFixtures.number("B$row", "124")) =
+        "<row r=\"$row\"><c r=\"A$row\" t=\"d\">${formula?.let { "<f>$it</f>" }.orEmpty()}<v>$value</v></c>" +
+            systolic + HealthXlsxFixtures.number("C$row", "82") + HealthXlsxFixtures.text("D$row", "mmHg") + "</row>"
+
+    private fun isoWorkbook(body: String) = HealthXlsxFixtures.workbook(sheets = listOf("Home" to (HealthXlsxFixtures.headers() + body)))
+
+    @Test fun isoTypedDateCanBePreviewedMappedAndSavedWithoutRewritingTheEncryptedOriginal() {
+        val raw = "2026-09-01T12:34:56.789+08:00"
+        val bytes = isoWorkbook(isoReading(2, raw))
+        fixture(bytes) { originals, original, tables, name ->
+            assertEquals(raw, HealthXlsxReader.preview(originals, original, null) {}.rows.last().cells.first())
+            val loaded = load(originals, original, tables, catalog(originals, original, tables))
+            val row = tables.page(loaded.id).single().row
+            assertEquals(raw, row.cells["time"]); assertEquals("A2", row.addresses["time"])
+            assertTrue(row.formulas.isEmpty()); assertFalse(row.numbers.containsKey("time"))
+            tables.mapping(loaded.id, loaded.mappingRevision, loaded.mapping.copy(zone = "UTC"), true)
+            complete(tables, loaded.id)
+            val ready = tables.batch(loaded.id)!!
+            assertEquals(1L, tables.counts(loaded.id)[HealthTableRowState.VALID])
+            tables.confirmSave(loaded.id, ready.mappingRevision)
+            complete(tables, loaded.id)
+            HealthRecordStore(context, name).use { records ->
+                val draft = records.page().records.single().draft
+                assertEquals(Instant.parse("2026-09-01T04:34:56.789Z").toEpochMilli(), draft.measuredAt)
+                val evidence = draft.evidence!!.rawText
+                assertTrue(evidence.contains(raw))
+                assertFalse(evidence.contains("Excel epoch"))
+            }
+            ByteArrayOutputStream().use { output ->
+                originals.copyVerified(original, output)
+                assertArrayEquals(bytes, output.toByteArray())
+            }
         }
+    }
+
+    @Test fun isoLocalDatesRespectZoneAndDateOnlyNeedsExplicitTime() = fixture(isoWorkbook(
+        isoReading(2, "2026-09-01T08:30") + isoReading(3, "2026-09-01") + isoReading(4, "2026-11-01T01:30") +
+            isoReading(5, "2026-11-01T01:30:00-04:00") + isoReading(6, "2026-09-01+08:00") +
+            isoReading(7, "2026-03-08T02:30")
+    )) { originals, original, tables, _ ->
+        val loaded = load(originals, original, tables, catalog(originals, original, tables))
+        val rows = tables.page(loaded.id).associate { it.row.sourceRow.toInt() to it.row }
+        val mapping = loaded.mapping.copy(zone = "America/New_York")
+        fun checkRow(row: Int, dateOnly: String = "") = HealthTablePolicy.evaluate(
+            loaded.copy(mapping = mapping.copy(dateOnlyTime = dateOnly)), rows.getValue(row))
+        assertEquals(Instant.parse("2026-09-01T12:30:00Z").toEpochMilli(), checkRow(2).draft!!.measuredAt)
+        assertEquals("time", checkRow(3).issue)
+        assertEquals(Instant.parse("2026-09-01T12:30:00Z").toEpochMilli(), checkRow(3, "08:30").draft!!.measuredAt)
+        assertEquals("time", checkRow(4).issue)
+        assertEquals(Instant.parse("2026-11-01T05:30:00Z").toEpochMilli(), checkRow(5).draft!!.measuredAt)
+        assertEquals(Instant.parse("2026-09-01T00:30:00Z").toEpochMilli(), checkRow(6, "08:30").draft!!.measuredAt)
+        assertEquals("time", checkRow(7).issue)
+    }
+
+    @Test fun malformedIsoTypedValuesCannotBecomeNumbersAndDateFormulaCacheRequiresConsent() = fixture(isoWorkbook(
+        isoReading(2, "2026-09-01T12:00:00Z", systolic = "<c r=\"B2\" t=\"d\"><v>124</v></c>") +
+            isoReading(3, "2026-09-01T12:00:00Z", formula = "A2") + isoReading(4, "") +
+            isoReading(5, "2026-02-30") +
+            isoReading(6, "2026-09-01T12:00:00Z", systolic = "<c r=\"B6\" t=\"d\"><f>B2</f><v>124</v></c>")
+    )) { originals, original, tables, _ ->
+        val loaded = load(originals, original, tables, catalog(originals, original, tables))
+        val rows = tables.page(loaded.id).associate { it.row.sourceRow.toInt() to it.row }
+        val invalid = rows.getValue(2)
+        assertTrue("systolic" in invalid.errors)
+        assertNull(invalid.numbers["systolic"])
+        assertEquals(HealthTableRowState.INVALID, HealthTablePolicy.evaluate(loaded, invalid).state)
+        val cached = rows.getValue(3)
+        assertEquals("A2", cached.formulas["time"])
+        assertEquals("formula_ack", HealthTablePolicy.evaluate(loaded, cached).issue)
+        assertEquals(HealthTableRowState.VALID, HealthTablePolicy.evaluate(
+            loaded.copy(mapping = loaded.mapping.copy(allowFormulaCache = true)), cached).state)
+        assertEquals(HealthTableRowState.MISSING, HealthTablePolicy.evaluate(loaded, rows.getValue(4)).state)
+        assertTrue("time" in rows.getValue(5).errors)
+        assertEquals("excel_error", HealthTablePolicy.evaluate(
+            loaded.copy(mapping = loaded.mapping.copy(allowFormulaCache = true)), rows.getValue(6)).issue)
     }
     @Test fun chineseWorksheetAndHeaderNamesUseTheSameMappingWithoutEnglishOnlyShortcuts() {
         val headers = "<row r=\"1\">" + listOf("日期", "高压", "低压", "单位").mapIndexed { index, name -> HealthXlsxFixtures.text("${'A' + index}1", name) }.joinToString("") + "</row>"
