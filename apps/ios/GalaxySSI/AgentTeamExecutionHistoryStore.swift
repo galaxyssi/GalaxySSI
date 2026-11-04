@@ -417,6 +417,47 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func archiveDesktopToolEvidence(request: AgentDesktopToolEvidenceWire.Request,
+                                  descriptor: AgentDesktopToolEvidenceWire.Descriptor,
+                                  pages: [Data]) throws -> AgentDesktopToolEvidenceWire.ArchiveReceipt {
+    guard request.verifyOriginal(pages, descriptor: descriptor) != nil,
+          let source = request.binding.teamSource else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let binding = request.binding
+    let conversation = binding.identity.conversationId
+    var identity = binding.fields.mapValues(AgentMcpJSONValue.string)
+    identity["desktop_id"] = .string(binding.desktopId)
+    identity["execution_generation"] = .int(request.generation)
+    identity["evidence_id"] = .string(descriptor.evidenceId)
+    let id = AgentMcpJSONCodec.sha256(identity)
+    let receipt = AgentDesktopToolEvidenceWire.ArchiveReceipt(archiveId: id, desktopId: binding.desktopId,
+      evidenceId: descriptor.evidenceId, sha256: descriptor.sha256, generation: request.generation,
+      totalBytes: descriptor.totalBytes, pageCount: descriptor.pageCount)
+    return try access { database in
+      guard let owner = try database.replyOwner(source: binding.sourceIdentity, conversation: conversation,
+              turn: binding.identity.turnId, contact: binding.contactId),
+            owner.supervisorRunId == source.supervisorRunId, owner.memberId == source.memberId,
+            owner.deliveryMode == .observe, owner.observedGeneration == request.generation,
+            let team = try database.snapshots(runId: owner.supervisorRunId).first,
+            team.conversationId == conversation, team.taskId == binding.identity.turnId,
+            team.state != .cancelled,
+            team.members.contains(where: { $0.memberId == owner.memberId &&
+              $0.sourceMessageId == owner.sourceMessageId && $0.status == .succeeded }) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let key = "desktop-evidence:" + id
+      if let prior = try database.researchRecord(AgentDesktopToolEvidenceWire.ArchiveReceipt.self,
+        conversationId: conversation, key: key, revision: 0) {
+        guard prior == receipt else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return prior
+      }
+      for (index, page) in pages.enumerated() {
+        try database.insertResearchRecord(page, conversationId: conversation, key: key, revision: Int64(index + 1))
+      }
+      try database.insertResearchRecord(receipt, conversationId: conversation, key: key, revision: 0)
+      return receipt
+    }
+  }
+
   func collaborationResults(conversationId: String, limit: Int) -> [AgentTeamExecutionSnapshot] {
     guard !conversationId.isBlank, limit > 0 else { return [] }
     return (try? access {
