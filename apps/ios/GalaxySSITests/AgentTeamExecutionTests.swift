@@ -1106,7 +1106,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(restored.members[index].elapsedExecutionMillis(now: 100, team: restored), 30)
   }
 
-  func testCollaborationResultsStayInTheirConversationAfterReopen() {
+  func testCollaborationResultsStayInTheirConversationAfterReopen() throws {
     let suite = "team-results-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -1123,10 +1123,14 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(history.upsert(other))
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
-    let scoped = reopened.collaborationResults(conversationId: first.conversationId, limit: 20)
+    let scoped = try reopened.readCollaborationResults(conversationId: first.conversationId, limit: 20)
     XCTAssertEqual(scoped.map(\.supervisorRunId), ["first"])
     XCTAssertEqual(scoped.first?.members.first?.displayName, "Original member name")
     XCTAssertTrue(reopened.collaborationResults(conversationId: "", limit: 20).isEmpty)
+    XCTAssertTrue(try reopened.readCollaborationResults(conversationId: "empty", limit: 20).isEmpty)
+    let unavailable = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root)
+    XCTAssertThrowsError(try unavailable.readCollaborationResults(conversationId: first.conversationId, limit: 20))
   }
 
   func testObserverRecoveryPersistsFullFailureAndRejectsPreviewOnlyDuplicateProof() throws {
@@ -1540,6 +1544,10 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").isEmpty)
     XCTAssertEqual(mailbox.messages(supervisorRunId: "run", instanceId: "reviewer", afterSequence: 5_000).count, 1)
     XCTAssertEqual(mailbox.messages(supervisorRunId: "run", instanceId: "unrelated", afterSequence: 0).count, 0)
+    let recent = try reopened.recentMessages(supervisorRunId: "run", conversationId: "group")
+    XCTAssertEqual(recent.map(\.sequence), Array(Int64(4_982)...5_001))
+    XCTAssertThrowsError(try reopened.recentMessages(supervisorRunId: "run", conversationId: "other"))
+    XCTAssertTrue(try reopened.recentMessages(supervisorRunId: "missing", conversationId: "group").isEmpty)
   }
 
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {
