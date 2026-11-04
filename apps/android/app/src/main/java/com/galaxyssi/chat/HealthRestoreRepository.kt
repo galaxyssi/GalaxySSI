@@ -57,6 +57,7 @@ internal class HealthRestoreRepository(private val context: Context, private val
                 val targetIds = hashSetOf<String>()
                 var added = 0L; var duplicates = 0L; var conflicts = 0L
                 var originalsAdded = 0; var originalsReused = 0; var repaired = 0; var missing = 0
+                var sourcesAdded = 0L; var sourcesReused = 0L; var sourcesSkipped = 0L
                 fun prepareOriginal(item: HealthBackupOriginal): OutputStream? {
                     if (!digests.add(item.sha256)) throw HealthBackupException(HealthBackupIssue.DAMAGED)
                     val match = originals.restorationState(item)
@@ -76,7 +77,8 @@ internal class HealthRestoreRepository(private val context: Context, private val
                     return sink
                 }
                 val manifest = spool.fill {
-                    open().use { stream ->
+                    var sourceTarget: HealthObservation? = null
+                    val verified = open().use { stream ->
                         HealthBackupCodec.verify(stream, password, signal::throwIfCanceled,
                             onManifest = {
                                 if (it.owner.isNotBlank() && targetOwner.isNotBlank() && !it.owner.trim().equals(targetOwner, ignoreCase = true))
@@ -102,13 +104,39 @@ internal class HealthRestoreRepository(private val context: Context, private val
                                     HealthRestoreKind.CONFLICT -> conflicts++
                                 }
                                 spool.add(row, match, dedupe, evidenceKey)
+                                sourceTarget = when (match.kind) {
+                                    HealthRestoreKind.NEW -> row
+                                    HealthRestoreKind.DUPLICATE -> requireNotNull(match.existing)
+                                    HealthRestoreKind.CONFLICT -> null
+                                }
+                            }, onSourceLink = { _, evidence ->
+                                val target = sourceTarget
+                                if (target == null) sourcesSkipped++
+                                else spool.stageSource(HealthRestoreSourceLink(target.id, target.revision, target.draft.metric,
+                                    evidence.copy(originalId = requireNotNull(originalPlans[evidence.originalId]).targetId)))
                             })
                     }
+                    for ((seq, link) in spool.sourceLinks()) {
+                        signal.throwIfCanceled()
+                        val primary = spool.colliding(null, records.restorePrimarySourceKey(link))
+                        val match = if (primary != null) {
+                            if (primary.id == link.recordId && primary.revision == link.revision) HealthRestoreKind.DUPLICATE
+                            else HealthRestoreKind.CONFLICT
+                        } else records.restoreSourceMatch(link)
+                        when (if (match == HealthRestoreKind.NEW) spool.planSource(seq, records.restoreSourceSlot(link), link) else match) {
+                            HealthRestoreKind.NEW -> sourcesAdded++
+                            HealthRestoreKind.DUPLICATE -> sourcesReused++
+                            HealthRestoreKind.CONFLICT -> sourcesSkipped++
+                        }
+                    }
+                    verified
                 }
                 signal.throwIfCanceled()
                 if (records.metricVersions(metrics) != expected || owner() != targetOwner) throw HealthRestoreChanged()
-                val counts = HealthRestoreCounts(added, duplicates, conflicts, originalsAdded, originalsReused, repaired, missing)
+                val counts = HealthRestoreCounts(added, duplicates, conflicts, originalsAdded, originalsReused, repaired, missing,
+                    sourcesAdded, sourcesReused, sourcesSkipped)
                 check(added + duplicates + conflicts == manifest.records)
+                check(sourcesAdded + sourcesReused + sourcesSkipped == manifest.secondary)
                 HealthRestorePlan(id, manifest, targetOwner, counts, expected, originalPlans.values.toList(), spool, this)
             }
         } catch (failure: Throwable) {
@@ -149,6 +177,13 @@ internal class HealthRestoreRepository(private val context: Context, private val
                 inserted++
             }
             check(inserted == plan.counts.added)
+            var linked = 0L
+            for ((_, link) in plan.stage.sourceLinks(planned = true)) {
+                signal.throwIfCanceled()
+                records.insertRestoredSource(link)
+                linked++
+            }
+            check(linked == plan.counts.sourcesAdded)
             if (owner() != plan.owner) throw HealthRestoreChanged()
             signal.throwIfCanceled()
             receipt = HealthRestoreReceipt(plan.id, plan.manifest.id, System.currentTimeMillis(),

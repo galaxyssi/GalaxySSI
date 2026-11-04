@@ -223,7 +223,7 @@ class HealthBackupDeviceTest {
         assertEquals(HealthBackupIssue.UNLOCK, failure { verify(bytes, "incorrect fixture password".toCharArray()) })
         assertEquals(HealthBackupIssue.FORMAT, failure { verify("""{"records":[]}""".toByteArray()) })
         assertEquals(HealthBackupIssue.OLDER_VERSION, failure { verify(bytes.clone().also { it[11] = 0 }) })
-        assertEquals(HealthBackupIssue.NEWER_VERSION, failure { verify(bytes.clone().also { it[11] = 2 }) })
+        assertEquals(HealthBackupIssue.NEWER_VERSION, failure { verify(bytes.clone().also { it[11] = (HealthBackupCodec.VERSION + 1).toByte() }) })
         assertEquals(HealthBackupIssue.DAMAGED, failure { verify(bytes.copyOf(bytes.size - 1)) })
         assertEquals(HealthBackupIssue.DAMAGED, failure { verify(bytes + byteArrayOf(0)) })
         assertEquals(HealthBackupIssue.DAMAGED, failure { verify(bytes.clone().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }) })

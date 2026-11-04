@@ -29,6 +29,10 @@ enum AgentCollaborationDecisionContext {
 }
 
 enum AgentCollaborationInlineOriginals {
+  static let contextSections = ["context:assignment", "context:resources", "context:peer_requests"]
+  static let recallSections = ["goal", "criteria", "source"] + contextSections
+  static let maximumContextSectionBytes = 128_000
+
   static func source(goal: String, criteria: Data) -> Data {
     let units = Array(goal.utf16)
     var segments: [String] = []

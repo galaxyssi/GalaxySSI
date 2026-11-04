@@ -38,20 +38,30 @@ internal class HealthBackupRepository(private val context: Context, private val 
         }
         var count = 0L
         var linked = 0L
+        var secondary = 0L
         var first = Long.MAX_VALUE
         var last = 0L
         var recordBytes = 0L
-        records(records, signal).map(sources::project).forEach { record ->
-            if (record.draft.evidence != null) linked++
-            val encoded = record.json().toString().toByteArray(Charsets.UTF_8)
+        fun addFrame(value: org.json.JSONObject) {
+            val encoded = value.toString().toByteArray(Charsets.UTF_8)
             try { recordBytes = Math.addExact(recordBytes, encoded.size.toLong() + 4L) } finally { encoded.fill(0) }
+        }
+        records(records, signal).forEach { record ->
+            if (record.draft.evidence != null) linked++
+            addFrame(sources.project(record).json())
+            for (evidence in records.backupSourceLinks(record, signal)) {
+                signal.throwIfCanceled()
+                addFrame(sources.project(evidence).json())
+                secondary++
+            }
+            recordBytes = Math.addExact(recordBytes, 4L)
             first = minOf(first, record.draft.measuredAt)
             last = maxOf(last, record.draft.measuredAt)
             count++
         }
         val originalStamp = sources.stamp
         val manifest = HealthBackupManifest(UUID.randomUUID().toString(), System.currentTimeMillis(), owner,
-            count, sources.items.size, missing, linked, originalBytes, if (count == 0L) 0L else first, last)
+            count, sources.items.size, missing, linked, originalBytes, if (count == 0L) 0L else first, last, secondary)
         val estimate = Math.addExact(originalBytes, recordBytes) + sources.items.size * 1200L + 4096L +
             (originalBytes + recordBytes) / 2048L
         ensureCurrent(records, originals, versions, originalStamp, signal)
@@ -101,7 +111,8 @@ internal class HealthBackupRepository(private val context: Context, private val 
                             val original = originals.original(item.id) ?: changed()
                             if (original.reviewOnly || manifestItem(original, originals) != item) changed()
                             originals.copyVerified(original, sink, signal::throwIfCanceled)
-                        }, records(records, signal).map(sources::project), signal::throwIfCanceled)
+                        }, records(records, signal).map(sources::project), signal::throwIfCanceled,
+                        sourceLinks = { record -> records.backupSourceLinks(record, signal).map(sources::project) })
                 }
                 raw.fd.sync()
             }
@@ -256,9 +267,13 @@ internal class HealthBackupRepository(private val context: Context, private val 
     private data class Sources(val items: List<HealthBackupOriginal>, val aliases: Map<String, HealthBackupOriginal>, val stamp: String) {
         fun project(record: HealthObservation): HealthObservation {
             val ref = record.draft.evidence ?: return record
+            val projected = project(ref)
+            return if (projected === ref) record else record.copy(draft = record.draft.copy(evidence = projected))
+        }
+        fun project(ref: HealthEvidence): HealthEvidence {
             val item = aliases[ref.originalId]?.takeIf { it.sha256 == ref.sha256 }
                 ?: throw HealthBackupException(HealthBackupIssue.MISSING_MANIFEST)
-            return if (item.id == ref.originalId) record else record.copy(draft = record.draft.copy(evidence = ref.copy(originalId = item.id)))
+            return if (item.id == ref.originalId) ref else ref.copy(originalId = item.id)
         }
     }
 

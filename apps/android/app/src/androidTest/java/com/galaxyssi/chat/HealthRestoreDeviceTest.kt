@@ -76,6 +76,130 @@ class HealthRestoreDeviceTest {
 
     private fun stageFolder(names: HealthOverviewDatabases, id: String) = File(names.originalRoot(context), "restore/$id")
 
+    private fun addSource(names: HealthOverviewDatabases, target: HealthObservation, original: HealthOriginal, index: Int): HealthEvidence {
+        val evidence = HealthEvidence(original.id, id(), "association-$index", original.sha256, 2, "Verified source $index",
+            boxes = if (target.source == "ocr") listOf(listOf(50, 100, 200, 300)) else emptyList(),
+            confirmed = true, kind = target.source, tableRow = if (target.source == "table") index.toLong() else 0L)
+        HealthRecordStore(context, names.records).use { records ->
+            records.tableDatabase.beginTransaction()
+            try {
+                records.insertRestoredSource(HealthRestoreSourceLink(target.id, target.revision, target.draft.metric, evidence))
+                records.tableDatabase.setTransactionSuccessful()
+            } finally { records.tableDatabase.endTransaction() }
+        }
+        return evidence
+    }
+
+    @Test fun secondarySourcesRoundTripAcrossPagesAndRemappedOriginalsWithoutDuplicatingMeasurements() = fixture { source, target ->
+        val primaryBytes = "primary OCR report".toByteArray()
+        val primary = original(source, primaryBytes)
+        val ocr = save(source, draft(1, original = primary))
+        val tableFile = original(source, "primary table".toByteArray())
+        val tableDraft = draft(2, original = tableFile)
+        val table = save(source, tableDraft.copy(evidence = tableDraft.evidence!!.copy(kind = "table", tableRow = 1)))
+        val reports = (1..34).map { index ->
+            val bytes = "secondary OCR report $index".toByteArray()
+            val file = original(source, bytes)
+            Triple(file, addSource(source, ocr, file, index), bytes)
+        }
+        val secondaryTableBytes = "secondary table".toByteArray()
+        val secondaryTable = original(source, secondaryTableBytes)
+        val tableEvidence = addSource(source, table, secondaryTable, 2)
+        val missing = reports.last().first
+        HealthOriginalStore(context, source.originals, source.originalRoot(context)).use { assertTrue(it.removeOriginalBytes(missing)) }
+
+        val remappedPrimary = original(target, primaryBytes)
+        val remappedTable = original(target, secondaryTableBytes)
+        assertNotEquals(primary.id, remappedPrimary.id)
+        assertNotEquals(secondaryTable.id, remappedTable.id)
+        val current = save(target, ocr.draft.copy(recordId = ocr.id, evidence = ocr.draft.evidence!!.copy(originalId = remappedPrimary.id)))
+        val file = packageFile(source)
+        val repo = restore(target)
+        prepare(repo, file).use { plan ->
+            assertEquals(35L, plan.manifest.secondary)
+            assertEquals(1, plan.counts.missing)
+            assertEquals(HealthRestoreCounts(1, 1, 0, 35, 2, 0, 1, sourcesAdded = 35), plan.counts)
+            assertEquals(1L to 2L, count(target))
+            plan.commit(CancellationSignal())
+        }
+        HealthRecordStore(context, target.records).use { records ->
+            assertEquals(2L, records.count())
+            assertEquals(current, records.record(ocr.id))
+            assertEquals(table, records.record(table.id))
+            HealthOriginalStore(context, target.originals, target.originalRoot(context), records).use { originals ->
+                reports.forEach { (original, evidence, bytes) ->
+                    val saved = requireNotNull(originals.original(original.id))
+                    assertEquals(original.sha256, saved.sha256)
+                    assertEquals(evidence, records.originalPage(original.id).records.single().draft.evidence)
+                    if (original.id == missing.id) assertFalse(originals.present(saved))
+                    else assertArrayEquals(bytes, originals.input(saved).use { it.readBytes() })
+                }
+                assertArrayEquals(secondaryTableBytes, originals.input(remappedTable).use { it.readBytes() })
+            }
+            assertEquals(tableEvidence.copy(originalId = remappedTable.id), records.originalPage(remappedTable.id).records.single().draft.evidence)
+        }
+        prepare(repo, file).use { plan ->
+            assertEquals(0L, plan.counts.added)
+            assertEquals(0L, plan.counts.sourcesAdded)
+            assertEquals(35L, plan.counts.sourcesReused)
+            assertEquals(0L, plan.counts.sourcesSkipped)
+            plan.commit(CancellationSignal())
+        }
+        assertEquals(2L to 37L, count(target))
+    }
+
+    @Test fun associationWriteFailureRollsBackRecordsFilesAndReceipt() = fixture { source, target ->
+        val record = save(source, draft(1, original = original(source, "primary".toByteArray())))
+        val secondary = original(source, "secondary".toByteArray())
+        addSource(source, record, secondary, 1)
+        val file = packageFile(source)
+        val repo = restore(target)
+        prepare(repo, file).use { plan ->
+            assertEquals(1L, plan.counts.sourcesAdded)
+            HealthRecordStore(context, target.records).use { records ->
+                records.tableDatabase.execSQL("CREATE TRIGGER refuse_source BEFORE INSERT ON health_source_links BEGIN SELECT RAISE(ABORT,'test failure'); END")
+            }
+            assertTrue(runCatching { plan.commit(CancellationSignal()) }.exceptionOrNull() is android.database.sqlite.SQLiteConstraintException)
+            assertEquals(0L to 0L, count(target))
+            assertTrue(repo.recent().isEmpty())
+        }
+        HealthRecordStore(context, target.records).use { it.tableDatabase.execSQL("DROP TRIGGER refuse_source") }
+        prepare(repo, file).use { assertEquals(1L, it.commit(CancellationSignal()).counts.sourcesAdded) }
+    }
+
+    @Test fun conflictingMeasurementDoesNotReceiveAnIncomingAssociation() = fixture { source, target ->
+        val record = save(source, draft(1, original = original(source, "primary conflict".toByteArray())))
+        val secondary = original(source, "secondary conflict".toByteArray())
+        addSource(source, record, secondary, 1)
+        val existing = save(target, draft(1, note = "Current profile record", id = record.id))
+        val repo = restore(target)
+        prepare(repo, packageFile(source)).use {
+            assertEquals(1L, it.counts.conflicts)
+            assertEquals(1L, it.counts.sourcesSkipped)
+            assertEquals(it.counts, it.commit(CancellationSignal()).counts)
+        }
+        HealthRecordStore(context, target.records).use { records ->
+            assertEquals(existing, records.record(record.id))
+            assertTrue(records.originalPage(secondary.id).records.isEmpty())
+        }
+    }
+
+    @Test fun restoresLegacyVersionOneBackup() = fixture { source, target ->
+        val record = save(source, draft(1))
+        val manifest = HealthBackupRepository(context, source).preview("Fixture Owner", CancellationSignal()).manifest
+        val buffer = java.io.ByteArrayOutputStream()
+        val password = secret.toCharArray()
+        try {
+            HealthBackupCodec.write(buffer, password, manifest, emptySequence(), { _, _ -> error("Unexpected file") },
+                sequenceOf(record), formatVersion = 1)
+            restore(target).prepare({ buffer.toByteArray().inputStream() }, password, CancellationSignal()).use {
+                assertEquals(0L, it.manifest.secondary)
+                assertEquals(1L, it.commit(CancellationSignal()).counts.added)
+            }
+        } finally { password.fill('\u0000') }
+        HealthRecordStore(context, target.records).use { assertEquals(record, it.record(record.id)) }
+    }
+
     @Test fun verifiesThenRestoresPagedRecordsAndOriginalAndRepeatIsIdempotent() = fixture { source, target ->
         val content = ByteArray(310_555) { (it % 241).toByte() }
         val photo = original(source, content)
@@ -219,7 +343,9 @@ class HealthRestoreDeviceTest {
 
     @Test fun nativeRestoreRequiresConsentAndWritesAnIsolatedReceipt() = fixture { source, target ->
         assumeFalse("Restore UI requires an unlocked display", context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
-        save(source, draft(1))
+        val record = save(source, draft(1, original = original(source, "UI primary".toByteArray())))
+        val secondary = original(source, "UI secondary".toByteArray())
+        val evidence = addSource(source, record, secondary, 1)
         val packageFile = packageFile(source)
         val folder = File(context.cacheDir, "health-backups").apply { mkdirs() }
         val picked = File(folder, "restore-ui-${id()}.ghbackup")
@@ -248,6 +374,8 @@ class HealthRestoreDeviceTest {
                 }
                 assertEquals(0L to 0L, count(target))
                 scenario.onActivity {
+                    val caption = it.getString(R.string.health_restore_secondary_counts, 1, 0, 0)
+                    assertNotNull(findText(it.window.decorView, caption))
                     val commit = requireNotNull(find(it.window.decorView, "health-restore-commit"))
                     assertFalse(commit.isEnabled)
                     (requireNotNull(find(it.window.decorView, "health-restore-consent")) as CheckBox).isChecked = true
@@ -260,12 +388,22 @@ class HealthRestoreDeviceTest {
                     true.takeIf { ready }
                 }
                 assertEquals(1L, restore(target).recent().single().counts.added)
+                assertEquals(1L, restore(target).recent().single().counts.sourcesAdded)
+                HealthRecordStore(context, target.records).use { records ->
+                    assertEquals(evidence, records.originalPage(secondary.id).records.single().draft.evidence)
+                }
             }
         } finally { instrumentation.removeMonitor(monitor); picked.delete() }
     }
 
     private fun find(root: View, tag: String): View? = if (root.tag == tag) root else if (root is ViewGroup)
         (0 until root.childCount).firstNotNullOfOrNull { find(root.getChildAt(it), tag) } else null
+
+    private fun findText(root: View, text: String): View? = when {
+        root is android.widget.TextView && root.text.toString() == text -> root
+        root is ViewGroup -> (0 until root.childCount).firstNotNullOfOrNull { findText(root.getChildAt(it), text) }
+        else -> null
+    }
 
     private fun node(root: AccessibilityNodeInfo?, matches: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
         if (root == null || matches(root)) return root
