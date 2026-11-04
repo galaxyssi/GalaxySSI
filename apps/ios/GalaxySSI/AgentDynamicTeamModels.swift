@@ -24,6 +24,8 @@ enum AgentCollaborationGoalAssessmentPolicy {
     var status: Status
     var evidence_kind: EvidenceKind?
     var evidence: [String]
+    var delivery: AgentCollaborationDocumentaryAcceptance.Reference? = nil
+    var review: AgentCollaborationDocumentaryAcceptance.Reference? = nil
   }
 
   struct Work: Codable {
@@ -127,6 +129,94 @@ enum AgentCollaborationGoalAssessmentPolicy {
             }) else { return .needsAssessment }
       return .achieved
     }
+  }
+}
+
+enum AgentCollaborationDocumentaryAcceptance {
+  struct Reference: Codable, Equatable {
+    var objectId: String
+    var revision: Int64
+    var sha256: String
+
+    enum CodingKeys: String, CodingKey {
+      case objectId = "object_id"
+      case revision, sha256
+    }
+  }
+
+  struct Revision {
+    var reference: Reference
+    var conversationId: String
+    var runId: String
+    var turnId: String
+    var authorId: String
+    var kind: String
+    var body: AgentMcpJSONObject
+    var parents: [Reference]
+    var hostObservationIds: Set<String>
+  }
+
+  private struct Review: Decodable {
+    var criterion_id: String
+    var requirement: String
+    var target: Reference
+    var verdict: String
+    var rationale: String
+    var unresolved: [String]
+  }
+
+  static func evaluate(_ raw: String, preserving contract: [AgentCollaborationGoalAssessmentPolicy.Criterion],
+                       conversationId: String, runId: String, turnId: String,
+                       readRevision: (String, Int64?) throws -> Revision?,
+                       observationIsSupporting: (String) throws -> Bool)
+    -> AgentCollaborationGoalAssessmentPolicy.Outcome {
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    guard !conversationId.isBlank, !runId.isBlank, !turnId.isBlank, raw.utf8.count <= 256_000,
+          let assessment = try? JSONDecoder().decode(Policy.Assessment.self, from: Data(raw.utf8)),
+          assessment.decision == .achieved else { return .needsAssessment }
+
+    func current(_ reference: Reference) throws -> Revision? {
+      guard reference.revision > 0, !reference.objectId.isBlank,
+            reference.sha256.utf8.count == 64,
+            let record = try readRevision(reference.objectId, nil),
+            record.reference == reference, record.conversationId == conversationId,
+            record.runId == runId, record.turnId == turnId,
+            !record.authorId.isBlank else { return nil }
+      return record
+    }
+
+    var verified: [String: Policy.VerifiedCriterion] = [:]
+    do {
+      for criterion in assessment.criteria {
+        guard criterion.verification == .documentary, criterion.evidence_kind == .observed,
+              let deliveryRef = criterion.delivery, let reviewRef = criterion.review,
+              let delivery = try current(deliveryRef), let review = try current(reviewRef),
+              ["artifact", "proposal", "decision"].contains(delivery.kind),
+              !delivery.body.string("content").isBlank,
+              ["acceptance_review", "decision"].contains(review.kind),
+              delivery.authorId != review.authorId,
+              review.parents.contains(deliveryRef),
+              let rawReview = review.body["acceptance_review"]?.objectValue,
+              let check = try? JSONDecoder().decode(Review.self, from: Data(AgentMcpJSONCodec.stringify(rawReview).utf8)),
+              check.criterion_id == criterion.id, check.requirement == criterion.requirement,
+              check.target == deliveryRef, check.verdict == "supported",
+              !check.rationale.isBlank, check.unresolved.isEmpty else { return .needsAssessment }
+        var number: Int64 = 1
+        while number < deliveryRef.revision {
+          guard let previous = try readRevision(deliveryRef.objectId, number),
+                previous.reference.objectId == deliveryRef.objectId,
+                previous.reference.revision == number, previous.conversationId == conversationId,
+                !previous.authorId.isBlank, previous.authorId != review.authorId else { return .needsAssessment }
+          number += 1
+        }
+        let observations = delivery.hostObservationIds.union(review.hostObservationIds)
+        guard try observations.allSatisfy(observationIsSupporting) else { return .needsAssessment }
+        let receipts = observations.union([deliveryRef.objectId, reviewRef.objectId, deliveryRef.sha256, reviewRef.sha256])
+        verified[criterion.id] = Policy.VerifiedCriterion(requirement: criterion.requirement,
+          verification: .documentary, evidence: receipts)
+      }
+    } catch { return .needsAssessment }
+    return Policy.evaluate(raw, preserving: contract, authorizedMembers: [], completedWork: [], verified: verified)
   }
 }
 

@@ -10,6 +10,24 @@ struct AgentCollaborationNativeToolObservation: Codable {
   var result: AgentNativeToolResult
 }
 
+struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
+  var runId: String
+  var conversationId: String
+  var turnId: String
+  var memberId: String
+  var sourceId: String
+}
+
+struct AgentCollaborationCloudToolEvidence: Codable, Equatable {
+  var scope: AgentCollaborationToolEvidenceScope
+  var round: Int
+  var call: AssembledToolCall
+  var output: String
+  var succeeded: Bool
+  var startedAtMillis: Int64
+  var finishedAtMillis: Int64
+}
+
 struct AgentCollaborationResearchReference: Codable, Equatable {
   var objectId: String
   var revision: Int64
