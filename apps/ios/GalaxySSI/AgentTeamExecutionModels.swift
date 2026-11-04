@@ -128,6 +128,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case environmentModel = "task_environment_model"
     case actionForecast = "action_forecast"
     case predictionOutcome = "prediction_outcome"
+    case numericModelTrial = "numeric_model_trial"
     case experimentPlan = "experiment_plan"
     case experimentResult = "experiment_result"
     case capabilityLesson = "capability_lesson"
@@ -892,6 +893,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil
+  var numericReplay: AgentMcpJSONObject? = nil
 }
 
 struct AgentCollaborationFrozenCloudRead: Codable {

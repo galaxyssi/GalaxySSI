@@ -653,6 +653,30 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentCollaborationForecastIntake.brierScore(probability: .infinity, occurred: true))
   }
 
+  func testNumericTrialPersistsCounterexamplesAndComparesIdenticalCases() throws {
+    let raw = """
+    {"purpose":"Replay","reference_basis":"Supplied","limitations":"Finite cases",
+     "validator":{"id":"numeric_model_cases.v1","variables":["x"],"cases":[
+       {"id":"tiny","input":{"x":0.000000000001},"expected":0.000000000001,"absolute_tolerance":0.000000000000000001},
+       {"id":"domain","input":{"x":-2},"expected":0,"absolute_tolerance":0}]},
+     "computation":{"validator_id":"numeric_model_cases.v1","model":{"op":"log1p","args":[{"variable":"x"}]}}}
+    """
+    var trial = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let first = try XCTUnwrap(AgentCollaborationNumericTrial.evaluate(trial))
+    XCTAssertEqual(first["failed_cases"], .int(1))
+    XCTAssertEqual(first["domain_error_cases"], .int(1))
+    var computation = try XCTUnwrap(trial["computation"]?.objectValue)
+    computation["model"] = .object(["constant": .double(0)])
+    trial["computation"] = .object(computation)
+    let second = try XCTUnwrap(AgentCollaborationNumericTrial.evaluate(trial))
+    let changes = try XCTUnwrap(AgentCollaborationNumericTrial.comparison(previous: first, current: second))
+    XCTAssertEqual(changes["domain_recovered_case_ids"], .array([.string("domain")]))
+    XCTAssertEqual(changes["regressed_case_ids"], .array([.string("tiny")]))
+    computation["model"] = .object(["op": .string("shell"), "args": .array([])])
+    trial["computation"] = .object(computation)
+    XCTAssertNil(AgentCollaborationNumericTrial.evaluate(trial))
+  }
+
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
     let raw = """
     {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",

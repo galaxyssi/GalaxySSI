@@ -92,6 +92,11 @@ enum AgentCollaborationRuleTopics {
     question, hypothesis claims, and environment scope. Omit explicit priors; the host uses the saved posterior.
     A prediction_outcome binds an exact forecast parent and one fully recalled original cloud tool observation
     from its executor. The host computes any posterior; declared probabilities are assumptions, not calibration.
+    A numeric_model_trial records local replay, not independent reference truth. Supply purpose, reference_basis, limitations,
+    validator {id:"numeric_model_cases.v1",variables,cases:[{id,input,expected,absolute_tolerance}]}, and computation
+    {validator_id:"numeric_model_cases.v1",model}. Expressions use {constant}, {variable}, or {op,args}.
+    Operations: neg, abs, exp, expm1, log, log1p, sqrt, sin, cos, add, sub, mul, div, pow, min, max.
+    Valid failed cases are saved. An exact previous_trial parent can compare the same preserved cases.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,

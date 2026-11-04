@@ -785,6 +785,7 @@ final class AgentTeamExecutionHistoryStore {
         var carriedPosterior: AgentMcpJSONObject? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
         var trialAuthors: [String]? = nil
+        var numericReplay: AgentMcpJSONObject? = nil
         if draft.kind == .acceptanceReview {
           let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
             objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
@@ -957,6 +958,23 @@ final class AgentTeamExecutionHistoryStore {
             return record
           }
           guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else if draft.kind == .numericModelTrial {
+          guard draft.objectId?.isBlank != false, draft.baseRevision == 0, references.isEmpty,
+                let trial = draft.body["numeric_model_trial"]?.objectValue,
+                var replay = AgentCollaborationNumericTrial.evaluate(trial)
+          else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          if let previous = trial["previous_trial"] {
+            guard let ref = Self.forecastReference(previous), draft.parents.contains(ref),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+                  saved.reference == ref, saved.draft.kind == .numericModelTrial,
+                  saved.turnId != turnId || (saved.runId == runId && saved.authorId == memberId),
+                  let original = saved.numericReplay,
+                  let comparison = AgentCollaborationNumericTrial.comparison(previous: original, current: replay)
+            else { throw AgentTeamHistoryDatabase.Failure.stale }
+            replay["comparison"] = .object(comparison)
+          }
+          numericReplay = replay
         } else if draft.kind == .predictionOutcome {
           let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
             turnId: turnId, memberId: memberId, sourceId: sourceId)
@@ -1081,7 +1099,7 @@ final class AgentTeamExecutionHistoryStore {
           hypothesisFeedback: hypothesisFeedback,
           carriedHypothesisPosterior: carriedPosterior,
           registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
-          measuredCases: measuredCases, trialAuthors: trialAuthors)
+          measuredCases: measuredCases, trialAuthors: trialAuthors, numericReplay: numericReplay)
         revision.reference.sha256 = try digest(revision)
         revisions.append(revision)
       }
