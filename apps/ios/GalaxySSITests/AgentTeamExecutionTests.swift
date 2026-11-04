@@ -83,6 +83,17 @@ extension GalaxySSIStoreTests {
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     XCTAssertEqual(try reopened.recordCloudEvidence(observation), receipt)
+    let input: AgentMcpJSONObject = [
+      "mode": .string("evidence"), "evidence_id": receipt["evidence_id"] ?? .null,
+      "sha256": receipt["sha256"] ?? .null
+    ]
+    XCTAssertTrue(try reopened.recallCollaborationOriginal(input, scope: scope).string("content").contains("web_search"))
+    var invalidScope = scope
+    invalidScope.memberId = "foreign-member"
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(input, scope: invalidScope))
+    var invalidInput = input
+    invalidInput["sha256"] = .string(String(repeating: "f", count: 64))
+    XCTAssertThrowsError(try reopened.recallCollaborationOriginal(invalidInput, scope: scope))
     observation.output = "different"
     XCTAssertThrowsError(try reopened.recordCloudEvidence(observation))
     observation.scope.conversationId = "other-group"
