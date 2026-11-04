@@ -256,6 +256,9 @@ class HealthCenterActivity : Activity() {
                 addView(ui.row(getString(R.string.health_records), getString(R.string.health_record_sources)) { open("records") })
                 addView(ui.row(getString(R.string.health_catalog_title)) { openCatalog() })
                 addView(ui.row(getString(R.string.health_weekly_title)) { openWeekly() }.apply { tag = "health-weekly-entry" })
+                addView(ui.row(getString(R.string.health_sources_title)) {
+                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthSourcesActivity::class.java))
+                })
                 addView(ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this@HealthCenterActivity, HealthDataFilesActivity::class.java)) })
             }, 14)
             ui.add(this, ui.text(getString(R.string.health_profile_preferences), 18f, bold = true), 24)

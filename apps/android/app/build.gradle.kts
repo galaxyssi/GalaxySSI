@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1443
-        versionName = "0.1.7.30"
+        versionCode = 1444
+        versionName = "0.1.7.31"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -334,6 +334,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.documentfile:documentfile:1.1.0")
+    implementation("androidx.health.connect:connect-client:1.1.0")
+    // Health Connect brings Guava at runtime; WorkManager also needs ListenableFuture at compile time.
+    implementation("com.google.guava:guava:31.1-android")
     implementation("androidx.sqlite:sqlite-bundled:2.6.2")
     implementation("com.github.jelmerk:hnswlib-core:1.2.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")

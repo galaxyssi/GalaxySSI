@@ -119,13 +119,14 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 }, LinearLayout.LayoutParams(ui.dp(20), ui.dp(20)))
                 ui.add(this, ui.text(label(title), 13f, bold = true).apply { gravity = Gravity.CENTER }, 5)
                 setOnClickListener { action() }
-            }, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = ui.dp(if (childCount < 2) 4 else 0) })
+            }, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = ui.dp(if (childCount < 3) 4 else 0) })
         }
         item(R.drawable.ic_agent_camera, R.string.health_overview_photo, "health-overview-photo") { start(HealthCaptureActivity::class.java) }
         item(R.drawable.ic_health_heart, R.string.health_manual, "health-overview-manual") { activity.open("manual") }
         item(R.drawable.ic_chat_shortcut_file, R.string.health_overview_import, "health-overview-import") {
             start(HealthCaptureActivity::class.java) { putExtra("health_pick_files", true) }
         }
+        item(R.drawable.ic_protocol_link, R.string.health_sources_quick, "health-overview-sources") { start(HealthSourcesActivity::class.java) }
     }
     private fun card(item: HealthOverviewMetric, snapshot: HealthOverviewSnapshot): LinearLayout {
         val weekly = snapshot.derived.sleep?.takeIf { item.metric == HealthMetric.SLEEP_DURATION && it.mean != null }
