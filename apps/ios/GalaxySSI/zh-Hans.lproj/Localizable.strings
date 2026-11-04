@@ -97,6 +97,12 @@
 "galaxyssi.health.originals.prepared" = "已准备，保存未验证";
 "galaxyssi.health.originals.verified" = "已验证保存";
 "galaxyssi.health.originals.not_verified" = "未能验证保存";
+"galaxyssi.health.originals.prepare_zip" = "准备所选 ZIP";
+"galaxyssi.health.originals.ready_to_share" = "ZIP 已准备好，可在导出历史中查看。";
+"galaxyssi.health.originals.share_zip" = "分享 ZIP";
+"galaxyssi.health.originals.share_plain_zip" = "分享此未加密的 ZIP？";
+"galaxyssi.health.originals.artifact_unavailable" = "本机加密 ZIP 已不可用。";
+"galaxyssi.health.originals.share_failed" = "无法读取并验证 ZIP 内容。";
 "galaxyssi.health.confirmed_count" = "已确认测量";
 "galaxyssi.health.latest_manual" = "最近一次手动测量";
 "galaxyssi.health.body.title" = "人体探索";
