@@ -338,6 +338,19 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
   }
 
+  func testStructuredOriginalPreviewBoundsDoNotMutateSourceTable() throws {
+    let long = String(repeating: "x", count: 300)
+    let columns = (0..<13).map { "column\($0)" }
+    let rows = Array(repeating: Array(repeating: long, count: 13), count: 31)
+    let table = GalaxySSIHealthTableImport.Table(headers: columns, rows: rows)
+    let sample = GalaxySSIHealthTableSourceSample(table)
+    XCTAssertTrue(sample.limited)
+    XCTAssertEqual(sample.headers.count, 12)
+    XCTAssertEqual(sample.rows.count, 30)
+    XCTAssertEqual(sample.rows.first?.first?.count, 256)
+    XCTAssertEqual(table.rows.first?.first, long)
+  }
+
   func testXLSXUsesWorksheetRelationshipsPhysicalRowsAndExplicitFormulaConsent() throws {
     let xml = [
       "xl/workbook.xml": #"<workbook xmlns:r="urn:test"><workbookPr date1904="1"/><sheets><sheet name="Weight" r:id="rId7"/></sheets></workbook>"#,
@@ -349,6 +362,9 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let table = try workbook.table(.init(sheet: "rId7", header: 3))
     XCTAssertEqual(table.headers, ["Value", "", "Time"])
     XCTAssertEqual(table.sheetPath, "xl/worksheets/sheet3.xml")
+    let sample = GalaxySSIHealthTableSourceSample(sheetRows: try workbook.rows("rId7"))
+    XCTAssertEqual(sample.rowNumbers, [3, 8])
+    XCTAssertEqual(sample.rows.last?.first, "=1+60\n61")
     let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
     var mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 2,
                                                      confirmedUnit: true, dateStyle: .excel, localZone: utc)
@@ -363,6 +379,19 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let cached = try XCTUnwrap(damaged.range(of: Data("<v>61</v>".utf8)))
     damaged[cached.lowerBound + 3] = 55
     XCTAssertThrowsError(try GalaxySSIHealthXLSX(damaged))
+    var nativeParts = xml
+    let sheetPath = "xl/worksheets/sheet3.xml"
+    nativeParts[sheetPath] = try XCTUnwrap(xml[sheetPath]).replacingOccurrences(
+      of: #"<c r="C8"><v>1.5</v></c>"#,
+      with: #"<c r="C8" t="d"><v>2025-11-02T01:30:00-04:00</v></c>"#)
+    let nativeData = AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: nativeParts.map {
+      .init(path: $0.key, data: Data($0.value.utf8))
+    })
+    let nativeWorkbook = try GalaxySSIHealthXLSX(nativeData)
+    let nativeRow = try XCTUnwrap(nativeWorkbook.rows("rId7").last)
+    XCTAssertEqual(nativeRow.isoDates, [2])
+    XCTAssertEqual(nativeRow.formulaText[0], "1+60")
+    XCTAssertEqual(nativeRow.cells[2], "2025-11-02T01:30:00-04:00")
   }
 
   func testXLSXTypedDatesPreserveOffsetAndRejectAmbiguousWallTimes() throws {
