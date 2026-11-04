@@ -60,7 +60,12 @@
     <string name="health_import_original_only">Original saved; this file type has no measurement extractor yet</string>
     <string name="health_import_cancelled">Cancelled; no measurements were saved automatically</string>
     <string name="health_import_image_unsupported">The image cannot be decoded. The original is retained; choose another image or enter values manually.</string>
-    <string name="health_import_pdf_password">The PDF requires a password. Unlock a copy in your PDF reader before importing it.</string>
+    <string name="health_import_pdf_password">This PDF requires a password.</string>
+    <string name="health_pdf_password_title">PDF password</string>
+    <string name="health_pdf_unlock">Unlock PDF</string>
+    <string name="health_pdf_password_wrong">That password did not unlock the PDF.</string>
+    <string name="health_pdf_password_interrupted">Import paused. Unlock the PDF to continue from the saved page.</string>
+    <string name="health_pdf_permission">This password does not allow extracting data from the PDF. Use an authorized owner password or enter the measurements manually.</string>
     <string name="health_import_pdf_unsupported">The PDF cannot be rendered. The original is retained; use photos or manual entry.</string>
     <string name="health_import_source_unavailable">Source access was revoked or the file is missing. Choose the file again.</string>
     <string name="health_import_camera_permission">Camera permission was denied. You can choose photos or enter values manually.</string>

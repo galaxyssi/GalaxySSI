@@ -72,6 +72,7 @@ private class HealthImportInterrupted : CancellationException()
 internal class HealthImportPipeline(private val context: Context, private val recordDatabase: String = "health_records_v1.db") {
     fun run(store: HealthOriginalStore, id: String, prepareCapture: Boolean = false, stopped: () -> Boolean = { false }): HealthImportOutcome {
             val initial = store.job(id) ?: return HealthImportOutcome.FAILED
+            if (initial.needsPdfPassword()) return HealthImportOutcome.FAILED
             if (initial.state in listOf(HealthImportState.CANCELLED, HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW, HealthImportState.ORIGINAL_ONLY, HealthImportState.CAPTURE_READY)) return HealthImportOutcome.COMPLETE
             if (prepareCapture && initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             if (!prepareCapture && initial.captureBatch.isNotBlank() && !initial.captureSubmitted) return HealthImportOutcome.COMPLETE

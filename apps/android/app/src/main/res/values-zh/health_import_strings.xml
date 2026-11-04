@@ -60,7 +60,12 @@
     <string name="health_import_original_only">原件已保存，此文件类型暂未接入指标提取</string>
     <string name="health_import_cancelled">已取消，未自动保存测量记录</string>
     <string name="health_import_image_unsupported">图片无法解码，原件仍保留，请改选图片或手动输入。</string>
-    <string name="health_import_pdf_password">PDF 需要密码，请先在阅读器中解锁副本后再导入。</string>
+    <string name="health_import_pdf_password">此 PDF 需要密码。</string>
+    <string name="health_pdf_password_title">PDF 密码</string>
+    <string name="health_pdf_unlock">解锁 PDF</string>
+    <string name="health_pdf_password_wrong">密码不正确，未能解锁此 PDF。</string>
+    <string name="health_pdf_password_interrupted">导入已暂停。解锁 PDF 后可从已保存的页面继续。</string>
+    <string name="health_pdf_permission">此密码无权提取 PDF 数据。请使用获授权的所有者密码，或手动录入。</string>
     <string name="health_import_pdf_unsupported">PDF 无法渲染，原件仍保留，可改用照片或手动输入。</string>
     <string name="health_import_source_unavailable">来源授权已失效或文件不存在，请重新选择文件。</string>
     <string name="health_import_camera_permission">相机权限未获授权，可从相册选择或手动输入。</string>
