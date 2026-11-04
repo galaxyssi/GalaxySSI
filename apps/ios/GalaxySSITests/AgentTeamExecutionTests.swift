@@ -379,6 +379,52 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(pinned.first?.objectValue?["title"])
   }
 
+  func testModelCallAuditPreservesUnsettledAdmissionAndImmutableTerminalReceipt() throws {
+    let suite = "model-call-audit-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let team = durableTeamSnapshot("audit")
+    XCTAssertTrue(history.upsert(team))
+    let member = try XCTUnwrap(team.members.first)
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId, conversationId: team.conversationId,
+      turnId: team.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let admission = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 0,
+      provider: .openAICompatible, requestedModel: "fixture", startedAtMillis: 1)
+    try history.admitCollaborationModelCall(admission)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    XCTAssertTrue(try reopened.collaborationModelCall(admission).admitted)
+    XCTAssertNil(try reopened.collaborationModelCall(admission).settlement)
+    let completed = AgentCollaborationModelSettlement(state: .completed, finishedAtMillis: 2,
+      reportedUsage: .init(inputTokens: 10, outputTokens: 3, cachedInputTokens: 2), usageComplete: false, costMicros: nil)
+    try reopened.settleCollaborationModelCall(admission, settlement: completed)
+    try reopened.settleCollaborationModelCall(admission, settlement: completed)
+    XCTAssertEqual(try history.collaborationModelCall(admission).settlement, completed)
+    let interrupted = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: 1,
+      provider: .openAICompatible, requestedModel: nil, startedAtMillis: 3)
+    try reopened.admitCollaborationModelCall(interrupted)
+    let firstPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, limit: 1)
+    let cursor = try XCTUnwrap(firstPage.next)
+    let secondPage = try history.collaborationModelAuditPage(conversationId: scope.conversationId, after: cursor, limit: 1)
+    let entries = firstPage.entries + secondPage.entries
+    XCTAssertEqual(Set(entries.map { $0.admission.id }), [admission.id, interrupted.id])
+    XCTAssertEqual(entries.first(where: { $0.admission.id == admission.id })?.settlement, completed)
+    XCTAssertNil(entries.first(where: { $0.admission.id == interrupted.id })?.settlement)
+    XCTAssertNil(secondPage.next)
+    XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: "foreign").entries.isEmpty)
+    XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: .init(
+      state: .failed, finishedAtMillis: 3, reportedUsage: nil, usageComplete: false, costMicros: nil)))
+    reopened.removeResearchObjects(conversationId: scope.conversationId)
+    XCTAssertFalse(try history.collaborationModelCall(admission).admitted)
+    XCTAssertTrue(try history.collaborationModelAuditPage(conversationId: scope.conversationId).entries.isEmpty)
+    XCTAssertThrowsError(try reopened.settleCollaborationModelCall(admission, settlement: completed))
+  }
+
   func testPublicationRecoveryFindsSavedReplyAndSkipsCommittedReplay() throws {
     let suite = "publication-recovery-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -481,6 +527,38 @@ extension GalaxySSIStoreTests {
       AgentCollaborationWorkflowIntake.validates(try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(input.utf8)))
     }
     XCTAssertTrue(try validates(raw))
+    let body = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let method = AgentCollaborationResearchReference(objectId: "method", revision: 1, sha256: "exact")
+    let instance = AgentCollaborationWorkflowInstance(execution_id: "run", method: method,
+      inputs: [:], roles: ["author": "writer", "reviewer": "reviewer"])
+    let steps = try XCTUnwrap(instance.compile(body))
+    XCTAssertEqual(steps.map(\.stage), ["EXPLORE", "VERIFY"])
+    XCTAssertEqual(steps.last?.depends_on, [try XCTUnwrap(steps.first?.id)])
+    XCTAssertEqual(instance.compile(body), steps)
+    let sameMember = AgentCollaborationWorkflowInstance(execution_id: "run", method: method,
+      inputs: [:], roles: ["author": "writer", "reviewer": "writer"])
+    XCTAssertNil(sameMember.compile(body))
+    let mixed = """
+    {"format":"galaxyssi.work-expansion.v1","work":[
+      {"id":"ordinary","member":"writer","assignment":"Other work","depends_on":[]},
+      {"workflow_instance":{"execution_id":"run","method":{"object_id":"method","revision":1,"sha256":"exact"},
+        "inputs":{},"roles":{"author":"writer","reviewer":"reviewer"}}}
+    ]}
+    """
+    let expansion = try JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(mixed.utf8))
+    let empty = AgentCollaborationLiveGraph()
+    XCTAssertNil(empty.appending(expansion, authorizedMembers: ["writer", "reviewer"],
+      historicalAuthors: [:], settled: [:]) { _ in nil })
+    let graph = try XCTUnwrap(empty.appending(expansion, authorizedMembers: ["writer", "reviewer"],
+      historicalAuthors: [:], settled: [:]) { $0.compile(body) })
+    XCTAssertEqual(graph.work.map(\.id), ["ordinary"] + steps.map(\.id))
+    XCTAssertEqual(graph.workflowInstances?["run"], instance)
+    let replay = try JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self,
+      from: Data(mixed.replacingOccurrences(of: "{\"id\":\"ordinary\",\"member\":\"writer\",\"assignment\":\"Other work\",\"depends_on\":[]},", with: "").utf8))
+    XCTAssertEqual(graph.appending(replay, authorizedMembers: ["writer", "reviewer"],
+      historicalAuthors: [:], settled: [:]) { _ in nil }, graph)
+    let overridden = mixed.replacingOccurrences(of: "{\"workflow_instance\":", with: "{\"assignment\":\"Override\",\"workflow_instance\":")
+    XCTAssertThrowsError(try JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(overridden.utf8)))
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",
       with: "\"assignment\":\"Draft\",\"depends_on\":[\"review\"]")))
     XCTAssertFalse(try validates(raw.replacingOccurrences(of: "\"assignment\":\"Draft\"",

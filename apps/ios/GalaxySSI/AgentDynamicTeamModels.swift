@@ -25,6 +25,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let independent_review: Bool?
     var stage: String? = nil
     var learning: LearningBinding? = nil
+    var review_targets: [String]? = nil
+    var workflowExecutionId: String? = nil
   }
 
   struct LearningBinding: Codable, Equatable {
@@ -37,7 +39,38 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let work: [Work]
   }
 
+  struct WorkflowExpansion: Decodable {
+    enum Entry: Decodable {
+      case work(Work)
+      case workflow(AgentCollaborationWorkflowInstance)
+
+      init(from decoder: Decoder) throws {
+        let object = try AgentMcpJSONObject(from: decoder)
+        if let raw = object["workflow_instance"] {
+          guard object.count == 1, let instance = raw.objectValue,
+                Set(instance.keys) == Set(["execution_id", "method", "inputs", "roles"]) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "Invalid workflow instance wrapper"))
+          }
+          self = .workflow(try JSONDecoder().decode(AgentCollaborationWorkflowInstance.self,
+            from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
+        } else {
+          let item = try Work(from: decoder)
+          guard item.workflowExecutionId == nil, item.review_targets == nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+              debugDescription: "Workflow bindings must come from a saved method"))
+          }
+          self = .work(item)
+        }
+      }
+    }
+
+    let format: String
+    let work: [Entry]
+  }
+
   private(set) var work: [Work] = []
+  private(set) var workflowInstances: [String: AgentCollaborationWorkflowInstance]? = nil
   private(set) var learningPriorities: [String: Int64]? = nil
 
   func pinningLearningPriorities(_ ranks: [String: Int64]) -> Self {
@@ -50,10 +83,55 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
                  historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
     guard raw.utf8.count <= 256_000,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
-          expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
+          expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
+          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.review_targets == nil }) else { return nil }
+    return appendingWork(expansion.work, authorizedMembers: authorizedMembers, historicalAuthors: historicalAuthors, settled: settled)
+  }
+
+  func appendingWorkflow(_ instance: AgentCollaborationWorkflowInstance, compiled: [Work],
+                         authorizedMembers: Set<String>, historicalAuthors: [String: String],
+                         settled: [String: Settlement]) -> Self? {
+    guard workflowInstances?[instance.execution_id] == nil,
+          var next = appendingWork(compiled, authorizedMembers: authorizedMembers,
+            historicalAuthors: historicalAuthors, settled: settled) else { return nil }
+    var instances = workflowInstances ?? [:]
+    instances[instance.execution_id] = instance
+    next.workflowInstances = instances
+    return next
+  }
+
+  func appending(_ expansion: WorkflowExpansion, authorizedMembers: Set<String>,
+                 historicalAuthors: [String: String], settled: [String: Settlement],
+                 resolve: (AgentCollaborationWorkflowInstance) throws -> [Work]?) rethrows -> Self? {
+    guard expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
+    var instances = workflowInstances ?? [:]
+    var additions: [Work] = []
+    for entry in expansion.work {
+      switch entry {
+      case .work(let item):
+        additions.append(item)
+      case .workflow(let instance):
+        if let existing = instances[instance.execution_id] {
+          guard existing == instance else { return nil }
+          continue
+        }
+        guard let work = try resolve(instance), !work.isEmpty else { return nil }
+        additions.append(contentsOf: work)
+        instances[instance.execution_id] = instance
+      }
+    }
+    if additions.isEmpty { return self }
+    guard var next = appendingWork(additions, authorizedMembers: authorizedMembers,
+      historicalAuthors: historicalAuthors, settled: settled) else { return nil }
+    next.workflowInstances = instances.isEmpty ? nil : instances
+    return next
+  }
+
+  private func appendingWork(_ additions: [Work], authorizedMembers: Set<String>,
+                             historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
     var byId = Dictionary(work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     guard byId.count == work.count else { return nil }
-    for item in expansion.work {
+    for item in additions {
       guard !item.id.isBlank, item.id.utf8.count <= 160, !item.assignment.isBlank,
             item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
@@ -61,17 +139,18 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             !item.depends_on.contains(item.id) else { return nil }
       byId[item.id] = item
     }
-    for item in expansion.work {
+    for item in additions {
       for dependency in item.depends_on {
         guard byId[dependency] != nil || settled[dependency] != nil else { return nil }
-        if item.independent_review == true {
+        if item.independent_review == true && (item.review_targets?.contains(dependency) ?? true) {
           guard let author = byId[dependency]?.member ?? historicalAuthors[dependency],
-                !author.isBlank, author != item.member else { return nil }
+                !author.isBlank, AgentTeamProgressPolicy.stableCollaborationMemberId(author) !=
+                  AgentTeamProgressPolicy.stableCollaborationMemberId(item.member) else { return nil }
         }
       }
     }
     var resolved = Set(settled.keys)
-    var remaining = work + expansion.work
+    var remaining = work + additions
     while !remaining.isEmpty {
       let ready = remaining.filter { Set($0.depends_on).isSubset(of: resolved) }
       guard !ready.isEmpty else { return nil }
@@ -80,7 +159,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       remaining.removeAll { ids.contains($0.id) }
     }
     var next = self
-    next.work.append(contentsOf: expansion.work)
+    next.work.append(contentsOf: additions)
     return next
   }
 
@@ -107,6 +186,52 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       for (index, entry) in zip(indices, ordered) { ready[index] = entry.1 }
     }
     return ready
+  }
+}
+
+struct AgentCollaborationWorkflowInstance: Codable, Equatable {
+  let execution_id: String
+  let method: AgentCollaborationResearchReference
+  let inputs: [String: AgentCollaborationResearchReference]
+  let roles: [String: String]
+
+  func compile(_ body: AgentMcpJSONObject) -> [AgentCollaborationLiveGraph.Work]? {
+    guard !execution_id.isBlank, execution_id.utf8.count <= 160,
+          AgentCollaborationWorkflowIntake.validates(body),
+          let declaredRoles = body["roles"]?.arrayValue,
+          Set(declaredRoles.compactMap(\.stringValue)) == Set(roles.keys),
+          let declaredInputs = body["inputs"]?.arrayValue,
+          Set(declaredInputs.compactMap(\.stringValue)) == Set(inputs.keys),
+          let steps = body["steps"]?.arrayValue else { return nil }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
+    var ids: [String: String] = [:]
+    for raw in steps {
+      guard let step = raw.objectValue, let bytes = try? encoder.encode([execution_id, step.string("id")]) else { return nil }
+      ids[step.string("id")] = "workflow:" + AgentTeamDispatchIds.nameBasedUUID(String(decoding: bytes, as: UTF8.self))
+        .uuidString.lowercased()
+    }
+    let compiled: [AgentCollaborationLiveGraph.Work] = steps.compactMap { raw in
+      guard let step = raw.objectValue, let member = roles[step.string("role")],
+            let id = ids[step.string("id")] else { return nil }
+      return AgentCollaborationLiveGraph.Work(id: id, member: member,
+        assignment: step.string("assignment"),
+        depends_on: (step["depends_on"]?.arrayValue ?? []).compactMap(\.stringValue).compactMap { ids[$0] },
+        dependency_policy: AgentCollaborationLiveGraph.DependencyPolicy(rawValue: step.string("dependency_policy")),
+        independent_review: step["independent_review"] == .bool(true), stage: step.string("stage"),
+        review_targets: step["review_targets"]?.arrayValue?.compactMap(\.stringValue).compactMap { ids[$0] },
+        workflowExecutionId: execution_id)
+    }
+    guard compiled.count == steps.count else { return nil }
+    let members = Dictionary(uniqueKeysWithValues: compiled.map { ($0.id, $0.member) })
+    for step in compiled where step.independent_review == true {
+      let reviewer = AgentTeamProgressPolicy.stableCollaborationMemberId(step.member)
+      for target in step.review_targets ?? step.depends_on {
+        guard let author = members[target],
+              AgentTeamProgressPolicy.stableCollaborationMemberId(author) != reviewer else { return nil }
+      }
+    }
+    return compiled
   }
 }
 

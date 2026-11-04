@@ -2,6 +2,20 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudModelStreamProviderAdaptersTests: XCTestCase {
+  func testOpenAIReportedModelIsIndependentOfUsageAndRejectsConflicts() {
+    let adapter = ModelStreamProviderAdapters.create(provider: .openAICompatible)
+    let first = adapter.parse(data: "{\"model\":\"actual-model\",\"choices\":[]}", eventName: nil)
+    XCTAssertNil(first.usage)
+    XCTAssertEqual(first.reportedModel, "actual-model")
+    let state = ModelStreamEmissionState()
+    state.observeReportedModel(first.reportedModel)
+    state.observeReportedModel(adapter.parse(data: "[DONE]", eventName: nil).reportedModel)
+    XCTAssertEqual(state.reportedModel, "actual-model")
+    state.observeReportedModel("conflicting-model")
+    state.observeReportedModel("actual-model")
+    XCTAssertNil(state.reportedModel)
+  }
+
   func testOpenAIChatCompletionDeltaParsesTextToolUsageAndFinishReason() {
     let adapter = ModelStreamProviderAdapters.create(provider: .openAICompatible)
     let frame = adapter.parse(

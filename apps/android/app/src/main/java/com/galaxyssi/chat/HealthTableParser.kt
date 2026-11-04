@@ -7,6 +7,7 @@ import com.univocity.parsers.csv.CsvParserSettings
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.PushbackInputStream
+import java.io.Reader
 import java.nio.charset.CodingErrorAction
 
 /** Streaming adapters retain source cells; they never execute spreadsheet formulas or infer measurements. */
@@ -21,7 +22,7 @@ internal object HealthTableParser {
         name.endsWith(".json", true) || mime == "application/json" -> "json"
         else -> null
     }
-    fun read(input: InputStream, format: String, emit: (HealthTableRow) -> Unit): List<String> {
+    internal fun <T> text(input: InputStream, block: (Reader) -> T): T {
         val source = PushbackInputStream(input, 3)
         val prefix = ByteArray(3); var count = 0
         while (count < prefix.size) { val n = source.read(prefix, count, prefix.size - count); if (n < 0) break; if (n > 0) count += n }
@@ -34,18 +35,23 @@ internal object HealthTableParser {
         if (count > skip) source.unread(prefix, skip, count - skip)
         prefix.fill(0)
         val decoder = charset.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
-        return InputStreamReader(source, decoder).use { reader ->
+        return InputStreamReader(source, decoder).use(block)
+    }
+
+    internal fun csvParser() = CsvParser(CsvParserSettings().apply {
+        setDelimiterDetectionEnabled(true, ',', ';', '\t'); isLineSeparatorDetectionEnabled = true
+        maxColumns = MAX_COLUMNS; maxCharsPerColumn = MAX_CELL; setReadInputOnSeparateThread(false)
+        setSkipEmptyLines(false); emptyValue = ""; nullValue = ""; isAutoClosingEnabled = false
+        setIgnoreLeadingWhitespaces(false); setIgnoreTrailingWhitespaces(false); setCommentProcessingEnabled(false)
+        errorContentLength = 0
+        unescapedQuoteHandling = com.univocity.parsers.csv.UnescapedQuoteHandling.RAISE_ERROR
+    })
+
+    fun read(input: InputStream, format: String, emit: (HealthTableRow) -> Unit): List<String> =
+        text(input) { reader ->
             when (format) {
                 "csv" -> {
-                    val settings = CsvParserSettings().apply {
-                        setDelimiterDetectionEnabled(true, ',', ';', '\t'); isLineSeparatorDetectionEnabled = true
-                        maxColumns = MAX_COLUMNS; maxCharsPerColumn = MAX_CELL; setReadInputOnSeparateThread(false)
-                        setSkipEmptyLines(false); emptyValue = ""; nullValue = ""; isAutoClosingEnabled = false
-                        setIgnoreLeadingWhitespaces(false); setIgnoreTrailingWhitespaces(false); setCommentProcessingEnabled(false)
-                        errorContentLength = 0
-                        unescapedQuoteHandling = com.univocity.parsers.csv.UnescapedQuoteHandling.RAISE_ERROR
-                    }
-                    val parser = CsvParser(settings)
+                    val parser = csvParser()
                     try {
                         parser.beginParsing(reader)
                         val headers = parser.parseNext()?.map(String::trim) ?: throw HealthImportFailure("table_empty")
@@ -98,5 +104,4 @@ internal object HealthTableParser {
                 else -> throw HealthImportFailure("table_format")
             }
         }
-    }
 }

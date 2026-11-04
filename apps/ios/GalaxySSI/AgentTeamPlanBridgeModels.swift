@@ -187,6 +187,10 @@ enum AgentTeamDispatchIds {
     var source = "galaxyssi-agent-team\u{001f}\(conversationId)\u{001f}\(turnId)\u{001f}\(plan.planId)\u{001f}"
     for action in actions {
       source += "\(action.id):\(action.parameters["connector_id"] ?? "")\u{001f}"
+      if let model = action.parameters["_galaxyssi_member_model_id"] {
+        let effort = action.parameters[AgentCollaborationReasoningSelection.contextKey] ?? ""
+        source += "\(model.utf8.count):\(model):\(effort)\u{001f}"
+      }
     }
     return nameBasedUUID(source).uuidString.lowercased()
   }
@@ -213,7 +217,7 @@ enum AgentTeamDispatchIds {
     return Int64(value | sourceIdNamespaceBit)
   }
 
-  private static func nameBasedUUID(_ value: String) -> UUID {
+  static func nameBasedUUID(_ value: String) -> UUID {
     var bytes = Array(Insecure.MD5.hash(data: Data(value.utf8)))
     bytes[6] = (bytes[6] & 0x0f) | 0x30
     bytes[8] = (bytes[8] & 0x3f) | 0x80
@@ -262,6 +266,12 @@ enum AgentTeamPlanCompiler {
     }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let registered = Dictionary(registrations.map { ($0.agentId, $0) },
       uniquingKeysWith: { first, _ in first })
+    guard selected.allSatisfy({ member in
+      guard let effort = member.reasoningEffort else { return true }
+      guard let target = available[member.resourceId], target.kind == .agent else { return false }
+      return AgentCollaborationReasoningSelection.invocation(model: member.modelId, effort: effort,
+        adapter: target.adapterType, profile: target.invocationProfile) != nil
+    }) else { return nil }
     let counts = Dictionary(grouping: selected, by: \.resourceId).mapValues(\.count)
     guard counts.allSatisfy({ id, count in
       guard available[id] != nil, let registration = registered[id],
@@ -305,19 +315,21 @@ enum AgentTeamPlanCompiler {
           objective = "Explore the user goal within this role: \(role). Identify candidate approaches, sources, and verifiable acceptance criteria."
         }
       }
+      var memberContext = [
+        "_galaxyssi_selection_source": "collaboration_roster",
+        "_galaxyssi_member_name": member.name,
+        "_galaxyssi_roster_member_id": member.id.uuidString.lowercased(),
+        "_galaxyssi_member_model_id": member.modelId,
+        "_galaxyssi_independent_review": roster.independentReview ? "true" : "false",
+        "_galaxyssi_research_stage": stage
+      ]
+      memberContext[AgentCollaborationReasoningSelection.contextKey] = member.reasoningEffort
       return AgentTeamMember(
         agentId: target.id, deliveryMode: isCoordinator ? .respond : .observe,
         requiredCapabilities: Set(target.capabilities), role: role,
         objective: String("\(objective) User goal: \(plan.goal)".prefix(maxMemberObjectiveCharacters)),
         dependsOnAgentIds: dependencies,
-        context: [
-          "_galaxyssi_selection_source": "collaboration_roster",
-          "_galaxyssi_member_name": member.name,
-          "_galaxyssi_roster_member_id": member.id.uuidString.lowercased(),
-          "_galaxyssi_member_model_id": member.modelId,
-          "_galaxyssi_independent_review": roster.independentReview ? "true" : "false",
-          "_galaxyssi_research_stage": stage
-        ],
+        context: memberContext,
         instanceId: member.id.uuidString.lowercased()
       )
     }
@@ -349,6 +361,11 @@ enum AgentTeamPlanCompiler {
       var identity = template
       identity.id = member.memberId
       identity.parameters["connector_id"] = member.agentId
+      if available[member.agentId]?.adapterType == "codex-app-server-or-cli",
+         let model = member.context["_galaxyssi_member_model_id"], !model.isBlank {
+        identity.parameters["_galaxyssi_member_model_id"] = model
+        identity.parameters[AgentCollaborationReasoningSelection.contextKey] = member.context[AgentCollaborationReasoningSelection.contextKey]
+      }
       return identity
     }
     let teamId = AgentTeamDispatchIds.teamId(plan: plan, actions: identityActions)

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_structured_sheet">Choose worksheet</string>
+    <string name="health_structured_sheet_name">Worksheet: %1$s</string>
+    <string name="health_structured_first_rows">First %1$d rows · Read only</string>
+    <string name="health_structured_rows">%1$d rows · Read only</string>
+    <string name="health_structured_columns">First %1$d columns</string>
+    <string name="health_structured_empty">No rows to preview.</string>
+    <string name="health_structured_limit">The opening values are too large to preview. The original is unchanged.</string>
+    <string name="health_structured_key">Key</string>
+    <string name="health_structured_value">Value</string>
+</resources>

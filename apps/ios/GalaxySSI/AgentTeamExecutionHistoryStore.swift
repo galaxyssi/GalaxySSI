@@ -328,6 +328,76 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
+  func admitCollaborationModelCall(_ admission: AgentCollaborationModelAdmission) throws {
+    let scope = admission.scope
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    try access { database in
+      guard admission.round >= 0, admission.startedAtMillis > 0,
+            (admission.requestedModel?.utf8.count ?? 0) <= 256,
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal })
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      try database.insertResearchRecord(admission, conversationId: scope.conversationId, key: key, revision: 0)
+    }
+  }
+
+  func settleCollaborationModelCall(_ admission: AgentCollaborationModelAdmission,
+                                    settlement: AgentCollaborationModelSettlement) throws {
+    let conversation = admission.scope.conversationId
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    try access { database in
+      guard settlement.finishedAtMillis >= admission.startedAtMillis, !settlement.usageComplete,
+            settlement.costMicros == nil, (settlement.reportedModel?.utf8.count ?? 0) <= 256,
+            try database.researchRecord(AgentCollaborationModelAdmission.self,
+              conversationId: conversation, key: key, revision: 0) == admission
+      else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if let existing = try database.researchRecord(AgentCollaborationModelSettlement.self,
+        conversationId: conversation, key: key, revision: 1) {
+        guard existing == settlement else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        try database.insertResearchRecord(settlement, conversationId: conversation, key: key, revision: 1)
+      }
+    }
+  }
+
+  func collaborationModelCall(_ admission: AgentCollaborationModelAdmission)
+    throws -> (admitted: Bool, settlement: AgentCollaborationModelSettlement?) {
+    let conversation = admission.scope.conversationId
+    let key = "model-call:" + admission.id.uuidString.lowercased()
+    return try access { database in
+      guard try database.researchRecord(AgentCollaborationModelAdmission.self,
+        conversationId: conversation, key: key, revision: 0) == admission else { return (false, nil) }
+      return (true, try database.researchRecord(AgentCollaborationModelSettlement.self,
+        conversationId: conversation, key: key, revision: 1))
+    }
+  }
+
+  func collaborationModelAuditPage(conversationId: String, after: String = "", limit: Int = 16)
+    throws -> (entries: [AgentCollaborationModelAuditEntry], next: String?) {
+    guard !conversationId.isBlank, (1...32).contains(limit),
+          after.isEmpty || UUID(uuidString: after)?.uuidString.lowercased() == after
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      let keys = try database.modelCallAdmissionKeys(conversationId: conversationId, after: after, limit: limit + 1)
+      let entries = try keys.prefix(limit).map { key in
+        guard let admission = try database.researchRecord(AgentCollaborationModelAdmission.self,
+                conversationId: conversationId, key: key, revision: 0),
+              admission.scope.conversationId == conversationId,
+              key == "model-call:" + admission.id.uuidString.lowercased()
+        else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let settlement = try database.researchRecord(AgentCollaborationModelSettlement.self,
+          conversationId: conversationId, key: key, revision: 1)
+        return AgentCollaborationModelAuditEntry(admission: admission, settlement: settlement)
+      }
+      let next = keys.count > limit ? entries.last?.admission.id.uuidString.lowercased() : nil
+      return (entries, next)
+    }
+  }
+
   func removeCloudEvidence(conversationId: String) {
     _ = try? access { try $0.removeCloudEvidence(conversationId: conversationId) }
   }
@@ -1301,6 +1371,19 @@ final class AgentTeamExecutionHistoryStore {
               }) else { return false }
         let existing = prior.first?.liveGraph?.work ?? []
         let updated = checkpoint.liveGraph?.work ?? []
+        let priorWorkflows = prior.first?.liveGraph?.workflowInstances ?? [:]
+        let workflows = checkpoint.liveGraph?.workflowInstances ?? [:]
+        let additions = updated.dropFirst(existing.count)
+        guard priorWorkflows.allSatisfy({ workflows[$0.key] == $0.value }),
+              additions.allSatisfy({ item in
+                guard let id = item.workflowExecutionId else { return item.review_targets == nil }
+                return priorWorkflows[id] == nil && workflows[id] != nil
+              }) else { return false }
+        for (id, instance) in workflows where priorWorkflows[id] == nil {
+          guard id == instance.execution_id,
+                let compiled = try Self.resolveWorkflow(instance, snapshot: snapshot, database: database),
+                compiled == additions.filter({ $0.workflowExecutionId == id }) else { return false }
+        }
         guard let ranks = try Self.validatedLearningPriorities(updated, existingCount: existing.count,
           previous: prior.first?.liveGraph?.learningPriorities ?? [:], snapshot: snapshot,
           database: database) else { return false }
@@ -1310,6 +1393,45 @@ final class AgentTeamExecutionHistoryStore {
         return true
       }
     } catch { return false }
+  }
+
+  func appendSavedCollaborationWorkflow(_ instance: AgentCollaborationWorkflowInstance,
+    runId: String, conversationId: String, turnId: String, expectedRevision: Int64,
+    historicalAuthors: [String: String], settled: [String: AgentCollaborationLiveGraph.Settlement]) -> Bool {
+    guard var checkpoint = goalCheckpoint(runId: runId, conversationId: conversationId, turnId: turnId),
+          let snapshot = snapshot(supervisorRunId: runId), snapshot.conversationId == conversationId,
+          snapshot.taskId == turnId, !snapshot.state.isTerminal else { return false }
+    let graph = checkpoint.liveGraph ?? .init()
+    if let existing = graph.workflowInstances?[instance.execution_id] { return existing == instance }
+    guard checkpoint.revision == expectedRevision, expectedRevision < Int64.max,
+          let compiled = try? access({ try Self.resolveWorkflow(instance, snapshot: snapshot, database: $0) }),
+          let expanded = graph.appendingWorkflow(instance, compiled: compiled,
+            authorizedMembers: Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId)),
+            historicalAuthors: historicalAuthors, settled: settled) else { return false }
+    checkpoint.liveGraph = expanded
+    checkpoint.revision += 1
+    checkpoint.completedWorkIds = []
+    return advanceGoalCheckpoint(checkpoint, expectedRevision: expectedRevision)
+  }
+
+  private static func resolveWorkflow(_ instance: AgentCollaborationWorkflowInstance, snapshot: AgentTeamExecutionSnapshot,
+    database: AgentTeamHistoryDatabase) throws -> [AgentCollaborationLiveGraph.Work]? {
+    let assigned = Set(instance.roles.values)
+    guard assigned.isSubset(of: Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))) else { return nil }
+    func current(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision? {
+      guard let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+        conversationId: snapshot.conversationId, key: "object:" + ref.objectId), saved.reference == ref else { return nil }
+      return saved
+    }
+    guard let method = try current(instance.method), method.draft.kind == .workflowMethod,
+          method.turnId != snapshot.taskId ||
+            (method.runId == snapshot.supervisorRunId && method.authorId == snapshot.primaryMemberId),
+          let body = method.draft.body["workflow_method"]?.objectValue else { return nil }
+    for input in instance.inputs.values {
+      guard let saved = try current(input), saved.turnId != snapshot.taskId ||
+        (saved.runId == snapshot.supervisorRunId && assigned == [saved.authorId]) else { return nil }
+    }
+    return instance.compile(body)
   }
 
   private static func validatedLearningPriorities(_ work: [AgentCollaborationLiveGraph.Work], existingCount: Int,
@@ -1353,11 +1475,22 @@ final class AgentTeamExecutionHistoryStore {
                                 expectedRevision: Int64, authorizedMembers: Set<String>,
                                 historicalAuthors: [String: String],
                                 settled: [String: AgentCollaborationLiveGraph.Settlement]) -> Bool {
-    guard var checkpoint = goalCheckpoint(runId: runId, conversationId: conversationId, turnId: turnId),
-          checkpoint.revision == expectedRevision, expectedRevision < Int64.max,
-          let graph = (checkpoint.liveGraph ?? .init()).appending(raw, authorizedMembers: authorizedMembers,
-            historicalAuthors: historicalAuthors, settled: settled) else { return false }
-    checkpoint.liveGraph = graph
+    guard raw.utf8.count <= 256_000,
+          let expansion = try? JSONDecoder().decode(AgentCollaborationLiveGraph.WorkflowExpansion.self, from: Data(raw.utf8)),
+          var checkpoint = goalCheckpoint(runId: runId, conversationId: conversationId, turnId: turnId),
+          checkpoint.revision == expectedRevision, expectedRevision < Int64.max else { return false }
+    let graph = checkpoint.liveGraph ?? .init()
+    guard let updated = try? graph.appending(expansion, authorizedMembers: authorizedMembers,
+      historicalAuthors: historicalAuthors, settled: settled, resolve: { instance in
+        try access { database in
+          guard let snapshot = try database.snapshots(runId: runId).first,
+                snapshot.conversationId == conversationId, snapshot.taskId == turnId, !snapshot.state.isTerminal
+          else { return nil }
+          return try Self.resolveWorkflow(instance, snapshot: snapshot, database: database)
+        }
+      }) else { return false }
+    if updated == graph { return true }
+    checkpoint.liveGraph = updated
     checkpoint.revision += 1
     checkpoint.completedWorkIds = []
     return advanceGoalCheckpoint(checkpoint, expectedRevision: expectedRevision)

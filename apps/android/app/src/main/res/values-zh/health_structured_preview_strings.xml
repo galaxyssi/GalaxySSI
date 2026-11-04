@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_structured_sheet">选择工作表</string>
+    <string name="health_structured_sheet_name">工作表：%1$s</string>
+    <string name="health_structured_first_rows">前 %1$d 行 · 只读</string>
+    <string name="health_structured_rows">%1$d 行 · 只读</string>
+    <string name="health_structured_columns">前 %1$d 列</string>
+    <string name="health_structured_empty">没有可预览的行。</string>
+    <string name="health_structured_limit">文件开头的内容过大，无法预览。原件未改动。</string>
+    <string name="health_structured_key">键</string>
+    <string name="health_structured_value">值</string>
+</resources>

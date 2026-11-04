@@ -18,6 +18,31 @@ struct AgentCollaborationToolEvidenceScope: Codable, Equatable {
   var sourceId: String
 }
 
+struct AgentCollaborationModelAdmission: Codable, Equatable {
+  let id: UUID
+  let scope: AgentCollaborationToolEvidenceScope
+  let round: Int
+  let provider: ModelStreamProvider
+  let requestedModel: String?
+  let startedAtMillis: Int64
+}
+
+struct AgentCollaborationModelSettlement: Codable, Equatable {
+  enum State: String, Codable { case completed, failed, cancelled, interrupted }
+  let state: State
+  let finishedAtMillis: Int64
+  let reportedUsage: ModelUsage?
+  // A logical stream can include internal HTTP retries; snapshots do not prove total usage.
+  let usageComplete: Bool
+  let costMicros: Int64?
+  var reportedModel: String? = nil
+}
+
+struct AgentCollaborationModelAuditEntry: Codable, Equatable {
+  let admission: AgentCollaborationModelAdmission
+  let settlement: AgentCollaborationModelSettlement?
+}
+
 struct AgentCollaborationCloudToolEvidence: Codable, Equatable {
   var scope: AgentCollaborationToolEvidenceScope
   var round: Int
