@@ -42,6 +42,13 @@ private struct AgentCollaborationRosterEditor: View {
         Section {
           TextField(t("galaxyssi.collaboration.name", "Group Name"), text: $title)
           Toggle(t("galaxyssi.collaboration.review", "Independent Review"), isOn: $roster.independentReview)
+          Picker(t("galaxyssi.collaboration.workflow", "Workflow"), selection: Binding(
+            get: { roster.workflow ?? .automatic }, set: { roster.workflow = $0 }
+          )) {
+            Text(t("galaxyssi.collaboration.workflow_auto", "Automatic")).tag(AgentCollaborationRoster.Workflow.automatic)
+            Text(t("galaxyssi.collaboration.workflow_parallel", "Independent Contributions")).tag(AgentCollaborationRoster.Workflow.parallel)
+            Text(t("galaxyssi.collaboration.workflow_research", "Staged Research")).tag(AgentCollaborationRoster.Workflow.research)
+          }
         }
         ForEach($roster.members) { $member in
           Section {

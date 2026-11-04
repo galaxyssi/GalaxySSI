@@ -706,6 +706,10 @@ enum AgentVoiceTranscriptPolicy {
 }
 
 struct AgentCollaborationRoster: Codable, Equatable {
+  enum Workflow: String, Codable, CaseIterable {
+    case automatic, parallel, research
+  }
+
   struct Member: Codable, Equatable, Identifiable {
     var id = UUID()
     var name: String
@@ -719,6 +723,7 @@ struct AgentCollaborationRoster: Codable, Equatable {
   var members: [Member] = []
   var coordinatorId: UUID?
   var independentReview = false
+  var workflow: Workflow?
 
   var isValid: Bool {
     guard !members.isEmpty, members.count <= Self.maximumMembers,

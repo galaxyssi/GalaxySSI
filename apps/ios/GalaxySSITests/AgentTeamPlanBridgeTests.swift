@@ -269,6 +269,29 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(result.goal.contains(first.id.uuidString.lowercased()))
   }
 
+  func testStagedCollaborationSchedulesExplorationBeforeReviewAndSynthesis() throws {
+    let target = teamTarget("codex")
+    var registration = teamRegistration(target)
+    registration.maxParallelRuns = 3
+    let coordinator = AgentCollaborationRoster.Member(name: "Lead", resourceId: target.id)
+    let explorer = AgentCollaborationRoster.Member(name: "Explorer", resourceId: target.id)
+    let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", resourceId: target.id)
+    let roster = AgentCollaborationRoster(members: [coordinator, explorer, reviewer],
+      coordinatorId: coordinator.id, workflow: .research)
+    let plan = teamBridgePlan(goal: "Evaluate alternatives", teamAgentAction("work", target.id))
+    let compiled = try XCTUnwrap(AgentTeamPlanCompiler.compileCollaboration(
+      plan: plan, roster: roster, targets: [target], registrations: [registration]))
+    let wire = try XCTUnwrap(compiled.actions.first?.parameters[agentTeamSpecParameter])
+    let spec = try XCTUnwrap(AgentTeamDispatchSpecCodec.decode(wire))
+    let order = try XCTUnwrap(AgentTeamPlanCompiler.collaborationDispatchOrder(spec.definition.members))
+    XCTAssertEqual(order.map { $0.context["_galaxyssi_research_stage"] ?? "" }, ["EXPLORE", "CHALLENGE", "DELIVER"])
+    XCTAssertEqual(order[1].dependsOnAgentIds, [order[0].memberId])
+    XCTAssertEqual(order[2].dependsOnAgentIds, [order[0].memberId, order[1].memberId])
+    var cyclic = order
+    cyclic[0].dependsOnAgentIds = [order[2].memberId]
+    XCTAssertNil(AgentTeamPlanCompiler.collaborationDispatchOrder(cyclic))
+  }
+
   func testCollaborationCompilationPreservesRosterIdentityAndRejectsCapacityOverflow() throws {
     let target = teamTarget("codex")
     var registration = teamRegistration(target)

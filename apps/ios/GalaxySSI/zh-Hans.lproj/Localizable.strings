@@ -4918,3 +4918,7 @@
 "galaxyssi.collaboration.history" = "搜索协作组历史";
 "galaxyssi.collaboration.history_search" = "搜索以往结果";
 "galaxyssi.collaboration.history_empty" = "没有匹配的协作组记录。";
+"galaxyssi.collaboration.workflow" = "协作流程";
+"galaxyssi.collaboration.workflow_auto" = "自动";
+"galaxyssi.collaboration.workflow_parallel" = "独立贡献";
+"galaxyssi.collaboration.workflow_research" = "分阶段研究";
