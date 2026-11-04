@@ -2,6 +2,19 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
+    XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","summary":"Notes","workspace":[
+      {"id":"note","object_id":"","base_revision":0,"kind":"evidence","title":"Notes","body":{"text":"Source"},"parents":[]}
+    ]}
+    """
+    let drafts = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw))
+    XCTAssertEqual(drafts.map(\.id), ["note"])
+    XCTAssertThrowsError(try AgentCollaborationResearchEnvelope.publication(
+      in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

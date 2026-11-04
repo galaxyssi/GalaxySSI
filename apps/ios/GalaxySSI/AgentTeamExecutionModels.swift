@@ -25,11 +25,26 @@ struct AgentCollaborationResearchDraft: Codable {
   var title: String
   var body: AgentMcpJSONObject
   var parents: [AgentCollaborationResearchReference]
+  var resolves: [AgentCollaborationResearchReference]? = nil
+  var observations: [AgentMcpJSONObject]? = nil
 
   enum CodingKeys: String, CodingKey {
-    case id, kind, title, body, parents
+    case id, kind, title, body, parents, resolves, observations
     case objectId = "object_id"
     case baseRevision = "base_revision"
+  }
+}
+
+struct AgentCollaborationResearchEnvelope: Decodable {
+  static let wireFormat = "galaxyssi.research-artifact.v1"
+  var format: String
+  var workspace: [AgentCollaborationResearchDraft]?
+
+  static func publication(in raw: String) throws -> [AgentCollaborationResearchDraft]? {
+    guard raw.utf8.count <= 256_000, raw.contains(wireFormat) else { return nil }
+    let envelope = try JSONDecoder().decode(Self.self, from: Data(raw.utf8))
+    guard envelope.format == wireFormat, let workspace = envelope.workspace, !workspace.isEmpty else { return nil }
+    return workspace
   }
 }
 

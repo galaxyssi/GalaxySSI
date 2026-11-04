@@ -2348,6 +2348,8 @@ final class MessageCoordinator: ObservableObject {
         observation: AgentTeamReplyObservation(payload: payload))
       guard disposition == .observerCommitted || disposition == .observerDuplicate,
             teamObserverResultIsCommitted(payload, binding: binding), desktopResultRecovery.receipts.insert(receipt) else { return }
+      publishCommittedCollaborationResearch(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
+        turn: binding.identity.turnId, contact: binding.contactId)
       UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
       reconcileSavedTeamParents()
       if desktopReplyRecovery.retire(binding) { desktopReplyRecoverySweepRequested = true }
@@ -6526,6 +6528,15 @@ final class MessageCoordinator: ObservableObject {
         "[\(instanceId)] \(String(result.prefix(8_000)))"
       })
     }
+    if member.deliveryMode == .observe, member.context["_galaxyssi_selection_source"] == "collaboration_roster" {
+      instruction.append("""
+        If your contribution creates a reusable research object, return one JSON object with format
+        "galaxyssi.research-artifact.v1", a public summary, and a workspace array.
+        Each new item needs a stable id, base_revision 0, kind (such as evidence, hypothesis, or proposal),
+        title, a nonempty JSON body, and parents (empty unless you have exact saved references).
+        Do not invent receipt IDs or claim verification.
+        """)
+    }
     return goal + "\n\n" + instruction.joined(separator: "\n")
   }
 
@@ -6893,6 +6904,7 @@ final class MessageCoordinator: ObservableObject {
     case .observerProgress, .observerDuplicate, .retired: break
     }
     if terminal, tracked, disposition == .observerCommitted || disposition == .observerDuplicate {
+      publishCommittedCollaborationResearch(source: source, conversation: conversation, turn: turn, contact: contact.id)
       acknowledgeTeamObserverResult(payload, link: link)
     }
     if terminal { UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: source) }
@@ -6934,6 +6946,8 @@ final class MessageCoordinator: ObservableObject {
          conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString),
          task: binding.sourceMessageId, contact: member.agentId, content: text, success: true,
          now: AgentControlPlaneClock.nowMillis()) != nil {
+      publishCommittedCollaborationResearch(source: binding.sourceMessageId, conversation: outgoing.conversationId,
+        turn: outgoing.turnId.ifBlank(outgoing.id.uuidString), contact: member.agentId)
       reconcileSavedTeamParents()
     }
     _ = try? UserDefaultsAgentTeamMailbox().append(AgentTeamMessageEnvelope(
@@ -6947,6 +6961,23 @@ final class MessageCoordinator: ObservableObject {
       state: .delivered,
       deliveredAtMillis: AgentControlPlaneClock.nowMillis()
     ))
+  }
+
+  private func publishCommittedCollaborationResearch(source: String, conversation: String, turn: String, contact: String) {
+    guard let session = store.agentSession(id: conversation), session.id == conversation,
+          session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+          !session.privateMode, !session.trackingPaused else { return }
+    let history = AgentTeamExecutionHistoryStore.shared
+    do {
+      guard let context = try history.recoveryContext(source: source, conversation: conversation, turn: turn, contact: contact),
+            context.member.status == .succeeded, let raw = context.member.replyContent,
+            let drafts = try AgentCollaborationResearchEnvelope.publication(in: raw) else { return }
+      _ = try history.publishResearchObjects(drafts, runId: context.team.supervisorRunId,
+        conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
+    } catch {
+      lastError = localizedReply("galaxyssi.collaboration.publication_failed",
+        fallback: "The original reply was saved, but its research objects could not be published.")
+    }
   }
 
   private func automaticRequestedMembers(
