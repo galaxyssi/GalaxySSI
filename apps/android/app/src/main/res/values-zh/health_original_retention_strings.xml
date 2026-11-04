@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_retention_title">原件保存方式</string>
+    <string name="health_retention_switch">同时保存照片与上传原件</string>
+    <string name="health_retention_note">关闭后，原件仅为核对加密暂存，确认保存或取消时删除。未选项目保留识别草稿。</string>
+    <string name="health_retention_released">原件未保留，可查看已识别的内容和来源信息。</string>
+    <string name="health_retention_not_imported">未提取到记录，原件未保留。</string>
+</resources>

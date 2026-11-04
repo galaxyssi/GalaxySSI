@@ -3,6 +3,8 @@ package com.galaxyssi.chat
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal const val HEALTH_KEEP_ORIGINAL = "health_keep_original"
+
 internal enum class HealthImportState { QUEUED, COPYING, RECOGNIZING, CAPTURE_READY, REVIEW, TABLE_REVIEW, ORIGINAL_ONLY, FAILED, CANCELLED }
 internal data class HealthImportJob(
     val id: String, val sourceUri: String, val createdAt: Long,
@@ -10,29 +12,32 @@ internal data class HealthImportJob(
     val name: String = "", val mime: String = "", val totalBytes: Long = 0,
     val copiedBytes: Long = 0, val originalId: String = "", val nextPage: Int = 0,
     val pageCount: Int = 0, val state: HealthImportState = HealthImportState.QUEUED, val error: String = "",
-    val captureBatch: String = "", val captureSubmitted: Boolean = false, val documentPage: Int = 0, val originalOnly: Boolean = false
+    val captureBatch: String = "", val captureSubmitted: Boolean = false, val documentPage: Int = 0, val originalOnly: Boolean = false,
+    val keepOriginal: Boolean = true
 ) {
     fun json() = JSONObject().put("id", id).put("uri", sourceUri).put("created", createdAt).put("mode", mode)
         .put("camera", cameraToken).put("name", name).put("mime", mime).put("total", totalBytes).put("copied", copiedBytes)
         .put("original", originalId).put("next_page", nextPage).put("page_count", pageCount).put("state", state.name).put("error", error)
         .put("capture_batch", captureBatch).put("capture_submitted", captureSubmitted)
-        .put("document_page", documentPage).put("original_only", originalOnly)
+        .put("document_page", documentPage).put("original_only", originalOnly).put("keep_original", keepOriginal)
     companion object {
         fun from(j: JSONObject) = HealthImportJob(j.getString("id"), j.getString("uri"), j.getLong("created"), j.getString("mode"),
             j.getString("camera"), j.getString("name"), j.getString("mime"), j.getLong("total"), j.getLong("copied"),
             j.getString("original"), j.getInt("next_page"), j.getInt("page_count"), HealthImportState.valueOf(j.getString("state")), j.getString("error"),
-            j.optString("capture_batch"), j.optBoolean("capture_submitted"), j.optInt("document_page"), j.optBoolean("original_only"))
+            j.optString("capture_batch"), j.optBoolean("capture_submitted"), j.optInt("document_page"), j.optBoolean("original_only"),
+            j.optBoolean("keep_original", true))
     }
 }
 internal data class HealthOriginal(
     val id: String, val streamId: String, val name: String, val mime: String, val size: Long,
-    val sha256: String, val importedAt: Long, val relativePath: String, val source: String
+    val sha256: String, val importedAt: Long, val relativePath: String, val source: String, val reviewOnly: Boolean = false
 ) {
     fun json() = JSONObject().put("id", id).put("stream", streamId).put("name", name).put("mime", mime).put("size", size)
         .put("sha256", sha256).put("imported", importedAt).put("path", relativePath).put("source", source)
+        .apply { if (reviewOnly) put("review_only", true) }
     companion object {
         fun from(j: JSONObject) = HealthOriginal(j.getString("id"), j.getString("stream"), j.getString("name"), j.getString("mime"),
-            j.getLong("size"), j.getString("sha256"), j.getLong("imported"), j.getString("path"), j.getString("source"))
+            j.getLong("size"), j.getString("sha256"), j.getLong("imported"), j.getString("path"), j.getString("source"), j.optBoolean("review_only"))
     }
 }
 internal data class HealthOcrLine(val text: String, val box: List<Int> = emptyList()) {

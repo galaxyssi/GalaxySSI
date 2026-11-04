@@ -109,6 +109,47 @@ class HealthBackupDeviceTest {
         assertEquals(1L, verified.linked)
     }
 
+    @Test fun reviewOnlySourcesNeverExportBytesAndSharedDigestsUseRetainedOriginals() = fixture { names, repo ->
+        val bytes = ByteArray(128) { it.toByte() }
+        val retained = original(names, bytes)
+        val (same, unique) = HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { store ->
+            fun temporary(payload: ByteArray): HealthOriginal {
+                val id = UUID.randomUUID().toString()
+                store.createJob(HealthImportJob(id, "content://fixture/report", 1L, keepOriginal = false))
+                return store.importOriginal(id, payload.inputStream(), "review.pdf", "application/pdf", "file").also {
+                    assertTrue(store.present(it))
+                }
+            }
+            val pending = temporary(byteArrayOf(55, 44, 33))
+            assertTrue(pending.reviewOnly)
+            temporary(bytes) to temporary(byteArrayOf(8, 9, 10))
+        }
+        val first = seed(names, same, 1)
+        val second = seed(names, unique, 2)
+        val preview = repo.preview("", CancellationSignal())
+        assertEquals(2, preview.manifest.originals)
+        assertEquals(1, preview.manifest.missing)
+        assertEquals(retained.size, preview.manifest.originalBytes)
+        val result = create(repo, preview)
+        val linked = mutableMapOf<String, HealthEvidence>()
+        val missing = mutableListOf<String>()
+        val restored = ByteArrayOutputStream()
+        val secret = password
+        try {
+            repo.file(result).inputStream().use { input ->
+                HealthBackupCodec.verify(input, secret, onOriginal = { item ->
+                    assertEquals(retained.id, item.id)
+                    restored
+                }, onMissingOriginal = { missing += it.id },
+                    onRecord = { row -> linked[row.id] = requireNotNull(row.draft.evidence) })
+            }
+        } finally { secret.fill('\u0000') }
+        assertArrayEquals(bytes, restored.toByteArray())
+        assertEquals(listOf(unique.id), missing)
+        assertEquals(first.draft.evidence!!.copy(originalId = retained.id), linked[first.id])
+        assertEquals(second.draft.evidence, linked[second.id])
+    }
+
     @Test fun validCiphertextWithIncorrectOriginalDigestIsRejected() = fixture { names, repo ->
         val content = byteArrayOf(1, 2, 3, 4)
         original(names, content)

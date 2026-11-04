@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.Switch
 
 internal class HealthFirstUseView(private val activity: HealthCenterActivity, private val externalRoutes: Boolean) {
     private val ui get() = activity.ui
@@ -25,8 +26,9 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
     private fun open(target: Class<*>, extras: Intent.() -> Unit = {}) {
         if (externalRoutes) activity.startActivity(Intent(activity, target).apply(extras))
     }
-    private fun capture(entry: HealthCaptureEntry) = open(HealthCaptureActivity::class.java) {
+    private fun capture(entry: HealthCaptureEntry, keepOriginal: Boolean = true) = open(HealthCaptureActivity::class.java) {
         putExtra("health_capture_entry", entry.name)
+        putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal)
     }
     private fun sources() = open(HealthSourcesActivity::class.java)
 
@@ -110,17 +112,29 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
         ui.add(content, ui.text(label(R.string.health_first_import_note), 15f, muted = true), 6)
         ui.add(content, panel().apply {
             addView(iconRow(R.drawable.ic_agent_camera, Accent.ORANGE, R.string.health_take_photo, R.string.health_first_capture_note,
-                "health-import-camera") { capture(HealthCaptureEntry.CAMERA) })
+                "health-import-camera") { capture(HealthCaptureEntry.CAMERA, activity.keepImportedOriginal) })
             addView(rule())
             addView(iconRow(R.drawable.ic_chat_shortcut_file, Accent.BLUE, R.string.health_first_report, R.string.health_first_report_note,
-                "health-import-report") { capture(HealthCaptureEntry.REPORT) })
+                "health-import-report") { capture(HealthCaptureEntry.REPORT, activity.keepImportedOriginal) })
             addView(rule())
             addView(iconRow(R.drawable.ic_settings_upload, Accent.GREEN, R.string.health_first_table, R.string.health_first_table_note,
-                "health-import-table") { capture(HealthCaptureEntry.TABLE) })
+                "health-import-table") { capture(HealthCaptureEntry.TABLE, activity.keepImportedOriginal) })
             addView(rule())
             addView(iconRow(R.drawable.ic_security_shield, Accent.VIOLET, R.string.health_restore_title, R.string.health_first_backup_note,
                 "health-import-restore") { open(HealthRestoreActivity::class.java) })
         }, 16)
+        ui.add(content, ui.text(label(R.string.health_retention_title), 18f, bold = true), 18)
+        ui.add(content, panel().apply {
+            addView(Switch(activity).apply {
+                tag = "health-import-keep-original"
+                text = label(R.string.health_retention_switch)
+                setTextColor(activity.getColor(R.color.text_primary))
+                minimumHeight = ui.dp(48)
+                isChecked = activity.keepImportedOriginal
+                setOnCheckedChangeListener { _, checked -> activity.keepImportedOriginal = checked }
+            })
+            ui.add(this, ui.text(label(R.string.health_retention_note), 14f, muted = true), 6)
+        }, 8)
     }
 
     private fun chooseFirstRecord() {

@@ -140,7 +140,7 @@ internal class HealthOriginalStore(
         "SELECT o.id,o.payload FROM imports i JOIN originals o ON o.id=i.original_id WHERE i.job_id=?", arrayOf(job)
     ).use { if (it.moveToFirst()) decodeOriginal(it.getString(0), it.getBlob(1)) else null }
 
-    fun originalCount(): Long = helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM originals", null)
+    fun originalCount(): Long = helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM originals WHERE $ARCHIVED", null)
         .use { it.moveToFirst(); it.getLong(0) }
 
     internal fun backupPage(after: String, signal: android.os.CancellationSignal? = null): List<HealthOriginal> =
@@ -148,13 +148,13 @@ internal class HealthOriginalStore(
             .use { rows -> buildList { while (rows.moveToNext()) add(decodeOriginal(rows.getString(0), rows.getBlob(1))) } }
 
     fun originals(before: Pair<Long, String>? = null): List<HealthOriginal> {
-        val where = if (before == null) "" else " WHERE imported_at<? OR (imported_at=? AND id<?)"
+        val where = if (before == null) "" else " AND (imported_at<? OR (imported_at=? AND id<?))"
         val args = before?.let { arrayOf(it.first.toString(), it.first.toString(), it.second) }
-        return helper.readableDatabase.rawQuery("SELECT id,payload FROM originals$where ORDER BY imported_at DESC,id DESC LIMIT 30", args)
+        return helper.readableDatabase.rawQuery("SELECT id,payload FROM originals WHERE $ARCHIVED$where ORDER BY imported_at DESC,id DESC LIMIT 30", args)
             .use { buildList { while (it.moveToNext()) add(decodeOriginal(it.getString(0), it.getBlob(1))) } }
     }
     fun library(filter: HealthLibraryFilter, before: Pair<Long, String>? = null, signal: android.os.CancellationSignal? = null): HealthLibraryPage {
-        val terms = arrayListOf("imported_at>=?", "imported_at<?")
+        val terms = arrayListOf(ARCHIVED, "imported_at>=?", "imported_at<?")
         val args = arrayListOf(filter.from.toString(), filter.until.toString())
         filter.kind?.let { terms += "kind=?"; args += it.name }
         before?.let { terms += "(imported_at<? OR (imported_at=? AND id<?))"; args += listOf(it.first.toString(), it.first.toString(), it.second) }
@@ -242,7 +242,9 @@ internal class HealthOriginalStore(
         originalForJob(id)?.takeIf(::present)?.let { return it }
         val streamId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val capturedAt = job(id)?.createdAt ?: now
+        val job = job(id)
+        val capturedAt = job?.createdAt ?: now
+        val reviewOnly = job?.let { !it.keepOriginal && !it.originalOnly } == true
         val folder = SimpleDateFormat("yyyy/MM", Locale.ROOT).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date(capturedAt))
         val relative = "$folder/$id-$streamId.ghealth"
         val destination = File(root, relative)
@@ -282,21 +284,21 @@ internal class HealthOriginalStore(
             require(total > 0) { "Empty health original" }
             checkCancelled(); progress(total)
             val hash = digest.digest().joinToString("") { "%02x".format(it) }
-            val token = AgentMemoryIndexKey.token("$databaseName|health-original-digest|$hash")
+            val token = if (reviewOnly) "$REVIEW_PREFIX$id" else AgentMemoryIndexKey.token("$databaseName|health-original-digest|$hash")
             val db = helper.writableDatabase
             db.beginTransaction()
             var committed = false
             try {
                 val previous = db.rawQuery("SELECT id,payload FROM originals WHERE digest_token=?", arrayOf(token)).use {
                     if (it.moveToFirst()) decodeOriginal(it.getString(0), it.getBlob(1)) else null
-                }
-                if (previous != null) check(previous.sha256 == hash && previous.size == total) { "Health digest index mismatch" }
+                } ?: existing?.takeIf { reviewOnly && it.reviewOnly && it.id == id }
+                if (previous != null) check(previous.sha256 == hash && previous.size == total && previous.reviewOnly == reviewOnly) { "Health digest index mismatch" }
                 if (previous != null && present(previous)) {
                     mapImport(db, id, previous.id); db.setTransactionSuccessful()
                     return previous
                 }
                 val original = HealthOriginal(previous?.id ?: id, streamId, previous?.name ?: name.take(240).ifBlank { "document" }, previous?.mime ?: mime.take(120), total,
-                    hash, previous?.importedAt ?: now, relative, previous?.source ?: source)
+                    hash, previous?.importedAt ?: now, relative, previous?.source ?: source, reviewOnly)
                 val values = ContentValues().apply {
                     put("id", original.id); put("imported_at", original.importedAt); put("digest_token", token); put("kind", HealthOriginalKind.of(original).name)
                     put("payload", pack("original", original.id, original.json()))
@@ -366,6 +368,25 @@ internal class HealthOriginalStore(
         val value = file(original)
         return !value.exists() || value.delete().also { notifyChanged("originals") }
     }
+    fun releaseReviewOriginal(jobId: String): Boolean {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val original = original(jobId) ?: return true
+            if (!original.reviewOnly) return true
+            val path = file(original)
+            if (path.exists() && !path.delete()) return false
+            db.update("originals", ContentValues().apply { put("digest_token", "$RELEASED_PREFIX$jobId") },
+                "id=? AND digest_token=?", arrayOf(jobId, "$REVIEW_PREFIX$jobId"))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        notifyChanged("originals")
+        return true
+    }
+
+    fun reviewOriginalIds(after: String): List<String> = helper.readableDatabase.rawQuery(
+        "SELECT id FROM originals WHERE digest_token>? AND digest_token<'review;' ORDER BY digest_token LIMIT 30",
+        arrayOf("$REVIEW_PREFIX$after")).use { rows -> buildList { while (rows.moveToNext()) add(rows.getString(0)) } }
     fun createCaptureBatch(batch: HealthPhotoBatch) {
         require(validId(batch.id) && batch.mode in listOf("report", "device") && !batch.submitted)
         helper.writableDatabase.insertOrThrow("capture_batches", null, ContentValues().apply {
@@ -401,7 +422,7 @@ internal class HealthOriginalStore(
             require(job.captureBatch == batch && !job.captureSubmitted && job.mode == owner.mode && validId(job.id) && job.sourceUri.startsWith("content://"))
             val previous = replace?.let { requireNotNull(capturePage(it)).also { old -> require(old.batchId == batch) } }
             val position = previous?.position ?: db.rawQuery("SELECT COALESCE(MAX(position),-1)+1 FROM capture_pages WHERE batch_id=?", arrayOf(batch)).use { it.moveToFirst(); it.getInt(0) }
-            db.insertOrThrow("jobs", null, jobValues(job))
+            db.insertOrThrow("jobs", null, jobValues(job.copy(keepOriginal = owner.keepOriginal)))
             if (previous != null) {
                 updateJob(previous.jobId) { it.copy(state = HealthImportState.CANCELLED) }
                 db.delete("capture_pages", "job_id=?", arrayOf(previous.jobId))
@@ -410,6 +431,7 @@ internal class HealthOriginalStore(
             db.insertOrThrow("capture_pages", null, pageValues(HealthPhotoPage(job.id, batch, position)))
             db.setTransactionSuccessful()
         } finally { db.endTransaction(); notifyChanged("capture") }
+        replace?.let { runCatching { releaseReviewOriginal(it) } }
     }
     @Synchronized fun inspectCapture(id: String, quality: HealthPhotoQuality) {
         val db = helper.writableDatabase; db.beginTransaction()
@@ -442,6 +464,7 @@ internal class HealthOriginalStore(
             updateJob(id) { it.copy(state = HealthImportState.CANCELLED) }
             db.delete("capture_pages", "job_id=?", arrayOf(id)); db.delete("jobs", "id=?", arrayOf(id)); db.setTransactionSuccessful()
         } finally { db.endTransaction(); notifyChanged("capture") }
+        runCatching { releaseReviewOriginal(id) }
     }
     @Synchronized fun captureMode(id: String, mode: String) {
         require(mode in listOf("report", "device"))
@@ -494,6 +517,9 @@ internal class HealthOriginalStore(
     }
     companion object {
         const val LEGACY_DATABASE = "health_originals_v1.db"
+        private const val REVIEW_PREFIX = "review:"
+        private const val RELEASED_PREFIX = "released:"
+        private const val ARCHIVED = "digest_token NOT LIKE 'review:%' AND digest_token NOT LIKE 'released:%'"
 
         fun createSharedSchema(db: SQLiteDatabase) {
             createOriginalTables(db)

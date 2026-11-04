@@ -18,7 +18,7 @@ import java.util.concurrent.Executors
 
 /** Uses the existing pinch/drag viewport; PDF seeks decrypt authenticated segments on demand. */
 internal class HealthOriginalPreview(
-    private val activity: Activity, private val original: HealthOriginal, private val onSave: () -> Unit
+    private val activity: Activity, private val original: HealthOriginal, private val onSave: (() -> Unit)?
 ) : Dialog(activity, android.R.style.Theme_Black_NoTitleBar) {
     private val ui = HealthCenterViews(activity)
     private val worker = Executors.newSingleThreadExecutor()
@@ -38,7 +38,8 @@ internal class HealthOriginalPreview(
         root.addView(ui.line().apply {
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { dismiss() }.apply { imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE) })
             addView(ui.text(original.name, 15f).apply { maxLines = 2; setTextColor(Color.WHITE); gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.icon(R.drawable.ic_rich_download, R.string.health_save_original) { onSave() }.apply { imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE) })
+            if (onSave == null) addView(View(activity), LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)))
+            else addView(ui.icon(R.drawable.ic_rich_download, R.string.health_save_original, onSave).apply { imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE) })
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
         val viewport = GalaxySSIPinchZoomViewport(activity).apply { attach(image) }
         root.addView(FrameLayout(activity).apply {

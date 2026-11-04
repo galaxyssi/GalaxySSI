@@ -2,9 +2,12 @@ package com.galaxyssi.chat
 
 import org.json.JSONObject
 
-internal data class HealthPhotoBatch(val id: String, val mode: String, val createdAt: Long, val submitted: Boolean = false) {
+internal data class HealthPhotoBatch(val id: String, val mode: String, val createdAt: Long, val submitted: Boolean = false,
+    val keepOriginal: Boolean = true) {
     fun json() = JSONObject().put("id", id).put("mode", mode).put("created", createdAt).put("submitted", submitted)
-    companion object { fun from(j: JSONObject) = HealthPhotoBatch(j.getString("id"), j.getString("mode"), j.getLong("created"), j.getBoolean("submitted")) }
+        .put("keep_original", keepOriginal)
+    companion object { fun from(j: JSONObject) = HealthPhotoBatch(j.getString("id"), j.getString("mode"), j.getLong("created"),
+        j.getBoolean("submitted"), j.optBoolean("keep_original", true)) }
 }
 internal data class HealthPhotoPage(val jobId: String, val batchId: String, val position: Int, val quality: HealthPhotoQuality? = null) {
     fun json() = JSONObject().put("job", jobId).put("batch", batchId).put("position", position).apply { quality?.let { put("quality", it.json()) } }
