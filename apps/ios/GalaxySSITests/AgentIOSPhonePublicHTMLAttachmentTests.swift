@@ -2,6 +2,22 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSPhonePublicHTMLAttachmentTests: XCTestCase {
+  func testWeChatPDFKeepsImageOrderAndRejectsVerificationPage() throws {
+    let url = try XCTUnwrap(AgentIOSWeChatArticlePDF.articleURL("https://mp.weixin.qq.com/s/example"))
+    let source = """
+    <h1 id="activity-name">Article</h1><div id="js_content"><p>Before</p>
+    <img data-src="https://mmbiz.qpic.cn/example"><p>After</p></div>
+    """
+    let (title, blocks) = try XCTUnwrap(AgentIOSPublicArticleParser.weChatPDFBlocks(url: url, source: source))
+    XCTAssertEqual(title, "Article")
+    XCTAssertEqual(blocks.count, 3)
+    guard case .text("Before") = blocks.first,
+          case .image("https://mmbiz.qpic.cn/example") = blocks.dropFirst().first,
+          case .text("After") = blocks.last else { return XCTFail("Unexpected article block order") }
+    XCTAssertNil(AgentIOSPublicArticleParser.weChatPDFBlocks(url: url, source: "<div id='js_verify'>Verify</div>"))
+    XCTAssertNil(AgentIOSWeChatArticlePDF.articleURL("https://mp.weixin.qq.com.example.org/s/example"))
+  }
+
   func testSourceArchivePreservesBytesWithoutPublishingExecutableHTML() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

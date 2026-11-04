@@ -16,6 +16,8 @@ struct GalaxySSIScreenPagePDFImporter: View {
 struct GalaxySSIScreenAnalysisLinkPicker: View {
   @Environment(\.dismiss) private var dismiss
   @State private var value = ""
+  @State private var pdfTask: Task<Void, Never>?
+  @State private var pdfStatus = ""
   var t: (String, String) -> String
   var onAdd: (String) -> Void
 
@@ -36,6 +38,16 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
           .accessibilityIdentifier("ios.screen-assistant.link-input")
+        if let article = AgentIOSWeChatArticlePDF.articleURL(value) {
+          Button {
+            saveArticle(article)
+          } label: {
+            Label(t("galaxyssi.screen_page.wechat_pdf", "Save WeChat Article PDF"), systemImage: "arrow.down.doc")
+          }
+          .disabled(pdfTask != nil)
+          if pdfTask != nil { ProgressView() }
+          if !pdfStatus.isEmpty { Text(pdfStatus).font(.footnote).foregroundColor(.secondary) }
+        }
       }
       .navigationTitle(t("galaxyssi.screen_page.link", "Link"))
       .toolbar {
@@ -51,6 +63,34 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
       }
     }
     .navigationViewStyle(.stack)
+    .onDisappear { pdfTask?.cancel() }
+  }
+
+  private func saveArticle(_ url: URL) {
+    guard pdfTask == nil else { return }
+    pdfStatus = ""
+    let missingImage = t("galaxyssi.screen_page.wechat_pdf_image", "[Image unavailable]")
+    let worker = Task.detached(priority: .userInitiated) {
+      try AgentIOSWeChatArticlePDF.save(url: url, missingImage: missingImage)
+    }
+    pdfTask = Task { @MainActor in
+      defer { pdfTask = nil }
+      do {
+        let (file, missing) = try await withTaskCancellationHandler(operation: { try await worker.value },
+          onCancel: { worker.cancel() })
+        guard !Task.isCancelled else { return }
+        pdfStatus = String(format: t("galaxyssi.screen_page.wechat_pdf_saved",
+          "Saved in Files: GalaxySSI / Downloads / GongZhongHao / %@"), file.lastPathComponent)
+        if missing > 0 {
+          pdfStatus += "\n" + String(format: t("galaxyssi.screen_page.wechat_pdf_missing",
+            "%d images could not be saved."), missing)
+        }
+      } catch {
+        guard !Task.isCancelled else { return }
+        pdfStatus = t("galaxyssi.screen_page.wechat_pdf_failed",
+          "Could not save this article. Open it in WeChat and check whether verification is required.")
+      }
+    }
   }
 }
 
