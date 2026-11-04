@@ -24,6 +24,7 @@ struct GalaxySSIHealthBackupView: View {
   @State private var acknowledged = false
   @State private var restored = false
   @State private var shownConflicts = 30
+  @State private var replacements: Set<UUID> = []
 
   private enum WorkResult: Sendable {
     case created(Data, GalaxySSIHealthPortableBackup.Summary)
@@ -114,24 +115,64 @@ struct GalaxySSIHealthBackupView: View {
 
   private func restoreSection(_ preview: GalaxySSIHealthPortableBackup.RestorePreview) -> some View {
     Section(t("restore_preview", "Unlock restore preview")) {
-      Text(t("restore_owner", "Restore to my current profile. Local conflicts and deleted records are kept."))
+      Text(t("restore_owner_review", "Restore to my current profile. Local versions are kept unless selected for replacement."))
       Text(String(format: t("restore_counts", "%lld new measurements · %lld duplicates · %lld conflicts"),
                   Int64(preview.readings), Int64(preview.duplicates), Int64(preview.conflicts.count)))
       Text(String(format: t("restore_files", "%lld original files · %lld tables · %lld missing sources"),
                   Int64(preview.originals), Int64(preview.tables), Int64(preview.missing)))
-      ForEach(preview.conflicts.prefix(shownConflicts)) { reading in
-        VStack(alignment: .leading) {
-          Text(reading.metric.title(language: language))
-          Text(reading.measuredAt, style: .date).foregroundColor(.secondary)
+      ForEach(preview.conflicts.prefix(shownConflicts)) { conflict in
+        DisclosureGroup(conflict.backup.metric.title(language: language)) {
+          conflictVersion(t("restore_local", "Local version"), reading: conflict.local)
+          conflictVersion(t("restore_backup_version", "Backup version"), reading: conflict.backup)
+          if let restriction = conflict.restriction {
+            Text(restrictionText(restriction)).foregroundColor(.secondary)
+          } else {
+            Toggle(t("restore_use_backup", "Use backup version"), isOn: Binding(
+              get: { replacements.contains(conflict.id) }, set: { selected in
+                acknowledged = false
+                if selected { replacements.insert(conflict.id) } else { replacements.remove(conflict.id) }
+              }))
+          }
         }
       }
       if preview.conflicts.count > shownConflicts {
         Button(t("more_conflicts", "Show more conflicts")) { shownConflicts += 30 }
       }
-      if preview.hasChanges {
+      if preview.hasChanges || !replacements.isEmpty {
+        if !replacements.isEmpty {
+          Text(String(format: t("restore_replace_count", "%lld new revisions selected"), Int64(replacements.count)))
+        }
         Toggle(t("restore_consent", "I reviewed the changes"), isOn: $acknowledged)
         Button(t("restore", "Restore to this device"), action: restore).disabled(!acknowledged || task != nil)
       }
+    }
+  }
+
+  private func conflictVersion(_ title: String, reading: GalaxySSIHealthReading) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(title).font(.subheadline.weight(.semibold))
+      if reading.deleted {
+        Text(t("restore_deleted", "Deleted locally"))
+      } else {
+        let value = reading.reported?.raw ?? reading.value?.formatted() ?? ""
+        let diastolic = reading.diastolic.map { "/" + $0.formatted() } ?? ""
+        Text(value + diastolic + " " + reading.unit)
+        if let pulse = reading.pulse { Text(pulse.formatted() + " bpm") }
+        Text(reading.measuredAt, format: .dateTime)
+        if !reading.conditions.isEmpty { Text(reading.conditions) }
+        if !reading.notes.isEmpty { Text(reading.notes) }
+        if let reference = reading.referenceInterval, !reference.isEmpty { Text(reference) }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func restrictionText(_ restriction: GalaxySSIHealthPortableBackup.RestoreConflict.Restriction) -> String {
+    switch restriction {
+    case .deleted: return t("restore_deleted", "Deleted locally")
+    case .source: return t("restore_source_mismatch", "Source differs or cannot be verified")
+    case .draft: return t("restore_pending_edit", "An unfinished local edit exists")
+    case .ambiguous: return t("restore_ambiguous", "Another local measurement matches this version")
     }
   }
 
@@ -183,7 +224,8 @@ struct GalaxySSIHealthBackupView: View {
   private func restore() {
     guard scene == .active, acknowledged, let restoreInput, let restorePreview else { return }
     do {
-      try GalaxySSIHealthPortableBackup.restore(restoreInput, expected: restorePreview, records: records, originals: originals)
+      try GalaxySSIHealthPortableBackup.restore(restoreInput, expected: restorePreview, records: records,
+                                                originals: originals, replacing: replacements)
       reset()
       restored = true
     } catch {
@@ -225,6 +267,7 @@ struct GalaxySSIHealthBackupView: View {
     password = ""; repeated = ""
     plan = nil; verificationInput = nil; generated = nil; outcome = nil; error = false
     restoring = false; restoreInput = nil; restorePreview = nil; acknowledged = false; restored = false; shownConflicts = 30
+    replacements = []
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

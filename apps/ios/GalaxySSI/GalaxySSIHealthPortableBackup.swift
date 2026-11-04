@@ -167,10 +167,18 @@ enum GalaxySSIHealthPortableBackup {
 }
 
 extension GalaxySSIHealthPortableBackup {
+  struct RestoreConflict: Identifiable, Equatable {
+    enum Restriction: Equatable { case deleted, source, draft, ambiguous }
+    let local: GalaxySSIHealthReading
+    let backup: GalaxySSIHealthReading
+    let restriction: Restriction?
+    var id: UUID { backup.id }
+  }
+
   struct RestorePreview: Equatable {
     let readings: Int
     let duplicates: Int
-    let conflicts: [GalaxySSIHealthReading]
+    let conflicts: [RestoreConflict]
     let originals: Int
     let tables: Int
     let missing: Int
@@ -190,11 +198,25 @@ extension GalaxySSIHealthPortableBackup {
 
   @MainActor
   static func restore(_ input: RestoreInput, expected: RestorePreview, records: GalaxySSIHealthRecords,
-                      originals: GalaxySSIHealthOriginalStore) throws {
+                      originals: GalaxySSIHealthOriginalStore, replacing selected: Set<UUID> = []) throws {
     try originals.withRestoreLease { lease in
       try originals.reconcileRestores(lease: lease)
-      let (fresh, archive, files) = try restoreWork(input, records: records, originals: originals, lease: lease)
-      guard fresh == expected, fresh.hasChanges else { throw Failure.stale }
+      let (fresh, proposed, files) = try restoreWork(input, records: records, originals: originals, lease: lease)
+      let accepted = fresh.conflicts.filter { selected.contains($0.id) && $0.restriction == nil }
+      guard fresh == expected, fresh.hasChanges || !selected.isEmpty,
+            accepted.count == selected.count else { throw Failure.stale }
+      var archive = proposed
+      let unchanged = archive.current.filter { !selected.contains($0.id) }
+      var replacements: [GalaxySSIHealthReading] = []
+      for conflict in accepted {
+        guard conflict.local.revision < Int.max,
+              !(unchanged + replacements).contains(where: { $0.sameMeasurement(as: conflict.backup) })
+        else { throw Failure.stale }
+        var revision = conflict.backup
+        revision.revision = conflict.local.revision + 1
+        replacements.append(revision)
+      }
+      archive.revisions.append(contentsOf: replacements)
       let receipt = UUID()
       do {
         try originals.stageRestore(files, receipt: receipt, lease: lease)
@@ -228,7 +250,7 @@ extension GalaxySSIHealthPortableBackup {
     snapshot += localTableHashes.map { "t:\($0.key):\($0.value)" }
     snapshot += listing.originals.map { "o:\($0.id):\($0.sha256)" }
     snapshot.append("unavailable:\(listing.unavailable)")
-    var conflicts: [GalaxySSIHealthReading] = []
+    var pendingConflicts: [(GalaxySSIHealthReading, GalaxySSIHealthReading)] = []
     var duplicates = 0
     var additions: [GalaxySSIHealthReading] = []
     for var reading in payload.readings {
@@ -237,7 +259,7 @@ extension GalaxySSIHealthPortableBackup {
         normalized.revision = existing.revision
         if existing == normalized {
           duplicates += 1
-        } else { conflicts.append(reading) }
+        } else { pendingConflicts.append((existing, reading)) }
       } else if local.contains(where: { $0.sameMeasurement(as: reading) }) ||
         archive.revisions.contains(where: { existing in
           guard let receipt = reading.bluetoothReceipt, let previous = existing.bluetoothReceipt else { return false }
@@ -256,6 +278,19 @@ extension GalaxySSIHealthPortableBackup {
     else { throw Failure.limit }
     let combinedHashes = Dictionary(combinedTables.map { ($0.id, digest($0.data)) },
       uniquingKeysWith: { first, _ in first })
+    let conflicts = pendingConflicts.map { existing, incoming in
+      let restriction: RestoreConflict.Restriction?
+      if existing.deleted { restriction = .deleted }
+      else if archive.draft?.existing?.id == existing.id { restriction = .draft }
+      else if existing.metric != incoming.metric || existing.bluetoothReceipt != incoming.bluetoothReceipt ||
+                existing.tableSource != incoming.tableSource ||
+                incoming.tableSource.map({ combinedHashes[$0.batch] != $0.sha256 }) == true {
+        restriction = .source
+      } else if (local + additions).contains(where: { $0.id != existing.id && $0.sameMeasurement(as: incoming) }) {
+        restriction = .ambiguous
+      } else { restriction = nil }
+      return RestoreConflict(local: existing, backup: incoming, restriction: restriction)
+    }
     let missingTables = Set(additions.compactMap(\.tableSource)
       .filter { combinedHashes[$0.batch] != $0.sha256 }.map(\.batch)).count
     var missing = payload.unreadableOriginals + missingTables

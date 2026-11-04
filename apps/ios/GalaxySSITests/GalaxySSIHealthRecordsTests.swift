@@ -93,6 +93,50 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try files.read(manifest), pdf)
   }
 
+  @MainActor
+  func testHealthRestoreOnlyAppendsSelectedEligibleConflictRevisions() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let source = root.appendingPathComponent("source")
+    let target = root.appendingPathComponent("target")
+    for directory in [source, target] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: source.appendingPathComponent("records"))
+    let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: source)
+    let destination = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: target.appendingPathComponent("records"))
+    let files = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: target,
+      restoreRecordsFile: destination.isolatedFile)
+    let selected = GalaxySSIHealthReading(metric: .weight, value: 65)
+    let untouched = GalaxySSIHealthReading(metric: .glucose, value: 5)
+    for reading in [selected, untouched] {
+      try records.write(reading)
+      var local = reading
+      local.value = reading.metric == .weight ? 66 : 6
+      try destination.write(local)
+    }
+    let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    let (payload, _) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
+    let encrypted = try GalaxySSIHealthPortableBackup.seal(payload, password: "fixture-password")
+    let input = try GalaxySSIHealthPortableBackup.unlock(encrypted, password: "fixture-password")
+    let preview = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files)
+    XCTAssertFalse(preview.hasChanges)
+    XCTAssertEqual(preview.conflicts.filter { $0.restriction == nil }.count, 2)
+    let local = try XCTUnwrap(destination.load().current.first { $0.id == selected.id })
+    try destination.storeDraft(.init(existing: local))
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.restore(input, expected: preview,
+      records: destination, originals: files, replacing: [selected.id]))
+    let blocked = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files)
+    XCTAssertEqual(blocked.conflicts.first { $0.id == selected.id }?.restriction, .draft)
+    try GalaxySSIHealthPortableBackup.restore(input, expected: blocked, records: destination,
+      originals: files, replacing: [untouched.id])
+    let restored = try destination.load()
+    XCTAssertEqual(restored.revisions.filter { $0.id == untouched.id }.compactMap(\.value), [6, 5])
+    XCTAssertEqual(restored.current.first { $0.id == selected.id }?.value, 66)
+    XCTAssertEqual(restored.draft?.existing?.id, selected.id)
+  }
+
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
     var reading = GalaxySSIHealthReading(metric: .bloodPressure, value: 120, diastolic: 80, pulse: 65)
     reading.conditions = " =2+2"
