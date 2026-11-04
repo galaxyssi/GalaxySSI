@@ -25,6 +25,7 @@ internal object HealthImportScheduler {
         }
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-import:$id")
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-capture:$id")
+        HealthReminderWork.reportSourceChanged(context)
     }
     fun recoverAsync(context: Context) {
         kotlin.concurrent.thread(name = "health-import-recovery", isDaemon = true) {
@@ -53,7 +54,11 @@ class HealthImportWorker(context: Context, params: WorkerParameters) : Worker(co
         val id = inputData.getString("health_job") ?: return Result.failure()
         HealthOriginalStore(applicationContext).use { store ->
             return when (HealthImportPipeline(applicationContext).run(store, id, inputData.getBoolean("capture_stage", false)) { isStopped }) {
-                HealthImportOutcome.COMPLETE -> Result.success()
+                HealthImportOutcome.COMPLETE -> {
+                    val ready = store.job(id)?.state in setOf(HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW)
+                    if (ready && runCatching { HealthReminderWork.reportReady(applicationContext, id) }.isFailure) Result.retry()
+                    else Result.success()
+                }
                 HealthImportOutcome.RETRY -> Result.retry()
                 HealthImportOutcome.FAILED -> Result.failure()
             }

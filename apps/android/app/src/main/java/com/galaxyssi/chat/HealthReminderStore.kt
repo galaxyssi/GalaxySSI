@@ -50,6 +50,9 @@ internal class HealthReminderStore(private val context: Context, private val nam
         writeSettings(saved)
         if (current.enabled && !saved.enabled) disableOutstanding(now)
         if (current.sleepChanges && !saved.sleepChanges) disableSleep(now)
+        if (!saved.reportReviews || !saved.notifications) db.update("report_notifications", ContentValues().apply {
+            put("delivery", HealthReminderDelivery.IN_APP_ONLY.ordinal)
+        }, "delivery=?", arrayOf(HealthReminderDelivery.WAITING.ordinal.toString()))
         saved
     }.also { changed() }
 
@@ -240,18 +243,65 @@ internal class HealthReminderStore(private val context: Context, private val nam
     fun actReport(id: String, expected: HealthReportReviewDisposition, action: HealthReminderAction, now: Long) {
         require(HealthProfilePolicy.uuid(id) && action != HealthReminderAction.DISABLE)
         transaction {
-            if (!settings().reportReviews || reportDisposition(id) != expected || expected.handledAt != 0L) throw HealthReminderConflict()
-            val payload = JSONObject().put("resume", if (action == HealthReminderAction.SNOOZE) now + HealthReminderPolicy.HOUR else 0L)
+            val settings = settings()
+            if (!settings.reportReviews || reportDisposition(id) != expected || expected.handledAt != 0L) throw HealthReminderConflict()
+            val resume = if (action == HealthReminderAction.SNOOZE) now + HealthReminderPolicy.HOUR else 0L
+            val payload = JSONObject().put("resume", resume)
                 .put("handled", if (action == HealthReminderAction.COMPLETE) now else 0L)
             db.insertWithOnConflict("report_reviews", null, ContentValues().apply {
                 put("id", id); put("payload", pack("report:$id", payload))
             }, SQLiteDatabase.CONFLICT_REPLACE).also { check(it != -1L) }
+            if (resume > 0L) putReportNotice(id, resume, settings.notifications, replace = true)
+            else db.update("report_notifications", ContentValues().apply {
+                put("delivery", HealthReminderDelivery.IN_APP_ONLY.ordinal)
+            }, "id=? AND delivery=?", arrayOf(id, HealthReminderDelivery.WAITING.ordinal.toString()))
         }
         changed()
     }
 
+    fun admitReportNotice(id: String, now: Long): Boolean = transaction {
+        require(HealthProfilePolicy.uuid(id) && now > 0L)
+        val settings = settings()
+        val disposition = reportDisposition(id)
+        if (disposition.handledAt > 0) return@transaction false
+        putReportNotice(id, maxOf(now, disposition.resumeAt), settings.reportReviews && settings.notifications, replace = false)
+        reportNotice(id)?.delivery == HealthReminderDelivery.WAITING
+    }
+
+    private fun putReportNotice(id: String, due: Long, enabled: Boolean, replace: Boolean) {
+        val delivery = if (enabled) HealthReminderDelivery.WAITING else HealthReminderDelivery.IN_APP_ONLY
+        val values = ContentValues().apply { put("id", id); put("due", due); put("delivery", delivery.ordinal) }
+        val mode = if (replace) SQLiteDatabase.CONFLICT_REPLACE else SQLiteDatabase.CONFLICT_IGNORE
+        val row = db.insertWithOnConflict("report_notifications", null, values, mode)
+        if (replace) check(row != -1L)
+    }
+
+    fun reportNotice(id: String): HealthReportNotice? = db.rawQuery(
+        "SELECT id,due,delivery FROM report_notifications WHERE id=?", arrayOf(id)
+    ).use { if (it.moveToFirst()) HealthReportNotice(it.getString(0), it.getLong(1), HealthReminderDelivery.entries[it.getInt(2)]) else null }
+
+    fun dueReportNotices(now: Long): List<HealthReportNotice> = db.rawQuery(
+        "SELECT id,due FROM report_notifications WHERE delivery=? AND due<=? ORDER BY due,id LIMIT 30",
+        arrayOf(HealthReminderDelivery.WAITING.ordinal.toString(), now.toString())
+    ).use { rows -> buildList {
+        while (rows.moveToNext()) add(HealthReportNotice(rows.getString(0), rows.getLong(1), HealthReminderDelivery.WAITING))
+    } }
+
+    fun nextReportNotice(): Long? = db.rawQuery("SELECT MIN(due) FROM report_notifications WHERE delivery=?",
+        arrayOf(HealthReminderDelivery.WAITING.ordinal.toString())).use {
+        if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
+    }
+
+    fun finishReportNotice(notice: HealthReportNotice, delivery: HealthReminderDelivery): Boolean {
+        require(delivery != HealthReminderDelivery.WAITING)
+        val changed = db.update("report_notifications", ContentValues().apply { put("delivery", delivery.ordinal) },
+            "id=? AND due=? AND delivery=?", arrayOf(notice.id, notice.dueAt.toString(), HealthReminderDelivery.WAITING.ordinal.toString())) == 1
+        if (changed) changed()
+        return changed
+    }
+
     override fun close() = helper.close()
-    private inner class Database(context: Context) : SQLiteOpenHelper(context, name, null, 3) {
+    private inner class Database(context: Context) : SQLiteOpenHelper(context, name, null, 4) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY CHECK(id=1),payload BLOB NOT NULL)")
@@ -263,6 +313,7 @@ internal class HealthReminderStore(private val context: Context, private val nam
             })
             addSleepTables(db)
             addReportTable(db)
+            addReportNotifications(db)
         }
         private fun addSleepTables(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE sleep_alerts(id TEXT PRIMARY KEY,opened INTEGER NOT NULL,state INTEGER NOT NULL,ended INTEGER NOT NULL,payload BLOB NOT NULL)")
@@ -273,10 +324,15 @@ internal class HealthReminderStore(private val context: Context, private val nam
         private fun addReportTable(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE report_reviews(id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
+        private fun addReportNotifications(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE report_notifications(id TEXT PRIMARY KEY,due INTEGER NOT NULL,delivery INTEGER NOT NULL)")
+            db.execSQL("CREATE INDEX report_notifications_due ON report_notifications(delivery,due,id)")
+        }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..2 && newVersion == 3)
+            check(oldVersion in 1..3 && newVersion == 4)
             if (oldVersion == 1) addSleepTables(db)
-            addReportTable(db)
+            if (oldVersion < 3) addReportTable(db)
+            addReportNotifications(db)
         }
     }
     companion object {

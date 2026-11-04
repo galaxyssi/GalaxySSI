@@ -85,6 +85,14 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(snapshot.members.first?.output, "original")
   }
 
+  func testCollaborationReviewerIdentityCannotChangeWithResearchStage() {
+    let rosterId = UUID().uuidString
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":revise"), rosterId.lowercased())
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":recheck"), rosterId.lowercased())
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":unknown"), rosterId + ":unknown")
+    XCTAssertNotEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(UUID().uuidString + ":revise"), rosterId.lowercased())
+  }
+
   func testCollaborationTimingUsesRecordedExecutionBounds() throws {
     var snapshot = durableTeamSnapshot("timed-run")
     snapshot.state = .running
@@ -191,6 +199,10 @@ extension GalaxySSIStoreTests {
     var failedIds = Set<String>()
     for round in 20...28 {
       failed.round = round
+      if round == 28 {
+        failed.succeeded = true
+        failed.output = "{\"success\":false}"
+      }
       failedIds.insert(try history.recordCloudEvidence(failed).string("evidence_id"))
     }
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
@@ -199,7 +211,7 @@ extension GalaxySSIStoreTests {
     let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
     let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
     XCTAssertEqual(entries.count, 8)
-    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains(failed.output))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains("sensitive failure detail"))
     let lastProblems = try reopened.recallCollaborationOriginal(
       ["mode": .string("problems"), "cursor": .string(firstProblems.string("next_cursor"))], scope: scope)
     let tail = try XCTUnwrap(lastProblems["problems"]?.arrayValue)
@@ -368,6 +380,105 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
     regression.state = "incomplete"
     XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+  }
+
+  func testToolTestRegistrationUsesSkillParameterContract() throws {
+    let tool = """
+    {"language":"python","name":"Check","purpose":"Validate","applies_when":"Input","avoid_when":"None",
+     "environment":"python","dependencies":"None","side_effects":"None","source":"def run(parameters): return parameters",
+     "input_schema":{"type":"object","required":["value"],"properties":{"value":{"type":"integer"}}}}
+    """
+    let plan = """
+    {"environment":"python","purpose":"Validate","coverage_gaps":"None known","oracle_basis":"Identity",
+     "cases":[{"id":"target","purpose":"target","reason":"Typical","input":{"value":1},"expected":1},
+       {"id":"regression","purpose":"regression","reason":"Zero","input":{"value":0},"expected":null}]}
+    """
+    func decode(_ raw: String) throws -> AgentMcpJSONObject {
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    }
+    let spec = try decode(tool)
+    XCTAssertTrue(AgentCollaborationToolRegistration.validatesTestPlan(try decode(plan), tool: spec))
+    XCTAssertFalse(AgentCollaborationToolRegistration.validatesTestPlan(
+      try decode(plan.replacingOccurrences(of: "\"value\":0", with: "\"value\":\"0\"")), tool: spec))
+    XCTAssertFalse(AgentCollaborationToolRegistration.validatesTestPlan(
+      try decode(plan.replacingOccurrences(of: ",\"expected\":null", with: "")), tool: spec))
+  }
+
+  func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
+    let raw = """
+    {"work_id":"test","executor":"member","horizon":"One test","decision_rationale":"Avoid side effects",
+     "risk_tradeoff":"Delay","information_value":"Compare","revalidate_before_action":"Check input","utility_unit":"points",
+     "selected_action":"defer","events":[{"id":"pass","meaning":"Test passes","unit":"boolean","pointer":"/pass",
+       "expected":true,"utility_if_true":10,"utility_if_false":-2}],
+     "choices":[{"action_id":"probe","reasoning":"Measure","uncertainty":"Known input","resources":"One trial","risk":"Low",
+       "probabilities":{"pass":0.75}},{"action_id":"defer","reasoning":"Wait","uncertainty":"No measure",
+       "resources":"None","risk":"Delay","probabilities":{"pass":0}}]}
+    """
+    let forecast = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    XCTAssertEqual(AgentCollaborationForecastIntake.utilities(forecast, actions: ["probe", "defer"]),
+      ["probe": 7, "defer": -2])
+    XCTAssertNil(AgentCollaborationForecastIntake.utilities(forecast, actions: ["probe", "defer", "act"]))
+    let invalid = raw.replacingOccurrences(of: "0.75", with: "1.25")
+    XCTAssertNil(AgentCollaborationForecastIntake.utilities(
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(invalid.utf8)), actions: ["probe", "defer"]))
+  }
+
+  func testCloudObservationDistinguishesExplicitFailureFromEmptyErrors() {
+    for output in ["{}", "{\"error\":false}", "{\"error\":null}", "{\"error\":{}}",
+                   "{\"error\":[]}", "{\"error\":0}", "{\"error\":\"  \"}",
+                   "{\"success\":\"false\"}", "unstructured error text"] {
+      XCTAssertFalse(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
+    for output in ["{\"success\":false}", "{\"ok\":false}", "{\"isError\":true}",
+                   "{\"error\":{\"code\":\"offline\"}}", "{\"status\":\"timed_out\"}"] {
+      XCTAssertTrue(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
+  }
+
+  func testInnovationOpportunityCannotReplaceGoalCriterionOrDriverEvidence() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"opportunity","kind":"innovation_opportunity","title":"Opportunity","base_revision":0,
+       "parents":[{"object_id":"gap","revision":1,"sha256":"exact"}],
+       "body":{"innovation_opportunity":{"goal_sha256":"pinned","criterion_id":"accuracy","requirement":"Preserve accuracy",
+        "question":"Reduce noise?","unmet_need":"Unstable responses","expected_benefit":"Repeatability","constraints":"Same budget",
+        "null_hypothesis":"No change","discriminating_test":"Compare trials","uncertainty":"Sample size",
+        "alternative_routes":["Keep baseline"],"drivers":[{"id":"one","kind":"knowledge_gap","why":"Observed gap",
+          "what_would_change":"Better checks","sources":[{"object_id":"gap","revision":1,"sha256":"exact"}]}]}}}
+    ]}
+    """
+    let draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    let criterion = AgentCollaborationGoalAssessmentPolicy.Criterion(id: "accuracy", requirement: "Preserve accuracy",
+      verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    XCTAssertTrue(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: [criterion]) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "changed", contract: [criterion]) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: []) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: [criterion]) { _ in "proposal" })
+  }
+
+  func testTransferStudyRequiresCurrentFailureAndDistinctTargetDomain() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"study","kind":"transfer_study","title":"Study","base_revision":0,
+       "parents":[{"object_id":"failure","revision":1,"sha256":"exact"}],
+       "body":{"transfer_study":{
+         "source":{"object_id":"failure","revision":1,"sha256":"exact"},
+         "source_domain":"Parsing","target_domain":"Extraction","mode":"cross_domain","target_task":"Extract fields",
+         "abstract_strategy":"Validate input","proposed_method":"Check schema","rationale":"Avoid ambiguity",
+         "risks":"Reject valid input","falsifier":"No gain","limitations":"Structured only",
+         "alternatives":["Manual review"],"calibration_data":[],
+         "mappings":[{"source_element":"Parser","target_element":"Extractor","invariant":"Structure",
+           "adaptation":"New schema","breaks_when":"Free text"}]
+       }}}
+    ]}
+    """
+    let draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    XCTAssertTrue(AgentCollaborationTransferIntake.validates(draft) { _ in "failure_experience" })
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(draft) { _ in nil })
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(draft) { _ in "proposal" })
+    let sameDomain = raw.replacingOccurrences(of: "\"Extraction\"", with: "\"Parsing\"")
+    let invalid = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: sameDomain)?.first)
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(invalid) { _ in "failure_experience" })
   }
 
   func testLearningAgendaRetainsDeferredOptionAndRejectsInventedCost() throws {
@@ -561,9 +672,20 @@ extension GalaxySSIStoreTests {
     var snapshot = durableTeamSnapshot("run")
     let index = try XCTUnwrap(snapshot.members.firstIndex { $0.deliveryMode == .observe })
     snapshot.members[index].dispatchCheckpoint = .notStarted
+    snapshot.goal = "Preserve the original task"
     snapshot.members[index].researchStage = "EXPLORE"
     let member = snapshot.members[index]
     XCTAssertTrue(history.upsert(snapshot))
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let goal = try history.recallCollaborationOriginal(["mode": .string("goal"), "section": .string("goal")], scope: scope)
+    XCTAssertEqual(Data(base64Encoded: goal.string("data_b64")), Data(snapshot.goal.utf8))
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(
+      ["mode": .string("goal"), "section": .string("criteria")], scope: scope))
+    var changedGoal = snapshot
+    changedGoal.goal = "Do something else"
+    changedGoal.updatedAtMillis += 1
+    XCTAssertFalse(history.upsert(changedGoal))
     XCTAssertFalse(history.advanceDispatchCheckpoint(runId: "run", conversationId: "foreign",
       turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
       to: .dispatching, now: 20))

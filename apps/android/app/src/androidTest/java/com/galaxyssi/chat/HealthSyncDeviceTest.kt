@@ -74,6 +74,126 @@ class HealthSyncDeviceTest {
         runBlocking { assertTrue(HealthSyncEngine.run(store, setOf(scope), availability, gateway, { clock }, zone)) }
     }
 
+    @Test fun retriesUpdateOneIncidentAndRecoveryDoesNotLoseMeasurements() = fixture { names ->
+        val gateway = Gateway(pressure).apply {
+            snapshotRead = { HealthSyncSnapshotPage(sequenceOf(pressure("fixture")), "") }
+            changesRead = { throw UnknownHostException("fixture network") }
+        }
+        val first = HealthRecordStore(context, names.records).use { store ->
+            sync(store, gateway)
+            val incident = requireNotNull(store.healthSyncIncident(pressure))
+            assertEquals(HealthSyncOutcome.NETWORK, incident.outcome)
+            assertTrue(incident.matches(HealthReminderFilter.PENDING))
+            assertEquals(1L, store.count())
+            incident
+        }
+        HealthRecordStore(context, names.records).use { store ->
+            gateway.permissions = emptySet()
+            sync(store, gateway, clock = now + 1)
+            val updated = requireNotNull(store.healthSyncIncident(pressure))
+            assertEquals(first.id, updated.id)
+            assertEquals(HealthSyncOutcome.PERMISSION, updated.outcome)
+            assertTrue(runCatching { store.acknowledgeHealthSyncIncident(first, now + 2) }.exceptionOrNull() is HealthReminderConflict)
+            val checkpoint = store.healthSyncCheckpoint(pressure)
+            store.acknowledgeHealthSyncIncident(updated, now + 2)
+            assertEquals(checkpoint, store.healthSyncCheckpoint(pressure))
+            sync(store, gateway, clock = now + 3)
+            assertTrue(requireNotNull(store.healthSyncIncident(pressure)).matches(HealthReminderFilter.HANDLED))
+            gateway.permissions = setOf(pressure.permission)
+            gateway.changesRead = { HealthSyncChangePage(emptySequence(), "complete", false) }
+            sync(store, gateway, clock = now + 4)
+            val recovered = requireNotNull(store.healthSyncIncident(pressure))
+            assertEquals(first.id, recovered.id)
+            assertEquals(now + 4, recovered.resolvedAt)
+            assertEquals(HealthSyncOutcome.UPDATED, store.healthSyncCheckpoint(pressure).outcome)
+            assertEquals(1L, store.count())
+            sync(store, gateway, clock = now + 5)
+            assertEquals(HealthSyncOutcome.NO_NEW, store.healthSyncCheckpoint(pressure).outcome)
+            assertEquals(recovered, store.healthSyncIncident(pressure))
+            gateway.changesRead = { throw IOException("fixture outage") }
+            sync(store, gateway, clock = now + 6)
+            val next = requireNotNull(store.healthSyncIncident(pressure))
+            assertNotEquals(first.id, next.id)
+            assertTrue(next.matches(HealthReminderFilter.PENDING))
+            assertEquals(now + 5, next.lastSuccess)
+            assertEquals(1L, store.count())
+        }
+    }
+
+    @Test fun legacyFailureSurvivesRetryButInitialAndPausedSyncAreNotFailures() = fixture { names ->
+        HealthRecordStore(context, names.records).use { store ->
+            val running = HealthSyncCheckpoint(pressure, lastAttempt = now, outcome = HealthSyncOutcome.RUNNING)
+            assertNull(store.healthSyncIncident(pressure))
+            store.startHealthSyncAttempt(running)
+            assertNull(store.healthSyncIncident(pressure))
+            store.saveHealthSyncCheckpoint(running.copy(outcome = HealthSyncOutcome.TRANSPORT))
+            store.tableDatabase.delete("health_sync_checkpoints", "source=?", arrayOf("connect-incident:${pressure.name}"))
+            val legacy = requireNotNull(store.healthSyncIncident(pressure))
+            assertEquals(legacy, store.healthSyncIncident(pressure))
+            store.startHealthSyncAttempt(running.copy(lastAttempt = now + 1))
+            assertEquals(legacy, store.healthSyncIncident(pressure))
+            assertNull(store.healthSyncIncident(HealthConnectScope.STEPS))
+            store.saveHealthSyncCheckpoint(running.copy(lastAttempt = now + 1, lastSuccess = now + 2, outcome = HealthSyncOutcome.NO_NEW))
+            assertEquals(now + 2, store.healthSyncIncident(pressure)?.resolvedAt)
+        }
+    }
+
+    @Test fun nativeSyncReminderOpensTheMatchingCoverageAndUpdatesAfterRecovery() = fixture { names ->
+        assumeFalse("Sync reminder UI requires an unlocked display", context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val failed = HealthSyncCheckpoint(pressure, lastAttempt = now, lastSuccess = now - 1000, outcome = HealthSyncOutcome.NETWORK)
+        HealthRecordStore(context, names.records).use { it.saveHealthSyncCheckpoint(failed) }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(HealthSyncActivity::class.java.name, null, false)
+        val tag = "health-sync-reminder-${pressure.name}"
+        try {
+            val intent = Intent(context, HealthReminderActivity::class.java).putExtra("health_reminder_test_db", names.reminders)
+            ActivityScenario.launch<HealthReminderActivity>(intent).use { scenario ->
+                fun await(tag: String, exists: Boolean = true) {
+                    val end = SystemClock.elapsedRealtime() + 10_000
+                    do {
+                        var found = false
+                        scenario.onActivity { found = it.window.decorView.findViewWithTag<View>(tag) != null }
+                        if (found == exists) return
+                        SystemClock.sleep(50)
+                    } while (SystemClock.elapsedRealtime() < end)
+                    fail("Unexpected visibility for $tag")
+                }
+                await(tag)
+                if (InstrumentationRegistry.getArguments().getString("health_sync_reminder_screenshot") == "true") {
+                    instrumentation.waitForIdleSync()
+                    instrumentation.uiAutomation.takeScreenshot()?.let { screenshot ->
+                        try {
+                            java.io.File(context.getExternalFilesDir(null), "health-sync-reminder.png").outputStream().use {
+                                screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                            }
+                        } finally { screenshot.recycle() }
+                    }
+                }
+                scenario.onActivity { assertTrue(it.window.decorView.findViewWithTag<View>(tag).performClick()) }
+                val detail = requireNotNull(instrumentation.waitForMonitorWithTimeout(monitor, 5000))
+                assertEquals(pressure.name, detail.intent.getStringExtra("health_sync_scope"))
+                assertEquals(names.fixture, detail.intent.getStringExtra("health_sync_test_id"))
+                val deadline = SystemClock.elapsedRealtime() + 8000L
+                var card = false
+                do {
+                    instrumentation.runOnMainSync {
+                        card = detail.window.decorView.findViewWithTag<View>("health-sync-scope-${pressure.name}") != null
+                    }
+                    if (!card) SystemClock.sleep(50)
+                } while (!card && SystemClock.elapsedRealtime() < deadline)
+                assertTrue(card)
+                instrumentation.runOnMainSync { detail.finish() }
+                await(tag)
+                HealthRecordStore(context, names.records).use {
+                    it.saveHealthSyncCheckpoint(failed.copy(lastSuccess = now + 1, outcome = HealthSyncOutcome.NO_NEW))
+                }
+                await(tag, exists = false)
+                scenario.onActivity { assertTrue(it.window.decorView.findViewWithTag<View>("health-reminder-filter-HANDLED").performClick()) }
+                await(tag)
+            }
+        } finally { instrumentation.removeMonitor(monitor) }
+    }
+
     @Test fun snapshotFailureResumesItsPageAndExistingRowsAreNotRepeated() = fixture { names ->
         val gateway = Gateway(pressure).apply {
             snapshotRead = { cursor ->
