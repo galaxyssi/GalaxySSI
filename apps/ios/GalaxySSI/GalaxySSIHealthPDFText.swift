@@ -23,7 +23,8 @@ enum GalaxySSIHealthPDFText {
     return document.pageCount
   }
 
-  static func read(_ data: Data, page index: Int) throws -> Result {
+  static func read(_ data: Data, page index: Int, forceOCR: Bool = false) throws -> Result {
+    try Task.checkCancellation()
     let document = try open(data)
     guard index >= 0, index < document.pageCount, let page = document.page(at: index) else { throw Failure.invalid }
     let crop = page.bounds(for: .cropBox)
@@ -34,7 +35,8 @@ enum GalaxySSIHealthPDFText {
       guard !bounds.isEmpty, !bounds.isNull, bounds.width.isFinite, bounds.height.isFinite else { return nil }
       return Region(id: index, text: text, bounds: bounds)
     } ?? []
-    if native.reduce(0, { $0 + $1.text.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.count }) >= 12 {
+    if !forceOCR,
+       native.reduce(0, { $0 + $1.text.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.count }) >= 12 {
       return Result(method: .native, regions: native, crop: crop, rotation: page.rotation)
     }
 
@@ -119,6 +121,9 @@ struct GalaxySSIHealthPDFTextView: View {
               if result.regions.isEmpty { Text(t("no_text", "No usable text found on this page.")) }
               ForEach(result.regions.prefix(showLimit)) { Text($0.text) }
               if result.regions.count > showLimit { Button(t("more", "Show more")) { showLimit += 50 } }
+              if result.method == .native {
+                Button(t("force_ocr", "Read again with on-device OCR")) { recognize(forceOCR: true) }
+              }
             }
           }
         } else {
@@ -133,7 +138,9 @@ struct GalaxySSIHealthPDFTextView: View {
         switch status {
         case .idle: EmptyView()
         case .working: ProgressView(t("working", "Reading page"))
-        case .unavailable: Text(t("failed", "The PDF page could not be read."))
+        case .unavailable:
+          Text(t("failed", "The PDF page could not be read."))
+          if selected != nil { Button(t("retry", "Retry this page")) { recognize() } }
         case .locked: Text(t("locked", "This PDF is password protected."))
         }
       }
@@ -156,7 +163,7 @@ struct GalaxySSIHealthPDFTextView: View {
     } catch { files = []; status = .unavailable }
   }
 
-  private func recognize() {
+  private func recognize(forceOCR: Bool = false) {
     cancel()
     guard scene == .active, let selected else { return }
     showLimit = 50
@@ -169,7 +176,7 @@ struct GalaxySSIHealthPDFTextView: View {
     task = Task {
       let worker = Task.detached(priority: .userInitiated) {
         let pages = try GalaxySSIHealthPDFText.pageCount(data)
-        return (pages, try GalaxySSIHealthPDFText.read(data, page: index))
+        return (pages, try GalaxySSIHealthPDFText.read(data, page: index, forceOCR: forceOCR))
       }
       do {
         let (pages, pageResult) = try await withTaskCancellationHandler(operation: {

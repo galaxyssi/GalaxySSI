@@ -236,6 +236,11 @@ struct GalaxySSIHealthCenterView: View {
             ? t("platform_available", "Available on this device")
             : t("platform_unavailable", "Not available on this device"))
           sourceStatus(t("bluetooth_devices", "Bluetooth devices"), detail: bluetoothAuthorization)
+          NavigationLink {
+            GalaxySSIHealthBluetoothView(records: records)
+          } label: {
+            Label(t("bluetooth.title", "Bluetooth Blood Pressure"), systemImage: "waveform.path.ecg")
+          }
         }
         Section(t("local_sources", "On this device")) {
           if let archive {
@@ -245,7 +250,7 @@ struct GalaxySSIHealthCenterView: View {
               Spacer()
               Text(current.count.formatted(.number.locale(locale))).foregroundColor(.secondary)
             }
-            if let latest = current.first {
+            if let latest = current.first(where: { $0.bluetoothReceipt == nil }) {
               VStack(alignment: .leading, spacing: 4) {
                 Text(t("latest_manual", "Latest manual measurement"))
                 Text(title(latest.metric)).foregroundColor(.secondary)
@@ -283,7 +288,8 @@ struct GalaxySSIHealthCenterView: View {
               Text(summary(reading))
               Text(item.freshness == .recent ? t("fresh", "Recent") : t("stale_reading", "Older"))
                 .foregroundColor(.secondary)
-              Text(t("manual_source", "Entered manually")).foregroundColor(.secondary)
+              Text(reading.bluetoothReceipt == nil ? t("manual_source", "Entered manually")
+                : t("bluetooth.source", "Bluetooth monitor")).foregroundColor(.secondary)
               Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened))
                 .foregroundColor(.secondary)
             }

@@ -173,6 +173,30 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testBluetoothPressureDecodesOptionalFieldsAndDoesNotResurrectDeletedReading() throws {
+    let bytes = Data([30, 120, 0, 80, 0, 90, 0, 234, 7, 11, 5, 12, 30, 0, 64, 0, 2, 1, 0])
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(bytes))
+    XCTAssertEqual(packet.deviceClock, "2026-11-05 12:30:00")
+    XCTAssertEqual(packet.slot, 2)
+    XCTAssertEqual(packet.status, 1)
+    XCTAssertEqual(packet.pulse, 64)
+    XCTAssertNil(GalaxySSIHealthBluetoothPacket.decode(Data(bytes.dropLast())))
+    XCTAssertNil(GalaxySSIHealthBluetoothPacket.decode(Data([0, 255, 7, 80, 0, 90, 0])))
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let receipt = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: Date(), packet: packet)
+    try records.write(receipt.reading(conditions: ""))
+    var saved = try XCTUnwrap(records.load().current.first)
+    saved.deleted = true
+    try records.write(saved)
+    let replay = GalaxySSIHealthBluetoothReceipt(device: receipt.device,
+      receivedAt: receipt.receivedAt.addingTimeInterval(600), packet: packet)
+    XCTAssertThrowsError(try records.write(replay.reading(conditions: ""), allowDuplicate: true))
+    XCTAssertTrue(try records.load().current.isEmpty)
+  }
+
+  @MainActor
   func testOriginalLibraryKeepsExactBytesAndRejectsTamperedPayload() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

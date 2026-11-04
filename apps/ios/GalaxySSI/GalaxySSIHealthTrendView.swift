@@ -109,7 +109,6 @@ struct GalaxySSIHealthTrendView: View {
                 statistic(t("min", "Minimum"), minimum)
                 statistic(t("max", "Maximum"), maximum)
                 chart(trend)
-                Text(t("manual", "Source: manual measurements")).font(.footnote).foregroundColor(.secondary)
               }
               Section(t("sources", "Daily source records")) {
                 ForEach(trend.points.reversed().filter { $0.mean != nil }) { point in
@@ -154,6 +153,8 @@ struct GalaxySSIHealthTrendView: View {
               VStack(alignment: .leading, spacing: 4) {
                 if let value = component.value(in: reading) { Text(number(value) + " " + unit) }
                 Text(reading.measuredAt, style: .time).foregroundColor(.secondary)
+                Text(reading.bluetoothReceipt == nil ? t("manual", "Source: manual measurements")
+                  : t("bluetooth", "Source: Bluetooth monitor")).foregroundColor(.secondary)
                 Text(String(format: t("revision", "Revision %lld"), Int64(reading.revision)))
                   .foregroundColor(.secondary)
               }
