@@ -23,6 +23,13 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     let depends_on: [String]
     let dependency_policy: DependencyPolicy?
     let independent_review: Bool?
+    var stage: String? = nil
+    var learning: LearningBinding? = nil
+  }
+
+  struct LearningBinding: Codable, Equatable {
+    let agenda: AgentCollaborationResearchReference
+    let option_id: String
   }
 
   struct Expansion: Decodable {
