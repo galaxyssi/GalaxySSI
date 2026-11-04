@@ -97,6 +97,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case candidate
     case transferStudy = "transfer_study"
     case candidateEvent = "candidate_event"
+    case teamExchange = "team_exchange"
     case capabilityGap = "capability_gap"
     case innovation
   }
@@ -311,6 +312,55 @@ enum AgentCollaborationOpportunityIntake {
   }
 }
 
+enum AgentCollaborationTeamExchangeIntake {
+  static func validates(_ draft: AgentCollaborationResearchDraft, author: String,
+                        current: (AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision?) rethrows -> Bool {
+    guard draft.kind == .teamExchange, draft.objectId?.isBlank != false, draft.baseRevision == 0,
+          let exchange = draft.body["team_exchange"]?.objectValue,
+          hasText(exchange, ["issue", "reasoning", "discriminating_test", "uncertainty"]),
+          let target = reference(exchange["innovation"]), draft.parents.contains(target),
+          let idea = try current(target), idea.draft.kind.rawValue == "innovation" else { return false }
+    let person = AgentTeamProgressPolicy.stableCollaborationMemberId(author)
+    var contributors = Set<String>()
+    var visited = Set<String>()
+    var pending = [idea]
+    while let item = pending.popLast() {
+      guard visited.insert(item.reference.objectId).inserted else { continue }
+      guard visited.count <= 128 else { return false }
+      contributors.insert(AgentTeamProgressPolicy.stableCollaborationMemberId(item.authorId))
+      for parent in item.draft.parents {
+        guard let source = try current(parent) else { return false }
+        if source.draft.kind.rawValue == "innovation" { pending.append(source) }
+      }
+    }
+    switch exchange.string("operation") {
+    case "challenge":
+      return !contributors.contains(person) && exchange["challenge"] == nil && hasText(exchange, ["suggested_change"])
+    case "response":
+      guard contributors.contains(person), let challengeRef = reference(exchange["challenge"]),
+            draft.parents.contains(challengeRef), let challenge = try current(challengeRef),
+            challenge.draft.kind == .teamExchange,
+            !contributors.contains(AgentTeamProgressPolicy.stableCollaborationMemberId(challenge.authorId)),
+            let prior = challenge.draft.body["team_exchange"]?.objectValue, prior.string("operation") == "challenge",
+            reference(prior["innovation"]) == target,
+            ["adopt", "adapt", "reject", "test_needed"].contains(exchange.string("decision")) else { return false }
+      return hasText(exchange, ["change_or_reason", "remaining_question"])
+    default:
+      return false
+    }
+  }
+
+  private static func reference(_ raw: AgentMcpJSONValue?) -> AgentCollaborationResearchReference? {
+    guard let object = raw?.objectValue, Set(object.keys) == Set(["object_id", "revision", "sha256"]),
+          case .int(let revision)? = object["revision"], revision > 0 else { return nil }
+    return .init(objectId: object.string("object_id"), revision: revision, sha256: object.string("sha256"))
+  }
+
+  private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
+  }
+}
+
 struct AgentCollaborationResearchEnvelope: Decodable {
   static let wireFormat = "galaxyssi.research-artifact.v1"
   var format: String
@@ -406,18 +456,20 @@ struct AgentTeamProgressProjection: Codable, Equatable {
 }
 
 enum AgentTeamProgressPolicy {
+  static func stableCollaborationMemberId(_ memberId: String) -> String {
+    let parts = memberId.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+    if let first = parts.first, let rosterId = UUID(uuidString: String(first)),
+       parts.count == 1 || ["revise", "recheck"].contains(String(parts[1])) {
+      return rosterId.uuidString.lowercased()
+    }
+    return memberId
+  }
+
   static func currentCollaborationMembers(_ snapshot: AgentTeamExecutionSnapshot) -> [AgentTeamMemberSnapshot] {
     var keys: [String] = []
     var current: [String: AgentTeamMemberSnapshot] = [:]
     for member in snapshot.members where member.deliveryMode != .ignore {
-      let parts = member.memberId.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-      let key: String
-      if let first = parts.first, let rosterId = UUID(uuidString: String(first)),
-         parts.count == 1 || ["revise", "recheck"].contains(String(parts[1])) {
-        key = rosterId.uuidString.lowercased()
-      } else {
-        key = member.memberId
-      }
+      let key = stableCollaborationMemberId(member.memberId)
       if let previous = current[key] {
         let candidateRank = collaborationStatusRank(member)
         let previousRank = collaborationStatusRank(previous)
