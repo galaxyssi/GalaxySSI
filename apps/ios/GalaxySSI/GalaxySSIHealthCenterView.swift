@@ -7,25 +7,13 @@ struct GalaxySSIHealthCenterView: View {
   @Environment(\.locale) private var locale
   let records: GalaxySSIHealthRecords
   @State private var archive: GalaxySSIHealthRecords.Archive?
-  @State private var editor: Editor?
+  @State private var editor: GalaxySSIHealthDraft?
   @State private var alert: Notice?
   @State private var limit = 30
 
   private enum Notice: String, Identifiable {
-    case unavailable, invalid, stale, duplicate, delete
+    case unavailable, invalid, stale, duplicate, delete, discardDraft
     var id: String { rawValue }
-  }
-
-  private struct Editor: Identifiable {
-    let id = UUID()
-    var existing: GalaxySSIHealthReading?
-    var metric: GalaxySSIHealthMetric = .bloodPressure
-    var measuredAt = Date()
-    var value = ""
-    var diastolic = ""
-    var pulse = ""
-    var conditions = ""
-    var notes = ""
   }
 
   var body: some View {
@@ -33,8 +21,14 @@ struct GalaxySSIHealthCenterView: View {
       if scenePhase == .active, let archive {
         let current = archive.current
         Section {
-          Button { editor = Editor() } label: {
-            Label(t("manual", "Record measurement"), systemImage: "plus.circle")
+          if let draft = archive.draft {
+            Button { editor = draft } label: {
+              Label(t("resume_draft", "Resume draft"), systemImage: "doc.text")
+            }
+          } else {
+            Button { editor = GalaxySSIHealthDraft() } label: {
+              Label(t("manual", "Record measurement"), systemImage: "plus.circle")
+            }
           }
         }
         Section(t("recent", "Recent measurements")) {
@@ -49,6 +43,7 @@ struct GalaxySSIHealthCenterView: View {
                 Text(reading.measuredAt, style: .date).foregroundColor(.secondary)
               }
             }
+            .disabled(archive.draft != nil)
           }
           if current.count > limit {
             Button(t("more", "Show more")) { limit += 30 }
@@ -72,6 +67,7 @@ struct GalaxySSIHealthCenterView: View {
     .sheet(item: $editor) { _ in
       NavigationView { editorForm }
         .navigationViewStyle(.stack)
+        .interactiveDismissDisabled()
         .alert(item: $alert, content: editorAlert)
     }
   }
@@ -86,6 +82,10 @@ struct GalaxySSIHealthCenterView: View {
         return Alert(title: Text(t("delete", "Remove measurement?")),
                      message: Text(t("delete_note", "The encrypted revision history is retained.")),
                      primaryButton: .destructive(Text(t("remove", "Remove"))) { save(deleted: true) },
+                     secondaryButton: .cancel())
+      case .discardDraft:
+        return Alert(title: Text(t("discard_draft", "Discard draft?")),
+                     primaryButton: .destructive(Text(t("remove", "Remove")), action: discardDraft),
                      secondaryButton: .cancel())
       case .invalid:
         return Alert(title: Text(t("invalid", "Check the measurement values and field lengths.")))
@@ -112,6 +112,10 @@ struct GalaxySSIHealthCenterView: View {
         DatePicker(t("time", "Measured at"), selection: field(\.measuredAt, Date()), in: ...Date())
         TextField(t("conditions", "Conditions"), text: field(\.conditions, ""))
         TextField(t("notes", "Notes"), text: field(\.notes, ""))
+        Button(t("save_draft", "Save draft"), action: saveDraft)
+        if archive?.draft?.id == draft.id {
+          Button(t("discard", "Discard draft"), role: .destructive) { alert = .discardDraft }
+        }
         if let existing = draft.existing, let archive {
           Section(t("history", "Revision history")) {
             ForEach(Array(archive.revisions.filter { $0.id == existing.id }.suffix(50).reversed()),
@@ -135,12 +139,12 @@ struct GalaxySSIHealthCenterView: View {
     }
   }
 
-  private func field<Value>(_ key: WritableKeyPath<Editor, Value>, _ fallback: Value) -> Binding<Value> {
+  private func field<Value>(_ key: WritableKeyPath<GalaxySSIHealthDraft, Value>, _ fallback: Value) -> Binding<Value> {
     Binding(get: { editor?[keyPath: key] ?? fallback }, set: { editor?[keyPath: key] = $0 })
   }
 
   private func edit(_ reading: GalaxySSIHealthReading) {
-    editor = Editor(existing: reading, metric: reading.metric, measuredAt: reading.measuredAt,
+    editor = GalaxySSIHealthDraft(existing: reading, metric: reading.metric, measuredAt: reading.measuredAt,
                     value: number(reading.value), diastolic: reading.diastolic.map(number) ?? "",
                     pulse: reading.pulse.map(number) ?? "", conditions: reading.conditions, notes: reading.notes)
   }
@@ -150,7 +154,7 @@ struct GalaxySSIHealthCenterView: View {
     do {
       if deleted, var existing = draft.existing {
         existing.deleted = true
-        try records.write(existing)
+        try records.write(existing, draftId: draft.id)
       } else {
         guard let value = parse(draft.value) else { throw GalaxySSIHealthRecords.Failure.invalid }
         let pressure = draft.metric == .bloodPressure
@@ -165,7 +169,7 @@ struct GalaxySSIHealthCenterView: View {
         reading.pulse = pulse
         reading.conditions = draft.conditions
         reading.notes = draft.notes
-        try records.write(reading, allowDuplicate: allowDuplicate)
+        try records.write(reading, allowDuplicate: allowDuplicate, draftId: draft.id)
       }
       editor = nil
       reload()
@@ -173,6 +177,25 @@ struct GalaxySSIHealthCenterView: View {
       catch GalaxySSIHealthRecords.Failure.invalid { alert = .invalid }
       catch GalaxySSIHealthRecords.Failure.stale { alert = .stale }
       catch { alert = .unavailable }
+  }
+
+  private func saveDraft() {
+    guard scenePhase == .active, let editor else { return }
+    do {
+      try records.storeDraft(editor)
+      self.editor = nil
+      reload()
+    } catch GalaxySSIHealthRecords.Failure.invalid { alert = .invalid }
+      catch { alert = .unavailable }
+  }
+
+  private func discardDraft() {
+    guard scenePhase == .active, let editor else { return }
+    do {
+      try records.discardDraft(id: editor.id)
+      self.editor = nil
+      reload()
+    } catch { alert = .unavailable }
   }
 
   private func reload() {

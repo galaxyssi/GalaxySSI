@@ -4,6 +4,28 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testPartialDraftIsEncryptedAndClearedOnlyByMatchingCommit() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    var draft = GalaxySSIHealthDraft()
+    draft.value = "120."
+    draft.notes = "private partial fixture marker"
+    try records.storeDraft(draft)
+    XCTAssertNil(String(decoding: try Data(contentsOf: file), as: UTF8.self).range(of: draft.notes))
+    XCTAssertEqual(try records.load().draft?.value, "120.")
+    try records.discardDraft(id: UUID())
+    XCTAssertEqual(try records.load().draft?.id, draft.id)
+    let invalid = GalaxySSIHealthReading(metric: .bloodPressure, value: 120)
+    XCTAssertThrowsError(try records.write(invalid, draftId: draft.id))
+    XCTAssertEqual(try records.load().draft?.id, draft.id)
+    try records.write(GalaxySSIHealthReading(metric: .bloodPressure, value: 120, diastolic: 80),
+                      draftId: draft.id)
+    XCTAssertNil(try records.load().draft)
+    XCTAssertEqual(try records.load().current.count, 1)
+  }
+
+  @MainActor
   func testDuplicateRevisionDeletionAndCorruption() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

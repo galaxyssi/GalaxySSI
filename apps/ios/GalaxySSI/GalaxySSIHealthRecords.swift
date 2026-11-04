@@ -46,6 +46,23 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   }
 }
 
+struct GalaxySSIHealthDraft: Codable, Identifiable {
+  var id = UUID()
+  var existing: GalaxySSIHealthReading?
+  var metric: GalaxySSIHealthMetric = .bloodPressure
+  var measuredAt = Date()
+  var value = ""
+  var diastolic = ""
+  var pulse = ""
+  var conditions = ""
+  var notes = ""
+
+  var fitsStorageLimits: Bool {
+    [value, diastolic, pulse].allSatisfy { $0.utf8.count <= 128 } &&
+      conditions.utf8.count <= 512 && notes.utf8.count <= 4096
+  }
+}
+
 @MainActor
 struct GalaxySSIHealthRecords {
   enum Failure: Error {
@@ -55,6 +72,7 @@ struct GalaxySSIHealthRecords {
   struct Archive: Codable {
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
+    var draft: GalaxySSIHealthDraft?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -99,7 +117,21 @@ struct GalaxySSIHealthRecords {
     return archive
   }
 
-  func write(_ input: GalaxySSIHealthReading, allowDuplicate: Bool = false) throws {
+  func storeDraft(_ draft: GalaxySSIHealthDraft) throws {
+    guard draft.fitsStorageLimits else { throw Failure.invalid }
+    var archive = try load()
+    archive.draft = draft
+    try persist(archive)
+  }
+
+  func discardDraft(id: UUID) throws {
+    var archive = try load()
+    guard archive.draft?.id == id else { return }
+    archive.draft = nil
+    try persist(archive)
+  }
+
+  func write(_ input: GalaxySSIHealthReading, allowDuplicate: Bool = false, draftId: UUID? = nil) throws {
     guard input.isValid else { throw Failure.invalid }
     var archive = try load()
     let latest = archive.revisions.last { $0.id == input.id }
@@ -112,6 +144,11 @@ struct GalaxySSIHealthRecords {
     var revision = input
     revision.revision += 1
     archive.revisions.append(revision)
+    if let draftId, archive.draft?.id == draftId { archive.draft = nil }
+    try persist(archive)
+  }
+
+  private func persist(_ archive: Archive) throws {
     let payload = try JSONEncoder().encode(archive)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true),
                                         authenticating: context).combined else { throw Failure.unavailable }

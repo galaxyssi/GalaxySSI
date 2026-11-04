@@ -2,6 +2,10 @@
 "galaxyssi.health.title" = "健康中心";
 "galaxyssi.health.subtitle" = "个人健康测量";
 "galaxyssi.health.manual" = "记录测量";
+"galaxyssi.health.resume_draft" = "继续编辑草稿";
+"galaxyssi.health.save_draft" = "保存草稿";
+"galaxyssi.health.discard" = "丢弃草稿";
+"galaxyssi.health.discard_draft" = "丢弃这份草稿？";
 "galaxyssi.health.recent" = "最近测量";
 "galaxyssi.health.empty" = "暂无测量记录";
 "galaxyssi.health.more" = "查看更多";
