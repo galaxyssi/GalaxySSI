@@ -525,7 +525,9 @@ final class AgentTeamExecutionHistoryStore {
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
-              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }) else {
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
       if mode == "workspace" {
@@ -711,7 +713,9 @@ final class AgentTeamExecutionHistoryStore {
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
-              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }) else {
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
       let ids = try database.cloudProblemIds(scope: scope, after: cursor, limit: 9)
