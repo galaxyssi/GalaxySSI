@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_restore_title">Restore health backup</string>
+    <string name="health_restore_intro">Verify a backup, review changes, and merge into your current profile. Existing records will not be overwritten.</string>
+    <string name="health_restore_verified">Backup verified</string>
+    <string name="health_restore_owner_pair">Backup owner: %1$s\nCurrent profile: %2$s</string>
+    <string name="health_restore_record_counts">New: %1$d · Duplicates: %2$d · Conflicts: %3$d</string>
+    <string name="health_restore_file_counts">New originals: %1$d · Reused: %2$d · Repaired: %3$d · Missing: %4$d</string>
+    <string name="health_restore_conflicts">Review conflicts</string>
+    <string name="health_restore_keep_existing">Keep existing records. Conflicting items will be skipped.</string>
+    <string name="health_restore_incoming">Backup: %1$s</string>
+    <string name="health_restore_local_value">On this device: %1$s</string>
+    <string name="health_restore_no_note">No note</string>
+    <string name="health_restore_incoming_note">Backup note: %1$s</string>
+    <string name="health_restore_local_note">Local note: %1$s</string>
+    <string name="health_restore_deleted">Deleted on this device. It will not be restored.</string>
+    <string name="health_restore_back_preview">Back to restore preview</string>
+    <string name="health_restore_confirm">I confirm this backup is mine and agree to merge without overwriting.</string>
+    <string name="health_restore_confirm_missing">I confirm this backup is mine and agree to restore it with missing originals.</string>
+    <string name="health_restore_commit">Restore to my profile</string>
+    <string name="health_restore_complete">Restore complete</string>
+    <string name="health_restore_partial">Restore complete with items skipped or missing</string>
+    <string name="health_restore_history">Recent restore batches</string>
+    <string name="health_restore_changed">The target profile or its data changed. Verify the backup again before restoring.</string>
+    <string name="health_restore_owner_mismatch">The named owner in this backup does not match the current profile. Nothing was imported.</string>
+    <string name="health_restore_original_unavailable">An existing original with the same digest could not be read. Nothing was imported.</string>
+    <string name="health_restore_failed">Restore could not be completed. No partial records were saved.</string>
+</resources>

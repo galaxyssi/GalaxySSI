@@ -231,6 +231,9 @@ class HealthCaptureActivity : Activity() {
             addView(ui.row(getString(R.string.health_take_photo), getString(R.string.health_camera_alignment)) { camera() })
             addView(ui.row(getString(R.string.health_choose_images)) { choose(images = true) })
             addView(ui.row(getString(R.string.health_choose_files)) { choose(images = false) })
+            addView(ui.row(getString(R.string.health_restore_title)) {
+                startActivity(Intent(this@HealthCaptureActivity, HealthRestoreActivity::class.java))
+            })
             addView(ui.row(getString(R.string.health_original_library)) { open("library") })
         }, 14)
         if (pendingPhoto) {

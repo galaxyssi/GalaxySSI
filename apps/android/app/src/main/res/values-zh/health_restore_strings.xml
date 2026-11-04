@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_restore_title">恢复健康备份</string>
+    <string name="health_restore_intro">先校验备份，再核对变更并合并到本人档案。不会覆盖现有记录。</string>
+    <string name="health_restore_verified">备份校验通过</string>
+    <string name="health_restore_owner_pair">备份归属：%1$s\n当前档案：%2$s</string>
+    <string name="health_restore_record_counts">新增 %1$d 条 · 重复 %2$d 条 · 冲突 %3$d 条</string>
+    <string name="health_restore_file_counts">新增原件 %1$d 个 · 复用 %2$d 个 · 补回 %3$d 个 · 缺失 %4$d 个</string>
+    <string name="health_restore_conflicts">核对冲突记录</string>
+    <string name="health_restore_keep_existing">保留本机记录，跳过冲突项。</string>
+    <string name="health_restore_incoming">备份：%1$s</string>
+    <string name="health_restore_local_value">本机：%1$s</string>
+    <string name="health_restore_no_note">无备注</string>
+    <string name="health_restore_incoming_note">备份备注：%1$s</string>
+    <string name="health_restore_local_note">本机备注：%1$s</string>
+    <string name="health_restore_deleted">此记录已在本机删除，本次不会恢复。</string>
+    <string name="health_restore_back_preview">返回恢复预览</string>
+    <string name="health_restore_confirm">我确认备份属于本人，同意合并且不覆盖现有记录。</string>
+    <string name="health_restore_confirm_missing">我确认备份属于本人，接受在缺少部分原件的情况下恢复。</string>
+    <string name="health_restore_commit">恢复到本人档案</string>
+    <string name="health_restore_complete">恢复完成</string>
+    <string name="health_restore_partial">恢复已提交，有跳过项或缺失原件</string>
+    <string name="health_restore_history">最近恢复批次</string>
+    <string name="health_restore_changed">目标档案或数据已变化，请重新校验备份后再恢复。</string>
+    <string name="health_restore_owner_mismatch">备份中的姓名与当前档案不符，未导入任何数据。</string>
+    <string name="health_restore_original_unavailable">本机同摘要的原件无法校验，未导入任何数据。</string>
+    <string name="health_restore_failed">未能完成恢复，没有保存部分记录。</string>
+</resources>

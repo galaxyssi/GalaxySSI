@@ -126,6 +126,61 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             arrayOf(after), signal
         ).use { rows -> buildList { while (rows.moveToNext()) add(decode(rows)) } }
 
+    internal fun restoreMatch(candidate: HealthObservation): HealthRestoreMatch {
+        val db = helper.readableDatabase
+        fun compare(value: HealthObservation): HealthRestoreMatch {
+            val equivalent = value.profileId == candidate.profileId && value.source == candidate.source &&
+                value.platformOrigin == candidate.platformOrigin && value.deviceReceivedAt == candidate.deviceReceivedAt &&
+                value.deviceClock == candidate.deviceClock && value.draft == candidate.draft
+            return HealthRestoreMatch(if (equivalent) HealthRestoreKind.DUPLICATE else HealthRestoreKind.CONFLICT, value)
+        }
+        db.rawQuery("SELECT id,revision,payload,metric,measured_at,deleted FROM observations WHERE id=?",
+            arrayOf(candidate.id)).use { row ->
+            if (row.moveToFirst()) return if (row.getInt(5) != 0) HealthRestoreMatch(HealthRestoreKind.CONFLICT, deleted = true)
+                else compare(decode(row))
+        }
+        recordForEvidence(candidate.draft)?.let { return compare(it) }
+        db.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE dedupe=? AND deleted=0",
+            arrayOf(dedupe(candidate))).use { if (it.moveToFirst()) return compare(decode(it)) }
+        if (candidate.source in setOf("health_connect", "bluetooth")) {
+            db.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE metric=? AND deleted=0 " +
+                "AND measured_at=? AND external_key IS NOT NULL", arrayOf(candidate.draft.metric.name, candidate.draft.measuredAt.toString()))
+                .use { rows ->
+                    while (rows.moveToNext()) {
+                        val existing = decode(rows)
+                        if (HealthObservationPolicy.duplicateKey(existing) == HealthObservationPolicy.duplicateKey(candidate))
+                            return compare(existing)
+                    }
+                }
+        }
+        return HealthRestoreMatch(HealthRestoreKind.NEW)
+    }
+
+    internal fun restoreDedupeKey(record: HealthObservation) = dedupe(record)
+    internal fun restoreEvidenceKey(record: HealthObservation) = evidenceKey(record.draft)
+
+    internal fun insertRestored(record: HealthObservation) {
+        val db = helper.writableDatabase
+        check(db.inTransaction())
+        require(record.profileId == "self" && record.revision in 1 until Int.MAX_VALUE && HealthObservationPolicy.validate(record.draft) == null)
+        val bytes = encode(record)
+        try {
+            val external = if (record.source in setOf("health_connect", "bluetooth"))
+                AgentMemoryIndexKey.token("$name|health-restore-source-v1|${record.id}") else null
+            db.insertOrThrow("observations", null, ContentValues().apply {
+                put("id", record.id); put("revision", record.revision); put("metric", record.draft.metric.name)
+                put("measured_at", record.draft.measuredAt); put("payload", bytes); put("dedupe", external ?: dedupe(record))
+                put("deleted", 0); put("original_id", record.draft.evidence?.originalId)
+                put("evidence_key", evidenceKey(record.draft)); put("external_key", external)
+            })
+            db.insertOrThrow("revisions", null, ContentValues().apply {
+                put("id", record.id); put("revision", record.revision); put("payload", bytes)
+                put("changed_at", record.receivedAt); put("deleted", 0)
+            })
+            changed(record.draft.metric)
+        } finally { bytes.fill(0) }
+    }
+
     fun page(after: HealthPageCursor? = null, metric: HealthMetric? = null, limit: Int = PAGE_SIZE, originalId: String? = null,
              metrics: Set<HealthMetric>? = null): HealthRecordPage {
         require(limit in 1..PAGE_SIZE)
@@ -437,6 +492,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             indexPlatformRecords(db)
             createSyncCheckpoints(db)
             HealthOriginalStore.createSharedSchema(db)
+            HealthRestoreReceipts.createSchema(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             check(oldVersion in 1 until SCHEMA_VERSION && newVersion == SCHEMA_VERSION) { "Unsupported health schema upgrade" }
@@ -454,6 +510,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             }
             if (oldVersion < 6) createSyncCheckpoints(db)
             if (oldVersion < 7) HealthOriginalStore.createSharedSchema(db)
+            if (oldVersion < 8) HealthRestoreReceipts.createSchema(db)
         }
         private fun indexPlatformRecords(db: SQLiteDatabase) =
             db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
@@ -462,7 +519,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         private fun createClocks(db: SQLiteDatabase) { db.execSQL("CREATE TABLE IF NOT EXISTS health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)") }
     }
     companion object {
-        const val SCHEMA_VERSION = 7
+        const val SCHEMA_VERSION = 8
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
         fun draftKey(draft: HealthDraft) = when {

@@ -17,14 +17,13 @@ legacy data is retained for recovery, but no new originals are written there.
 Fresh installs do not create a legacy database. Large old ciphertext fields
 are read in slices to avoid the Android CursorWindow row limit.
 
-This enables a future restore operation to prepare and authenticate encrypted
-original files before opening a short, single-database transaction, then
-publish their metadata, measurement revisions, and a restore receipt
-together. A file staged before that commit is not a visible original;
-abandoned staging files need dedicated cleanup in the restore path. No
+This allows the [restore flow](android-health-restore.md) to prepare and
+authenticate encrypted original files before opening a single-database
+transaction, then publish their metadata, measurement revisions, and a
+restore receipt together. A file staged before that commit is not a visible
+original; the restore path checks receipts before clearing staging. No
 multi-database WAL commit, temporary plaintext, or destructive replacement of
 the existing profile is required. [SQLite WAL documentation](https://www.sqlite.org/wal.html)
 explains why commits across attached WAL databases are not atomic as a set.
 
-This change does not implement the restore merge or expose a restore button.
-The authenticated backup verifier remains read-only.
+The standalone backup verifier still remains read-only.

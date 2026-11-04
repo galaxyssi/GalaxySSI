@@ -31,6 +31,9 @@ class HealthDataFilesActivity : Activity() {
             addView(ui.row(getString(R.string.health_backup_verify)) {
                 startActivity(Intent(this@HealthDataFilesActivity, HealthBackupActivity::class.java).putExtra("verify_backup", true))
             }.apply { tag = "health-backup-verify-entry" })
+            addView(ui.row(getString(R.string.health_restore_title)) {
+                startActivity(Intent(this@HealthDataFilesActivity, HealthRestoreActivity::class.java))
+            }.apply { tag = "health-restore-entry" })
         }) }, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
     }
 }
