@@ -369,6 +369,28 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testDirectedRequestsKeepLongQuestionsAndSeparateCandidateIdentities() throws {
+    var team = durableTeamSnapshot("run")
+    team.members[1].researchStage = "EXPLORE"
+    let sender = team.members[1]
+    let question = String(repeating: "q", count: 1_300)
+    func request(_ candidate: String, recipient: String = "primary") -> AgentMcpJSONValue {
+      .object(["to": .array([.string(recipient)]), "question": .string(question), "candidate_id": .string(candidate)])
+    }
+    var envelope: AgentMcpJSONObject = ["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+      "requests": .array([request("a"), request("b"), request("a"), request("c")])]
+    let roster: Set<String> = ["primary", "review"]
+    let rows = try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(envelope),
+      team: team, sender: sender, rosterMemberIds: roster)
+    XCTAssertEqual(rows.count, 3)
+    XCTAssertEqual(Set(rows.map(\.messageId)).count, 3)
+    XCTAssertTrue(rows.allSatisfy { $0.text == question && $0.toInstanceId == "primary" })
+    XCTAssertTrue(AgentCollaborationDirectedRequests.prompt(rows).contains(#""candidate_id":"b""#))
+    envelope["requests"] = .array([request("a", recipient: "foreign")])
+    XCTAssertThrowsError(try AgentCollaborationDirectedRequests.messages(in: AgentMcpJSONCodec.stringify(envelope),
+      team: team, sender: sender, rosterMemberIds: roster))
+  }
+
   func testResearchPublicationRequiresExplicitStructuredArtifact() throws {
     XCTAssertNil(try AgentCollaborationResearchEnvelope.publication(in: "A normal reply"))
     let raw = """
@@ -1548,6 +1570,16 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(recent.map(\.sequence), Array(Int64(4_982)...5_001))
     XCTAssertThrowsError(try reopened.recentMessages(supervisorRunId: "run", conversationId: "other"))
     XCTAssertTrue(try reopened.recentMessages(supervisorRunId: "missing", conversationId: "group").isEmpty)
+    var added = legacy[0]
+    added.messageId = "new-request"
+    var invalid = added
+    invalid.messageId = "invalid-request"
+    invalid.text = ""
+    XCTAssertThrowsError(try reopened.appendAll([added, invalid]))
+    XCTAssertTrue(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").isEmpty)
+    let batch = try reopened.appendAll([legacy[0], added, added])
+    XCTAssertEqual(batch.map(\.sequence), [1, 5_002, 5_002])
+    XCTAssertEqual(mailbox.pendingMessages(supervisorRunId: "run", instanceId: "reviewer").map(\.messageId), ["new-request"])
   }
 
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {
