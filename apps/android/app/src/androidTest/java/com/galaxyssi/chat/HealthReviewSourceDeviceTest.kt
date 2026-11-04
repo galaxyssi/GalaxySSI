@@ -10,6 +10,7 @@ import android.graphics.pdf.PdfDocument
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox
 import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -128,6 +129,183 @@ class HealthReviewSourceDeviceTest {
             }
         } finally { worker?.awaitTermination(15, TimeUnit.SECONDS) }
     }
+
+    @Test fun batchRejectsChangedDraftAndRollsBackAnEarlierInsertOnDuplicate() = isolated { names, originals ->
+        val job = seed(originals)
+        val drafts = recognized(originals, job)
+        val glucose = approved(drafts.first { it.metric == HealthMetric.GLUCOSE })
+        val hemoglobin = approved(drafts.first { it.metric == HealthMetric.HEMOGLOBIN })
+        HealthRecordStore(context, names.records).use { store ->
+            listOf(glucose, hemoglobin).forEach(store::saveDraft)
+            fun selected() = store.prepareOcrReviewPage(listOf(glucose, hemoglobin)).map { requireNotNull(it.selection) }
+            val stale = selected()
+            store.saveDraft(hemoglobin.copy(note = "Corrected after selection"))
+            assertEquals(HealthOcrBatchResult.Stale(stale[1].key), store.saveOcrReviewBatch(job.id, job.originalId, stale))
+            assertEquals(0L, store.count())
+            val otherSource = hemoglobin.copy(evidence = hemoglobin.evidence!!.copy(originalId = id(), jobId = id()))
+            assertTrue(store.save(otherSource) is HealthSaveResult.Saved)
+            val valid = selected()
+            val clock = store.metricVersion(HealthMetric.GLUCOSE)
+            assertEquals(HealthOcrBatchResult.Duplicate(valid[1].key), store.saveOcrReviewBatch(job.id, job.originalId, valid))
+            assertEquals(1L, store.count())
+            assertEquals(clock, store.metricVersion(HealthMetric.GLUCOSE))
+            assertEquals(glucose, store.draft(valid[0].key))
+            assertNull(store.recordForEvidence(glucose))
+        }
+    }
+
+    @Test fun finishingOneItemStagesItWithoutCreatingARecord() = isolated { names, originals ->
+        assumeFalse("Native review requires an unlocked display",
+            context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val job = seed(originals)
+        val ready = approved(recognized(originals, job).first { it.metric == HealthMetric.GLUCOSE })
+        val key = HealthRecordStore.draftKey(ready)
+        HealthRecordStore(context, names.records).use { it.saveDraft(ready.copy(evidence = ready.evidence!!.copy(confirmed = false))) }
+        val intent = Intent(context, HealthCenterActivity::class.java).putExtra("review_draft", key)
+            .putExtra("health_stage_ocr_review", true).putExtra("health_overview_test_id", names.fixture)
+        ActivityScenario.launch<HealthCenterActivity>(intent).use { scenario ->
+            await {
+                var visible = false
+                scenario.onActivity { visible = views(it.window.decorView).any { view -> view.tag == "health-save" } }
+                visible
+            }
+            scenario.onActivity {
+                val root = views(it.window.decorView)
+                val finish = root.single { view -> view.tag == "health-save" } as TextView
+                assertEquals(it.getString(R.string.health_review_finish_item), finish.text)
+                assertTrue(finish.performClick())
+                assertEquals(View.VISIBLE, root.single { view -> view.tag == "health-validation" }.visibility)
+                val approval = root.single { view -> view.tag == "health-confirm-source" } as CheckBox
+                approval.performClick()
+                assertTrue(approval.isChecked)
+                assertTrue(finish.performClick())
+            }
+            await { scenario.state == Lifecycle.State.DESTROYED }
+        }
+        HealthRecordStore(context, names.records).use {
+            assertEquals(0L, it.count())
+            assertTrue(requireNotNull(it.draft(key)).evidence!!.confirmed)
+        }
+    }
+
+    @Test fun batchUiRequiresFreshConsentAndKeepsUnselectedDrafts() = isolated { names, originals ->
+        assumeFalse("Native review requires an unlocked display",
+            context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val job = seed(originals)
+        val drafts = recognized(originals, job)
+        val remaining = drafts.single { it.metric == HealthMetric.CHOLESTEROL }
+        val toSave = drafts.filter { it.metric != HealthMetric.CHOLESTEROL }.map(::approved)
+        HealthRecordStore(context, names.records).use { records ->
+            toSave.forEach(records::saveDraft)
+            val intent = Intent(context, HealthCaptureActivity::class.java)
+                .putExtra("health_job", job.id).putExtra("health_review_test_id", names.fixture)
+            ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
+                fun awaitRows() = await {
+                    var ready = false
+                    scenario.onActivity { ready = views(it.window.decorView).count { view ->
+                        (view.tag as? String)?.startsWith("health-review-pick-") == true } == 2 }
+                    ready
+                }
+                awaitRows()
+                scenario.onActivity {
+                    val root = views(it.window.decorView)
+                    val checks = root.filter { view -> (view.tag as? String)?.startsWith("health-review-pick-") == true }
+                    val consent = root.single { view -> view.tag == "health-review-batch-consent" } as CheckBox
+                    val save = root.single { view -> view.tag == "health-review-batch-save" }
+                    assertFalse(save.isEnabled)
+                    checks.forEach { check -> assertTrue(check.performClick()) }
+                    assertFalse(save.isEnabled)
+                    consent.performClick()
+                    assertTrue(consent.isChecked)
+                    assertTrue(save.isEnabled)
+                }
+                scenario.recreate()
+                awaitRows()
+                scenario.onActivity {
+                    val root = views(it.window.decorView)
+                    val checks = root.filterIsInstance<CheckBox>().filter { view -> (view.tag as? String)?.startsWith("health-review-pick-") == true }
+                    assertTrue(checks.all { it.isChecked })
+                    val consent = root.single { view -> view.tag == "health-review-batch-consent" } as CheckBox
+                    val save = root.single { view -> view.tag == "health-review-batch-save" }
+                    assertFalse(consent.isChecked)
+                    assertFalse(save.isEnabled)
+                    consent.performClick()
+                    assertTrue(consent.isChecked)
+                    assertTrue(save.isEnabled)
+                }
+                screenshot("health-ocr-batch-confirm.png")
+                scenario.onActivity {
+                    assertTrue(views(it.window.decorView).single { view -> view.tag == "health-review-batch-save" }.performClick())
+                }
+                await { records.count() == 2L }
+                assertEquals(toSave.map { it.metric }.toSet(), records.page().records.map { it.draft.metric }.toSet())
+                assertEquals(remaining, records.draft(HealthRecordStore.draftKey(remaining)))
+                assertNull(records.recordForEvidence(remaining))
+            }
+        }
+    }
+
+    @Test fun selectionsAcrossTwoRealPdfPagesCommitInOneBatch() = isolated { names, originals ->
+        assumeFalse("Native review requires an unlocked display",
+            context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val id = id()
+        val lines = listOf("Glucose: 5.4 mmol/L", "Hemoglobin: 142 g/L")
+        originals.createJob(HealthImportJob(id, "content://fixture/report", System.currentTimeMillis()))
+        val bytes = ByteArrayOutputStream()
+        val pdf = PdfDocument()
+        try {
+            lines.forEachIndexed { index, line ->
+                val page = pdf.startPage(PdfDocument.PageInfo.Builder(250, 350, index + 1).create())
+                page.canvas.drawText(line, 10f, 80f, Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 14f })
+                pdf.finishPage(page)
+                originals.savePage(id, HealthOcrPage(index + 1, 250, 350,
+                    listOf(HealthOcrLine(line, listOf(40, 185, 720, 240)))))
+            }
+            pdf.writeTo(bytes)
+        } finally { pdf.close() }
+        val original = originals.importOriginal(id, bytes.toByteArray().inputStream(), "synthetic-two-pages.pdf", "application/pdf", "file")
+        val job = requireNotNull(originals.updateJob(id) { it.copy(state = HealthImportState.REVIEW, originalId = original.id) })
+        HealthRecordStore(context, names.records).use { records ->
+            (1..2).forEach { page ->
+                records.saveDraft(approved(HealthOcrCandidates.suggest(job, original, requireNotNull(originals.page(id, page))).single()))
+            }
+            val intent = Intent(context, HealthCaptureActivity::class.java)
+                .putExtra("health_job", job.id).putExtra("health_review_test_id", names.fixture)
+            ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
+                fun row(views: List<View>, metric: String) = views.singleOrNull {
+                    (it.tag as? String)?.startsWith("health-review-pick-$metric-") == true
+                }
+                fun waitFor(metric: String) = await {
+                    var visible = false
+                    scenario.onActivity { visible = row(views(it.window.decorView), metric) != null }
+                    visible
+                }
+                waitFor("glucose")
+                scenario.onActivity {
+                    val root = views(it.window.decorView)
+                    assertTrue(requireNotNull(row(root, "glucose")).performClick())
+                    assertTrue(root.filterIsInstance<TextView>().single { v -> v.text == it.getString(R.string.health_next_page) }.performClick())
+                }
+                waitFor("hemoglobin")
+                scenario.onActivity {
+                    val root = views(it.window.decorView)
+                    assertTrue(requireNotNull(row(root, "hemoglobin")).performClick())
+                    val consent = root.single { view -> view.tag == "health-review-batch-consent" } as CheckBox
+                    assertEquals(it.getString(R.string.health_review_batch_consent, 2), consent.text)
+                    consent.performClick()
+                    assertTrue(consent.isChecked)
+                    assertTrue(root.single { view -> view.tag == "health-review-batch-save" }.performClick())
+                }
+                await { records.count() == 2L }
+                assertEquals(setOf(1, 2), records.page().records.map { it.draft.evidence!!.page }.toSet())
+            }
+        }
+    }
+
+    private fun recognized(store: HealthOriginalStore, job: HealthImportJob) =
+        HealthOcrCandidates.suggest(job, requireNotNull(store.original(job.originalId)), requireNotNull(store.page(job.id, 1)))
+
+    private fun approved(draft: HealthDraft) = draft.copy(measuredAt = 1_790_000_000_000L, evidence = draft.evidence!!.copy(confirmed = true))
 
     private fun seed(store: HealthOriginalStore): HealthImportJob {
         val id = id()

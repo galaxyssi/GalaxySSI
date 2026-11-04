@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_review_finish_item">核对完成，返回列表</string>
+    <string name="health_review_saved_item">已保存 · 查看记录</string>
+    <string name="health_review_recorded_time">采样时间：%1$s</string>
+    <string name="health_review_select_item">选择保存：%1$s</string>
+    <string name="health_review_limit">请先保存或取消部分选项，再继续选择。</string>
+    <string name="health_review_batch_idle">核对完成后，可勾选要保存的条目。</string>
+    <string name="health_review_batch_consent">我已核对本次准备保存的 %1$d 项记录。</string>
+    <string name="health_review_batch_save">确认保存 %1$d 项，其余保留草稿</string>
+    <string name="health_review_batch_saved">已保存 %1$d 项，其余仍是草稿。</string>
+    <string name="health_review_batch_duplicate">有条目已存在，本次未保存任何记录。请核对选项。</string>
+    <string name="health_review_batch_stale">有草稿已变更，本次未保存任何记录。请重新核对。</string>
+</resources>
