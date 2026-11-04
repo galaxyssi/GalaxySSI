@@ -837,10 +837,39 @@ final class AgentTeamExecutionHistoryStore {
                 $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
                   $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
               }) else { return false }
+        let existing = prior.first?.liveGraph?.work ?? []
+        let updated = checkpoint.liveGraph?.work ?? []
+        guard try Self.validateLearningAdmissions(updated, existingCount: existing.count,
+          snapshot: snapshot, database: database) else { return false }
         try database.insertGoalCheckpoint(checkpoint)
         return true
       }
     } catch { return false }
+  }
+
+  private static func validateLearningAdmissions(_ work: [AgentCollaborationLiveGraph.Work], existingCount: Int,
+    snapshot: AgentTeamExecutionSnapshot, database: AgentTeamHistoryDatabase) throws -> Bool {
+    var claims: [String: Set<String>] = [:]
+    for (index, item) in work.enumerated() {
+      guard let binding = item.learning else { continue }
+      guard claims[binding.agenda.objectId, default: []].insert(binding.option_id).inserted else { return false }
+      if index < existingCount { continue }
+      guard let agenda = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: snapshot.conversationId, key: "object:" + binding.agenda.objectId),
+            agenda.reference == binding.agenda, agenda.draft.kind == .learningAgenda,
+            agenda.runId == snapshot.supervisorRunId, agenda.turnId == snapshot.taskId,
+            agenda.authorId == snapshot.primaryMemberId,
+            snapshot.members.contains(where: { $0.memberId == item.member && $0.deliveryMode != .ignore }),
+            let options = agenda.draft.body["learning_agenda"]?.objectValue?["options"]?.arrayValue,
+            let option = options.compactMap(\.objectValue).first(where: { $0.string("id") == binding.option_id }),
+            AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item),
+            let gap = option["gap"]?.objectValue, case .int(let revision)? = gap["revision"],
+            let current = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: snapshot.conversationId, key: "object:" + gap.string("object_id")),
+            current.reference.revision == revision, current.reference.sha256 == gap.string("sha256"),
+            current.draft.kind.rawValue == "capability_gap" else { return false }
+    }
+    return true
   }
 
   func appendCollaborationGraph(_ raw: String, runId: String, conversationId: String, turnId: String,

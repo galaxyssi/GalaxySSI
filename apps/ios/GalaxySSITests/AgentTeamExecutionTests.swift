@@ -290,6 +290,26 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(valid(draft))
   }
 
+  func testLearningAdmissionRequiresExactSelectedAssignment() throws {
+    let raw = """
+    {"format":"galaxyssi.work-expansion.v1","work":[
+      {"id":"learn","member":"member","stage":"VERIFY","assignment":"Repeat the check","depends_on":[],
+       "learning":{"agenda":{"object_id":"agenda","revision":1,"sha256":"exact"},"option_id":"repeat"}}
+    ]}
+    """
+    let graph = try XCTUnwrap(AgentCollaborationLiveGraph().appending(raw, authorizedMembers: ["member"],
+      historicalAuthors: [:], settled: [:]))
+    let item = try XCTUnwrap(graph.work.first)
+    var option: AgentMcpJSONObject = ["decision": .string("select"), "member": .string("member"),
+      "stage": .string("VERIFY"), "assignment": .string("Repeat the check")]
+    XCTAssertTrue(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
+    option["decision"] = .string("defer")
+    XCTAssertFalse(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
+    option["decision"] = .string("select")
+    option["assignment"] = .string("Repeat a different check")
+    XCTAssertFalse(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

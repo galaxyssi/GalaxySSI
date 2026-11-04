@@ -91,6 +91,12 @@ struct AgentCollaborationResearchDraft: Codable {
 }
 
 enum AgentCollaborationLearningAgendaIntake {
+  static func matchesSelection(_ option: AgentMcpJSONObject, work: AgentCollaborationLiveGraph.Work) -> Bool {
+    option.string("decision") == "select" && option.string("member") == work.member &&
+      option["assignment"]?.stringValue.map { Data($0.utf8) == Data(work.assignment.utf8) } == true &&
+      option.string("stage") == work.stage
+  }
+
   static func validates(_ draft: AgentCollaborationResearchDraft, members: Set<String>,
                         gapOptions: (AgentCollaborationResearchReference) throws -> Set<String>?) rethrows -> Bool {
     guard draft.objectId?.isBlank != false, draft.baseRevision == 0,
