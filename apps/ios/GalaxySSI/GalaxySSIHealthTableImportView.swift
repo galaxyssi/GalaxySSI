@@ -15,6 +15,9 @@ struct GalaxySSIHealthTableImportView: View {
   @State private var limit = 30
   @State private var undo: GalaxySSIHealthTableImport.Batch?
   @State private var message: String?
+  @State private var original: OriginalSelection?
+
+  private struct OriginalSelection: Identifiable { let id: UUID }
   @State private var workbook: WorkbookInput?
   @State private var sheetID = ""
   @State private var header = 0
@@ -53,6 +56,7 @@ struct GalaxySSIHealthTableImportView: View {
                 Text(batch.name)
                 Text(batch.at, style: .date).foregroundColor(.secondary)
                 Text(String(format: t("saved", "%lld measurements saved"), Int64(batch.inserted)))
+                Button(t("open_source", "View table original")) { original = OriginalSelection(id: batch.id) }
                 if let count = batch.undone {
                   Text(String(format: t("undone", "%lld measurements removed"), Int64(count)))
                     .foregroundColor(.secondary)
@@ -71,7 +75,7 @@ struct GalaxySSIHealthTableImportView: View {
     .onAppear(perform: reload)
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
-      else if phase == .background { clear(); batches = []; undo = nil; message = nil }
+      else if phase == .background { clear(); batches = []; undo = nil; original = nil; message = nil }
     }
     .onDisappear { clear(); batches = []; undo = nil; message = nil }
     .onChange(of: mapping) { _ in rows = nil; owned = false }
@@ -86,6 +90,17 @@ struct GalaxySSIHealthTableImportView: View {
             message: Text(t("undo_scope", "Only unchanged measurements added by this batch will be removed.")),
             primaryButton: .destructive(Text(t("remove", "Remove")), action: { undoBatch(batch.id) }),
             secondaryButton: .cancel())
+    }
+    .sheet(item: $original) { selection in
+      NavigationView {
+        GalaxySSIHealthTableSourceView(records: records, batchID: selection.id)
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button(t("close_source", "Close")) { original = nil }
+            }
+          }
+      }
+      .navigationViewStyle(.stack)
     }
   }
 

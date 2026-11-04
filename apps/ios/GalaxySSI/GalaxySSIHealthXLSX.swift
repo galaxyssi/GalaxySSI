@@ -16,6 +16,7 @@ struct GalaxySSIHealthXLSX {
     let number: Int
     let cells: [Int: String]
     let formulas: Set<Int>
+    let formulaText: [Int: String]
   }
 
   let sheets: [Sheet]
@@ -152,6 +153,9 @@ private final class SheetXML: NSObject, XMLParserDelegate {
   private var column = -1
   private var cells: [Int: String] = [:]
   private var formulas = Set<Int>()
+  private var formulaText: [Int: String] = [:]
+  private var expression = ""
+  private var collectingFormula = false
   private var text = ""
   private var type = ""
   private var collecting = false
@@ -169,6 +173,7 @@ private final class SheetXML: NSObject, XMLParserDelegate {
       column = -1
       cells = [:]
       formulas = []
+      formulaText = [:]
     case "c":
       let next = attrs["r"].flatMap { Self.column($0, row: row) } ?? (attrs["r"] == nil ? column + 1 : -1)
       guard next > column, next < 64 else { parser.abortParsing(); return }
@@ -176,14 +181,20 @@ private final class SheetXML: NSObject, XMLParserDelegate {
       type = attrs["t", default: "n"]
       text = ""
       formula = false
+      expression = ""
     case "v": collecting = true
     case "t" where type == "inlineStr": collecting = true
-    case "f": formula = true
+    case "f": formula = true; collectingFormula = true
     default: break
     }
   }
 
   func parser(_ parser: XMLParser, foundCharacters value: String) {
+    if collectingFormula {
+      expression += value
+      if expression.utf8.count > 8_192 { parser.abortParsing() }
+      return
+    }
     guard collecting else { return }
     text += value
     if text.utf8.count > 8_192 { parser.abortParsing() }
@@ -191,16 +202,20 @@ private final class SheetXML: NSObject, XMLParserDelegate {
 
   func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
     switch tag(name) {
+    case "f": collectingFormula = false
     case "v", "t": collecting = false
     case "c":
       if type == "s" {
         guard let index = Int(text), strings.indices.contains(index) else { parser.abortParsing(); return }
         cells[column] = strings[index]
       } else if type != "e" { cells[column] = text }
-      if formula { formulas.insert(column) }
+      if formula {
+        formulas.insert(column)
+        formulaText[column] = expression
+      }
     case "row":
       if !cells.isEmpty || !formulas.isEmpty {
-        rows.append(.init(number: row, cells: cells, formulas: formulas))
+        rows.append(.init(number: row, cells: cells, formulas: formulas, formulaText: formulaText))
       }
     default: break
     }
