@@ -144,6 +144,7 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.TREND_SOURCES -> R.string.health_privacy_trend_sources
     HealthAccessPurpose.PROFILE_CONTEXT -> R.string.health_privacy_profile_context
     HealthAccessPurpose.SLEEP_CHANGE -> R.string.health_sleep_alert_title
+    HealthAccessPurpose.OVERVIEW -> R.string.health_overview_title
     HealthAccessPurpose.WEEKLY_REPORT -> R.string.health_weekly_title
     HealthAccessPurpose.SAVE_WEEKLY_REPORT -> R.string.health_weekly_save
     HealthAccessPurpose.SAVE_RECORDS -> R.string.health_privacy_save_records

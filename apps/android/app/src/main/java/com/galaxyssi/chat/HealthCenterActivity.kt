@@ -25,7 +25,31 @@ class HealthCenterActivity : Activity() {
     private lateinit var root: LinearLayout
     private val worker = Executors.newSingleThreadExecutor()
     internal val main = Handler(Looper.getMainLooper())
-    private val records by lazy { HealthRecordStore(applicationContext) }
+    private val overviewNames by lazy {
+        val fixture = intent.getStringExtra("health_overview_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) }
+        HealthOverviewDatabases(fixture)
+    }
+    private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
+    private val overview by lazy { HealthOverviewView(this, overviewNames) }
+    private var overviewScroll = 0
+    private val reloadOverview = Runnable { if (active && route == "overview") render() }
+    private val overviewChanges = object : android.database.ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) {
+            if (active && route == "overview") {
+                main.removeCallbacks(reloadOverview)
+                main.postDelayed(reloadOverview, 120)
+            }
+        }
+    }
+    private val overviewPrivacy = object : android.database.ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) {
+            if (active && route == "overview") {
+                sensitiveDialogs.toList().forEach { it.dismiss() }
+                main.removeCallbacks(reloadOverview)
+                render()
+            }
+        }
+    }
     private var active = false
     private var generation = 0
     private var route = "overview"
@@ -65,6 +89,7 @@ class HealthCenterActivity : Activity() {
             route = state.getString("route", "overview").orEmpty().ifBlank { "overview" }
             selected = HealthMetric.entries.getOrElse(state.getInt("metric")) { HealthMetric.BLOOD_PRESSURE }
             recordId = state.getString("record", "").orEmpty()
+            overviewScroll = state.getInt("overviewScroll")
             state.getStringArrayList("stack")?.forEach { encoded ->
                 val parts = encoded.split('|')
                 if (parts.size == 3) backStack.addLast(Triple(parts[0], HealthMetric.valueOf(parts[1]), parts[2]))
@@ -85,11 +110,20 @@ class HealthCenterActivity : Activity() {
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
     }
-    override fun onStart() { super.onStart(); active = true; render() }
+    override fun onStart() {
+        super.onStart(); active = true
+        contentResolver.registerContentObserver(HealthRecordStore.changes(this, overviewNames.records), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this).buildUpon().appendPath("jobs").build(), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthReminderStore.changes(this, overviewNames.reminders), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, overviewNames.privacy), false, overviewPrivacy)
+        render()
+    }
     override fun onStop() {
         saveDraft()
         active = false; generation++
-        main.removeCallbacks(savePendingDraft)
+        main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview)
+        contentResolver.unregisterContentObserver(overviewChanges); contentResolver.unregisterContentObserver(overviewPrivacy)
+        retainOverviewScroll()
         editor = null; body.removeAllViews()
         sensitiveDialogs.toList().forEach { it.dismiss() }; sensitiveDialogs.clear()
         super.onStop()
@@ -102,6 +136,7 @@ class HealthCenterActivity : Activity() {
         saveDraft()
         out.putString("route", route); out.putInt("metric", selected.ordinal); out.putString("record", recordId)
         out.putString("review", reviewKey)
+        retainOverviewScroll(); out.putInt("overviewScroll", overviewScroll)
         out.putStringArrayList("stack", ArrayList(backStack.map { "${it.first}|${it.second.name}|${it.third}" }))
         super.onSaveInstanceState(out)
     }
@@ -162,7 +197,8 @@ class HealthCenterActivity : Activity() {
         }
     }
     private fun render() {
-        generation++; main.removeCallbacks(savePendingDraft); editor = null; body.removeAllViews()
+        retainOverviewScroll()
+        generation++; main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview); editor = null; body.removeAllViews()
         val reminderVisibility = if (route == "overview") View.VISIBLE else View.GONE
         reminderIcon.visibility = reminderVisibility; reminderSpacer.visibility = reminderVisibility
         title.text = getString(when (route) {
@@ -190,63 +226,21 @@ class HealthCenterActivity : Activity() {
         return content
     }
     internal fun date(time: Long): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))
+    private fun retainOverviewScroll() {
+        (body.getChildAt(0) as? ScrollView)?.takeIf { it.tag == "health-overview-scroll" }?.let { overviewScroll = it.scrollY }
+    }
     private fun renderOverview() {
         val content = scrolling()
-        val loading = ui.text(getString(R.string.health_loading), 14f, muted = true)
-        content.addView(loading)
-        val overviewMetrics = listOf(HealthMetric.BLOOD_PRESSURE, HealthMetric.GLUCOSE, HealthMetric.WEIGHT, HealthMetric.HEART_RATE,
-            HealthMetric.SLEEP_DURATION, HealthMetric.STEPS)
-        query({ store -> store.count() to overviewMetrics.associateWith { metric ->
-            store.page(metric = metric, limit = 1).records.firstOrNull()
-        } }) { (count, latest) ->
-            content.removeAllViews()
-            if (count == 0L) {
-                val hero = ui.column().apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(25), 0, ui.dp(25)) }
-                hero.addView(android.widget.ImageView(this).apply {
-                    setImageResource(R.drawable.ic_health_heart); imageTintList = android.content.res.ColorStateList.valueOf(0xff15975e.toInt())
-                    setPadding(ui.dp(20), ui.dp(20), ui.dp(20), ui.dp(20)); background = ui.background(0xffe8f6ee.toInt(), radius = 28)
-                }, LinearLayout.LayoutParams(ui.dp(80), ui.dp(80)))
-                ui.add(hero, ui.text(getString(R.string.health_first_title), 23f, bold = true).apply { gravity = Gravity.CENTER }, 22)
-                ui.add(hero, ui.text(getString(R.string.health_first_description), 15f, muted = true).apply { gravity = Gravity.CENTER }, 12)
-                content.addView(hero)
-                ui.add(content, ui.card().apply {
-                    addView(ui.row(getString(R.string.health_photo_record), getString(R.string.health_photo_description)) { openCapture() })
-                    addView(ui.row(getString(R.string.health_manual), getString(R.string.health_measurement_context)) { open("manual") })
-                    addView(ui.row(getString(R.string.health_records)) { open("records") })
-                }, 18)
-                ui.add(content, ui.text(getString(R.string.health_no_analysis), 13f, muted = true), 20)
-                ui.add(content, ui.command(R.string.health_add_first) { open("manual") }, 20)
-                ui.add(content, ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this, HealthDataFilesActivity::class.java)) }, 12)
-            } else {
-                content.addView(ui.text(getString(R.string.health_your_records), 26f, bold = true))
-                ui.add(content, ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this, HealthDataFilesActivity::class.java)) }, 8)
-                ui.add(content, ui.text(getString(R.string.health_record_count, count), 14f, muted = true), 6)
-                ui.add(content, ui.command(R.string.health_add_measurement) { open("manual") }, 18)
-                ui.add(content, ui.row(getString(R.string.health_photo_record), getString(R.string.health_photo_description)) { openCapture() }, 10)
-                ui.add(content, ui.row(getString(R.string.health_key_metrics), getString(R.string.health_catalog_title)) { openCatalog() }, 20)
-                overviewMetrics.chunked(2).forEach { metrics ->
-                    val line = ui.line().apply { gravity = Gravity.TOP }
-                    metrics.forEachIndexed { index, metric ->
-                        val record = latest[metric]
-                        val card = ui.card().apply {
-                            minimumHeight = ui.dp(142)
-                            addView(ui.text(getString(metric.titleResource()), 14f, muted = true))
-                            ui.add(this, ui.text(record?.let(::value) ?: getString(R.string.health_no_measurement),
-                                if (record == null) 16f else 23f, bold = record != null), 12)
-                            if (record != null) ui.add(this, ui.text(date(record.draft.measuredAt), 12f, muted = true), 8)
-                            setOnClickListener {
-                                startActivity(android.content.Intent(this@HealthCenterActivity, HealthTrendActivity::class.java).putExtra("health_metric", metric.name))
-                            }
-                            isFocusable = true
-                        }
-                        line.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                            if (index == 0) marginEnd = ui.dp(5) else marginStart = ui.dp(5)
-                        })
-                    }
-                    ui.add(content, line, 12)
-                }
-                ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 12f, muted = true), 18)
-            }
+        val scroll = (content.parent as ScrollView).apply { tag = "health-overview-scroll" }
+        content.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
+        val now = System.currentTimeMillis()
+        val zone = java.time.ZoneId.systemDefault()
+        query({ store -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone) }) { snapshot ->
+            overview.show(content, snapshot)
+            val position = overviewScroll
+            if (position > 0) scroll.post { if (active && scroll.parent === body) scroll.scrollTo(0, position) }
+            val tomorrow = HealthOverviewPolicy.localDay(now, zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            main.postDelayed(reloadOverview, (tomorrow - System.currentTimeMillis()).coerceAtLeast(500))
         }
     }
     private fun renderFunctions() {

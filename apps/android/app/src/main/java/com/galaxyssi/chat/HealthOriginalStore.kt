@@ -108,6 +108,18 @@ internal class HealthOriginalStore(
         return helper.readableDatabase.rawQuery("SELECT id,state,payload FROM jobs$where ORDER BY created_at DESC,id DESC LIMIT 30", args)
             .use { buildList { while (it.moveToNext()) add(decodeJob(it.getString(0), it.getString(1), it.getBlob(2))) } }
     }
+    fun overviewReviewJobs(): List<HealthImportJob> {
+        val limit = HealthOverviewPolicy.REVIEW_LIMIT
+        val states = listOf(HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW)
+        val streams = states.joinToString(" UNION ALL ") {
+            "SELECT id,created_at FROM (SELECT id,created_at FROM jobs WHERE state=? ORDER BY created_at DESC,id DESC LIMIT $limit)"
+        }
+        return helper.readableDatabase.rawQuery("SELECT id,state,payload FROM jobs WHERE id IN " +
+            "(SELECT id FROM ($streams) ORDER BY created_at DESC,id DESC LIMIT $limit) ORDER BY created_at DESC,id DESC",
+            states.map { it.name }.toTypedArray()).use {
+            buildList { while (it.moveToNext()) add(decodeJob(it.getString(0), it.getString(1), it.getBlob(2))) }
+        }
+    }
     fun pendingJobs(after: Pair<Long, String>? = null): List<HealthImportJob> {
         val cursor = if (after == null) "" else " AND (created_at<? OR (created_at=? AND id<?))"
         val args = after?.let { arrayOf(it.first.toString(), it.first.toString(), it.second) }

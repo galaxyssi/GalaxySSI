@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_overview_title">我的健康</string>
+    <string name="health_overview_attention">待关注</string>
+    <string name="health_overview_no_attention">暂无待关注事项</string>
+    <string name="health_overview_partial">部分总览数据暂不可用</string>
+    <string name="health_overview_permission">已关闭已确认指标的分析权限</string>
+    <string name="health_overview_sort">关注事项排序</string>
+    <string name="health_overview_order_changes">健康变化优先</string>
+    <string name="health_overview_order_review">待核对记录优先</string>
+    <string name="health_overview_order_recent">最新优先</string>
+    <string name="health_overview_coverage">%1$d/%2$d 类指标有近期记录</string>
+    <string name="health_overview_latest">最近测量：%1$s</string>
+    <string name="health_overview_photo">拍照</string>
+    <string name="health_overview_import">导入文件</string>
+    <string name="health_overview_recent">近期记录</string>
+    <string name="health_overview_stale">较早记录</string>
+    <string name="health_overview_unrecorded">未记录</string>
+    <string name="health_overview_missing_metrics">尚未记录：%1$s</string>
+    <string name="health_overview_no_data_warning">缺少数据或提醒不代表结果正常。</string>
+    <string name="health_overview_ocr_review">识别结果待核对</string>
+    <string name="health_overview_table_review">表格导入待核对</string>
+    <string name="health_overview_sleep_mean">%1$s 分钟</string>
+    <string name="health_overview_sleep_days">近 7 天均值 · %1$d 天可用</string>
+    <string name="health_overview_source">%1$s · %2$s</string>
+</resources>
