@@ -1463,6 +1463,22 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(resumed.permitsRecall(generation: 2))
   }
 
+  func testDesktopRecallReplayPreservesResponseAndRejectsChangedIdentity() {
+    var cache = AgentDesktopCollaborationResponseReplay()
+    let result: AgentMcpJSONObject = ["success": .bool(true), "data_b64": .string("original")]
+    cache.remember(result, key: "nonce", fingerprint: "assignment-1", expiresAt: 20, now: 10)
+    XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-1", now: 11), .response(result))
+    XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-2", now: 11), .identityMismatch)
+    XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-1", now: 20), .missing)
+    cache.remember(["success": .bool(false)], key: "failed", fingerprint: "assignment-1", expiresAt: 30, now: 20)
+    XCTAssertEqual(cache.lookup(key: "failed", fingerprint: "assignment-1", now: 21), .missing)
+    for _ in 0..<4 { XCTAssertTrue(cache.begin(desktopId: "desktop")) }
+    XCTAssertFalse(cache.begin(desktopId: "desktop"))
+    XCTAssertTrue(cache.begin(desktopId: "other"))
+    cache.end(desktopId: "desktop")
+    XCTAssertTrue(cache.begin(desktopId: "desktop"))
+  }
+
   func testDesktopGoalRecallCursorBindsOriginalSectionAndAssignment() {
     let recall = AgentDesktopCollaborationArchiveRecall.self
     let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group",

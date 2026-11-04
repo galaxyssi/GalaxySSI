@@ -42,6 +42,62 @@ struct AgentTeamDesktopReplySource: Codable, Equatable {
   var sourceMessageId: String
 }
 
+struct AgentDesktopCollaborationResponseReplay {
+  enum Lookup: Equatable {
+    case missing, identityMismatch, response(AgentMcpJSONObject)
+  }
+
+  private struct Entry {
+    var fingerprint: String
+    var expiresAt: Int64
+    var bytes: Int
+    var result: AgentMcpJSONObject
+  }
+
+  private var entries: [String: Entry] = [:]
+  private var activeByDesktop: [String: Int] = [:]
+  private let maximumEntries = 64
+  private let maximumBytes = 512 * 1_024
+
+  mutating func begin(desktopId: String) -> Bool {
+    let active = activeByDesktop[desktopId, default: 0]
+    guard active < 4 else { return false }
+    activeByDesktop[desktopId] = active + 1
+    return true
+  }
+
+  mutating func end(desktopId: String) {
+    let remaining = activeByDesktop[desktopId, default: 0] - 1
+    activeByDesktop[desktopId] = remaining > 0 ? remaining : nil
+  }
+
+  mutating func lookup(key: String, fingerprint: String, now: Int64) -> Lookup {
+    prune(now: now)
+    guard let existing = entries[key] else { return .missing }
+    return existing.fingerprint == fingerprint ? .response(existing.result) : .identityMismatch
+  }
+
+  mutating func remember(_ result: AgentMcpJSONObject, key: String, fingerprint: String,
+                         expiresAt: Int64, now: Int64) {
+    guard result["success"] == .bool(true), expiresAt > now, expiresAt - now <= 60_000 else { return }
+    prune(now: now)
+    guard entries[key] == nil else { return }
+    let bytes = AgentMcpJSONCodec.stringify(result).utf8.count
+    guard bytes <= maximumBytes else { return }
+    var total = entries.values.reduce(bytes) { $0 + $1.bytes }
+    while entries.count >= maximumEntries || total > maximumBytes {
+      guard let oldest = entries.min(by: { $0.value.expiresAt < $1.value.expiresAt }) else { return }
+      total -= oldest.value.bytes
+      entries.removeValue(forKey: oldest.key)
+    }
+    entries[key] = Entry(fingerprint: fingerprint, expiresAt: expiresAt, bytes: bytes, result: result)
+  }
+
+  private mutating func prune(now: Int64) {
+    entries = entries.filter { $0.value.expiresAt > now }
+  }
+}
+
 enum AgentDesktopCollaborationArchiveRecall {
   static let requestType = "collaboration_recall_request"
   static let responseType = "collaboration_recall_result"
