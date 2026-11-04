@@ -43,7 +43,9 @@ class HealthRecordExportWorker(context: Context, params: WorkerParameters) : Wor
             catch (_: Exception) { exports.externalFailure(id, dispatch, "background_unavailable"); return@use Result.failure() }
             val outcome = if (phase == "prepare") HealthRecordStore(applicationContext).use { records -> HealthOriginalStore(applicationContext).use { originals ->
                 HealthRecordExportPipeline.prepare(records, originals, exports, id, dispatch) { isStopped }
-            } } else HealthRecordExportPipeline.generate(exports, id, dispatch, { isStopped })
+            } } else if (session.scope.bundlesOriginals) HealthOriginalStore(applicationContext).use { originals ->
+                HealthRecordExportPipeline.generate(exports, id, dispatch, { isStopped }, originals = originals)
+            } else HealthRecordExportPipeline.generate(exports, id, dispatch, { isStopped })
             when (outcome) { HealthOriginalArchiveOutcome.COMPLETE -> Result.success(); HealthOriginalArchiveOutcome.FAILED -> Result.failure(); HealthOriginalArchiveOutcome.RETRY -> Result.retry() }
         }
     }

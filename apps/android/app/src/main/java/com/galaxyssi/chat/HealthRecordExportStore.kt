@@ -54,9 +54,12 @@ internal class HealthRecordExportStore(private val context: Context, private val
         val s = session(id) ?: return@transaction null
         if (s.dispatch != dispatch || s.phase != "prepare" || s.state != HealthRecordExportState.PREPARING) return@transaction null
         db.delete("export_records", "export_id=?", arrayOf(id))
-        s.copy(attempt = UUID.randomUUID().toString(), count = 0, rows = 0, completed = 0, sourceWarnings = 0, estimatedBytes = 0, error = "", preparedAt = 0, confirmedAt = 0, scanned = 0).also(::put)
+        db.delete("export_attachments", "export_id=?", arrayOf(id))
+        s.copy(attempt = UUID.randomUUID().toString(), count = 0, rows = 0, completed = 0, sourceWarnings = 0, estimatedBytes = 0, error = "", preparedAt = 0, confirmedAt = 0, scanned = 0,
+            attachmentCount = 0, attachmentAvailable = 0, attachmentBytes = 0, attachmentWarnings = 0).also(::put)
     }
-    fun append(s: HealthRecordExportSession, values: List<Pair<HealthObservation, HealthExportSourceStatus>>, scanned: Int = values.size): HealthRecordExportSession = transaction {
+    fun append(s: HealthRecordExportSession, values: List<Pair<HealthObservation, HealthExportSourceStatus>>, scanned: Int = values.size,
+               newAttachments: Map<String, HealthRecordExportAttachment> = emptyMap()): HealthRecordExportSession = transaction {
         require(values.size <= 30 && scanned in values.size..30); check(current(s)); val prior = requireNotNull(session(s.id)); var index = prior.count
         var rows = prior.rows; var warnings = prior.sourceWarnings; var estimate = prior.estimatedBytes
         values.forEach { (record, status) ->
@@ -67,11 +70,26 @@ internal class HealthRecordExportStore(private val context: Context, private val
                 put("payload", pack("record", "${s.id}:$sequence:${snapshot.id}:${snapshot.revision}", j))
             })
             rows += HealthRecordExportRows.count(snapshot)
-            if (status !in listOf(HealthExportSourceStatus.NONE, HealthExportSourceStatus.AVAILABLE)) warnings++
+            if (status.warning) warnings++
             val plain = j.toString().toByteArray(Charsets.UTF_8)
             try { estimate = Math.addExact(estimate, plain.size.toLong()) } finally { plain.fill(0) }
         }
-        prior.copy(count = index, rows = rows, sourceWarnings = warnings, estimatedBytes = estimate, completed = index, scanned = prior.scanned + scanned).also(::put)
+        var attachmentCount = prior.attachmentCount
+        var available = prior.attachmentAvailable
+        var attachmentBytes = prior.attachmentBytes
+        var attachmentWarnings = prior.attachmentWarnings
+        check(newAttachments.isEmpty() || s.scope.bundlesOriginals && newAttachments.size <= values.size)
+        newAttachments.forEach { (token, item) ->
+            val sequence = ++attachmentCount
+            db.insertOrThrow("export_attachments", null, ContentValues().apply {
+                put("export_id", s.id); put("sequence", sequence); put("token", token)
+                put("payload", pack("attachment", "${s.id}:$sequence:$token", item.json()))
+            })
+            if (item.original != null) { available++; attachmentBytes = Math.addExact(attachmentBytes, item.original.size) }
+            if (item.status.warning) attachmentWarnings++
+        }
+        prior.copy(count = index, rows = rows, sourceWarnings = warnings, estimatedBytes = estimate, completed = index, scanned = prior.scanned + scanned,
+            attachmentCount = attachmentCount, attachmentAvailable = available, attachmentBytes = attachmentBytes, attachmentWarnings = attachmentWarnings).also(::put)
     }
     fun review(s: HealthRecordExportSession) = transaction {
         check(current(s)); val prior = requireNotNull(session(s.id))
@@ -86,8 +104,23 @@ internal class HealthRecordExportStore(private val context: Context, private val
             add(HealthRecordExportItem(sequence, record, HealthExportSourceStatus.valueOf(j.getString("source_status_at_preview"))))
         }
     } }
+    private fun attachment(id: String, cursor: android.database.Cursor): HealthRecordExportAttachment {
+        val sequence = cursor.getLong(0)
+        val token = cursor.getString(1)
+        return HealthRecordExportAttachment.from(sequence, unpack("attachment", "$id:$sequence:$token", cursor.getBlob(2))).also {
+            check(HealthRecordExportAttachment.token(it.originalId, it.sha256) == token)
+        }
+    }
+    fun attachmentByToken(id: String, token: String): HealthRecordExportAttachment? =
+        db.rawQuery("SELECT sequence,token,payload FROM export_attachments WHERE export_id=? AND token=?", arrayOf(id, token))
+            .use { if (it.moveToFirst()) attachment(id, it) else null }
+    fun attachments(id: String, after: Long = 0): List<HealthRecordExportAttachment> =
+        db.rawQuery("SELECT sequence,token,payload FROM export_attachments WHERE export_id=? AND sequence>? ORDER BY sequence LIMIT 31",
+            arrayOf(id, after.toString())).use { cursor -> buildList { while (cursor.moveToNext()) add(attachment(id, cursor)) } }
     fun queue(id: String): HealthRecordExportSession = transaction {
-        val s = requireNotNull(session(id)); check(s.state == HealthRecordExportState.REVIEW || s.state == HealthRecordExportState.FAILED && s.phase == "generate")
+        val s = requireNotNull(session(id))
+        check(s.state == HealthRecordExportState.REVIEW ||
+            s.state == HealthRecordExportState.FAILED && s.phase == "generate" && s.error != "originals_changed")
         check(s.count > 0)
         s.copy(state = HealthRecordExportState.QUEUED, phase = "generate", dispatch = UUID.randomUUID().toString(), completed = 0, error = "", confirmedAt = System.currentTimeMillis()).also(::put)
     }
@@ -134,15 +167,22 @@ internal class HealthRecordExportStore(private val context: Context, private val
         return try { artifacts.input(s.id, s.attempt, key, artifactAad(s)) } finally { key.fill(0) }
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 1) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 2) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) = db.setForeignKeyConstraintsEnabled(true)
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE exports(id TEXT PRIMARY KEY,state TEXT NOT NULL,phase TEXT NOT NULL,dispatch TEXT NOT NULL,attempt TEXT NOT NULL,created_at INTEGER NOT NULL,payload BLOB NOT NULL,key_payload BLOB)")
             db.execSQL("CREATE INDEX export_history ON exports(created_at DESC,id DESC)"); db.execSQL("CREATE INDEX export_active ON exports(state,id)")
             db.execSQL("CREATE TABLE export_records(export_id TEXT NOT NULL REFERENCES exports(id) ON DELETE CASCADE,sequence INTEGER NOT NULL,record_id TEXT NOT NULL,revision INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(export_id,sequence),UNIQUE(export_id,record_id))")
+            attachmentsTable(db)
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { error("Unsupported record-export schema upgrade") }
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            check(oldVersion == 1 && newVersion == 2)
+            attachmentsTable(db)
+        }
+        private fun attachmentsTable(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE export_attachments(export_id TEXT NOT NULL REFERENCES exports(id) ON DELETE CASCADE,sequence INTEGER NOT NULL,token TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(export_id,sequence),UNIQUE(export_id,token))")
+        }
     }
     companion object { fun changes(context: Context, name: String = "health_record_exports_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/record-exports/" + android.net.Uri.encode(name)) }
 }
