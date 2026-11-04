@@ -241,6 +241,16 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.minimum, 64)
     XCTAssertEqual(trend.maximum, 69)
   }
+
+  func testPaperEdgeSuggestionConvertsOriginAndRejectsClippedOrSmallRectangles() throws {
+    let accepted = try XCTUnwrap(GalaxySSIHealthPaperEdges.paddedCrop(
+      visionBounds: CGRect(x: 0.15, y: 0.10, width: 0.6, height: 0.5)))
+    XCTAssertEqual(accepted.minX, 0.125, accuracy: 0.0001)
+    XCTAssertEqual(accepted.minY, 0.375, accuracy: 0.0001)
+    XCTAssertEqual(accepted.height, 0.55, accuracy: 0.0001)
+    XCTAssertNil(GalaxySSIHealthPaperEdges.paddedCrop(visionBounds: CGRect(x: 0, y: 0.1, width: 0.6, height: 0.5)))
+    XCTAssertNil(GalaxySSIHealthPaperEdges.paddedCrop(visionBounds: CGRect(x: 0.2, y: 0.2, width: 0.2, height: 0.2)))
+  }
 }
 
 private final class HealthFixtureSecrets: GalaxySSISecretStore {
