@@ -11,7 +11,7 @@ acceptance, and no global completion claim follows from the first imports.
 | Screen | Existing implementation/evidence | Required work or acceptance still missing |
 | --- | --- | --- |
 | h01 Common entry | Native Health Center route and prior entry/manual device checks | Final navigation/layout regression with the complete feature set |
-| h02 Page navigation | Native function page, grid entry, data/file hub, Activity returns, no bottom tabs | Profile/privacy links and final deep-return matrix |
+| h02 Page navigation | Native function page, grid entry, data/file hub and personal-profile entry, Activity returns, no bottom tabs | Privacy/reminder links and final deep-return matrix |
 | h03 Overview | Real confirmed-record counts/latest observations; no fabricated score | Freshness/missing/unverified separation, versioned attention cards and preference/severity ordering |
 | h04 First use | Actual empty state and local photo/manual/file entry | Backup restore entry and complete first-use acceptance |
 | h05 Record Center | Native capture/file queue, encrypted drafts, edit/delete and recovery foundations | Changes must invalidate affected analyses once analysis exists; full multi-format UI matrix |
@@ -30,7 +30,7 @@ acceptance, and no global completion claim follows from the first imports.
 | h18 Health platforms | No simulated platform connection | User-selected scopes, actual adapter availability, revocation/background/copy-retention handling |
 | h19 BLE | No simulated peripheral measurements | Real scan/pair/connect/read/disconnect states, ownership, device timestamps/source IDs/deduplication and opt-in trusted autosave |
 | h20 Sync recovery | Import recovery is not health-platform synchronization | Real incremental platform/BLE sync, separate failure classes and tested recovery without duplicate writes |
-| h21 Personal profile | Observation profile ID defaults to self | Editable/deletable self-reported context, separate provenance and stale-analysis invalidation |
+| h21 Personal profile | Native optional basic fields and paged self-reported history/medication/allergies; encrypted drafts, per-field/entry conflicts, scoped delete preview and generation-safe clearing; explicit context/dependency-stamp APIs; 255 JVM, 218 non-visual and 28 UI tests pass on 0.1.7.25 with profile screenshots inspected | Connect dependency stamps to consent-scoped analysis/report consumers and stale-result UI when h13/h14/h16 are implemented; backup/restore and explicit family ownership remain open |
 | h22 Privacy/data | Keystore-backed row encryption and per-original streaming keys; background view cleanup; no generic Agent-memory copy | Health-specific scope/purpose controls, export/delete range preview, permanent erasure and key/backup policy acceptance |
 | h23 Reminder settings | General App notification capabilities are not health-specific plans | Plans, quiet/pause/group/complete/later/disable, permission loss/reboot/timezone/revision handling |
 | h24 Body exploration | No personal body measurements or fictitious model installed | Educational visuals and interaction, explicit reference/personal distinction; independently validate animation/molecular/experiment work |

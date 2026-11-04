@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_profile_title">My health profile</string>
+    <string name="health_profile_preferences">Profile and preferences</string>
+    <string name="health_profile_self">My profile</string>
+    <string name="health_profile_source">Self-reported · Separate from measured and laboratory records</string>
+    <string name="health_profile_basics">Basic information</string>
+    <string name="health_profile_name">Name</string>
+    <string name="health_profile_birth">Date of birth</string>
+    <string name="health_profile_sex">Sex for medical reference</string>
+    <string name="health_profile_stage">Relevant physiological context</string>
+    <string name="health_profile_missing">Not provided</string>
+    <string name="health_profile_female">Female</string>
+    <string name="health_profile_male">Male</string>
+    <string name="health_profile_not_disclosed">Prefer not to say</string>
+    <string name="health_profile_choose_date">Choose date</string>
+    <string name="health_profile_background">Health background</string>
+    <string name="health_profile_history">Known health history</string>
+    <string name="health_profile_medication">Medication and supplements</string>
+    <string name="health_profile_allergy">Allergies</string>
+    <string name="health_profile_entry_count">%1$d saved entries</string>
+    <string name="health_profile_save">Save profile</string>
+    <string name="health_profile_unsaved">Unsaved changes · Encrypted draft</string>
+    <string name="health_profile_discard">Discard draft</string>
+    <string name="health_profile_missing_notice">Missing information does not mean no relevant condition. Only analyses requiring that information should be unavailable.</string>
+    <string name="health_profile_delete">Delete profile and health background</string>
+    <string name="health_profile_delete_preview">Delete %1$d basic fields, %2$d health-background entries and %3$d drafts? This cannot be undone. Measurements, report originals and export files will not be deleted.</string>
+    <string name="health_profile_conflict">This profile changed; newer information was not overwritten. Review the current information, discard the conflicting draft and edit again.</string>
+    <string name="health_profile_date_error">Enter a valid date of birth in YYYY-MM-DD format, not in the future.</string>
+    <string name="health_profile_height_error">Enter a positive exact height and select cm or in.</string>
+    <string name="health_profile_text_error">Check the text format and length. The profile was not saved.</string>
+    <string name="health_profile_entry_name_error">Enter the name of this health-background entry.</string>
+    <string name="health_profile_add_entry">Add entry</string>
+    <string name="health_profile_no_entries">No self-reported entries yet</string>
+    <string name="health_profile_entry_name">Name</string>
+    <string name="health_profile_dose">Reported dose</string>
+    <string name="health_profile_timing">Reported timing</string>
+    <string name="health_profile_medication_notice">Record your existing medication or supplement details. GalaxySSI does not adjust doses here.</string>
+    <string name="health_profile_reaction">Reaction or notes</string>
+    <string name="health_profile_save_entry">Save entry</string>
+    <string name="health_profile_delete_entry">Delete this self-reported entry and its draft? Measurements and report originals will be kept.</string>
+</resources>

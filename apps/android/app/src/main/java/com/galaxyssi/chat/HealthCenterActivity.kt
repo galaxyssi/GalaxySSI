@@ -255,6 +255,10 @@ class HealthCenterActivity : Activity() {
                 addView(ui.row(getString(R.string.health_catalog_title)) { openCatalog() })
                 addView(ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this@HealthCenterActivity, HealthDataFilesActivity::class.java)) })
             }, 14)
+            ui.add(this, ui.text(getString(R.string.health_profile_preferences), 18f, bold = true), 24)
+            ui.add(this, ui.profileRow(getString(R.string.health_profile_title), getString(R.string.health_profile_source)) {
+                startActivity(android.content.Intent(this@HealthCenterActivity, HealthProfileActivity::class.java))
+            }.apply { tag = "health-profile-entry" }, 8)
         }
     }
     private fun recordRow(record: HealthObservation) = ui.card().apply {

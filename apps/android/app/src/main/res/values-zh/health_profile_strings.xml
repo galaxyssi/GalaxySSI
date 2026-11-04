@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_profile_title">我的健康档案</string>
+    <string name="health_profile_preferences">档案与偏好</string>
+    <string name="health_profile_self">本人档案</string>
+    <string name="health_profile_source">本人自述 · 与测量和检验记录分开保存</string>
+    <string name="health_profile_basics">基本资料</string>
+    <string name="health_profile_name">姓名</string>
+    <string name="health_profile_birth">出生日期</string>
+    <string name="health_profile_sex">用于医学参考的性别</string>
+    <string name="health_profile_stage">相关生理阶段</string>
+    <string name="health_profile_missing">未填写</string>
+    <string name="health_profile_female">女</string>
+    <string name="health_profile_male">男</string>
+    <string name="health_profile_not_disclosed">不便说明</string>
+    <string name="health_profile_choose_date">选择日期</string>
+    <string name="health_profile_background">健康背景</string>
+    <string name="health_profile_history">既往情况</string>
+    <string name="health_profile_medication">用药与补充剂</string>
+    <string name="health_profile_allergy">过敏信息</string>
+    <string name="health_profile_entry_count">已保存 %1$d 条</string>
+    <string name="health_profile_save">保存资料</string>
+    <string name="health_profile_unsaved">尚未保存 · 草稿已加密保留</string>
+    <string name="health_profile_discard">放弃草稿</string>
+    <string name="health_profile_missing_notice">未填写不代表没有相关情况。仅缺少资料所依赖的分析不可用。</string>
+    <string name="health_profile_delete">删除档案与健康背景</string>
+    <string name="health_profile_delete_preview">删除 %1$d 项基本资料、%2$d 条健康背景和 %3$d 份草稿？此操作无法撤销。不会删除测量记录、报告原件或已生成的导出文件。</string>
+    <string name="health_profile_conflict">档案已变更，未覆盖新资料。请核对当前资料，放弃冲突草稿后重新编辑。</string>
+    <string name="health_profile_date_error">请输入有效且不晚于今天的出生日期，格式为 YYYY-MM-DD。</string>
+    <string name="health_profile_height_error">请输入大于零的准确身高，并选择 cm 或 in。</string>
+    <string name="health_profile_text_error">请检查文字格式和长度，资料尚未保存。</string>
+    <string name="health_profile_entry_name_error">请填写这条健康背景的名称。</string>
+    <string name="health_profile_add_entry">添加条目</string>
+    <string name="health_profile_no_entries">尚未填写相关情况</string>
+    <string name="health_profile_entry_name">名称</string>
+    <string name="health_profile_dose">本人填写的用量</string>
+    <string name="health_profile_timing">本人填写的用药时间</string>
+    <string name="health_profile_medication_notice">仅记录已有用药或补充剂信息，不在这里自动调整用量。</string>
+    <string name="health_profile_reaction">反应或相关说明</string>
+    <string name="health_profile_save_entry">保存条目</string>
+    <string name="health_profile_delete_entry">删除这条本人自述及其草稿？测量记录和报告原件将保留。</string>
+</resources>

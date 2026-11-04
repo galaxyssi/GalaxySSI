@@ -161,6 +161,11 @@ class HealthRecordExportDeviceTest {
         do { val page = f.exports.items(ready.id, after); page.take(30).forEach { assertTrue(texts.contains(it.record.id)); count++ }; after = if (page.size > 30) page[29].sequence else 0 } while (after > 0)
         assertEquals(65, count)
     }
+    @Test fun csvQuotedNewlinesRemainByteFaithfulOnAndroid(): Unit = fixture { f ->
+        val text = "first\r\nsecond\nthird\rfourth"; save(f, note = text)
+        val ready = generate(f, HealthRecordExportScope(format = HealthRecordExportFormat.CSV, annotations = true))
+        assertTrue(bytes(f, ready).toString(Charsets.UTF_8).contains("\"$text\""))
+    }
     @Test fun generatedIsNotSavedAndAFailedDestinationCanBeRetried(): Unit = fixture { f ->
         save(f); val s = generate(f)
         assertTrue(runCatching { HealthRecordExportPipeline.save(f.exports, s, object : OutputStream() { override fun write(value: Int) { error("destination full") } }) }.isFailure)
