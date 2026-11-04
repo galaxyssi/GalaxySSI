@@ -301,6 +301,18 @@ final class GalaxySSILinkDeliveryStore {
     return false
   }
 
+  // A partial artifact chunk has no whole-artifact receipt to publish.
+  @discardableResult
+  func completeAttachmentControlWithoutResponse(messageId: String) -> Bool {
+    guard journal != nil, journalHealthy, state.pendingIncoming[messageId] != nil else { return false }
+    let previous = state
+    state.pendingIncoming.removeValue(forKey: messageId)
+    if !state.completedInboxIds.contains(messageId) { state.completedInboxIds.append(messageId); trimInbox() }
+    if save() { return true }
+    state = previous
+    return false
+  }
+
   // Commit the response batch and retire its authenticated control in one FULL SQLite transaction.
   @discardableResult
   func commitAttachmentControl(_ requests: [LinkDeliveryEnqueueRequest], messageId: String, now: Date = Date()) -> Bool {

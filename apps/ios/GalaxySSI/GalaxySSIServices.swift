@@ -31,6 +31,9 @@ final class MessageCoordinator: ObservableObject {
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
   var attachmentChunkControlsInFlight = Set<String>()
+  private var desktopArtifactChunksInFlight = Set<String>()
+  private var desktopArtifactRetryAfter: [String: Date] = [:]
+  private let desktopArtifactQueue = DispatchQueue(label: "org.galaxyssi.ios.desktop-artifact-receive", qos: .utility)
   private lazy var desktopReplyRecovery = store.makeDesktopReplyRecovery()
   private lazy var managedDesktopReplyLedger = store.makeManagedResponseLedger()
   private var managedDesktopDiscoveryCursor = ""
@@ -8291,11 +8294,12 @@ final class MessageCoordinator: ObservableObject {
     return prompt + "\n" + label + names
   }
 
-  func stageAuthenticatedAttachmentControl(_ payload: [String: Any], link: ServerLink, messageId: String) -> Bool {
+  func stageAuthenticatedAttachmentControl(_ payload: [String: Any], link: ServerLink, messageId: String,
+                                           maximumBytes: Int = 64 * 1024) -> Bool {
     guard link.paired, !messageId.isEmpty, JSONSerialization.isValidJSONObject(payload),
           let data = try? JSONSerialization.data(withJSONObject: ["type": "ios_attachment_control_replay",
             "owner": store.profile.identityFingerprint, "desktop_id": link.desktopId, "control": payload]),
-          data.count <= 64 * 1024, let text = String(data: data, encoding: .utf8) else { return false }
+          data.count <= min(maximumBytes, 512 * 1024), let text = String(data: data, encoding: .utf8) else { return false }
     return deliveryStore.stageAttachmentControl(messageId: messageId, payload: text)
   }
 
@@ -11003,6 +11007,7 @@ final class MessageCoordinator: ObservableObject {
     }
     if appPayload.string("type") == "artifact_chunk" ||
       appPayload.string("type") == "artifact_redelivery_result" {
+      guard object.string("scheme") == "signal" else { return }
       handleDesktopArtifactPayload(appPayload, link: link, messageId: messageId)
       return
     }
@@ -11637,9 +11642,47 @@ final class MessageCoordinator: ObservableObject {
   ) {
     let type = payload.string("type")
     if type == "artifact_chunk" {
-      do {
-        let result = try desktopArtifactStore.ingest(payload)
-        if result.completed {
+      guard let link = incomingLink, desktopArtifactLinkIsCurrent(link, payload: payload) else { return }
+      let key = "\(store.profile.identityFingerprint):\(link.desktopId):\(messageId)"
+      desktopArtifactRetryAfter = desktopArtifactRetryAfter.filter { $0.value > Date() }
+      guard !desktopArtifactChunksInFlight.contains(key), desktopArtifactRetryAfter[key] == nil,
+            stageAuthenticatedAttachmentControl(payload, link: link, messageId: messageId, maximumBytes: 512 * 1024) else { return }
+      guard desktopArtifactChunksInFlight.count < 8, desktopArtifactChunksInFlight.insert(key).inserted else { return }
+      let owner = store.profile.identityFingerprint
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        defer {
+          self.desktopArtifactChunksInFlight.remove(key)
+        }
+        do {
+          let artifactStore = self.desktopArtifactStore
+          let result: AgentDesktopArtifactIngestResult = try await withCheckedThrowingContinuation { continuation in
+            self.desktopArtifactQueue.async {
+              do { continuation.resume(returning: try artifactStore.ingest(payload)) }
+              catch { continuation.resume(throwing: error) }
+            }
+          }
+          guard !Task.isCancelled, self.store.profile.identityFingerprint == owner,
+                self.desktopArtifactLinkIsCurrent(link, payload: payload) else { return }
+          if !result.completed {
+            guard self.deliveryStore.completeAttachmentControlWithoutResponse(messageId: messageId) else { return }
+            _ = self.replayPendingIncoming()
+            return
+          }
+          let receipt: [String: Any] = [
+            "type": "artifact_receipt", "desktop_id": link.desktopId, "artifact_id": result.artifactId,
+            "artifact_uri": result.artifactURI, "task_id": result.taskId, "sha256": result.sha256,
+            "status": "stored", "client_route_id": link.routes.clientRouteId,
+            "time": Int64(Date().timeIntervalSince1970 * 1_000)
+          ]
+          let wire = try self.linkWirePayload(receipt, link: link)
+          let request = LinkDeliveryEnqueueRequest(messageId: wire.messageId, topic: link.routes.controlTopic,
+            wirePayload: wire.wireText, requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [],
+            clientSourceMessageId: "", contactId: "")
+          guard self.deliveryStore.commitAttachmentControl([request], messageId: messageId) else {
+            throw GalaxySSIError.transportUnavailable
+          }
+          self.scheduleOutboxFlush(after: 0)
           let saveRequested = pendingArtifactDownloads.remove(result.artifactURI) != nil
           pendingArtifactFetches.remove(result.artifactURI)
           artifactDownloadRetryGate.remove(result.artifactURI)
@@ -11657,26 +11700,15 @@ final class MessageCoordinator: ObservableObject {
             }
           }
           artifactDownloadCompletedRevision &+= 1
-          let link = incomingLink ?? store.serverLinks.first { $0.desktopId == payload.string("desktop_id") }
-          publishDesktopArtifactControl(
-            [
-              "type": "artifact_receipt",
-              "desktop_id": link?.desktopId ?? payload.string("desktop_id"),
-              "artifact_id": result.artifactId,
-              "artifact_uri": result.artifactURI,
-              "task_id": result.taskId,
-              "sha256": result.sha256,
-              "status": "stored",
-              "client_route_id": payload.string("client_route_id"),
-              "time": Int64(Date().timeIntervalSince1970 * 1_000)
-            ],
-            link: link
-          )
+          _ = self.replayPendingIncoming()
+        } catch {
+          guard self.store.profile.identityFingerprint == owner else { return }
+          self.desktopArtifactRetryAfter[key] = Date().addingTimeInterval(5)
+          self.lastError = error.localizedDescription
+          self.artifactDownloadFailure = self.lastError
         }
-      } catch {
-        lastError = error.localizedDescription
-        artifactDownloadFailure = lastError
       }
+      return
     } else if type == "artifact_redelivery_result",
       payload.string("status") != "stored" {
       let artifactURI = payload.string("artifact_uri")
@@ -11692,6 +11724,13 @@ final class MessageCoordinator: ObservableObject {
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
     }
+  }
+
+  private func desktopArtifactLinkIsCurrent(_ link: ServerLink, payload: [String: Any]) -> Bool {
+    guard link.paired, payload.string("client_route_id") == link.routes.clientRouteId,
+          payload.string("desktop_id").isEmpty || payload.string("desktop_id") == link.desktopId else { return false }
+    return store.serverLinks.contains { $0.paired && $0.desktopId == link.desktopId &&
+      $0.routes.clientRouteId == link.routes.clientRouteId && $0.routes.remoteFingerprint == link.routes.remoteFingerprint }
   }
 
   private func blobArtifactIdentity(desktopId: String) -> AgentBlobArtifactReceiver.Identity? {
@@ -12352,6 +12391,8 @@ final class MessageCoordinator: ObservableObject {
           handleAttachmentRecoveryRequest(control, link: link, messageId: pending.messageId)
         } else if control.string("type") == "input_attachment_receipt", control.string("status") == "missing" {
           handleInputAttachmentReceipt(control, link: link, messageId: pending.messageId)
+        } else if control.string("type") == "artifact_chunk" {
+          handleDesktopArtifactPayload(control, link: link, messageId: pending.messageId)
         }
         return
       }

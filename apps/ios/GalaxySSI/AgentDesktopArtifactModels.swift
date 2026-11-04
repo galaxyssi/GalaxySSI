@@ -135,6 +135,11 @@ final class AgentDesktopArtifactStore {
           of: file,
           purpose: artifactPurpose(record.artifactId)
         ) == record.sizeBytes {
+        guard record.taskId == typed.taskId, record.name == typed.name, record.mimeType == typed.mimeType,
+              record.sizeBytes == typed.sizeBytes, record.originalSizeBytes == typed.originalSizeBytes,
+              record.originalSHA256 == typed.originalSHA256 else {
+          throw AgentDesktopArtifactStoreError.integrity("Stored artifact identity does not match the replay")
+        }
         return AgentDesktopArtifactIngestResult(
           completed: true,
           artifactId: typed.artifactId,
