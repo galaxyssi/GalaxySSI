@@ -18,6 +18,7 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var reportedNotation: String?
   var unitOverride: String?
   var referenceInterval: String?
+  var reportSource: GalaxySSIHealthReportReview.Source?
 
   var unit: String { unitOverride ?? metric.unit }
   var resultKind: String { reported?.kind.rawValue ?? "number" }
@@ -126,6 +127,7 @@ struct GalaxySSIHealthRecords {
   }
 
   struct Archive: Codable {
+    var reportReview: [GalaxySSIHealthReportReview.Item]?
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
@@ -272,7 +274,8 @@ struct GalaxySSIHealthRecords {
     guard (latest?.revision ?? 0) == input.revision, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
-      guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource
+      guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
+            latest.reportSource == input.reportSource
       else { throw Failure.invalid }
     } else if let receipt = input.bluetoothReceipt, archive.revisions.contains(where: {
       $0.bluetoothReceipt.map { receipt.isReplay(of: $0) } == true
@@ -287,6 +290,54 @@ struct GalaxySSIHealthRecords {
     revision.revision += 1
     archive.revisions.append(revision)
     if let draftId, archive.draft?.id == draftId { archive.draft = nil }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {
+    var archive = try load()
+    var pending = archive.reportReview ?? []
+    let index = pending.firstIndex { $0.source == input.source }
+    guard index.map({ pending[$0].version }) == expected else { throw Failure.stale }
+    guard input.reading.isValid, input.reading.reportSource == input.source,
+          input.reading.revision == 0, !input.reading.deleted,
+          !input.excerpt.isEmpty, input.excerpt.count <= 500 else { throw Failure.invalid }
+    if let index { pending[index] = input }
+    else {
+      guard pending.count < 300 else { throw Failure.invalid }
+      pending.append(input)
+    }
+    archive.reportReview = pending
+    try persist(archive)
+  }
+
+  func discardReportItem(source: GalaxySSIHealthReportReview.Source, version: UUID) throws {
+    var archive = try load()
+    guard let index = archive.reportReview?.firstIndex(where: { $0.source == source && $0.version == version })
+    else { throw Failure.stale }
+    archive.reportReview?.remove(at: index)
+    try persist(archive)
+  }
+
+  func confirmReportItems(_ versions: Set<UUID>, original: GalaxySSIHealthOriginalStore.Original) throws {
+    var archive = try load()
+    let pending = archive.reportReview ?? []
+    let chosen = pending.filter { versions.contains($0.version) }
+    guard !chosen.isEmpty, chosen.count == versions.count,
+          chosen.allSatisfy({ $0.source.original == original.id && $0.source.sha256 == original.sha256 })
+    else { throw Failure.stale }
+    let existing = archive.current
+    var appended: [GalaxySSIHealthReading] = []
+    for item in chosen {
+      var reading = item.reading
+      guard reading.isValid, reading.revision == 0, !reading.deleted, reading.reportSource == item.source,
+            !archive.revisions.contains(where: { $0.id == reading.id || $0.reportSource == item.source }),
+            !(existing + appended).contains(where: { $0.sameMeasurement(as: reading) }) else { throw Failure.duplicate }
+      reading.revision = 1
+      appended.append(reading)
+    }
+    archive.revisions.append(contentsOf: appended)
+    archive.reportReview = pending.filter { !versions.contains($0.version) }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
