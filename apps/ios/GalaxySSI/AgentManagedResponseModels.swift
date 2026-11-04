@@ -110,7 +110,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
   }
 
   func isStale(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
-    max(createdAtMillis, completedAtMillis) < nowMillis - Self.maxAgeMillis
+    state == .applied && max(createdAtMillis, completedAtMillis) < nowMillis - Self.maxAgeMillis
   }
 
   static let maxAgeMillis: Int64 = 7 * 24 * 60 * 60 * 1_000
