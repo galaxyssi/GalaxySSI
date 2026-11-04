@@ -14,6 +14,8 @@ import org.json.JSONObject
 
 internal class HealthReminderConflict : IllegalStateException("Health reminder changed")
 internal data class HealthReminderPage(val rows: List<HealthReminderOccurrence>, val next: LocalDate?)
+internal data class HealthSleepCursor(val time: Long, val id: String)
+internal data class HealthSleepPage(val rows: List<HealthSleepAlert>, val next: HealthSleepCursor?)
 
 internal class HealthReminderStore(private val context: Context, private val name: String = DEFAULT_DB) : Closeable {
     private val helper = Database(context)
@@ -47,6 +49,7 @@ internal class HealthReminderStore(private val context: Context, private val nam
         val saved = candidate.copy(effectiveAt = if (planChanged) now else current.effectiveAt, revision = UUID.randomUUID().toString())
         writeSettings(saved)
         if (current.enabled && !saved.enabled) disableOutstanding(now)
+        if (current.sleepChanges && !saved.sleepChanges) disableSleep(now)
         saved
     }.also { changed() }
 
@@ -134,8 +137,100 @@ internal class HealthReminderStore(private val context: Context, private val nam
         val visible = found.take(30)
         return HealthReminderPage(visible, if (found.size > 30) visible.last().day else null)
     }
+
+    private fun readSleep(cursor: Cursor): HealthSleepAlert {
+        val id = cursor.getString(0)
+        return HealthSleepAlert.from(unpack("sleep:$id", cursor.getBlob(4))).also {
+            check(it.id == id && it.openedAt == cursor.getLong(1) && it.state.ordinal == cursor.getInt(2) && it.endedAt == cursor.getLong(3))
+        }
+    }
+    private fun sleepRows(where: String, args: Array<String>, limit: Int): List<HealthSleepAlert> =
+        db.rawQuery("SELECT id,opened,state,ended,payload FROM sleep_alerts WHERE $where ORDER BY opened DESC,id DESC LIMIT $limit", args).use {
+            buildList { while (it.moveToNext()) add(readSleep(it)) }
+        }
+    fun sleepAlert(id: String): HealthSleepAlert? = sleepRows("id=?", arrayOf(id), 1).singleOrNull()
+    fun activeSleep(): HealthSleepAlert? = sleepRows("ended=0", emptyArray(), 1).singleOrNull()
+    fun hasSleepHistory(): Boolean = db.rawQuery("SELECT 1 FROM sleep_alerts LIMIT 1", null).use { it.moveToFirst() }
+    fun sleepPage(filter: HealthReminderFilter, after: HealthSleepCursor?): HealthSleepPage {
+        val open = "state IN (${HealthReminderState.PENDING.ordinal},${HealthReminderState.SNOOZED.ordinal})"
+        val condition = when (filter) {
+            HealthReminderFilter.PENDING -> open
+            HealthReminderFilter.HANDLED -> "NOT ($open)"
+            HealthReminderFilter.ALL -> "1"
+        }
+        val rows = if (after == null) sleepRows(condition, emptyArray(), 31) else sleepRows(
+            "($condition) AND (opened<? OR (opened=? AND id<?))", arrayOf(after.time.toString(), after.time.toString(), after.id), 31)
+        val visible = rows.take(30)
+        return HealthSleepPage(visible, if (rows.size > 30) visible.last().let { HealthSleepCursor(it.openedAt, it.id) } else null)
+    }
+    private fun writeSleep(alert: HealthSleepAlert) {
+        val values = ContentValues().apply {
+            put("id", alert.id); put("opened", alert.openedAt); put("state", alert.state.ordinal); put("ended", alert.endedAt)
+            put("payload", pack("sleep:${alert.id}", alert.json()))
+        }
+        if (db.update("sleep_alerts", values, "id=?", arrayOf(alert.id)) == 0) db.insertOrThrow("sleep_alerts", null, values)
+    }
+    private fun disableSleep(now: Long) {
+        activeSleep()?.let { alert -> writeSleep(alert.copy(endedAt = now, resumeAt = 0, revision = UUID.randomUUID().toString(),
+            handledAt = if (alert.handledAt != 0L) alert.handledAt else now,
+            state = if (alert.state == HealthReminderState.COMPLETE) alert.state else HealthReminderState.DISABLED)) }
+        db.delete("sleep_eval", "id=1", null)
+    }
+    fun sleepEvaluated(key: String): Boolean = db.rawQuery("SELECT 1 FROM sleep_eval WHERE id=1 AND key=?", arrayOf(key)).use { it.moveToFirst() }
+    fun applySleep(expected: String, key: String?, evidence: HealthSleepAlertEvidence?, now: Long) {
+        val dirty = transaction {
+            val settings = settings()
+            if (settings.revision != expected) throw HealthReminderConflict()
+            if (!settings.sleepChanges && evidence != null) throw HealthReminderConflict()
+            val active = activeSleep()
+            val latest = db.rawQuery("SELECT MAX(opened) FROM sleep_alerts", null).use {
+                if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
+            }
+            val updates = HealthSleepAlertPolicy.changes(active, latest, evidence, now, settings.mergeSleepChanges)
+            updates.forEach(::writeSleep)
+            if (key == null) db.delete("sleep_eval", "id=1", null) else db.insertWithOnConflict("sleep_eval", null, ContentValues().apply {
+                put("id", 1); put("key", key)
+            }, SQLiteDatabase.CONFLICT_REPLACE)
+            updates.isNotEmpty()
+        }
+        if (dirty) changed()
+    }
+    fun resumeSleep(now: Long) {
+        val dirty = transaction {
+            val alert = activeSleep()
+            if (alert?.state != HealthReminderState.SNOOZED || alert.resumeAt > now) false
+            else {
+                writeSleep(alert.copy(state = HealthReminderState.PENDING, revision = UUID.randomUUID().toString()))
+                true
+            }
+        }
+        if (dirty) changed()
+    }
+    fun actSleep(expected: HealthSleepAlert, action: HealthReminderAction, now: Long) = transaction {
+        val current = sleepAlert(expected.id)
+        if (current?.revision != expected.revision || !current.actionable) throw HealthReminderConflict()
+        val revision = UUID.randomUUID().toString()
+        when (action) {
+            HealthReminderAction.COMPLETE -> writeSleep(current.copy(state = HealthReminderState.COMPLETE, resumeAt = 0, revision = revision, handledAt = now))
+            HealthReminderAction.SNOOZE -> writeSleep(current.copy(state = HealthReminderState.SNOOZED,
+                resumeAt = now + HealthReminderPolicy.HOUR, delivery = HealthReminderDelivery.WAITING, revision = revision))
+            HealthReminderAction.DISABLE -> {
+                writeSettings(settings().copy(sleepChanges = false, revision = revision))
+                disableSleep(now)
+            }
+        }
+    }.also { changed() }
+    fun sleepDelivered(expected: HealthSleepAlert, outcome: HealthReminderDelivery) {
+        val dirty = transaction {
+            val current = sleepAlert(expected.id)
+            if (current?.revision != expected.revision || current.state != HealthReminderState.PENDING ||
+                !current.open || current.delivery != HealthReminderDelivery.WAITING) false
+            else { writeSleep(current.copy(delivery = outcome)); true }
+        }
+        if (dirty) changed()
+    }
     override fun close() = helper.close()
-    private inner class Database(context: Context) : SQLiteOpenHelper(context, name, null, 1) {
+    private inner class Database(context: Context) : SQLiteOpenHelper(context, name, null, 2) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY CHECK(id=1),payload BLOB NOT NULL)")
@@ -145,8 +240,18 @@ internal class HealthReminderStore(private val context: Context, private val nam
             db.insertOrThrow("settings", null, ContentValues().apply {
                 put("id", 1); put("payload", pack("settings", HealthReminderSettings(revision = UUID.randomUUID().toString()).json()))
             })
+            addSleepTables(db)
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { error("Unsupported health reminder schema") }
+        private fun addSleepTables(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE sleep_alerts(id TEXT PRIMARY KEY,opened INTEGER NOT NULL,state INTEGER NOT NULL,ended INTEGER NOT NULL,payload BLOB NOT NULL)")
+            db.execSQL("CREATE UNIQUE INDEX sleep_active ON sleep_alerts(ended) WHERE ended=0")
+            db.execSQL("CREATE INDEX sleep_alert_pages ON sleep_alerts(opened DESC,id DESC)")
+            db.execSQL("CREATE TABLE sleep_eval(id INTEGER PRIMARY KEY CHECK(id=1),key TEXT NOT NULL)")
+        }
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            check(oldVersion == 1 && newVersion == 2)
+            addSleepTables(db)
+        }
     }
     companion object {
         const val DEFAULT_DB = "health_reminders_v1.db"

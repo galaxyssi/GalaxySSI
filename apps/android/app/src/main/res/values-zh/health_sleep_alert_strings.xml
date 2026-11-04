@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_sleep_alert_group">健康变化</string>
+    <string name="health_sleep_alert_tag">趋势提醒</string>
+    <string name="health_sleep_alert_title">睡眠时长较个人基线减少</string>
+    <string name="health_sleep_alert_empty">此列表暂无睡眠趋势提醒</string>
+    <string name="health_sleep_alert_setting">睡眠时长变化提醒</string>
+    <string name="health_sleep_alert_threshold">触发提醒的减少量</string>
+    <string name="health_sleep_alert_threshold_value">%1$d 分钟</string>
+    <string name="health_sleep_alert_merge">合并同一变化的提醒</string>
+    <string name="health_sleep_alert_note">比较最近 7 个完整自然日和此前 14 天。所选阈值仅用于提醒，不是医学标准。</string>
+    <string name="health_sleep_alert_decrease">比此前基线少 %1$s 分钟</string>
+    <string name="health_sleep_alert_opened">首次生成于 %1$s</string>
+    <string name="health_sleep_alert_handled">处理于 %1$s</string>
+    <string name="health_sleep_alert_basis">为什么收到这条提醒？</string>
+    <string name="health_sleep_alert_rule">个人变化规则 v%1$d · 提醒阈值 %2$d 分钟</string>
+    <string name="health_sleep_alert_trigger">首次触发：%1$s 至 %2$s · 较基线少 %3$s 分钟</string>
+    <string name="health_sleep_alert_source">查看这 7 天的记录</string>
+    <string name="health_sleep_alert_record_note">可以在记录备注中补充入睡时间、起床时间和白天感受。</string>
+    <string name="health_sleep_alert_stale">已失效</string>
+    <string name="health_sleep_alert_disable">关闭睡眠变化提醒</string>
+    <string name="health_sleep_alert_disable_confirm">关闭睡眠变化提醒？每日记录计划不会改变。</string>
+</resources>

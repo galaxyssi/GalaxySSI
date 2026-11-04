@@ -33,6 +33,7 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     TREND_RECORDS(HealthPrivacyOption.CONFIRMED_METRICS),
     TREND_SOURCES(HealthPrivacyOption.CONFIRMED_METRICS),
     PROFILE_CONTEXT(HealthPrivacyOption.PROFILE_CONTEXT),
+    SLEEP_CHANGE(HealthPrivacyOption.CONFIRMED_METRICS),
     WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     SAVE_WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     SAVE_RECORDS, SAVE_ORIGINALS, DELETE_PROFILE
@@ -57,6 +58,7 @@ internal data class HealthAccessScope(
             HealthAccessPurpose.TREND, HealthAccessPurpose.TREND_RECORDS, HealthAccessPurpose.TREND_SOURCES ->
                 require(metrics.size == 1 && fields.isEmpty() && count == null && format == null)
             HealthAccessPurpose.PROFILE_CONTEXT -> require(metrics.isEmpty() && count != null && format == null)
+            HealthAccessPurpose.SLEEP_CHANGE -> require(metrics == setOf(HealthMetric.SLEEP_DURATION) && baselineFrom != null && format == null)
             HealthAccessPurpose.WEEKLY_REPORT, HealthAccessPurpose.SAVE_WEEKLY_REPORT ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && format == if (purpose == HealthAccessPurpose.SAVE_WEEKLY_REPORT) HealthAccessFormat.PDF else null)
             HealthAccessPurpose.SAVE_RECORDS -> require(metrics.isNotEmpty() && count != null && format in listOf(HealthAccessFormat.CSV, HealthAccessFormat.JSON, HealthAccessFormat.XLSX))
@@ -92,6 +94,8 @@ internal data class HealthAccessScope(
             if (save) HealthAccessPurpose.SAVE_WEEKLY_REPORT else HealthAccessPurpose.WEEKLY_REPORT,
             scope.metrics, scope.from, scope.until, scope.zone.id, format = if (save) HealthAccessFormat.PDF else null,
             reportRecords = scope.records, baselineFrom = if (scope.hasBaseline) scope.baselineScope().from else null)
+        fun sleepChange(scope: HealthWeeklyScope) = HealthAccessScope(HealthAccessPurpose.SLEEP_CHANGE, scope.metrics,
+            scope.from, scope.until, scope.zone.id, baselineFrom = scope.baselineScope().from)
         fun deleteProfile(preview: HealthProfileDeletePreview) = HealthAccessScope(HealthAccessPurpose.DELETE_PROFILE,
             count = preview.entries, drafts = preview.drafts, basicCount = preview.fields)
     }

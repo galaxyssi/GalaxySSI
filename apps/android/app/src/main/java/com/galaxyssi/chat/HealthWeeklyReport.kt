@@ -25,7 +25,7 @@ internal data class HealthWeeklyScope(val end: LocalDate, val zone: ZoneId,
 }
 
 internal data class HealthWeeklyStat(val metric: HealthMetric, val records: Long, val exactRecords: Long,
-    val recordedDays: Int, val validDays: Int, val mean: BigDecimal?)
+    val recordedDays: Int, val validDays: Int, val mean: BigDecimal?, val dailyMinutes: List<BigDecimal?> = emptyList())
 internal data class HealthWeeklyComparison(val current: HealthWeeklyStat, val baseline: HealthWeeklyStat) {
     val deltaMinutes: BigDecimal? get() = if (current.validDays >= 5 && baseline.validDays >= 10)
         current.mean?.let { currentMean -> baseline.mean?.let { currentMean - it } } else null
@@ -102,6 +102,9 @@ internal class HealthWeeklyAccumulator(private val metric: HealthMetric, private
             }
             total.divide(BigDecimal(valid.size), MathContext.DECIMAL64).stripTrailingZeros()
         }
-        return HealthWeeklyStat(metric, records, exactRecords, bins.count { it.recorded }, valid.size, mean)
+        val dailyMinutes = if (metric == HealthMetric.SLEEP_DURATION) bins.map { day ->
+            if (day.valid) day.sum.divide(BigDecimal.valueOf(day.count), MathContext.DECIMAL64).stripTrailingZeros() else null
+        } else emptyList()
+        return HealthWeeklyStat(metric, records, exactRecords, bins.count { it.recorded }, valid.size, mean, dailyMinutes)
     }
 }

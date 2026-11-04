@@ -75,6 +75,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             if (helper.writableDatabase.inTransaction()) return
             val versions = pendingVersions.toMap(); pendingVersions.clear()
             if (versions.any { (metric, token) -> metricVersion(metric) == token }) app.contentResolver.notifyChange(changes(app, name), null)
+            if (name == "health_records_v1.db" && HealthMetric.SLEEP_DURATION in versions) HealthReminderWork.sleepRecordsChanged(app)
         }
     }
     fun revision(id: String, revision: Int): HealthObservation? = helper.readableDatabase.rawQuery(

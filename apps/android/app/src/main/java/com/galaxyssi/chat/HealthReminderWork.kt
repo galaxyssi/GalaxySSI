@@ -16,15 +16,27 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.concurrent.TimeUnit
 
 internal object HealthReminderWork {
     private const val WORK = "health-reminder-reconcile"
     private const val CHANNEL = "health_record_reminders"
     private const val TAG = "health-record-reminder:"
+    private const val SLEEP_TAG = "health-sleep-change:"
     private const val ID = 1
+    @Volatile private var sleepEnabled: Boolean? = null
 
     fun enqueue(context: Context) = WorkManager.getInstance(context).enqueueUniqueWork(
         WORK, ExistingWorkPolicy.APPEND_OR_REPLACE, OneTimeWorkRequestBuilder<HealthReminderWorker>().build())
+
+    fun sleepRecordsChanged(context: Context) {
+        if (!context.getDatabasePath(HealthReminderStore.DEFAULT_DB).exists() || sleepEnabled == false) return
+        runCatching {
+            val enabled = sleepEnabled ?: HealthReminderStore(context.applicationContext).use { it.settings().sleepChanges }.also { sleepEnabled = it }
+            if (enabled) WorkManager.getInstance(context).enqueueUniqueWork("$WORK-sleep", ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<HealthReminderWorker>().setInitialDelay(1, TimeUnit.SECONDS).build())
+        }.onFailure { android.util.Log.w("HealthReminder", "Sleep reconciliation enqueue failed: ${it.javaClass.simpleName}") }
+    }
 
     private fun alarm(context: Context) = PendingIntent.getBroadcast(context, 0, Intent(context, HealthReminderReceiver::class.java),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -37,6 +49,17 @@ internal object HealthReminderWork {
     @Synchronized fun save(context: Context, store: HealthReminderStore, candidate: HealthReminderSettings, live: Boolean) {
         if (live) enqueue(context)
         store.save(candidate, System.currentTimeMillis())
+        if (live) sleepEnabled = candidate.sleepChanges
+        refresh(context, store, live)
+    }
+
+    @Synchronized fun actSleep(context: Context, store: HealthReminderStore, alert: HealthSleepAlert, action: HealthReminderAction, live: Boolean) {
+        if (live) {
+            if (!refresh(context, store, true)) throw HealthReminderConflict()
+            enqueue(context)
+        }
+        store.actSleep(alert, action, System.currentTimeMillis())
+        if (live && action == HealthReminderAction.DISABLE) sleepEnabled = false
         refresh(context, store, live)
     }
 
@@ -46,12 +69,16 @@ internal object HealthReminderWork {
         refresh(context, store, live)
     }
 
-    @Synchronized fun refresh(context: Context, store: HealthReminderStore, live: Boolean) {
+    @Synchronized fun refresh(context: Context, store: HealthReminderStore, live: Boolean): Boolean {
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
         store.reconcile(now, zone)
-        if (!live) return
+        if (!live) return false
         val settings = store.settings()
+        sleepEnabled = settings.sleepChanges
+        val sleepAllowed = runCatching { HealthSleepAlertEngine.evaluate(context, store, now, zone) }
+            .onFailure { android.util.Log.w("HealthReminder", "Sleep evaluation failed: ${it.javaClass.simpleName}") }.getOrDefault(false)
+        val sleep = if (sleepAllowed && settings.sleepChanges) store.activeSleep() else null
         val alerts = context.getSystemService(NotificationManager::class.java)
         val scheduler = context.getSystemService(AlarmManager::class.java)
         val nextDaily = HealthReminderPolicy.nextDaily(settings, now, zone)
@@ -61,7 +88,13 @@ internal object HealthReminderWork {
         val canPost = allowed && now >= settings.pauseUntil && quietUntil == null
         val pending = store.pendingDelivery(now)
         val defer = if (allowed && pending.isNotEmpty()) maxOf(quietUntil ?: 0, settings.pauseUntil).takeIf { it > now } else null
-        val next = listOfNotNull(nextDaily, nextSnooze, defer).minOrNull()
+        val sleepNotifyAllowed = sleep != null && settings.notifications && systemAllowed(context)
+        val sleepPending = sleep?.takeIf { it.state == HealthReminderState.PENDING && it.delivery == HealthReminderDelivery.WAITING &&
+            maxOf(it.openedAt, it.resumeAt) in (now - HealthReminderPolicy.DAY)..now }
+        val sleepWake = sleep?.resumeAt?.takeIf { sleep.state == HealthReminderState.SNOOZED && it > now }
+        val sleepQuiet = quietUntil?.takeIf { sleepNotifyAllowed && sleepPending != null }
+        val nextSleepDay = if (settings.sleepChanges) HealthReminderPolicy.day(now, zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() else null
+        val next = listOfNotNull(nextDaily, nextSnooze, defer, sleepWake, sleepQuiet, nextSleepDay).minOrNull()
         if (next == null) scheduler.cancel(alarm(context))
         else scheduler.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, alarm(context))
         // Remove obsolete visible alerts without altering the persisted handling state.
@@ -80,20 +113,43 @@ internal object HealthReminderWork {
                 }
             }
         }
+        alerts.activeNotifications.filter { it.tag?.startsWith(SLEEP_TAG) == true }.forEach { existing ->
+            if (!sleepNotifyAllowed || quietUntil != null || sleep?.state != HealthReminderState.PENDING ||
+                existing.tag != SLEEP_TAG + sleep.id || existing.notification.visibility != visibility(settings)) alerts.cancel(existing.tag, existing.id)
+        }
+        if (sleepPending != null) {
+            when {
+                !sleepNotifyAllowed -> store.sleepDelivered(sleepPending, HealthReminderDelivery.IN_APP_ONLY)
+                quietUntil == null -> {
+                    val posted = try {
+                        val intent = Intent(context, HealthReminderActivity::class.java).putExtra("health_sleep_alert_id", sleepPending.id)
+                            .setData(android.net.Uri.parse("galaxyssi://health/sleep/${sleepPending.id}"))
+                        post(context, alerts, SLEEP_TAG + sleepPending.id, intent, 0, R.string.health_sleep_alert_title, settings)
+                        true
+                    } catch (_: SecurityException) { false }
+                    store.sleepDelivered(sleepPending, if (posted) HealthReminderDelivery.POSTED else HealthReminderDelivery.IN_APP_ONLY)
+                }
+            }
+        }
+        return sleepAllowed
     }
 
     private fun visibility(settings: HealthReminderSettings) =
         if (settings.hideOnLock) Notification.VISIBILITY_PRIVATE else Notification.VISIBILITY_PUBLIC
 
     private fun notify(context: Context, manager: NotificationManager, event: HealthReminderOccurrence, settings: HealthReminderSettings) {
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.health_reminder_channel), NotificationManager.IMPORTANCE_DEFAULT))
         val intent = Intent(context, HealthReminderActivity::class.java).putExtra("health_reminder_day", event.day.toString())
-        val open = PendingIntent.getActivity(context, event.day.toEpochDay().toInt(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        post(context, manager, TAG + event.day, intent, event.day.toEpochDay().toInt(), event.target.titleResource(), settings)
+    }
+
+    private fun post(context: Context, manager: NotificationManager, tag: String, intent: Intent, requestCode: Int, title: Int, settings: HealthReminderSettings) {
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.health_reminder_channel), NotificationManager.IMPORTANCE_DEFAULT))
+        val open = PendingIntent.getActivity(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         fun base() = Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_settings_notification)
             .setContentTitle(context.getString(R.string.health_reminder_generic)).setContentIntent(open)
             .setAutoCancel(true).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_REMINDER)
         val public = base().setVisibility(Notification.VISIBILITY_PUBLIC).build()
-        manager.notify(TAG + event.day, ID, base().setContentText(context.getString(event.target.titleResource()))
+        manager.notify(tag, ID, base().setContentText(context.getString(title))
             .setVisibility(visibility(settings)).setPublicVersion(public).build())
     }
 
