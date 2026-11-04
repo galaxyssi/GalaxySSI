@@ -246,7 +246,7 @@ class HealthCenterActivity : Activity() {
                 addView(ui.row(getString(R.string.health_title)) { open("overview") })
                 addView(ui.row(getString(R.string.health_photo_record), getString(R.string.health_photo_description)) { openCapture() })
                 addView(ui.row(getString(R.string.health_original_library)) {
-                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthCaptureActivity::class.java).putExtra("route", "library"))
+                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthOriginalLibraryActivity::class.java))
                 })
                 addView(ui.row(getString(R.string.health_manual), getString(R.string.health_measurement_context)) { open("manual") })
                 addView(ui.row(getString(R.string.health_records), getString(R.string.health_record_sources)) { open("records") })

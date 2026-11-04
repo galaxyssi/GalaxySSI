@@ -26,6 +26,7 @@ internal object HealthImportScheduler {
     fun recoverAsync(context: Context) {
         kotlin.concurrent.thread(name = "health-import-recovery", isDaemon = true) {
             runCatching { HealthTableScheduler.recover(context) }
+            if (context.getDatabasePath("health_originals_v1.db").exists()) runCatching { HealthOriginalExportScheduler.recover(context) }
             if (!context.getDatabasePath("health_originals_v1.db").exists()) return@thread
             runCatching { HealthOriginalStore(context).use { store ->
                 var after: Pair<Long, String>? = null

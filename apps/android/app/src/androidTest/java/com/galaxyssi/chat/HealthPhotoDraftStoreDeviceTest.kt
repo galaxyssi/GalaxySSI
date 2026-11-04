@@ -157,7 +157,14 @@ class HealthPhotoDraftStoreDeviceTest {
                 original = picture().inputStream().use { store.importOriginal(savedJob.id, it, "report.png", "image/png", "file") }
                 store.savePage(savedJob.id, HealthOcrPage(1, 100, 100, listOf(HealthOcrLine("saved before upgrade"))))
             }
-            context.openOrCreateDatabase(name, 0, null).use { db -> db.execSQL("DROP TABLE capture_pages"); db.execSQL("DROP TABLE capture_batches"); db.version = 1 }
+            context.openOrCreateDatabase(name, 0, null).use { db ->
+                db.execSQL("DROP TABLE capture_pages"); db.execSQL("DROP TABLE capture_batches")
+                db.execSQL("DROP TABLE library_export_items"); db.execSQL("DROP TABLE library_exports")
+                db.execSQL("CREATE TABLE originals_legacy(id TEXT PRIMARY KEY,imported_at INTEGER NOT NULL,digest_token TEXT UNIQUE NOT NULL,payload BLOB NOT NULL,key_payload BLOB NOT NULL)")
+                db.execSQL("INSERT INTO originals_legacy SELECT id,imported_at,digest_token,payload,key_payload FROM originals")
+                db.execSQL("DROP TABLE originals"); db.execSQL("ALTER TABLE originals_legacy RENAME TO originals")
+                db.execSQL("CREATE INDEX original_page ON originals(imported_at DESC,id DESC)"); db.version = 1
+            }
             HealthOriginalStore(context, name, root).use { upgraded ->
                 assertEquals(original, upgraded.original(original.id)); assertEquals(1, upgraded.job(savedJob.id)!!.nextPage)
                 assertEquals("saved before upgrade", upgraded.page(savedJob.id, 1)!!.lines.single().text)

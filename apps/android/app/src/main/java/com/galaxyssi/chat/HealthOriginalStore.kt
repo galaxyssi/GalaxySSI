@@ -34,7 +34,12 @@ internal class HealthOriginalStore(
     private val databaseName: String = "health_originals_v1.db",
     private val root: File = File(context.filesDir, "health-originals-v1")
 ) : Closeable {
-    private val helper = Database(context.applicationContext, databaseName)
+    private val helper = Database(context.applicationContext, databaseName) { id, bytes -> HealthOriginalKind.of(decodeOriginal(id, bytes)).name }
+    internal val libraryDatabase: SQLiteDatabase get() = helper.writableDatabase
+    internal fun libraryPack(kind: String, id: String, value: JSONObject) = pack(kind, id, value)
+    internal fun libraryUnpack(kind: String, id: String, value: ByteArray) = unpack(kind, id, value)
+    internal fun libraryKeyAad(id: String) = aad("export-key", id)
+    internal fun libraryChanged() { runCatching { notifyChanged("exports") } }
     private fun aad(kind: String, id: String) = "$databaseName|health-$kind-v1|$id".toByteArray(Charsets.UTF_8)
     private fun pack(kind: String, id: String, json: JSONObject): ByteArray {
         val bytes = json.toString().toByteArray(Charsets.UTF_8)
@@ -71,6 +76,18 @@ internal class HealthOriginalStore(
         val args = before?.let { arrayOf(it.first.toString(), it.first.toString(), it.second) }
         return helper.readableDatabase.rawQuery("SELECT id,payload FROM originals$where ORDER BY imported_at DESC,id DESC LIMIT 30", args)
             .use { buildList { while (it.moveToNext()) add(decodeOriginal(it.getString(0), it.getBlob(1))) } }
+    }
+    fun library(filter: HealthLibraryFilter, before: Pair<Long, String>? = null, signal: android.os.CancellationSignal? = null): HealthLibraryPage {
+        val terms = arrayListOf("imported_at>=?", "imported_at<?")
+        val args = arrayListOf(filter.from.toString(), filter.until.toString())
+        filter.kind?.let { terms += "kind=?"; args += it.name }
+        before?.let { terms += "(imported_at<? OR (imported_at=? AND id<?))"; args += listOf(it.first.toString(), it.first.toString(), it.second) }
+        val rows = helper.readableDatabase.rawQuery("SELECT id,payload,imported_at,kind FROM originals WHERE ${terms.joinToString(" AND ")} ORDER BY imported_at DESC,id DESC LIMIT 31", args.toTypedArray(), signal)
+            .use { cursor -> buildList { while (cursor.moveToNext()) add(decodeOriginal(cursor.getString(0), cursor.getBlob(1)).also {
+                check(it.importedAt == cursor.getLong(2) && HealthOriginalKind.of(it).name == cursor.getString(3)) { "Health original index mismatch" }
+            }) } }
+        val visible = rows.take(30)
+        return HealthLibraryPage(visible, if (rows.size > 30) visible.last().let { it.importedAt to it.id } else null)
     }
     fun createJob(job: HealthImportJob) {
         require(validId(job.id) && job.sourceUri.startsWith("content://") && job.mode in listOf("report", "device"))
@@ -193,7 +210,7 @@ internal class HealthOriginalStore(
                 val original = HealthOriginal(previous?.id ?: id, streamId, previous?.name ?: name.take(240).ifBlank { "document" }, previous?.mime ?: mime.take(120), total,
                     hash, previous?.importedAt ?: now, relative, previous?.source ?: source)
                 val values = ContentValues().apply {
-                    put("id", original.id); put("imported_at", original.importedAt); put("digest_token", token)
+                    put("id", original.id); put("imported_at", original.importedAt); put("digest_token", token); put("kind", HealthOriginalKind.of(original).name)
                     put("payload", pack("original", original.id, original.json()))
                     put("key_payload", AgentStorageCipher.encryptBinary(key, aad("key", original.id)))
                 }
@@ -371,20 +388,31 @@ internal class HealthOriginalStore(
         } finally { db.endTransaction() }
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 2) {
+    private class Database(context: Context, name: String, private val classify: (String, ByteArray) -> String) : SQLiteOpenHelper(context, name, null, 3) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL("CREATE TABLE originals(id TEXT PRIMARY KEY,imported_at INTEGER NOT NULL,digest_token TEXT UNIQUE NOT NULL,payload BLOB NOT NULL,key_payload BLOB NOT NULL)")
+            db.execSQL("CREATE TABLE originals(id TEXT PRIMARY KEY,imported_at INTEGER NOT NULL,digest_token TEXT UNIQUE NOT NULL,payload BLOB NOT NULL,key_payload BLOB NOT NULL,kind TEXT NOT NULL)")
             db.execSQL("CREATE INDEX original_page ON originals(imported_at DESC,id DESC)")
+            db.execSQL("CREATE INDEX original_kind_page ON originals(kind,imported_at DESC,id DESC)")
             db.execSQL("CREATE TABLE imports(job_id TEXT PRIMARY KEY,original_id TEXT NOT NULL REFERENCES originals(id))")
             db.execSQL("CREATE TABLE jobs(id TEXT PRIMARY KEY,created_at INTEGER NOT NULL,state TEXT NOT NULL,payload BLOB NOT NULL)")
             db.execSQL("CREATE INDEX job_page ON jobs(created_at DESC,id DESC)")
             db.execSQL("CREATE INDEX job_pending ON jobs(state,created_at DESC,id DESC)")
             db.execSQL("CREATE TABLE pages(job_id TEXT NOT NULL REFERENCES jobs(id),page_number INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(job_id,page_number))")
-            captureSchema(db)
+            captureSchema(db); HealthOriginalLibraryStore.createSchema(db)
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { check(oldVersion == 1 && newVersion == 2); captureSchema(db) }
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            check(oldVersion in 1..2 && newVersion == 3)
+            if (oldVersion < 2) captureSchema(db)
+            db.execSQL("ALTER TABLE originals ADD COLUMN kind TEXT NOT NULL DEFAULT 'OTHER'")
+            db.rawQuery("SELECT id,payload FROM originals", null).use { rows -> while (rows.moveToNext()) {
+                val id = rows.getString(0); val kind = classify(id, rows.getBlob(1))
+                check(db.update("originals", ContentValues().apply { put("kind", kind) }, "id=?", arrayOf(id)) == 1)
+            } }
+            db.execSQL("CREATE INDEX original_kind_page ON originals(kind,imported_at DESC,id DESC)")
+            HealthOriginalLibraryStore.createSchema(db)
+        }
         private fun captureSchema(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE capture_batches(id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
             db.execSQL("CREATE TABLE capture_pages(job_id TEXT PRIMARY KEY REFERENCES jobs(id),batch_id TEXT NOT NULL REFERENCES capture_batches(id),position INTEGER NOT NULL,payload BLOB NOT NULL)")

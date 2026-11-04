@@ -283,13 +283,34 @@ final catalog/empty-trend screenshots are inspected. Results are tracked in the
 adapters, complete point/return acceptance and large-history rollups remain
 separate work; this increment is not completion of all 32 health screens.
 
+## Increment 8: Original Library And Explicit Original ZIPs
+
+The original library is now a separate native grid/list page with imported-date
+and type filters, bounded image/PDF thumbnails, 30-row keyset pages and durable
+cross-page selection. A frozen paged confirmation manifest precedes generation.
+Original files are preserved byte-for-byte, with per-file integrity checks and
+a streaming archive manifest rather than OCR text substituted for originals.
+
+Generated ZIPs remain encrypted in private staging/storage. A separate explicit
+SAF save writes a standard unencrypted ZIP only after consent; generated and
+saved are distinct states. Durable dispatch/attempt identities isolate retry,
+interruption and cancellation. No automatic share, measurement export, complete
+backup or password-protected public ZIP is claimed. See the
+[original-library contract](../testing/android-health-original-library.md).
+
+Version 0.1.7.23 / Android 1436 is cover-installed on Tab Active3. The final
+offline build passes 207 focused JVM tests and 167 non-visual device tests.
+Visible library/confirmation/SAF acceptance remains pending because the tablet
+relocked; no keyguard bypass or camera capture was used. These focused passes
+do not replace the complete health acceptance ledger.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
 version and focused validation before claiming completion:
 
 1. Native camera hardware/device-matrix acceptance, automatic paper-edge
-   detection, and original-library thumbnail/filter/batch-selection modes.
+   detection, and populated original-library/SAF/foreground export acceptance.
 2. XLSX ISO-typed date interoperability and unlocked structured-import UI
    acceptance; keep existing numeric-date/formula provenance checks intact.
 3. Complete native catalog/trend point-and-return acceptance, physical-device
