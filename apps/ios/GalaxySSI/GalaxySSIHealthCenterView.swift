@@ -93,6 +93,11 @@ struct GalaxySSIHealthCenterView: View {
         Button(t("retry", "Reload records"), action: reload)
       }
       NavigationLink {
+        GalaxySSIHealthMeasurementExportView(records: records)
+      } label: {
+        Label(t("export.title", "Export Measurements"), systemImage: "square.and.arrow.up")
+      }
+      NavigationLink {
         GalaxySSIWeeklyHealthReportView(records: records)
       } label: {
         Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar")

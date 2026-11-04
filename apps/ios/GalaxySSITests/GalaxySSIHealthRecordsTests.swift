@@ -3,6 +3,23 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
+    var reading = GalaxySSIHealthReading(metric: .bloodPressure, value: 120, diastolic: 80, pulse: 65)
+    reading.conditions = " =2+2"
+    reading.notes = "a\r\nb\nc\rd,\"quoted\""
+    let csv = String(decoding: try GalaxySSIHealthMeasurementExport.encode([reading], as: .csv, includeNotes: true),
+                     as: UTF8.self)
+    XCTAssertTrue(csv.contains("\"120\",\"mmHg\",\"80\",\"65\""))
+    XCTAssertTrue(csv.contains("\"' =2+2\""))
+    XCTAssertTrue(csv.contains("\"a\r\nb\nc\rd,\"\"quoted\"\"\""))
+    let json = try GalaxySSIHealthMeasurementExport.encode([reading], as: .json, includeNotes: false)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+    let row = try XCTUnwrap((object["measurements"] as? [[String: String]])?.first)
+    XCTAssertEqual(row["diastolic"], "80")
+    XCTAssertNil(row["conditions"])
+    XCTAssertNil(row["notes"])
+  }
+
   @MainActor
   func testProfileIsSeparateAndStaleDraftCannotRestoreClearedFacts() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
