@@ -13,8 +13,16 @@
     <string name="health_assistant_profile_none">未选择</string>
     <string name="health_assistant_profile_self_reported">本人填写的档案资料</string>
     <string name="health_assistant_profile_value">%1$s：%2$s</string>
-    <string name="health_assistant_profile_changed">所选档案资料已变更，请重新分析。</string>
+    <string name="health_assistant_profile_changed">所选档案资料已变更，请检查选择后重新分析。</string>
     <string name="health_assistant_profile_blocked">隐私设置未允许使用档案资料。请取消选择或修改授权。</string>
+    <string name="health_assistant_background">病史、用药和过敏</string>
+    <string name="health_assistant_background_selected">已选条目</string>
+    <string name="health_assistant_background_count">已选 %1$d 条，最多 %2$d 条</string>
+    <string name="health_assistant_background_item">%1$s\n%2$s</string>
+    <string name="health_assistant_background_loading">正在加载已保存条目…</string>
+    <string name="health_assistant_background_reloaded">档案条目已更新，已返回第一页。</string>
+    <string name="health_assistant_background_previous">上一页</string>
+    <string name="health_assistant_background_next">下一页</string>
     <string name="health_assistant_calculate">本机分析</string>
     <string name="health_assistant_changed">记录或授权已变更，请重新分析。</string>
     <string name="health_assistant_result">本机分析结果</string>

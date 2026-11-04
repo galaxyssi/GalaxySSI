@@ -13,8 +13,16 @@
     <string name="health_assistant_profile_none">None selected</string>
     <string name="health_assistant_profile_self_reported">Self-reported profile context</string>
     <string name="health_assistant_profile_value">%1$s: %2$s</string>
-    <string name="health_assistant_profile_changed">The selected profile context changed. Run the analysis again.</string>
+    <string name="health_assistant_profile_changed">The selected profile context changed. Review your selection and run the analysis again.</string>
     <string name="health_assistant_profile_blocked">Profile context is disabled in Privacy and Data. Remove the selection or update your permissions.</string>
+    <string name="health_assistant_background">Health history, medication and allergies</string>
+    <string name="health_assistant_background_selected">Selected entries</string>
+    <string name="health_assistant_background_count">%1$d of %2$d selected</string>
+    <string name="health_assistant_background_item">%1$s\n%2$s</string>
+    <string name="health_assistant_background_loading">Loading saved entries…</string>
+    <string name="health_assistant_background_reloaded">Entries changed. Showing the first page.</string>
+    <string name="health_assistant_background_previous">Previous page</string>
+    <string name="health_assistant_background_next">Next page</string>
     <string name="health_assistant_calculate">Analyze on this device</string>
     <string name="health_assistant_changed">Records or permissions changed. Run the analysis again.</string>
     <string name="health_assistant_result">On-device results</string>
