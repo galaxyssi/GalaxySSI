@@ -156,7 +156,8 @@ class HealthCameraActivity : Activity() {
         if (batchId.isBlank()) {
             batchId = UUID.randomUUID().toString()
             val mode = intent.getStringExtra("capture_mode")?.takeIf { it in listOf("report", "device") } ?: "report"
-            io.execute { val result = runCatching { store.createCaptureBatch(HealthPhotoBatch(batchId, mode, System.currentTimeMillis())) }
+            io.execute { val result = runCatching { store.createCaptureBatch(HealthPhotoBatch(batchId, mode, System.currentTimeMillis(),
+                keepOriginal = intent.getBooleanExtra(HEALTH_KEEP_ORIGINAL, true))) }
                 main.post { if (!isDestroyed) result.fold({ load(); if (active) {
                     if (inCamera) openCamera() else if (state == null && intent.getBooleanExtra("capture_pick_images", false)) chooseImages()
                 } }, { message(R.string.health_photo_save_failed) }) } }
@@ -279,7 +280,11 @@ class HealthCameraActivity : Activity() {
                         val token = generation
                         io.execute { val bitmap = runCatching { HealthPhotoInspector.decode(store, original, 60_000) }.getOrNull()
                             main.post { if (active && token == generation && image.isAttachedToWindow && bitmap != null) { thumbnails[image] = bitmap; image.setImageBitmap(bitmap) } else bitmap?.recycle() } }
-                        image.setOnClickListener { preview?.dismiss(); preview = HealthOriginalPreview(this@HealthCameraActivity, original) { export(original) }.also { it.show() } }
+                        image.setOnClickListener {
+                            preview?.dismiss()
+                            preview = HealthOriginalPreview(this@HealthCameraActivity, original,
+                                if (original.reviewOnly) null else ({ export(original) })).also { it.show() }
+                        }
                     }
                 })
                 addView(ui.line().apply {

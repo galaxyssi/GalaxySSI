@@ -151,6 +151,36 @@ struct AgentTeamProgressProjection: Codable, Equatable {
 }
 
 enum AgentTeamProgressPolicy {
+  static func currentCollaborationMembers(_ snapshot: AgentTeamExecutionSnapshot) -> [AgentTeamMemberSnapshot] {
+    var keys: [String] = []
+    var current: [String: AgentTeamMemberSnapshot] = [:]
+    for member in snapshot.members where member.deliveryMode != .ignore {
+      let parts = member.memberId.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+      let key: String
+      if let first = parts.first, let rosterId = UUID(uuidString: String(first)),
+         parts.count == 1 || ["revise", "recheck"].contains(String(parts[1])) {
+        key = rosterId.uuidString.lowercased()
+      } else {
+        key = member.memberId
+      }
+      if let previous = current[key] {
+        let candidateRank = collaborationStatusRank(member.status)
+        let previousRank = collaborationStatusRank(previous.status)
+        guard candidateRank > previousRank ||
+          (candidateRank == previousRank && member.updatedAtMillis >= previous.updatedAtMillis) else { continue }
+      } else {
+        keys.append(key)
+      }
+      current[key] = member
+    }
+    return keys.compactMap { current[$0] }
+  }
+
+  private static func collaborationStatusRank(_ status: AgentSubagentStatus) -> Int {
+    if status == .running { return 2 }
+    return status.isTerminal ? 0 : 1
+  }
+
   static func project(_ snapshot: AgentTeamExecutionSnapshot, expanded: Bool) -> AgentTeamProgressProjection {
     let showMembers = expanded || snapshot.visibilityMode == .visible
     return AgentTeamProgressProjection(

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_retention_title">Original retention</string>
+    <string name="health_retention_switch">Keep photos and uploaded originals</string>
+    <string name="health_retention_note">When off, originals are encrypted temporarily for review and removed after saving or canceling. Unselected items remain as recognized drafts.</string>
+    <string name="health_retention_released">Original not kept. Review and source details remain.</string>
+    <string name="health_retention_not_imported">No records extracted. The original was not kept.</string>
+</resources>

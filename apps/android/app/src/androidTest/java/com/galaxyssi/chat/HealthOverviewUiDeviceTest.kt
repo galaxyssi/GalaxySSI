@@ -95,9 +95,25 @@ class HealthOverviewUiDeviceTest {
             assertNotNull(find(it, "health-import-center"))
             listOf("health-import-camera", "health-import-report", "health-import-table", "health-import-restore")
                 .forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
+            val retention = find(it, "health-import-keep-original") as android.widget.Switch
+            assertTrue(retention.isChecked)
+            assertTrue(retention.performClick())
+            assertFalse(retention.isChecked)
         }
         scenario.recreate()
         await(scenario, "health-import-restore")
+        scenario.onActivity { assertFalse((find(it, "health-import-keep-original") as android.widget.Switch).isChecked) }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        if (InstrumentationRegistry.getArguments().getString("health_retention_screenshot") == "true") {
+            instrumentation.waitForIdleSync()
+            instrumentation.uiAutomation.takeScreenshot()?.let { image ->
+                try {
+                    java.io.File(context.getExternalFilesDir(null), "health-original-retention.png").outputStream().use {
+                        image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                } finally { image.recycle() }
+            }
+        }
         scenario.onActivity { it.onBackPressed() }
         await(scenario, "health-overview-first")
         scenario.onActivity {

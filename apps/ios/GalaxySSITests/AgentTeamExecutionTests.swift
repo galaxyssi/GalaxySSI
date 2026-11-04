@@ -37,6 +37,24 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(try reopened.rejectedResearchReply(scope: scope))
   }
 
+  func testCollaborationMemberProjectionKeepsCurrentWorkAndOriginalAttempts() {
+    var snapshot = durableTeamSnapshot("current-projection")
+    let rosterId = UUID().uuidString.lowercased()
+    let otherId = UUID().uuidString.lowercased()
+    snapshot.members = [
+      .init(agentId: "shared-model", status: .succeeded, output: "original", updatedAtMillis: 100, instanceId: rosterId),
+      .init(agentId: "shared-model", status: .running, updatedAtMillis: 50, instanceId: rosterId + ":revise"),
+      .init(agentId: "shared-model", status: .queued, updatedAtMillis: 60, instanceId: rosterId + ":recheck"),
+      .init(agentId: "shared-model", status: .succeeded, updatedAtMillis: 40, instanceId: otherId)
+    ]
+    XCTAssertEqual(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot).map(\.memberId),
+      [rosterId + ":revise", otherId])
+    snapshot.members[1].status = .succeeded
+    XCTAssertEqual(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot).first?.memberId, rosterId + ":recheck")
+    XCTAssertEqual(snapshot.members.count, 4)
+    XCTAssertEqual(snapshot.members.first?.output, "original")
+  }
+
   func testCollaborationTimingUsesRecordedExecutionBounds() throws {
     var snapshot = durableTeamSnapshot("timed-run")
     snapshot.state = .running
@@ -65,11 +83,15 @@ extension GalaxySSIStoreTests {
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     var prior = durableTeamSnapshot("prior")
     prior.taskId = "past"
+    prior.createdAtMillis = 10
+    prior.updatedAtMillis = 50
     prior.state = .succeeded
     prior.finalOutput = "Verified battery comparison"
     var current = prior
     current.supervisorRunId = "current"
     current.taskId = "turn"
+    current.createdAtMillis = 20
+    current.updatedAtMillis = 30
     var foreign = prior
     foreign.supervisorRunId = "foreign"
     foreign.conversationId = "another-group"
@@ -83,6 +105,7 @@ extension GalaxySSIStoreTests {
       excludingTurnId: "turn", query: "BATTERY comparison").map(\.supervisorRunId), ["prior"])
     XCTAssertTrue(reopened.recallCollaborationResults(conversationId: prior.conversationId,
       excludingTurnId: "turn", query: "unmatched").isEmpty)
+    XCTAssertEqual(reopened.latestCollaborationRun(conversationId: prior.conversationId)?.supervisorRunId, "current")
   }
 
   func testNativeObservationRequiresExactActiveMemberAndRejectsDeletedGroup() throws {

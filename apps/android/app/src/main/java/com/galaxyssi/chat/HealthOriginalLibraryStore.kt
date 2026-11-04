@@ -48,7 +48,10 @@ internal class HealthOriginalLibraryStore(private val context: Context, private 
         check(session(id)?.state == HealthOriginalExportState.SELECTING)
         require(values.size <= 30)
         values.forEach { original -> valid(original)
-            if (selected) db.insertWithOnConflict("library_export_items", null, ContentValues().apply { put("session_id", id); put("original_id", original) }, SQLiteDatabase.CONFLICT_IGNORE)
+            if (selected) {
+                require(originals.original(original)?.reviewOnly == false)
+                db.insertWithOnConflict("library_export_items", null, ContentValues().apply { put("session_id", id); put("original_id", original) }, SQLiteDatabase.CONFLICT_IGNORE)
+            }
             else db.delete("library_export_items", "session_id=? AND original_id=?", arrayOf(id, original))
         }
     }
@@ -61,6 +64,7 @@ internal class HealthOriginalLibraryStore(private val context: Context, private 
         var count = 0L; var size = 0L; var missing = 0L
         db.rawQuery("SELECT original_id FROM library_export_items WHERE session_id=? ORDER BY original_id", arrayOf(id)).use { rows -> while (rows.moveToNext()) {
             val original = requireNotNull(originals.original(rows.getString(0)))
+            check(!original.reviewOnly)
             count++; size = Math.addExact(size, original.size); if (!originals.present(original)) missing++
             db.update("library_export_items", ContentValues().apply { put("snapshot", originals.libraryPack("export-item", "$id:${original.id}", original.json())) },
                 "session_id=? AND original_id=?", arrayOf(id, original.id))

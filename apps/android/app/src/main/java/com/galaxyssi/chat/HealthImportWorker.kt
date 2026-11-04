@@ -19,7 +19,10 @@ internal object HealthImportScheduler {
         WorkManager.getInstance(context.applicationContext).enqueueUniqueWork("${if (prepareCapture) "health-capture" else "health-import"}:$id", ExistingWorkPolicy.KEEP, request)
     }
     fun cancel(context: Context, id: String) {
-        HealthOriginalStore(context).use { it.updateJob(id) { job -> job.copy(state = HealthImportState.CANCELLED) } }
+        HealthOriginalStore(context).use {
+            it.updateJob(id) { job -> job.copy(state = HealthImportState.CANCELLED) }
+            runCatching { it.releaseReviewOriginal(id) }
+        }
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-import:$id")
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-capture:$id")
     }
@@ -31,6 +34,7 @@ internal object HealthImportScheduler {
             if (!context.getDatabasePath("health_records_v1.db").exists() &&
                 !context.getDatabasePath(HealthOriginalStore.LEGACY_DATABASE).exists()) return@thread
             runCatching { HealthOriginalExportScheduler.recover(context) }
+            runCatching { HealthOriginalRetention.recover(context) }
             runCatching { HealthOriginalStore(context).use { store ->
                 var after: Pair<Long, String>? = null
                 do {
@@ -67,7 +71,8 @@ internal class HealthImportPipeline(private val context: Context, private val re
             if (prepareCapture && initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             if (!prepareCapture && initial.captureBatch.isNotBlank() && !initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             fun cancelled() {
-                if (store.job(id)?.state == HealthImportState.CANCELLED) throw CancellationException()
+                val job = store.job(id) ?: throw CancellationException()
+                if (job.state == HealthImportState.CANCELLED) throw CancellationException()
                 if (stopped()) throw HealthImportInterrupted()
             }
             try {
@@ -105,7 +110,9 @@ internal class HealthImportPipeline(private val context: Context, private val re
                     return HealthImportOutcome.COMPLETE
                 }
                 if (!mime.startsWith("image/") && mime != "application/pdf") {
-                    store.updateJob(id) { it.copy(state = HealthImportState.ORIGINAL_ONLY) }; return HealthImportOutcome.COMPLETE
+                    store.updateJob(id) { it.copy(state = HealthImportState.ORIGINAL_ONLY) }
+                    runCatching { store.releaseReviewOriginal(id) }
+                    return HealthImportOutcome.COMPLETE
                 }
                 HealthOcrEngine().use { engine ->
                     val current = store.job(id) ?: throw HealthImportFailure("job_missing")
@@ -127,7 +134,11 @@ internal class HealthImportPipeline(private val context: Context, private val re
                 store.updateJob(id) { it.copy(state = HealthImportState.QUEUED, error = "interrupted") }
                 return HealthImportOutcome.RETRY
             } catch (_: CancellationException) {
-                if (store.job(id)?.state == HealthImportState.CANCELLED) return HealthImportOutcome.COMPLETE
+                val job = store.job(id)
+                if (job == null || job.state == HealthImportState.CANCELLED) {
+                    runCatching { store.releaseReviewOriginal(id) }
+                    return HealthImportOutcome.COMPLETE
+                }
                 store.updateJob(id) { it.copy(state = HealthImportState.FAILED, error = "recognition_cancelled") }
                 return HealthImportOutcome.FAILED
             } catch (_: OutOfMemoryError) {
