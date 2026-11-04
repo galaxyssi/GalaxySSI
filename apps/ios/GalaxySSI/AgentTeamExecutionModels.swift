@@ -258,6 +258,8 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
   var updatedAtMillis: Int64
   var interruptedAtMillis: Int64
   var primaryInstanceId: String
+  var executionStartedAtMillis: Int64?
+  var executionEndedAtMillis: Int64?
 
   var primaryMemberId: String { primaryInstanceId.ifBlank(primaryAgentId) }
 
@@ -275,7 +277,9 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     createdAtMillis: Int64 = 0,
     updatedAtMillis: Int64 = 0,
     interruptedAtMillis: Int64 = 0,
-    primaryInstanceId: String = ""
+    primaryInstanceId: String = "",
+    executionStartedAtMillis: Int64? = nil,
+    executionEndedAtMillis: Int64? = nil
   ) {
     self.supervisorRunId = supervisorRunId
     self.teamId = teamId
@@ -291,6 +295,8 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     self.updatedAtMillis = max(updatedAtMillis, 0)
     self.interruptedAtMillis = max(interruptedAtMillis, 0)
     self.primaryInstanceId = primaryInstanceId.ifBlank(primaryAgentId)
+    self.executionStartedAtMillis = executionStartedAtMillis
+    self.executionEndedAtMillis = executionEndedAtMillis
   }
 
   enum CodingKeys: String, CodingKey {
@@ -308,6 +314,8 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
     case updatedAtMillis = "updated_at_millis"
     case interruptedAtMillis = "interrupted_at_millis"
     case primaryInstanceId = "primary_instance_id"
+    case executionStartedAtMillis = "execution_started_at_millis"
+    case executionEndedAtMillis = "execution_ended_at_millis"
   }
 
   init(from decoder: Decoder) throws {
@@ -327,8 +335,25 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0,
       interruptedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .interruptedAtMillis) ?? 0,
       primaryInstanceId: try container.decodeIfPresent(String.self, forKey: .primaryInstanceId) ??
-        (try container.decodeIfPresent(String.self, forKey: .primaryAgentId) ?? "")
+        (try container.decodeIfPresent(String.self, forKey: .primaryAgentId) ?? ""),
+      executionStartedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .executionStartedAtMillis),
+      executionEndedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .executionEndedAtMillis)
     )
+  }
+
+  func elapsedExecutionMillis(now: Int64) -> Int64? {
+    guard let start = executionStartedAtMillis, start > 0 else { return nil }
+    let end: Int64
+    if let recordedEnd = executionEndedAtMillis {
+      end = recordedEnd
+    } else if state == .interrupted {
+      end = interruptedAtMillis
+    } else if state == .running || state == .waitingResponse {
+      end = now
+    } else {
+      return nil
+    }
+    return end >= start ? end - start : nil
   }
 }
 
