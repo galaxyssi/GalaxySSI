@@ -70,6 +70,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case hypothesis, evidence, counterexample, proposal, experiment, artifact, decision, question
     case experimentPlan = "experiment_plan"
     case experimentResult = "experiment_result"
+    case capabilityLesson = "capability_lesson"
     case acceptanceReview = "acceptance_review"
     case candidate
     case candidateEvent = "candidate_event"
@@ -225,6 +226,12 @@ struct AgentCollaborationMeasuredCase: Codable, Equatable {
   var baseline: Double? = nil
   var candidate: Double? = nil
   var gain: Double? = nil
+
+  static func supportsRetention(_ cases: [Self]) -> Bool {
+    cases.contains { $0.purpose == "target" } &&
+      cases.contains { $0.purpose == "regression" } &&
+      cases.allSatisfy { $0.state == "passed" }
+  }
 }
 
 struct AgentCollaborationResearchEnvelope: Decodable {
@@ -251,6 +258,7 @@ struct AgentCollaborationResearchRevision: Codable {
   var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
+  var trialAuthors: [String]? = nil
 }
 
 struct AgentCollaborationFrozenCloudRead: Codable {

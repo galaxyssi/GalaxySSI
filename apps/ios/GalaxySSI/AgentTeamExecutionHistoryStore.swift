@@ -471,6 +471,7 @@ final class AgentTeamExecutionHistoryStore {
         let references = draft.observations ?? []
         var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
+        var trialAuthors: [String]? = nil
         if draft.kind == .acceptanceReview {
           let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
             objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
@@ -508,6 +509,7 @@ final class AgentTeamExecutionHistoryStore {
           let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
             turnId: turnId, memberId: memberId, sourceId: sourceId)
           let reads = try Self.freezeCloudReads(references, scope: scope, database: database)
+          var authors = Set<String>()
           let reports = try reads.map { read -> AgentMcpJSONObject in
             guard let original = try database.cloudEvidence(id: read.evidenceId, conversationId: conversationId),
                   original.succeeded, original.startedAtMillis >= registered,
@@ -515,6 +517,7 @@ final class AgentTeamExecutionHistoryStore {
                   original.call.name == source.string("tool"),
                   let report = Self.measurementReport(original.output, pointer: spec.string("report_pointer"))
             else { throw AgentTeamHistoryDatabase.Failure.stale }
+            authors.insert(original.scope.memberId)
             return report
           }
           guard let measured = AgentCollaborationExperimentPlanIntake.measure(reports, plan: plan) else {
@@ -522,6 +525,11 @@ final class AgentTeamExecutionHistoryStore {
           }
           frozenReads = reads
           measuredCases = measured
+          trialAuthors = authors.sorted()
+        } else if draft.kind == .capabilityLesson {
+          frozenReads = try Self.validateCapabilityLesson(draft, scope: .init(runId: runId,
+            conversationId: conversationId, turnId: turnId, memberId: memberId, sourceId: sourceId),
+            changedIds: Set(drafts.compactMap(\.objectId)), database: database)
         } else if !references.isEmpty {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
@@ -551,7 +559,7 @@ final class AgentTeamExecutionHistoryStore {
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
           frozenCloudReads: frozenReads,
           registeredAtMillis: draft.kind == .experimentPlan ? AgentControlPlaneClock.nowMillis() : nil,
-          measuredCases: measuredCases)
+          measuredCases: measuredCases, trialAuthors: trialAuthors)
         revision.reference.sha256 = try digest(revision)
         revisions.append(revision)
       }
@@ -564,6 +572,74 @@ final class AgentTeamExecutionHistoryStore {
       try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
       return receipt
     }
+  }
+
+  private static func validateCapabilityLesson(_ draft: AgentCollaborationResearchDraft,
+    scope: AgentCollaborationToolEvidenceScope, changedIds: Set<String>, database: AgentTeamHistoryDatabase)
+    throws -> [AgentCollaborationFrozenCloudRead]? {
+    let reference = AgentCollaborationExperimentPlanIntake.reference
+    guard draft.objectId?.isBlank != false, draft.baseRevision == 0,
+          let value = draft.body["capability_lesson"]?.objectValue,
+          ["retain", "reject", "revise"].contains(value.string("decision")),
+          ["rationale", "applies_when", "avoid_when", "procedure", "transfer_test"].allSatisfy({
+            value[$0]?.stringValue?.isBlank == false
+          }), let resultRef = reference(value["result"]), let rollback = reference(value["rollback"]),
+          draft.parents.contains(resultRef), draft.parents.contains(rollback)
+    else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let retaining = value.string("decision") == "retain"
+    func exact(_ ref: AgentCollaborationResearchReference) throws -> AgentCollaborationResearchRevision? {
+      guard !retaining || !changedIds.contains(ref.objectId),
+            let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + ref.objectId, revision: retaining ? nil : ref.revision),
+            saved.reference == ref, saved.turnId != scope.turnId || (saved.runId == scope.runId && saved.authorId == scope.memberId)
+      else { return nil }
+      return saved
+    }
+    guard let result = try exact(resultRef), result.draft.kind == .experimentResult,
+          let planRef = reference(result.draft.body["experiment_result"]?.objectValue?["plan"]),
+          let plan = try exact(planRef), plan.draft.kind == .experimentPlan,
+          let spec = plan.draft.body["experiment_plan"]?.objectValue,
+          reference(spec["baseline"]) == rollback, let baseline = try exact(rollback),
+          let ideaRef = reference(spec["innovation"]), let idea = try exact(ideaRef),
+          idea.draft.kind.rawValue == "innovation"
+    else { throw AgentTeamHistoryDatabase.Failure.stale }
+    let references = draft.observations ?? []
+    if !retaining {
+      guard references.isEmpty else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return nil
+    }
+    guard let cases = result.measuredCases, AgentCollaborationMeasuredCase.supportsRetention(cases),
+          let authors = result.trialAuthors, !authors.isEmpty,
+          let required = result.frozenCloudReads, !required.isEmpty
+    else { throw AgentTeamHistoryDatabase.Failure.stale }
+    var seen = Set<String>()
+    var pending = [idea, baseline, plan, result]
+    func person(_ id: String) -> String {
+      let parts = id.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+      guard let first = parts.first, let uuid = UUID(uuidString: String(first)),
+            parts.count == 1 || ["revise", "recheck"].contains(String(parts[1])) else { return id }
+      return uuid.uuidString.lowercased()
+    }
+    let reviewer = person(scope.memberId)
+    guard !authors.map(person).contains(reviewer) else {
+      throw AgentTeamHistoryDatabase.Failure.stale
+    }
+    while let record = pending.popLast() {
+      guard seen.insert(record.reference.objectId).inserted else { continue }
+      guard seen.count <= 128, person(record.authorId) != reviewer else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      for ref in record.draft.parents {
+        guard let original = try exact(ref) else { throw AgentTeamHistoryDatabase.Failure.stale }
+        pending.append(original)
+      }
+    }
+    let reads = try freezeCloudReads(references, scope: scope, database: database)
+    guard required.allSatisfy({ original in
+      reads.contains { $0.evidenceId == original.evidenceId && $0.sha256 == original.sha256 &&
+        $0.totalCharacters == original.totalCharacters }
+    }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+    return reads
   }
 
   private static func measurementReport(_ raw: String, pointer: String) -> AgentMcpJSONObject? {
@@ -687,7 +763,7 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          guard [.acceptanceReview, .experimentResult].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
+          guard [.acceptanceReview, .experimentResult, .capabilityLesson].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
                 reads.count == citations.count,
                 zip(reads, citations).allSatisfy({ pair in
                   pair.0.evidenceId == pair.1.string("evidence_id") &&

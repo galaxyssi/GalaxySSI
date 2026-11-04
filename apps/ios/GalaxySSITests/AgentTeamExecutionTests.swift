@@ -304,6 +304,17 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentCollaborationExperimentPlanIntake.measure([costly], plan: plan))
   }
 
+  func testCapabilityRetentionRequiresPassingTargetAndRegression() {
+    let target = AgentCollaborationMeasuredCase(id: "target", purpose: "target", state: "passed")
+    var regression = AgentCollaborationMeasuredCase(id: "regression", purpose: "regression", state: "passed")
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target]))
+    XCTAssertTrue(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+    regression.state = "not_met"
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+    regression.state = "incomplete"
+    XCTAssertFalse(AgentCollaborationMeasuredCase.supportsRetention([target, regression]))
+  }
+
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
     let suite = "research-publication-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
