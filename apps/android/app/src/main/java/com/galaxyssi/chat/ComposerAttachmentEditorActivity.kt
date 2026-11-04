@@ -52,6 +52,7 @@ class ComposerAttachmentEditorActivity : Activity() {
     private var rotationLabel: TextView? = null
     private var cameraId: String = ""
     private var pendingCropFile: File? = null
+    private var pendingHealthCrop: HealthReportCrop? = null
 
     override fun onCreate(state: Bundle?) {
         AppDisplaySettings.applyToResources(this)
@@ -63,6 +64,12 @@ class ComposerAttachmentEditorActivity : Activity() {
         cameraId = state?.getString("camera_id") ?: items[selected].id
         cropping = state?.getBoolean("cropping") ?: intent.getBooleanExtra("crop_immediately", false)
         if (!items[selected].isImage) cropping = false
+        val original = android.net.Uri.parse(items[selected].source)
+        if (cropping && items.size == 1 && original.authority == "$packageName.health-originals" &&
+            original.pathSegments.singleOrNull() == intent.getStringExtra("health_original_parent")) {
+            pendingHealthCrop = HealthReportCrop.from(if (state == null) intent.getIntArrayExtra(HEALTH_REPORT_CROP)
+                else state.getIntArray(HEALTH_REPORT_CROP))
+        }
         fineRotation = state?.getInt("fine_rotation") ?: 0
         selectedRatio = state?.getInt("ratio") ?: 0
         advancedCrop = state?.getBoolean("advanced_crop") ?: false
@@ -90,6 +97,10 @@ class ComposerAttachmentEditorActivity : Activity() {
                 loaded = error == null
                 if (error != null) showError(error)
                 if (loaded && pendingRotation != 0) { rotateImage(pendingRotation); pendingRotation = 0 }
+                if (loaded && cropping) {
+                    pendingHealthCrop?.let { applyHealthReportCrop(it) }
+                    pendingHealthCrop = null
+                }
                 done.isEnabled = !saving && (!cropping || loaded)
             }
             setOnCropImageCompleteListener { _, result -> persistCrop(result) }
@@ -412,6 +423,7 @@ class ComposerAttachmentEditorActivity : Activity() {
         out.putBoolean("advanced_crop", advancedCrop)
         out.putInt("ratio", selectedRatio)
         out.putString("camera_id", cameraId)
+        out.putIntArray(HEALTH_REPORT_CROP, pendingHealthCrop?.encode())
         out.putStringArrayList("created", ArrayList(createdFiles))
         super.onSaveInstanceState(out)
     }
