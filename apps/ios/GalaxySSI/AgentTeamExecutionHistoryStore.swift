@@ -540,6 +540,32 @@ final class AgentTeamExecutionHistoryStore {
               turnId: turnId, memberId: memberId, sourceId: sourceId)
             frozenReads = try Self.freezeCloudReads(references, scope: scope, database: database)
           }
+        } else if draft.kind == .executableTool || draft.kind == .toolTestPlan {
+          guard references.isEmpty, draft.objectId?.isBlank != false, draft.baseRevision == 0,
+                let spec = draft.body[draft.kind.rawValue]?.objectValue else {
+            throw AgentTeamHistoryDatabase.Failure.corrupt
+          }
+          if draft.kind == .executableTool {
+            guard AgentCollaborationToolRegistration.parameterSchema(spec) != nil else {
+              throw AgentTeamHistoryDatabase.Failure.corrupt
+            }
+          } else {
+            guard let link = spec["executable_tool"]?.objectValue,
+                  Set(link.keys) == Set(["object_id", "revision", "sha256"]),
+                  case .int(let version)? = link["revision"], version > 0 else {
+              throw AgentTeamHistoryDatabase.Failure.corrupt
+            }
+            let reference = AgentCollaborationResearchReference(objectId: link.string("object_id"),
+              revision: version, sha256: link.string("sha256"))
+            guard draft.parents.contains(reference),
+                  let candidate = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + reference.objectId),
+                  candidate.reference == reference, candidate.draft.kind == .executableTool,
+                  candidate.turnId != turnId || (candidate.runId == runId && candidate.authorId == memberId),
+                  let tool = candidate.draft.body["executable_tool"]?.objectValue,
+                  AgentCollaborationToolRegistration.validatesTestPlan(spec, tool: tool)
+            else { throw AgentTeamHistoryDatabase.Failure.stale }
+          }
         } else if draft.kind == .environmentModel || draft.kind == .actionForecast {
           guard draft.objectId?.isBlank != false, draft.baseRevision == 0,
                 let value = draft.body[draft.kind.rawValue]?.objectValue,

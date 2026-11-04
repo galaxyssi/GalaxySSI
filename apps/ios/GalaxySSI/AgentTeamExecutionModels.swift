@@ -96,6 +96,8 @@ struct AgentCollaborationResearchDraft: Codable {
     case learningAgenda = "learning_agenda"
     case candidate
     case transferStudy = "transfer_study"
+    case executableTool = "executable_tool"
+    case toolTestPlan = "tool_test_plan"
     case environmentModel = "task_environment_model"
     case actionForecast = "action_forecast"
     case candidateEvent = "candidate_event"
@@ -356,6 +358,39 @@ enum AgentCollaborationTeamExchangeIntake {
     guard let object = raw?.objectValue, Set(object.keys) == Set(["object_id", "revision", "sha256"]),
           case .int(let revision)? = object["revision"], revision > 0 else { return nil }
     return .init(objectId: object.string("object_id"), revision: revision, sha256: object.string("sha256"))
+  }
+
+  private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {
+    fields.allSatisfy { object[$0]?.stringValue?.isBlank == false }
+  }
+}
+
+enum AgentCollaborationToolRegistration {
+  static func parameterSchema(_ spec: AgentMcpJSONObject) -> AgentSkillParameterSchema? {
+    guard spec.string("language") == "python",
+          hasText(spec, ["name", "purpose", "applies_when", "avoid_when", "environment", "dependencies", "side_effects", "source"]),
+          let raw = spec["input_schema"]?.objectValue, raw.string("type") == "object",
+          let schema = try? JSONDecoder().decode(AgentSkillParameterSchema.self,
+            from: Data(AgentMcpJSONCodec.stringify(raw).utf8)),
+          AgentSkillManifestValidator.validatesObjectParameterSchema(schema) else { return nil }
+    return schema
+  }
+
+  static func validatesTestPlan(_ plan: AgentMcpJSONObject, tool: AgentMcpJSONObject) -> Bool {
+    guard let schema = parameterSchema(tool), plan.string("environment") == tool.string("environment"),
+          hasText(plan, ["purpose", "coverage_gaps", "oracle_basis"]),
+          let cases = plan["cases"]?.arrayValue, (2...32).contains(cases.count) else { return false }
+    var ids = Set<String>()
+    var coverage = Set<String>()
+    for item in cases {
+      guard let test = item.objectValue, hasText(test, ["id", "reason"]),
+            ids.insert(test.string("id")).inserted, ["target", "edge", "regression"].contains(test.string("purpose")),
+            let input = test["input"]?.objectValue, test["expected"] != nil,
+            AgentSkillManifestValidator.validateParameters(schema, value: .object(input), path: "$.input").isEmpty
+      else { return false }
+      coverage.insert(test.string("purpose"))
+    }
+    return coverage.contains("target") && coverage.contains("regression")
   }
 
   private static func hasText(_ object: AgentMcpJSONObject, _ fields: [String]) -> Bool {

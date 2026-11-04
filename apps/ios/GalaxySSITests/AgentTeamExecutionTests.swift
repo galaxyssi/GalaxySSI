@@ -324,6 +324,28 @@ extension GalaxySSIStoreTests {
       in: "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"))
   }
 
+  func testToolTestRegistrationUsesSkillParameterContract() throws {
+    let tool = """
+    {"language":"python","name":"Check","purpose":"Validate","applies_when":"Input","avoid_when":"None",
+     "environment":"python","dependencies":"None","side_effects":"None","source":"def run(parameters): return parameters",
+     "input_schema":{"type":"object","required":["value"],"properties":{"value":{"type":"integer"}}}}
+    """
+    let plan = """
+    {"environment":"python","purpose":"Validate","coverage_gaps":"None known","oracle_basis":"Identity",
+     "cases":[{"id":"target","purpose":"target","reason":"Typical","input":{"value":1},"expected":1},
+       {"id":"regression","purpose":"regression","reason":"Zero","input":{"value":0},"expected":null}]}
+    """
+    func decode(_ raw: String) throws -> AgentMcpJSONObject {
+      try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    }
+    let spec = try decode(tool)
+    XCTAssertTrue(AgentCollaborationToolRegistration.validatesTestPlan(try decode(plan), tool: spec))
+    XCTAssertFalse(AgentCollaborationToolRegistration.validatesTestPlan(
+      try decode(plan.replacingOccurrences(of: "\"value\":0", with: "\"value\":\"0\"")), tool: spec))
+    XCTAssertFalse(AgentCollaborationToolRegistration.validatesTestPlan(
+      try decode(plan.replacingOccurrences(of: ",\"expected\":null", with: "")), tool: spec))
+  }
+
   func testForecastRecomputesUtilityWithoutChoosingAnAction() throws {
     let raw = """
     {"work_id":"test","executor":"member","horizon":"One test","decision_rationale":"Avoid side effects",
