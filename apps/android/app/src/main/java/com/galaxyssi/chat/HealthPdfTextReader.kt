@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.RectF
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.contentstream.operator.Operator
@@ -12,7 +13,9 @@ import com.tom_roush.pdfbox.io.ScratchFile
 import com.tom_roush.pdfbox.pdfparser.PDFParser
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
+import com.tom_roush.pdfbox.rendering.PDFRenderer
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.tom_roush.pdfbox.text.TextPosition
 import java.io.Closeable
@@ -29,6 +32,8 @@ import kotlin.math.floor
 /** Probes only visible text with usable page coordinates. The source remains encrypted on disk. */
 internal class HealthPdfTextReader private constructor(private val document: PDDocument, private val cancelled: () -> Unit) : Closeable {
     val pageCount get() = document.numberOfPages
+    val canExtract get() = document.currentAccessPermission.canExtractContent()
+    private val renderer by lazy { PDFRenderer(document).apply { isSubsamplingAllowed = true } }
 
     fun page(index: Int): HealthOcrPage? = probe {
         cancelled()
@@ -37,8 +42,30 @@ internal class HealthPdfTextReader private constructor(private val document: PDD
 
     override fun close() = document.close()
 
+    fun render(index: Int, maxEdge: Int, maxPixels: Int): Bitmap {
+        cancelled()
+        val crop = document.getPage(index).cropBox
+        val width = crop.width.toDouble()
+        val height = crop.height.toDouble()
+        if (!width.isFinite() || !height.isFinite() || width <= 0 || height <= 0) throw HealthImportFailure("pdf_unsupported")
+        val scale = minOf(3.0, maxEdge / maxOf(width, height), kotlin.math.sqrt(maxPixels / (width * height)))
+        return renderer.renderImage(index, scale.toFloat())
+    }
+
     companion object {
         fun open(context: Context, store: HealthOriginalStore, original: HealthOriginal, cancelled: () -> Unit): HealthPdfTextReader? = probe {
+            openDocument(context, store, original, null, cancelled)
+        }
+
+        fun openProtected(context: Context, store: HealthOriginalStore, original: HealthOriginal,
+                          password: CharArray, cancelled: () -> Unit): HealthPdfTextReader = try {
+            openDocument(context, store, original, password, cancelled)
+        } catch (_: InvalidPasswordException) {
+            throw HealthImportFailure("pdf_password_wrong")
+        } finally { password.fill('\u0000') }
+
+        private fun openDocument(context: Context, store: HealthOriginalStore, original: HealthOriginal,
+                                 password: CharArray?, cancelled: () -> Unit): HealthPdfTextReader {
             cancelled()
             PDFBoxResourceLoader.init(context.applicationContext)
             val source = EncryptedPdfInput(store.readChannel(original), original.size, cancelled)
@@ -46,13 +73,9 @@ internal class HealthPdfTextReader private constructor(private val document: PDD
             try {
                 val memory = ScratchFile(MemoryUsageSetting.setupMainMemoryOnly(16L * 1024 * 1024))
                 scratch = memory
-                val parser = PDFParser(source, memory).apply { isLenient = false }
+                val parser = PDFParser(source, password?.concatToString().orEmpty(), memory).apply { isLenient = false }
                 parser.parse()
-                val document = parser.pdDocument
-                if (!document.currentAccessPermission.canExtractContent()) {
-                    document.close()
-                    null
-                } else HealthPdfTextReader(document, cancelled)
+                return HealthPdfTextReader(parser.pdDocument, cancelled)
             } catch (failure: Throwable) {
                 runCatching { source.close() }
                 runCatching { scratch?.close() }
@@ -62,6 +85,7 @@ internal class HealthPdfTextReader private constructor(private val document: PDD
 
         private inline fun <T> probe(block: () -> T): T? = try { block() }
         catch (cancel: CancellationException) { throw cancel }
+        catch (_: InvalidPasswordException) { throw HealthImportFailure("pdf_password") }
         catch (_: IOException) { null }
         catch (_: RuntimeException) { null }
     }

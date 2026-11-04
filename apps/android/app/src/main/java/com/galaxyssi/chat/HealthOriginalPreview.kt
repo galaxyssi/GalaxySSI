@@ -18,7 +18,8 @@ import java.util.concurrent.Executors
 
 /** Uses the existing pinch/drag viewport; PDF seeks decrypt authenticated segments on demand. */
 internal class HealthOriginalPreview(
-    private val activity: Activity, private val original: HealthOriginal, private val onSave: (() -> Unit)?
+    private val activity: Activity, private val original: HealthOriginal, private val onSave: (() -> Unit)?,
+    private val names: HealthOverviewDatabases = HealthOverviewDatabases()
 ) : Dialog(activity, android.R.style.Theme_Black_NoTitleBar) {
     private val ui = HealthCenterViews(activity)
     private val worker = Executors.newSingleThreadExecutor()
@@ -30,7 +31,9 @@ internal class HealthOriginalPreview(
     private var page = 0
     private var pages = 1
     private var revision = 0
-    private var released = false
+    @Volatile private var released = false
+    private val passwords = HealthPdfPasswordUi(activity)
+    private var protectedPdf: HealthPdfTextReader? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setOwnerActivity(activity)
@@ -56,21 +59,29 @@ internal class HealthOriginalPreview(
         window?.setLayout(-1, -1)
         setOnDismissListener {
             released = true; revision++; image.setImageDrawable(null); bitmap?.recycle(); bitmap = null
-            worker.shutdownNow()
+            passwords.cancel()
+            protectedPdf?.let { opened -> worker.execute { runCatching { opened.close() } } }
+            protectedPdf = null
+            worker.shutdown()
         }
         load()
     }
     private fun load() {
         val token = ++revision
         val selected = page
+        val session = protectedPdf
+        status.setText(R.string.health_import_preparing)
+        status.setOnClickListener(null)
         status.visibility = View.VISIBLE
         worker.execute {
+            if (released) return@execute
             val result = runCatching {
-                if (original.mime.startsWith("image/")) {
+                if (session != null) session.render(selected, 1600, 2_000_000)
+                else if (original.mime.startsWith("image/")) {
                     AgentImagePipeline.loadPreview(activity.applicationContext, HealthOriginalContentProvider.uri(activity, original.id), 1600, 1600)
                         ?: throw HealthImportFailure("image_unsupported")
                 } else if (original.mime == "application/pdf") {
-                    HealthOriginalStore(activity.applicationContext).use { store ->
+                    HealthOriginalStore(activity.applicationContext, names.originals, names.originalRoot(activity)).use { store ->
                         val descriptor = store.descriptor(original)
                         val renderer = try { PdfRenderer(descriptor) } catch (error: Exception) { descriptor.close(); throw error }
                         renderer.use {
@@ -90,10 +101,42 @@ internal class HealthOriginalPreview(
                 result.fold({ next ->
                     image.setImageBitmap(next); bitmap?.recycle(); bitmap = next
                     status.visibility = View.GONE; count.text = activity.getString(R.string.health_preview_page, page + 1, pages)
-                }, {
-                    status.text = activity.getString(R.string.health_original_preview_failed)
+                }, { failure ->
+                    if (session == null && original.mime == "application/pdf" && failure is SecurityException) {
+                        status.setText(R.string.health_pdf_unlock)
+                        status.setOnClickListener { unlock() }
+                    } else status.setText(R.string.health_original_preview_failed)
                 })
             }
+        }
+    }
+
+    private fun unlock() {
+        passwords.request(
+            work = { password, signal, _ ->
+                HealthOriginalStore(activity.applicationContext, names.originals, names.originalRoot(activity)).use { store ->
+                    val opened = HealthPdfTextReader.openProtected(activity.applicationContext, store, original, password, signal::throwIfCanceled)
+                    try {
+                        val count = opened.pageCount
+                        if (count <= 0) throw HealthImportFailure("pdf_unsupported")
+                        opened to count
+                    } catch (failure: Throwable) {
+                        runCatching { opened.close() }
+                        throw failure
+                    }
+                }
+            }, discard = { runCatching { it.first.close() } }
+        ) { result ->
+            result.fold({ (opened, count) ->
+                if (released) { runCatching { opened.close() }; return@request }
+                window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                protectedPdf = opened
+                pages = count
+                load()
+            }, {
+                status.setText(if ((it as? HealthImportFailure)?.code == "pdf_password_wrong")
+                    R.string.health_pdf_password_wrong else R.string.health_original_preview_failed)
+            })
         }
     }
 }
