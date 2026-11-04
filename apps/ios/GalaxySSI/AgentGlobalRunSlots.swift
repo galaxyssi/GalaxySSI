@@ -9,6 +9,34 @@ enum AgentConnectorCapacityPolicy {
   }
 }
 
+enum AgentCollaborationResourceObservation {
+  static func prompt(registration: AgentRegistration, activeCounts: [String: Int], now: Int64) -> String {
+    let limit = AgentConnectorCapacityPolicy.normalize(registration.maxParallelRuns)
+    let occupied = max(0, activeCounts[AgentRuntimeIdentity.key(registration)] ?? 0)
+    let remaining = max(0, limit - occupied)
+    let observation: AgentMcpJSONObject = [
+      "format": .string("galaxyssi.ios-execution-resources.v1"),
+      "scope": .string("shared_target_runtime_pool"),
+      "observed_at_unix_ms": .int(now),
+      "admission_unit": .string("concurrent_runtime_slots_not_provider_requests"),
+      "admission_limit": .int(Int64(limit)),
+      "admissions_reserved": .int(Int64(occupied)),
+      "admissions_remaining_at_observation": .int(Int64(remaining)),
+      "current_dispatch_included": .bool(false),
+      "remaining_window_ms_at_observation": .null,
+      "billed_cost": .null,
+      "provider_request_count": .null,
+      "remaining_token_budget": .null
+    ]
+    return """
+    [Host resource observation]
+    \(AgentMcpJSONCodec.stringify(observation))
+    This is a pre-admission sample, not a reservation. Other tasks can consume or release slots.
+    Unknown values are not free or unlimited. Existing admission, user permissions, and goal criteria still apply.
+    """
+  }
+}
+
 enum AgentRuntimeIdentity {
   static func key(_ registration: AgentRegistration) -> String {
     registration.runtimeFailureDomain

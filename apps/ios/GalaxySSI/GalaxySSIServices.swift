@@ -6354,6 +6354,14 @@ final class MessageCoordinator: ObservableObject {
           ? observations.filter { member.dependsOnAgentIds.contains($0.0) }
           : (member.deliveryMode == .respond ? observations : [])
       )
+      func promptForDispatch() -> String {
+        guard isCollaboration else { return memberPrompt }
+        let observation = AgentCollaborationResourceObservation.prompt(
+          registration: AgentMentionCandidatePolicy.registration(for: target),
+          activeCounts: UserDefaultsAgentGlobalRunSlotStore.shared.activeCounts(),
+          now: AgentControlPlaneClock.nowMillis())
+        return memberPrompt + "\n\n" + observation
+      }
 
       do {
         if isCollaboration {
@@ -6375,6 +6383,7 @@ final class MessageCoordinator: ObservableObject {
             LocalModelInferenceRuntime.shared.ready(profile: profile) else {
             throw LocalModelInferenceError.modelNotReady
           }
+          let memberPrompt = promptForDispatch()
           try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
             if member.deliveryMode == .respond {
               try await receiveLocalModelReply(
@@ -6421,6 +6430,7 @@ final class MessageCoordinator: ObservableObject {
             }
             memberContact.selectedCloudModelId = model.modelId
           }
+          let memberPrompt = promptForDispatch()
           try await withTransientAgentSlot(target: target, sourceMessageId: sourceMessageId) {
             if member.deliveryMode == .respond {
               try await receiveRequestedCloudReply(
@@ -6473,11 +6483,12 @@ final class MessageCoordinator: ObservableObject {
           }
           memberContact = current
         }
+        let dispatchPrompt = promptForDispatch()
         let slotOwnerId = try acquireAgentSlot(target: target, sourceMessageId: sourceMessageId)
         do {
           try Task.checkCancellation()
           try await publishRequestedLinkTarget(
-            memberPrompt,
+            dispatchPrompt,
             contact: memberContact,
             outgoing: outgoing,
             attachments: attachments,

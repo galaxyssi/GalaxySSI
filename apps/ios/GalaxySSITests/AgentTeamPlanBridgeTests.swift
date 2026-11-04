@@ -269,6 +269,21 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(result.goal.contains(first.id.uuidString.lowercased()))
   }
 
+  func testResourceObservationUsesOnlyTheSelectedRuntimePool() throws {
+    var registration = teamRegistration(teamTarget("codex"))
+    registration.maxParallelRuns = 2
+    let runtime = AgentRuntimeIdentity.key(registration)
+    let prompt = AgentCollaborationResourceObservation.prompt(registration: registration,
+      activeCounts: [runtime: 3, "unrelated-runtime": 7], now: 12)
+    let json = try XCTUnwrap(prompt.split(separator: "\n").dropFirst().first)
+    let record = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
+    XCTAssertEqual(record["admission_limit"], .int(2))
+    XCTAssertEqual(record["admissions_reserved"], .int(3))
+    XCTAssertEqual(record["admissions_remaining_at_observation"], .int(0))
+    XCTAssertEqual(record["provider_request_count"], .null)
+    XCTAssertEqual(record["remaining_window_ms_at_observation"], .null)
+  }
+
   func testStagedCollaborationSchedulesExplorationBeforeReviewAndSynthesis() throws {
     let target = teamTarget("codex")
     var registration = teamRegistration(target)
