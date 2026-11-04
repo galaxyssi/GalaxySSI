@@ -22,6 +22,8 @@ import androidx.core.content.FileProvider
 import java.util.UUID
 import java.util.concurrent.Executors
 
+internal enum class HealthCaptureEntry { CAMERA, REPORT, TABLE }
+
 /** Collects originals and review suggestions; only the separate confirmed editor writes observations. */
 class HealthCaptureActivity : Activity() {
     private val ui by lazy { HealthCenterViews(this) }
@@ -36,6 +38,7 @@ class HealthCaptureActivity : Activity() {
     private var candidateOffset = 0
     private var mode = "report"
     private var originalOnly = false; private var pickOnStart = false
+    private var firstEntry: HealthCaptureEntry? = null
     private var active = false
     private var generation = 0
     private var querying = false
@@ -75,6 +78,7 @@ class HealthCaptureActivity : Activity() {
         mode = state?.getString("mode") ?: "report"
         originalOnly = state?.getBoolean("original_only") ?: intent.getBooleanExtra("health_original_only", false)
         pickOnStart = state == null && intent.getBooleanExtra("health_pick_files", false)
+        if (state == null) firstEntry = HealthCaptureEntry.entries.firstOrNull { it.name == intent.getStringExtra("health_capture_entry") }
         pendingCamera = state?.getString("camera") ?: getSharedPreferences("health_capture_pending", MODE_PRIVATE).getString("token", "").orEmpty()
         exportId = state?.getString("export").orEmpty(); cropId = state?.getString("crop").orEmpty()
         fun restore(key: String) = state?.getStringArrayList(key).orEmpty().mapNotNull { value ->
@@ -101,7 +105,15 @@ class HealthCaptureActivity : Activity() {
         super.onStart(); active = true
         contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this), true, observer)
         refresh()
-        if (pickOnStart) { pickOnStart = false; choose(false) }
+        val entry = firstEntry
+        firstEntry = null
+        when (entry) {
+            HealthCaptureEntry.CAMERA -> camera()
+            HealthCaptureEntry.REPORT -> choose(false, arrayOf("image/*", "application/pdf"))
+            HealthCaptureEntry.TABLE -> choose(false, arrayOf("text/csv", "application/csv", "text/plain",
+                "application/json", "text/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            null -> if (pickOnStart) { pickOnStart = false; choose(false) }
+        }
     }
     override fun onStop() {
         active = false; generation++; contentResolver.unregisterContentObserver(observer)
@@ -373,14 +385,16 @@ class HealthCaptureActivity : Activity() {
             }, { showFailure("storage") }) }
         }
     }
-    private fun choose(images: Boolean) {
+    private fun choose(images: Boolean, types: Array<String>? = null) {
         if (images) {
             startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode)
                 .putExtra("capture_camera", false).putExtra("capture_pick_images", true), NATIVE_CAMERA)
             return
         }
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-            .setType(if (images) "image/*" else "*/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true), PICK)
+            .setType("*/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true).apply {
+                if (types != null) putExtra(Intent.EXTRA_MIME_TYPES, types)
+            }, PICK)
     }
     private fun camera() {
         startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode), NATIVE_CAMERA)

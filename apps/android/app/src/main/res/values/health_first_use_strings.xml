@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_first_intro">Take a photo of a report or enter a measurement to start your health timeline.</string>
+    <string name="health_first_steps">Set up your health profile</string>
+    <string name="health_first_profile">Add basic details</string>
+    <string name="health_first_profile_note">Optional. Helps select relevant metric explanations.</string>
+    <string name="health_first_add">Add your first record</string>
+    <string name="health_first_add_note">Take a photo, enter a measurement, or import a file.</string>
+    <string name="health_first_sources">Choose data sources</string>
+    <string name="health_first_sources_note">Connecting a device or health platform is optional.</string>
+    <string name="health_first_no_analysis">No records to analyze yet. Connected devices and online AI are optional.</string>
+    <string name="health_first_privacy">How your data is stored</string>
+    <string name="health_first_existing">Import from files or a backup</string>
+    <string name="health_first_import_title">Import data and files</string>
+    <string name="health_first_import_intro">Bring in your existing records</string>
+    <string name="health_first_import_note">Choose a source and review it before saving to your health profile.</string>
+    <string name="health_first_capture_note">Capture reports or device readings across multiple pages.</string>
+    <string name="health_first_report">Import photos or reports</string>
+    <string name="health_first_report_note">Photos, scanned pages, and PDF reports</string>
+    <string name="health_first_table">Import measurement data</string>
+    <string name="health_first_table_note">CSV, XLSX, or JSON with field mapping</string>
+    <string name="health_first_backup_note">Verify and restore an encrypted backup from this app.</string>
+</resources>
