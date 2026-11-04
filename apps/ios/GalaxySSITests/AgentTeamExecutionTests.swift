@@ -2,6 +2,36 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCollaborationEvolutionRejectsUnboundOptionsAndUnsupportedNovelty() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"gap","base_revision":0,"kind":"capability_gap","title":"Gap","parents":[],"body":{
+        "capability_gap":{"category":"verification","symptom":"Unstable output","needed_capability":"Repeat checks",
+          "learning_options":[{"id":"repeat","action":"Repeat","expected_gain":"Confidence","cost":"One trial",
+            "goal_relevance":"Check stability","verification":"Compare outputs"}],"chosen_option":"repeat","rationale":"Isolate noise"}}},
+      {"id":"idea","base_revision":0,"kind":"innovation","title":"Idea","parents":[],"body":{
+        "innovation":{"origin":"gap","novelty_scope":"not_checked","hypothesis":"Check twice","mechanism":"Pair trials",
+          "difference":"Same input","prior_art":"Not reviewed","falsifier":"No improvement","domain":"Testing",
+          "applies_when":"Repeatable","risks":"Correlated errors","alternatives":["Independent test"],
+          "predictions":[{"id":"p1","statement":"Detect instability","test":"Repeat on baseline"}]}}}
+    ]}
+    """
+    var drafts = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw))
+    XCTAssertTrue(drafts.allSatisfy(AgentCollaborationEvolutionIntake.validates))
+    var gap = try XCTUnwrap(drafts[0].body["capability_gap"]?.objectValue)
+    gap["chosen_option"] = .string("missing")
+    drafts[0].body["capability_gap"] = .object(gap)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[0]))
+    var idea = try XCTUnwrap(drafts[1].body["innovation"]?.objectValue)
+    idea["origin"] = .string("combination")
+    drafts[1].body["innovation"] = .object(idea)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[1]))
+    idea["origin"] = .string("gap")
+    idea["novelty_scope"] = .string("searched_scope_only")
+    drafts[1].body["innovation"] = .object(idea)
+    XCTAssertFalse(AgentCollaborationEvolutionIntake.validates(drafts[1]))
+  }
+
   func testRejectedResearchReplyReopensWithExactScopeAndOriginalBytes() throws {
     let suite = "research-rejection-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
@@ -53,6 +83,14 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(AgentTeamProgressPolicy.currentCollaborationMembers(snapshot).first?.memberId, rosterId + ":recheck")
     XCTAssertEqual(snapshot.members.count, 4)
     XCTAssertEqual(snapshot.members.first?.output, "original")
+  }
+
+  func testCollaborationReviewerIdentityCannotChangeWithResearchStage() {
+    let rosterId = UUID().uuidString
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":revise"), rosterId.lowercased())
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":recheck"), rosterId.lowercased())
+    XCTAssertEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(rosterId + ":unknown"), rosterId + ":unknown")
+    XCTAssertNotEqual(AgentTeamProgressPolicy.stableCollaborationMemberId(UUID().uuidString + ":revise"), rosterId.lowercased())
   }
 
   func testCollaborationTimingUsesRecordedExecutionBounds() throws {
@@ -155,8 +193,37 @@ extension GalaxySSIStoreTests {
       call: AssembledToolCall(callId: "tool-call", index: 0, name: "web_search", argumentsJson: "{}"),
       output: String(repeating: "search result ", count: 320), succeeded: true, startedAtMillis: 10, finishedAtMillis: 12)
     let receipt = try history.recordCloudEvidence(observation)
+    var failed = observation
+    failed.succeeded = false
+    failed.output = "sensitive failure detail"
+    var failedIds = Set<String>()
+    for round in 20...28 {
+      failed.round = round
+      if round == 28 {
+        failed.succeeded = true
+        failed.output = "{\"success\":false}"
+      }
+      failedIds.insert(try history.recordCloudEvidence(failed).string("evidence_id"))
+    }
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let directory: AgentMcpJSONObject = ["mode": .string("problems")]
+    let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
+    let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
+    XCTAssertEqual(entries.count, 8)
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains("sensitive failure detail"))
+    let lastProblems = try reopened.recallCollaborationOriginal(
+      ["mode": .string("problems"), "cursor": .string(firstProblems.string("next_cursor"))], scope: scope)
+    let tail = try XCTUnwrap(lastProblems["problems"]?.arrayValue)
+    XCTAssertEqual(tail.count, 1)
+    XCTAssertEqual(lastProblems["next_cursor"], .null)
+    XCTAssertEqual(Set((entries + tail).compactMap { $0.objectValue?.string("evidence_id") }), failedIds)
+    let other = try XCTUnwrap(team.members.first { $0.memberId != scope.memberId })
+    var otherScope = scope
+    otherScope.memberId = other.memberId
+    otherScope.sourceId = other.sourceMessageId
+    let isolated = try reopened.recallCollaborationOriginal(directory, scope: otherScope)
+    XCTAssertEqual(isolated["problems"], .array([]))
     XCTAssertEqual(try reopened.recordCloudEvidence(observation), receipt)
     let input: AgentMcpJSONObject = [
       "mode": .string("evidence"), "evidence_id": receipt["evidence_id"] ?? .null,
@@ -277,6 +344,117 @@ extension GalaxySSIStoreTests {
       try decode(plan.replacingOccurrences(of: "\"value\":0", with: "\"value\":\"0\"")), tool: spec))
     XCTAssertFalse(AgentCollaborationToolRegistration.validatesTestPlan(
       try decode(plan.replacingOccurrences(of: ",\"expected\":null", with: "")), tool: spec))
+  }
+
+  func testCloudObservationDistinguishesExplicitFailureFromEmptyErrors() {
+    for output in ["{}", "{\"error\":false}", "{\"error\":null}", "{\"error\":{}}",
+                   "{\"error\":[]}", "{\"error\":0}", "{\"error\":\"  \"}",
+                   "{\"success\":\"false\"}", "unstructured error text"] {
+      XCTAssertFalse(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
+    for output in ["{\"success\":false}", "{\"ok\":false}", "{\"isError\":true}",
+                   "{\"error\":{\"code\":\"offline\"}}", "{\"status\":\"timed_out\"}"] {
+      XCTAssertTrue(AgentCollaborationCloudToolEvidence.reportsFailure(output), output)
+    }
+  }
+
+  func testInnovationOpportunityCannotReplaceGoalCriterionOrDriverEvidence() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"opportunity","kind":"innovation_opportunity","title":"Opportunity","base_revision":0,
+       "parents":[{"object_id":"gap","revision":1,"sha256":"exact"}],
+       "body":{"innovation_opportunity":{"goal_sha256":"pinned","criterion_id":"accuracy","requirement":"Preserve accuracy",
+        "question":"Reduce noise?","unmet_need":"Unstable responses","expected_benefit":"Repeatability","constraints":"Same budget",
+        "null_hypothesis":"No change","discriminating_test":"Compare trials","uncertainty":"Sample size",
+        "alternative_routes":["Keep baseline"],"drivers":[{"id":"one","kind":"knowledge_gap","why":"Observed gap",
+          "what_would_change":"Better checks","sources":[{"object_id":"gap","revision":1,"sha256":"exact"}]}]}}}
+    ]}
+    """
+    let draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    let criterion = AgentCollaborationGoalAssessmentPolicy.Criterion(id: "accuracy", requirement: "Preserve accuracy",
+      verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    XCTAssertTrue(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: [criterion]) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "changed", contract: [criterion]) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: []) { _ in "capability_gap" })
+    XCTAssertFalse(AgentCollaborationOpportunityIntake.validates(draft, goalHash: "pinned", contract: [criterion]) { _ in "proposal" })
+  }
+
+  func testTransferStudyRequiresCurrentFailureAndDistinctTargetDomain() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"study","kind":"transfer_study","title":"Study","base_revision":0,
+       "parents":[{"object_id":"failure","revision":1,"sha256":"exact"}],
+       "body":{"transfer_study":{
+         "source":{"object_id":"failure","revision":1,"sha256":"exact"},
+         "source_domain":"Parsing","target_domain":"Extraction","mode":"cross_domain","target_task":"Extract fields",
+         "abstract_strategy":"Validate input","proposed_method":"Check schema","rationale":"Avoid ambiguity",
+         "risks":"Reject valid input","falsifier":"No gain","limitations":"Structured only",
+         "alternatives":["Manual review"],"calibration_data":[],
+         "mappings":[{"source_element":"Parser","target_element":"Extractor","invariant":"Structure",
+           "adaptation":"New schema","breaks_when":"Free text"}]
+       }}}
+    ]}
+    """
+    let draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    XCTAssertTrue(AgentCollaborationTransferIntake.validates(draft) { _ in "failure_experience" })
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(draft) { _ in nil })
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(draft) { _ in "proposal" })
+    let sameDomain = raw.replacingOccurrences(of: "\"Extraction\"", with: "\"Parsing\"")
+    let invalid = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: sameDomain)?.first)
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(invalid) { _ in "failure_experience" })
+  }
+
+  func testLearningAgendaRetainsDeferredOptionAndRejectsInventedCost() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"agenda","base_revision":0,"kind":"learning_agenda","title":"Compare","parents":[
+        {"object_id":"gap","revision":1,"sha256":"original"}
+      ],"body":{"learning_agenda":{"goal_alignment":"Goal","resource_reasoning":"Bounded",
+        "selection_reason":"Defer until data arrives","reconsider_when":"Data available","options":[
+          {"id":"option","gap":{"object_id":"gap","revision":1,"sha256":"original"},"gap_option":"repeat",
+           "priority":1,"decision":"defer","member":"member","stage":"VERIFY","assignment":"Repeat",
+           "current_goal_value":"Direct","future_transfer_value":"Unknown","information_gain":"Measure variance",
+           "uncertainty":"Sample size","tradeoff":"Time","verification":"Compare","reconsider_when":"Data available",
+           "resource_estimates":[{"unit":"cost_micros","status":"unknown","basis":"Not measured"}]}
+        ]}}}
+    ]}
+    """
+    var draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    func valid(_ draft: AgentCollaborationResearchDraft) -> Bool {
+      AgentCollaborationLearningAgendaIntake.validates(draft, members: ["member"]) { reference in
+        reference.objectId == "gap" && reference.revision == 1 && reference.sha256 == "original" ? ["repeat"] : nil
+      }
+    }
+    XCTAssertTrue(valid(draft))
+    var revision = draft
+    revision.baseRevision = 1
+    XCTAssertFalse(valid(revision))
+    revision = draft
+    revision.parents = []
+    XCTAssertFalse(valid(revision))
+    let priced = raw.replacingOccurrences(of: "\"status\":\"unknown\"", with: "\"status\":\"unknown\",\"value\":0")
+    draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: priced)?.first)
+    XCTAssertFalse(valid(draft))
+  }
+
+  func testLearningAdmissionRequiresExactSelectedAssignment() throws {
+    let raw = """
+    {"format":"galaxyssi.work-expansion.v1","work":[
+      {"id":"learn","member":"member","stage":"VERIFY","assignment":"Repeat the check","depends_on":[],
+       "learning":{"agenda":{"object_id":"agenda","revision":1,"sha256":"exact"},"option_id":"repeat"}}
+    ]}
+    """
+    let graph = try XCTUnwrap(AgentCollaborationLiveGraph().appending(raw, authorizedMembers: ["member"],
+      historicalAuthors: [:], settled: [:]))
+    let item = try XCTUnwrap(graph.work.first)
+    var option: AgentMcpJSONObject = ["decision": .string("select"), "member": .string("member"),
+      "stage": .string("VERIFY"), "assignment": .string("Repeat the check")]
+    XCTAssertTrue(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
+    option["decision"] = .string("defer")
+    XCTAssertFalse(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
+    option["decision"] = .string("select")
+    option["assignment"] = .string("Repeat a different check")
+    XCTAssertFalse(AgentCollaborationLearningAgendaIntake.matchesSelection(option, work: item))
   }
 
   func testResearchObjectPublicationRejectsStaleBatchAndReplaysExactReceipt() throws {
@@ -417,9 +595,20 @@ extension GalaxySSIStoreTests {
     var snapshot = durableTeamSnapshot("run")
     let index = try XCTUnwrap(snapshot.members.firstIndex { $0.deliveryMode == .observe })
     snapshot.members[index].dispatchCheckpoint = .notStarted
+    snapshot.goal = "Preserve the original task"
     snapshot.members[index].researchStage = "EXPLORE"
     let member = snapshot.members[index]
     XCTAssertTrue(history.upsert(snapshot))
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let goal = try history.recallCollaborationOriginal(["mode": .string("goal"), "section": .string("goal")], scope: scope)
+    XCTAssertEqual(Data(base64Encoded: goal.string("data_b64")), Data(snapshot.goal.utf8))
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(
+      ["mode": .string("goal"), "section": .string("criteria")], scope: scope))
+    var changedGoal = snapshot
+    changedGoal.goal = "Do something else"
+    changedGoal.updatedAtMillis += 1
+    XCTAssertFalse(history.upsert(changedGoal))
     XCTAssertFalse(history.advanceDispatchCheckpoint(runId: "run", conversationId: "foreign",
       turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
       to: .dispatching, now: 20))
