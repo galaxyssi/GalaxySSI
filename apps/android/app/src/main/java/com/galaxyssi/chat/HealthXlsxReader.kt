@@ -39,10 +39,40 @@ internal object HealthXlsxReader {
     }
     fun inspect(originals: HealthOriginalStore, original: HealthOriginal, cancelled: () -> Unit = {}): Pair<List<HealthXlsxSheet>, Boolean> =
         workbook(originals, original, cancelled) { book ->
-            val sheets = book.sheets.use { it.iterator().asSequence().map { sheet -> HealthXlsxSheet(sheet.index, sheet.name, sheet.visibility.name) }.toList() }
-            if (sheets.isEmpty() || sheets.size > 256 || sheets.any { it.name.isBlank() || it.name.length > 200 }) throw HealthImportFailure("xlsx_sheets")
-            sheets to book.isDate1904
+            sheets(book) to book.isDate1904
         }
+
+    private fun sheets(book: ReadableWorkbook): List<HealthXlsxSheet> = book.sheets.use {
+        it.iterator().asSequence().map { sheet -> HealthXlsxSheet(sheet.index, sheet.name, sheet.visibility.name) }.toList()
+    }.also { sheets ->
+        if (sheets.isEmpty() || sheets.size > 256 || sheets.any { it.name.isBlank() || it.name.length > 200 }) throw HealthImportFailure("xlsx_sheets")
+    }
+
+    fun preview(originals: HealthOriginalStore, original: HealthOriginal, sheetIndex: Int?,
+                cancelled: () -> Unit): HealthStructuredSample = workbook(originals, original, cancelled) { book ->
+        val sheets = sheets(book)
+        val selected = sheetIndex ?: sheets.first().index
+        val sheet = book.getSheet(selected).orElseThrow { HealthImportFailure("xlsx_sheet") }
+        sheet.openStream().use { stream ->
+            val rows = ArrayList<HealthStructuredRow>(HealthStructuredPreview.ROWS)
+            val iterator = stream.iterator()
+            var clipped = false
+            while (rows.size < HealthStructuredPreview.ROWS) {
+                cancelled()
+                val row = try { if (!iterator.hasNext()) break; iterator.next() }
+                    catch (_: IllegalStateException) { throw HealthImportFailure("xlsx_cell_type") }
+                if (row.cellCount > HealthStructuredPreview.COLUMNS) clipped = true
+                val values = (0 until minOf(row.cellCount, HealthStructuredPreview.COLUMNS)).map { index ->
+                    val cell = row.getOptionalCell(index).orElse(null)
+                    val raw = if (cell == null) "" else cell.formula?.let { "=$it" } ?: cell.text
+                    HealthStructuredPreview.cell(raw)
+                }
+                rows += HealthStructuredRow(row.rowNum.toLong(), values)
+            }
+            cancelled()
+            HealthStructuredSample(rows, iterator.hasNext(), clipped, sheets, selected)
+        }
+    }
 
     fun rows(originals: HealthOriginalStore, original: HealthOriginal, batch: HealthTableBatch,
              cancelled: () -> Unit = {}, emit: (HealthTableRow) -> Unit): List<String> = workbook(originals, original, cancelled) { book ->
