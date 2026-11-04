@@ -221,6 +221,23 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try store.makeZIP([item]))
   }
 
+  @MainActor
+  func testHealthReportPDFReadsNativePageAndKeepsPageBounds() throws {
+    let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 240, height: 200)).pdfData { context in
+      context.beginPage()
+      ("Synthetic report line 12345" as NSString).draw(at: CGPoint(x: 12, y: 18),
+        withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
+      context.beginPage()
+    }
+    XCTAssertEqual(try GalaxySSIHealthPDFText.pageCount(data), 2)
+    let result = try GalaxySSIHealthPDFText.read(data, page: 0)
+    XCTAssertEqual(result.method, .native)
+    let text = try XCTUnwrap(result.regions.first)
+    XCTAssertTrue(text.text.contains("Synthetic report"))
+    XCTAssertTrue(result.crop.contains(text.bounds))
+    XCTAssertThrowsError(try GalaxySSIHealthPDFText.read(data, page: 2))
+  }
+
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
