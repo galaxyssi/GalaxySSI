@@ -16,7 +16,7 @@
     <string name="health_sources_open_store">在 Google Play 中查看</string>
     <string name="health_sources_devices">我的设备</string>
     <string name="health_sources_bluetooth">蓝牙设备</string>
-    <string name="health_sources_ble_supported">本机支持低功耗蓝牙，暂未开放健康外设直连采集。</string>
+    <string name="health_sources_ble_supported">添加兼容的蓝牙血压计</string>
     <string name="health_sources_ble_unavailable">本机不支持低功耗蓝牙。</string>
     <string name="health_sources_local">其他记录来源</string>
     <string name="health_sources_files">报告与表格</string>

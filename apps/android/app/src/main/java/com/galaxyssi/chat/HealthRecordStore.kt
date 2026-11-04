@@ -242,7 +242,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 ensureActive()
                 val key = AgentMemoryIndexKey.token("$name|health-connect-v1|${row.draft.metric.name}|${row.origin}|${row.id}")
                 if (db.rawQuery("SELECT 1 FROM observations WHERE external_key=?", arrayOf(key)).use { it.moveToFirst() }) continue
-                if (saveWithinTransaction(row.draft, key, row.origin) is HealthSaveResult.Saved) inserted++
+                if (saveWithinTransaction(row.draft, key, HealthLinkedSource("health_connect", row.origin)) is HealthSaveResult.Saved) inserted++
             }
             ensureActive()
             db.setTransactionSuccessful()
@@ -250,7 +250,25 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         } finally { db.endTransaction(); publishCommittedChanges() }
     }
 
-    private fun saveWithinTransaction(draft: HealthDraft, externalKey: String? = null, platformOrigin: String = ""): HealthSaveResult {
+    @Synchronized fun saveBluetooth(receipt: HealthBluetoothReceipt, condition: String, active: () -> Unit): HealthSaveResult {
+        val db = helper.writableDatabase
+        val key = AgentMemoryIndexKey.token("$name|health-bluetooth-v1|${receipt.deviceToken}|${receipt.eventKey}")
+        db.beginTransaction()
+        try {
+            active()
+            val previous = db.rawQuery("SELECT id FROM observations WHERE external_key=?", arrayOf(key))
+                .use { if (it.moveToFirst()) it.getString(0) else null }
+            val result = if (previous != null) HealthSaveResult.Duplicate(previous)
+                else saveWithinTransaction(receipt.draft(condition), key, HealthLinkedSource("bluetooth", receipt.label, receipt.receivedAt, receipt.clockText))
+            active()
+            db.setTransactionSuccessful()
+            return result
+        } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+
+    private data class HealthLinkedSource(val source: String, val origin: String, val receivedAt: Long? = null, val clock: String = "")
+
+    private fun saveWithinTransaction(draft: HealthDraft, externalKey: String? = null, source: HealthLinkedSource? = null): HealthSaveResult {
         val database = helper.writableDatabase
         val existingPlatform = if (draft.recordId.isBlank()) null else database.rawQuery(
             "SELECT id,revision,payload,external_key FROM observations WHERE id=? AND deleted=0 AND external_key IS NOT NULL",
@@ -261,7 +279,9 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         val record = if (sourceKey != null) {
             if (existingPlatform != null && (draft.metric != existingPlatform.first.draft.metric || draft.evidence != null))
                 return HealthSaveResult.Conflict
-            normalized.copy(source = "health_connect", platformOrigin = existingPlatform?.first?.platformOrigin ?: platformOrigin)
+            val linked = existingPlatform?.first?.let { HealthLinkedSource(it.source, it.platformOrigin, it.deviceReceivedAt, it.deviceClock) }
+                ?: requireNotNull(source)
+            normalized.copy(source = linked.source, platformOrigin = linked.origin, deviceReceivedAt = linked.receivedAt, deviceClock = linked.clock)
         } else normalized
         val encrypted = encode(record)
         val duplicateKey = sourceKey ?: dedupe(record)

@@ -134,8 +134,12 @@ class HealthSourcesActivity : Activity() {
         }, 8)
         ui.add(body, ui.text(getString(R.string.health_sources_devices), 18f, bold = true), 20)
         ui.add(body, ui.card().apply {
-            addView(sourceRow(R.drawable.ic_settings_devices, getString(R.string.health_sources_bluetooth),
-                getString(if (snapshot.bluetoothLe) R.string.health_sources_ble_supported else R.string.health_sources_ble_unavailable)))
+            val caption = getString(if (snapshot.bluetoothLe) R.string.health_sources_ble_supported else R.string.health_sources_ble_unavailable)
+            val connect: (() -> Unit)? = if (snapshot.bluetoothLe) ({
+                openLocal(Intent(this@HealthSourcesActivity, HealthBluetoothActivity::class.java))
+            }) else null
+            addView(sourceRow(R.drawable.ic_settings_devices, getString(R.string.health_sources_bluetooth), caption, connect)
+                .apply { tag = "health-ble-entry" })
         }, 8)
         ui.add(body, ui.text(getString(R.string.health_sources_local), 18f, bold = true), 20)
         val local = snapshot.local
