@@ -22,6 +22,9 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var confirming = false
   @State private var exporting = false
   @State private var zip: OriginalZIP?
+  @State private var exportAttempt: GalaxySSIHealthOriginalStore.ExportAttempt?
+  @State private var verifying = false
+  @State private var receiptFailed = false
   @State private var pending: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var removal: GalaxySSIHealthOriginalStore.Original?
   @State private var error = false
@@ -58,7 +61,10 @@ struct GalaxySSIHealthOriginalsView: View {
               pending = listing?.originals.filter { selection.contains($0.id) } ?? []
               confirming = !pending.isEmpty
             } label: { Label(t("export", "Export selected ZIP"), systemImage: "square.and.arrow.up") }
+            .disabled(verifying)
           }
+          if verifying { ProgressView(t("verifying", "Verifying saved ZIP")) }
+          if receiptFailed { Text(t("verify_failed", "The destination could not be verified.")).foregroundColor(.secondary) }
         }
         if let listing {
           let rows = filtered(listing.originals)
@@ -98,6 +104,11 @@ struct GalaxySSIHealthOriginalsView: View {
           Button(t("retry", "Reload originals"), action: reload)
         }
       }
+      NavigationLink {
+        OriginalExportHistory(store: store)
+      } label: {
+        Label(t("export_history", "ZIP export history"), systemImage: "clock.arrow.circlepath")
+      }
     }
     .navigationTitle(t("title", "Health Originals"))
     .navigationBarTitleDisplayMode(.inline)
@@ -136,7 +147,14 @@ struct GalaxySSIHealthOriginalsView: View {
     .fileExporter(isPresented: $exporting, document: zip, contentType: .zip,
                   defaultFilename: "GalaxySSI-Health-Originals") { result in
       zip = nil
-      if case .failure = result { error = true }
+      guard let attempt = exportAttempt else { return }
+      exportAttempt = nil
+      switch result {
+      case .success(let url): verify(url, attempt: attempt)
+      case .failure:
+        do { try store.finishExport(id: attempt.id, verified: false) } catch {}
+        receiptFailed = true
+      }
     }
     .onChange(of: exporting) { if !$0 { zip = nil } }
     .sheet(item: $preview) { item in
@@ -221,11 +239,31 @@ struct GalaxySSIHealthOriginalsView: View {
   }
 
   private func export() {
-    guard scene == .active else { return }
+    guard scene == .active, !verifying else { return }
     let selected = pending
     pending = []
-    do { zip = OriginalZIP(data: try store.makeZIP(selected)); exporting = true }
+    receiptFailed = false
+    do {
+      let (data, attempt) = try store.prepareExport(selected)
+      exportAttempt = attempt
+      zip = OriginalZIP(data: data)
+      exporting = true
+    }
     catch { error = true }
+  }
+
+  private func verify(_ url: URL, attempt: GalaxySSIHealthOriginalStore.ExportAttempt) {
+    verifying = true
+    Task {
+      let verified = await Task.detached(priority: .utility) {
+        (try? GalaxySSIHealthOriginalStore.verifyDestination(url, for: attempt)) == true
+      }.value
+      do {
+        try store.finishExport(id: attempt.id, verified: verified)
+        receiptFailed = !verified
+      } catch { receiptFailed = true }
+      verifying = false
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -301,6 +339,89 @@ struct GalaxySSIHealthOriginalsView: View {
     private func t(_ key: String, _ fallback: String) -> String {
       GalaxySSILocalization.string("galaxyssi.health.originals." + key, fallback: fallback, language: language)
     }
+  }
+}
+
+@MainActor
+private struct OriginalExportHistory: View {
+  @Environment(\.scenePhase) private var scene
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  let store: GalaxySSIHealthOriginalStore
+  @State private var history: [GalaxySSIHealthOriginalStore.ExportAttempt] = []
+  @State private var selected: GalaxySSIHealthOriginalStore.ExportAttempt?
+  @State private var limit = 20
+  @State private var scopeLimit = 30
+  @State private var unavailable = false
+
+  var body: some View {
+    List {
+      if scene == .active {
+        if unavailable {
+          Text(t("history_unavailable", "Export history unavailable"))
+          Button(t("retry_history", "Reload history"), action: reload)
+        } else if history.isEmpty {
+          Text(t("history_empty", "No ZIP export attempts")).foregroundColor(.secondary)
+        } else {
+          ForEach(history.prefix(limit)) { entry in
+            Button { scopeLimit = 30; selected = entry } label: {
+              VStack(alignment: .leading, spacing: 4) {
+                Text(outcome(entry)).foregroundColor(.primary)
+                Text(entry.at.formatted(date: .abbreviated, time: .shortened)).foregroundColor(.secondary)
+                Text(String(format: t("selected_count", "%lld selected originals"), Int64(entry.originals.count)))
+                  .foregroundColor(.secondary)
+              }
+            }
+          }
+          if history.count > limit { Button(t("more", "Show more")) { limit += 20 } }
+        }
+      }
+    }
+    .navigationTitle(t("export_history", "ZIP export history"))
+    .navigationBarTitleDisplayMode(.inline)
+    .onAppear(perform: reload)
+    .onChange(of: scene) {
+      if $0 == .active { reload() } else { selected = nil; history = [] }
+    }
+    .sheet(item: $selected) { entry in
+      NavigationView {
+        List {
+          if scene == .active {
+            Section(outcome(entry)) {
+              Text(entry.sha256).font(.footnote.monospaced())
+              Text(ByteCountFormatter.string(fromByteCount: Int64(entry.bytes), countStyle: .file))
+            }
+            Section(t("export_scope", "Originals in this export")) {
+              ForEach(entry.originals.prefix(scopeLimit)) { item in Text(item.name) }
+              if entry.originals.count > scopeLimit { Button(t("more", "Show more")) { scopeLimit += 30 } }
+            }
+          }
+        }
+        .navigationTitle(t("export_history", "ZIP export history"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .confirmationAction) {
+          Button(t("close", "Close")) { selected = nil }
+        } }
+      }
+      .navigationViewStyle(.stack)
+    }
+  }
+
+  private func reload() {
+    guard scene == .active else { return }
+    do { history = try store.exportHistory(); unavailable = false }
+    catch { history = []; unavailable = true }
+  }
+
+  private func outcome(_ entry: GalaxySSIHealthOriginalStore.ExportAttempt) -> String {
+    switch entry.outcome {
+    case .prepared: return t("prepared", "Prepared, save not verified")
+    case .verified: return t("verified", "Save verified")
+    case .unverified: return t("not_verified", "Save could not be verified")
+    }
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.originals." + key, fallback: fallback, language: language)
   }
 }
 

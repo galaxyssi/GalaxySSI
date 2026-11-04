@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 
 @MainActor
 struct GalaxySSIHealthOriginalStore {
-  enum Kind: String, Codable, CaseIterable { case image, pdf }
-  struct Original: Codable, Equatable, Identifiable {
+  enum Kind: String, Codable, CaseIterable, Sendable { case image, pdf }
+  struct Original: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let name: String
     let kind: Kind
@@ -22,6 +22,16 @@ struct GalaxySSIHealthOriginalStore {
   struct Listing {
     let originals: [Original]
     let unavailable: Int
+  }
+
+  struct ExportAttempt: Codable, Identifiable, Sendable {
+    enum Outcome: String, Codable, Sendable { case prepared, verified, unverified }
+    let id: UUID
+    let at: Date
+    let originals: [Original]
+    let bytes: Int
+    let sha256: String
+    var outcome: Outcome
   }
 
   enum Failure: Error { case invalid, limit, stale }
@@ -122,6 +132,67 @@ struct GalaxySSIHealthOriginalStore {
       entries.append(.init(path: item.entryPath, data: try read(item)))
     }
     return AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: entries)
+  }
+
+  func prepareExport(_ originals: [Original]) throws -> (Data, ExportAttempt) {
+    let zip = try makeZIP(originals)
+    var history = try exportHistory()
+    let attempt = ExportAttempt(id: UUID(), at: Date(), originals: originals, bytes: zip.count,
+                                sha256: Self.digest(zip), outcome: .prepared)
+    history.insert(attempt, at: 0)
+    try persistExportHistory(Array(history.prefix(50)))
+    return (zip, attempt)
+  }
+
+  func exportHistory() throws -> [ExportAttempt] {
+    let data: Data
+    do { data = try Data(contentsOf: historyURL()) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return [] }
+    let plaintext = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key(create: false),
+                                       authenticating: historyBinding)
+    return try JSONDecoder().decode([ExportAttempt].self, from: plaintext)
+  }
+
+  func finishExport(id: UUID, verified: Bool) throws {
+    var history = try exportHistory()
+    guard let index = history.firstIndex(where: { $0.id == id }), history[index].outcome == .prepared else { return }
+    history[index].outcome = verified ? .verified : .unverified
+    try persistExportHistory(history)
+  }
+
+  nonisolated static func verifyDestination(_ url: URL, for attempt: ExportAttempt) throws -> Bool {
+    let scoped = url.startAccessingSecurityScopedResource()
+    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    var coordinationError: NSError?
+    var verification: Result<Bool, Error>?
+    NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinationError) { resolved in
+      verification = Result {
+        let file = try FileHandle(forReadingFrom: resolved)
+        defer { try? file.close() }
+        var count = 0
+        var hash = SHA256()
+        while let block = try file.read(upToCount: 128 * 1024), !block.isEmpty {
+          count += block.count
+          guard count <= attempt.bytes else { return false }
+          hash.update(data: block)
+        }
+        return count == attempt.bytes &&
+          hash.finalize().map { String(format: "%02x", $0) }.joined() == attempt.sha256
+      }
+    }
+    if let coordinationError { throw coordinationError }
+    guard let verification else { throw Failure.invalid }
+    return try verification.get()
+  }
+
+  private var historyBinding: Data { Data("galaxyssi.health.originals.export-history.v1:\(owner)".utf8) }
+  private func historyURL() throws -> URL { try directory().appendingPathComponent("export-history-v1") }
+
+  private func persistExportHistory(_ history: [ExportAttempt]) throws {
+    let data = try JSONEncoder().encode(history)
+    guard let sealed = try AES.GCM.seal(data, using: key(create: true), authenticating: historyBinding).combined
+    else { throw Failure.invalid }
+    try sealed.write(to: historyURL(), options: [.atomic, .completeFileProtection])
   }
 
   private struct ManifestEntry: Encodable { let original: Original; let path: String }
