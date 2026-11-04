@@ -357,8 +357,10 @@ extension GalaxySSIStoreTests {
     var review = Gate.Revision(reference: reviewRef, conversationId: "group", runId: "run",
       turnId: "turn", authorId: "reviewer", kind: "decision", body: reviewBody,
       parents: [deliveryRef], hostObservationIds: [])
-    let original = Policy.Criterion(id: "report", requirement: "Deliver report",
+    var original = Policy.Criterion(id: "report", requirement: "Deliver report",
       verification: .documentary, status: .open, evidence_kind: nil, evidence: [])
+    original.required_observations = [.init(origin: "ios_cloud_tool", tool: "web_search")]
+    review.hostObservationIds = ["observed"]
     var met = original
     met.status = .met
     met.evidence_kind = .observed
@@ -368,13 +370,18 @@ extension GalaxySSIStoreTests {
     let assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "Report delivered",
       decision: .achieved, criteria: [met], work: [], blockers: [])
     let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
-    func check(observationAvailable: Bool = true) -> Policy.Outcome {
+    func check(observationAvailable: Bool = true, originalTool: String = "web_search") -> Policy.Outcome {
       Gate.evaluate(raw, preserving: [original], conversationId: "group", runId: "run", turnId: "turn",
         readRevision: { id, _ in id == "delivery" ? delivery : (id == "review" ? review : nil) },
-        observationIsSupporting: { $0 == "observed" && observationAvailable })
+        observationIsSupporting: { $0 == "observed" && observationAvailable },
+        originalObservation: { id in
+          id == "observed" ? .init(origin: "ios_cloud_tool", tool: originalTool,
+            status: "returned", kind: "tool_output_recorded") : nil
+        })
     }
     XCTAssertEqual(check(), .achieved)
     XCTAssertEqual(check(observationAvailable: false), .needsAssessment)
+    XCTAssertEqual(check(originalTool: "collaboration_recall"), .needsAssessment)
     review.authorId = delivery.authorId
     XCTAssertEqual(check(), .needsAssessment)
     review.authorId = "reviewer"
