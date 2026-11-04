@@ -96,7 +96,7 @@ enum GalaxySSIHealthTableImport {
       let reading = GalaxySSIHealthReading(metric: mapping.metric, measuredAt: time, value: value,
                                            diastolic: lower, pulse: pulse, notes: cell(mapping.notes))
       guard reading.isValid else { return row(.invalid) }
-      guard !accepted.contains(where: { $0.sameMeasurement(as: reading) }) else { return row(.duplicate) }
+      guard !accepted.contains(where: { $0.sameMeasurement(as: reading) }) else { return row(.duplicate, reading) }
       accepted.append(reading)
       return row(.ready, reading)
     }

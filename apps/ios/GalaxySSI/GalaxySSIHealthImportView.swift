@@ -8,6 +8,7 @@ struct GalaxySSIHealthImportView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let store: GalaxySSIHealthOriginalStore
+  let records: GalaxySSIHealthRecords
   @State private var picking = false
   @State private var scanning = false
   @State private var notice: Notice?
@@ -32,6 +33,13 @@ struct GalaxySSIHealthImportView: View {
           }
         }
       }
+      Section(t("tables", "Measurement tables")) {
+        NavigationLink {
+          GalaxySSIHealthTableImportView(records: records)
+        } label: {
+          Label(t("choose_table", "Choose CSV or JSON"), systemImage: "tablecells")
+        }
+      }
       Section {
         NavigationLink {
           GalaxySSIHealthOriginalsView(store: store)
@@ -54,7 +62,7 @@ struct GalaxySSIHealthImportView: View {
         }
       }
     }
-    .navigationTitle(t("title", "Import Health Reports"))
+    .navigationTitle(t("title", "Import Health Data"))
     .navigationBarTitleDisplayMode(.inline)
     .onChange(of: scene) { if $0 == .background { notice = nil; scanning = false } }
     .fileImporter(isPresented: $picking, allowedContentTypes: [.pdf, .image]) { result in

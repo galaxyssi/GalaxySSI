@@ -288,7 +288,7 @@ struct GalaxySSIHealthRecords {
     let id = UUID(), hash = GalaxySSIHealthTableImport.digest(data)
     var readings = [GalaxySSIHealthReading]()
     for row in preview {
-      guard var reading = row.reading else { continue }
+      guard row.status == .ready, var reading = row.reading else { continue }
       reading.revision = 1
       reading.tableSource = .init(batch: id, row: row.id, sha256: hash)
       readings.append(reading)
