@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.health.READ_BLOOD_PRESSURE" />
     <uses-permission android:name="android.permission.health.READ_WEIGHT" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
@@ -243,6 +245,7 @@
         <activity android:name=".HealthPrivacyActivity" android:exported="false" />
         <activity android:name=".HealthSourcesActivity" android:exported="false" />
         <activity android:name=".HealthConnectActivity" android:exported="false" />
+        <activity android:name=".HealthBluetoothActivity" android:exported="false" />
         <activity android:name=".HealthConnectRationaleActivity" android:exported="true">
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />

@@ -16,7 +16,7 @@
     <string name="health_sources_open_store">View on Google Play</string>
     <string name="health_sources_devices">My Devices</string>
     <string name="health_sources_bluetooth">Bluetooth Devices</string>
-    <string name="health_sources_ble_supported">This device supports Bluetooth LE. Direct health-device collection is not yet available.</string>
+    <string name="health_sources_ble_supported">Add a compatible Bluetooth blood pressure monitor</string>
     <string name="health_sources_ble_unavailable">This device does not support Bluetooth LE.</string>
     <string name="health_sources_local">Other Record Sources</string>
     <string name="health_sources_files">Reports and Tables</string>

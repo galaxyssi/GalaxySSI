@@ -193,5 +193,6 @@ internal fun healthRecordSourceResource(source: String) = when (source) {
     "table" -> R.string.health_source_table
     "manual" -> R.string.health_source_manual
     "health_connect" -> R.string.health_sources_platform_name
+    "bluetooth" -> R.string.health_ble_title
     else -> R.string.health_trend_other_source
 }
