@@ -477,6 +477,7 @@
 "galaxyssi.health.catalog.empty" = "暂无已确认的测量";
 "galaxyssi.health.catalog.more" = "查看更多";
 "galaxyssi.health.catalog.reload" = "重新加载测量";
+"galaxyssi.health.catalog.trend" = "测量趋势";
 "galaxyssi.health.catalog.unit" = "单位";
 "galaxyssi.health.catalog.systolic" = "收缩压";
 "galaxyssi.health.catalog.diastolic" = "舒张压";

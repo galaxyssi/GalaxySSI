@@ -354,6 +354,14 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.maximum, 69)
   }
 
+  func testHealthCatalogRefreshAnchorsToSurvivingVisibleRecord() throws {
+    let anchor = try XCTUnwrap(GalaxySSIHealthCatalogAnchor.restoration(
+      visible: [29, 30], updated: [100, 101] + Array(0..<29) + [30, 31], limit: 30))
+    XCTAssertEqual(anchor.id, 30)
+    XCTAssertEqual(anchor.limit, 32)
+    XCTAssertNil(GalaxySSIHealthCatalogAnchor.restoration(visible: [29], updated: [30], limit: 30))
+  }
+
   func testHealthCatalogTypedResultsDoNotEnterNumericTrendsOrMixUnits() throws {
     XCTAssertEqual(GalaxySSIHealthMetric.allCases.count, 27)
     XCTAssertTrue(GalaxySSIHealthMetric.hemoglobin.matches("HGB g/L"))
