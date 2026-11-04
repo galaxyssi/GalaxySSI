@@ -367,6 +367,13 @@ do not send data or constitute consent. See the
 [privacy contract](android-health-privacy.md) for the coverage and remaining
 retention, erasure, and provider work.
 
+## Recording Reminders
+
+Health Center now links to a native reminder center, occurrence detail, and
+daily recording preferences. Plans are opt-in; opening the editor does not
+complete a reminder. See the [reminder contract](android-health-reminders.md)
+for deduplication, scheduling, and notification privacy.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new

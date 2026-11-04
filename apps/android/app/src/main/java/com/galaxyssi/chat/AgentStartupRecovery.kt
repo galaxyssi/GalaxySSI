@@ -38,6 +38,10 @@ internal class AgentStartupRecoverySequence(
 class AgentStartupRecoveryWorker(context: Context, parameters: WorkerParameters) :
     CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result = try {
+        if (applicationContext.getDatabasePath(HealthReminderStore.DEFAULT_DB).exists()) {
+            runCatching { HealthReminderWork.enqueue(applicationContext) }
+                .onFailure { Log.w("GalaxySSIRecovery", "Health reminder enqueue failed: ${it.javaClass.simpleName}") }
+        }
         runCatching { AgentMemorySegmentWork.enqueue(applicationContext) }
             .onFailure { Log.w("GalaxySSIRecovery", "Memory maintenance enqueue failed: ${it.javaClass.simpleName}") }
         runCatching { KnowledgePayloadWork.enqueue(applicationContext) }
