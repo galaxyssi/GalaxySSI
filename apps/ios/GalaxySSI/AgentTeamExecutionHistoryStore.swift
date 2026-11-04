@@ -532,7 +532,8 @@ final class AgentTeamExecutionHistoryStore {
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
-              !$0.status.isTerminal && $0.dispatchDependencyMemberIds?.contains(id) == true }),
+              !$0.status.isTerminal && ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) &&
+              $0.dispatchDependencyMemberIds?.contains(id) == true }),
             try database.researchRecord(Bool.self, conversationId: scope.conversationId,
               key: "native-evidence-revoked", revision: 0) != true,
             let author = team.members.first(where: { $0.memberId == id && $0.status == .succeeded }),
