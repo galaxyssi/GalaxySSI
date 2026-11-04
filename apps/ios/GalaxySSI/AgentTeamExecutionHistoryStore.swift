@@ -261,6 +261,43 @@ final class AgentTeamExecutionHistoryStore {
     }.prefix(max(0, limit)).map { $0 }
   }
 
+  func recordCloudEvidence(_ evidence: AgentCollaborationCloudToolEvidence) throws -> AgentMcpJSONObject {
+    let scope = evidence.scope
+    let id = AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "member": .string(scope.memberId), "source": .string(scope.sourceId),
+      "round": .int(Int64(evidence.round)), "call": .string(evidence.call.callId), "index": .int(Int64(evidence.call.index))
+    ])
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId,
+            !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId &&
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let saved: AgentCollaborationCloudToolEvidence
+      if let prior = try database.cloudEvidence(id: id, conversationId: scope.conversationId) {
+        guard prior.scope == scope, prior.call == evidence.call, prior.output == evidence.output,
+              prior.succeeded == evidence.succeeded else { throw AgentTeamHistoryDatabase.Failure.stale }
+        saved = prior
+      } else {
+        try database.insertCloudEvidence(evidence, id: id)
+        saved = evidence
+      }
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      let hash = try SHA256.hash(data: encoder.encode(saved)).map { String(format: "%02x", $0) }.joined()
+      return [
+        "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
+        "trust": .string("execution_observed_not_claim_verified")
+      ]
+    }
+  }
+
+  func removeCloudEvidence(conversationId: String) {
+    _ = try? access { try $0.removeCloudEvidence(conversationId: conversationId) }
+  }
+
   func recoverable(conversationId: String) -> [AgentTeamExecutionSnapshot] {
     guard !conversationId.isBlank else { return [] }
     return (try? access { try $0.snapshots(conversation: conversationId, recoverableOnly: true) }) ?? []

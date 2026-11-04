@@ -6415,7 +6415,10 @@ final class MessageCoordinator: ObservableObject {
                 attachments: attachments,
                 outgoing: outgoing,
                 requestId: teamContext.runId,
-                scopeToConversation: isCollaboration
+                scopeToConversation: isCollaboration,
+                collaborationEvidence: isCollaboration ? AgentCollaborationToolEvidenceScope(
+                  runId: spec.supervisorRunId, conversationId: outgoing.conversationId,
+                  turnId: homeTurnId, memberId: member.memberId, sourceId: sourceMessageId) : nil
               )
               observations.append((member.memberId, result))
               persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
@@ -6791,7 +6794,8 @@ final class MessageCoordinator: ObservableObject {
     attachments: [GalaxySSIDraftAttachment],
     outgoing: ChatMessage,
     requestId: String,
-    scopeToConversation: Bool = false
+    scopeToConversation: Bool = false,
+    collaborationEvidence: AgentCollaborationToolEvidenceScope? = nil
   ) async throws -> String {
     let images = try CloudImagePayloadFactory.prepare(
       attachments,
@@ -6813,13 +6817,15 @@ final class MessageCoordinator: ObservableObject {
     }
     var accumulated = ""
     var completed = false
-    for try await event in cloudStreamEngine.streamConversation(
-      contact: cloudContact,
-      store: store,
-      turns: turns,
-      images: images,
-      requestId: requestId
-    ) {
+    let events: AsyncThrowingStream<ModelStreamEvent, Error>
+    if let engine = cloudStreamEngine as? CloudConversationStreamEngine, let collaborationEvidence {
+      events = engine.streamConversation(contact: cloudContact, store: store, turns: turns, images: images,
+        requestId: requestId, collaborationEvidence: collaborationEvidence)
+    } else {
+      events = cloudStreamEngine.streamConversation(contact: cloudContact, store: store, turns: turns,
+        images: images, requestId: requestId)
+    }
+    for try await event in events {
       try Task.checkCancellation()
       switch event {
       case .textDelta(let delta): accumulated += delta.text
