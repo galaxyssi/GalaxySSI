@@ -18,6 +18,69 @@ struct AgentCollaborationCloudToolEvidence: Codable, Equatable {
   var finishedAtMillis: Int64
 }
 
+struct AgentCollaborationResearchReference: Codable, Equatable {
+  var objectId: String
+  var revision: Int64
+  var sha256: String
+
+  enum CodingKeys: String, CodingKey {
+    case objectId = "object_id"
+    case revision, sha256
+  }
+}
+
+struct AgentCollaborationResearchDraft: Codable {
+  enum Kind: String, Codable {
+    case hypothesis, evidence, counterexample, proposal, experiment, artifact, decision, question
+    case acceptanceReview = "acceptance_review"
+    case candidate
+    case candidateEvent = "candidate_event"
+  }
+  var id: String
+  var objectId: String?
+  var baseRevision: Int64
+  var kind: Kind
+  var title: String
+  var body: AgentMcpJSONObject
+  var parents: [AgentCollaborationResearchReference]
+  var resolves: [AgentCollaborationResearchReference]? = nil
+  var observations: [AgentMcpJSONObject]? = nil
+
+  enum CodingKeys: String, CodingKey {
+    case id, kind, title, body, parents, resolves, observations
+    case objectId = "object_id"
+    case baseRevision = "base_revision"
+  }
+}
+
+struct AgentCollaborationResearchEnvelope: Decodable {
+  static let wireFormat = "galaxyssi.research-artifact.v1"
+  var format: String
+  var workspace: [AgentCollaborationResearchDraft]?
+
+  static func publication(in raw: String) throws -> [AgentCollaborationResearchDraft]? {
+    guard raw.utf8.count <= 256_000, raw.contains(wireFormat) else { return nil }
+    let envelope = try JSONDecoder().decode(Self.self, from: Data(raw.utf8))
+    guard envelope.format == wireFormat, let workspace = envelope.workspace, !workspace.isEmpty else { return nil }
+    return workspace
+  }
+}
+
+struct AgentCollaborationResearchRevision: Codable {
+  var reference: AgentCollaborationResearchReference
+  var previousHash: String?
+  var runId: String
+  var turnId: String
+  var authorId: String
+  var sourceId: String
+  var draft: AgentCollaborationResearchDraft
+}
+
+struct AgentCollaborationResearchPublication: Codable {
+  var requestHash: String
+  var references: [AgentCollaborationResearchReference]
+}
+
 enum AgentSubagentStatus: String, Codable, CaseIterable, Identifiable {
   case pending = "PENDING"
   case queued = "QUEUED"

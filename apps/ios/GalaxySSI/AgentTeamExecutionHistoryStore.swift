@@ -303,6 +303,83 @@ final class AgentTeamExecutionHistoryStore {
     return (try? access { try $0.snapshots(conversation: conversationId, recoverableOnly: true) }) ?? []
   }
 
+  func publishResearchObjects(_ drafts: [AgentCollaborationResearchDraft], runId: String,
+                              conversationId: String, turnId: String, memberId: String,
+                              sourceId: String) throws -> AgentCollaborationResearchPublication {
+    guard !drafts.isEmpty, drafts.count <= 32, !sourceId.isBlank else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    func digest<T: Encodable>(_ value: T) throws -> String {
+      let bytes = try encoder.encode(value)
+      guard bytes.count <= 256_000 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+    let requestHash = try digest(drafts)
+    let publicationKey = "publication:" + AgentMcpJSONCodec.sha256([
+      "run": .string(runId), "member": .string(memberId), "source": .string(sourceId)
+    ])
+    return try access { database in
+      guard let snapshot = try database.snapshots(runId: runId).first,
+            snapshot.conversationId == conversationId, snapshot.taskId == turnId,
+            let member = snapshot.members.first(where: { $0.memberId == memberId && $0.sourceMessageId == sourceId }),
+            member.status == .succeeded, snapshot.state != .cancelled else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      if let prior = try database.researchRecord(AgentCollaborationResearchPublication.self,
+        conversationId: conversationId, key: publicationKey, revision: 0) {
+        guard prior.requestHash == requestHash else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return prior
+      }
+      var revisions: [AgentCollaborationResearchRevision] = []
+      var objectIds = Set<String>()
+      for draft in drafts {
+        guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
+              draft.title.utf8.count <= 960, !draft.body.isEmpty,
+              draft.baseRevision >= 0, draft.baseRevision < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        guard draft.observations?.isEmpty != false else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        let existingId = draft.objectId.flatMap { $0.isBlank ? nil : $0 }
+        let objectId = existingId ?? AgentMcpJSONCodec.sha256([
+          "group": .string(conversationId), "author": .string(memberId), "id": .string(draft.id)
+        ])
+        guard objectIds.insert(objectId).inserted else { throw AgentTeamHistoryDatabase.Failure.stale }
+        let head = try database.researchRecord(AgentCollaborationResearchRevision.self,
+          conversationId: conversationId, key: "object:" + objectId)
+        if let head {
+          guard existingId != nil, head.authorId == memberId, head.draft.kind == draft.kind,
+                head.reference.revision == draft.baseRevision else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else {
+          guard existingId == nil, draft.baseRevision == 0 else { throw AgentTeamHistoryDatabase.Failure.stale }
+        }
+        for parent in draft.parents + (draft.resolves ?? []) {
+          guard let existing = try database.researchRecord(AgentCollaborationResearchRevision.self,
+            conversationId: conversationId, key: "object:" + parent.objectId, revision: parent.revision),
+            existing.reference == parent,
+            existing.turnId != turnId || existing.authorId == memberId else {
+            throw AgentTeamHistoryDatabase.Failure.stale
+          }
+        }
+        var revision = AgentCollaborationResearchRevision(reference: .init(objectId: objectId,
+          revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
+          runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft)
+        revision.reference.sha256 = try digest(revision)
+        revisions.append(revision)
+      }
+      for revision in revisions {
+        try database.insertResearchRecord(revision, conversationId: conversationId,
+          key: "object:" + revision.reference.objectId, revision: revision.reference.revision)
+      }
+      let receipt = AgentCollaborationResearchPublication(requestHash: requestHash,
+        references: revisions.map(\.reference))
+      try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
+      return receipt
+    }
+  }
+
+  func removeResearchObjects(conversationId: String) {
+    guard !conversationId.isBlank else { return }
+    _ = try? access { try $0.removeResearchRecords(conversationId: conversationId) }
+  }
+
   func collaborationResults(conversationId: String, limit: Int) -> [AgentTeamExecutionSnapshot] {
     guard !conversationId.isBlank, limit > 0 else { return [] }
     return (try? access {
@@ -319,6 +396,39 @@ final class AgentTeamExecutionHistoryStore {
     guard !run.isEmpty else { return nil }
     do { return newer(try access { try $0.snapshots(runId: run).first }, executionStore.snapshot(supervisorRunId: run)) }
     catch { return nil }
+  }
+
+  func goalCheckpoint(runId: String, conversationId: String, turnId: String,
+                      revision: Int64? = nil) -> AgentCollaborationGoalCheckpoint? {
+    try? access { database -> AgentCollaborationGoalCheckpoint? in
+      guard let snapshot = try database.snapshots(runId: runId).first,
+            snapshot.conversationId == conversationId, snapshot.taskId == turnId,
+            let checkpoint = try database.goalCheckpoints(runId: runId, revision: revision, newestOnly: true).first,
+            checkpoint.conversationId == conversationId, checkpoint.turnId == turnId else { return nil }
+      return checkpoint
+    }
+  }
+
+  func advanceGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64) -> Bool {
+    guard expectedRevision >= 0, expectedRevision < Int64.max, checkpoint.revision == expectedRevision + 1,
+          !checkpoint.contract.isEmpty, Set(checkpoint.contract.map(\.id)).count == checkpoint.contract.count,
+          checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank }),
+          checkpoint.completedWorkIds.allSatisfy({ !$0.isBlank }) else { return false }
+    do {
+      return try access { database in
+        guard let snapshot = try database.snapshots(runId: checkpoint.runId).first,
+              snapshot.conversationId == checkpoint.conversationId, snapshot.taskId == checkpoint.turnId,
+              !snapshot.state.deliverable else { return false }
+        let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
+        guard (prior.first?.revision ?? 0) == expectedRevision,
+              prior.allSatisfy({
+                $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
+                  $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
+              }) else { return false }
+        try database.insertGoalCheckpoint(checkpoint)
+        return true
+      }
+    } catch { return false }
   }
 
   func remove(supervisorRunId: String) {

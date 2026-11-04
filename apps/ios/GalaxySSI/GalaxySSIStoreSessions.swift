@@ -844,6 +844,7 @@ extension GalaxySSIStore {
     for session in knownConversations where session.collaborationRoster != nil &&
       agentConversationDatabase.read(session.id) == nil {
       AgentTeamExecutionHistoryStore.shared.removeCloudEvidence(conversationId: session.id)
+      AgentTeamExecutionHistoryStore.shared.removeResearchObjects(conversationId: session.id)
     }
     let removedChatMessages = chatHistoryDatabase.deleteConversations(ids)
     let removedTranscripts = UserDefaultsAgentTranscriptEntryStore(defaults: defaults, secrets: secrets)
