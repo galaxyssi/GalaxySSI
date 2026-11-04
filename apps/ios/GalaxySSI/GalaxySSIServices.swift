@@ -247,6 +247,7 @@ final class MessageCoordinator: ObservableObject {
   private var attachmentRecoveryInFlight: Set<String> = []
   private var volatileTeamReplyOwners: [String: AgentTeamReplyOwner] = [:]
   private lazy var teamReplyOwnerProfile = store.profile.identityFingerprint
+  private var researchPublicationRecoveryProfile: String?
   private var artifactDownloadRetryGate = AgentArtifactRequestRetryGate()
   private var artifactFetchRetryGate = AgentArtifactRequestRetryGate()
   private var liveConnectorMessageIds: [String: UUID] = [:]
@@ -868,6 +869,7 @@ final class MessageCoordinator: ObservableObject {
 
   func refreshAgentHomeState() {
     reconcileSavedTeamParents()
+    recoverSavedResearchPublications()
     _ = requestCapabilityManifestRefresh()
     _ = reconcileStaleAgentConnectorReplies()
     downloadCompletionCoordinator.deliverPendingCompletions()
@@ -7064,7 +7066,37 @@ final class MessageCoordinator: ObservableObject {
     ))
   }
 
-  private func publishCommittedCollaborationResearch(source: String, conversation: String, turn: String, contact: String) {
+  private func recoverSavedResearchPublications() {
+    let profile = store.profile.identityFingerprint
+    guard researchPublicationRecoveryProfile != profile else { return }
+    researchPublicationRecoveryProfile = profile
+    Task { @MainActor [weak self] in
+      var cursor = ""
+      while !Task.isCancelled {
+        let after = cursor
+        let page = await Task.detached(priority: .utility) {
+          try? AgentTeamExecutionHistoryStore.shared.pendingPublicationRecoveryPage(after: after)
+        }.value
+        guard let self, self.store.profile.identityFingerprint == profile,
+              self.researchPublicationRecoveryProfile == profile else { return }
+        guard let page else {
+          self.researchPublicationRecoveryProfile = nil
+          return
+        }
+        for owner in page.owners {
+          self.publishCommittedCollaborationResearch(source: owner.sourceMessageId, conversation: owner.conversationId,
+            turn: owner.turnId, contact: owner.contactId, reportFailure: false)
+          await Task.yield()
+          guard !Task.isCancelled, self.store.profile.identityFingerprint == profile else { return }
+        }
+        guard let next = page.next else { return }
+        cursor = next
+      }
+    }
+  }
+
+  private func publishCommittedCollaborationResearch(source: String, conversation: String, turn: String, contact: String,
+                                                     reportFailure: Bool = true) {
     guard let session = store.agentSession(id: conversation), session.id == conversation,
           session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
           !session.privateMode, !session.trackingPaused else { return }
@@ -7076,10 +7108,10 @@ final class MessageCoordinator: ObservableObject {
         conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
       guard let raw = context.member.replyContent else { return }
       try history.publishSavedResearchReply(raw, scope: scope)
-    } catch {
+    } catch where reportFailure {
       lastError = localizedReply("galaxyssi.collaboration.publication_failed",
         fallback: "The original reply was saved, but its research objects could not be published.")
-    }
+    } catch {}
   }
 
   private func automaticRequestedMembers(

@@ -250,6 +250,28 @@ final class AgentTeamExecutionHistoryStore {
     try access { try $0.recoveryPage(after: after, limit: limit) }
   }
 
+  func pendingPublicationRecoveryPage(after: String) throws -> (owners: [AgentTeamReplyOwner], next: String?) {
+    try access { database in
+      let page = try database.publicationRecoveryPage(after: after)
+      var owners: [AgentTeamReplyOwner] = []
+      for team in page.teams where team.state != .cancelled {
+        for member in team.members where member.deliveryMode == .observe && member.status == .succeeded &&
+          member.replyContent?.contains(AgentCollaborationResearchEnvelope.wireFormat) == true {
+          guard let owner = try database.replyOwner(source: member.sourceMessageId, conversation: team.conversationId,
+            turn: team.taskId, contact: member.agentId), owner.supervisorRunId == team.supervisorRunId,
+            owner.memberId == member.memberId, owner.deliveryMode == .observe else { continue }
+          let key = Self.researchPublicationKey(runId: team.supervisorRunId, memberId: member.memberId,
+            sourceId: member.sourceMessageId)
+          if try database.researchRecord(AgentCollaborationResearchPublication.self,
+            conversationId: team.conversationId, key: key, revision: 0) == nil {
+            owners.append(owner)
+          }
+        }
+      }
+      return (owners, page.next)
+    }
+  }
+
   func recoveryContext(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyRecoveryContext? {
     try access { database in
       guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact),
