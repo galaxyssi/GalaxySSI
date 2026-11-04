@@ -31,10 +31,28 @@ import org.json.JSONObject
 /** Originals are immutable objects; per-import mappings make worker restarts idempotent. */
 internal class HealthOriginalStore(
     private val context: Context,
-    private val databaseName: String = "health_originals_v1.db",
-    private val root: File = File(context.filesDir, "health-originals-v1")
+    private val databaseName: String = LEGACY_DATABASE,
+    private val root: File = File(context.filesDir, "health-originals-v1"),
+    sharedRecords: HealthRecordStore? = null
 ) : Closeable {
-    private val helper = Database(context.applicationContext, databaseName) { id, bytes -> HealthOriginalKind.of(decodeOriginal(id, bytes)).name }
+    private val legacy = Database(context.applicationContext, databaseName) { id, bytes -> HealthOriginalKind.of(decodeOriginal(id, bytes)).name }
+    private val ownedRecords = if (sharedRecords == null && databaseName == LEGACY_DATABASE) HealthRecordStore(context) else null
+    private val records = sharedRecords ?: ownedRecords
+    @Volatile private var migrated = false
+    private val helper = object : Closeable {
+        val readableDatabase: SQLiteDatabase get() = records?.tableDatabase?.also(::migrate) ?: legacy.readableDatabase
+        val writableDatabase: SQLiteDatabase get() = records?.tableDatabase?.also(::migrate) ?: legacy.writableDatabase
+        override fun close() { try { legacy.close() } finally { ownedRecords?.close() } }
+    }
+
+    @Synchronized private fun migrate(target: SQLiteDatabase) {
+        if (migrated) return
+        HealthOriginalMetadataMigration.migrate(target, databaseName) {
+            if (!context.getDatabasePath(databaseName).exists()) null else legacy.readableDatabase
+        }
+        legacy.close()
+        migrated = true
+    }
     internal val libraryDatabase: SQLiteDatabase get() = helper.writableDatabase
     internal fun libraryPack(kind: String, id: String, value: JSONObject) = pack(kind, id, value)
     internal fun libraryUnpack(kind: String, id: String, value: ByteArray) = unpack(kind, id, value)
@@ -410,17 +428,7 @@ internal class HealthOriginalStore(
     private class Database(context: Context, name: String, private val classify: (String, ByteArray) -> String) : SQLiteOpenHelper(context, name, null, 3) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
-        override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL("CREATE TABLE originals(id TEXT PRIMARY KEY,imported_at INTEGER NOT NULL,digest_token TEXT UNIQUE NOT NULL,payload BLOB NOT NULL,key_payload BLOB NOT NULL,kind TEXT NOT NULL)")
-            db.execSQL("CREATE INDEX original_page ON originals(imported_at DESC,id DESC)")
-            db.execSQL("CREATE INDEX original_kind_page ON originals(kind,imported_at DESC,id DESC)")
-            db.execSQL("CREATE TABLE imports(job_id TEXT PRIMARY KEY,original_id TEXT NOT NULL REFERENCES originals(id))")
-            db.execSQL("CREATE TABLE jobs(id TEXT PRIMARY KEY,created_at INTEGER NOT NULL,state TEXT NOT NULL,payload BLOB NOT NULL)")
-            db.execSQL("CREATE INDEX job_page ON jobs(created_at DESC,id DESC)")
-            db.execSQL("CREATE INDEX job_pending ON jobs(state,created_at DESC,id DESC)")
-            db.execSQL("CREATE TABLE pages(job_id TEXT NOT NULL REFERENCES jobs(id),page_number INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(job_id,page_number))")
-            captureSchema(db); HealthOriginalLibraryStore.createSchema(db)
-        }
+        override fun onCreate(db: SQLiteDatabase) = createOriginalTables(db)
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             check(oldVersion in 1..2 && newVersion == 3)
             if (oldVersion < 2) captureSchema(db)
@@ -432,13 +440,31 @@ internal class HealthOriginalStore(
             db.execSQL("CREATE INDEX original_kind_page ON originals(kind,imported_at DESC,id DESC)")
             HealthOriginalLibraryStore.createSchema(db)
         }
+    }
+    companion object {
+        const val LEGACY_DATABASE = "health_originals_v1.db"
+
+        fun createSharedSchema(db: SQLiteDatabase) {
+            createOriginalTables(db)
+            db.execSQL("CREATE TABLE health_original_metadata_migration(id INTEGER PRIMARY KEY CHECK(id=1),source TEXT NOT NULL)")
+        }
+
+        private fun createOriginalTables(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE originals(id TEXT PRIMARY KEY,imported_at INTEGER NOT NULL,digest_token TEXT UNIQUE NOT NULL,payload BLOB NOT NULL,key_payload BLOB NOT NULL,kind TEXT NOT NULL)")
+            db.execSQL("CREATE INDEX original_page ON originals(imported_at DESC,id DESC)")
+            db.execSQL("CREATE INDEX original_kind_page ON originals(kind,imported_at DESC,id DESC)")
+            db.execSQL("CREATE TABLE imports(job_id TEXT PRIMARY KEY,original_id TEXT NOT NULL REFERENCES originals(id))")
+            db.execSQL("CREATE TABLE jobs(id TEXT PRIMARY KEY,created_at INTEGER NOT NULL,state TEXT NOT NULL,payload BLOB NOT NULL)")
+            db.execSQL("CREATE INDEX job_page ON jobs(created_at DESC,id DESC)")
+            db.execSQL("CREATE INDEX job_pending ON jobs(state,created_at DESC,id DESC)")
+            db.execSQL("CREATE TABLE pages(job_id TEXT NOT NULL REFERENCES jobs(id),page_number INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(job_id,page_number))")
+            captureSchema(db); HealthOriginalLibraryStore.createSchema(db)
+        }
         private fun captureSchema(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE capture_batches(id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
             db.execSQL("CREATE TABLE capture_pages(job_id TEXT PRIMARY KEY REFERENCES jobs(id),batch_id TEXT NOT NULL REFERENCES capture_batches(id),position INTEGER NOT NULL,payload BLOB NOT NULL)")
             db.execSQL("CREATE INDEX capture_page_order ON capture_pages(batch_id,position)")
         }
-    }
-    companion object {
         fun changesUri(context: Context): Uri = Uri.parse("content://${context.packageName}.health-originals/changes")
         private val reader by lazy { Handler(HandlerThread("health-original-reader").apply { start() }.looper) }
     }

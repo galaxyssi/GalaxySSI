@@ -436,6 +436,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             createClocks(db)
             indexPlatformRecords(db)
             createSyncCheckpoints(db)
+            HealthOriginalStore.createSharedSchema(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             check(oldVersion in 1 until SCHEMA_VERSION && newVersion == SCHEMA_VERSION) { "Unsupported health schema upgrade" }
@@ -451,7 +452,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 db.execSQL("ALTER TABLE observations ADD COLUMN external_key TEXT")
                 indexPlatformRecords(db)
             }
-            createSyncCheckpoints(db)
+            if (oldVersion < 6) createSyncCheckpoints(db)
+            if (oldVersion < 7) HealthOriginalStore.createSharedSchema(db)
         }
         private fun indexPlatformRecords(db: SQLiteDatabase) =
             db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
@@ -460,7 +462,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         private fun createClocks(db: SQLiteDatabase) { db.execSQL("CREATE TABLE IF NOT EXISTS health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)") }
     }
     companion object {
-        const val SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = 7
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
         fun draftKey(draft: HealthDraft) = when {
