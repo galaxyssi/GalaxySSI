@@ -4,7 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 
 internal fun seedLegacyHealthObservation(context: Context, name: String, version: Int, draft: HealthDraft): HealthObservation {
-    require(version in 2..4 && !context.getDatabasePath(name).exists())
+    require(version in 2..5 && !context.getDatabasePath(name).exists())
     val record = HealthObservationPolicy.observation(draft)
     val plain = record.json().toString().toByteArray()
     val encrypted = try { AgentStorageCipher.encryptBinary(plain, "$name|health|${record.id}|1".toByteArray()) } finally { plain.fill(0) }
@@ -22,6 +22,10 @@ internal fun seedLegacyHealthObservation(context: Context, name: String, version
             db.execSQL("CREATE TABLE drafts(draft_key TEXT PRIMARY KEY,payload BLOB NOT NULL)")
             if (version >= 3) HealthTableStore.createSchema(db)
             if (version >= 4) db.execSQL("CREATE TABLE health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)")
+            if (version >= 5) {
+                db.execSQL("ALTER TABLE observations ADD COLUMN external_key TEXT")
+                db.execSQL("CREATE UNIQUE INDEX observation_external ON observations(external_key) WHERE external_key IS NOT NULL")
+            }
             db.insertOrThrow("observations", null, ContentValues().apply {
                 put("id", record.id); put("revision", 1); put("metric", draft.metric.name); put("measured_at", draft.measuredAt)
                 put("payload", encrypted); put("original_id", draft.evidence?.originalId)

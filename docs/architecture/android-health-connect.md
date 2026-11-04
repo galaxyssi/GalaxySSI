@@ -20,6 +20,8 @@ missing, user-selected scopes through AndroidX's Health Connect contract.
   not collide. Re-import does not overwrite existing observations, undo
   user edits, or resurrect removed copies. The source page's import time
   is a foreground confirmation timestamp, not a synchronization cursor.
+  [Sync and Data Coverage](android-health-sync.md) maintains its own separate
+  foreground checkpoints.
 - Disconnect revokes Health Connect grants and clears the app selection
   without removing local copies. Existing catalog removal hides the
   measurement but retains its encrypted revision history. Full erasure

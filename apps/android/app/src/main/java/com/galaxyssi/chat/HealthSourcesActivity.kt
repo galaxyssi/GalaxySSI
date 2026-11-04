@@ -120,6 +120,9 @@ class HealthSourcesActivity : Activity() {
             addView(ui.profileRow(getString(R.string.health_connect_authorize)) {
                 openLocal(Intent(this@HealthSourcesActivity, HealthConnectActivity::class.java))
             }.apply { tag = "health-connect-entry" })
+            addView(ui.profileRow(getString(R.string.health_sync_title)) {
+                openLocal(Intent(this@HealthSourcesActivity, HealthSyncActivity::class.java))
+            }.apply { tag = "health-sync-entry" })
             when (snapshot.platform) {
                 HealthPlatformAvailability.AVAILABLE -> addView(ui.profileRow(getString(R.string.health_sources_system_settings)) {
                     openExternal(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS))

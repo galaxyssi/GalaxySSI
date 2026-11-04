@@ -163,6 +163,7 @@ class HealthConnectActivity : ComponentActivity() {
                     tag = "health-connect-scope-${scope.name}"
                     setOnCheckedChangeListener { _, checked ->
                         selected = if (checked) selected + scope else selected - scope
+                        HealthConnectSettings.setSelection(this@HealthConnectActivity, selected)
                         if (hours !in rangeOptions()) hours = 24
                         preview = null; notice = ""
                         body.findViewWithTag<View>("health-connect-notice")?.let(body::removeView)
