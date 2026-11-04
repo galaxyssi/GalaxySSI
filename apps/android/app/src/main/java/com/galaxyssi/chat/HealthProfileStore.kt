@@ -9,7 +9,7 @@ import java.util.UUID
 import org.json.JSONObject
 
 /** Self-reported context has its own encrypted rows, never measurement or generic memory records. */
-internal class HealthProfileStore(private val context: Context, private val name: String = "health_profiles_v1.db",
+internal class HealthProfileStore(private val context: Context, private val name: String = DEFAULT_DB,
     private val privacyDatabase: String = HealthPrivacyStore.DEFAULT_DB) : Closeable {
     private val helper = Database(context, name); private val db get() = helper.writableDatabase
     private fun aad(kind: String, key: String) = "$name|health-profile-v1|self|$kind|$key".toByteArray(Charsets.UTF_8)
@@ -182,5 +182,8 @@ internal class HealthProfileStore(private val context: Context, private val name
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { error("Unsupported health-profile upgrade") }
     }
-    companion object { fun changes(context: Context, name: String = "health_profiles_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/profiles/" + android.net.Uri.encode(name)) }
+    companion object {
+        const val DEFAULT_DB = "health_profiles_v1.db"
+        fun changes(context: Context, name: String = DEFAULT_DB) = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/profiles/" + android.net.Uri.encode(name))
+    }
 }
