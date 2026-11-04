@@ -238,12 +238,33 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let (secondZIP, second) = try store.prepareExport(originals)
     try Data(secondZIP.dropLast()).write(to: output)
     XCTAssertFalse(try GalaxySSIHealthOriginalStore.verifyDestination(output, for: second))
+    var tampered = secondZIP
+    tampered[tampered.count - 1] ^= 1
+    try tampered.write(to: output)
+    XCTAssertFalse(try GalaxySSIHealthOriginalStore.verifyDestination(output, for: second))
     try store.finishExport(id: second.id, verified: false)
     try store.finishExport(id: first.id, verified: false)
     let history = try store.exportHistory()
     XCTAssertEqual(history.map(\.outcome), [.unverified, .verified])
     XCTAssertEqual(history.last?.originals, originals)
     XCTAssertEqual(try store.list().originals, originals)
+  }
+
+  @MainActor
+  func testHealthReportPDFReadsNativePageAndKeepsPageBounds() throws {
+    let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 240, height: 200)).pdfData { context in
+      context.beginPage()
+      ("Synthetic report line 12345" as NSString).draw(at: CGPoint(x: 12, y: 18),
+        withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
+      context.beginPage()
+    }
+    XCTAssertEqual(try GalaxySSIHealthPDFText.pageCount(data), 2)
+    let result = try GalaxySSIHealthPDFText.read(data, page: 0)
+    XCTAssertEqual(result.method, .native)
+    let text = try XCTUnwrap(result.regions.first)
+    XCTAssertTrue(text.text.contains("Synthetic report"))
+    XCTAssertTrue(result.crop.contains(text.bounds))
+    XCTAssertThrowsError(try GalaxySSIHealthPDFText.read(data, page: 2))
   }
 
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
