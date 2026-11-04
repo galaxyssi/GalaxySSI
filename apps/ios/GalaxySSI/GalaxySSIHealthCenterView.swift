@@ -113,6 +113,11 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("export.title", "Export Measurements"), systemImage: "square.and.arrow.up")
       }
       NavigationLink {
+        GalaxySSIHealthTableImportView(records: records)
+      } label: {
+        Label(t("table.title", "Import Measurement Table"), systemImage: "tablecells")
+      }
+      NavigationLink {
         GalaxySSIWeeklyHealthReportView(records: records)
       } label: {
         Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar")
@@ -255,7 +260,7 @@ struct GalaxySSIHealthCenterView: View {
               Spacer()
               Text(current.count.formatted(.number.locale(locale))).foregroundColor(.secondary)
             }
-            if let latest = current.first(where: { $0.bluetoothReceipt == nil }) {
+            if let latest = current.first(where: { $0.bluetoothReceipt == nil && $0.tableSource == nil }) {
               VStack(alignment: .leading, spacing: 4) {
                 Text(t("latest_manual", "Latest manual measurement"))
                 Text(title(latest.metric)).foregroundColor(.secondary)
@@ -293,8 +298,9 @@ struct GalaxySSIHealthCenterView: View {
               Text(summary(reading))
               Text(item.freshness == .recent ? t("fresh", "Recent") : t("stale_reading", "Older"))
                 .foregroundColor(.secondary)
-              Text(reading.bluetoothReceipt == nil ? t("manual_source", "Entered manually")
-                : t("bluetooth.source", "Bluetooth monitor")).foregroundColor(.secondary)
+              Text(reading.tableSource != nil ? t("table.source", "Imported table") :
+                (reading.bluetoothReceipt == nil ? t("manual_source", "Entered manually") :
+                  t("bluetooth.source", "Bluetooth monitor"))).foregroundColor(.secondary)
               Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened))
                 .foregroundColor(.secondary)
             }

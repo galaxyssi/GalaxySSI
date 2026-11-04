@@ -302,6 +302,33 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.maximum, 69)
   }
 
+  @MainActor
+  func testStructuredImportKeepsExactSourceAndUndoPreservesEdits() throws {
+    let data = Data("value,time,note\r\n60,2025-01-01T12:00:00Z,\"line\r\nnext\"\r\n61,2025-01-02T12:00:00Z,\r\n60,2025-01-01T12:00:00Z,\r\n".utf8)
+    let table = try GalaxySSIHealthTableImport.parse(data, json: false)
+    XCTAssertEqual(table.rows.first?[2], "line\r\nnext")
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, notes: 2, confirmedUnit: true)
+    let rows = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: [])
+    XCTAssertEqual(rows.map(\.status), [.ready, .ready, .duplicate])
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    XCTAssertEqual(try records.importTable(data, name: "fixture.csv", json: false, mapping: mapping,
+                                           expected: rows.map(\.status)), 2)
+    XCTAssertThrowsError(try records.importTable(data, name: "fixture.csv", json: false, mapping: mapping,
+                                                  expected: rows.map(\.status)))
+    let archive = try records.load()
+    let batch = try XCTUnwrap(archive.tableBatches?.first)
+    XCTAssertEqual(batch.data, data)
+    XCTAssertNil(try Data(contentsOf: file).range(of: data))
+    var edited = try XCTUnwrap(archive.current.first)
+    edited.value = 62
+    try records.write(edited)
+    XCTAssertEqual(try records.undoTableBatch(batch.id), 1)
+    XCTAssertEqual(try records.load().current.map(\.value), [62])
+    XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
+  }
+
   func testPaperEdgeSuggestionConvertsOriginAndRejectsClippedOrSmallRectangles() throws {
     let accepted = try XCTUnwrap(GalaxySSIHealthPaperEdges.paddedCrop(
       visionBounds: CGRect(x: 0.15, y: 0.10, width: 0.6, height: 0.5)))

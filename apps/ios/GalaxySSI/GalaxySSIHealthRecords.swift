@@ -27,6 +27,7 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var notes = ""
   var deleted = false
   var bluetoothReceipt: GalaxySSIHealthBluetoothReceipt?
+  var tableSource: GalaxySSIHealthTableImport.Source?
 
   var isValid: Bool {
     func positive(_ number: Decimal) -> Bool {
@@ -120,6 +121,7 @@ struct GalaxySSIHealthRecords {
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
+    var tableBatches: [GalaxySSIHealthTableImport.Batch]?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -258,7 +260,8 @@ struct GalaxySSIHealthRecords {
     guard (latest?.revision ?? 0) == input.revision, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
-      guard latest.bluetoothReceipt == input.bluetoothReceipt else { throw Failure.invalid }
+      guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource
+      else { throw Failure.invalid }
     } else if let receipt = input.bluetoothReceipt, archive.revisions.contains(where: {
       $0.bluetoothReceipt.map { receipt.isReplay(of: $0) } == true
     }) {
@@ -274,6 +277,51 @@ struct GalaxySSIHealthRecords {
     if let draftId, archive.draft?.id == draftId { archive.draft = nil }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func importTable(_ data: Data, name: String, json: Bool, mapping: GalaxySSIHealthTableImport.Mapping,
+                   expected: [GalaxySSIHealthTableImport.Status]) throws -> Int {
+    var archive = try load()
+    let table = try GalaxySSIHealthTableImport.parse(data, json: json)
+    let preview = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: archive.current)
+    guard preview.map(\.status) == expected else { throw GalaxySSIHealthTableImport.Failure.stale }
+    let id = UUID(), hash = GalaxySSIHealthTableImport.digest(data)
+    var readings = [GalaxySSIHealthReading]()
+    for row in preview {
+      guard var reading = row.reading else { continue }
+      reading.revision = 1
+      reading.tableSource = .init(batch: id, row: row.id, sha256: hash)
+      readings.append(reading)
+    }
+    guard !readings.isEmpty else { return 0 }
+    var batches = archive.tableBatches ?? []
+    guard batches.count < 30,
+          batches.reduce(data.count, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
+    else { throw GalaxySSIHealthTableImport.Failure.limit }
+    batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: data,
+                         inserted: readings.count, undone: nil), at: 0)
+    archive.tableBatches = batches
+    archive.revisions.append(contentsOf: readings)
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return readings.count
+  }
+
+  func undoTableBatch(_ id: UUID) throws -> Int {
+    var archive = try load()
+    guard let index = archive.tableBatches?.firstIndex(where: { $0.id == id }),
+          archive.tableBatches?[index].undone == nil else { return 0 }
+    let tombstones = archive.current.filter { $0.tableSource?.batch == id && $0.revision == 1 }.map {
+      var reading = $0
+      reading.revision += 1
+      reading.deleted = true
+      return reading
+    }
+    archive.tableBatches?[index].undone = tombstones.count
+    archive.revisions.append(contentsOf: tombstones)
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return tombstones.count
   }
 
   private func persist(_ archive: Archive) throws {
