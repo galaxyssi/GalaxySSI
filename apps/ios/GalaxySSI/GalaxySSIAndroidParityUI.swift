@@ -131,6 +131,7 @@ struct AgentHomeView: View {
   @State var screenPagePickerPresented = false
   @State var screenPageImportIsPDF = true
   @State var screenLinkPickerPresented = false
+  @State var screenLinkWeChatOnly = false
   @State var screenLinkConversationID = ""
   @State var screenPageImportConversationID = ""
   @State var screenPageImportRequestID: UUID?
@@ -292,6 +293,9 @@ struct AgentHomeView: View {
         Button(t("galaxyssi.screen_page.pdf", "Full-page PDF"), action: beginScreenPagePDFImport)
         Button(t("galaxyssi.screen_page.file", "File"), action: beginScreenAnalysisFileImport)
         Button(t("galaxyssi.screen_page.link", "Link"), action: beginScreenAnalysisLink)
+        Button(t("galaxyssi.screen_page.wechat_link", "WeChat Article Link")) {
+          beginScreenAnalysisLink(weChatOnly: true)
+        }
         Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) {}
       }
       .background(GalaxySSIConversationFocusProbe(focused: $homeWindowFocused))
@@ -443,7 +447,8 @@ struct AgentHomeView: View {
         }
       }
       .sheet(isPresented: $screenLinkPickerPresented) {
-        GalaxySSIScreenAnalysisLinkPicker(t: t, onAdd: addScreenAnalysisLink)
+        GalaxySSIScreenAnalysisLinkPicker(t: t, weChatOnly: screenLinkWeChatOnly,
+          onAdd: addScreenAnalysisLink)
       }
       .galaxySSIAgentHomePresentationRoutes(
         scanShortcutActive: $scanShortcutActive,
