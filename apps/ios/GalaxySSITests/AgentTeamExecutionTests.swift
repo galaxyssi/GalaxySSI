@@ -160,7 +160,7 @@ extension GalaxySSIStoreTests {
     XCTAssertNotEqual(updated.references.last?.sha256, original.references.first?.sha256)
   }
 
-  func testGoalCheckpointCompareAndSetRetainsPriorRevisionAfterReopen() {
+  func testGoalCheckpointCompareAndSetRetainsPriorRevisionAfterReopen() throws {
     let suite = "goal-checkpoint-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -169,7 +169,8 @@ extension GalaxySSIStoreTests {
     let file = root.appendingPathComponent("history.sqlite3")
     let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
-    let team = durableTeamSnapshot("goal-run")
+    var team = durableTeamSnapshot("goal-run")
+    team.goal = String(repeating: "a", count: 8_191) + "\u{7814}\u{7A76}"
     XCTAssertTrue(history.upsert(team))
     let first = AgentCollaborationGoalCheckpoint(runId: team.supervisorRunId,
       conversationId: team.conversationId, turnId: team.taskId, revision: 1, phase: .working,
@@ -188,6 +189,24 @@ extension GalaxySSIStoreTests {
       turnId: first.turnId), next)
     XCTAssertEqual(reopened.goalCheckpoint(runId: first.runId, conversationId: first.conversationId,
       turnId: first.turnId, revision: 1), first)
+    let member = try XCTUnwrap(team.members.first { !$0.status.isTerminal })
+    var scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, memberId: member.memberId,
+      sourceId: member.sourceMessageId)
+    let page = try reopened.readPinnedCollaborationGoal(scope: scope, section: "goal")
+    let tail = try reopened.readPinnedCollaborationGoal(scope: scope, section: "goal",
+      offset: Int(page.int64("next_offset")), expectedHash: page.string("sha256"))
+    let headBytes = try XCTUnwrap(Data(base64Encoded: page.string("data_b64")))
+    let tailBytes = try XCTUnwrap(Data(base64Encoded: tail.string("data_b64")))
+    XCTAssertEqual(headBytes + tailBytes, Data(team.goal.utf8))
+    XCTAssertThrowsError(try reopened.readPinnedCollaborationGoal(scope: scope, section: "goal",
+      offset: 8_192, expectedHash: "wrong"))
+    scope.sourceId = "foreign-source"
+    XCTAssertThrowsError(try reopened.readPinnedCollaborationGoal(scope: scope, section: "criteria"))
+    var weakened = team
+    weakened.goal = "A different goal"
+    weakened.updatedAtMillis += 1
+    XCTAssertFalse(reopened.upsert(weakened))
     let expansion = """
     {"format":"galaxyssi.work-expansion.v1","work":[
       {"id":"review","member":"reviewer","assignment":"Review the saved result","depends_on":["verify"],"independent_review":true}
