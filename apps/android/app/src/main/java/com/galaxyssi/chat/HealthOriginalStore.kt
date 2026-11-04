@@ -71,6 +71,9 @@ internal class HealthOriginalStore(
         "SELECT o.id,o.payload FROM imports i JOIN originals o ON o.id=i.original_id WHERE i.job_id=?", arrayOf(job)
     ).use { if (it.moveToFirst()) decodeOriginal(it.getString(0), it.getBlob(1)) else null }
 
+    fun originalCount(): Long = helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM originals", null)
+        .use { it.moveToFirst(); it.getLong(0) }
+
     fun originals(before: Pair<Long, String>? = null): List<HealthOriginal> {
         val where = if (before == null) "" else " WHERE imported_at<? OR (imported_at=? AND id<?)"
         val args = before?.let { arrayOf(it.first.toString(), it.first.toString(), it.second) }

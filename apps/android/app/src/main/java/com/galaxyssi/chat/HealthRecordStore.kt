@@ -52,11 +52,17 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     fun count(): Long = helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM observations WHERE deleted=0", null)
         .use { it.moveToFirst(); it.getLong(0) }
-    fun overviewLatestSelf(metric: HealthMetric?, until: Long): HealthObservation? {
+    fun overviewLatestSelf(metric: HealthMetric?, until: Long): HealthObservation? = latestSelf(metric, until, manual = false)
+    fun latestManualMeasurement(until: Long): Long? = latestSelf(null, until, manual = true)?.draft?.measuredAt
+    fun confirmedImportCount(): Long = helper.readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM observations WHERE original_id IS NOT NULL AND deleted=0", null
+    ).use { it.moveToFirst(); it.getLong(0) }
+    private fun latestSelf(metric: HealthMetric?, until: Long, manual: Boolean): HealthObservation? {
         var after: HealthPageCursor? = null
         while (true) {
             val args = arrayListOf(until.toString())
             val conditions = arrayListOf("deleted=0", "measured_at<=?")
+            if (manual) conditions += "original_id IS NULL"
             metric?.let { conditions += "metric=?"; args += it.name }
             after?.let { conditions += "(measured_at<? OR (measured_at=? AND id<?))"; args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id) }
             val result = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE " +
@@ -64,7 +70,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 var last: HealthPageCursor? = null
                 while (cursor.moveToNext()) {
                     val row = decode(cursor)
-                    if (row.profileId == "self") return row
+                    if (row.profileId == "self" && (!manual || row.source == "manual")) return row
                     last = HealthPageCursor(row.draft.measuredAt, row.id)
                 }
                 last

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_sources_title">设备与数据来源</string>
+    <string name="health_sources_quick">连接设备</string>
+    <string name="health_sources_checking">正在检查数据来源…</string>
+    <string name="health_sources_summary">来源概况</string>
+    <string name="health_sources_summary_detail">尚未连接外部来源</string>
+    <string name="health_sources_platforms">健康平台</string>
+    <string name="health_sources_platform_name">Health Connect</string>
+    <string name="health_sources_platform_available">此设备可使用 Health Connect</string>
+    <string name="health_sources_platform_install">需安装或更新 Health Connect</string>
+    <string name="health_sources_platform_unsupported">此设备或个人资料不支持</string>
+    <string name="health_sources_platform_error">无法检查平台是否可用</string>
+    <string name="health_sources_no_sync">GalaxySSI 尚未连接或同步此来源。</string>
+    <string name="health_sources_system_settings">打开系统设置</string>
+    <string name="health_sources_open_store">在 Google Play 中查看</string>
+    <string name="health_sources_devices">我的设备</string>
+    <string name="health_sources_bluetooth">蓝牙设备</string>
+    <string name="health_sources_ble_supported">本机支持低功耗蓝牙，暂未开放健康外设直连采集。</string>
+    <string name="health_sources_ble_unavailable">本机不支持低功耗蓝牙。</string>
+    <string name="health_sources_local">其他记录来源</string>
+    <string name="health_sources_files">报告与表格</string>
+    <string name="health_sources_file_counts">%1$d 份原件 · %2$d 项已确认测量</string>
+    <string name="health_sources_manual_empty">还没有手动测量记录</string>
+    <string name="health_sources_manual_latest">最近一次手动测量：%1$s</string>
+    <string name="health_sources_local_error">无法读取来源详情</string>
+    <string name="health_sources_external_unavailable">没有可打开此页面的应用。</string>
+</resources>

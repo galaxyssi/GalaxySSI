@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_sources_title">Devices &amp; Data Sources</string>
+    <string name="health_sources_quick">Devices</string>
+    <string name="health_sources_checking">Checking data sources…</string>
+    <string name="health_sources_summary">Source Overview</string>
+    <string name="health_sources_summary_detail">No external sources connected</string>
+    <string name="health_sources_platforms">Health Platforms</string>
+    <string name="health_sources_platform_name">Health Connect</string>
+    <string name="health_sources_platform_available">Available on this device</string>
+    <string name="health_sources_platform_install">Install or update Health Connect</string>
+    <string name="health_sources_platform_unsupported">Unavailable on this device or profile</string>
+    <string name="health_sources_platform_error">Could not check availability</string>
+    <string name="health_sources_no_sync">GalaxySSI has not connected to or synced this source.</string>
+    <string name="health_sources_system_settings">Open System Settings</string>
+    <string name="health_sources_open_store">View on Google Play</string>
+    <string name="health_sources_devices">My Devices</string>
+    <string name="health_sources_bluetooth">Bluetooth Devices</string>
+    <string name="health_sources_ble_supported">This device supports Bluetooth LE. Direct health-device collection is not yet available.</string>
+    <string name="health_sources_ble_unavailable">This device does not support Bluetooth LE.</string>
+    <string name="health_sources_local">Other Record Sources</string>
+    <string name="health_sources_files">Reports and Tables</string>
+    <string name="health_sources_file_counts">%1$d originals · %2$d confirmed measurements</string>
+    <string name="health_sources_manual_empty">No manual measurements yet</string>
+    <string name="health_sources_manual_latest">Latest manual measurement: %1$s</string>
+    <string name="health_sources_local_error">Could not load source details</string>
+    <string name="health_sources_external_unavailable">No app can open this destination.</string>
+</resources>

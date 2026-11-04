@@ -45,6 +45,7 @@
         android:maxSdkVersion="28" />
 
     <queries>
+        <package android:name="com.google.android.apps.healthdata" />
         <package android:name="com.tencent.mm" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -234,6 +235,9 @@
         <activity android:name=".HealthDataFilesActivity" android:exported="false" />
         <activity android:name=".HealthProfileActivity" android:exported="false" />
         <activity android:name=".HealthPrivacyActivity" android:exported="false" />
+        <activity android:name=".HealthSourcesActivity" android:exported="false" />
+        <!-- Availability checks do not require the legacy Health Connect SDK callback service. -->
+        <service android:name="androidx.health.platform.client.impl.sdkservice.HealthDataSdkService" tools:node="remove" />
         <activity android:name=".HealthReminderActivity" android:exported="false" />
         <activity android:name=".HealthWeeklyActivity" android:exported="false" />
         <activity android:name=".HealthBackgroundActivity" android:exported="false" />
