@@ -9708,7 +9708,6 @@ final class MessageCoordinator: ObservableObject {
       }
       volatileTeamReplyOwners[sourceMessageId] = owner
     }
-    let wire = try linkWirePayload(payload, link: link)
     if !peerChat {
       guard taskIdentityStore.register(
         contactId: contact.id,
@@ -9742,25 +9741,29 @@ final class MessageCoordinator: ObservableObject {
     )
     if !outboundAttachments.isEmpty {
       do {
+        guard !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload) else {
+          throw GalaxySSIError.invalidPayload("Local-only Agent state cannot be sent over GalaxySSI Link.")
+        }
+        let messageId = GalaxySSILinkProtocol.normalizedMessageId(payload.string("message_id"))
+        payload["message_id"] = messageId
+        let taskPayload = String(decoding: try GalaxySSILinkProtocol.jsonData(payload), as: UTF8.self)
         let attachmentRequests = try makeOutboundAttachmentDeliveryRequests(
           outboundAttachments,
           link: link,
           sourceMessageId: sourceMessageId,
           contactId: contact.id
         )
-        deliveryStore.enqueueBatch(
-          attachmentRequests + [
+        guard deliveryStore.enqueueDeferredAttachmentTask(
             LinkDeliveryEnqueueRequest(
-              messageId: wire.messageId,
+              messageId: messageId,
               topic: link.routes.upTopic,
-              wirePayload: wire.wireText,
+              wirePayload: "",
               requiresValidatedNetwork: requiresValidatedNetwork,
               blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId),
               clientSourceMessageId: sourceMessageId,
               contactId: contact.id
-            )
-          ]
-        )
+            ), payload: taskPayload, attachments: attachmentRequests
+        ) else { throw GalaxySSIError.transportUnavailable }
       } catch {
         attachmentTransferStore.discard(
           outboundAttachments.map(\.transferId),
@@ -9779,6 +9782,7 @@ final class MessageCoordinator: ObservableObject {
       scheduleOutboxFlush(after: 0)
       return .queued
     }
+    let wire = try linkWirePayload(payload, link: link)
     deliveryStore.enqueue(
       messageId: wire.messageId,
       topic: link.routes.upTopic,

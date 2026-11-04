@@ -39,11 +39,24 @@ extension MessageCoordinator {
     )
     guard !pending.isEmpty else { return }
     var rejectedSourceIds = Set<String>()
-    for item in pending {
+    for var item in pending {
       guard !Task.isCancelled else { return }
       if activeMessageIds.contains(item.messageId) { continue }
       let sourceId = item.clientSourceMessageId.ifBlank(item.messageId)
       if rejectedSourceIds.contains(sourceId) { continue }
+      if let deferred = item.deferredTaskPayload {
+        guard deliveryStore.canPrepareDeferredTask(item),
+              let link = store.serverLinks.first(where: { $0.paired && $0.routes.upTopic == item.topic }),
+              let payload = (try? JSONSerialization.jsonObject(with: Data(deferred.utf8))) as? [String: Any],
+              payload.string("message_id") == item.messageId,
+              let wire = try? linkWirePayload(payload, link: link), wire.messageId == item.messageId,
+              deliveryStore.commitDeferredTaskCiphertext(item, wirePayload: wire.wireText) else {
+          deliveryStore.postponeDeferredTask(item)
+          continue
+        }
+        item.wirePayload = wire.wireText
+        item.deferredTaskPayload = nil
+      }
       if let reason = GalaxySSIMqttWireChunking.permanentRejectionReason(
         wirePayload: item.wirePayload
       ) {

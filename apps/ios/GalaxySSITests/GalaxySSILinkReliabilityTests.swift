@@ -3,6 +3,39 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testDeferredAttachmentTaskRequiresEveryReceiptAndPersistsCiphertext() throws {
+    let fixture = try ChunkFixture()
+    let suite = "deferred-task-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let ids = ["a", "b"].map { String(repeating: $0, count: 64) }
+    let task = LinkDeliveryEnqueueRequest(messageId: "task", topic: "topic/up", wirePayload: "",
+      requiresValidatedNetwork: false, blockedByAttachmentTransferIds: ids,
+      clientSourceMessageId: "source", contactId: "contact")
+    let manifests = ids.map {
+      LinkDeliveryEnqueueRequest(messageId: $0, topic: "topic/up", wirePayload: "encrypted-manifest",
+        requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [],
+        clientSourceMessageId: "source", contactId: "contact", attachmentTransferId: $0)
+    }
+    let now = Date()
+    XCTAssertTrue(store.enqueueDeferredAttachmentTask(task, payload: "private-task", attachments: manifests, now: now))
+    XCTAssertFalse(store.pending(now: now).contains { $0.messageId == "task" })
+    XCTAssertEqual(store.releaseAttachmentDependency(ids[0], now: now), 0)
+    XCTAssertFalse(store.pending(now: now).contains { $0.messageId == "task" })
+    XCTAssertEqual(store.releaseAttachmentDependency(ids[1], now: now), 1)
+    let ready = try XCTUnwrap(store.pending(now: now).first { $0.messageId == "task" })
+    XCTAssertEqual(ready.deferredTaskPayload, "private-task")
+    XCTAssertTrue(ready.wirePayload.isEmpty)
+    XCTAssertTrue(store.commitDeferredTaskCiphertext(ready, wirePayload: "encrypted-task"))
+    XCTAssertFalse(store.commitDeferredTaskCiphertext(ready, wirePayload: "replacement"))
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let saved = try XCTUnwrap(reopened.pending(now: now.addingTimeInterval(1)).first { $0.messageId == "task" })
+    XCTAssertNil(saved.deferredTaskPayload)
+    XCTAssertEqual(saved.wirePayload, "encrypted-task")
+  }
+
   func testAttachmentControlQueueFailureRetainsControlAcrossReopen() throws {
     let fixture = try ChunkFixture()
     let suite = "attachment-control-\(UUID().uuidString)"
