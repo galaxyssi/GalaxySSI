@@ -13,7 +13,7 @@ enum AgentOfficeDocumentExtractionError: LocalizedError, Equatable {
 
 enum AgentOfficeDocumentExtractor {
   static func readXlsxParts(_ bytes: Data) throws -> [String: Data] {
-    try readEntries(bytes) { name in
+    try readEntries(bytes, verifyChecksum: true) { name in
       name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" || name == "xl/sharedStrings.xml" ||
         (name.hasPrefix("xl/worksheets/") && name.hasSuffix(".xml") && !name.dropFirst("xl/worksheets/".count).contains("/"))
     }
@@ -121,9 +121,11 @@ enum AgentOfficeDocumentExtractor {
     var uncompressedBytes: Int64
     var dataOffset: Int
     var dataLength: Int
+    var checksum: UInt32
   }
 
-  private static func readEntries(_ data: Data, include: (String) -> Bool) throws -> [String: Data] {
+  private static func readEntries(_ data: Data, verifyChecksum: Bool = false,
+                                  include: (String) -> Bool) throws -> [String: Data] {
     let entries = try inspectZipData(data)
     var selected: [String: Data] = [:]
     var selectedBytes: Int64 = 0
@@ -151,7 +153,11 @@ enum AgentOfficeDocumentExtractor {
       guard selected[entry.path] == nil else {
         throw AgentOfficeDocumentExtractionError.invalid("Office archive contains a duplicate entry")
       }
-      selected[entry.path] = try entryData(entry, from: data)
+      let content = try entryData(entry, from: data)
+      guard !verifyChecksum || AgentRuntimeProjectArchiveBuilder.crc32(content) == entry.checksum else {
+        throw AgentOfficeDocumentExtractionError.invalid("Office archive entry checksum does not match")
+      }
+      selected[entry.path] = content
     }
     return selected
   }
@@ -183,6 +189,7 @@ enum AgentOfficeDocumentExtractor {
       }
       let flags = try data.officeUInt16LE(at: offset + 8)
       let method = try data.officeUInt16LE(at: offset + 10)
+      let checksum = try data.officeUInt32LE(at: offset + 16)
       let compressedBytes = Int64(try data.officeUInt32LE(at: offset + 20))
       let uncompressedBytes = Int64(try data.officeUInt32LE(at: offset + 24))
       let nameLength = Int(try data.officeUInt16LE(at: offset + 28))
@@ -213,7 +220,8 @@ enum AgentOfficeDocumentExtractor {
         compressedBytes: compressedBytes,
         uncompressedBytes: uncompressedBytes,
         dataOffset: local.offset,
-        dataLength: local.length
+        dataLength: local.length,
+        checksum: checksum
       ))
       offset = nextOffset
     }

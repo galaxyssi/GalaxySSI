@@ -37,7 +37,7 @@ struct GalaxySSIHealthImportView: View {
         NavigationLink {
           GalaxySSIHealthTableImportView(records: records)
         } label: {
-          Label(t("choose_table", "Choose CSV or JSON"), systemImage: "tablecells")
+          Label(t("choose_table", "Choose CSV, JSON or XLSX"), systemImage: "tablecells")
         }
       }
       Section {

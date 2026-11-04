@@ -359,6 +359,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(row.reading?.value, 61)
     XCTAssertEqual(row.reading?.measuredAt, ISO8601DateFormatter().date(from: "1904-01-02T12:00:00Z"))
     XCTAssertNil(GalaxySSIHealthXLSX.date(serial: 60, date1904: false, zone: utc))
+    var damaged = data
+    let cached = try XCTUnwrap(damaged.range(of: Data("<v>61</v>".utf8)))
+    damaged[cached.lowerBound + 3] = 55
+    XCTAssertThrowsError(try GalaxySSIHealthXLSX(damaged))
   }
 
   func testPaperEdgeSuggestionConvertsOriginAndRejectsClippedOrSmallRectangles() throws {
