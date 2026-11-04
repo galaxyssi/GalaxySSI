@@ -1,5 +1,16 @@
 import Foundation
 
+struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
+  enum Phase: String, Codable { case planning, working, waiting }
+  var runId: String
+  var conversationId: String
+  var turnId: String
+  var revision: Int64
+  var phase: Phase
+  var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
+  var completedWorkIds: Set<String>
+}
+
 enum AgentCollaborationGoalAssessmentPolicy {
   enum Verification: String, Codable { case documentary, computational, physical }
   enum Decision: String, Codable { case `continue`, achieved, blocked }
