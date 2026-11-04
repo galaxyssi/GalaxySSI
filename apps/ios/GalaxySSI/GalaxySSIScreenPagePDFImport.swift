@@ -21,6 +21,7 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
   var t: (String, String) -> String
   var weChatOnly: Bool
   var onAdd: (String) -> Void
+  @State private var weChatBrowserPresented = false
 
   private var link: String? {
     Self.validatedLink(value, weChatOnly: weChatOnly)
@@ -49,6 +50,13 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
           .accessibilityIdentifier("ios.screen-assistant.link-input")
+        if GalaxySSIWeChatBrowserSession.articleURL(value) != nil {
+          Button {
+            weChatBrowserPresented = true
+          } label: {
+            Label(t("galaxyssi.screen_page.wechat_browser", "WeChat Article Browser"), systemImage: "safari")
+          }
+        }
         if let article = AgentIOSWeChatArticlePDF.articleURL(value) {
           Button {
             saveArticle(article)
@@ -87,6 +95,11 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
       }
     }
     .navigationViewStyle(.stack)
+    .sheet(isPresented: $weChatBrowserPresented) {
+      if let article = GalaxySSIWeChatBrowserSession.articleURL(value) {
+        GalaxySSIWeChatArticleBrowser(url: article, t: t)
+      }
+    }
     .onDisappear { pdfTask?.cancel() }
   }
 
