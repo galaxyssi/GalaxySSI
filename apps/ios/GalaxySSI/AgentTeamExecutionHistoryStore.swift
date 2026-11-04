@@ -118,9 +118,11 @@ final class AgentTeamExecutionHistoryStore {
         if let current = try database.snapshots(runId: incoming.supervisorRunId).first {
           guard current.teamId == incoming.teamId, current.conversationId == incoming.conversationId,
                 current.taskId == incoming.taskId else { throw AgentTeamHistoryDatabase.Failure.stale }
-          if current.goal != incoming.goal,
-             !(try database.goalCheckpoints(runId: incoming.supervisorRunId, newestOnly: true)).isEmpty {
-            throw AgentTeamHistoryDatabase.Failure.stale
+          if current.goal != incoming.goal {
+            let pinned = try database.goalCheckpoints(runId: incoming.supervisorRunId, newestOnly: true)
+            if !pinned.isEmpty || current.members.contains(where: { $0.dispatchCheckpoint != nil }) {
+              throw AgentTeamHistoryDatabase.Failure.stale
+            }
           }
           if current.state.deliverable || current.updatedAtMillis > incoming.updatedAtMillis { return false }
           for member in current.members where member.dispatchCheckpoint != nil {
@@ -311,6 +313,15 @@ final class AgentTeamExecutionHistoryStore {
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
+    if mode == "goal" {
+      guard Set(input.keys).isSubset(of: ["mode", "section", "offset", "sha256"]),
+            case .int(let offset) = input["offset"] ?? .int(0), let start = Int(exactly: offset),
+            input["sha256"] == nil || input["sha256"]?.stringValue != nil else {
+        throw AgentTeamHistoryDatabase.Failure.corrupt
+      }
+      return try readPinnedCollaborationGoal(scope: scope, section: input.string("section"), offset: start,
+        expectedHash: input["sha256"]?.stringValue)
+    }
     if mode == "problems" { return try recallCloudProblems(input, scope: scope) }
     let hash = input.string("sha256")
     let idKey = mode == "workspace" ? "object_id" : "evidence_id"
@@ -507,6 +518,7 @@ final class AgentTeamExecutionHistoryStore {
       }
       var revisions: [AgentCollaborationResearchRevision] = []
       var objectIds = Set<String>()
+      let transferBatchUpdates = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
       let revisedInBatch = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
       for draft in drafts {
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
@@ -555,6 +567,18 @@ final class AgentTeamExecutionHistoryStore {
             existing.turnId != turnId || existing.authorId == memberId else {
             throw AgentTeamHistoryDatabase.Failure.stale
           }
+        }
+        if draft.kind == .transferStudy {
+          let valid = try AgentCollaborationTransferIntake.validates(draft) { reference in
+            guard !transferBatchUpdates.contains(reference.objectId),
+                  let record = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + reference.objectId),
+                  record.reference == reference else { return nil }
+            if record.draft.kind.rawValue == "failure_experience",
+               record.frozenCloudReads?.isEmpty != false { return nil }
+            return record.draft.kind.rawValue
+          }
+          guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
         }
         if draft.kind == .learningAgenda {
           let members = Set(snapshot.members.filter { $0.deliveryMode != .ignore }.map(\.memberId))
@@ -847,9 +871,11 @@ final class AgentTeamExecutionHistoryStore {
     let bytes = try access { database -> Data in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
-            team.members.contains(where: { $0.memberId == scope.memberId &&
+            let member = team.members.first(where: { $0.memberId == scope.memberId &&
               $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
-            let pinned = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first,
+            !team.goal.isBlank else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if section == "goal", member.dispatchCheckpoint != nil { return Data(team.goal.utf8) }
+      guard let pinned = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first,
             pinned.conversationId == scope.conversationId, pinned.turnId == scope.turnId,
             !pinned.contract.isEmpty else { throw AgentTeamHistoryDatabase.Failure.stale }
       if section == "goal" { return Data(team.goal.utf8) }

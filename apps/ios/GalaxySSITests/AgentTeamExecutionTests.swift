@@ -328,6 +328,31 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testTransferStudyRequiresCurrentFailureAndDistinctTargetDomain() throws {
+    let raw = """
+    {"format":"galaxyssi.research-artifact.v1","workspace":[
+      {"id":"study","kind":"transfer_study","title":"Study","base_revision":0,
+       "parents":[{"object_id":"failure","revision":1,"sha256":"exact"}],
+       "body":{"transfer_study":{
+         "source":{"object_id":"failure","revision":1,"sha256":"exact"},
+         "source_domain":"Parsing","target_domain":"Extraction","mode":"cross_domain","target_task":"Extract fields",
+         "abstract_strategy":"Validate input","proposed_method":"Check schema","rationale":"Avoid ambiguity",
+         "risks":"Reject valid input","falsifier":"No gain","limitations":"Structured only",
+         "alternatives":["Manual review"],"calibration_data":[],
+         "mappings":[{"source_element":"Parser","target_element":"Extractor","invariant":"Structure",
+           "adaptation":"New schema","breaks_when":"Free text"}]
+       }}}
+    ]}
+    """
+    let draft = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: raw)?.first)
+    XCTAssertTrue(AgentCollaborationTransferIntake.validates(draft) { _ in "failure_experience" })
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(draft) { _ in nil })
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(draft) { _ in "proposal" })
+    let sameDomain = raw.replacingOccurrences(of: "\"Extraction\"", with: "\"Parsing\"")
+    let invalid = try XCTUnwrap(AgentCollaborationResearchEnvelope.publication(in: sameDomain)?.first)
+    XCTAssertFalse(AgentCollaborationTransferIntake.validates(invalid) { _ in "failure_experience" })
+  }
+
   func testLearningAgendaRetainsDeferredOptionAndRejectsInventedCost() throws {
     let raw = """
     {"format":"galaxyssi.research-artifact.v1","workspace":[
@@ -519,9 +544,20 @@ extension GalaxySSIStoreTests {
     var snapshot = durableTeamSnapshot("run")
     let index = try XCTUnwrap(snapshot.members.firstIndex { $0.deliveryMode == .observe })
     snapshot.members[index].dispatchCheckpoint = .notStarted
+    snapshot.goal = "Preserve the original task"
     snapshot.members[index].researchStage = "EXPLORE"
     let member = snapshot.members[index]
     XCTAssertTrue(history.upsert(snapshot))
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId, memberId: member.memberId, sourceId: member.sourceMessageId)
+    let goal = try history.recallCollaborationOriginal(["mode": .string("goal"), "section": .string("goal")], scope: scope)
+    XCTAssertEqual(Data(base64Encoded: goal.string("data_b64")), Data(snapshot.goal.utf8))
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(
+      ["mode": .string("goal"), "section": .string("criteria")], scope: scope))
+    var changedGoal = snapshot
+    changedGoal.goal = "Do something else"
+    changedGoal.updatedAtMillis += 1
+    XCTAssertFalse(history.upsert(changedGoal))
     XCTAssertFalse(history.advanceDispatchCheckpoint(runId: "run", conversationId: "foreign",
       turnId: snapshot.taskId, memberId: member.memberId, sourceMessageId: member.sourceMessageId,
       to: .dispatching, now: 20))

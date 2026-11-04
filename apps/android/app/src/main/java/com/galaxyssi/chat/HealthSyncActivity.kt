@@ -50,6 +50,7 @@ class HealthSyncActivity : Activity() {
     private val ui by lazy { HealthCenterViews(this) }
     private val tasks = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var body: LinearLayout
+    private lateinit var scroll: ScrollView
     private lateinit var names: HealthOverviewDatabases
     private var screen: Screen? = null
     private var job: Job? = null
@@ -59,12 +60,15 @@ class HealthSyncActivity : Activity() {
     private var generation = 0
     private var dialog: AlertDialog? = null
     private var notice: Int? = null
+    private var focusScope: HealthConnectScope? = null
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         val fixture = if (BuildConfig.DEBUG) intent.getStringExtra("health_sync_test_id")
             ?.takeIf { runCatching { UUID.fromString(it).toString() == it }.getOrDefault(false) } else null
         names = HealthOverviewDatabases(fixture)
+        focusScope = (state?.getString("sync_scope") ?: if (state == null) intent.getStringExtra("health_sync_scope") else null)
+            ?.let { id -> HealthConnectScope.entries.firstOrNull { it.name == id } }
         window.statusBarColor = getColor(R.color.page_bg)
         window.navigationBarColor = getColor(R.color.page_bg)
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
@@ -77,7 +81,8 @@ class HealthSyncActivity : Activity() {
                     LinearLayout.LayoutParams(0, -2, 1f))
                 addView(View(this@HealthSyncActivity), LinearLayout.LayoutParams(ui.dp(48), 1))
             }, LinearLayout.LayoutParams(-1, ui.dp(56)))
-            addView(ScrollView(this@HealthSyncActivity).apply { addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
+            scroll = ScrollView(this@HealthSyncActivity).apply { addView(body) }
+            addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         })
     }
 
@@ -91,6 +96,10 @@ class HealthSyncActivity : Activity() {
         super.onPause()
     }
     override fun onDestroy() { tasks.cancel(); super.onDestroy() }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("sync_scope", focusScope?.name)
+        super.onSaveInstanceState(outState)
+    }
 
     private fun refresh() {
         if (!active || running || loading) return
@@ -213,7 +222,7 @@ class HealthSyncActivity : Activity() {
                 val outcome = if (scope in current.selected && current.granted != null && scope.permission !in current.granted)
                     HealthSyncOutcome.PERMISSION else mark.outcome
                 val result = if (outcome == HealthSyncOutcome.UPDATED) getString(R.string.health_sync_updated, mark.lastInserts)
-                    else getString(outcome.resource())
+                    else getString(outcome.statusResource(running))
                 ui.add(this, ui.text(result, 14f), 4)
                 if (mark.latestMeasurement > 0) ui.add(this, ui.text(getString(R.string.health_sync_latest, date(mark.latestMeasurement)), 13f, muted = true), 4)
                 if (mark.lastAttempt > 0) ui.add(this, ui.text(getString(R.string.health_sync_attempt, date(mark.lastAttempt)), 13f, muted = true), 4)
@@ -221,6 +230,13 @@ class HealthSyncActivity : Activity() {
                 if (mark.retainedSourceDeletion) ui.add(this, ui.text(getString(R.string.health_sync_source_deleted), 13f), 4)
                 if (mark.historyGap) ui.add(this, ui.text(getString(R.string.health_sync_gap), 13f), 4)
             }, 8)
+        }
+        focusScope?.let { scope ->
+            val card = body.findViewWithTag<View>("health-sync-scope-${scope.name}")
+            if (card != null) {
+                focusScope = null
+                scroll.post { if (active && card.isAttachedToWindow) scroll.scrollTo(0, body.top + card.top) }
+            }
         }
         ui.add(body, ui.text(getString(R.string.health_sources_bluetooth), 18f, bold = true), 18)
         ui.add(body, ui.card().apply {
@@ -243,18 +259,18 @@ class HealthSyncActivity : Activity() {
     private fun open(type: Class<*>) { if (names.fixture == null) startActivity(Intent(this, type)) }
     private fun recheck() { notice = null; refresh() }
     private fun date(value: Long) = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(value))
+}
 
-    private fun HealthSyncOutcome.resource() = when (this) {
-        HealthSyncOutcome.NOT_STARTED -> R.string.health_sync_not_started
-        HealthSyncOutcome.RUNNING -> if (running) R.string.health_sync_running else R.string.health_sync_interrupted
-        HealthSyncOutcome.UPDATED -> R.string.health_sync_updated
-        HealthSyncOutcome.NO_NEW -> R.string.health_sync_no_new
-        HealthSyncOutcome.PERMISSION -> R.string.health_sync_permission
-        HealthSyncOutcome.UNAVAILABLE -> R.string.health_sync_unavailable
-        HealthSyncOutcome.NETWORK -> R.string.health_sync_network
-        HealthSyncOutcome.TRANSPORT -> R.string.health_sync_transport
-        HealthSyncOutcome.TIMEOUT -> R.string.health_sync_timeout
-        HealthSyncOutcome.STORAGE -> R.string.health_sync_storage
-        HealthSyncOutcome.FAILED -> R.string.health_sync_failed
-    }
+internal fun HealthSyncOutcome.statusResource(running: Boolean = false) = when (this) {
+    HealthSyncOutcome.NOT_STARTED -> R.string.health_sync_not_started
+    HealthSyncOutcome.RUNNING -> if (running) R.string.health_sync_running else R.string.health_sync_interrupted
+    HealthSyncOutcome.UPDATED -> R.string.health_sync_updated
+    HealthSyncOutcome.NO_NEW -> R.string.health_sync_no_new
+    HealthSyncOutcome.PERMISSION -> R.string.health_sync_permission
+    HealthSyncOutcome.UNAVAILABLE -> R.string.health_sync_unavailable
+    HealthSyncOutcome.NETWORK -> R.string.health_sync_network
+    HealthSyncOutcome.TRANSPORT -> R.string.health_sync_transport
+    HealthSyncOutcome.TIMEOUT -> R.string.health_sync_timeout
+    HealthSyncOutcome.STORAGE -> R.string.health_sync_storage
+    HealthSyncOutcome.FAILED -> R.string.health_sync_failed
 }

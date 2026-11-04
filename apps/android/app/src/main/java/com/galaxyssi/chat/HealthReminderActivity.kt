@@ -40,10 +40,10 @@ class HealthReminderActivity : Activity() {
             HealthProfilePolicy.uuid(name.removePrefix("health-weekly-test-").removeSuffix(".db"))) name else null
     }
     private val store by lazy { HealthReminderStore(applicationContext, database) }
-    private val reportNames by lazy {
+    private val healthNames by lazy {
         if (live) HealthOverviewDatabases() else HealthOverviewDatabases(database.removePrefix("health-reminder-test-").removeSuffix(".db"))
     }
-    private val reports by lazy { HealthReportReviewRepository(applicationContext, reportNames) }
+    private val reports by lazy { HealthReportReviewRepository(applicationContext, healthNames) }
     private lateinit var body: LinearLayout
     private lateinit var title: TextView
     private var active = false
@@ -116,6 +116,7 @@ class HealthReminderActivity : Activity() {
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, privacy), false, changes)
         recordsName?.let { contentResolver.registerContentObserver(HealthRecordStore.changes(this, it), false, changes) }
         contentResolver.registerContentObserver(HealthOriginalStore.reportChanges(this), false, reportChanges)
+        contentResolver.registerContentObserver(HealthRecordStore.syncIncidentChanges(this, healthNames.records), false, reportChanges)
         load(refresh = true)
     }
     override fun onStop() {
@@ -162,7 +163,9 @@ class HealthReminderActivity : Activity() {
                 val reportPage = if (center && settings.reportReviews) runCatching {
                     reports.page(store, selected, reportCursor, System.currentTimeMillis())
                 } else null
-                Snapshot(settings, if (center) store.page(selected, cursor) else null, day?.let(store::occurrence), sleep, hasSleep, reportPage)
+                val incidents = if (center) runCatching { syncIncidents(selected) } else null
+                Snapshot(settings, if (center) store.page(selected, cursor) else null, day?.let(store::occurrence),
+                    sleep, hasSleep, reportPage, incidents)
             }
             main.post {
                 if (!active || token != generation) return@post
@@ -171,7 +174,8 @@ class HealthReminderActivity : Activity() {
                     if (preferences) { if (draft == null) draft = snapshot.settings; renderPreferences() }
                     else if (selectedSleep != null) renderSleepDetail(snapshot.sleep)
                     else if (day != null) renderDetail(snapshot.event)
-                    else renderCenter(snapshot.settings, requireNotNull(snapshot.page), snapshot.sleep, snapshot.hasSleep, snapshot.reports)
+                    else renderCenter(snapshot.settings, requireNotNull(snapshot.page), snapshot.sleep, snapshot.hasSleep, snapshot.reports,
+                        snapshot.syncIncidents)
                 }, { renderError() })
             }
         }
@@ -179,7 +183,8 @@ class HealthReminderActivity : Activity() {
     private data class SleepViews(val page: HealthSleepPage? = null, val alert: HealthSleepAlert? = null,
         val blocked: Boolean = false, val unavailable: Boolean = false)
     private data class Snapshot(val settings: HealthReminderSettings, val page: HealthReminderPage?, val event: HealthReminderOccurrence?,
-        val sleep: SleepViews, val hasSleep: Boolean, val reports: Result<HealthReportReviewPage>?)
+        val sleep: SleepViews, val hasSleep: Boolean, val reports: Result<HealthReportReviewPage>?,
+        val syncIncidents: Result<List<HealthSyncIncident>>?)
 
     private fun button(label: Int, tag: String, primary: Boolean = false, action: () -> Unit) = ui.command(label, action).apply {
         this.tag = tag
@@ -190,7 +195,7 @@ class HealthReminderActivity : Activity() {
         setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
     }
     private fun renderCenter(settings: HealthReminderSettings, page: HealthReminderPage, sleep: SleepViews, hasSleep: Boolean,
-        reportPage: Result<HealthReportReviewPage>?) {
+        reportPage: Result<HealthReportReviewPage>?, syncIncidents: Result<List<HealthSyncIncident>>?) {
         val content = healthProfileContent(body)
         content.addView(ui.line().apply {
             HealthReminderFilter.entries.forEach { item ->
@@ -240,10 +245,59 @@ class HealthReminderActivity : Activity() {
             after = previous.removeAt(previous.lastIndex); load()
         }, 8)
         page.next?.let { next -> ui.add(content, button(R.string.health_next_page, "health-reminder-next") { previous += after; after = next; load() }, 8) }
+        syncIncidents?.let { renderSyncIncidents(content, it) }
         val next = HealthReminderPolicy.nextDaily(settings, System.currentTimeMillis(), ZoneId.systemDefault())
         ui.add(content, ui.text(if (next == null) getString(R.string.health_reminder_plan_off)
             else getString(R.string.health_reminder_next_due, format(next, ZoneId.systemDefault().id)), 14f, muted = true), 20)
         ui.add(content, button(R.string.health_reminder_preferences, "health-reminder-settings") { settingsOpen = true; load() }, 12)
+    }
+    private fun syncIncidents(selected: HealthReminderFilter): List<HealthSyncIncident> {
+        val scopes = if (live) HealthConnectSettings.selection(applicationContext) else HealthConnectScope.entries.toSet()
+        if (scopes.isEmpty() || !getDatabasePath(healthNames.records).exists()) return emptyList()
+        return HealthRecordStore(applicationContext, healthNames.records).use { records ->
+            scopes.mapNotNull(records::healthSyncIncident).filter { it.matches(selected) }
+                .sortedWith(compareByDescending<HealthSyncIncident> { it.failedAt }.thenBy { it.scope.ordinal })
+        }
+    }
+
+    private fun renderSyncIncidents(content: LinearLayout, result: Result<List<HealthSyncIncident>>) {
+        val items = result.getOrNull()
+        if (items?.isEmpty() == true) return
+        ui.add(content, ui.text(getString(R.string.health_sync_reminder_group), 18f, bold = true), 20)
+        if (items == null) {
+            ui.add(content, ui.profileRow(getString(R.string.health_storage_error)) { load() }, 8)
+            return
+        }
+        val zone = ZoneId.systemDefault().id
+        items.forEach { incident ->
+            val status = when {
+                incident.resolvedAt > 0 -> getString(R.string.health_sync_reminder_resolved, format(incident.resolvedAt, zone))
+                else -> getString(incident.outcome.statusResource())
+            }
+            ui.add(content, ui.card().apply {
+                addView(ui.line().apply {
+                    addView(ui.profileRow(getString(incident.scope.metric.titleResource()), status) {
+                        startActivity(Intent(this@HealthReminderActivity, HealthSyncActivity::class.java)
+                            .putExtra("health_sync_scope", incident.scope.name).putExtra("health_sync_test_id", healthNames.fixture))
+                    }.apply { tag = "health-sync-reminder-${incident.scope.name}" }, LinearLayout.LayoutParams(0, -2, 1f))
+                    if (!incident.handled) addView(ui.icon(R.drawable.ic_more_horizontal, R.string.health_report_review_actions) {
+                        show(AlertDialog.Builder(this@HealthReminderActivity).setTitle(R.string.health_report_review_actions)
+                            .setItems(arrayOf(getString(R.string.health_report_review_handle))) { _, _ ->
+                                mutate {
+                                    HealthRecordStore(applicationContext, healthNames.records).use {
+                                        it.acknowledgeHealthSyncIncident(incident, System.currentTimeMillis())
+                                    }
+                                }
+                            }.setNegativeButton(android.R.string.cancel, null).create())
+                    }.apply { tag = "health-sync-reminder-actions-${incident.scope.name}" }, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)))
+                })
+                ui.add(this, ui.text(getString(R.string.health_sync_reminder_failed_at, format(incident.failedAt, zone)), 13f, muted = true), 4)
+                if (incident.resolvedAt == 0L) ui.add(this, ui.text(
+                    if (incident.lastSuccess == 0L) getString(R.string.health_sync_no_success)
+                    else getString(R.string.health_sync_success_time, format(incident.lastSuccess, zone)), 13f, muted = true), 4)
+            }, 8)
+        }
+        ui.add(content, ui.text(getString(R.string.health_sync_reminder_retention), 13f, muted = true), 6)
     }
     private fun renderReports(content: LinearLayout, result: Result<HealthReportReviewPage>) {
         val page = result.getOrNull()
@@ -287,7 +341,7 @@ class HealthReminderActivity : Activity() {
     private fun openReport(report: HealthReportReview) {
         val intent = when (report.kind) {
             HealthOverviewReviewKind.OCR -> Intent(this, HealthCaptureActivity::class.java).putExtra("health_job", report.id)
-                .putExtra("health_review_test_id", reportNames.fixture)
+                .putExtra("health_review_test_id", healthNames.fixture)
             HealthOverviewReviewKind.TABLE -> Intent(this, HealthTableActivity::class.java).putExtra("health_table", report.id)
         }
         startActivity(intent)
