@@ -56,7 +56,7 @@ class HealthCaptureActivity : Activity() {
     private val observer = object : ContentObserver(main) {
         override fun onChange(selfChange: Boolean) { refresh() }
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            if (uri?.pathSegments?.getOrNull(1) in listOf("record-exports", "exports")) return
+            if (uri?.pathSegments?.getOrNull(1)?.let { it !in listOf("jobs", "originals", "capture", "observations") } == true) return
             if (uri?.lastPathSegment != "jobs" || route in listOf("capture", "review")) refresh()
         }
     }

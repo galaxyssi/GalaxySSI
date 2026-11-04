@@ -332,6 +332,31 @@ skips. Native data/file-hub and export-configuration screenshots were inspected.
 Populated confirmation, SAF/provider and foreground/process-death export acceptance,
 complete backups and restore remain separate work.
 
+## Increment 10: Self-Reported Personal Profile
+
+The native function page now reaches optional personal basics and independent
+history, medication/supplement and allergy lists. The profile is explicitly
+self-reported and single-owner, with no inferred clinical facts. Basic edits use
+an explicit save action; background entries have individual save/delete actions
+and bounded 30-row keyset pages. Incomplete drafts remain encrypted and separate
+from confirmed context. Field-specific draft merging and cancellation preserve
+unrelated work, and optimistic versions reject conflicting confirmed changes.
+
+An independently encrypted profile database provides scoped deletion previews
+and generation-safe clearing without deleting observations, originals or exports.
+Explicitly selected context has field/entry/category dependency stamps, ready for
+later analysis/report consumers. No model receives a profile automatically, and
+there is not yet a consumer showing stale analyses; that remains part of h13-h16.
+See the [profile contract](android-health-profile.md). Version 0.1.7.25 / Android
+1438 is cover-installed on Tab Active3. The final offline build passes 255
+focused JVM tests, all 218 non-visual device tests and all 28 unlocked native
+UI/lifecycle tests with no skips. Actual profile and background sections were
+inspected; populated UI tests use an isolated encrypted database.
+
+This increment also addresses the actual parent CI CSV newline regression by
+preserving quoted-cell bytes across platforms, with explicit raw-byte JVM/Android
+cases rather than weakening the Linux assertion.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
@@ -347,8 +372,9 @@ version and focused validation before claiming completion:
 4. Complete populated original/measurement export and SAF acceptance, explicit
    sharing, password-protected portable backups and verified transactional restore
    with record/original link manifests and attachment integrity checks.
-5. Personal profile, scoped health permissions, explicit erase and reminder
-   preferences, deduplication/cooldown and notification delivery.
+5. Complete profile/analysis dependency integration, scoped health permissions,
+   explicit broad erasure and reminder preferences, deduplication/cooldown and
+   notification delivery.
 6. Health platform/BLE adapters with actual capability and synchronization
    status, not simulated connected devices.
 7. Consent-scoped AI interpretation and versioned reports citing actual records.
