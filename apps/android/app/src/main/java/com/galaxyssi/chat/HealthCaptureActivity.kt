@@ -44,6 +44,7 @@ class HealthCaptureActivity : Activity() {
     private var candidateOffset = 0
     private var mode = "report"
     private var originalOnly = false; private var pickOnStart = false
+    private val keepOriginal get() = intent.getBooleanExtra(HEALTH_KEEP_ORIGINAL, true)
     private var firstEntry: HealthCaptureEntry? = null
     private var active = false
     private var generation = 0
@@ -318,27 +319,30 @@ class HealthCaptureActivity : Activity() {
         if (recordPages.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { recordPages.removeAt(recordPages.lastIndex); generation++; refresh() }, 16)
         if (next != null) ui.add(content, ui.command(R.string.health_next_page) { recordPages += next; generation++; refresh() }, 16)
         if (!available) {
-            ui.add(content, ui.text(getString(R.string.health_original_missing), 14f), 16)
-            ui.add(content, ui.row(getString(R.string.health_choose_files)) { choose(false) }, 12)
+            ui.add(content, ui.text(getString(if (original.reviewOnly) R.string.health_retention_released else R.string.health_original_missing), 14f), 16)
+            if (!original.reviewOnly) ui.add(content, ui.row(getString(R.string.health_choose_files)) { choose(false) }, 12)
             return
         }
         ui.add(content, ui.row(getString(R.string.health_open_original)) {
             preview?.dismiss()
-            preview = HealthOriginalPreview(this, original) { export(original) }.also { it.show() }
+            preview = HealthOriginalPreview(this, original, if (original.reviewOnly) null else ({ export(original) })).also { it.show() }
         }, 14)
-        if (original.mime.startsWith("image/")) ui.add(content, ui.row(getString(R.string.composer_crop)) { crop(original) })
-        original.source.takeIf { it.startsWith("crop:") }?.substringAfter("crop:")?.let { parent ->
-            ui.add(content, ui.row(getString(R.string.health_view_uncropped)) { open("original", parent) })
+        if (!original.reviewOnly) {
+            if (original.mime.startsWith("image/")) ui.add(content, ui.row(getString(R.string.composer_crop)) { crop(original) })
+            original.source.takeIf { it.startsWith("crop:") }?.substringAfter("crop:")?.let { parent ->
+                ui.add(content, ui.row(getString(R.string.health_view_uncropped)) { open("original", parent) })
+            }
+            ui.add(content, ui.row(getString(R.string.health_save_original)) { export(original) })
+            ui.add(content, ui.row(getString(R.string.health_recognize_again)) {
+                importSource(HealthOriginalContentProvider.uri(this, original.id), originalOnly = false)
+            })
         }
-        ui.add(content, ui.row(getString(R.string.health_save_original)) { export(original) })
-        ui.add(content, ui.row(getString(R.string.health_recognize_again)) {
-            importSource(HealthOriginalContentProvider.uri(this, original.id), originalOnly = false)
-        })
         ui.add(content, ui.row(getString(R.string.health_remove_original)) {
             actionDialog = AlertDialog.Builder(this).setTitle(R.string.health_remove_original).setMessage(R.string.health_remove_original_explanation)
                 .setNegativeButton(R.string.common_cancel, null).setPositiveButton(R.string.common_delete) { _, _ ->
                     worker.execute {
-                        val removed = originals.removeOriginalBytes(original)
+                        val removed = if (original.reviewOnly) originals.releaseReviewOriginal(original.id)
+                            else originals.removeOriginalBytes(original)
                         main.post { if (active) { if (!removed) showFailure("storage") else Toast.makeText(this, R.string.health_original_removed, Toast.LENGTH_SHORT).show(); refresh() } }
                     }
                 }.show()
@@ -362,7 +366,8 @@ class HealthCaptureActivity : Activity() {
         }
         selectedCandidate = selected?.candidateId.orEmpty()
         val source = if (selected != null && data.available) reviewSource(content, original, selected, displayedPage) else null
-        if (!data.available) ui.add(content, ui.text(getString(R.string.health_original_preview_failed), 14f, muted = true), 8)
+        if (!data.available) ui.add(content, ui.text(getString(if (original.reviewOnly)
+            R.string.health_retention_released else R.string.health_original_preview_failed), 14f, muted = true), 8)
         ui.add(content, ui.row(getString(R.string.health_view_original), original.name) { open("original", original.id) }, 8)
         if (scanned.blurry) ui.add(content, ui.text(getString(R.string.health_ocr_quality_warning), 14f), 12)
         if (rows.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_matched_fields), 15f), 12)
@@ -473,6 +478,7 @@ class HealthCaptureActivity : Activity() {
         body.findViewWithTag<View>("health-review-batch-consent")?.isEnabled = false
         worker.execute {
             val result = runCatching { HealthRecordStore(applicationContext, names.records).use { it.saveOcrReviewBatch(job, original, selected) } }
+            if (result.getOrNull() is HealthOcrBatchResult.Saved) runCatching { originals.releaseReviewOriginal(job) }
             main.post {
                 savingReview = false
                 if (isDestroyed) return@post
@@ -582,7 +588,7 @@ class HealthCaptureActivity : Activity() {
     private fun choose(images: Boolean, types: Array<String>? = null) {
         if (images) {
             startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode)
-                .putExtra("capture_camera", false).putExtra("capture_pick_images", true), NATIVE_CAMERA)
+                .putExtra("capture_camera", false).putExtra("capture_pick_images", true).putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal), NATIVE_CAMERA)
             return
         }
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
@@ -591,7 +597,8 @@ class HealthCaptureActivity : Activity() {
             }, PICK)
     }
     private fun camera() {
-        startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode), NATIVE_CAMERA)
+        startActivityForResult(Intent(this, HealthCameraActivity::class.java).putExtra("capture_mode", mode)
+            .putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal), NATIVE_CAMERA)
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
@@ -641,7 +648,8 @@ class HealthCaptureActivity : Activity() {
             runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             val id = cameraToken.ifBlank { UUID.randomUUID().toString() }
             val result = runCatching {
-                if (originals.job(id) == null) originals.createJob(HealthImportJob(id, uri.toString(), System.currentTimeMillis(), selectedMode, cameraToken, originalOnly = originalOnly))
+                if (originals.job(id) == null) originals.createJob(HealthImportJob(id, uri.toString(), System.currentTimeMillis(), selectedMode, cameraToken,
+                    originalOnly = originalOnly, keepOriginal = keepOriginal || originalOnly))
                 HealthImportScheduler.enqueue(applicationContext, id)
                 if (cameraToken.isNotBlank()) getSharedPreferences("health_capture_pending", MODE_PRIVATE).edit().remove("token").apply()
             }
@@ -678,7 +686,11 @@ class HealthCaptureActivity : Activity() {
         HealthImportState.RECOGNIZING -> getString(R.string.health_import_recognizing, job.nextPage + 1, job.pageCount.coerceAtLeast(1))
         HealthImportState.REVIEW -> getString(R.string.health_import_review_ready, job.nextPage)
         HealthImportState.TABLE_REVIEW -> getString(R.string.health_table_queue_ready)
-        HealthImportState.ORIGINAL_ONLY -> getString(if (job.originalOnly) R.string.health_export_original_stored else R.string.health_import_original_only)
+        HealthImportState.ORIGINAL_ONLY -> getString(when {
+            job.originalOnly -> R.string.health_export_original_stored
+            !job.keepOriginal -> R.string.health_retention_not_imported
+            else -> R.string.health_import_original_only
+        })
         HealthImportState.CANCELLED -> getString(R.string.health_import_cancelled)
         HealthImportState.CAPTURE_READY -> getString(R.string.health_photo_arrange)
         HealthImportState.FAILED -> getString(failureText(job.error))

@@ -81,6 +81,11 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     fun overviewHasOriginalHistory(id: String): Boolean = helper.readableDatabase.rawQuery(
         "SELECT 1 FROM observations WHERE original_id=? LIMIT 1", arrayOf(id)).use { it.moveToFirst() }
+    fun hasSelfOriginalLink(id: String): Boolean = helper.readableDatabase.rawQuery(
+        "SELECT id,revision,payload FROM observations WHERE original_id=? AND deleted=0", arrayOf(id)).use { rows ->
+        while (rows.moveToNext()) if (decode(rows).profileId == "self") return@use true
+        false
+    }
     fun overviewHasOcrDraft(job: String): Boolean {
         val prefix = "ocr:$job:"
         return helper.readableDatabase.rawQuery("SELECT 1 FROM drafts WHERE draft_key>=? AND draft_key<? LIMIT 1",

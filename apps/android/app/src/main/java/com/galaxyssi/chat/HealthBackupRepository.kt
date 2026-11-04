@@ -24,17 +24,12 @@ internal class HealthBackupRepository(private val context: Context, private val 
 
     fun preview(owner: String, signal: CancellationSignal): HealthBackupPreview = records { records, originals ->
         val versions = records.metricVersions(metrics)
-        val digest = MessageDigest.getInstance("SHA-256")
-        val byId = HashMap<String, String>()
+        val sources = backupSources(records, originals, signal)
         val examples = ArrayList<HealthBackupOriginal>()
         var photos = 0
         var missing = 0
         var originalBytes = 0L
-        originals(originals, signal).forEach { value ->
-            if (byId.size == HealthBackupCodec.MAX_ORIGINALS) throw HealthBackupException(HealthBackupIssue.FORMAT)
-            val item = HealthBackupOriginal.from(value, originals.present(value))
-            stamp(digest, item)
-            byId[item.id] = item.sha256
+        sources.items.forEach { item ->
             if (examples.size < 30) examples += item
             if (item.source == "camera") photos++
             if (item.present) originalBytes = Math.addExact(originalBytes, item.bytes) else missing++
@@ -44,21 +39,18 @@ internal class HealthBackupRepository(private val context: Context, private val 
         var first = Long.MAX_VALUE
         var last = 0L
         var recordBytes = 0L
-        records(records, signal).forEach { record ->
-            record.draft.evidence?.let {
-                if (byId[it.originalId] != it.sha256) throw HealthBackupException(HealthBackupIssue.MISSING_MANIFEST)
-                linked++
-            }
+        records(records, signal).map(sources::project).forEach { record ->
+            if (record.draft.evidence != null) linked++
             val encoded = record.json().toString().toByteArray(Charsets.UTF_8)
             try { recordBytes = Math.addExact(recordBytes, encoded.size.toLong() + 4L) } finally { encoded.fill(0) }
             first = minOf(first, record.draft.measuredAt)
             last = maxOf(last, record.draft.measuredAt)
             count++
         }
-        val originalStamp = digest.digest().toHex()
+        val originalStamp = sources.stamp
         val manifest = HealthBackupManifest(UUID.randomUUID().toString(), System.currentTimeMillis(), owner,
-            count, byId.size, missing, linked, originalBytes, if (count == 0L) 0L else first, last)
-        val estimate = Math.addExact(originalBytes, recordBytes) + byId.size * 1200L + 4096L +
+            count, sources.items.size, missing, linked, originalBytes, if (count == 0L) 0L else first, last)
+        val estimate = Math.addExact(originalBytes, recordBytes) + sources.items.size * 1200L + 4096L +
             (originalBytes + recordBytes) / 2048L
         ensureCurrent(records, originals, versions, originalStamp, signal)
         HealthBackupPreview(manifest, photos, estimate, examples, originalStamp, versions)
@@ -70,18 +62,18 @@ internal class HealthBackupRepository(private val context: Context, private val 
         val destination = path(manifest.id)
         require(!destination.exists() && !partial.exists())
         check(directory.isDirectory || directory.mkdirs())
-        ensureCurrent(records, originals, preview.versions, preview.originalStamp, signal)
+        val sources = ensureCurrent(records, originals, preview.versions, preview.originalStamp, signal)
         val digest = MessageDigest.getInstance("SHA-256")
         try {
             FileOutputStream(partial).use { raw ->
                 DigestOutputStream(raw, digest).let { output ->
                     HealthBackupCodec.write(output, password, manifest,
-                        originals(originals, signal).map { HealthBackupOriginal.from(it, originals.present(it)) },
+                        sources.items.asSequence(),
                         { item, sink ->
                             val original = originals.original(item.id) ?: changed()
-                            if (HealthBackupOriginal.from(original, originals.present(original)) != item) changed()
+                            if (original.reviewOnly || manifestItem(original, originals) != item) changed()
                             originals.copyVerified(original, sink, signal::throwIfCanceled)
-                        }, records(records, signal), signal::throwIfCanceled)
+                        }, records(records, signal).map(sources::project), signal::throwIfCanceled)
                 }
                 raw.fd.sync()
             }
@@ -142,12 +134,48 @@ internal class HealthBackupRepository(private val context: Context, private val 
         }
     }
 
-    private fun ensureCurrent(records: HealthRecordStore, originals: HealthOriginalStore, expected: Map<HealthMetric, String>,
-        originalStamp: String, signal: CancellationSignal) {
+    private data class Sources(val items: List<HealthBackupOriginal>, val aliases: Map<String, HealthBackupOriginal>, val stamp: String) {
+        fun project(record: HealthObservation): HealthObservation {
+            val ref = record.draft.evidence ?: return record
+            val item = aliases[ref.originalId]?.takeIf { it.sha256 == ref.sha256 }
+                ?: throw HealthBackupException(HealthBackupIssue.MISSING_MANIFEST)
+            return if (item.id == ref.originalId) record else record.copy(draft = record.draft.copy(evidence = ref.copy(originalId = item.id)))
+        }
+    }
+
+    private fun manifestItem(original: HealthOriginal, store: HealthOriginalStore) =
+        HealthBackupOriginal.from(original, !original.reviewOnly && store.present(original))
+
+    private fun backupSources(records: HealthRecordStore, store: HealthOriginalStore, signal: CancellationSignal): Sources {
+        val hashes = linkedMapOf<String, String>()
+        val canonical = HashMap<String, Pair<HealthBackupOriginal, Boolean>>()
+        // Backups use one source per content digest. Prefer a retained source to review-only metadata.
+        originals(store, signal).forEach { original ->
+            if (original.reviewOnly && !records.hasSelfOriginalLink(original.id)) return@forEach
+            if (hashes.size == HealthBackupCodec.MAX_ORIGINALS) throw HealthBackupException(HealthBackupIssue.FORMAT)
+            hashes[original.id] = original.sha256
+            val previous = canonical[original.sha256]
+            if (previous == null || previous.second && !original.reviewOnly) {
+                canonical[original.sha256] = manifestItem(original, store) to original.reviewOnly
+            }
+        }
+        val items = canonical.values.map { it.first }.sortedBy { it.id }
+        val aliases = hashes.mapValues { (_, hash) -> canonical.getValue(hash).first }
         val digest = MessageDigest.getInstance("SHA-256")
-        originals(originals, signal).forEach { stamp(digest, HealthBackupOriginal.from(it, originals.present(it))) }
-        if (digest.digest().toHex() != originalStamp || records.metricVersions(metrics) != expected) changed()
+        items.forEach { stamp(digest, it) }
+        aliases.forEach { (id, item) ->
+            digest.update(id.toByteArray(Charsets.US_ASCII))
+            digest.update(item.id.toByteArray(Charsets.US_ASCII))
+        }
+        return Sources(items, aliases, digest.digest().toHex())
+    }
+
+    private fun ensureCurrent(records: HealthRecordStore, originals: HealthOriginalStore, expected: Map<HealthMetric, String>,
+        originalStamp: String, signal: CancellationSignal): Sources {
+        val sources = backupSources(records, originals, signal)
+        if (sources.stamp != originalStamp || records.metricVersions(metrics) != expected) changed()
         signal.throwIfCanceled()
+        return sources
     }
 
     private fun stamp(digest: MessageDigest, value: HealthBackupOriginal) {

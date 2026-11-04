@@ -61,6 +61,7 @@ class HealthCenterActivity : Activity() {
     private val backStack = ArrayDeque<Triple<String, HealthMetric, String>>()
     internal var editor: HealthManualEditor? = null
     internal var saving = false
+    internal var keepImportedOriginal = true
     internal val stagingOcrReview get() = route == "review" && intent.getBooleanExtra("health_stage_ocr_review", false)
     private val sensitiveDialogs = mutableSetOf<android.app.Dialog>()
     private var nextPage: HealthPageCursor? = null
@@ -91,6 +92,7 @@ class HealthCenterActivity : Activity() {
             route = if (intent.getBooleanExtra("health_history", false)) "history" else "detail"
         }
         savedInstanceState?.let { state ->
+            keepImportedOriginal = state.getBoolean(HEALTH_KEEP_ORIGINAL, true)
             route = state.getString("route", "overview").orEmpty().ifBlank { "overview" }
             selected = HealthMetric.entries.getOrElse(state.getInt("metric")) { HealthMetric.BLOOD_PRESSURE }
             recordId = state.getString("record", "").orEmpty()
@@ -140,6 +142,7 @@ class HealthCenterActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         saveDraft()
         out.putString("route", route); out.putInt("metric", selected.ordinal); out.putString("record", recordId)
+        out.putBoolean(HEALTH_KEEP_ORIGINAL, keepImportedOriginal)
         out.putString("review", reviewKey)
         retainOverviewScroll(); out.putInt("overviewScroll", overviewScroll)
         out.putStringArrayList("stack", ArrayList(backStack.map { "${it.first}|${it.second.name}|${it.third}" }))
@@ -423,6 +426,13 @@ class HealthCenterActivity : Activity() {
         }
         worker.execute {
             val result = runCatching { records.save(draft) }
+            if (result.getOrNull() is HealthSaveResult.Saved) draft.evidence?.let { evidence ->
+                runCatching {
+                    HealthOriginalStore(applicationContext, overviewNames.originals, overviewNames.originalRoot(applicationContext)).use {
+                        it.releaseReviewOriginal(evidence.jobId)
+                    }
+                }
+            }
             main.post {
                 saving = false
                 if (isDestroyed) return@post
