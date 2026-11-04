@@ -30,6 +30,31 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.load().current.count, 1)
   }
 
+  @MainActor
+  func testHealthBluetoothSameNameAndEqualValuesStaySeparated() throws {
+    let bytes = Data([30, 120, 0, 80, 0, 90, 0, 234, 7, 11, 5, 12, 30, 0, 64, 0, 2, 1, 0])
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(bytes))
+    let now = Date()
+    let a = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Monitor")
+    let b = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Monitor")
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.write(a.reading(conditions: ""))
+    try records.write(b.reading(conditions: ""))
+    let saved = try records.load().current
+    XCTAssertEqual(saved.count, 2)
+    XCTAssertEqual(GalaxySSIHealthTrendDevice.options(in: saved, metric: .bloodPressure).count, 2)
+    let selected = GalaxySSIHealthTrendDevice.matching(saved, device: a.device)
+    XCTAssertEqual(selected.map { $0.bluetoothReceipt?.device }, [a.device])
+    let trend = GalaxySSIHealthTrend(current: selected, metric: .bloodPressure, component: .value,
+                                    now: now, dayCount: 7, calendar: .current)
+    XCTAssertEqual(trend.points.last?.readings.count, 1)
+    let export = try GalaxySSIHealthMeasurementExport.encode(saved, as: .json, includeNotes: false)
+    XCTAssertNil(export.range(of: Data(a.device.uuidString.utf8)))
+    XCTAssertNil(export.range(of: Data("Monitor".utf8)))
+  }
+
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
     var reading = GalaxySSIHealthReading(metric: .bloodPressure, value: 120, diastolic: 80, pulse: 65)
     reading.conditions = " =2+2"

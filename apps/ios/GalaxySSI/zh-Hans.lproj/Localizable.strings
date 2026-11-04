@@ -304,6 +304,10 @@
 "galaxyssi.health.trend.manual" = "来源：手动测量";
 "galaxyssi.health.trend.bluetooth" = "来源：蓝牙血压计";
 "galaxyssi.health.trend.sources" = "每日来源记录";
+"galaxyssi.health.trend.bluetooth_filter" = "蓝牙设备";
+"galaxyssi.health.trend.all_devices" = "不按设备筛选";
+"galaxyssi.health.trend.device_unavailable" = "所选设备不可用";
+"galaxyssi.health.trend.unnamed_device" = "未命名的蓝牙设备";
 "galaxyssi.health.trend.empty" = "此期间没有已确认的测量。";
 "galaxyssi.health.trend.revision" = "修订版本 %lld";
 "galaxyssi.health.trend.more" = "查看更多";

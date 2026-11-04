@@ -51,7 +51,9 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   }
 
   func sameMeasurement(as other: Self) -> Bool {
-    metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
+    if let device = bluetoothReceipt?.device, let otherDevice = other.bluetoothReceipt?.device,
+       device != otherDevice { return false }
+    return metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
       unit == other.unit && value == other.value && reported?.canonical == other.reported?.canonical &&
       diastolic == other.diastolic && pulse == other.pulse
   }
