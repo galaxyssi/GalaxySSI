@@ -35,6 +35,7 @@ struct AgentCollaborationModelSettlement: Codable, Equatable {
   // A logical stream can include internal HTTP retries; snapshots do not prove total usage.
   let usageComplete: Bool
   let costMicros: Int64?
+  var reportedModel: String? = nil
 }
 
 struct AgentCollaborationModelAuditEntry: Codable, Equatable {

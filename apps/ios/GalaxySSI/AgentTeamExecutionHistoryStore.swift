@@ -329,7 +329,7 @@ final class AgentTeamExecutionHistoryStore {
     let key = "model-call:" + admission.id.uuidString.lowercased()
     try access { database in
       guard settlement.finishedAtMillis >= admission.startedAtMillis, !settlement.usageComplete,
-            settlement.costMicros == nil,
+            settlement.costMicros == nil, (settlement.reportedModel?.utf8.count ?? 0) <= 256,
             try database.researchRecord(AgentCollaborationModelAdmission.self,
               conversationId: conversation, key: key, revision: 0) == admission
       else { throw AgentTeamHistoryDatabase.Failure.stale }

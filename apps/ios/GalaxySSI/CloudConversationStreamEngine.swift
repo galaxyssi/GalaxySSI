@@ -249,6 +249,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var roundCompleted = false
         var roundFailure: ModelStreamFailed?
         var observedUsage: ModelUsage?
+        var reportedModel: String?
         var audit: AgentCollaborationModelAdmission?
         if let scope = collaborationEvidence {
           let candidate = AgentCollaborationModelAdmission(id: UUID(), scope: scope, round: currentRound,
@@ -270,7 +271,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             (roundFailure != nil ? .failed : (roundCompleted ? .completed : .interrupted))
           try? AgentTeamExecutionHistoryStore.shared.settleCollaborationModelCall(admission, settlement: .init(
             state: state, finishedAtMillis: max(admission.startedAtMillis, AgentControlPlaneClock.nowMillis()),
-            reportedUsage: observedUsage, usageComplete: false, costMicros: nil))
+            reportedUsage: observedUsage, usageComplete: false, costMicros: nil, reportedModel: reportedModel))
         }
         defer { finishAudit() }
         setActiveRound(roundId, for: requestId)
@@ -341,6 +342,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
           case .completed(let value):
             roundCompleted = true
+            reportedModel = value.reportedModel
             lastFinishReason = value.finishReason
 
           case .failed(let value):
