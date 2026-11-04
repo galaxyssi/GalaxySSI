@@ -95,6 +95,8 @@ struct GalaxySSIHealthOverview {
 
 @MainActor
 struct GalaxySSIHealthRecords {
+  static let trendInputsChanged = Notification.Name("galaxyssi.health.trendInputsChanged")
+
   enum Failure: Error {
     case invalid, stale, duplicate, unavailable, permission
   }
@@ -239,6 +241,7 @@ struct GalaxySSIHealthRecords {
       archive.privacyEvents = Array(history.suffix(100))
     }
     try persist(archive)
+    if scope == .overview { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
   }
 
   func discardDraft(id: UUID) throws {
@@ -270,6 +273,7 @@ struct GalaxySSIHealthRecords {
     archive.revisions.append(revision)
     if let draftId, archive.draft?.id == draftId { archive.draft = nil }
     try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
   private func persist(_ archive: Archive) throws {
