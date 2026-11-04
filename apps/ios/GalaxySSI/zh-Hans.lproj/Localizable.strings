@@ -4835,9 +4835,15 @@
 "galaxyssi.screen_page.source" = "页面输入";
 "galaxyssi.screen_page.screenshot" = "截图";
 "galaxyssi.screen_page.pdf" = "整页 PDF";
+"galaxyssi.screen_page.file" = "文件";
+"galaxyssi.screen_page.link" = "链接";
+"galaxyssi.screen_page.file_prompt" = "请分析这个文件。";
+"galaxyssi.screen_page.link_prompt" = "请分析这个页面。";
 "galaxyssi.screen_page.collecting" = "正在提取页面…";
 "galaxyssi.screen_page.prompt" = "请分析这份页面内容。";
 "galaxyssi.screen_page.added" = "已添加 %d 页";
+"galaxyssi.screen_page.pdf_saved" = "已保存到文件：我的 iPhone → GalaxySSI → Downloads → %@";
+"galaxyssi.screen_page.pdf_save_failed" = "无法在文件 App 中保存副本，原始 PDF 仍保留在附件中。";
 "galaxyssi.screen_page.truncated" = "文本提取已达到上限，已附上原始 PDF。";
 "galaxyssi.screen_page.image_pages" = "部分页面没有可选择文本，已附上原始 PDF。";
 "galaxyssi.screen_page.protected" = "不支持加密或禁止复制的 PDF。";

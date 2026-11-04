@@ -4,11 +4,53 @@ import UniformTypeIdentifiers
 struct GalaxySSIScreenPagePDFImporter: View {
   @Binding var isPresented: Bool
   var requestID: UUID?
-  var onResult: (UUID?, Result<[URL], Error>) -> Void
+  var isPDF: Bool
+  var onResult: (UUID?, Bool, Result<[URL], Error>) -> Void
 
   var body: some View {
-    Color.clear.fileImporter(isPresented: $isPresented, allowedContentTypes: [.pdf],
-      allowsMultipleSelection: false) { [requestID] result in onResult(requestID, result) }
+    Color.clear.fileImporter(isPresented: $isPresented, allowedContentTypes: isPDF ? [.pdf] : [.item],
+      allowsMultipleSelection: false) { [requestID, isPDF] result in onResult(requestID, isPDF, result) }
+  }
+}
+
+struct GalaxySSIScreenAnalysisLinkPicker: View {
+  @Environment(\.dismiss) private var dismiss
+  @State private var value = ""
+  var t: (String, String) -> String
+  var onAdd: (String) -> Void
+
+  private var link: String? {
+    let input = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard input.utf8.count <= 4_096, !input.contains(where: { $0.isWhitespace }),
+          let parts = URLComponents(string: input), parts.scheme?.lowercased() == "https",
+          parts.host?.isEmpty == false, parts.user == nil, parts.password == nil,
+          parts.url != nil else { return nil }
+    return input
+  }
+
+  var body: some View {
+    NavigationView {
+      Form {
+        TextField("https://", text: $value)
+          .keyboardType(.URL)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+          .accessibilityIdentifier("ios.screen-assistant.link-input")
+      }
+      .navigationTitle(t("galaxyssi.screen_page.link", "Link"))
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(t("galaxyssi.common.cancel", "Cancel")) { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button(t("galaxyssi.common.add", "Add")) {
+            if let link { onAdd(link); dismiss() }
+          }
+          .disabled(link == nil)
+        }
+      }
+    }
+    .navigationViewStyle(.stack)
   }
 }
 
@@ -25,19 +67,75 @@ extension AgentHomeView {
   }
 
   func beginScreenPagePDFImport() {
+    beginScreenSourceFileImport(isPDF: true)
+  }
+
+  func beginScreenAnalysisFileImport() {
+    beginScreenSourceFileImport(isPDF: false)
+  }
+
+  private func beginScreenSourceFileImport(isPDF: Bool) {
     cancelScreenPagePDFImport()
+    screenPageImportIsPDF = isPDF
     screenPageImportConversationID = store.activeAgentConversationId
     screenPageImportRequestID = UUID()
     screenPagePickerPresented = true
   }
 
   func cancelScreenPagePDFImport() {
+    screenLinkPickerPresented = false
+    screenLinkConversationID = ""
     screenPageImportRequestID = nil
     screenPageImportConversationID = ""
     screenPageImportTask?.cancel()
     screenPageImportTask = nil
     screenPagePickerPresented = false
     screenCaptureSourcePresented = false
+  }
+
+  func importScreenAnalysisFile(_ result: Result<[URL], Error>, requestID: UUID?) {
+    guard let requestID, requestID == screenPageImportRequestID else { return }
+    defer { cancelScreenPagePDFImport() }
+    guard !screenAssistantStopping, !screenPageImportConversationID.isEmpty,
+          screenPageImportConversationID == store.activeAgentConversationId else { return }
+    do {
+      guard let url = try result.get().first else { return }
+      let attachment = try GalaxySSIAttachmentPayloadBuilder.makeAttachment(from: url)
+      appendAttachment(attachment)
+      guard attachments.contains(where: { $0.id == attachment.id }) else { return }
+      openScreenAnalysisSource()
+      screenAssistantAttachmentIDs.insert(attachment.id)
+      if draft.isBlank { draft = t("galaxyssi.screen_page.file_prompt", "Analyze this file.") }
+    } catch {
+      let failure = error as NSError
+      if failure.domain != NSCocoaErrorDomain || failure.code != NSUserCancelledError {
+        attachmentError = error.localizedDescription
+      }
+    }
+  }
+
+  func beginScreenAnalysisLink() {
+    cancelScreenPagePDFImport()
+    screenLinkConversationID = store.activeAgentConversationId
+    screenLinkPickerPresented = !screenLinkConversationID.isEmpty
+  }
+
+  func addScreenAnalysisLink(_ link: String) {
+    guard !screenAssistantStopping, !screenLinkConversationID.isEmpty,
+          screenLinkConversationID == store.activeAgentConversationId else { return }
+    openScreenAnalysisSource()
+    if draft.isBlank { draft = t("galaxyssi.screen_page.link_prompt", "Analyze this page.") }
+    draft += "\n" + link
+  }
+
+  private func openScreenAnalysisSource() {
+    screenAssistantConversationID = store.activeAgentConversationId
+    screenAssistantCompact = true
+    screenAssistantCollapsed = false
+    screenAssistantRunID = UUID()
+    screenAssistantStartedAt = Date()
+    screenAssistantOwnedTurns = []
+    screenAssistantAttachmentIDs.formIntersection(Set(attachments.map(\.id)))
   }
 
   func importScreenPagePDF(_ result: Result<[URL], Error>, requestID: UUID?) {
@@ -86,12 +184,32 @@ extension AgentHomeView {
         if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           draft = t("galaxyssi.screen_page.prompt", "Analyze this captured page.")
         }
-        richActionStatus = String(format: t("galaxyssi.screen_page.added", "%d pages added"), page.pageCount)
+        let added = String(format: t("galaxyssi.screen_page.added", "%d pages added"), page.pageCount)
         if page.truncated {
           attachmentError = t("galaxyssi.screen_page.truncated", "Text extraction was limited; the original PDF is included.")
         } else if page.emptyTextPages > 0 {
           attachmentError = t("galaxyssi.screen_page.image_pages", "Some pages have no selectable text; the original PDF is included.")
         }
+        let pdf = page.attachments.first(where: { $0.mimeType == "application/pdf" })?.data
+        let captureID = page.captureID
+        let export = Task.detached(priority: .utility) {
+          guard let pdf else { throw AgentIOSScreenPagePDFError.invalidDocument }
+          return try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: captureID)
+        }
+        let saved = await withTaskCancellationHandler(operation: { try? await export.value },
+          onCancel: { export.cancel() })
+        guard !Task.isCancelled, screenPageImportRequestID == requestID,
+              screenAssistantRunID == runID, scenePhase == .active,
+              store.activeAgentConversationId == conversationID else { return }
+        let status: String
+        if let saved {
+          status = String(format: t("galaxyssi.screen_page.pdf_saved",
+            "Saved in Files: On My iPhone > GalaxySSI > Downloads > %@"), saved.lastPathComponent)
+        } else {
+          status = t("galaxyssi.screen_page.pdf_save_failed",
+            "Could not save a copy in Files. The original PDF is still attached.")
+        }
+        richActionStatus = added + "\n" + status
       } catch {
         guard !Task.isCancelled, screenPageImportRequestID == requestID else { return }
         let key: String

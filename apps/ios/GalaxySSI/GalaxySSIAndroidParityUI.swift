@@ -129,6 +129,9 @@ struct AgentHomeView: View {
   @State var screenshotPickerPresented = false
   @State var screenCaptureSourcePresented = false
   @State var screenPagePickerPresented = false
+  @State var screenPageImportIsPDF = true
+  @State var screenLinkPickerPresented = false
+  @State var screenLinkConversationID = ""
   @State var screenPageImportConversationID = ""
   @State var screenPageImportRequestID: UUID?
   @State var screenPageImportTask: Task<Void, Never>?
@@ -274,7 +277,11 @@ struct AgentHomeView: View {
       .navigationBarHidden(true)
       .background(GalaxySSIScreenPagePDFImporter(isPresented: $screenPagePickerPresented,
         requestID: screenPageImportRequestID,
-        onResult: { requestID, result in importScreenPagePDF(result, requestID: requestID) })
+        isPDF: screenPageImportIsPDF,
+        onResult: { requestID, isPDF, result in
+          if isPDF { importScreenPagePDF(result, requestID: requestID) }
+          else { importScreenAnalysisFile(result, requestID: requestID) }
+        })
         .id(screenPageImportRequestID))
       .confirmationDialog(t("galaxyssi.screen_page.source", "Page input"),
         isPresented: $screenCaptureSourcePresented, titleVisibility: .visible) {
@@ -283,6 +290,8 @@ struct AgentHomeView: View {
           screenshotPickerPresented = true
         }
         Button(t("galaxyssi.screen_page.pdf", "Full-page PDF"), action: beginScreenPagePDFImport)
+        Button(t("galaxyssi.screen_page.file", "File"), action: beginScreenAnalysisFileImport)
+        Button(t("galaxyssi.screen_page.link", "Link"), action: beginScreenAnalysisLink)
         Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) {}
       }
       .background(GalaxySSIConversationFocusProbe(focused: $homeWindowFocused))
@@ -432,6 +441,9 @@ struct AgentHomeView: View {
           screenAssistantSubmissions = [:]
           screenAssistantAttachmentIDs = [attachment.id]
         }
+      }
+      .sheet(isPresented: $screenLinkPickerPresented) {
+        GalaxySSIScreenAnalysisLinkPicker(t: t, onAdd: addScreenAnalysisLink)
       }
       .galaxySSIAgentHomePresentationRoutes(
         scanShortcutActive: $scanShortcutActive,

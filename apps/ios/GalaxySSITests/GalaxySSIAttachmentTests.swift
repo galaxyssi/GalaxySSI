@@ -4,6 +4,23 @@ import UIKit
 
 final class GalaxySSIAttachmentTests: XCTestCase {
   @MainActor
+  func testScreenPageDownloadPreservesOriginalAndUsesStableCaptureFilename() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let id = UUID()
+    let pdf = screenPagePDF(["Original article"])
+    let saved = try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, documents: root)
+    XCTAssertEqual(saved.deletingLastPathComponent().lastPathComponent, "Downloads")
+    XCTAssertEqual(saved.lastPathComponent, "article-\(id.uuidString.lowercased()).pdf")
+    XCTAssertEqual(try Data(contentsOf: saved), pdf)
+    XCTAssertEqual(try AgentIOSScreenPagePDFDownloads.save(pdf: pdf, captureID: id, documents: root), saved)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: saved.deletingLastPathComponent().path),
+      [saved.lastPathComponent])
+    XCTAssertThrowsError(try AgentIOSScreenPagePDFDownloads.save(pdf: Data(), captureID: id, documents: root))
+    XCTAssertEqual(try Data(contentsOf: saved), pdf)
+  }
+
+  @MainActor
   func testScreenPagePDFCreatesOriginalAndEscapedPaginatedEvidence() throws {
     let pdf = screenPagePDF(["First page <script>hidden()</script>", "Second page"])
     let result = try AgentIOSScreenPagePDFCapture.collect(data: pdf)

@@ -231,6 +231,7 @@ final class MessageCoordinator: ObservableObject {
   let mqttClient: GalaxySSIMqttClient
   var outboxRetryTask: Task<Void, Never>?
   var outboxFlushInProgress = false
+  var outboxReceiptWindow = LinkOutboxReceiptWindow()
   var outboxFlushRequested = false
   private var automationSchedulerTask: Task<Void, Never>?
   private var pairingConfirmationTimeoutTask: Task<Void, Never>?
@@ -3558,6 +3559,15 @@ final class MessageCoordinator: ObservableObject {
           ? requestText
           : requestText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: publicPages)
         for publicPage in publicPages {
+          if let archiveName = publicPage.originalSourceArchiveName {
+            store.appendDeliveryTrace(
+              outgoing.id,
+              contactId: agentContact.id,
+              stage: "phone_public_page_source_archived",
+              detail: "Downloads/\(archiveName)",
+              status: .delivered
+            )
+          }
           store.appendDeliveryTrace(
             outgoing.id,
             contactId: agentContact.id,
@@ -10574,6 +10584,7 @@ final class MessageCoordinator: ObservableObject {
     ].filter { !$0.isEmpty }
     for messageId in messageIds {
       deliveryStore.acknowledge(messageId: messageId)
+      outboxReceiptWindow.release(messageId)
       guard let uuid = UUID(uuidString: messageId) else { continue }
       store.appendDeliveryTrace(
         uuid,

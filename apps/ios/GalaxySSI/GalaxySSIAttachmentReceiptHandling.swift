@@ -302,6 +302,7 @@ extension MessageCoordinator {
     ].filter { !$0.isEmpty }
     acknowledgedIds.forEach { messageId in
       deliveryStore.acknowledge(messageId: messageId)
+      outboxReceiptWindow.release(messageId)
       if let uuid = UUID(uuidString: messageId) {
         store.appendDeliveryTrace(uuid, stage: "desktop_broker_ack", detail: "Delivery ACK", status: .delivered)
       }

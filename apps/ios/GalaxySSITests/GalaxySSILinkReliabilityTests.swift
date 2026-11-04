@@ -36,6 +36,32 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     XCTAssertEqual(saved.wirePayload, "encrypted-task")
   }
 
+  func testReceiptCreditIsPerRouteAndReleasedByPeerReceiptOrTimeout() {
+    var window = LinkOutboxReceiptWindow()
+    for index in 0..<8 {
+      XCTAssertTrue(window.acquire(topic: "a", messageId: "message-\(index)", now: 100))
+    }
+    XCTAssertEqual(window.delay(topic: "a", messageId: "fresh", now: 101), 1)
+    XCTAssertEqual(window.delay(topic: "a", messageId: "message-0", now: 101), 29)
+    XCTAssertTrue(window.acquire(topic: "b", messageId: "other", now: 101))
+    XCTAssertFalse(window.acquire(topic: "a", messageId: "fresh", now: 101))
+    window.release("message-0")
+    XCTAssertTrue(window.acquire(topic: "a", messageId: "fresh", now: 101))
+    window.reconcile(now: 102) { $0 != "message-1" }
+    XCTAssertTrue(window.acquire(topic: "a", messageId: "next", now: 102))
+    window.reconcile(now: 130) { _ in true }
+    XCTAssertFalse(window.messageIds.contains("message-2"))
+    XCTAssertTrue(window.acquire(topic: "a", messageId: "message-2", now: 130))
+  }
+
+  func testReceiptCreditDelayDoesNotModifyDurableRetryBudget() throws {
+    let store = makeDeliveryStore()
+    let now = Date(timeIntervalSince1970: 1_000)
+    store.enqueue(messageId: "send", topic: "topic/up", wirePayload: "encrypted-wire", now: now)
+    XCTAssertEqual(store.nextRetryDelay(now: now, minimumDelay: { _ in 1 }), 1)
+    XCTAssertEqual(try XCTUnwrap(store.pending(now: now).first).attempts, 0)
+  }
+
   func testAdmissionDeferralPreservesEarlierAttemptAndCiphertext() throws {
     let store = makeDeliveryStore()
     let start = Date(timeIntervalSince1970: 1_000)
