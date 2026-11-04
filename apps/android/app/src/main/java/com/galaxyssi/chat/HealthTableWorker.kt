@@ -65,6 +65,9 @@ class HealthTableWorker(context: Context, params: WorkerParameters) : Worker(con
                         if (phase == HealthTableState.SAVING && store.batch(id)?.state == HealthTableState.SAVED) {
                             runCatching { HealthOriginalStore(applicationContext).use { it.releaseReviewOriginal(id) } }
                         }
+                        if (phase in listOf(HealthTableState.SAVING, HealthTableState.UNDOING)) {
+                            HealthOriginalStore.notifyReportReviews(applicationContext)
+                        }
                         return@use Result.success()
                     }
                 }

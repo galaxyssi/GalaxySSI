@@ -229,8 +229,29 @@ internal class HealthReminderStore(private val context: Context, private val nam
         }
         if (dirty) changed()
     }
+    fun reportDisposition(id: String): HealthReportReviewDisposition = db.rawQuery(
+        "SELECT payload FROM report_reviews WHERE id=?", arrayOf(id)
+    ).use {
+        if (it.moveToFirst()) unpack("report:$id", it.getBlob(0)).let { value ->
+            HealthReportReviewDisposition(value.getLong("resume"), value.getLong("handled"))
+        } else HealthReportReviewDisposition()
+    }
+
+    fun actReport(id: String, expected: HealthReportReviewDisposition, action: HealthReminderAction, now: Long) {
+        require(HealthProfilePolicy.uuid(id) && action != HealthReminderAction.DISABLE)
+        transaction {
+            if (!settings().reportReviews || reportDisposition(id) != expected || expected.handledAt != 0L) throw HealthReminderConflict()
+            val payload = JSONObject().put("resume", if (action == HealthReminderAction.SNOOZE) now + HealthReminderPolicy.HOUR else 0L)
+                .put("handled", if (action == HealthReminderAction.COMPLETE) now else 0L)
+            db.insertWithOnConflict("report_reviews", null, ContentValues().apply {
+                put("id", id); put("payload", pack("report:$id", payload))
+            }, SQLiteDatabase.CONFLICT_REPLACE).also { check(it != -1L) }
+        }
+        changed()
+    }
+
     override fun close() = helper.close()
-    private inner class Database(context: Context) : SQLiteOpenHelper(context, name, null, 2) {
+    private inner class Database(context: Context) : SQLiteOpenHelper(context, name, null, 3) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY CHECK(id=1),payload BLOB NOT NULL)")
@@ -241,6 +262,7 @@ internal class HealthReminderStore(private val context: Context, private val nam
                 put("id", 1); put("payload", pack("settings", HealthReminderSettings(revision = UUID.randomUUID().toString()).json()))
             })
             addSleepTables(db)
+            addReportTable(db)
         }
         private fun addSleepTables(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE sleep_alerts(id TEXT PRIMARY KEY,opened INTEGER NOT NULL,state INTEGER NOT NULL,ended INTEGER NOT NULL,payload BLOB NOT NULL)")
@@ -248,9 +270,13 @@ internal class HealthReminderStore(private val context: Context, private val nam
             db.execSQL("CREATE INDEX sleep_alert_pages ON sleep_alerts(opened DESC,id DESC)")
             db.execSQL("CREATE TABLE sleep_eval(id INTEGER PRIMARY KEY CHECK(id=1),key TEXT NOT NULL)")
         }
+        private fun addReportTable(db: SQLiteDatabase) {
+            db.execSQL("CREATE TABLE report_reviews(id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
+        }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion == 1 && newVersion == 2)
-            addSleepTables(db)
+            check(oldVersion in 1..2 && newVersion == 3)
+            if (oldVersion == 1) addSleepTables(db)
+            addReportTable(db)
         }
     }
     companion object {

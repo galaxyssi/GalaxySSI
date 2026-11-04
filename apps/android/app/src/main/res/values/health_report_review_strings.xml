@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_report_review_group">Records and review</string>
+    <string name="health_report_review_document">Report review</string>
+    <string name="health_report_review_table">Table review</string>
+    <string name="health_report_review_actions">Reminder actions</string>
+    <string name="health_report_review_snooze">Snooze in app for one hour</string>
+    <string name="health_report_review_handle">Mark reminder as handled</string>
+    <string name="health_report_review_setting">Report review reminders</string>
+</resources>
