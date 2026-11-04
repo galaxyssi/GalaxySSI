@@ -230,7 +230,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         images: images
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
-      if collaborationEvidence != nil { prepared.installCollaborationRecall() }
+      let collaborationRecallScope = collaborationEvidence ?? collaborationModelAudit
+      if collaborationRecallScope != nil {
+        prepared.installCollaborationRecall(originalsOnly: collaborationEvidence == nil)
+      }
       var evidenceResults: [(String, String)] = []
       let evidencePromptLedger = CloudEvidencePromptLedger(query: turns.last?.content ?? "")
       let progress = CloudWebToolLoopProgress()
@@ -585,9 +588,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             images: images,
             readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false
           ),
-          collaborationRecall: collaborationEvidence.map { scope in
+          collaborationRecall: collaborationRecallScope.map { scope in
             { arguments in
               await MainActor.run {
+                guard collaborationEvidence != nil || ["goal", "dependency"].contains(arguments.string("mode")) else {
+                  return nil
+                }
                 guard let session = store.agentSession(id: scope.conversationId), session.id == scope.conversationId,
                       let roster = session.collaborationRoster,
                       let member = scope.memberId.split(separator: ":").first,

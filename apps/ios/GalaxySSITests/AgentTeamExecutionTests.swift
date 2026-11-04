@@ -1378,6 +1378,41 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(reopened.snapshot(supervisorRunId: "new"))
   }
 
+  func testDependencyRecallRequiresPinnedDirectDependencyAndExactReply() throws {
+    let suite = "team-dependency-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: InMemorySecretStore(),
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: root.appendingPathComponent("history.sqlite3"))
+    var team = durableTeamSnapshot("run")
+    team.members[0].dispatchCheckpoint = .dispatching
+    team.members[0].dispatchDependencyMemberIds = ["review"]
+    let original = String(repeating: "\u{1F642}", count: 2_050)
+    team.members[1].status = .succeeded
+    team.members[1].replyContent = original
+    XCTAssertTrue(history.upsert(team))
+    var input: AgentMcpJSONObject = ["mode": .string("dependency"), "member_id": .string("review")]
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: team.conversationId,
+      turnId: team.taskId, memberId: "primary", sourceId: "source-primary")
+    var foreign = scope
+    foreign.sourceId = "other"
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: foreign))
+    let page = try history.recallCollaborationOriginal(input, scope: scope)
+    input["offset"] = page["next_offset"]
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope))
+    input["sha256"] = page["sha256"]
+    let tail = try history.recallCollaborationOriginal(input, scope: scope)
+    let prefix = try XCTUnwrap(Data(base64Encoded: page.string("data_b64")))
+    let suffix = try XCTUnwrap(Data(base64Encoded: tail.string("data_b64")))
+    XCTAssertEqual(prefix + suffix, Data(original.utf8))
+    input["member_id"] = .string("primary")
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope))
+    input["member_id"] = .string("review")
+    history.removeResearchObjects(conversationId: team.conversationId)
+    XCTAssertThrowsError(try history.recallCollaborationOriginal(input, scope: scope))
+  }
+
   private func durableTeamSnapshot(_ run: String) -> AgentTeamExecutionSnapshot {
     AgentTeamExecutionSnapshot(supervisorRunId: run, teamId: "team", conversationId: "conversation",
       taskId: "turn", primaryAgentId: "primary", state: .running,

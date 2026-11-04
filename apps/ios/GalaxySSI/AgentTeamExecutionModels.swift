@@ -1033,6 +1033,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var richOutputJson: String
   var replyContent: String?
   var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
+  var dispatchDependencyMemberIds: [String]? = nil
   var dispatchResourceObservation: AgentMcpJSONObject? = nil
   var displayName: String?
   var researchStage: String?
@@ -1087,6 +1088,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case richOutputJson = "rich_output_json"
     case replyContent = "reply_content"
     case dispatchCheckpoint = "dispatch_checkpoint"
+    case dispatchDependencyMemberIds = "dispatch_dependency_member_ids"
     case dispatchResourceObservation = "dispatch_resource_observation"
     case displayName = "display_name"
     case researchStage = "research_stage"
@@ -1113,6 +1115,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       researchStage: try container.decodeIfPresent(String.self, forKey: .researchStage),
       executionStartedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .executionStartedAtMillis)
     )
+    dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
     dispatchResourceObservation = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .dispatchResourceObservation)
   }
 
