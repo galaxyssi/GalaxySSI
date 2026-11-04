@@ -578,6 +578,8 @@ final class AgentTeamExecutionHistoryStore {
               !snapshot.state.deliverable else { return false }
         let prior = try database.goalCheckpoints(runId: checkpoint.runId, newestOnly: checkpoint.completedWorkIds.isEmpty)
         guard (prior.first?.revision ?? 0) == expectedRevision,
+              (prior.first?.liveGraph?.work ?? []).elementsEqual(
+                (checkpoint.liveGraph?.work ?? []).prefix(prior.first?.liveGraph?.work.count ?? 0)),
               prior.allSatisfy({
                 $0.conversationId == checkpoint.conversationId && $0.turnId == checkpoint.turnId &&
                   $0.contract == checkpoint.contract && $0.completedWorkIds.isDisjoint(with: checkpoint.completedWorkIds)
@@ -586,6 +588,20 @@ final class AgentTeamExecutionHistoryStore {
         return true
       }
     } catch { return false }
+  }
+
+  func appendCollaborationGraph(_ raw: String, runId: String, conversationId: String, turnId: String,
+                                expectedRevision: Int64, authorizedMembers: Set<String>,
+                                historicalAuthors: [String: String],
+                                settled: [String: AgentCollaborationLiveGraph.Settlement]) -> Bool {
+    guard var checkpoint = goalCheckpoint(runId: runId, conversationId: conversationId, turnId: turnId),
+          checkpoint.revision == expectedRevision, expectedRevision < Int64.max,
+          let graph = (checkpoint.liveGraph ?? .init()).appending(raw, authorizedMembers: authorizedMembers,
+            historicalAuthors: historicalAuthors, settled: settled) else { return false }
+    checkpoint.liveGraph = graph
+    checkpoint.revision += 1
+    checkpoint.completedWorkIds = []
+    return advanceGoalCheckpoint(checkpoint, expectedRevision: expectedRevision)
   }
 
   func remove(supervisorRunId: String) {

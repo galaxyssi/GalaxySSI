@@ -9,6 +9,75 @@ struct AgentCollaborationGoalCheckpoint: Codable, Equatable {
   var phase: Phase
   var contract: [AgentCollaborationGoalAssessmentPolicy.Criterion]
   var completedWorkIds: Set<String>
+  var liveGraph: AgentCollaborationLiveGraph? = nil
+}
+
+struct AgentCollaborationLiveGraph: Codable, Equatable {
+  enum DependencyPolicy: String, Codable { case success, terminal }
+  enum Settlement: String, Codable { case succeeded, failed, cancelled, skipped }
+
+  struct Work: Codable, Equatable {
+    let id: String
+    let member: String
+    let assignment: String
+    let depends_on: [String]
+    let dependency_policy: DependencyPolicy?
+    let independent_review: Bool?
+  }
+
+  struct Expansion: Decodable {
+    let format: String
+    let work: [Work]
+  }
+
+  private(set) var work: [Work] = []
+
+  func appending(_ raw: String, authorizedMembers: Set<String>,
+                 historicalAuthors: [String: String], settled: [String: Settlement]) -> Self? {
+    guard raw.utf8.count <= 256_000,
+          let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
+          expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty else { return nil }
+    var byId = Dictionary(work.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    guard byId.count == work.count else { return nil }
+    for item in expansion.work {
+      guard !item.id.isBlank, item.id.utf8.count <= 160, !item.assignment.isBlank,
+            item.assignment.utf8.count <= 16_000, authorizedMembers.contains(item.member),
+            byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
+            Set(item.depends_on).count == item.depends_on.count,
+            !item.depends_on.contains(item.id) else { return nil }
+      byId[item.id] = item
+    }
+    for item in expansion.work {
+      for dependency in item.depends_on {
+        guard byId[dependency] != nil || settled[dependency] != nil else { return nil }
+        if item.independent_review == true {
+          guard let author = byId[dependency]?.member ?? historicalAuthors[dependency],
+                !author.isBlank, author != item.member else { return nil }
+        }
+      }
+    }
+    var resolved = Set(settled.keys)
+    var remaining = work + expansion.work
+    while !remaining.isEmpty {
+      let ready = remaining.filter { Set($0.depends_on).isSubset(of: resolved) }
+      guard !ready.isEmpty else { return nil }
+      let ids = Set(ready.map(\.id))
+      resolved.formUnion(ids)
+      remaining.removeAll { ids.contains($0.id) }
+    }
+    var next = self
+    next.work.append(contentsOf: expansion.work)
+    return next
+  }
+
+  func ready(settled: [String: Settlement], active: Set<String>) -> [Work] {
+    work.filter { item in
+      settled[item.id] == nil && !active.contains(item.id) && item.depends_on.allSatisfy { dependency in
+        guard let state = settled[dependency] else { return false }
+        return item.dependency_policy == .terminal || state == .succeeded
+      }
+    }
+  }
 }
 
 enum AgentCollaborationGoalAssessmentPolicy {

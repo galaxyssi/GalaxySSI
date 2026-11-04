@@ -188,6 +188,24 @@ extension GalaxySSIStoreTests {
       turnId: first.turnId), next)
     XCTAssertEqual(reopened.goalCheckpoint(runId: first.runId, conversationId: first.conversationId,
       turnId: first.turnId, revision: 1), first)
+    let expansion = """
+    {"format":"galaxyssi.work-expansion.v1","work":[
+      {"id":"review","member":"reviewer","assignment":"Review the saved result","depends_on":["verify"],"independent_review":true}
+    ]}
+    """
+    XCTAssertFalse(reopened.appendCollaborationGraph(expansion, runId: first.runId,
+      conversationId: first.conversationId, turnId: first.turnId, expectedRevision: 2,
+      authorizedMembers: ["reviewer"], historicalAuthors: ["verify": "reviewer"], settled: ["verify": .succeeded]))
+    XCTAssertTrue(reopened.appendCollaborationGraph(expansion, runId: first.runId,
+      conversationId: first.conversationId, turnId: first.turnId, expectedRevision: 2,
+      authorizedMembers: ["reviewer"], historicalAuthors: ["verify": "author"], settled: ["verify": .succeeded]))
+    XCTAssertFalse(reopened.appendCollaborationGraph(expansion, runId: first.runId,
+      conversationId: first.conversationId, turnId: first.turnId, expectedRevision: 2,
+      authorizedMembers: ["reviewer"], historicalAuthors: ["verify": "author"], settled: ["verify": .succeeded]))
+    let graph = history.goalCheckpoint(runId: first.runId, conversationId: first.conversationId,
+      turnId: first.turnId)?.liveGraph
+    XCTAssertEqual(graph?.ready(settled: ["verify": .succeeded], active: ["unrelated"]).map(\.id), ["review"])
+    XCTAssertEqual(graph?.ready(settled: ["verify": .failed], active: []).count, 0)
     XCTAssertNil(reopened.goalCheckpoint(runId: first.runId, conversationId: "foreign", turnId: first.turnId))
     reopened.remove(supervisorRunId: first.runId)
     XCTAssertTrue(reopened.upsert(team))
