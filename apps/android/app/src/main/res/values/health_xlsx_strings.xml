@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_xlsx_sheet">Worksheet</string>
+    <string name="health_xlsx_choose_sheet">Choose a worksheet</string>
+    <string name="health_xlsx_header_row">Header row</string>
+    <string name="health_xlsx_epoch">Excel date system: %1$d</string>
+    <string name="health_xlsx_selection_notice">Select the worksheet and the row containing unique column names. No measurements are saved during preview.</string>
+    <string name="health_xlsx_load_sheet">Read selected worksheet</string>
+    <string name="health_xlsx_reading">Reading worksheet · %1$d rows staged</string>
+    <string name="health_xlsx_date_format">Excel date serial</string>
+    <string name="health_xlsx_date_only">Time for date-only values</string>
+    <string name="health_xlsx_time_required">Choose explicitly; do not assume midnight</string>
+    <string name="health_xlsx_clear_time">Clear time</string>
+    <string name="health_xlsx_allow_cache">Allow stored formula results. They are not recalculated and may be stale.</string>
+    <string name="health_xlsx_formula_ack">This row uses a formula. Verify the stored result and explicitly allow formula caches before saving.</string>
+    <string name="health_xlsx_no_cache">The formula has no stored result. Recalculate and save a copy in your spreadsheet app before importing.</string>
+    <string name="health_xlsx_cell_error">A selected source cell contains a spreadsheet error. Check the original; no value is invented.</string>
+    <string name="health_xlsx_cell_type_error">This worksheet uses a cell representation not yet supported by the local reader, such as ISO-typed date cells. The original is retained; a text-date XLSX or CSV copy can be imported.</string>
+    <string name="health_xlsx_formula_detail">%1$s · Formula: =%2$s\nStored result: %3$s · not recalculated</string>
+    <string name="health_xlsx_hidden">Hidden</string>
+    <string name="health_xlsx_change_notice">Changing the worksheet or header row clears this unsaved preview and its column mapping. Confirmed records and original files remain unchanged.</string>
+    <string name="health_xlsx_source_row">%1$s · worksheet row %2$d</string>
+    <string name="health_xlsx_format_error">This is not a readable standard XLSX workbook. Password-protected or legacy workbooks need an unlocked XLSX copy; the original is retained.</string>
+    <string name="health_xlsx_package_error">Workbook structure, cell addresses or checksums are invalid. The original is retained; save a repaired copy before retrying.</string>
+    <string name="health_xlsx_xml_error">Workbook XML is invalid or contains an unsupported document declaration. No external content is loaded.</string>
+    <string name="health_xlsx_macro_error">Choose a macro-free XLSX copy. Macros are never executed and the original is retained.</string>
+    <string name="health_xlsx_expansion_error">The workbook exceeds the local working bounds: 64 MiB expanded data, 4 MiB per metadata part or 10,000 ZIP entries. Split a copy before retrying.</string>
+    <string name="health_xlsx_header_error">Choose a worksheet and a header row with unique, nonempty text names. Maximum: 256 sheets/columns and row 1,048,576. The original is retained.</string>
+</resources>

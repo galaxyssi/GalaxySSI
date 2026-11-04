@@ -68,6 +68,9 @@ Build, device and UI results must be recorded separately. A locked-device store
 test is not proof that the visible page matches the supplied design. Actual
 unlocked UI acceptance, camera hardware/automatic paper boundaries, XLSX and the
 other remaining health screens must not be marked complete from this matrix.
+The later [XLSX increment](android-health-xlsx-import.md) extends this contract
+with worksheet/header selection, numeric serial dates and explicit formula-cache
+consent; its evidence and remaining interoperability gaps are recorded separately.
 
 ## Recorded Results
 

@@ -203,6 +203,42 @@ FileProvider fixture-location failures were corrected without broadening the
 provider's roots. Native table-page acceptance remains pending because the
 tablet reports an active keyguard; no lock-screen bypass was attempted.
 
+## Increment 5: Encrypted XLSX Worksheet Review
+
+XLSX sources now enter the same encrypted file queue and explicit mapping,
+validation, confirmation and batch-undo contract. Before reading observations,
+users select an actual worksheet and text header row. Hidden sheets are marked,
+and the workbook's 1900/1904 date system is retained. Numeric serial dates require
+the Excel date mode; whole-day values additionally require an explicit clock
+time. The preview shows the interpreted time before saving, without discarding
+the source notation.
+
+Formula evaluation and macros remain disabled. Cached formula results require
+separate consent; missing caches remain missing. Saved evidence retains the
+worksheet, physical row, cell address, expression and unrecalculated cached
+value. Committed batches cannot be redirected to another worksheet. Revision-
+bound reading checkpoints reject late writes after cancellation or replacement.
+
+The existing authenticated seekable decrypting channel feeds Commons Compress
+and the pinned fastexcel reader directly, without plaintext scratch files. ZIP
+and XML validation imposes explicit source/expanded-size and metadata bounds,
+checks entry integrity, and rejects document declarations and macro packages.
+Queue labels reflect actual read/validation/save/undo progress. Active progress
+updates do not repeatedly decrypt previews, count all rows or rebuild the page.
+
+This is another subset of h09/h10/h26, not completion of the complete health
+design. ISO-typed XLSX date cells remain an explicit interoperability error;
+numeric Excel dates and text timestamps use separate supported paths. Visible
+worksheet/mapping-page acceptance still requires an unlocked tablet. See the
+[XLSX test record](../testing/android-health-xlsx-import.md) and the complete
+[32-screen acceptance ledger](android-health-screen-status.md).
+
+The 0.1.7.20 / 1433 increment is cover-installed on Tab Active3 and passes
+141 focused JVM tests plus 106 non-visual device tests. Synthetic fixtures remain
+isolated from the user's archive. The tablet's active keyguard still prevents
+visible-page acceptance; no camera hardware was opened. Full-repository CI is
+not claimed green while the parent branch retains its five Agent test failures.
+
 ## Following Increments
 
 Each independent feature is delivered as a separate pull request, with a new
@@ -210,8 +246,8 @@ version and focused validation before claiming completion:
 
 1. Native camera hardware/device-matrix acceptance, automatic paper-edge
    detection, and original-library thumbnail/filter/batch-selection modes.
-2. XLSX sheet selection, typed dates and formula-cache provenance using the same
-   mapping/transaction/undo contract; unlocked structured-import UI acceptance.
+2. XLSX ISO-typed date interoperability and unlocked structured-import UI
+   acceptance; keep existing numeric-date/formula provenance checks intact.
 3. Metric catalog, time-window/source filters and true, gap-aware trend charts.
 4. Original-file library, export configuration, save/share and verified backup
    restore with transactional merge and attachment integrity checks.

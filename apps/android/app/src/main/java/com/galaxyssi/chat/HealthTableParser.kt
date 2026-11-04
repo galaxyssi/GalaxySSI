@@ -16,6 +16,7 @@ internal object HealthTableParser {
     private const val MAX_CELL = 16_384
     private const val MAX_ROW = 65_536
     fun format(name: String, mime: String): String? = when {
+        name.endsWith(".xlsx", true) || mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> "xlsx"
         name.endsWith(".csv", true) || mime in listOf("text/csv", "application/csv") -> "csv"
         name.endsWith(".json", true) || mime == "application/json" -> "json"
         else -> null

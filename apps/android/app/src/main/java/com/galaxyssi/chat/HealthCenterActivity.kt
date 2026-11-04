@@ -282,8 +282,10 @@ class HealthCenterActivity : Activity() {
                 addView(ui.text(getString(R.string.health_measured_at), 13f, muted = true)); addView(ui.text(date(record.draft.measuredAt)))
                 ui.add(this, ui.text(source(record), 14f, muted = true), 14)
                 record.draft.evidence?.let { evidence ->
-                    ui.add(this, ui.row(getString(R.string.health_view_original), getString(if (evidence.kind == "table") R.string.health_table_source_row else R.string.health_source_page,
-                        if (evidence.kind == "table") evidence.tableRow else evidence.page.toLong())) {
+                    val location = if (evidence.tableSheet.isNotBlank()) getString(R.string.health_xlsx_source_row, evidence.tableSheet, evidence.tableRow)
+                        else getString(if (evidence.kind == "table") R.string.health_table_source_row else R.string.health_source_page,
+                            if (evidence.kind == "table") evidence.tableRow else evidence.page.toLong())
+                    ui.add(this, ui.row(getString(R.string.health_view_original), location) {
                         startActivity(android.content.Intent(this@HealthCenterActivity, HealthCaptureActivity::class.java).putExtra("original", evidence.originalId))
                     }, 12)
                     ui.add(this, ui.text(evidence.rawText, 13f, muted = true), 8)

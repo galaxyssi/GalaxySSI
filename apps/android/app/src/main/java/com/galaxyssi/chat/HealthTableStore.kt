@@ -43,8 +43,27 @@ internal class HealthTableStore(context: Context, private val name: String = "he
             previous
         } else HealthTableBatch(id, original.id, original.sha256, original.name, format).also(::put)
     }
-    fun append(id: String, rows: List<HealthTableRow>) = transaction {
-        val batch = requireNotNull(batch(id)); check(batch.state == HealthTableState.READING)
+    fun workbook(id: String, sheets: List<HealthXlsxSheet>, date1904: Boolean) = transaction {
+        val batch = requireNotNull(batch(id)); check(batch.format == "xlsx" && batch.state == HealthTableState.READING && batch.sheetIndex < 0)
+        put(batch.copy(sheets = sheets, date1904 = date1904, state = HealthTableState.SHEET_SELECTION))
+    }
+    fun configureSheet(id: String, expectedRevision: Int, index: Int, headerRow: Int, load: Boolean = false) = transaction {
+        val batch = requireNotNull(batch(id))
+        check(batch.format == "xlsx" && batch.mappingRevision == expectedRevision &&
+            batch.state in listOf(HealthTableState.SHEET_SELECTION, HealthTableState.MAPPING, HealthTableState.READY))
+        require((index == -1 && !load || batch.sheets.any { it.index == index }) && headerRow in 1..1_048_576)
+        db.delete("health_table_rows", "batch_id=?", arrayOf(id))
+        put(batch.copy(sheetIndex = index, headerRow = headerRow, rows = 0, cursor = 0, headers = emptyList(), mapping = HealthTableMapping(),
+            mappingRevision = batch.mappingRevision + 1, state = if (load) HealthTableState.READING else HealthTableState.SHEET_SELECTION, error = ""))
+    }
+    fun cancelReading(id: String, expectedRevision: Int) = transaction {
+        val batch = requireNotNull(batch(id)); check(batch.format == "xlsx" && batch.state == HealthTableState.READING && batch.mappingRevision == expectedRevision)
+        db.delete("health_table_rows", "batch_id=?", arrayOf(id))
+        put(batch.copy(rows = 0, cursor = 0, headers = emptyList(), state = HealthTableState.SHEET_SELECTION, mappingRevision = batch.mappingRevision + 1, error = ""))
+    }
+    fun append(id: String, rows: List<HealthTableRow>, expectedRevision: Int? = null) = transaction {
+        val batch = requireNotNull(batch(id))
+        if (batch.state != HealthTableState.READING || expectedRevision != null && batch.mappingRevision != expectedRevision) throw java.util.concurrent.CancellationException()
         var last = batch.rows
         rows.forEach { row ->
             check(row.number == last + 1)
@@ -57,8 +76,9 @@ internal class HealthTableStore(context: Context, private val name: String = "he
         }
         put(batch.copy(rows = last))
     }
-    fun finishReading(id: String, headers: List<String>) = transaction {
-        val batch = requireNotNull(batch(id)); check(batch.state == HealthTableState.READING)
+    fun finishReading(id: String, headers: List<String>, expectedRevision: Int? = null) = transaction {
+        val batch = requireNotNull(batch(id))
+        if (batch.state != HealthTableState.READING || expectedRevision != null && batch.mappingRevision != expectedRevision) throw java.util.concurrent.CancellationException()
         if (batch.rows == 0L) throw HealthImportFailure("table_empty")
         put(batch.copy(headers = headers, state = HealthTableState.MAPPING,
             mapping = HealthTablePolicy.suggest(headers, HealthMetric.BLOOD_PRESSURE)))
@@ -104,8 +124,8 @@ internal class HealthTableStore(context: Context, private val name: String = "he
         val batch = requireNotNull(batch(id))
         if ((expectedPhase == null || batch.state == expectedPhase) && (expectedRevision == null || batch.mappingRevision == expectedRevision)) put(batch.copy(error = code))
     }
-    fun active(after: String = ""): List<String> = db.rawQuery("SELECT id FROM health_tables WHERE id>? AND state IN (?,?,?) ORDER BY id LIMIT 100",
-        arrayOf(after, HealthTableState.VALIDATING.name, HealthTableState.SAVING.name, HealthTableState.UNDOING.name))
+    fun active(after: String = ""): List<String> = db.rawQuery("SELECT id FROM health_tables WHERE id>? AND state IN (?,?,?,?) ORDER BY id LIMIT 100",
+        arrayOf(after, HealthTableState.VALIDATING.name, HealthTableState.SAVING.name, HealthTableState.UNDOING.name, HealthTableState.READING.name))
         .use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0)) } }
 
     /** One small transaction advances both the output records and its durable cursor. */

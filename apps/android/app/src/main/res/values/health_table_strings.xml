@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="health_table_title">Verify Table Data</string>
+    <string name="health_table_interpreted_time">Interpreted time: %1$s · %2$s</string>
+    <string name="health_table_import_done">Import complete</string>
+    <string name="health_table_import_undone">Import undone</string>
     <string name="health_table_queue_ready">Table saved; match columns and verify records</string>
     <string name="health_table_file_summary">%1$s · %2$d rows</string>
     <string name="health_table_mapping">Match columns</string>
