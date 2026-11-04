@@ -1151,7 +1151,8 @@ final class AgentTeamExecutionHistoryStore {
           key: "object:" + revision.reference.objectId, revision: revision.reference.revision)
       }
       let receipt = AgentCollaborationResearchPublication(requestHash: requestHash,
-        references: linked + revisions.map(\.reference))
+        references: linked + revisions.map(\.reference), milestoneId: milestone?.id,
+        recordedAtMillis: milestone == nil ? nil : AgentControlPlaneClock.nowMillis())
       try database.insertResearchRecord(receipt, conversationId: conversationId, key: publicationKey, revision: 0)
       return receipt
     }
@@ -1292,8 +1293,12 @@ final class AgentTeamExecutionHistoryStore {
     ])
   }
 
+  private static func milestonePrefix(_ baseKey: String) -> String {
+    baseKey + ":milestone:"
+  }
+
   private static func milestoneKey(_ baseKey: String, id: String) -> String {
-    baseKey + ":milestone:" + AgentMcpJSONCodec.sha256(["id": .string(id)])
+    milestonePrefix(baseKey) + AgentMcpJSONCodec.sha256(["id": .string(id)])
   }
 
   private static func canPublishMilestone(_ snapshot: AgentTeamExecutionSnapshot, member: AgentTeamMemberSnapshot) -> Bool {
@@ -1305,7 +1310,7 @@ final class AgentTeamExecutionHistoryStore {
                                      scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
     let id = input.string("milestone_id")
-    if mode == "status" || mode == "receipt" {
+    if ["status", "receipt", "list"].contains(mode) {
       return try access { database in
         guard let snapshot = try database.snapshots(runId: scope.runId).first,
               snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
@@ -1317,12 +1322,36 @@ final class AgentTeamExecutionHistoryStore {
         if mode == "status", Set(input.keys) == ["mode"] {
           return ["success": .bool(true), "status": .string("available")]
         }
+        let base = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+        if mode == "list" {
+          guard Set(input.keys).isSubset(of: ["mode", "cursor"]),
+                case .string(let cursor) = input["cursor"] ?? .string("") else {
+            throw AgentTeamHistoryDatabase.Failure.corrupt
+          }
+          let prefix = Self.milestonePrefix(base)
+          let suffix = cursor.dropFirst(prefix.utf8.count)
+          guard cursor.isEmpty || (cursor.hasPrefix(prefix) && suffix.utf8.count == 64 &&
+            suffix.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })) else {
+            throw AgentTeamHistoryDatabase.Failure.stale
+          }
+          let keys = try database.milestoneKeys(conversationId: scope.conversationId, prefix: prefix, after: cursor)
+          let rows: [AgentMcpJSONValue] = try keys.prefix(32).map { key in
+            guard let saved = try database.researchRecord(AgentCollaborationResearchPublication.self,
+              conversationId: scope.conversationId, key: key, revision: 0),
+              let id = saved.milestoneId, let recorded = saved.recordedAtMillis, Self.milestoneKey(base, id: id) == key
+            else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+            return .object(["milestone_id": .string(id), "raw_sha256": .string(saved.requestHash),
+              "recorded_at": .int(recorded), "revision_count": .int(Int64(saved.references.count))])
+          }
+          return ["success": .bool(true), "status": .string("returned"), "milestones": .array(rows),
+            "next_cursor": keys.count > 32 ? .string(keys[31]) : .null,
+            "trust": .string("host_recorded_interim_versions_not_task_completion_or_verification")]
+        }
         let hash = input.string("artifact_sha256")
         guard mode == "receipt", Set(input.keys) == ["mode", "milestone_id", "artifact_sha256"],
               !id.isBlank, id.utf8.count <= 160, hash.utf8.count == 64,
               hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
         else { throw AgentTeamHistoryDatabase.Failure.corrupt }
-        let base = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
         guard let saved = try database.researchRecord(AgentCollaborationResearchPublication.self,
           conversationId: scope.conversationId, key: Self.milestoneKey(base, id: id), revision: 0) else {
           return ["success": .bool(false), "status": .string("not_recorded")]

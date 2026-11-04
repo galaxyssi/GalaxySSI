@@ -904,6 +904,8 @@ struct AgentCollaborationFrozenCloudRead: Codable {
 struct AgentCollaborationResearchPublication: Codable {
   var requestHash: String
   var references: [AgentCollaborationResearchReference]
+  var milestoneId: String? = nil
+  var recordedAtMillis: Int64? = nil
 }
 
 struct AgentCollaborationPublicationRejection: Codable, Equatable {

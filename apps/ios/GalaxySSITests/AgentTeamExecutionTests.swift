@@ -405,6 +405,22 @@ extension GalaxySSIStoreTests {
     let lookup: AgentMcpJSONObject = ["mode": .string("receipt"), "milestone_id": .string("first"),
       "artifact_sha256": try XCTUnwrap(receipt["artifact_sha256"])]
     XCTAssertEqual(try reopened.publishCollaborationMilestone(lookup, scope: scope)["references"], receipt["references"])
+    for index in 2...33 {
+      let id = "milestone-\(index)"
+      _ = try reopened.publishCollaborationMilestone(["mode": .string("publish"), "milestone_id": .string(id),
+        "artifact": .string(artifact.replacingOccurrences(of: #""id":"note""#, with: "\"id\":\"\(id)\""))], scope: scope)
+    }
+    let directory = try reopened.publishCollaborationMilestone(["mode": .string("list")], scope: scope)
+    XCTAssertEqual(directory["milestones"]?.arrayValue?.count, 32)
+    let cursor = try XCTUnwrap(directory["next_cursor"]?.strictStringValue)
+    let tail = try reopened.publishCollaborationMilestone(["mode": .string("list"), "cursor": .string(cursor)], scope: scope)
+    XCTAssertEqual(tail["milestones"]?.arrayValue?.count, 1)
+    XCTAssertEqual(tail["next_cursor"], .null)
+    let entries = (directory["milestones"]?.arrayValue ?? []) + (tail["milestones"]?.arrayValue ?? [])
+    XCTAssertEqual(entries.compactMap { $0.objectValue }.first { $0.string("milestone_id") == "first" }?["raw_sha256"],
+      receipt["artifact_sha256"])
+    XCTAssertThrowsError(try reopened.publishCollaborationMilestone(["mode": .string("list"),
+      "cursor": .string("foreign:" + cursor)], scope: scope))
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[1].status, team.members[1].status)
     var changed = input
     changed["artifact"] = .string(artifact + " ")
