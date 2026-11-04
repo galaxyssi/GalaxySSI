@@ -7060,11 +7060,8 @@ final class MessageCoordinator: ObservableObject {
             context.member.status == .succeeded else { return }
       let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
         conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
-      guard try history.committedResearchRevisions(scope: scope) == nil,
-            let raw = context.member.replyContent,
-            let drafts = try AgentCollaborationResearchEnvelope.publication(in: raw) else { return }
-      _ = try history.publishResearchObjects(drafts, runId: context.team.supervisorRunId,
-        conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
+      guard let raw = context.member.replyContent else { return }
+      try history.publishSavedResearchReply(raw, scope: scope)
     } catch {
       lastError = localizedReply("galaxyssi.collaboration.publication_failed",
         fallback: "The original reply was saved, but its research objects could not be published.")

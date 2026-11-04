@@ -2,6 +2,41 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testRejectedResearchReplyReopensWithExactScopeAndOriginalBytes() throws {
+    let suite = "research-rejection-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("rejected-run")
+    let malformed = "{\"format\":\"galaxyssi.research-artifact.v1\",\"workspace\":{}}"
+    team.members[0].status = .succeeded
+    team.members[0].replyContent = malformed
+    let member = team.members[0]
+    let scope = AgentCollaborationToolEvidenceScope(runId: team.supervisorRunId,
+      conversationId: team.conversationId, turnId: team.taskId, memberId: member.memberId,
+      sourceId: member.sourceMessageId)
+    XCTAssertTrue(history.upsert(team))
+    XCTAssertThrowsError(try history.publishSavedResearchReply(malformed + " ", scope: scope))
+    XCTAssertNil(try history.rejectedResearchReply(scope: scope))
+    XCTAssertThrowsError(try history.publishSavedResearchReply(malformed, scope: scope))
+    XCTAssertThrowsError(try history.publishSavedResearchReply(malformed, scope: scope))
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let rejected = try XCTUnwrap(reopened.rejectedResearchReply(scope: scope))
+    XCTAssertEqual(rejected.raw, malformed)
+    XCTAssertEqual(rejected.rejection.reason, .malformedEnvelope)
+    XCTAssertNil(try reopened.committedResearchRevisions(scope: scope))
+    var foreign = scope
+    foreign.turnId = "other-turn"
+    XCTAssertNil(try reopened.rejectedResearchReply(scope: foreign))
+    reopened.removeResearchObjects(conversationId: scope.conversationId)
+    XCTAssertNil(try reopened.rejectedResearchReply(scope: scope))
+  }
+
   func testCollaborationTimingUsesRecordedExecutionBounds() throws {
     var snapshot = durableTeamSnapshot("timed-run")
     snapshot.state = .running

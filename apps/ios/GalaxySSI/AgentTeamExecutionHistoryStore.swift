@@ -456,6 +456,85 @@ final class AgentTeamExecutionHistoryStore {
     ])
   }
 
+  func publishSavedResearchReply(_ raw: String, scope: AgentCollaborationToolEvidenceScope) throws {
+    guard try committedResearchRevisions(scope: scope) == nil else { return }
+    let hash = Self.replyHash(raw)
+    guard try access({ try Self.savedResearchReply(scope, database: $0).map(Self.replyHash) }) == hash else {
+      throw AgentTeamHistoryDatabase.Failure.stale
+    }
+    let drafts: [AgentCollaborationResearchDraft]?
+    do {
+      drafts = try AgentCollaborationResearchEnvelope.publication(in: raw)
+    } catch {
+      try recordResearchRejection(raw, scope: scope, reason: .malformedEnvelope)
+      throw error
+    }
+    guard let drafts else { return }
+    do {
+      _ = try publishResearchObjects(drafts, runId: scope.runId, conversationId: scope.conversationId,
+        turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId)
+    } catch AgentTeamHistoryDatabase.Failure.corrupt {
+      try recordResearchRejection(raw, scope: scope, reason: .invalidDraft)
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    } catch AgentTeamHistoryDatabase.Failure.stale {
+      try recordResearchRejection(raw, scope: scope, reason: .staleBindingOrRevision)
+      throw AgentTeamHistoryDatabase.Failure.stale
+    }
+  }
+
+  private static func researchRejectionKey(_ scope: AgentCollaborationToolEvidenceScope) -> String {
+    "rejection:" + researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+  }
+
+  private static func replyHash(_ raw: String) -> String {
+    SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
+  private func recordResearchRejection(_ raw: String, scope: AgentCollaborationToolEvidenceScope,
+                                       reason: AgentCollaborationPublicationRejection.Reason) throws {
+    try access { database in
+      let key = Self.researchRejectionKey(scope)
+      let hash = Self.replyHash(raw)
+      guard try Self.savedResearchReply(scope, database: database).map(Self.replyHash) == hash else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let publication = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+      guard try database.researchRecord(AgentCollaborationResearchPublication.self,
+        conversationId: scope.conversationId, key: publication, revision: 0) == nil else { return }
+      if try database.researchRecord(AgentCollaborationPublicationRejection.self,
+        conversationId: scope.conversationId, key: key, revision: 0) == nil {
+        try database.insertResearchRecord(AgentCollaborationPublicationRejection(scope: scope, replyHash: hash, reason: reason),
+          conversationId: scope.conversationId, key: key, revision: 0)
+      }
+    }
+  }
+
+  func rejectedResearchReply(scope: AgentCollaborationToolEvidenceScope)
+    throws -> (raw: String, rejection: AgentCollaborationPublicationRejection)? {
+    try access { database in
+      let publication = Self.researchPublicationKey(runId: scope.runId, memberId: scope.memberId, sourceId: scope.sourceId)
+      guard try database.researchRecord(AgentCollaborationResearchPublication.self,
+        conversationId: scope.conversationId, key: publication, revision: 0) == nil,
+        let rejection = try database.researchRecord(AgentCollaborationPublicationRejection.self,
+          conversationId: scope.conversationId, key: Self.researchRejectionKey(scope), revision: 0),
+        rejection.scope == scope, let raw = try Self.savedResearchReply(scope, database: database),
+        Self.replyHash(raw) == rejection.replyHash else { return nil }
+      return (raw, rejection)
+    }
+  }
+
+  private static func savedResearchReply(_ scope: AgentCollaborationToolEvidenceScope,
+                                         database: AgentTeamHistoryDatabase) throws -> String? {
+    guard try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+            key: "native-evidence-revoked", revision: 0) != true,
+          let snapshot = try database.snapshots(runId: scope.runId).first,
+          snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
+          snapshot.state != .cancelled else { return nil }
+    return snapshot.members.first {
+      $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId && $0.status == .succeeded
+    }?.replyContent
+  }
+
   func committedResearchRevisions(scope: AgentCollaborationToolEvidenceScope) throws -> [AgentCollaborationResearchRevision]? {
     try access { database in
       guard let snapshot = try database.snapshots(runId: scope.runId).first,

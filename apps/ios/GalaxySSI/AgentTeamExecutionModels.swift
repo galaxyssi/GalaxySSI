@@ -91,6 +91,18 @@ struct AgentCollaborationResearchPublication: Codable {
   var references: [AgentCollaborationResearchReference]
 }
 
+struct AgentCollaborationPublicationRejection: Codable, Equatable {
+  enum Reason: String, Codable {
+    case malformedEnvelope = "malformed_envelope"
+    case invalidDraft = "invalid_draft"
+    case staleBindingOrRevision = "stale_binding_or_revision"
+  }
+
+  var scope: AgentCollaborationToolEvidenceScope
+  var replyHash: String
+  var reason: Reason
+}
+
 enum AgentSubagentStatus: String, Codable, CaseIterable, Identifiable {
   case pending = "PENDING"
   case queued = "QUEUED"
