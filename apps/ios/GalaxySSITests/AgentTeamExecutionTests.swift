@@ -191,6 +191,10 @@ extension GalaxySSIStoreTests {
     var failedIds = Set<String>()
     for round in 20...28 {
       failed.round = round
+      if round == 28 {
+        failed.succeeded = true
+        failed.output = "{\"success\":false}"
+      }
       failedIds.insert(try history.recordCloudEvidence(failed).string("evidence_id"))
     }
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
@@ -199,7 +203,7 @@ extension GalaxySSIStoreTests {
     let firstProblems = try reopened.recallCollaborationOriginal(directory, scope: scope)
     let entries = try XCTUnwrap(firstProblems["problems"]?.arrayValue)
     XCTAssertEqual(entries.count, 8)
-    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains(failed.output))
+    XCTAssertFalse(AgentMcpJSONCodec.stringify(firstProblems).contains("sensitive failure detail"))
     let lastProblems = try reopened.recallCollaborationOriginal(
       ["mode": .string("problems"), "cursor": .string(firstProblems.string("next_cursor"))], scope: scope)
     let tail = try XCTUnwrap(lastProblems["problems"]?.arrayValue)

@@ -296,7 +296,7 @@ final class AgentTeamExecutionHistoryStore {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
       let hash = try SHA256.hash(data: encoder.encode(saved)).map { String(format: "%02x", $0) }.joined()
-      if !saved.succeeded { try database.indexCloudProblem(id: id, scope: scope) }
+      if saved.observedFailure { try database.indexCloudProblem(id: id, scope: scope) }
       return [
         "evidence_id": .string(id), "sha256": .string(hash), "origin": .string("ios_cloud_tool"),
         "trust": .string("execution_observed_not_claim_verified")
@@ -417,7 +417,7 @@ final class AgentTeamExecutionHistoryStore {
       encoder.outputFormatting = [.sortedKeys]
       let entries = try page.map { id -> AgentMcpJSONValue in
         guard let original = try database.cloudEvidence(id: id, conversationId: scope.conversationId),
-              !original.succeeded, original.scope.conversationId == scope.conversationId,
+              original.observedFailure, original.scope.conversationId == scope.conversationId,
               original.scope.turnId != scope.turnId || original.scope == scope else {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
