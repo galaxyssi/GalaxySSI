@@ -6457,6 +6457,25 @@ final class MessageCoordinator: ObservableObject {
       let dependencies = isCollaboration
         ? AgentCollaborationDecisionContext.dependencyLines(availableObservations, recallAvailable: canRecall) : nil
       var decisionContext: [String] = []
+      let mailbox = UserDefaultsAgentTeamMailbox()
+      let recipient = AgentTeamProgressPolicy.stableCollaborationMemberId(member.memberId)
+      let directedRequests = isCollaboration ? mailbox.pendingMessages(supervisorRunId: spec.supervisorRunId,
+        instanceId: recipient).filter {
+          $0.conversationId == outgoing.conversationId && $0.toInstanceId == recipient &&
+            $0.metadata[AgentCollaborationDirectedRequests.marker] == "true"
+        } : []
+      decisionContext.append(AgentCollaborationDirectedRequests.prompt(directedRequests))
+      if isCollaboration, member.deliveryMode == .observe {
+        let peers = Set(ordered.filter { $0.deliveryMode != .ignore }.map {
+          AgentTeamProgressPolicy.stableCollaborationMemberId($0.memberId)
+        }).subtracting([recipient])
+        decisionContext.append("Peer request recipient IDs: " + peers.sorted().joined(separator: ", "))
+      }
+      func markDirectedRequestsDelivered() {
+        for request in directedRequests {
+          _ = mailbox.markDelivered(messageId: request.messageId, atMillis: AgentControlPlaneClock.nowMillis())
+        }
+      }
       func promptForDispatch() throws -> String {
         guard isCollaboration else {
           return agentTeamMemberPrompt(goal: requestText, member: member,
@@ -6536,6 +6555,7 @@ final class MessageCoordinator: ObservableObject {
               persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
             }
           }
+          markDirectedRequestsDelivered()
           continue
         }
 
@@ -6585,6 +6605,7 @@ final class MessageCoordinator: ObservableObject {
               persistTeamObservation(result, from: member, spec: spec, outgoing: outgoing)
             }
           }
+          markDirectedRequestsDelivered()
           continue
         }
 
@@ -6639,6 +6660,7 @@ final class MessageCoordinator: ObservableObject {
           let result = try await waitForCollaborationObserver(runId: spec.supervisorRunId,
             memberId: member.memberId, sourceMessageId: sourceMessageId)
           observations.append((member.memberId, result))
+          markDirectedRequestsDelivered()
         }
       } catch {
         if error is CancellationError { throw error }
@@ -6770,6 +6792,8 @@ final class MessageCoordinator: ObservableObject {
         statement, test). Use novelty_scope "not_checked"; transfer needs an exact parent and combination
         needs two distinct exact parents. These objects are proposals, not verified findings.
         Do not invent receipt IDs or claim verification.
+        Optional requests are objects with to (exact roster member IDs), question, and candidate_id.
+        Direct requests are research context for a later assignment, not authorization to start work.
         """)
     }
     return goal + "\n\n" + instruction.joined(separator: "\n")
@@ -7272,10 +7296,13 @@ final class MessageCoordinator: ObservableObject {
             context.team.state != .cancelled,
             expectedRunId == nil || context.team.supervisorRunId == expectedRunId else { return }
       defer { reconcileSavedTeamParents(runId: context.team.supervisorRunId) }
-      guard session.collaborationRoster != nil, context.member.status == .succeeded else { return }
+      guard let roster = session.collaborationRoster, context.member.status == .succeeded else { return }
       let scope = AgentCollaborationToolEvidenceScope(runId: context.team.supervisorRunId,
         conversationId: conversation, turnId: turn, memberId: context.member.memberId, sourceId: source)
       guard let raw = context.member.replyContent else { return }
+      let requests = try AgentCollaborationDirectedRequests.messages(in: raw, team: context.team, sender: context.member,
+        rosterMemberIds: Set(roster.members.map { $0.id.uuidString.lowercased() }))
+      _ = try UserDefaultsAgentTeamMailbox().appendAll(requests)
       try history.publishSavedResearchReply(raw, scope: scope)
     } catch where reportFailure {
       lastError = localizedReply("galaxyssi.collaboration.publication_failed",

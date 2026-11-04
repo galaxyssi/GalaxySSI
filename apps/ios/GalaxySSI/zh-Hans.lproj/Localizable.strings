@@ -1001,6 +1001,8 @@
 "galaxyssi.agent_team.message_hint" = "向当前团队发送消息";
 "galaxyssi.agent_team.send" = "发送消息";
 "galaxyssi.agent_team.message_queued" = "消息已排队";
+"galaxyssi.agent_team.recent_messages" = "最近团队消息";
+"galaxyssi.agent_team.messages_unavailable" = "无法读取团队消息。";
 "galaxyssi.agent_team.message_failed" = "消息无法排队";
 "galaxyssi.agent.mention_select" = "选择 Agent %@";
 "galaxyssi.agent_recent_empty" = "还没有最近 Agent 任务";
@@ -4935,4 +4937,5 @@
 "galaxyssi.collaboration.stage_recheck" = "复核";
 "galaxyssi.collaboration.stage_deliver" = "交付";
 "galaxyssi.collaboration.no_results" = "暂无成员结果。";
+"galaxyssi.collaboration.results_unavailable" = "无法读取成员结果。";
 "galaxyssi.collaboration.older_results" = "更早的结果";

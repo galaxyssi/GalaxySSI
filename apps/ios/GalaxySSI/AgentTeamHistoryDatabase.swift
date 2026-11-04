@@ -172,6 +172,25 @@ final class AgentTeamHistoryDatabase {
     }
   }
 
+  func recentMailboxMessages(runId: String, conversationId: String, limit: Int) throws -> [AgentTeamMessageEnvelope] {
+    let statement = try prepare("SELECT message_key,payload FROM team_mailbox WHERE namespace=? AND run_key=? ORDER BY sequence DESC LIMIT ?")
+    defer { sqlite3_finalize(statement) }
+    bind(namespace, at: 1, to: statement)
+    bind(Self.digest(runId), at: 2, to: statement)
+    sqlite3_bind_int(statement, 3, Int32(limit))
+    var rows: [AgentTeamMessageEnvelope] = []
+    while true {
+      switch sqlite3_step(statement) {
+      case SQLITE_ROW:
+        let row = try decodeMailboxMessage(statement)
+        guard row.supervisorRunId == runId, row.conversationId == conversationId else { throw Failure.corrupt }
+        rows.append(row)
+      case SQLITE_DONE: return Array(rows.reversed())
+      default: throw Failure.unavailable
+      }
+    }
+  }
+
   func clearMailbox(runId: String?) throws {
     let statement = try prepare("DELETE FROM team_mailbox WHERE namespace=?" + (runId == nil ? "" : " AND run_key=?"))
     defer { sqlite3_finalize(statement) }
