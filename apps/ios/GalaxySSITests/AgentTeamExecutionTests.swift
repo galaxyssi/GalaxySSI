@@ -158,6 +158,17 @@ extension GalaxySSIStoreTests {
     let updated = try publish([new, changed], team: second, store: reopened)
     XCTAssertEqual(updated.references.map(\.revision), [1, 2])
     XCTAssertNotEqual(updated.references.last?.sha256, original.references.first?.sha256)
+    let scope = AgentCollaborationToolEvidenceScope(runId: first.supervisorRunId,
+      conversationId: first.conversationId, turnId: first.taskId, memberId: member.memberId,
+      sourceId: member.sourceMessageId)
+    let recovered = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope))
+    XCTAssertEqual(recovered.map(\.reference), original.references)
+    XCTAssertEqual(recovered.first?.draft.title, draft.title)
+    var wrongScope = scope
+    wrongScope.sourceId = second.members[0].sourceMessageId
+    XCTAssertThrowsError(try reopened.committedResearchRevisions(scope: wrongScope))
+    reopened.removeResearchObjects(conversationId: first.conversationId)
+    XCTAssertNil(try reopened.committedResearchRevisions(scope: scope))
   }
 
   func testGoalCheckpointCompareAndSetRetainsPriorRevisionAfterReopen() throws {
