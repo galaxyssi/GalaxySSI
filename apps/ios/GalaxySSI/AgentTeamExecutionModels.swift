@@ -1033,6 +1033,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var richOutputJson: String
   var replyContent: String?
   var dispatchCheckpoint: AgentTeamMemberDispatchCheckpoint?
+  var dispatchDependencyMemberIds: [String]? = nil
   var displayName: String?
   var researchStage: String?
   var executionStartedAtMillis: Int64?
@@ -1086,6 +1087,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case richOutputJson = "rich_output_json"
     case replyContent = "reply_content"
     case dispatchCheckpoint = "dispatch_checkpoint"
+    case dispatchDependencyMemberIds = "dispatch_dependency_member_ids"
     case displayName = "display_name"
     case researchStage = "research_stage"
     case executionStartedAtMillis = "execution_started_at_millis"
@@ -1111,6 +1113,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       researchStage: try container.decodeIfPresent(String.self, forKey: .researchStage),
       executionStartedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .executionStartedAtMillis)
     )
+    dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
   }
 
   func elapsedExecutionMillis(now: Int64, team: AgentTeamExecutionSnapshot) -> Int64? {

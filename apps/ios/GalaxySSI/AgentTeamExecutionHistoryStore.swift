@@ -128,7 +128,8 @@ final class AgentTeamExecutionHistoryStore {
           for member in current.members where member.dispatchCheckpoint != nil {
             guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
                   replacement.sourceMessageId == member.sourceMessageId,
-                  replacement.dispatchCheckpoint == member.dispatchCheckpoint else {
+                  replacement.dispatchCheckpoint == member.dispatchCheckpoint,
+                  replacement.dispatchDependencyMemberIds == member.dispatchDependencyMemberIds else {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
           }
@@ -405,6 +406,7 @@ final class AgentTeamExecutionHistoryStore {
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
+    if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
     if mode == "evolution_rules" {
       guard Set(input.keys).isSubset(of: ["mode", "topic", "offset"]),
@@ -517,6 +519,36 @@ final class AgentTeamExecutionHistoryStore {
       )
     }
     return result
+  }
+
+  private func recallDependencyOriginal(_ input: AgentMcpJSONObject,
+                                        scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    let id = input.string("member_id")
+    guard Set(input.keys).isSubset(of: ["mode", "member_id", "offset", "sha256"]),
+          !id.isBlank, id.utf8.count <= 256, id != scope.memberId,
+          case .int(let offset) = input["offset"] ?? .int(0), offset >= 0,
+          offset == 0 || input["sha256"] != nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+              !$0.status.isTerminal && $0.dispatchDependencyMemberIds?.contains(id) == true }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let author = team.members.first(where: { $0.memberId == id && $0.status == .succeeded }),
+            let original = author.replyContent else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let bytes = Data(original.utf8)
+      let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+      guard offset <= Int64(bytes.count), input["sha256"] == nil || input["sha256"] == .string(hash) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let start = Int(offset)
+      let end = start + min(8_192, bytes.count - start)
+      return ["member_id": .string(id), "sha256": .string(hash), "offset": .int(offset),
+        "data_b64": .string(bytes.subdata(in: start..<end).base64EncodedString()),
+        "total_bytes": .int(Int64(bytes.count)), "next_offset": end < bytes.count ? .int(Int64(end)) : .null,
+        "trust": .string("untrusted_group_evidence")]
+    }
   }
 
   func initialCollaborationCapabilities(scope: AgentCollaborationToolEvidenceScope) throws -> [AgentMcpJSONValue] {
