@@ -55,7 +55,15 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
     try originals.store(pdf, name: "fixture.pdf")
     let manifest = try XCTUnwrap(originals.list().originals.first)
-    try files.stageRestore([(manifest, pdf)], receipt: UUID())
+    let abandoned = UUID()
+    try files.withRestoreLease { lease in
+      try files.stageRestore([(manifest, pdf)], receipt: abandoned, lease: lease)
+      XCTAssertThrowsError(try files.list()) {
+        guard case GalaxySSIHealthOriginalStore.Failure.restoreBusy = $0 else { return XCTFail("Expected busy lease") }
+      }
+      XCTAssertTrue(FileManager.default.fileExists(atPath: target.appendingPathComponent("restore-staging")
+        .appendingPathComponent(abandoned.uuidString).appendingPathComponent(manifest.id.uuidString).path))
+    }
     XCTAssertTrue(try files.list().originals.isEmpty)
     let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
     let (payload, _) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
@@ -76,8 +84,11 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.previewRestore(input, records: foreign, originals: files))
     try files.remove(manifest)
     let pendingReceipt = UUID()
-    try files.stageRestore([(manifest, pdf)], receipt: pendingReceipt)
-    try destination.commitRestore(destination.load(), receipt: pendingReceipt)
+    try files.withRestoreLease { lease in
+      try files.stageRestore([(manifest, pdf)], receipt: pendingReceipt, lease: lease)
+      try destination.commitRestore(destination.load(), receipt: pendingReceipt)
+      XCTAssertThrowsError(try files.list())
+    }
     XCTAssertEqual(try files.list().originals, [manifest])
     XCTAssertEqual(try files.read(manifest), pdf)
   }

@@ -182,30 +182,37 @@ extension GalaxySSIHealthPortableBackup {
   @MainActor
   static func previewRestore(_ input: RestoreInput, records: GalaxySSIHealthRecords,
                              originals: GalaxySSIHealthOriginalStore) throws -> RestorePreview {
-    try restoreWork(input, records: records, originals: originals).0
+    try originals.withRestoreLease { lease in
+      try originals.reconcileRestores(lease: lease)
+      return try restoreWork(input, records: records, originals: originals, lease: lease).0
+    }
   }
 
   @MainActor
   static func restore(_ input: RestoreInput, expected: RestorePreview, records: GalaxySSIHealthRecords,
                       originals: GalaxySSIHealthOriginalStore) throws {
-    let (fresh, archive, files) = try restoreWork(input, records: records, originals: originals)
-    guard fresh == expected, fresh.hasChanges else { throw Failure.stale }
-    let receipt = UUID()
-    do {
-      try originals.stageRestore(files, receipt: receipt)
-      try records.commitRestore(archive, receipt: receipt)
-    } catch {
-      try? originals.reconcileRestores()
-      throw error
+    try originals.withRestoreLease { lease in
+      try originals.reconcileRestores(lease: lease)
+      let (fresh, archive, files) = try restoreWork(input, records: records, originals: originals, lease: lease)
+      guard fresh == expected, fresh.hasChanges else { throw Failure.stale }
+      let receipt = UUID()
+      do {
+        try originals.stageRestore(files, receipt: receipt, lease: lease)
+        try records.commitRestore(archive, receipt: receipt)
+      } catch {
+        try? originals.reconcileRestores(lease: lease)
+        throw error
+      }
+      // The receipt is the publication point. A later read retries interrupted promotion.
+      try? originals.reconcileRestores(lease: lease)
     }
-    // The receipt is the publication point. A later read retries interrupted promotion.
-    try? originals.reconcileRestores()
     NotificationCenter.default.post(name: GalaxySSIHealthRecords.trendInputsChanged, object: records.owner)
   }
 
   @MainActor
   private static func restoreWork(_ input: RestoreInput, records: GalaxySSIHealthRecords,
-                                  originals: GalaxySSIHealthOriginalStore) throws
+                                  originals: GalaxySSIHealthOriginalStore,
+                                  lease: GalaxySSIHealthOriginalStore.RestoreLease) throws
     -> (RestorePreview, GalaxySSIHealthRecords.Archive, [(GalaxySSIHealthOriginalStore.Original, Data)]) {
     let payload = try JSONDecoder().decode(Payload.self, from: input.plaintext)
     guard payload.owner == records.owner, originals.owner == records.owner,
@@ -214,7 +221,7 @@ extension GalaxySSIHealthPortableBackup {
     let local = archive.current
     var latest: [UUID: GalaxySSIHealthReading] = [:]
     for reading in archive.revisions { latest[reading.id] = reading }
-    let listing = try originals.list()
+    let listing = try originals.list(lease: lease)
     let tables = archive.tableBatches ?? []
     let localTableHashes = Dictionary(tables.map { ($0.id, digest($0.data)) }, uniquingKeysWith: { first, _ in first })
     var snapshot = latest.values.map { "r:\($0.id):\($0.revision):\($0.deleted)" }
@@ -257,7 +264,7 @@ extension GalaxySSIHealthPortableBackup {
     var newFiles = 0
     for file in payload.originals {
       let candidates = listing.originals.filter { $0.sha256 == file.manifest.sha256 }
-      if candidates.contains(where: { (try? originals.read($0)) != nil }) {
+      if candidates.contains(where: { (try? originals.read($0, lease: lease)) != nil }) {
         snapshot.append("verified:\(file.manifest.sha256)")
         continue
       }
