@@ -110,6 +110,13 @@ struct AgentCollaborationResearchRevision: Codable {
   var authorId: String
   var sourceId: String
   var draft: AgentCollaborationResearchDraft
+  var frozenCloudReads: [AgentCollaborationFrozenCloudRead]? = nil
+}
+
+struct AgentCollaborationFrozenCloudRead: Codable {
+  var evidenceId: String
+  var sha256: String
+  var totalCharacters: Int64
 }
 
 struct AgentCollaborationResearchPublication: Codable {
