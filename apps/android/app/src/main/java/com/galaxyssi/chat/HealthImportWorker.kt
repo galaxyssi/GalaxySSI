@@ -25,7 +25,7 @@ internal object HealthImportScheduler {
         }
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-import:$id")
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork("health-capture:$id")
-        HealthReminderWork.reportSourceChanged(context)
+        HealthReminderWork.sourceRemindersChanged(context)
     }
     fun recoverAsync(context: Context) {
         kotlin.concurrent.thread(name = "health-import-recovery", isDaemon = true) {

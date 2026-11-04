@@ -67,7 +67,7 @@ class HealthTableWorker(context: Context, params: WorkerParameters) : Worker(con
                         }
                         if (phase in listOf(HealthTableState.SAVING, HealthTableState.UNDOING)) {
                             HealthOriginalStore.notifyReportReviews(applicationContext)
-                            HealthReminderWork.reportSourceChanged(applicationContext)
+                            HealthReminderWork.sourceRemindersChanged(applicationContext)
                         }
                         return@use Result.success()
                     }

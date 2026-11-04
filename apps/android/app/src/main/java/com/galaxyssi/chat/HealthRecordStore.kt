@@ -373,9 +373,11 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
 
     private fun incidentKey(scope: HealthConnectScope) = "connect-incident:${scope.name}"
 
-    fun healthSyncIncident(scope: HealthConnectScope): HealthSyncIncident? =
+    internal fun storedSyncIncident(scope: HealthConnectScope): HealthSyncIncident? =
         readHealthSync(incidentKey(scope))?.let { HealthSyncIncident.from(it).also { incident -> check(incident.scope == scope) } }
-            ?: HealthSyncIncident.fromCheckpoint(healthSyncCheckpoint(scope))
+
+    fun healthSyncIncident(scope: HealthConnectScope): HealthSyncIncident? =
+        storedSyncIncident(scope) ?: HealthSyncIncident.fromCheckpoint(healthSyncCheckpoint(scope))
 
     fun startHealthSyncAttempt(mark: HealthSyncCheckpoint) {
         require(mark.outcome == HealthSyncOutcome.RUNNING)
@@ -391,44 +393,68 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         } finally { db.endTransaction() }
     }
 
-    fun saveHealthSyncCheckpoint(mark: HealthSyncCheckpoint) {
+    fun saveHealthSyncCheckpoint(mark: HealthSyncCheckpoint, systemDelivery: Boolean? = null) {
         val key = "connect:${mark.scope.name}"
         val succeeded = mark.outcome == HealthSyncOutcome.UPDATED || mark.outcome == HealthSyncOutcome.NO_NEW
         if (!succeeded && !mark.outcome.isSyncFailure) {
             writeHealthSync(key, mark.json())
             return
         }
+        val delivery = if (mark.outcome.isSyncFailure &&
+            (systemDelivery ?: (name == DEFAULT_DB && HealthReminderWork.syncDeliveryEnabled(app)))) HealthReminderDelivery.WAITING
+        else HealthReminderDelivery.IN_APP_ONLY
         val db = helper.writableDatabase
         var changed = false
+        var reconcileNotices = false
         db.beginTransaction()
         try {
             val prior = healthSyncIncident(mark.scope)
             val next = if (succeeded) prior?.let {
-                if (it.resolvedAt == 0L && mark.lastSuccess > 0) it.copy(resolvedAt = mark.lastSuccess) else it
+                if (it.resolvedAt == 0L && mark.lastSuccess > 0) it.copy(resolvedAt = mark.lastSuccess, delivery = it.handledDelivery) else it
             } else HealthSyncIncident.fromCheckpoint(mark)?.let {
                 if (prior != null && prior.resolvedAt == 0L) prior.copy(outcome = it.outcome, failedAt = it.failedAt,
-                    lastSuccess = it.lastSuccess) else it.copy(id = java.util.UUID.randomUUID().toString())
+                    lastSuccess = it.lastSuccess) else it.copy(id = java.util.UUID.randomUUID().toString(), delivery = delivery)
             } ?: prior
             writeHealthSync(key, mark.json())
             if (next != null && next != prior) {
                 writeHealthSync(incidentKey(mark.scope), next.json())
                 changed = true
+                reconcileNotices = (next.id != prior?.id && next.delivery == HealthReminderDelivery.WAITING) ||
+                    (next.handled && prior != null && !prior.handled && prior.delivery != HealthReminderDelivery.IN_APP_ONLY)
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
         if (changed) notifySyncIncidents()
+        if (reconcileNotices && name == DEFAULT_DB) HealthReminderWork.sourceRemindersChanged(app)
     }
 
     fun acknowledgeHealthSyncIncident(expected: HealthSyncIncident, now: Long) {
         require(now > 0)
         val db = helper.writableDatabase
+        val reconcileNotices: Boolean
         db.beginTransaction()
         try {
-            if (healthSyncIncident(expected.scope) != expected || expected.handled) throw HealthReminderConflict()
-            writeHealthSync(incidentKey(expected.scope), expected.copy(acknowledgedAt = now).json())
+            val current = healthSyncIncident(expected.scope)
+            if (current == null || current.copy(delivery = expected.delivery) != expected || current.handled) throw HealthReminderConflict()
+            writeHealthSync(incidentKey(expected.scope), current.copy(acknowledgedAt = now, delivery = current.handledDelivery).json())
+            reconcileNotices = current.delivery != HealthReminderDelivery.IN_APP_ONLY
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
         notifySyncIncidents()
+        if (reconcileNotices && name == DEFAULT_DB) HealthReminderWork.sourceRemindersChanged(app)
+    }
+
+    fun finishSyncNotice(expected: HealthSyncIncident, delivery: HealthReminderDelivery): Boolean {
+        require(delivery != HealthReminderDelivery.WAITING)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            val current = healthSyncIncident(expected.scope)
+            if (current == null || current.id != expected.id || current.handled || current.delivery != HealthReminderDelivery.WAITING) return false
+            writeHealthSync(incidentKey(current.scope), current.copy(delivery = delivery).json())
+            db.setTransactionSuccessful()
+            return true
+        } finally { db.endTransaction() }
     }
 
     private fun notifySyncIncidents() = app.contentResolver.notifyChange(syncIncidentChanges(app, name), null)
@@ -637,6 +663,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         private fun createClocks(db: SQLiteDatabase) { db.execSQL("CREATE TABLE IF NOT EXISTS health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)") }
     }
     companion object {
+        const val DEFAULT_DB = "health_records_v1.db"
         const val SCHEMA_VERSION = 8
         const val PAGE_SIZE = 30
         fun changes(context: Context, name: String = "health_records_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/observations/" + android.net.Uri.encode(name))
