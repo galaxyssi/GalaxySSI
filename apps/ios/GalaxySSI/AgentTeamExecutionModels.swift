@@ -74,6 +74,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var sourceMessageId: String
   var richOutputJson: String
   var replyContent: String?
+  var displayName: String?
 
   var memberId: String { instanceId.ifBlank(agentId) }
 
@@ -88,7 +89,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     instanceId: String = "",
     sourceMessageId: String = "",
     richOutputJson: String = "",
-    replyContent: String? = nil
+    replyContent: String? = nil,
+    displayName: String? = nil
   ) {
     self.agentId = agentId
     self.role = role
@@ -101,6 +103,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     self.sourceMessageId = sourceMessageId
     self.richOutputJson = richOutputJson
     self.replyContent = replyContent
+    self.displayName = displayName.map { String($0.prefix(256)) }
   }
 
   enum CodingKeys: String, CodingKey {
@@ -115,6 +118,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case sourceMessageId = "source_message_id"
     case richOutputJson = "rich_output_json"
     case replyContent = "reply_content"
+    case displayName = "display_name"
   }
 
   init(from decoder: Decoder) throws {
@@ -131,7 +135,8 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       instanceId: try container.decodeIfPresent(String.self, forKey: .instanceId) ?? agentId,
       sourceMessageId: try container.decodeIfPresent(String.self, forKey: .sourceMessageId) ?? "",
       richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? "",
-      replyContent: try container.decodeIfPresent(String.self, forKey: .replyContent)
+      replyContent: try container.decodeIfPresent(String.self, forKey: .replyContent),
+      displayName: try container.decodeIfPresent(String.self, forKey: .displayName)
     )
   }
 }
