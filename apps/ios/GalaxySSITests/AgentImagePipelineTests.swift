@@ -4,6 +4,40 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testComposerCropKeepsOriginalBytesAndRejectsStaleReplacement() throws {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let source = UIGraphicsImageRenderer(size: CGSize(width: 160, height: 90), format: format).image { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 160, height: 90))
+    }
+    let bytes = try XCTUnwrap(source.pngData())
+    let original = GalaxySSIDraftAttachment(id: "image", displayName: "source.png",
+      mimeType: "image/png", data: bytes, sourceDescription: "camera")
+    let crop = ComposerAttachmentCrop(aspect: .square, rotation: 90)
+    let derivative = try XCTUnwrap(crop.derivative(from: bytes))
+    let cropped = try XCTUnwrap(UIImage(data: derivative))
+    XCTAssertEqual(cropped.size, CGSize(width: 90, height: 90))
+    let edited = try XCTUnwrap(original.applyingComposerCrop(crop, derivative: derivative))
+    XCTAssertEqual(edited.id, original.id)
+    XCTAssertEqual(edited.composerSourceData, bytes)
+    XCTAssertEqual(edited.restoringComposerOriginal(), original)
+    var draft = [original]
+    XCTAssertTrue(draft.replaceComposerAttachment(original, with: edited))
+    XCTAssertFalse(draft.replaceComposerAttachment(original, with: original))
+    XCTAssertEqual(draft, [edited])
+  }
+
+  func testComposerFreeCropClampsToImageAndZoomsAroundSelection() {
+    let size = CGSize(width: 160, height: 100)
+    let crop = ComposerAttachmentCrop(zoom: 2, freeSelection: CGRect(x: -0.25, y: 0.2, width: 0.75, height: 0.6))
+    let selection = crop.selection(in: size, source: size)
+    XCTAssertEqual(selection.minX, 20, accuracy: 0.001)
+    XCTAssertEqual(selection.minY, 35, accuracy: 0.001)
+    XCTAssertEqual(selection.width, 40, accuracy: 0.001)
+    XCTAssertEqual(selection.height, 30, accuracy: 0.001)
+  }
+
   func testHistoricalImageStaysSeparateFromLatestUserMessageAcrossProviders() throws {
     let image = try CloudImagePayload(displayName: "old.png", mimeType: "image/png", data: Data([1, 2, 3]),
       historicalSourceTurnId: "earlier-turn")
