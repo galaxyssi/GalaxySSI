@@ -4,6 +4,21 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testHealthKitPreviewBindsSourceMetadataAndRowMultiplicity() {
+    let now = Date()
+    let source = GalaxySSIHealthKitImport.Source(key: "sample", origin: "fixture", name: "Original")
+    let original = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65, healthKitSource: source)
+    let another = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 66, healthKitSource: source)
+    var renamed = original
+    renamed.healthKitSource = .init(key: source.key, origin: source.origin, name: "Updated")
+    var reread = original
+    reread.id = UUID()
+    let stamp = GalaxySSIHealthKitImport.stamp
+    XCTAssertEqual(stamp([original, another]), stamp([another, reread]))
+    XCTAssertNotEqual(stamp([original]), stamp([renamed]))
+    XCTAssertNotEqual(stamp([original]), stamp([original, original]))
+  }
+
   @MainActor
   func testHealthKitImportKeepsOriginsEditsAndTombstones() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
