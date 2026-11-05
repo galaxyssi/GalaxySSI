@@ -271,7 +271,7 @@ class HealthCaptureActivity : Activity() {
             "library" -> R.string.health_original_library
             "original" -> R.string.health_original_detail
             "review" -> R.string.health_review_title
-            else -> R.string.health_record_center
+            else -> R.string.health_import_queue_title
         })
         val content = content()
         when (screen) {
@@ -750,6 +750,7 @@ class HealthCaptureActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == NATIVE_CAMERA) {
+            if (intent.getBooleanExtra("health_capture_return_to_record_center", false)) { finish(); return }
             if (resultCode == RESULT_OK) { jobPages.clear(); route = "capture"; generation++; refresh() }
         } else if (requestCode == CAMERA) {
             val token = pendingCamera
