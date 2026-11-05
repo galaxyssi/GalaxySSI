@@ -26,18 +26,19 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
             addView(ui.icon(R.drawable.ic_chat_shortcut_list, R.string.health_overview_sort) { chooseOrder(content, snapshot, firstUse) })
         }
         if (snapshot.hasRecords) content.addView(heading) else firstUse.showIntro(content)
-        if (snapshot.hasRecords || snapshot.attention.isNotEmpty() || snapshot.reviewUnavailable || !snapshot.derived.permitted) {
+        if (snapshot.hasRecords || snapshot.attention.isNotEmpty() || snapshot.reviewUnavailable ||
+            snapshot.connectionsUnavailable || !snapshot.derived.permitted) {
             val section = ui.column().apply { tag = "health-overview-attention" }
             val order = runCatching { HealthOverviewOrder.valueOf(prefs.getString("order", "")!!) }.getOrDefault(HealthOverviewOrder.CHANGES_FIRST)
             val ordered = HealthOverviewPolicy.sort(snapshot.attention, order)
             section.addView(ui.text(label(R.string.health_overview_attention), 18f, bold = true))
-            if (ordered.isEmpty()) ui.add(section, ui.text(label(if (snapshot.reviewUnavailable || snapshot.derived.unavailable)
+            if (ordered.isEmpty()) ui.add(section, ui.text(label(if (snapshot.reviewUnavailable || snapshot.connectionsUnavailable || snapshot.derived.unavailable)
                 R.string.health_overview_partial else R.string.health_overview_no_attention), 14f, muted = true), 8)
             ordered.forEach { ui.add(section, attention(it), 8) }
             if (!snapshot.derived.permitted) ui.add(section, ui.profileRow(label(R.string.health_overview_permission)) {
                 if (names.fixture == null) activity.startActivity(activity.healthPrivacyIntent())
             }.apply { tag = "health-overview-privacy-blocked" }, 4)
-            if (ordered.isNotEmpty() && (snapshot.reviewUnavailable || snapshot.derived.unavailable))
+            if (ordered.isNotEmpty() && (snapshot.reviewUnavailable || snapshot.connectionsUnavailable || snapshot.derived.unavailable))
                 ui.add(section, ui.text(label(R.string.health_overview_partial), 13f, muted = true), 6)
             ui.add(content, section, 12)
         }
@@ -86,6 +87,18 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
             if (item.kind == HealthOverviewReviewKind.OCR) start(HealthCaptureActivity::class.java) { putExtra("health_job", item.jobId) }
             else start(HealthTableActivity::class.java) { putExtra("health_table", item.jobId) }
         }.apply { tag = "health-overview-review-${item.kind.name}" }
+        is HealthOverviewAttention.Connection -> ui.column().apply {
+            tag = "health-overview-sync-${item.incident.scope.name}"
+            val incident = item.incident
+            addView(ui.profileRow(label(R.string.health_overview_connection_title, label(incident.scope.metric.titleResource())),
+                label(incident.outcome.statusResource())) {
+                activity.startActivity(incident.intent(activity).putExtra("health_sync_test_id", names.fixture))
+            }.apply { tag = "health-overview-sync-open-${incident.scope.name}" })
+            ui.add(this, ui.text(if (incident.lastSuccess > 0)
+                label(R.string.health_sync_success_time, activity.date(incident.lastSuccess))
+                else label(R.string.health_sync_no_success), 12f, muted = true), 4)
+            ui.add(this, ui.text(label(R.string.health_sync_reminder_retention), 12f, muted = true), 4)
+        }
     }
     private fun chooseOrder(content: LinearLayout, snapshot: HealthOverviewSnapshot, firstUse: HealthFirstUseView) {
         val options = HealthOverviewOrder.entries

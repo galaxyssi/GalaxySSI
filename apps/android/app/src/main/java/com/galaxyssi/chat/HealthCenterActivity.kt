@@ -127,6 +127,8 @@ class HealthCenterActivity : Activity() {
     override fun onStart() {
         super.onStart(); active = true
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, overviewNames.records), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthRecordStore.syncIncidentChanges(this, overviewNames.records), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthConnectSettings.changes(this), false, overviewChanges)
         contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this).buildUpon().appendPath("jobs").build(), false, overviewChanges)
         contentResolver.registerContentObserver(HealthTableScheduler.changes(this), false, overviewChanges)
         contentResolver.registerContentObserver(HealthReminderStore.changes(this, overviewNames.reminders), false, overviewChanges)
