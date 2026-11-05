@@ -34,6 +34,8 @@ enum GalaxySSIHealthReviewReminders {
     }
     var enabled = false
     var actions: [String: Entry] = [:]
+    var notificationPreferences: GalaxySSIHealthReviewDelivery.Preferences?
+    var deliveries: [String: GalaxySSIHealthReviewDelivery.Ticket]?
   }
 
   struct Page {
@@ -113,6 +115,7 @@ struct GalaxySSIHealthReviewReminderView: View {
             do { try records.setReviewRemindersEnabled(value); reload() } catch { failed = true }
           }))
         if enabled {
+          GalaxySSIHealthReviewNotificationSettings(records: records)
           if jobs.isEmpty { Text(t("empty", "No pending reviews")).foregroundColor(.secondary) }
           ForEach(jobs) { job in
             VStack(alignment: .leading, spacing: 6) {
@@ -121,7 +124,7 @@ struct GalaxySSIHealthReviewReminderView: View {
               }
               .disabled(job.kind == .report && originalNames[job.target] == nil)
               HStack {
-                Button(t("snooze", "Snooze for 24 hours")) { update(job, .snoozed(Date().addingTimeInterval(86_400))) }
+                Button(t("snooze_hour", "Snooze for one hour")) { update(job, .snoozed(Date().addingTimeInterval(3_600))) }
                 Spacer()
                 Button(t("handled", "Mark handled")) { update(job, .handled) }
               }

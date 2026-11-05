@@ -349,10 +349,12 @@ struct GalaxySSIHealthOriginalStore {
 
   @discardableResult
   func remove(_ preview: RemovalPreview) throws -> RemovalOutcome {
-    try withRestoreLease { lease in
+    let outcome = try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
       return try remove(preview, lease: lease)
     }
+    NotificationCenter.default.post(name: GalaxySSIHealthRecords.reviewInputsChanged, object: owner)
+    return outcome
   }
 
   private func remove(_ preview: RemovalPreview, lease: RestoreLease) throws -> RemovalOutcome {

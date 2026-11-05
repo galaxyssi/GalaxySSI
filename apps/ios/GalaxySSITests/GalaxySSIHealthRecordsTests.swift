@@ -520,6 +520,97 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try store.read(original), pdf)
   }
 
+  func testReviewNotificationPlanDefersAndDoesNotReplayDelivery() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 23)))
+    let job = GalaxySSIHealthReviewReminders.Job(target: UUID(), kind: .report, versions: [UUID()], at: now)
+    var state = GalaxySSIHealthReviewReminders.State()
+    state.enabled = true
+    state.notificationPreferences = .init(enabled: true)
+    let plan = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: now,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    var ticket = try XCTUnwrap(plan.pending.first)
+    XCTAssertEqual(calendar.component(.hour, from: ticket.due), 8)
+    XCTAssertFalse(ticket.identifier.contains(job.target.uuidString))
+    let request = GalaxySSIHealthReviewDelivery.request(ticket, title: "GalaxySSI reminder",
+      body: "Open GalaxySSI to review.", now: now)
+    XCTAssertTrue(request.content.userInfo.isEmpty)
+    XCTAssertTrue(request.content.attachments.isEmpty)
+    XCTAssertNil(request.content.sound)
+    XCTAssertEqual(request.identifier, ticket.identifier)
+    state.deliveries = plan.tickets
+    let later = ticket.due.addingTimeInterval(5)
+    let adopted = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [ticket.token])
+    XCTAssertTrue(adopted.pending.isEmpty)
+    XCTAssertEqual(adopted.keepDelivered, [ticket.token])
+    state.deliveries = adopted.tickets
+    ticket = try XCTUnwrap(adopted.tickets[job.key])
+    XCTAssertTrue(ticket.submitted)
+    let dismissed = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    XCTAssertTrue(dismissed.pending.isEmpty)
+    XCTAssertEqual(GalaxySSIHealthReviewDelivery.target(for: ticket.token, jobs: [job], state: state, now: later), job)
+    let revised = GalaxySSIHealthReviewReminders.Job(target: job.target, kind: .report, versions: [UUID()], at: now)
+    XCTAssertNil(GalaxySSIHealthReviewDelivery.target(for: ticket.token, jobs: [revised], state: state, now: later))
+    let snooze = later.addingTimeInterval(3_600)
+    state.actions[job.key] = .init(versions: job.versions, action: .snoozed(snooze))
+    let delayed = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [ticket.token])
+    XCTAssertEqual(delayed.pending.first?.due, snooze)
+    XCTAssertNotEqual(delayed.pending.first?.token, ticket.token)
+    XCTAssertTrue(delayed.keepDelivered.isEmpty)
+    state.notificationPreferences?.pausedUntil = snooze.addingTimeInterval(600)
+    state.deliveries = delayed.tickets
+    let paused = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: Set(delayed.pending.map(\.token)), delivered: [])
+    XCTAssertEqual(paused.pending.first?.due, state.notificationPreferences?.pausedUntil)
+    let denied = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: false, scheduled: [], delivered: [])
+    XCTAssertTrue(denied.pending.isEmpty)
+    state.deliveries = denied.tickets
+    let reauthorized = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    XCTAssertTrue(reauthorized.pending.isEmpty)
+  }
+
+  @MainActor
+  func testReviewNotificationOptInDoesNotReplayExistingDraftsAndRoutesExactVersion() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let old = GalaxySSIHealthReviewReminders.TableDraft(id: UUID(), name: "private-old.csv", at: now,
+      data: data, mapping: mapping, worksheet: nil, retainOriginal: false)
+    try records.saveTableReview(old, replacing: nil)
+    try records.setReviewRemindersEnabled(true)
+    let prefs = GalaxySSIHealthReviewDelivery.Preferences(enabled: true, quietStart: 0, quietEnd: 0)
+    try records.setReviewNotificationPreferences(prefs)
+    let fresh = GalaxySSIHealthReviewReminders.TableDraft(id: UUID(), name: "private-new.csv", at: now,
+      data: data, mapping: mapping, worksheet: nil, retainOriginal: false)
+    try records.saveTableReview(fresh, replacing: nil)
+    let plan = try records.reconcileReviewDelivery(now: now, calendar: .current, permitted: true,
+      scheduled: [], delivered: [], availableOriginals: [])
+    XCTAssertEqual(plan.pending.count, 1)
+    let ticket = try XCTUnwrap(plan.pending.first)
+    XCTAssertEqual(ticket.versions, [fresh.version])
+    try records.markReviewDeliverySubmitted(ticket, calendar: .current)
+    let archive = try records.load()
+    let state = try XCTUnwrap(archive.reviewReminderState)
+    XCTAssertEqual(GalaxySSIHealthReviewDelivery.target(for: ticket.token, jobs: GalaxySSIHealthReviewReminders.jobs(in: archive),
+      state: state, now: ticket.due)?.target, fresh.id)
+    try records.setReviewNotificationPreferences(.init(enabled: false))
+    try records.setReviewNotificationPreferences(prefs)
+    let after = try records.reconcileReviewDelivery(now: now, calendar: .current, permitted: true,
+      scheduled: [ticket.token], delivered: [], availableOriginals: [])
+    XCTAssertTrue(after.pending.isEmpty)
+    XCTAssertEqual(try records.load().tableReviews?.count, 2)
+    XCTAssertTrue(try records.load().current.isEmpty)
+  }
+
   @MainActor
   func testReviewReminderActionsDoNotConfirmAndTableCommitClearsDraft() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
