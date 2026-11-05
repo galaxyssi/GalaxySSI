@@ -763,6 +763,9 @@
 "galaxyssi.health.privacy.revoked" = "已撤销";
 "galaxyssi.health.privacy.export_history" = "PDF 导出请求";
 "galaxyssi.health.metric_deletion.title" = "按测量类型删除";
+"galaxyssi.health.metric_deletion.apple_health_title" = "Apple 健康本地副本";
+"galaxyssi.health.metric_deletion.apple_health_only" = "仅 Apple 健康副本";
+"galaxyssi.health.metric_deletion.apple_health_boundary" = "仅删除 GalaxySSI 中来自 Apple 健康的副本。其他来源、Apple 健康数据与权限、导出和备份均不受影响。";
 "galaxyssi.health.metric_deletion.choose" = "选择测量类型";
 "galaxyssi.health.metric_deletion.review" = "核对本地删除范围";
 "galaxyssi.health.metric_deletion.boundary" = "仅删除 GalaxySSI 的本地副本。原始文件、Apple 健康中的数据、导出和备份不受影响。";

@@ -265,6 +265,80 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testAppleHealthLocalEraseKeepsSameMetricFromOtherSourcesAndLeavesPermissionsAlone() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(),
+                                         isolatedFile: root.appendingPathComponent("records"))
+    let now = Date()
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let bluetooth = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet)
+      .reading(conditions: "")
+    let manual = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 120, diastolic: 80)
+    let apple = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 120, diastolic: 80,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture", name: nil))
+    let otherApple = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "b", count: 64), origin: "fixture", name: nil))
+    try records.write(bluetooth)
+    try records.write(manual, allowDuplicate: true)
+    XCTAssertEqual(try records.importHealthKit([apple, otherApple]), 2)
+    try records.updateSourceAttention { $0.selected = [.bloodPressure, .weight] }
+    let attention = try records.loadSourceAttention()
+    let source = GalaxySSIHealthReportReview.Source(original: UUID(), sha256: String(repeating: "c", count: 64),
+                                                   page: 0, region: 0, fromOCR: true)
+    let report = GalaxySSIHealthReportReview.Item(version: UUID(), source: source, excerpt: "Fixture",
+      reading: .init(metric: .bloodPressure, measuredAt: now, value: 121, diastolic: 79, reportSource: source))
+    try records.stageReportItem(report, replacing: nil)
+    let archivedApple = try XCTUnwrap(records.load().current.first { $0.id == apple.id })
+    try records.storeDraft(.init(existing: archivedApple, metric: .bloodPressure))
+    let withDraft = try records.previewMetricDeletion(.bloodPressure, filter: .appleHealth)
+    XCTAssertEqual(withDraft.scope.drafts, 1)
+    XCTAssertEqual(withDraft.scope.sources, [.appleHealth: 1])
+    var tombstone = archivedApple
+    tombstone.deleted = true
+    tombstone.measuredAt = now.addingTimeInterval(-120)
+    try records.write(tombstone, rememberDeletion: true)
+    XCTAssertThrowsError(try records.deleteMetricHistory(withDraft))
+
+    try records.storeDraft(.init(metric: .bloodPressure))
+    let reviewed = try records.previewMetricDeletion(.bloodPressure, filter: .appleHealth)
+    XCTAssertEqual(reviewed.scope.count, 1)
+    XCTAssertEqual(reviewed.scope.drafts, 0)
+    XCTAssertEqual(reviewed.scope.earliest, tombstone.measuredAt)
+    XCTAssertEqual(reviewed.scope.latest, now)
+    try records.deleteMetricHistory(reviewed)
+
+    let archive = try records.load()
+    XCTAssertEqual(Set(archive.current.map(\.id)), Set([manual.id, bluetooth.id, otherApple.id]))
+    XCTAssertFalse(archive.revisions.contains { $0.id == apple.id })
+    XCTAssertEqual(archive.draft?.metric, .bloodPressure)
+    XCTAssertNil(archive.lastMeasurementDeletion)
+    XCTAssertEqual(archive.reportReview?.map(\.version), [report.version])
+    XCTAssertEqual(archive.metricDeletionHistory?.first?.scope.filter, .appleHealth)
+    XCTAssertNil(archive.derivesOverview)
+    XCTAssertEqual(try records.loadSourceAttention(), attention)
+    XCTAssertEqual(try records.importHealthKit([apple]), 1)
+  }
+
+  @MainActor
+  func testAppleHealthLocalEraseClearsOnlyDraftLinkedToRemovedCopy() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let copy = GalaxySSIHealthReading(metric: .weight, value: 65,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: nil, name: nil))
+    XCTAssertEqual(try records.importHealthKit([copy]), 1)
+    let saved = try XCTUnwrap(records.load().current.first)
+    try records.storeDraft(.init(existing: saved, metric: .weight))
+    let reviewed = try records.previewMetricDeletion(.weight, filter: .appleHealth)
+    XCTAssertEqual(reviewed.scope.drafts, 1)
+    try records.deleteMetricHistory(reviewed)
+    XCTAssertNil(try records.load().draft)
+    XCTAssertTrue(try records.previewMetricDeletion(.weight, filter: .appleHealth).scope.isEmpty)
+  }
+
+  @MainActor
   func testHealthBackupHistoryKeepsVerifiedSaveAfterInterruptionAndPruning() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
