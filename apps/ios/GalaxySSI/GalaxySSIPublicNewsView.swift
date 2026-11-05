@@ -170,6 +170,7 @@ struct GalaxySSIPublicNewsReader: View {
           if !article.summary.isEmpty {
             Text(article.summary).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
           }
+          GalaxySSIPublicNewsBodyView(article: article)
           Link(destination: article.url) {
             Label(t("public_news_open_source", "Open publisher"), systemImage: "arrow.up.right")
           }

@@ -339,6 +339,9 @@
     E35390000000000000000001 /* PublicNewsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000002 /* PublicNewsFeed.swift */; };
     E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */; };
     E35390000000000000000003 /* PublicNewsArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000004 /* PublicNewsArchive.swift */; };
+    E36190000000000000000001 /* PublicNewsArticleBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000002 /* PublicNewsArticleBody.swift */; };
+    E36190000000000000000003 /* PublicNewsTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000004 /* PublicNewsTranslation.swift */; };
+    E36190000000000000000005 /* GalaxySSIPublicNewsBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */; };
     E36480000000000000000001 /* PublicNewsSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000002 /* PublicNewsSearch.swift */; };
     E36500000000000000000001 /* PublicNewsHighlights.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36500000000000000000002 /* PublicNewsHighlights.swift */; };
     E36500000000000000000003 /* GalaxySSIPublicNewsHighlightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36500000000000000000004 /* GalaxySSIPublicNewsHighlightsView.swift */; };
@@ -1012,6 +1015,7 @@
     A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */; };
     E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000008 /* PublicNewsFeedTests.swift */; };
     E36510000000000000000003 /* PublicNewsPublisherDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36510000000000000000004 /* PublicNewsPublisherDiscoveryTests.swift */; };
+    E36190000000000000000007 /* PublicNewsArticleBodyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000008 /* PublicNewsArticleBodyTests.swift */; };
     E36480000000000000000005 /* PublicNewsSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000006 /* PublicNewsSearchTests.swift */; };
     E36500000000000000000005 /* PublicNewsHighlightsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36500000000000000000006 /* PublicNewsHighlightsTests.swift */; };
     E36490000000000000000007 /* PublicScienceKnowledgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36490000000000000000008 /* PublicScienceKnowledgeTests.swift */; };
@@ -1468,6 +1472,9 @@
     E35390000000000000000002 /* PublicNewsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeed.swift; sourceTree = "<group>"; };
     E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsPublisherDiscovery.swift; sourceTree = "<group>"; };
     E35390000000000000000004 /* PublicNewsArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArchive.swift; sourceTree = "<group>"; };
+    E36190000000000000000002 /* PublicNewsArticleBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleBody.swift; sourceTree = "<group>"; };
+    E36190000000000000000004 /* PublicNewsTranslation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsTranslation.swift; sourceTree = "<group>"; };
+    E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsBodyView.swift; sourceTree = "<group>"; };
     E36480000000000000000002 /* PublicNewsSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSearch.swift; sourceTree = "<group>"; };
     E36500000000000000000002 /* PublicNewsHighlights.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsHighlights.swift; sourceTree = "<group>"; };
     E36500000000000000000004 /* GalaxySSIPublicNewsHighlightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsHighlightsView.swift; sourceTree = "<group>"; };
@@ -2125,6 +2132,7 @@
     A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReplyPlaybackPolicyTests.swift; sourceTree = "<group>"; };
     E35390000000000000000008 /* PublicNewsFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeedTests.swift; sourceTree = "<group>"; };
     E36510000000000000000004 /* PublicNewsPublisherDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsPublisherDiscoveryTests.swift; sourceTree = "<group>"; };
+    E36190000000000000000008 /* PublicNewsArticleBodyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleBodyTests.swift; sourceTree = "<group>"; };
     E36480000000000000000006 /* PublicNewsSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSearchTests.swift; sourceTree = "<group>"; };
     E36500000000000000000006 /* PublicNewsHighlightsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsHighlightsTests.swift; sourceTree = "<group>"; };
     E36490000000000000000008 /* PublicScienceKnowledgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicScienceKnowledgeTests.swift; sourceTree = "<group>"; };
@@ -2920,6 +2928,9 @@
         E35390000000000000000002 /* PublicNewsFeed.swift */,
         E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */,
         E35390000000000000000004 /* PublicNewsArchive.swift */,
+        E36190000000000000000002 /* PublicNewsArticleBody.swift */,
+        E36190000000000000000004 /* PublicNewsTranslation.swift */,
+        E36190000000000000000006 /* GalaxySSIPublicNewsBodyView.swift */,
         E36480000000000000000002 /* PublicNewsSearch.swift */,
         E36500000000000000000002 /* PublicNewsHighlights.swift */,
         E36500000000000000000004 /* GalaxySSIPublicNewsHighlightsView.swift */,
@@ -3252,6 +3263,7 @@
         A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */,
         E35390000000000000000008 /* PublicNewsFeedTests.swift */,
         E36510000000000000000004 /* PublicNewsPublisherDiscoveryTests.swift */,
+        E36190000000000000000008 /* PublicNewsArticleBodyTests.swift */,
         E36480000000000000000006 /* PublicNewsSearchTests.swift */,
         E36500000000000000000006 /* PublicNewsHighlightsTests.swift */,
         E36490000000000000000008 /* PublicScienceKnowledgeTests.swift */,
@@ -4188,6 +4200,9 @@
         E35390000000000000000001 /* PublicNewsFeed.swift in Sources */,
         E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */,
         E35390000000000000000003 /* PublicNewsArchive.swift in Sources */,
+        E36190000000000000000001 /* PublicNewsArticleBody.swift in Sources */,
+        E36190000000000000000003 /* PublicNewsTranslation.swift in Sources */,
+        E36190000000000000000005 /* GalaxySSIPublicNewsBodyView.swift in Sources */,
         E36480000000000000000001 /* PublicNewsSearch.swift in Sources */,
         E36500000000000000000001 /* PublicNewsHighlights.swift in Sources */,
         E36500000000000000000003 /* GalaxySSIPublicNewsHighlightsView.swift in Sources */,
@@ -4511,6 +4526,7 @@
         A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */,
         E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */,
         E36510000000000000000003 /* PublicNewsPublisherDiscoveryTests.swift in Sources */,
+        E36190000000000000000007 /* PublicNewsArticleBodyTests.swift in Sources */,
         E36480000000000000000005 /* PublicNewsSearchTests.swift in Sources */,
         E36500000000000000000005 /* PublicNewsHighlightsTests.swift in Sources */,
         E36490000000000000000007 /* PublicScienceKnowledgeTests.swift in Sources */,

@@ -39,6 +39,13 @@ final class PublicScienceDOM: NSObject, WKNavigationDelegate {
   }
 
   private func extract<T: Decodable>(html: String, source: PublicScienceSource, url: URL, catalog: Bool) async throws -> T {
+    try await decode(html: html, script: Self.script, arguments: [
+      "page": url.absoluteString, "bookSlug": source.rawValue,
+      "isPDB": source == .molecule, "catalog": catalog
+    ])
+  }
+
+  func decode<T: Decodable>(html: String, script: String, arguments: [String: Any] = [:]) async throws -> T {
     try Task.checkCancellation()
     guard html.utf8.count <= 5_000_000 else { throw PublicScienceError.tooLarge }
     let timeout = Task { @MainActor [weak self] in
@@ -57,10 +64,9 @@ final class PublicScienceDOM: NSObject, WKNavigationDelegate {
       Task { @MainActor in self?.finish(.failure(CancellationError())) }
     })
     try Task.checkCancellation()
-    let value = try await webView.callAsyncJavaScript(Self.script, arguments: [
-      "html": html, "page": url.absoluteString, "bookSlug": source.rawValue,
-      "isPDB": source == .molecule, "catalog": catalog
-    ], in: nil, contentWorld: .defaultClient)
+    var inputs = arguments
+    inputs["html"] = html
+    let value = try await webView.callAsyncJavaScript(script, arguments: inputs, in: nil, contentWorld: .defaultClient)
     try Task.checkCancellation()
     guard let json = value as? String, json.utf8.count <= 2_000_000 else { throw PublicScienceError.unreadable }
     return try JSONDecoder().decode(T.self, from: Data(json.utf8))
