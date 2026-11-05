@@ -42,14 +42,34 @@ actor PublicNewsBodyStore {
     return saved
   }
 
-  func install(_ body: PublicNewsOriginalBody, articleID: String) throws -> PublicNewsBodyCheckpoint {
+  func install(_ body: PublicNewsOriginalBody, articleID: String,
+               retaining: Set<String>? = nil) throws -> PublicNewsBodyCheckpoint {
     try Task.checkCancellation()
     if let current = load(articleID), current.fingerprint == body.fingerprint { return current }
     let next = PublicNewsBodyCheckpoint(articleID: articleID, source: body)
     guard !next.segments.isEmpty else { throw PublicNewsArticleBodyError.incompleteSource }
     try persist(next)
-    prune(excluding: articleID)
+    if let retaining { pruneOutsideArchive(retaining.union([articleID])) }
+    else { prune(excluding: articleID) }
     return next
+  }
+
+  func completedIDs(_ articleIDs: Set<String>) -> Set<String> {
+    var complete = Set<String>()
+    for id in articleIDs {
+      if Task.isCancelled { break }
+      if load(id)?.completed != nil { complete.insert(id) }
+    }
+    return complete
+  }
+
+  private func pruneOutsideArchive(_ retained: Set<String>) {
+    guard let root, let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+    else { return }
+    let names = Set(retained.compactMap { file(for: $0)?.lastPathComponent })
+    for url in urls where url.pathExtension == "json" && !names.contains(url.lastPathComponent) {
+      try? FileManager.default.removeItem(at: url)
+    }
   }
 
   func record(_ text: String, index: Int, articleID: String, fingerprint: String) throws -> PublicNewsBodyCheckpoint {
@@ -114,19 +134,21 @@ enum PublicNewsTranslation {
 
   static func run(
     _ initial: PublicNewsBodyCheckpoint, store: PublicNewsBodyStore = .shared,
+    workClass: LocalModelWorkClass = .interactive, deadlineUptime: TimeInterval? = nil,
     progress: @MainActor (PublicNewsBodyCheckpoint) -> Void
   ) async throws -> PublicNewsBodyCheckpoint {
     var checkpoint = initial
     let runtime = LocalModelInferenceRuntime.shared
     let profile = LocalModelRuntimeSettings.selectedProfile()
     for index in initial.segments.indices where checkpoint.translated[index] == nil {
-      try Task.checkCancellation()
+      try checkBudget(deadlineUptime)
       let source = initial.segments[index]
       let translated: String
       if isChinese(source) {
         translated = simplified(source)
       } else {
-        guard runtime.ready(profile: profile) else { throw PublicNewsArticleBodyError.modelUnavailable }
+        let ready = workClass == .background ? runtime.readyForBackground(profile: profile) : runtime.ready(profile: profile)
+        guard ready else { throw PublicNewsArticleBodyError.modelUnavailable }
         let input = try JSONEncoder().encode(["source": source])
         let reply = try await runtime.generateAsync(
           profile: profile,
@@ -136,9 +158,9 @@ enum PublicNewsTranslation {
             add facts, or omit sentences. Return exactly one JSON object with one string field named translation.
             """,
           userPrompt: String(decoding: input, as: UTF8.self),
-          maximumTokens: 960, temperature: 0, thinkingMode: .noThink
+          maximumTokens: 960, temperature: 0, thinkingMode: .noThink, workClass: workClass
         )
-        try Task.checkCancellation()
+        try checkBudget(deadlineUptime)
         guard let parsed = try? JSONDecoder().decode(ModelReply.self, from: Data(reply.text.utf8)) else {
           throw PublicNewsArticleBodyError.invalidTranslation
         }
@@ -150,6 +172,17 @@ enum PublicNewsTranslation {
       await progress(checkpoint)
     }
     return checkpoint
+  }
+
+  private static func checkBudget(_ deadlineUptime: TimeInterval?) throws {
+    try Task.checkCancellation()
+    if let deadlineUptime, ProcessInfo.processInfo.systemUptime >= deadlineUptime { throw CancellationError() }
+    if deadlineUptime != nil {
+      let process = ProcessInfo.processInfo
+      if process.isLowPowerModeEnabled || process.thermalState == .serious || process.thermalState == .critical {
+        throw CancellationError()
+      }
+    }
   }
 
   static func valid(_ translation: String, for source: String) -> Bool {
