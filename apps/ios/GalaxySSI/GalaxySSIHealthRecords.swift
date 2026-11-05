@@ -400,11 +400,16 @@ struct GalaxySSIHealthRecords {
     try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter, in: load())
   }
 
+  func previewBluetoothHistoryDeletion(device: UUID) throws -> GalaxySSIHealthMetricDeletion.Preview {
+    try GalaxySSIHealthMetricDeletion.preview(.bloodPressure, filter: .bluetooth, bluetoothDevice: device, in: load())
+  }
+
   func deleteMetricHistory(_ reviewed: GalaxySSIHealthMetricDeletion.Preview) throws {
     var archive = try load()
     let metric = reviewed.scope.metric
     let filter = reviewed.scope.filter
-    let current = try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter, in: archive)
+    let current = try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter,
+      bluetoothDevice: reviewed.bluetoothDevice, in: archive)
     guard current == reviewed, !current.scope.isEmpty else { throw Failure.stale }
     let ids = current.ids
     archive.revisions.removeAll { ids.contains($0.id) }
