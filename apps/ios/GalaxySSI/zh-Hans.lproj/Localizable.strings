@@ -473,6 +473,14 @@
 "galaxyssi.health.import.read_pdf" = "报告 PDF 文本";
 "galaxyssi.health.import.saved" = "原件已存入健康原件库";
 "galaxyssi.health.import.retain" = "保留原始文件";
+"galaxyssi.health.import.retention_next" = "下次导入的原件";
+"galaxyssi.health.import.default_keep" = "默认：保留原件";
+"galaxyssi.health.import.default_review" = "默认：不保留原件";
+"galaxyssi.health.import.keep_once" = "本次保留原件";
+"galaxyssi.health.import.review_once" = "本次不保留原件";
+"galaxyssi.health.import.retention_unavailable" = "无法读取原件保留设置。";
+"galaxyssi.health.table.retention_keep" = "将保留原件";
+"galaxyssi.health.table.retention_review" = "不会保留原件";
 "galaxyssi.health.import.close_review" = "关闭本次审阅";
 "galaxyssi.health.import.failed" = "无法导入原件，请检查文件或减少扫描页数。";
 "galaxyssi.health.more" = "查看更多";
@@ -746,6 +754,8 @@
 "galaxyssi.health.backup.links" = "%lld 条测量来源关联";
 "galaxyssi.health.backup.incomplete" = "备份不完整：%lld 个原件或来源关联缺失";
 "galaxyssi.health.privacy.local" = "本机分析";
+"galaxyssi.health.privacy.imports" = "新导入";
+"galaxyssi.health.privacy.import_originals" = "保留新导入的原件";
 "galaxyssi.health.privacy.failed" = "未能保存权限变更。";
 "galaxyssi.health.privacy.history" = "权限变更记录";
 "galaxyssi.health.privacy.empty" = "暂无权限变更";

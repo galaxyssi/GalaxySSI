@@ -240,16 +240,19 @@ struct GalaxySSIHealthCenterView: View {
             get: { self.archive?.derivesOverview == true }, set: { changePrivacy(.overview, enabled: $0) }))
           Toggle(t("weekly.permission", "Allow local weekly reports"), isOn: Binding(
             get: { self.archive?.weeklyReportAllowed == true }, set: { changePrivacy(.weeklyReport, enabled: $0) }))
-          if privacySaveFailed {
-            Text(t("privacy.failed", "The permission change was not saved.")).foregroundColor(.secondary)
-          }
+        }
+        Section(t("privacy.imports", "New imports")) {
+          Toggle(t("privacy.import_originals", "Keep originals of new imports"), isOn: Binding(
+            get: { self.archive?.keepsNewImportOriginals == true },
+            set: { changePrivacy(.importOriginals, enabled: $0) }))
+          if privacySaveFailed { Text(t("privacy.failed", "The permission change was not saved.")) }
         }
         Section(t("privacy.history", "Permission history")) {
           let events = archive.privacyEvents ?? []
           if events.isEmpty { Text(t("privacy.empty", "No permission changes")).foregroundColor(.secondary) }
           ForEach(events.reversed().prefix(privacyLimit)) { event in
             VStack(alignment: .leading, spacing: 4) {
-              Text(event.scope == .overview ? t("overview", "Measurement overview") : t("weekly.title", "Weekly Health Report"))
+              Text(privacyScopeTitle(event.scope))
               Text(event.enabled ? t("privacy.allowed", "Allowed") : t("privacy.revoked", "Revoked"))
                 .foregroundColor(.secondary)
               Text(event.at, style: .date).foregroundColor(.secondary)
@@ -281,6 +284,14 @@ struct GalaxySSIHealthCenterView: View {
     .navigationTitle(t("privacy.title", "Health Privacy"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
+  }
+
+  private func privacyScopeTitle(_ scope: GalaxySSIHealthRecords.PrivacyScope) -> String {
+    switch scope {
+    case .overview: return t("overview", "Measurement overview")
+    case .weeklyReport: return t("weekly.title", "Weekly Health Report")
+    case .importOriginals: return t("privacy.import_originals", "Keep originals of new imports")
+    }
   }
 
   private func changePrivacy(_ scope: GalaxySSIHealthRecords.PrivacyScope, enabled: Bool) {

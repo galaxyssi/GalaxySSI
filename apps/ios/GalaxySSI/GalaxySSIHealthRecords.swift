@@ -119,7 +119,7 @@ struct GalaxySSIHealthRecords {
   }
 
   enum PrivacyScope: String, Codable {
-    case overview, weeklyReport
+    case overview, weeklyReport, importOriginals
   }
 
   struct PrivacyEvent: Codable, Identifiable {
@@ -150,6 +150,9 @@ struct GalaxySSIHealthRecords {
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var healthOnlinePermission: UUID?
+    var retainImportOriginals: Bool?
+
+    var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -304,9 +307,12 @@ struct GalaxySSIHealthRecords {
     case .weeklyReport:
       previous = archive.weeklyReportAllowed
       archive.weeklyReportAllowed = enabled
+    case .importOriginals:
+      previous = archive.retainImportOriginals
+      archive.retainImportOriginals = enabled
     }
     guard previous != enabled else { return }
-    if (previous ?? false) != enabled {
+    if (previous ?? (scope == .importOriginals)) != enabled {
       var history = archive.privacyEvents ?? []
       history.append(.init(at: Date(), scope: scope, enabled: enabled))
       archive.privacyEvents = Array(history.suffix(100))
