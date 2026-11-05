@@ -28,7 +28,8 @@
     <string name="health_save_original">Save original</string>
     <string name="health_recognize_again">Recognize this original</string>
     <string name="health_remove_original">Remove original file</string>
-    <string name="health_remove_original_explanation">Remove the original bytes only. Confirmed measurements and recognition drafts are retained and will indicate that the file is unavailable.</string>
+    <string name="health_remove_original_preview">%1$s · %2$s\n%3$d linked measurements will be kept.\n\nOnly this app’s original file will be removed. Recognition drafts and source information are retained. Existing backups and exports are unchanged.</string>
+    <string name="health_original_removal_changed">The file or linked records changed. Review a new preview before deleting.</string>
     <string name="health_original_removed">Original file removed</string>
     <string name="health_original_saved">Original saved and integrity verified</string>
     <string name="health_review_title">Verify Recognition Results</string>
