@@ -149,6 +149,17 @@ final class MessageCoordinator: ObservableObject {
         pageTitle: "Agent"
       )
     }
+    let reminderTool = try? VoiceReminderNativeTool.executable { [weak settingsStore] context in
+      let load: @MainActor () -> VoiceReminderSnapshot? = {
+        guard let settingsStore, settingsStore.canReadVoiceReminderSnapshot,
+              UIApplication.shared.applicationState == .active,
+              let session = settingsStore.agentSession(id: context.conversationId.ifBlank(context.sessionId)),
+              session.status == .active, !session.privateMode, !session.trackingPaused else { return nil }
+        return settingsStore.voiceReminderSnapshot(calendar: VoiceReminderSnapshot.calendarRows())
+      }
+      if Thread.isMainThread { return MainActor.assumeIsolated { load() } }
+      return DispatchQueue.main.sync { load() }
+    }
     return try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: controlPlaneExecutor,
       screenProvider: { [weak self] _ in
@@ -159,7 +170,8 @@ final class MessageCoordinator: ObservableObject {
       },
       homeAssistantSettingsProvider: {
         settingsStore.homeAssistantSettings
-      }
+      },
+      voiceReminderTool: reminderTool
     )
   }()
   private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()

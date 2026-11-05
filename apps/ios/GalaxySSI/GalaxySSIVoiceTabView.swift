@@ -525,7 +525,7 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private var showsVoiceReminders: Bool {
-    viewVisible && scenePhase == .active && !reminderPrivacyLocked &&
+    viewVisible && scenePhase == .active && !reminderPrivacyLocked && store.canReadVoiceReminderSnapshot &&
       !isVoiceProcessing && !holdToTalk.isPending && !holdToTalk.isRecording &&
       !wakeListener.isCommandCapturing && !passiveCapture.isListening &&
       lastVoiceTranscript.isEmpty && visibleTranscript.isEmpty
@@ -536,13 +536,7 @@ struct GalaxySSIVoiceTabView: View {
     let calendarRead = Task.detached(priority: .utility) { VoiceReminderSnapshot.calendarRows() }
     let calendar = await calendarRead.value
     guard !Task.isCancelled, showsVoiceReminders else { return }
-    let archive = PublicNewsArchive()
-    archive.load()
-    reminderSnapshot = VoiceReminderSnapshot(
-      tasks: VoiceReminderSnapshot.taskRows(store.mergedAgentTaskRecords()),
-      calendar: calendar,
-      unreadNewsCount: archive.reminderUnreadCount
-    )
+    reminderSnapshot = store.voiceReminderSnapshot(calendar: calendar)
   }
 
   private var reminderSection: some View {
@@ -573,6 +567,15 @@ struct GalaxySSIVoiceTabView: View {
             .font(.footnote)
             .foregroundColor(.secondary)
         }
+        ForEach(snapshot.personal) { item in
+          GalaxySSISecurityStatusRow(
+            title: t("voice_reminders_personal", "Personal reminder"),
+            subtitle: item.content,
+            systemImage: "bell",
+            tint: .galaxySSIAccent,
+            badge: ""
+          )
+        }
         if let count = snapshot.unreadNewsCount {
           if count > 0 {
             NavigationLink(destination: GalaxySSIPublicNewsView()) {
@@ -591,7 +594,8 @@ struct GalaxySSIVoiceTabView: View {
             .font(.footnote)
             .foregroundColor(.secondary)
         }
-        if snapshot.tasks.isEmpty, snapshot.calendar?.isEmpty != false, snapshot.unreadNewsCount ?? 0 == 0 {
+        if snapshot.tasks.isEmpty, snapshot.personal.isEmpty,
+           snapshot.calendar?.isEmpty != false, (snapshot.unreadNewsCount ?? 0) == 0 {
           Text(t("voice_reminders_empty", "No reminders"))
             .font(.footnote)
             .foregroundColor(.secondary)
