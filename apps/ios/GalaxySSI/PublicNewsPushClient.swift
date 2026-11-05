@@ -98,7 +98,7 @@ enum PublicNewsPushClient {
     guard let url = parts.url, !title.isEmpty else { return nil }
     return PublicNewsArticle(
       url: url, title: title, summary: PublicNewsFeedParser.plainText(object["text"] as? String ?? "", limit: 800),
-      publisher: host, publishedAt: nil, discoveredAt: min(submitted, now)
+      publisher: host, publishedAt: nil, discoveredAt: min(submitted, now), interests: [.technology]
     )
   }
 

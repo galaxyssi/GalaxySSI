@@ -338,6 +338,8 @@
     E35390000000000000000001 /* PublicNewsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000002 /* PublicNewsFeed.swift */; };
     E35390000000000000000003 /* PublicNewsArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000004 /* PublicNewsArchive.swift */; };
     E36480000000000000000001 /* PublicNewsSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000002 /* PublicNewsSearch.swift */; };
+    E36500000000000000000001 /* PublicNewsHighlights.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36500000000000000000002 /* PublicNewsHighlights.swift */; };
+    E36500000000000000000003 /* GalaxySSIPublicNewsHighlightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36500000000000000000004 /* GalaxySSIPublicNewsHighlightsView.swift */; };
     E36480000000000000000003 /* GalaxySSIPublicNewsSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000004 /* GalaxySSIPublicNewsSearchView.swift */; };
     E35390000000000000000005 /* GalaxySSIPublicNewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */; };
     E35390000000000000000009 /* PublicNewsPushClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3539000000000000000000A /* PublicNewsPushClient.swift */; };
@@ -1004,6 +1006,7 @@
     A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */; };
     E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000008 /* PublicNewsFeedTests.swift */; };
     E36480000000000000000005 /* PublicNewsSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000006 /* PublicNewsSearchTests.swift */; };
+    E36500000000000000000005 /* PublicNewsHighlightsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36500000000000000000006 /* PublicNewsHighlightsTests.swift */; };
     A10000000000000000000590 /* VoiceLatencyTracerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000590 /* VoiceLatencyTracerTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
     A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000204 /* AgentWorkspacePlanTests.swift */; };
@@ -1456,6 +1459,8 @@
     E35390000000000000000002 /* PublicNewsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeed.swift; sourceTree = "<group>"; };
     E35390000000000000000004 /* PublicNewsArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArchive.swift; sourceTree = "<group>"; };
     E36480000000000000000002 /* PublicNewsSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSearch.swift; sourceTree = "<group>"; };
+    E36500000000000000000002 /* PublicNewsHighlights.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsHighlights.swift; sourceTree = "<group>"; };
+    E36500000000000000000004 /* GalaxySSIPublicNewsHighlightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsHighlightsView.swift; sourceTree = "<group>"; };
     E36480000000000000000004 /* GalaxySSIPublicNewsSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsSearchView.swift; sourceTree = "<group>"; };
     E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsView.swift; sourceTree = "<group>"; };
     E3539000000000000000000A /* PublicNewsPushClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsPushClient.swift; sourceTree = "<group>"; };
@@ -2106,6 +2111,7 @@
     A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReplyPlaybackPolicyTests.swift; sourceTree = "<group>"; };
     E35390000000000000000008 /* PublicNewsFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeedTests.swift; sourceTree = "<group>"; };
     E36480000000000000000006 /* PublicNewsSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSearchTests.swift; sourceTree = "<group>"; };
+    E36500000000000000000006 /* PublicNewsHighlightsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsHighlightsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000590 /* VoiceLatencyTracerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyTracerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyDiagnosticsStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000629 /* VoicePcmRingBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmRingBufferTests.swift; sourceTree = "<group>"; };
@@ -2898,6 +2904,8 @@
         E35390000000000000000002 /* PublicNewsFeed.swift */,
         E35390000000000000000004 /* PublicNewsArchive.swift */,
         E36480000000000000000002 /* PublicNewsSearch.swift */,
+        E36500000000000000000002 /* PublicNewsHighlights.swift */,
+        E36500000000000000000004 /* GalaxySSIPublicNewsHighlightsView.swift */,
         E36480000000000000000004 /* GalaxySSIPublicNewsSearchView.swift */,
         E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */,
         E3539000000000000000000A /* PublicNewsPushClient.swift */,
@@ -3222,6 +3230,7 @@
         A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */,
         E35390000000000000000008 /* PublicNewsFeedTests.swift */,
         E36480000000000000000006 /* PublicNewsSearchTests.swift */,
+        E36500000000000000000006 /* PublicNewsHighlightsTests.swift */,
         A20000000000000000000762 /* VoiceTTSRequestRegistryTests.swift */,
         A20000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift */,
         A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */,
@@ -4155,6 +4164,8 @@
         E35390000000000000000001 /* PublicNewsFeed.swift in Sources */,
         E35390000000000000000003 /* PublicNewsArchive.swift in Sources */,
         E36480000000000000000001 /* PublicNewsSearch.swift in Sources */,
+        E36500000000000000000001 /* PublicNewsHighlights.swift in Sources */,
+        E36500000000000000000003 /* GalaxySSIPublicNewsHighlightsView.swift in Sources */,
         E36480000000000000000003 /* GalaxySSIPublicNewsSearchView.swift in Sources */,
         E35390000000000000000005 /* GalaxySSIPublicNewsView.swift in Sources */,
         E35390000000000000000009 /* PublicNewsPushClient.swift in Sources */,
@@ -4470,6 +4481,7 @@
         A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */,
         E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */,
         E36480000000000000000005 /* PublicNewsSearchTests.swift in Sources */,
+        E36500000000000000000005 /* PublicNewsHighlightsTests.swift in Sources */,
         A10000000000000000000762 /* VoiceTTSRequestRegistryTests.swift in Sources */,
         A10000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift in Sources */,
         A10000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift in Sources */,

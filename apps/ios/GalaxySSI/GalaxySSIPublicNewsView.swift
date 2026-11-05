@@ -8,6 +8,7 @@ struct GalaxySSIPublicNewsView: View {
   @StateObject private var archive = PublicNewsArchive()
   @State private var filter = Filter.all
   @State private var refreshRequest = 0
+  @State private var showHighlights = false
   @State private var selected: PublicNewsArticle?
   @SceneStorage("publicNews.showSearch") private var showSearch = false
 
@@ -30,6 +31,9 @@ struct GalaxySSIPublicNewsView: View {
           Menu {
             Button { showSearch = true } label: {
               Label(t("public_news_search", "Search news"), systemImage: "magnifyingglass")
+            }
+            Button { showHighlights = true } label: {
+              Label(t("public_news_highlights", "Highlights"), systemImage: "sparkles")
             }
             Button { refreshRequest += 1 } label: {
               Label(t("public_news_refresh", "Refresh news"), systemImage: "arrow.clockwise")
@@ -96,6 +100,12 @@ struct GalaxySSIPublicNewsView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .background {
       NavigationLink(destination: GalaxySSIPublicNewsSearchView(archive: archive), isActive: $showSearch) {
+        EmptyView()
+      }
+      .hidden()
+    }
+    .background {
+      NavigationLink(destination: GalaxySSIPublicNewsHighlightsView(archive: archive), isActive: $showHighlights) {
         EmptyView()
       }
       .hidden()
