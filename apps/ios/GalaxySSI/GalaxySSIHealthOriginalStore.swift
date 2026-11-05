@@ -120,7 +120,8 @@ struct GalaxySSIHealthOriginalStore {
 
   nonisolated static let maximumFileBytes = 16 * 1024 * 1024
   private static let maximumZIPBytes = 64 * 1024 * 1024
-  private let maximumHeaderBytes = 4_096
+  private nonisolated static let maximumHeaderBytes = 4_096
+  static let indexChanged = Notification.Name("galaxyssi.health.originals.index.changed")
   let owner: String
   let secrets: GalaxySSISecretStore
   var fixtureDirectory: URL? = nil
@@ -146,6 +147,7 @@ struct GalaxySSIHealthOriginalStore {
       try reconcileRestores(lease: lease)
       try store(data, name: name, acquisition: acquisition, lease: lease)
     }
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
   }
 
   private func store(_ data: Data, name: String, acquisition: Acquisition, lease: RestoreLease) throws {
@@ -201,7 +203,7 @@ struct GalaxySSIHealthOriginalStore {
     let key = try key(create: true)
     guard let header = try AES.GCM.seal(JSONEncoder().encode(item), using: key,
                                        authenticating: binding(item.id, "header")).combined,
-          header.count <= maximumHeaderBytes,
+          header.count <= Self.maximumHeaderBytes,
           let payload = try AES.GCM.seal(data, using: key, authenticating: binding(item.id, item.sha256)).combined
     else { throw Failure.invalid }
     var length = UInt32(header.count).bigEndian
@@ -301,7 +303,7 @@ struct GalaxySSIHealthOriginalStore {
     _ = try verifiedPayload(handle, original: original, key: key)
     let length = try handle.offset()
     try handle.seek(toOffset: 0)
-    guard length <= UInt64(Self.maximumFileBytes + maximumHeaderBytes + 32),
+    guard length <= UInt64(Self.maximumFileBytes + Self.maximumHeaderBytes + 32),
           let data = try handle.read(upToCount: Int(length)), data.count == Int(length)
     else { throw Failure.invalid }
     try data.write(to: url(id), options: [.atomic, .completeFileProtection])
@@ -309,6 +311,53 @@ struct GalaxySSIHealthOriginalStore {
 
   func containsOriginalFile(_ id: UUID) throws -> Bool {
     FileManager.default.fileExists(atPath: try url(id).path)
+  }
+
+  func dataFilesDirectory() throws -> URL { try directory() }
+
+  func legacyDataFilesReader(directory: URL) -> LegacyIndexReader {
+    .init(directory: directory, owner: owner, key: try? key(create: false))
+  }
+
+  struct LegacyIndexReader: Sendable {
+    let directory: URL
+    let owner: String
+    let key: SymmetricKey?
+
+    func read() throws -> Index {
+      try Task.checkCancellation()
+      let ledger = try GalaxySSIHealthOriginalStore.readLegacyRemovals(
+        at: directory.appendingPathComponent("removals-v1"),
+        binding: Data("galaxyssi.health.originals.removal.v1:\(owner)".utf8), key: { key })
+      let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+      let ids = Set(files.compactMap { UUID(uuidString: $0.lastPathComponent) }).subtracting(ledger.pending)
+      var index = Index(removals: ledger)
+      if !ids.isEmpty {
+        guard let key else { throw Failure.invalid }
+        for id in ids {
+          try Task.checkCancellation()
+          let item: Original?
+          do {
+            let handle = try FileHandle(forReadingFrom: directory.appendingPathComponent(id.uuidString))
+            defer { try? handle.close() }
+            item = try GalaxySSIHealthOriginalStore.readHeader(handle, id: id, key: key, owner: owner)
+          } catch { item = nil }
+          if let item { try index.include(item) } else { index.unreadableLegacy.insert(id) }
+        }
+      }
+      return index
+    }
+  }
+
+  func indexedOriginal(id: UUID, sha256: String) throws -> Original {
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      let index = try ensureIndex(lease: lease)
+      guard !index.removals.pending.contains(id), !index.removals.metadata.contains(where: { $0.id == id }),
+            let original = index.originals[id], original.sha256 == sha256
+      else { throw Failure.stale }
+      return original
+    }
   }
 
   func list() throws -> Listing {
@@ -345,17 +394,7 @@ struct GalaxySSIHealthOriginalStore {
       lease.originalIndex = previous
       return previous
     }
-    let ledger = try loadLegacyRemovals()
-    let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil)
-    let ids = Set(files.compactMap { UUID(uuidString: $0.lastPathComponent) }).subtracting(ledger.pending)
-    var index = Index(removals: ledger)
-    if !ids.isEmpty {
-      let key = try key(create: false)
-      for id in ids {
-        if let item = try? withFile(id, { try readHeader($0, id: id, key: key) }) { try index.include(item) }
-        else { index.unreadableLegacy.insert(id) }
-      }
-    }
+    let index = try legacyDataFilesReader(directory: directory()).read()
     try records.setOriginalIndex(index, expected: nil)
     lease.originalIndex = index
     return index
@@ -425,6 +464,7 @@ struct GalaxySSIHealthOriginalStore {
       return try remove(preview, lease: lease)
     }
     NotificationCenter.default.post(name: GalaxySSIHealthRecords.reviewInputsChanged, object: owner)
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
     return outcome
   }
 
@@ -444,7 +484,7 @@ struct GalaxySSIHealthOriginalStore {
 
   func removalHistory() throws -> [RemovalAudit] { try loadRemovals().audit }
 
-  private static func missingFile(_ error: CocoaError) -> Bool {
+  private nonisolated static func missingFile(_ error: CocoaError) -> Bool {
     error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile
   }
 
@@ -457,11 +497,16 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   private func loadLegacyRemovals() throws -> RemovalLedger {
+    try Self.readLegacyRemovals(at: removalURL(), binding: removalBinding, key: { try key(create: false) })
+  }
+
+  private nonisolated static func readLegacyRemovals(at url: URL, binding: Data,
+                                                    key: () throws -> SymmetricKey?) throws -> RemovalLedger {
     let data: Data
-    do { data = try Data(contentsOf: removalURL()) }
+    do { data = try Data(contentsOf: url) }
     catch let error as CocoaError where Self.missingFile(error) { return RemovalLedger() }
-    let payload = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key(create: false),
-                                  authenticating: removalBinding)
+    guard let key = try key() else { throw Failure.invalid }
+    let payload = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key, authenticating: binding)
     return try JSONDecoder().decode(RemovalLedger.self, from: payload)
   }
 
@@ -698,18 +743,27 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   private func readHeader(_ file: FileHandle, id: UUID, key: SymmetricKey) throws -> Original {
+    try Self.readHeader(file, id: id, key: key, owner: owner)
+  }
+
+  private nonisolated static func readHeader(_ file: FileHandle, id: UUID, key: SymmetricKey,
+                                             owner: String) throws -> Original {
     guard let prefix = try file.read(upToCount: 4), prefix.count == 4 else { throw Failure.invalid }
     let size = prefix.reduce(0) { ($0 << 8) | Int($1) }
     guard (28...maximumHeaderBytes).contains(size), let header = try file.read(upToCount: size),
           header.count == size else { throw Failure.invalid }
     let decoded = try AES.GCM.open(AES.GCM.SealedBox(combined: header), using: key,
-                                   authenticating: binding(id, "header"))
+                                   authenticating: binding(owner: owner, id, "header"))
     let item = try JSONDecoder().decode(Original.self, from: decoded)
     guard item.id == id, (1...Self.maximumFileBytes).contains(item.bytes) else { throw Failure.invalid }
     return item
   }
 
   private func binding(_ id: UUID, _ purpose: String) -> Data {
+    Self.binding(owner: owner, id, purpose)
+  }
+
+  private nonisolated static func binding(owner: String, _ id: UUID, _ purpose: String) -> Data {
     Data("galaxyssi.health.originals.v1:\(owner):\(id.uuidString):\(purpose)".utf8)
   }
 

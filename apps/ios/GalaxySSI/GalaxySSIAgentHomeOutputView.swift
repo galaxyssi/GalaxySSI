@@ -114,6 +114,7 @@ extension AgentHomeView {
               t: t,
               mergedSourceLabel: { mergedSourceLabel(for: $0) },
               agentTask: { agentTask(for: $0) },
+              committedProgress: { committedProgress(for: $0) },
               remoteAgentTask: {
                 replyRuntimeIndex.remoteTask(
                   for: $0,
@@ -133,6 +134,7 @@ extension AgentHomeView {
                   updatedAtMillis: updatedAtMillis
                 )
               },
+              elapsedDuration: { executionDuration(elapsedMillis: $0) },
               timelineActions: { task in agentTimelineActions(for: task) },
               timelineActionTitle: agentTimelineActionTitle,
               timelineActionIcon: agentTimelineActionIcon,
