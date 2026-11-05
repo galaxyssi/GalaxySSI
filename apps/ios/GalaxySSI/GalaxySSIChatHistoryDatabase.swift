@@ -24,6 +24,58 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
+  private var rowCache = RowCache()
+  private var rowCachingEnabled = true
+
+  struct RowCache {
+    private struct Entry {
+      let ciphertext: Data
+      let message: ChatMessage
+      let cost: Int
+    }
+    private let maximumRows: Int
+    private let maximumBytes: Int
+    private var entries: [String: Entry] = [:]
+    private var order: [String] = []
+    private var bytes = 0
+
+    init(maximumRows: Int = 32, maximumBytes: Int = 512 * 1024) {
+      self.maximumRows = maximumRows
+      self.maximumBytes = maximumBytes
+    }
+
+    mutating func read(id: String, ciphertext: Data,
+                       decode: () -> (message: ChatMessage, plaintextBytes: Int)?) -> ChatMessage? {
+      if let entry = entries[id], entry.ciphertext == ciphertext {
+        order.removeAll { $0 == id }
+        order.append(id)
+        return entry.message
+      }
+      remove(id)
+      guard let decoded = decode() else { return nil }
+      let cost = ciphertext.count + decoded.plaintextBytes
+      guard maximumRows > 0, cost <= maximumBytes else { return decoded.message }
+      while let oldest = order.first, entries.count >= maximumRows || bytes > maximumBytes - cost {
+        remove(oldest)
+      }
+      entries[id] = Entry(ciphertext: ciphertext, message: decoded.message, cost: cost)
+      bytes += cost
+      order.append(id)
+      return decoded.message
+    }
+
+    mutating func remove(_ id: String) {
+      guard let removed = entries.removeValue(forKey: id) else { return }
+      bytes -= removed.cost
+      order.removeAll { $0 == id }
+    }
+
+    mutating func clear() {
+      entries.removeAll()
+      order.removeAll()
+      bytes = 0
+    }
+  }
 
   init(fileURL: URL, secrets: GalaxySSISecretStore) {
     self.fileURL = fileURL
@@ -141,25 +193,53 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   }
 
   func deliveredDesktopReplyTurns(contactId: String, conversationId: String) throws -> Set<String> {
+    var turns: Set<String> = []
+    var cursor: GalaxySSIChatHistoryCursor?
+    repeat {
+      let page = try deliveredDesktopReplyTurnPage(contactId: contactId, conversationId: conversationId, before: cursor)
+      turns.formUnion(page.turns)
+      cursor = page.next
+    } while cursor != nil
+    return turns
+  }
+
+  func deliveredDesktopReplyTurnPage(contactId: String, conversationId: String,
+                                     before cursor: GalaxySSIChatHistoryCursor?, pageSize: Int = 16) throws
+    -> (turns: Set<String>, next: GalaxySSIChatHistoryCursor?) {
     try locked {
+      let limit = min(max(1, pageSize), Self.maximumPageSize)
+      let boundary = cursor == nil ? "" : " AND (created_at < ? OR (created_at = ? AND message_id < ?))"
       guard let statement = prepare("""
-        SELECT message_id, encrypted_payload FROM chat_messages
-        WHERE contact_id = ? AND conversation_id = ? AND is_mine = 0 AND is_system = 0
+        SELECT message_id, encrypted_payload, created_at FROM chat_messages
+        WHERE contact_id = ? AND conversation_id = ? AND is_mine = 0 AND is_system = 0\(boundary)
+        ORDER BY created_at DESC, message_id DESC LIMIT ?
         """) else { throw MqttChunkStorageError.databaseFailure }
       defer { sqlite3_finalize(statement) }
       bind(contactId, at: 1, to: statement)
       bind(conversationId, at: 2, to: statement)
+      var parameter: Int32 = 3
+      if let cursor {
+        sqlite3_bind_int64(statement, 3, cursor.createdAtMillis)
+        sqlite3_bind_int64(statement, 4, cursor.createdAtMillis)
+        bind(cursor.messageId, at: 5, to: statement)
+        parameter = 6
+      }
+      sqlite3_bind_int(statement, parameter, Int32(limit + 1))
       var turns: Set<String> = []
-      while true {
+      var last: GalaxySSIChatHistoryCursor?
+      for index in 0...limit {
         let step = sqlite3_step(statement)
-        if step == SQLITE_DONE { break }
-        guard step == SQLITE_ROW, let id = sqlite3_column_text(statement, 0),
+        if step == SQLITE_DONE { return (turns, nil) }
+        guard step == SQLITE_ROW else { throw MqttChunkStorageError.databaseFailure }
+        if index == limit { return (turns, last) }
+        guard let id = sqlite3_column_text(statement, 0),
               let message = decode(statement, id: String(cString: id), payloadColumn: 1),
               message.contactId == contactId, message.conversationId == conversationId,
               !message.isMine, !message.isSystem else { throw MqttChunkStorageError.databaseFailure }
         if [ChatDeliveryStatus.delivered, .read].contains(message.deliveryStatus), !message.turnId.isBlank { turns.insert(message.turnId) }
+        last = GalaxySSIChatHistoryCursor(createdAtMillis: sqlite3_column_int64(statement, 2), messageId: String(cString: id))
       }
-      return turns
+      return (turns, nil)
     }
   }
 
@@ -226,7 +306,9 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       payload.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, 8, bytes.baseAddress, Int32(payload.count), Self.transient)
       }
-      return sqlite3_step(statement) == SQLITE_DONE
+      guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+      rowCache.remove(message.id.uuidString)
+      return true
     }
   }
 
@@ -488,6 +570,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       guard sqlite3_step(statement) == SQLITE_DONE, sqlite3_changes(database) == 1,
             execute("COMMIT") else { return nil }
       committed = true
+      rowCache.remove(id.uuidString)
       return current
     }
   }
@@ -551,6 +634,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
         _ = execute("ROLLBACK")
         return 0
       }
+      rowCache.clear()
       return deleted
     }
   }
@@ -558,6 +642,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   @discardableResult
   func replaceAll(_ messagesByContact: [String: [ChatMessage]]) -> Bool {
     locked {
+      rowCache.clear()
       // Explicit backup restoration is distinct from automatic replay or cache synchronization.
       guard execute("BEGIN IMMEDIATE TRANSACTION"), execute("DELETE FROM chat_messages"),
             execute("DELETE FROM chat_message_deletions") else {
@@ -575,7 +660,17 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   }
 
   func clear() {
-    locked { _ = execute("DELETE FROM chat_messages") }
+    locked {
+      rowCache.clear()
+      _ = execute("DELETE FROM chat_messages")
+    }
+  }
+
+  func setRowCachingEnabled(_ enabled: Bool) {
+    locked {
+      rowCachingEnabled = enabled
+      if !enabled { rowCache.clear() }
+    }
   }
 
   func destroyAllData() {
@@ -632,8 +727,16 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     let count = Int(sqlite3_column_bytes(statement, payloadColumn))
     guard count > 0, let bytes = sqlite3_column_blob(statement, payloadColumn) else { return nil }
     let encrypted = Data(bytes: bytes, count: count)
-    guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: purpose(id)) else { return nil }
-    return try? JSONDecoder().decode(ChatMessage.self, from: plaintext)
+    let cipher = self.cipher
+    let associatedPurpose = purpose(id)
+    let decrypt = { () -> (message: ChatMessage, plaintextBytes: Int)? in
+      guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: associatedPurpose),
+            let message = try? JSONDecoder().decode(ChatMessage.self, from: plaintext) else { return nil }
+      return (message, plaintext.count)
+    }
+    // Reads within a write transaction may observe rows that later roll back.
+    guard rowCachingEnabled, let database, sqlite3_get_autocommit(database) != 0 else { return decrypt()?.message }
+    return rowCache.read(id: id, ciphertext: encrypted, decode: decrypt)
   }
 
   private func purpose(_ id: String) -> String { "chat-message:\(id)" }
@@ -668,6 +771,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
 
   private func delete(whereClause: String, value: String) {
     locked {
+      rowCache.clear()
       guard let statement = prepare("DELETE FROM chat_messages WHERE \(whereClause)") else { return }
       defer { sqlite3_finalize(statement) }
       bind(value, at: 1, to: statement)

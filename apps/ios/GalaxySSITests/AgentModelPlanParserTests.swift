@@ -193,11 +193,33 @@ final class AgentModelPlanParserTests: XCTestCase {
     ))
     let completed = try XCTUnwrap(AgentModelPlanParser.parse(
       request: request(),
-      raw: planJson(actionJson(ref: "done", kind: "DRAFT_PLAN", target: "task-complete")),
+      raw: #"{"actions":[{"ref":"done","kind":"DRAFT_PLAN","target":"task-complete","description":"Verified answer."}]}"#,
       settings: AgentModelPlannerSettings(),
       context: context(replanReason: "connector_response_received")
     ))
     XCTAssertEqual(completed.actions.singleValue().target, "task-complete")
+  }
+
+  func testAnswerOnlyAliasesAndStructuredRepairPreserveTheAnswer() throws {
+    let answer = "Verified answer with [source](https://example.com/reference)."
+    for kind in ["task-complete", "TASK_COMPLETE"] {
+      let raw = """
+      {"actions":[{"kind":"\(kind)","description":"\(answer)","parameters":{}}]}
+      """
+      XCTAssertEqual(AgentModelPlanParser.answerOnlyAction(raw), answer)
+      XCTAssertNil(AgentModelPlanParser.answerOnlyAction(raw.replacingOccurrences(of: "\"parameters\":{}",
+        with: "\"parameters\":{\"tool_id\":\"galaxyssi.runtime.execute\"}")))
+      XCTAssertNil(AgentModelPlanParser.answerOnlyAction(raw.replacingOccurrences(of: "\"parameters\":{}",
+        with: "\"execution_site\":\"phone\"")))
+    }
+    let envelope = """
+    {"disposition":"respond","final_response":"\(answer)"}
+    """
+    let repaired = try XCTUnwrap(AgentModelPlanParser.parse(request: request(), raw: envelope,
+      settings: AgentModelPlannerSettings(), context: context(replanReason: AgentRollingPlanPolicy.replanReasonPrefix + "repair")))
+    XCTAssertEqual(repaired.actions.singleValue().description, answer)
+    XCTAssertNil(AgentModelDirectResponseCodec.parse(#"{"disposition":"respond","final_response":"<tool_call>fake</tool_call>"}"#))
+    XCTAssertNil(AgentModelDirectResponseCodec.parse(#"{"disposition":"respond","final_response":"Answer","actions":[]}"#))
   }
 
   func testAgentModelPlanParserRejectsUnavailableNativeToolAndConnector() throws {

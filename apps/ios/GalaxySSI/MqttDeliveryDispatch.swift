@@ -253,8 +253,11 @@ actor MqttDeliveryDispatch {
   }
 
   private func plan(_ delivery: Delivery, at: Int64) -> [MqttMultipathPolicy.Dispatch] {
-    policy.plan(peer: delivery.peer, messageID: delivery.message.messageID, traffic: Self.traffic(delivery.message),
-                wireBytes: delivery.sizeBound, receiveTopics: delivery.receiveTopics, now: at)
+    // Authorization can acquire the route lock. Evaluate it outside the policy lock.
+    let eligible = policy.readyPathGenerations(receiveTopics: delivery.receiveTopics)
+      .filter { delivery.authorized($0.key, $0.value) }
+    return policy.plan(peer: delivery.peer, messageID: delivery.message.messageID, traffic: Self.traffic(delivery.message),
+                       wireBytes: delivery.sizeBound, receiveTopics: delivery.receiveTopics, now: at, eligible: eligible)
   }
   private static func traffic(_ message: MqttDeliveryEnvelope.Message) -> MqttMultipathPolicy.Traffic {
     // Message construction already validates this closed wire enum.

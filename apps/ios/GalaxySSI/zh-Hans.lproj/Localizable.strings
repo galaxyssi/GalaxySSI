@@ -50,6 +50,11 @@
 "galaxyssi.health.originals.error" = "无法完成操作。请检查文件或减少选中的原件。";
 "galaxyssi.health.originals.retry" = "重新加载原件";
 "galaxyssi.health.originals.plain_zip" = "将所选原件保存为未加密的 ZIP？";
+"galaxyssi.health.originals.plain_original" = "保存此原件的未加密副本？";
+"galaxyssi.health.originals.save_original" = "保存原件";
+"galaxyssi.health.originals.verifying_destination" = "正在校验保存的文件";
+"galaxyssi.health.originals.file_save_history" = "文件保存历史";
+"galaxyssi.health.originals.single_save_history" = "单个原件保存记录";
 "galaxyssi.health.originals.save" = "选择保存位置";
 "galaxyssi.health.originals.selected_count" = "已选择 %lld 份原件";
 "galaxyssi.health.originals.remove_confirm" = "移除此原件？";
@@ -3633,6 +3638,7 @@
 "agent_latency_context" = "上下文与路由";
 "agent_latency_send_prepare" = "发送准备总耗时";
 "agent_latency_user_first" = "发送至首个可见输出";
+"agent_latency_user_complete" = "发送至完整回复显示";
 "agent_latency_publish_prepare" = "发布准备";
 "agent_latency_roundtrip" = "连接器往返";
 "agent_latency_first_visible" = "发布至首个可见输出";
@@ -4926,6 +4932,8 @@
 "rich_output_download_retry" = "重试";
 "rich_output_download_timeout" = "桌面端暂未响应，可以再次请求。";
 "rich_output_save" = "保存到文件";
+"image_original_saved" = "已保存原图";
+"image_original_failed" = "无法保存图片，请重试。";
 "rich_output_diagram" = "架构图";
 "rich_output_diagram_open" = "全屏查看架构图";
 "rich_output_diagram_save" = "保存架构图";
@@ -5677,3 +5685,7 @@
 "galaxyssi.collaboration.no_results" = "暂无成员结果。";
 "galaxyssi.collaboration.results_unavailable" = "无法读取成员结果。";
 "galaxyssi.collaboration.older_results" = "更早的结果";
+"galaxyssi.health.resume_removal" = "查看最近删除的测量";
+"galaxyssi.health.measurement_removed" = "测量已删除";
+"galaxyssi.health.undo_removal" = "撤销删除";
+"galaxyssi.health.undo_conflict" = "另一条测量与此记录冲突，无法撤销删除。";

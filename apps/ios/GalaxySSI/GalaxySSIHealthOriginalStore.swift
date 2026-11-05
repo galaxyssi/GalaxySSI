@@ -37,6 +37,13 @@ struct GalaxySSIHealthOriginalStore {
 
   enum Failure: Error { case invalid, limit, stale }
 
+  struct SingleSaveReceipt: Codable {
+    let at: Date
+    let kind: Kind
+    let bytes: Int
+    let verified: Bool
+  }
+
   nonisolated static let maximumFileBytes = 16 * 1024 * 1024
   private static let maximumZIPBytes = 64 * 1024 * 1024
   private let maximumHeaderBytes = 4_096
@@ -278,6 +285,10 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   nonisolated static func verifyDestination(_ url: URL, for attempt: ExportAttempt) throws -> Bool {
+    try verifyDestination(url, bytes: attempt.bytes, sha256: attempt.sha256)
+  }
+
+  nonisolated static func verifyDestination(_ url: URL, bytes: Int, sha256: String) throws -> Bool {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
     var coordinationError: NSError?
@@ -290,17 +301,41 @@ struct GalaxySSIHealthOriginalStore {
         var hash = SHA256()
         while let block = try file.read(upToCount: 128 * 1024), !block.isEmpty {
           count += block.count
-          guard count <= attempt.bytes else { return false }
+          guard count <= bytes else { return false }
           hash.update(data: block)
         }
-        return count == attempt.bytes &&
-          hash.finalize().map { String(format: "%02x", $0) }.joined() == attempt.sha256
+        return count == bytes &&
+          hash.finalize().map { String(format: "%02x", $0) }.joined() == sha256
       }
     }
     if let coordinationError { throw coordinationError }
     guard let verification else { throw Failure.invalid }
     return try verification.get()
   }
+
+  func singleSaveHistory() throws -> [SingleSaveReceipt] {
+    let data: Data
+    do { data = try Data(contentsOf: singleSaveURL()) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return [] }
+    let plaintext = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key(create: false),
+                                     authenticating: singleSaveBinding)
+    return try JSONDecoder().decode([SingleSaveReceipt].self, from: plaintext)
+  }
+
+  func finishSingleSave(_ original: Original, destinationVerified: Bool) throws -> Bool {
+    // A reimport is a different source even when it has the same bytes.
+    let verified = destinationVerified && (try? read(original)) != nil
+    let receipt = SingleSaveReceipt(at: Date(), kind: original.kind, bytes: original.bytes, verified: verified)
+    let history = [receipt] + (try singleSaveHistory())
+    let data = try JSONEncoder().encode(Array(history.prefix(50)))
+    guard let sealed = try AES.GCM.seal(data, using: key(create: false),
+                                        authenticating: singleSaveBinding).combined else { throw Failure.invalid }
+    try sealed.write(to: singleSaveURL(), options: [.atomic, .completeFileProtection])
+    return verified
+  }
+
+  private var singleSaveBinding: Data { Data("galaxyssi.health.originals.single-save.v1:\(owner)".utf8) }
+  private func singleSaveURL() throws -> URL { try directory().appendingPathComponent("single-save-v1") }
 
   private var historyBinding: Data { Data("galaxyssi.health.originals.export-history.v1:\(owner)".utf8) }
   private func historyURL() throws -> URL { try directory().appendingPathComponent("export-history-v1") }

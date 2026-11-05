@@ -54,6 +54,7 @@ class HealthCenterActivity : Activity() {
     private var route = "overview"
     private var selected = HealthMetric.BLOOD_PRESSURE
     private var recordId = ""
+    private var undoDeletionRevision = 0
     private var reviewKey = ""
     private val backStack = ArrayDeque<Triple<String, HealthMetric, String>>()
     internal var editor: HealthManualEditor? = null
@@ -98,6 +99,7 @@ class HealthCenterActivity : Activity() {
             route = state.getString("route", "overview").orEmpty().ifBlank { "overview" }
             selected = HealthMetric.entries.getOrElse(state.getInt("metric")) { HealthMetric.BLOOD_PRESSURE }
             recordId = state.getString("record", "").orEmpty()
+            undoDeletionRevision = state.getInt("undoDeletionRevision").takeIf { route == "detail" } ?: 0
             overviewScroll = state.getInt("overviewScroll")
             state.getStringArrayList("stack")?.forEach { encoded ->
                 val parts = encoded.split('|')
@@ -144,6 +146,7 @@ class HealthCenterActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         saveDraft()
         out.putString("route", route); out.putInt("metric", selected.ordinal); out.putString("record", recordId)
+        if (route == "detail" && undoDeletionRevision > 0) out.putInt("undoDeletionRevision", undoDeletionRevision)
         keepImportedOriginal?.let { out.putBoolean(HEALTH_KEEP_ORIGINAL, it) }
         out.putString("review", reviewKey)
         retainOverviewScroll(); out.putInt("overviewScroll", overviewScroll)
@@ -154,6 +157,7 @@ class HealthCenterActivity : Activity() {
 
     private fun back() {
         if (saving) return
+        undoDeletionRevision = 0
         saveDraft()
         if (backStack.isEmpty()) { finish(); return }
         val previous = backStack.removeLast()
@@ -162,6 +166,7 @@ class HealthCenterActivity : Activity() {
     }
     internal fun open(destination: String, metric: HealthMetric = selected, id: String = "") {
         if (saving) return
+        if (destination != "detail" || id != recordId) undoDeletionRevision = 0
         saveDraft()
         if (destination in listOf("records", "metric_records") && (route != destination || selected != metric)) {
             pageAfter = null; nextPage = null; pageHistory.clear()
@@ -338,8 +343,21 @@ class HealthCenterActivity : Activity() {
     private fun renderDetail() {
         val content = scrolling()
         val id = recordId
-        query({ it.record(id) }) { record ->
-            if (record == null) { content.addView(ui.text(getString(R.string.health_record_missing))); return@query }
+        val deletionRevision = undoDeletionRevision
+        query({ it.record(id) to it.canUndoDelete(id, deletionRevision) }) { (record, undoable) ->
+            if (record == null) {
+                if (undoable) {
+                    content.addView(ui.text(getString(R.string.health_record_deleted)))
+                    ui.add(content, ui.command(R.string.health_undo_record_delete) {
+                        changeRecordDeletion(0) { it.undoDelete(id, deletionRevision) }
+                    }.apply { tag = "health-undo-record-delete" }, 16)
+                } else {
+                    undoDeletionRevision = 0
+                    content.addView(ui.text(getString(R.string.health_record_missing)).apply { tag = "health-record-missing" })
+                }
+                return@query
+            }
+            undoDeletionRevision = 0
             title.text = getString(record.draft.metric.titleResource())
             content.addView(recordRow(record))
             ui.add(content, ui.card().apply {
@@ -374,16 +392,36 @@ class HealthCenterActivity : Activity() {
                 }
                 ui.add(this, ui.text(getString(R.string.health_revision, record.revision), 12f, muted = true), 12)
             }, 16)
-            ui.add(content, ui.row(getString(R.string.common_edit)) { open("manual", record.draft.metric, record.id) }, 14)
+            ui.add(content, ui.row(getString(R.string.common_edit)) { open("manual", record.draft.metric, record.id) }
+                .apply { tag = "health-edit-record" }, 14)
             ui.add(content, ui.row(getString(R.string.health_revision_history)) { open("history", record.draft.metric, record.id) })
             ui.add(content, ui.row(getString(R.string.common_delete)) {
-                AlertDialog.Builder(this).setTitle(R.string.health_delete_title).setMessage(R.string.health_delete_description)
+                if (saving) return@row
+                showHealthDialog(AlertDialog.Builder(this).setTitle(R.string.health_delete_title).setMessage(R.string.health_delete_description)
                     .setNegativeButton(R.string.common_cancel, null).setPositiveButton(R.string.common_delete) { _, _ ->
-                        query({ it.delete(record.id, record.revision) }) { removed ->
-                            if (removed) back() else Toast.makeText(this, R.string.health_conflict, Toast.LENGTH_LONG).show()
-                        }
-                    }.show()
-            })
+                        selected = record.draft.metric
+                        changeRecordDeletion(record.revision + 1) { it.delete(record.id, record.revision) }
+                    }.create())
+            }.apply { tag = "health-delete-record" })
+        }
+    }
+    private fun changeRecordDeletion(deletionRevision: Int, work: (HealthRecordStore) -> Boolean) {
+        if (!active || saving) return
+        saving = true
+        worker.execute {
+            val result = runCatching { work(records) }
+            main.post {
+                saving = false
+                if (isDestroyed) return@post
+                if (result.getOrNull() == true) undoDeletionRevision = deletionRevision
+                if (!active) return@post
+                if (result.getOrNull() != true) {
+                    val message = if (result.isFailure) R.string.health_storage_error
+                    else if (deletionRevision == 0) R.string.health_undo_record_unavailable else R.string.health_conflict
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                }
+                if (route == "detail") render()
+            }
         }
     }
     private fun renderHistory(beforeRevision: Int = Int.MAX_VALUE) {

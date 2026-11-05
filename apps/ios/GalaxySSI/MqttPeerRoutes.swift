@@ -284,6 +284,7 @@ final class MqttPeerRoutes {
 
   func isReady(scope: String) -> Bool { locked { peers[scope].map(ready) ?? false } }
   func readyForTopic(_ topic: String) -> Bool { locked { outgoing[topic].flatMap { peers[$0] }.map(ready) ?? false } }
+  func wakeTransportForTraffic() { pool.wakeForTraffic() }
 
   func prepareDelivery(topic: String, wire: Data, messageID: String, traffic: MqttMultipathPolicy.Traffic) throws -> MqttDeliveryDispatch.Delivery? {
     try locked {
@@ -297,7 +298,8 @@ final class MqttPeerRoutes {
         receiveTopics: binding.receiveTopics, authorized: { [weak self, weak peer] broker, generation in
           guard let self, let peer else { return false }
           return self.locked {
-            self.current(peer, binding: binding) && self.ready(peer) && self.generations(binding)[broker] == generation
+            self.current(peer, binding: binding) &&
+              peer.session.verifiedGenerations(self.generations(binding))[broker] == generation
           }
         })
     }
