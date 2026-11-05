@@ -4,7 +4,11 @@
     <string name="health_sources_quick">连接设备</string>
     <string name="health_sources_checking">正在检查数据来源…</string>
     <string name="health_sources_summary">来源概况</string>
-    <string name="health_sources_summary_detail">尚未连接外部来源</string>
+    <string name="health_sources_summary_detail">尚未启用 Health Connect 读取范围</string>
+    <string name="health_sources_read_types">Health Connect 各项读取权限</string>
+    <string name="health_sources_access_not_selected">未在 GalaxySSI 中选择</string>
+    <string name="health_sources_access_granted">已授权读取</string>
+    <string name="health_sources_access_missing">已选择 · 尚需系统读取权限</string>
     <string name="health_sources_platforms">健康平台</string>
     <string name="health_sources_platform_name">Health Connect</string>
     <string name="health_sources_platform_available">此设备可使用 Health Connect</string>
@@ -15,6 +19,12 @@
     <string name="health_sources_system_settings">打开系统设置</string>
     <string name="health_sources_open_store">在 Google Play 中查看</string>
     <string name="health_sources_devices">我的设备</string>
+    <string name="health_sources_saved_devices">有记录的设备</string>
+    <string name="health_sources_devices_expanded">已展开</string>
+    <string name="health_sources_devices_collapsed">已收起</string>
+    <string name="health_sources_no_saved_devices">暂无可识别设备的测量记录</string>
+    <string name="health_sources_device_measurement">最近测量：%1$s</string>
+    <string name="health_sources_device_receipt">接收于：%1$s</string>
     <string name="health_sources_bluetooth">蓝牙设备</string>
     <string name="health_sources_ble_supported">添加兼容的蓝牙血压计</string>
     <string name="health_sources_ble_unavailable">本机不支持低功耗蓝牙。</string>

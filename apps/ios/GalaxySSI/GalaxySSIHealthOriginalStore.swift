@@ -43,6 +43,7 @@ struct GalaxySSIHealthOriginalStore {
   let owner: String
   let secrets: GalaxySSISecretStore
   var fixtureDirectory: URL? = nil
+  var restoreRecordsFile: URL? = nil
 
   func importFile(_ url: URL) throws {
     let scoped = url.startAccessingSecurityScopedResource()
@@ -56,20 +57,7 @@ struct GalaxySSIHealthOriginalStore {
 
   func store(_ data: Data, name: String) throws {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
-    let kind: Kind
-    let fileExtension: String
-    if data.starts(with: Data("%PDF-".utf8)),
-       let provider = CGDataProvider(data: data as CFData),
-       let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 {
-      kind = .pdf
-      fileExtension = "pdf"
-    } else if let image = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(image) > 0,
-              let type = CGImageSourceGetType(image), let ext = UTType(type as String)?.preferredFilenameExtension,
-              !ext.isEmpty, ext.utf8.count <= 8,
-              ext.utf8.allSatisfy({ (48...57).contains($0) || (97...122).contains($0) }) {
-      kind = .image
-      fileExtension = ext
-    } else { throw Failure.invalid }
+    let (kind, fileExtension) = try Self.format(of: data)
     let listing = try list()
     let digest = Self.digest(data)
     if listing.originals.contains(where: { $0.sha256 == digest }) { return }
@@ -78,20 +66,83 @@ struct GalaxySSIHealthOriginalStore {
     else { throw Failure.limit }
     let item = Original(id: UUID(), name: String(name.prefix(180)), kind: kind, fileExtension: fileExtension,
                         importedAt: Date(), bytes: data.count, sha256: digest)
+    try writeOriginal(item, data: data, to: url(item.id))
+  }
+
+  private static func format(of data: Data) throws -> (Kind, String) {
+    if data.starts(with: Data("%PDF-".utf8)),
+       let provider = CGDataProvider(data: data as CFData),
+       let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 || (pdf.isEncrypted && !pdf.isUnlocked) {
+      return (.pdf, "pdf")
+    } else if let image = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(image) > 0,
+              let type = CGImageSourceGetType(image), let ext = UTType(type as String)?.preferredFilenameExtension,
+              !ext.isEmpty, ext.utf8.count <= 8,
+              ext.utf8.allSatisfy({ (48...57).contains($0) || (97...122).contains($0) }) {
+      return (.image, ext)
+    } else { throw Failure.invalid }
+  }
+
+  static func validateRestoreOriginal(_ item: Original, data: Data) throws {
+    let (kind, ext) = try format(of: data)
+    guard item.kind == kind, item.fileExtension == ext, item.bytes == data.count,
+          item.sha256 == digest(data) else { throw Failure.invalid }
+  }
+
+  private func writeOriginal(_ item: Original, data: Data, to destination: URL) throws {
     let key = try key(create: true)
     guard let header = try AES.GCM.seal(JSONEncoder().encode(item), using: key,
                                        authenticating: binding(item.id, "header")).combined,
           header.count <= maximumHeaderBytes,
-          let payload = try AES.GCM.seal(data, using: key, authenticating: binding(item.id, digest)).combined
+          let payload = try AES.GCM.seal(data, using: key, authenticating: binding(item.id, item.sha256)).combined
     else { throw Failure.invalid }
     var length = UInt32(header.count).bigEndian
     var file = withUnsafeBytes(of: &length) { Data($0) }
     file.append(header)
     file.append(payload)
-    try file.write(to: url(item.id), options: [.atomic, .completeFileProtection])
+    try file.write(to: destination, options: [.atomic, .completeFileProtection])
+  }
+
+  func stageRestore(_ files: [(Original, Data)], receipt: UUID) throws {
+    guard !files.isEmpty else { return }
+    let folder = try restoreRoot().appendingPathComponent(receipt.uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
+      attributes: [.protectionKey: FileProtectionType.complete])
+    for (item, bytes) in files {
+      try writeOriginal(item, data: bytes, to: folder.appendingPathComponent(item.id.uuidString))
+    }
+  }
+
+  private func restoreRoot() throws -> URL {
+    try directory().appendingPathComponent("restore-staging", isDirectory: true)
+  }
+
+  func containsRestoreID(_ id: UUID) throws -> Bool {
+    FileManager.default.fileExists(atPath: try url(id).path)
+  }
+
+  func reconcileRestores() throws {
+    let fm = FileManager.default
+    let root = try restoreRoot()
+    guard fm.fileExists(atPath: root.path) else { return }
+    let folders = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+    guard !folders.isEmpty else { return }
+    let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: restoreRecordsFile)
+    let receipts = try records.load().restoreReceipts ?? []
+    for folder in folders {
+      guard let receipt = UUID(uuidString: folder.lastPathComponent) else { continue }
+      if receipts.contains(receipt) {
+        for entry in try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
+          guard let id = UUID(uuidString: entry.lastPathComponent) else { continue }
+          let data = try Data(contentsOf: entry)
+          try data.write(to: url(id), options: [.atomic, .completeFileProtection])
+        }
+      }
+      try fm.removeItem(at: folder)
+    }
   }
 
   func list() throws -> Listing {
+    try reconcileRestores()
     let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil)
     let ids = files.compactMap { UUID(uuidString: $0.lastPathComponent) }
     guard !ids.isEmpty else { return Listing(originals: [], unavailable: 0) }
@@ -104,6 +155,7 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   func read(_ original: Original) throws -> Data {
+    try reconcileRestores()
     let key = try key(create: false)
     return try withFile(original.id) { file in
       guard try readHeader(file, id: original.id, key: key) == original,
@@ -117,6 +169,7 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   func remove(_ original: Original) throws {
+    try reconcileRestores()
     let key = try key(create: false)
     guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
     else { throw Failure.stale }

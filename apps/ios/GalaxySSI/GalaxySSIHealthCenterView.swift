@@ -1,5 +1,4 @@
 import CoreBluetooth
-import HealthKit
 import SwiftUI
 
 @MainActor
@@ -73,7 +72,8 @@ struct GalaxySSIHealthCenterView: View {
           Label(t("originals.title", "Health Originals"), systemImage: "doc.on.doc")
         }
         NavigationLink {
-          GalaxySSIHealthPDFTextView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
+          GalaxySSIHealthPDFTextView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets),
+                                    reviewRecords: records)
         } label: {
           Label(t("pdf_text.title", "Report PDF Text"), systemImage: "doc.text.magnifyingglass")
         }
@@ -135,9 +135,19 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar")
       }
       NavigationLink {
+        GalaxySSIHealthSleepReminderView(records: records)
+      } label: {
+        Label(t("sleep_reminder.title", "Sleep Change Reminders"), systemImage: "moon.zzz")
+      }
+      NavigationLink {
         privacyOverview
       } label: {
         Label(t("privacy.title", "Health Privacy"), systemImage: "lock.shield")
+      }
+      NavigationLink {
+        GalaxySSIHealthAssistantView(records: records)
+      } label: {
+        Label(t("assistant.title", "Health Assistant"), systemImage: "chart.bar.xaxis")
       }
       NavigationLink {
         GalaxySSIHealthBackupView(records: records, originals:
@@ -268,9 +278,16 @@ struct GalaxySSIHealthCenterView: View {
     List {
       if scenePhase == .active {
         Section(t("device_sources", "Device sources")) {
-          sourceStatus("HealthKit", detail: HKHealthStore.isHealthDataAvailable()
-            ? t("platform_available", "Available on this device")
-            : t("platform_unavailable", "Not available on this device"))
+          NavigationLink {
+            GalaxySSIHealthKitImportView(records: records)
+          } label: {
+            VStack(alignment: .leading) {
+              Text("Apple Health")
+              Text(GalaxySSIHealthKitImport.available ? t("platform_available", "Available on this device") :
+                t("healthkit.unavailable", "HealthKit is unavailable on this device or in this build."))
+                .foregroundColor(.secondary)
+            }
+          }
           sourceStatus(t("bluetooth_devices", "Bluetooth devices"), detail: bluetoothAuthorization)
           NavigationLink {
             GalaxySSIHealthBluetoothView(records: records)
@@ -324,7 +341,8 @@ struct GalaxySSIHealthCenterView: View {
               Text(summary(reading))
               Text(item.freshness == .recent ? t("fresh", "Recent") : t("stale_reading", "Older"))
                 .foregroundColor(.secondary)
-              Text(reading.tableSource != nil ? t("table.source", "Imported table") :
+              Text(reading.healthKitSource != nil ? "Apple Health" :
+                reading.tableSource != nil ? t("table.source", "Imported table") :
                 (reading.bluetoothReceipt == nil ? t("manual_source", "Entered manually") :
                   t("bluetooth.source", "Bluetooth monitor"))).foregroundColor(.secondary)
               Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened))

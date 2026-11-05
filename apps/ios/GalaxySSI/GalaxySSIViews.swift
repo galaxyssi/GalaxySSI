@@ -308,6 +308,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .environmentObject(runtime.coordinator)
       .environmentObject(runtime.agentStartupRecovery)
       .environmentObject(runtime.voiceAgentRunRecovery)
+      .modifier(GalaxySSIHealthSleepReminderLifecycle(store: runtime.store))
       .galaxySSITextScale(runtime.store.displaySettings)
       .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
       .onAppear {
