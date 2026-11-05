@@ -111,6 +111,9 @@ enum GalaxySSIHealthMetricDeletion {
     for evidence in archive.tableEvidence ?? [] where ids.contains(evidence.target.record) {
       try append(evidence)
     }
+    for evidence in archive.reportEvidence ?? [] where ids.contains(evidence.target.record) {
+      try append(evidence)
+    }
     var counts: [Source: Int] = [:]
     for reading in newest.values { counts[Source(reading), default: 0] += 1 }
     return Preview(scope: .init(metric: metric, sources: counts, earliest: earliest, latest: latest,

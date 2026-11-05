@@ -75,6 +75,8 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var pending: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var removal: GalaxySSIHealthOriginalStore.RemovalPreview?
   @State private var removalAfterPreview: GalaxySSIHealthOriginalStore.Original?
+  @State private var evidenceAfterPreview: GalaxySSIHealthOriginalStore.Original?
+  @State private var reportEvidenceOriginal: GalaxySSIHealthOriginalStore.Original?
   @State private var removalNotice: String?
   @State private var error = false
 
@@ -197,6 +199,8 @@ struct GalaxySSIHealthOriginalsView: View {
         preview = nil
         removal = nil
         removalAfterPreview = nil
+        evidenceAfterPreview = nil
+        reportEvidenceOriginal = nil
         removalNotice = nil
         pending = []
         pendingSingle = nil
@@ -247,6 +251,8 @@ struct GalaxySSIHealthOriginalsView: View {
     }
     .onChange(of: exporting) { if !$0 { exportDocument = nil } }
     .sheet(item: $preview, onDismiss: {
+      if scene == .active, let item = evidenceAfterPreview { reportEvidenceOriginal = item }
+      evidenceAfterPreview = nil
       if let item = removalAfterPreview {
         removalAfterPreview = nil
         reviewRemoval(item)
@@ -276,12 +282,30 @@ struct GalaxySSIHealthOriginalsView: View {
             .accessibilityLabel(Text(t("close", "Close")))
         }
         if let pdf = item.pdf {
+          Button {
+            evidenceAfterPreview = item.original
+            preview = nil
+          } label: {
+            Label(GalaxySSIHealthReportReview.text("evidence", "Linked report evidence", language: language),
+                  systemImage: "link")
+          }
           GalaxySSIHealthOriginalPDFPreview(document: pdf, name: item.name)
         } else if let image = item.image {
           Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(item.name))
         }
         }.padding()
       }
+    }
+    .sheet(item: $reportEvidenceOriginal) { original in
+      NavigationView {
+        GalaxySSIHealthReportEvidenceView(
+          records: GalaxySSIHealthRecords(owner: store.owner, secrets: store.secrets, isolatedFile: store.restoreRecordsFile),
+          store: store, original: original)
+          .toolbar { ToolbarItem(placement: .cancellationAction) {
+            Button(t("close", "Close")) { reportEvidenceOriginal = nil }
+          } }
+      }
+      .navigationViewStyle(.stack)
     }
   }
 

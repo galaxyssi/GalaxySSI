@@ -143,6 +143,7 @@ struct GalaxySSIHealthRecords {
 
   struct Archive: Codable {
     var reportReview: [GalaxySSIHealthReportReview.Item]?
+    var reportEvidence: [GalaxySSIHealthReportReview.Evidence]?
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
@@ -463,6 +464,7 @@ struct GalaxySSIHealthRecords {
     let ids = current.ids
     archive.revisions.removeAll { ids.contains($0.id) }
     archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    archive.reportEvidence?.removeAll { ids.contains($0.target.record) }
     if filter == nil { archive.reportReview?.removeAll { $0.reading.metric == metric } }
     if let draft = archive.draft, GalaxySSIHealthMetricDeletion.includes(draft, metric: metric, filter: filter, ids: ids) {
       archive.draft = nil
@@ -488,6 +490,7 @@ struct GalaxySSIHealthRecords {
 
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {
     var archive = try load()
+    guard archive.reportEvidence?.contains(where: { $0.source == input.source }) != true else { throw Failure.duplicate }
     var pending = archive.reportReview ?? []
     let index = pending.firstIndex { $0.source == input.source }
     guard index.map({ pending[$0].version }) == expected else { throw Failure.stale }
@@ -524,12 +527,44 @@ struct GalaxySSIHealthRecords {
       var reading = item.reading
       guard reading.isValid, reading.revision == 0, !reading.deleted, reading.reportSource == item.source,
             !archive.revisions.contains(where: { $0.id == reading.id || $0.reportSource == item.source }),
+            archive.reportEvidence?.contains(where: { $0.source == item.source }) != true,
             !(existing + appended).contains(where: { $0.sameMeasurement(as: reading) }) else { throw Failure.duplicate }
       reading.revision = 1
       appended.append(reading)
     }
     archive.revisions.append(contentsOf: appended)
     archive.reportReview = pending.filter { !versions.contains($0.version) }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func linkReportDuplicates(_ selected: [UUID: GalaxySSIHealthReportReview.Target],
+                            original: GalaxySSIHealthOriginalStore.Original, store: GalaxySSIHealthOriginalStore) throws {
+    guard store.owner == owner, store.restoreRecordsFile == isolatedFile, original.kind == .pdf else { throw Failure.invalid }
+    _ = try store.read(original)
+    var archive = try load()
+    let pending = archive.reportReview ?? []
+    let current = archive.current
+    let chosen = pending.filter { selected[$0.version] != nil }
+    guard !chosen.isEmpty, chosen.count == selected.count else { throw Failure.stale }
+    var evidence = archive.reportEvidence ?? []
+    for item in chosen {
+      guard item.source.original == original.id, item.source.sha256 == original.sha256,
+            let target = selected[item.version],
+            GalaxySSIHealthReportReview.exactTarget(for: item, current: current) == target else {
+        throw Failure.stale
+      }
+      if let linked = evidence.first(where: { $0.source == item.source }) {
+        guard linked.target == target else { throw Failure.duplicate }
+      } else {
+        guard evidence.count < 5_000,
+              !archive.revisions.contains(where: { $0.reportSource == item.source && $0.id != target.record })
+        else { throw Failure.duplicate }
+        evidence.append(.init(target: target, source: item.source, excerpt: item.excerpt))
+      }
+    }
+    archive.reportEvidence = evidence
+    archive.reportReview = pending.filter { selected[$0.version] == nil }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
