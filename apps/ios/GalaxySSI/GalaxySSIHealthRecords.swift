@@ -129,11 +129,18 @@ struct GalaxySSIHealthRecords {
     var enabled: Bool
   }
 
+  struct MeasurementDeletion: Codable, Equatable {
+    let id: UUID
+    let revision: Int
+  }
+
   struct Archive: Codable {
     var reportReview: [GalaxySSIHealthReportReview.Item]?
     var version = 1
+    var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
+    var lastMeasurementDeletion: MeasurementDeletion?
     var draft: GalaxySSIHealthDraft?
     var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
     var derivesOverview: Bool?
@@ -141,6 +148,7 @@ struct GalaxySSIHealthRecords {
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
+    var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var healthOnlinePermission: UUID?
 
     var current: [GalaxySSIHealthReading] {
@@ -220,6 +228,10 @@ struct GalaxySSIHealthRecords {
   func storeDraft(_ draft: GalaxySSIHealthDraft) throws {
     guard draft.fitsStorageLimits else { throw Failure.invalid }
     var archive = try load()
+    if let existing = draft.existing {
+      guard let latest = archive.revisions.last(where: { $0.id == existing.id }),
+            !latest.deleted, latest.revision == existing.revision else { throw Failure.stale }
+    }
     archive.draft = draft
     try persist(archive)
   }
@@ -281,11 +293,12 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
   }
 
-  func write(_ input: GalaxySSIHealthReading, allowDuplicate: Bool = false, draftId: UUID? = nil) throws {
+  func write(_ input: GalaxySSIHealthReading, allowDuplicate: Bool = false, draftId: UUID? = nil,
+             rememberDeletion: Bool = false) throws {
     guard input.isValid else { throw Failure.invalid }
     var archive = try load()
     let latest = archive.revisions.last { $0.id == input.id }
-    guard (latest?.revision ?? 0) == input.revision, latest?.deleted != true,
+    guard (latest?.revision ?? 0) == input.revision, input.revision < Int.max, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
       guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
@@ -304,9 +317,45 @@ struct GalaxySSIHealthRecords {
     var revision = input
     revision.revision += 1
     archive.revisions.append(revision)
+    if rememberDeletion && revision.deleted {
+      archive.lastMeasurementDeletion = .init(id: revision.id, revision: revision.revision)
+      if archive.draft?.existing?.id == revision.id { archive.draft = nil }
+    }
     if let draftId, archive.draft?.id == draftId { archive.draft = nil }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func undoMeasurementDeletion(_ deletion: MeasurementDeletion) throws -> GalaxySSIHealthReading {
+    var archive = try load()
+    guard (2..<Int.max).contains(deletion.revision),
+          let tombstone = archive.revisions.last(where: { $0.id == deletion.id }),
+          tombstone.deleted, tombstone.revision == deletion.revision,
+          let previous = archive.revisions.last(where: {
+            $0.id == deletion.id && $0.revision == deletion.revision - 1 && !$0.deleted
+          }) else { throw Failure.stale }
+    var restored = tombstone
+    restored.deleted = false
+    restored.revision = previous.revision
+    guard restored == previous, restored.isValid,
+          archive.draft?.existing?.id != deletion.id,
+          !((archive.tableBatches ?? []).contains {
+            $0.id == restored.tableSource?.batch && $0.undone != nil
+          }) else { throw Failure.stale }
+    guard !archive.current.contains(where: { current in
+      if current.sameMeasurement(as: restored) { return true }
+      if let receipt = restored.bluetoothReceipt, let other = current.bluetoothReceipt,
+         receipt.isReplay(of: other) { return true }
+      if let source = restored.tableSource, let other = current.tableSource,
+         source.batch == other.batch && source.row == other.row { return true }
+      return false
+    }) else { throw Failure.duplicate }
+    restored.revision = deletion.revision + 1
+    archive.revisions.append(restored)
+    if archive.lastMeasurementDeletion == deletion { archive.lastMeasurementDeletion = nil }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return restored
   }
 
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {
@@ -359,7 +408,8 @@ struct GalaxySSIHealthRecords {
 
   func importTable(_ data: Data, name: String, json: Bool, mapping: GalaxySSIHealthTableImport.Mapping,
                    expected: [GalaxySSIHealthTableImport.Status],
-                   worksheet: GalaxySSIHealthXLSX.Selection? = nil, retainOriginal: Bool = true) throws -> Int {
+                   worksheet: GalaxySSIHealthXLSX.Selection? = nil, retainOriginal: Bool = true,
+                   linkDuplicates: [Int: GalaxySSIHealthTableImport.EvidenceTarget] = [:]) throws -> Int {
     var archive = try load()
     let table: GalaxySSIHealthTableImport.Table
     if let worksheet { table = try GalaxySSIHealthXLSX(data).table(worksheet) }
@@ -368,21 +418,30 @@ struct GalaxySSIHealthRecords {
     guard preview.map(\.status) == expected else { throw GalaxySSIHealthTableImport.Failure.stale }
     let id = UUID(), hash = GalaxySSIHealthTableImport.digest(data)
     var readings = [GalaxySSIHealthReading]()
+    var links: [GalaxySSIHealthTableImport.Evidence] = []
     for row in preview {
+      if let selected = linkDuplicates[row.id] {
+        guard row.duplicateTarget == selected else { throw Failure.stale }
+        links.append(.init(target: selected, source: .init(batch: id, row: row.id, sha256: hash,
+          sheet: table.sheet, worksheetPath: table.sheetPath, columns: mapping.sourceColumns)))
+      }
       guard row.status == .ready, var reading = row.reading else { continue }
       reading.revision = 1
       reading.tableSource = .init(batch: id, row: row.id, sha256: hash, sheet: table.sheet,
                                   worksheetPath: table.sheetPath, columns: mapping.sourceColumns)
       readings.append(reading)
     }
-    guard !readings.isEmpty else { return 0 }
+    guard links.count == linkDuplicates.count else { throw Failure.stale }
+    guard !readings.isEmpty || !links.isEmpty else { return 0 }
     var batches = archive.tableBatches ?? []
     guard batches.count < 30,
           batches.reduce(retainOriginal ? data.count : 0, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
     else { throw GalaxySSIHealthTableImport.Failure.limit }
     batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: retainOriginal ? data : Data(),
-                         inserted: readings.count, undone: nil, sourceDigest: hash), at: 0)
+                         inserted: readings.count, undone: nil, linked: links.isEmpty ? nil : links.count,
+                         sourceDigest: hash), at: 0)
     archive.tableBatches = batches
+    if !links.isEmpty { archive.tableEvidence = (archive.tableEvidence ?? []) + links }
     archive.revisions.append(contentsOf: readings)
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
@@ -419,10 +478,58 @@ struct GalaxySSIHealthRecords {
       return reading
     }
     archive.tableBatches?[index].undone = tombstones.count
+    archive.tableEvidence?.removeAll { $0.source.batch == id }
     archive.revisions.append(contentsOf: tombstones)
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return tombstones.count
+  }
+
+  func loadRecordingReminders(at now: Date, calendar: Calendar) throws -> GalaxySSIHealthRecordingReminders.Ledger {
+    var archive = try load()
+    let previous = archive.recordingReminders ?? .init()
+    var ledger = previous
+    ledger.reconcile(at: now, calendar: calendar)
+    if ledger != previous { archive.recordingReminders = ledger; try persist(archive) }
+    return ledger
+  }
+
+  func saveRecordingReminderSettings(_ settings: GalaxySSIHealthRecordingReminders.Settings, at now: Date) throws {
+    guard settings.isValid else { throw Failure.invalid }
+    var archive = try load()
+    var ledger = archive.recordingReminders ?? .init(settings: settings)
+    guard ledger.settings.version == settings.version else { throw Failure.stale }
+    let before = ledger.settings
+    ledger.settings = settings
+    ledger.settings.version = UUID()
+    if before.effectiveAt == nil || !before.enabled || !settings.enabled || before.hour != settings.hour || before.minute != settings.minute ||
+        before.category != settings.category {
+      ledger.settings.effectiveAt = settings.enabled ? now : nil
+    }
+    if !settings.enabled {
+      for index in ledger.history.indices where ledger.history[index].completedAt == nil && !ledger.history[index].disabled {
+        ledger.history[index].disabled = true
+        ledger.history[index].version = UUID()
+      }
+    }
+    archive.recordingReminders = ledger
+    try persist(archive)
+    NotificationCenter.default.post(name: GalaxySSIHealthRecordingReminders.changed, object: owner)
+  }
+
+  func updateRecordingReminder(_ expected: GalaxySSIHealthRecordingReminders.Occurrence, complete: Bool,
+                               at now: Date, calendar: Calendar = .autoupdatingCurrent) throws {
+    var archive = try load()
+    guard var ledger = archive.recordingReminders, ledger.settings.enabled,
+          expected.day == GalaxySSIHealthRecordingReminders.Ledger.key(now, calendar: calendar),
+          let index = ledger.history.firstIndex(where: { $0.day == expected.day && $0.version == expected.version }),
+          ledger.history[index].completedAt == nil, !ledger.history[index].disabled else { throw Failure.stale }
+    if complete { ledger.history[index].completedAt = now }
+    else { ledger.history[index].snoozedUntil = now.addingTimeInterval(3_600) }
+    ledger.history[index].version = UUID()
+    archive.recordingReminders = ledger
+    try persist(archive)
+    NotificationCenter.default.post(name: GalaxySSIHealthRecordingReminders.changed, object: owner)
   }
 
   @discardableResult

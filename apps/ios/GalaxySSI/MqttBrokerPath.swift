@@ -62,10 +62,21 @@ protocol MqttBrokerPathTransport: AnyObject {
   func publishOnPath(_ publication: MqttPathPublication) async -> MqttPublishResult
   func publishSealedOnPath(_ publication: MqttSealedPathPublication) async -> MqttPublishResult
   func outstandingDurableMessageIds() async -> Set<String>
+  func wakeForTraffic()
   func disconnect()
 }
 
+extension MqttBrokerPathTransport {
+  func wakeForTraffic() {}
+}
+
 enum MqttBrokerPathPolicy {
+  static let handshakeTimeoutMillis: Int64 = 20_000
+
+  static func handshakeExpired(startedAt: Int64?, now: Int64) -> Bool {
+    guard let startedAt, startedAt >= 0, now >= startedAt else { return false }
+    return now - startedAt >= handshakeTimeoutMillis
+  }
   static func readyGenerations(_ snapshots: [String: MqttBrokerPathSnapshot], topics: Set<String>) -> [String: Int64] {
     snapshots.filter { MqttRouteProtocol.brokerIDs.contains($0.key) && $0.value.isReady(for: topics) }
       .mapValues(\.generation)
@@ -85,7 +96,7 @@ enum MqttBrokerPathPolicy {
   }
 
   static func expiredSubscriptionIDs(_ sentAt: [UInt16: Int64], now: Int64) -> [UInt16] {
-    sentAt.filter { now >= $0.value && now - $0.value >= 15_000 }.map(\.key).sorted()
+    sentAt.filter { handshakeExpired(startedAt: $0.value, now: now) }.map(\.key).sorted()
   }
 }
 

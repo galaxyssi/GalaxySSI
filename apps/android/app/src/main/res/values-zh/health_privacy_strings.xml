@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_measurement_history_delete">删除本机测量记录</string>
+    <string name="health_measurement_history_source">%1$s：%2$d 条</string>
+    <string name="health_measurement_history_preview">%1$s · %2$d 条测量\n%3$s 至 %4$s · 所有来源\n\n%5$s\n\n将删除此指标在本 App 内的测量、修订和编辑草稿，无法撤销。报告原件、个人档案、外部来源、备份和导出不受影响。</string>
+    <string name="health_measurement_history_empty">此指标没有本机测量记录</string>
+    <string name="health_measurement_history_deleted">已删除本机测量记录</string>
     <string name="health_privacy_title">隐私与数据</string>
     <string name="health_privacy_lead">本机健康资料</string>
     <string name="health_privacy_uses">分析权限</string>

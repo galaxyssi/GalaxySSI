@@ -260,19 +260,26 @@ final class AgentTaskHistoryPersistence {
         )
         let activeActions = plan.actions
         let checkpoints = Self.latestCheckpoints(previousCheckpoints + plan.checkpoints)
-        let activeActionPages = try encodePages(kind: Self.activeActionKind, items: activeActions)
-        let actionPages = try encodePages(kind: Self.actionKind, items: actions)
-        let checkpointPages = try encodePages(kind: Self.checkpointKind, items: checkpoints)
+        let prior = manifests[record.taskId].flatMap { manifest in
+          manifest.version == 2 && manifest.isValid && manifest.sessionId == record.sessionId &&
+            cachedRootRecords[record.taskId]?.historyManifest == manifest ? manifest : nil
+        }
+        let reuseActive = prior != nil && cachedActiveActions[record.taskId] == activeActions
+        let reuseActions = prior != nil && cachedActions[record.taskId] == actions
+        let reuseCheckpoints = prior != nil && cachedCheckpoints[record.taskId] == checkpoints
+        let activeActionPages = reuseActive ? [] : try encodePages(kind: Self.activeActionKind, items: activeActions)
+        let actionPages = reuseActions ? [] : try encodePages(kind: Self.actionKind, items: actions)
+        let checkpointPages = reuseCheckpoints ? [] : try encodePages(kind: Self.checkpointKind, items: checkpoints)
         let manifest = AgentSessionHistoryManifest(
           sessionId: record.sessionId,
           activePlanId: plan.planId,
           activePlanRevision: plan.revision,
-          activeActionPageIds: activeActionPages.map(\.id),
-          activeActionPageItemCounts: activeActionPages.map(\.itemCount),
-          actionPageIds: actionPages.map(\.id),
-          actionPageItemCounts: actionPages.map(\.itemCount),
-          checkpointPageIds: checkpointPages.map(\.id),
-          checkpointPageItemCounts: checkpointPages.map(\.itemCount)
+          activeActionPageIds: (reuseActive ? prior?.activeActionPageIds : nil) ?? activeActionPages.map(\.id),
+          activeActionPageItemCounts: (reuseActive ? prior?.activeActionPageItemCounts : nil) ?? activeActionPages.map(\.itemCount),
+          actionPageIds: (reuseActions ? prior?.actionPageIds : nil) ?? actionPages.map(\.id),
+          actionPageItemCounts: (reuseActions ? prior?.actionPageItemCounts : nil) ?? actionPages.map(\.itemCount),
+          checkpointPageIds: (reuseCheckpoints ? prior?.checkpointPageIds : nil) ?? checkpointPages.map(\.id),
+          checkpointPageItemCounts: (reuseCheckpoints ? prior?.checkpointPageItemCounts : nil) ?? checkpointPages.map(\.itemCount)
         )
         for page in activeActionPages + actionPages + checkpointPages {
           let key = pageKey(taskId: record.taskId, kind: page.kind, pageId: page.id)
@@ -419,31 +426,30 @@ final class AgentTaskHistoryPersistence {
   private func encodePages<Item: Encodable>(kind: String, items: [Item]) throws -> [EncodedPage] {
     var pages: [EncodedPage] = []
     var current: [Any] = []
-    func flush() throws {
-      guard !current.isEmpty else { return }
-      let data = try pageData(kind: kind, items: current)
+    var currentData: Data?
+    func flush() {
+      guard let data = currentData else { return }
       pages.append(
         EncodedPage(kind: kind, id: Self.sha256(data), itemCount: current.count, data: data)
       )
       current.removeAll(keepingCapacity: true)
+      currentData = nil
     }
     for item in items {
       let object = try boundedJSONObject(item)
-      let candidate = current + [object]
-      let candidateData = try pageData(kind: kind, items: candidate)
-      if !current.isEmpty && (
-        current.count >= AgentLongTaskPersistenceLimits.maximumPageItems ||
-          Self.characterCount(candidateData) > AgentLongTaskPersistenceLimits.maximumPageJSONCharacters
-      ) {
-        try flush()
+      if current.count >= AgentLongTaskPersistenceLimits.maximumPageItems { flush() }
+      var candidateData = try pageData(kind: kind, items: current + [object])
+      if !current.isEmpty && Self.characterCount(candidateData) > AgentLongTaskPersistenceLimits.maximumPageJSONCharacters {
+        flush()
+        candidateData = try pageData(kind: kind, items: [object])
       }
-      current.append(object)
-      let data = try pageData(kind: kind, items: current)
-      guard Self.characterCount(data) <= AgentLongTaskPersistenceLimits.maximumPageJSONCharacters else {
+      guard Self.characterCount(candidateData) <= AgentLongTaskPersistenceLimits.maximumPageJSONCharacters else {
         throw AgentHistoryPersistenceError.itemTooLarge
       }
+      current.append(object)
+      currentData = candidateData
     }
-    try flush()
+    flush()
     return pages
   }
 

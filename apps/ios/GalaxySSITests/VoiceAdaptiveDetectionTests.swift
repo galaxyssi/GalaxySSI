@@ -30,6 +30,16 @@ final class VoiceAdaptiveDetectionTests: XCTestCase {
     }
     model.reset()
   }
+
+  func testPassiveSpeechDetectorIgnoresWarmupAndFiresOnlyOnceAfterSustainedInput() {
+    let detector = VoicePassiveSpeechDetector(startedAt: 10)
+    let speech = (0..<320).map { Int16(sin(2.0 * Double.pi * Double($0) / 37.0) * 7_000) }
+    for _ in 0..<8 { XCTAssertFalse(detector.accept(speech, now: 10.2)) }
+    for _ in 0..<8 { XCTAssertFalse(detector.accept(Array(repeating: 0, count: 320), now: 10.4)) }
+    for _ in 0..<3 { XCTAssertFalse(detector.accept(speech, now: 10.5)) }
+    XCTAssertTrue(detector.accept(speech, now: 10.6))
+    XCTAssertFalse(detector.accept(speech, now: 10.7))
+  }
   func testVadAdaptsToSilenceAndDetectsSpeechBoundaries() {
     let vad = AdaptiveSpeechVad()
     for index in 0..<12 {

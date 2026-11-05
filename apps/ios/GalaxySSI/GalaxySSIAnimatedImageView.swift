@@ -1,6 +1,7 @@
 import ImageIO
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 enum GalaxySSIImageResourceDecoder {
   static let maximumBytes = 12 * 1024 * 1024
@@ -51,16 +52,29 @@ enum GalaxySSIImageResourceDecoder {
     return CGImageSourceGetCount(source) > 0
   }
 
-  static func frames(from source: Data) -> AgentAnimatedImageFrames? {
+  static func originalType(_ data: Data) -> UTType? {
+    guard !data.isEmpty, data.count <= maximumBytes,
+          let source = CGImageSourceCreateWithData(data as CFData, nil),
+          CGImageSourceGetCount(source) > 0, let identifier = CGImageSourceGetType(source),
+          let type = UTType(identifier as String), type.conforms(to: .image) else { return nil }
+    return type
+  }
+
+  static func frames(from source: Data, frameLimit: Int = .max, decodedByteLimit: Int = .max)
+    -> AgentAnimatedImageFrames? {
     let data = AgentAnimatedImageTiming.normalizeZeroFrameDelays(source)
     guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
     let count = CGImageSourceGetCount(imageSource)
-    guard count > 1 else { return nil }
+    guard count > 1, count <= frameLimit else { return nil }
 
     var images: [UIImage] = []
     var duration: TimeInterval = 0
+    var remainingBytes = decodedByteLimit
     for index in 0..<count {
+      guard !Task.isCancelled else { return nil }
       guard let image = thumbnail(imageSource: imageSource, index: index) else { continue }
+      guard image.height > 0, image.bytesPerRow <= remainingBytes / image.height else { return nil }
+      remainingBytes -= image.bytesPerRow * image.height
       images.append(UIImage(cgImage: image))
       duration += frameDelay(imageSource: imageSource, index: index)
     }
@@ -115,6 +129,17 @@ enum GalaxySSIImageResourceDecoder {
 
 struct GalaxySSIAnimatedImageView: UIViewRepresentable {
   let data: Data
+  var decodeOffMain = false
+
+  final class Coordinator {
+    var task: Task<Void, Never>?
+  }
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  static func dismantleUIView(_ uiView: UIImageView, coordinator: Coordinator) {
+    coordinator.task?.cancel()
+  }
 
   func makeUIView(context: Context) -> UIImageView {
     let imageView = GalaxySSIRichAnimatedImageView()
@@ -125,11 +150,42 @@ struct GalaxySSIAnimatedImageView: UIViewRepresentable {
   }
 
   func updateUIView(_ imageView: UIImageView, context: Context) {
-    let identity = String(data.base64EncodedString().hashValue)
+    let identity = String(data.hashValue)
     guard imageView.accessibilityIdentifier != identity else { return }
     imageView.accessibilityIdentifier = identity
+    context.coordinator.task?.cancel()
+    if decodeOffMain {
+      let bytes = data
+      context.coordinator.task = Task { @MainActor [weak imageView] in
+        let work = Task.detached(priority: .userInitiated) { Self.decode(bytes, bounded: true) }
+        let result = await withTaskCancellationHandler(operation: { await work.value },
+                                                       onCancel: { work.cancel() })
+        guard !Task.isCancelled, let imageView, imageView.accessibilityIdentifier == identity else { return }
+        Self.display(result, in: imageView)
+      }
+    } else {
+      Self.display(Self.decode(data), in: imageView)
+    }
+  }
+
+  private struct Decoded {
+    let frames: AgentAnimatedImageFrames?
+    let image: UIImage?
+  }
+
+  private nonisolated static func decode(_ data: Data, bounded: Bool = false) -> Decoded {
+    if let frames = GalaxySSIImageResourceDecoder.frames(from: data,
+      frameLimit: bounded ? 64 : .max, decodedByteLimit: bounded ? 32 * 1024 * 1024 : .max) {
+      return .init(frames: frames, image: nil)
+    }
+    guard !Task.isCancelled else { return .init(frames: nil, image: nil) }
+    return .init(frames: nil, image: GalaxySSIImageResourceDecoder.staticImage(from: data))
+  }
+
+  @MainActor
+  private static func display(_ decoded: Decoded, in imageView: UIImageView) {
     GalaxySSIRichAnimatedImagePlaybackCoordinator.shared.deactivate(imageView)
-    if let frames = GalaxySSIImageResourceDecoder.frames(from: data) {
+    if let frames = decoded.frames {
       imageView.animationImages = frames.images
       imageView.animationDuration = frames.duration
       imageView.animationRepeatCount = 0
@@ -139,7 +195,7 @@ struct GalaxySSIAnimatedImageView: UIViewRepresentable {
       }
     } else {
       imageView.animationImages = nil
-      imageView.image = GalaxySSIImageResourceDecoder.staticImage(from: data)
+      imageView.image = decoded.image
     }
   }
 }
@@ -170,16 +226,34 @@ struct GalaxySSIImageLightboxView: View {
   let item: GalaxySSIImageViewerItem
 
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @State private var scale: CGFloat = 1
   @State private var baseScale: CGFloat = 1
   @State private var offset: CGSize = .zero
   @State private var baseOffset: CGSize = .zero
+  @State private var loadedData: Data?
+  @State private var originalType: UTType?
+  @State private var exportDocument: GalaxySSIOriginalImageDocument?
+  @State private var exporting = false
+  @State private var result: ExportResult?
+
+  private enum ExportResult: Equatable { case saved, failed }
+  private var originalData: Data? { item.data ?? loadedData }
 
   var body: some View {
-    ZStack {
-      Color.black.ignoresSafeArea()
-
+    VStack(spacing: 0) {
+      ZStack(alignment: .trailing) {
+        Text(item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+             ? t("rich_output_type_image", "Image") : item.title)
+          .font(.headline).lineLimit(2).multilineTextAlignment(.center)
+          .frame(maxWidth: .infinity).padding(.horizontal, 52)
+        Button { dismiss() } label: {
+          Image(systemName: "xmark").frame(width: 44, height: 44)
+        }
+        .accessibilityLabel(t("common_close", "Close"))
+      }
+      .padding(.horizontal, 12)
       imageContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scaleEffect(scale)
@@ -188,60 +262,73 @@ struct GalaxySSIImageLightboxView: View {
         .gesture(magnificationGesture)
         .simultaneousGesture(panGesture)
         .onTapGesture(count: 2, perform: reset)
-
-      VStack {
-        HStack(alignment: .top, spacing: 12) {
-          if !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text(item.title)
-              .font(.caption.weight(.semibold))
-              .foregroundColor(.white)
-              .lineLimit(2)
-              .padding(.horizontal, 10)
-              .padding(.vertical, 8)
-              .background(Color.black.opacity(0.55))
-              .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-          }
-          Spacer(minLength: 8)
-          if let onSave = item.onSave {
-            Button {
-              dismiss()
-              DispatchQueue.main.async(execute: onSave)
-            } label: {
-              Image(systemName: "square.and.arrow.down")
-                .font(.headline.weight(.semibold))
-                .foregroundColor(.white)
-                .frame(width: 44, height: 44)
-                .background(Color.white.opacity(0.14))
-                .clipShape(Circle())
-            }
-            .accessibilityLabel(t("rich_output_save", "Save to Files"))
-          }
-          Button {
-            dismiss()
-          } label: {
-            Image(systemName: "xmark")
-              .font(.headline.weight(.semibold))
-              .foregroundColor(.white)
-              .frame(width: 44, height: 44)
-              .background(Color.white.opacity(0.14))
-              .clipShape(Circle())
-          }
-          .accessibilityLabel(t("common_close", "Close"))
+        .clipped()
+      VStack(spacing: 6) {
+        if let data = originalData, let type = originalType {
+          Text((type.preferredFilenameExtension?.uppercased() ?? t("rich_output_type_image", "Image"))
+               + " · " + ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))
+            .font(.caption).foregroundColor(.white.opacity(0.75))
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        Spacer()
+        if let result {
+          Text(result == .saved ? t("image_original_saved", "Original image saved")
+                                : t("image_original_failed", "Could not save the image. Try again."))
+            .font(.caption)
+        }
+        Button(action: save) {
+          Group {
+            if exporting { ProgressView().tint(.white) }
+            else { Label(t("rich_output_save", "Save to Files"), systemImage: "square.and.arrow.down") }
+          }
+          .frame(minHeight: 44)
+        }
+        .disabled(exporting || (originalType == nil && item.onSave == nil))
+      }
+      .padding(.horizontal, 12).padding(.bottom, 8)
+    }
+    .foregroundColor(.white)
+    .background(Color.black.ignoresSafeArea())
+    .statusBarHidden(true)
+    .task(id: originalData) {
+      guard let bytes = originalData else { originalType = nil; return }
+      let type = await Task.detached(priority: .userInitiated) {
+        GalaxySSIImageResourceDecoder.originalType(bytes)
+      }.value
+      if !Task.isCancelled { originalType = type }
+    }
+    .onChange(of: scene) { phase in
+      if phase == .background { loadedData = nil; exportDocument = nil; dismiss() }
+    }
+    .fileExporter(isPresented: $exporting, document: exportDocument,
+                  contentType: originalType ?? .image,
+                  defaultFilename: "GalaxySSI-Image") { outcome in
+      exportDocument = nil
+      switch outcome {
+      case .success: result = .saved
+      case .failure(let error):
+        let failure = error as NSError
+        if failure.domain != NSCocoaErrorDomain || failure.code != NSUserCancelledError { result = .failed }
       }
     }
-    .statusBarHidden(true)
+  }
+
+  private func save() {
+    guard !exporting, scene == .active else { return }
+    result = nil
+    if let onSave = item.onSave {
+      dismiss()
+      DispatchQueue.main.async(execute: onSave)
+    } else if let data = originalData, originalType != nil {
+      exportDocument = .init(data: data)
+      exporting = true
+    }
   }
 
   @ViewBuilder
   private var imageContent: some View {
-    if let data = item.data {
-      GalaxySSIAnimatedImageView(data: data)
+    if let data = originalData {
+      GalaxySSIAnimatedImageView(data: data, decodeOffMain: true)
     } else if let url = item.url {
-      GalaxySSIAsyncAnimatedImageView(url: url) {
+      GalaxySSIAsyncAnimatedImageView(url: url, onLoaded: { loadedData = $0 }, decodeOffMain: true) {
         VStack(spacing: 8) {
           Image(systemName: "photo")
             .font(.title2)
@@ -303,6 +390,26 @@ struct GalaxySSIImageLightboxView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+  }
+}
+
+struct GalaxySSIOriginalImageDocument: FileDocument {
+  static var readableContentTypes: [UTType] { [.image] }
+  let data: Data
+
+  init(data: Data) { self.data = data }
+
+  init(configuration: ReadConfiguration) throws {
+    guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
+    self.data = data
+  }
+
+  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    originalFileWrapper()
+  }
+
+  func originalFileWrapper() -> FileWrapper {
+    FileWrapper(regularFileWithContents: data)
   }
 }
 

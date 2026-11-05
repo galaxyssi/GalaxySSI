@@ -455,6 +455,21 @@ internal class HealthOriginalStore(
         val value = file(original)
         return !value.exists() || value.delete().also { notifyChanged("originals") }
     }
+    fun removeReviewedOriginal(expected: HealthOriginal, verifyScope: () -> Unit) {
+        val db = helper.writableDatabase
+        db.beginTransactionNonExclusive()
+        try {
+            val path = file(expected)
+            if (original(expected.id) != expected || !path.isFile) throw HealthOriginalRemovalChanged()
+            verifyScope()
+            if (expected.reviewOnly) check(db.update("originals",
+                ContentValues().apply { put("digest_token", "$RELEASED_PREFIX${expected.id}") },
+                "id=? AND digest_token=?", arrayOf(expected.id, "$REVIEW_PREFIX${expected.id}")) == 1)
+            check(path.delete()) { "Health original file could not be removed" }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        notifyChanged("originals")
+    }
     fun releaseReviewOriginal(jobId: String): Boolean {
         val db = helper.writableDatabase
         db.beginTransaction()

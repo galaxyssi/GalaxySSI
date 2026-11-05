@@ -26,9 +26,12 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
     private fun open(target: Class<*>, extras: Intent.() -> Unit = {}) {
         if (externalRoutes) activity.startActivity(Intent(activity, target).apply(extras))
     }
-    private fun capture(entry: HealthCaptureEntry, keepOriginal: Boolean = true) = open(HealthCaptureActivity::class.java) {
-        putExtra("health_capture_entry", entry.name)
-        putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal)
+    private fun capture(entry: HealthCaptureEntry, choice: Boolean? = null) {
+        if (!externalRoutes && entry == HealthCaptureEntry.CAMERA) return
+        activity.startActivity(Intent(activity, HealthCaptureActivity::class.java)
+            .putHealthNavigationFixture(activity.intent.healthNavigationDatabases())
+            .putExtra("health_capture_entry", entry.name).apply { choice?.let { putExtra(HEALTH_KEEP_ORIGINAL, it) } })
+        if (choice != null) activity.clearImportRetentionChoice()
     }
     private fun sources() = open(HealthSourcesActivity::class.java)
 
@@ -107,7 +110,7 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
         })
     }
 
-    fun showImport(content: LinearLayout) {
+    fun showImport(content: LinearLayout, retainByDefault: Boolean) {
         content.addView(ui.text(label(R.string.health_first_import_intro), 23f, bold = true).apply { tag = "health-import-center" })
         ui.add(content, ui.text(label(R.string.health_first_import_note), 15f, muted = true), 6)
         ui.add(content, panel().apply {
@@ -130,7 +133,7 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
                 text = label(R.string.health_retention_switch)
                 setTextColor(activity.getColor(R.color.text_primary))
                 minimumHeight = ui.dp(48)
-                isChecked = activity.keepImportedOriginal
+                isChecked = activity.keepImportedOriginal ?: retainByDefault
                 setOnCheckedChangeListener { _, checked -> activity.keepImportedOriginal = checked }
             })
             ui.add(this, ui.text(label(R.string.health_retention_note), 14f, muted = true), 6)
