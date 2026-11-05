@@ -543,7 +543,7 @@ struct ConversationView: View {
   @State private var attachmentMenuPresented = false
   @State private var fileImporterPresented = false
   @State private var cameraPickerPresented = false
-  @State private var cameraTargetContactId = ""
+  @State private var cameraAttachmentOwner: String?
   @State private var attachmentError = ""
   @State private var composerTextModeActive = false
   @State private var retryingMessageIDs: Set<UUID> = []
@@ -762,7 +762,12 @@ struct ConversationView: View {
             purpose: "chat_message",
             isPersonContact: isPhonePersonContact
           ),
-          attachmentScope: contact.id + ":" + (visibleAgentConversationId ?? ""),
+          attachmentScope: composerAttachmentScope,
+          attachmentPreviewBlocked: cameraPickerPresented || fileImporterPresented,
+          onReplaceAttachment: { scope, expected, edited in
+            guard scope == composerAttachmentScope else { return false }
+            return attachments.replaceComposerAttachment(expected, with: edited)
+          },
           onNewSession: createAgentConversationFromChat,
           onOpenSessions: openAgentSessionsFromChat,
           onScan: openContactScannerFromChat,
@@ -814,10 +819,10 @@ struct ConversationView: View {
       CameraAttachmentPickerView(
         onAttachment: { attachment in
           defer {
-            cameraTargetContactId = ""
+            cameraAttachmentOwner = nil
             cameraPickerPresented = false
           }
-          guard cameraTargetContactId == contact.id else {
+          guard cameraAttachmentOwner == composerAttachmentScope else {
             var discarded = attachment
             discarded.wipeSensitive()
             return
@@ -825,7 +830,7 @@ struct ConversationView: View {
           appendAttachment(attachment)
         },
         onCancel: {
-          cameraTargetContactId = ""
+          cameraAttachmentOwner = nil
           cameraPickerPresented = false
         }
       )
@@ -1416,6 +1421,10 @@ struct ConversationView: View {
     }
   }
 
+  private var composerAttachmentScope: String {
+    contact.id + ":" + (visibleAgentConversationId ?? "")
+  }
+
   private func openCameraAttachmentPicker() {
     guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
       attachmentError = t("agent_attachment_camera_unavailable", "Camera is unavailable")
@@ -1425,10 +1434,10 @@ struct ConversationView: View {
     case .denied, .restricted:
       attachmentError = t("galaxyssi.scanner.camera_access_required", "Camera access is required to scan GalaxySSI QR codes.")
     case .authorized, .notDetermined:
-      cameraTargetContactId = contact.id
+      cameraAttachmentOwner = composerAttachmentScope
       cameraPickerPresented = true
     @unknown default:
-      cameraTargetContactId = contact.id
+      cameraAttachmentOwner = composerAttachmentScope
       cameraPickerPresented = true
     }
   }

@@ -5,15 +5,70 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct AttachmentPreviewStrip: View {
+  @Environment(\.scenePhase) private var scenePhase
   var attachments: [GalaxySSIDraftAttachment]
+  var scope: String
+  var presentationBlocked: Bool
   var onRemove: (GalaxySSIDraftAttachment) -> Void
+  var onReplace: (String, GalaxySSIDraftAttachment, GalaxySSIDraftAttachment) -> Bool
+  @State private var selection: Selection?
+  @State private var pendingID: String?
+
+  private struct Selection: Identifiable {
+    let scope: String
+    let attachment: GalaxySSIDraftAttachment
+    var id: String { attachment.id }
+  }
+
+  private var previewCandidate: String? {
+    presentationBlocked || scenePhase != .active || selection != nil ? nil : pendingID
+  }
 
   var body: some View {
+    Group {
+      if !attachments.isEmpty { strip }
+    }
+    .sheet(item: $selection) { selection in
+      ComposerAttachmentEditor(attachment: selection.attachment, onReplace: { edited in
+        onReplace(selection.scope, selection.attachment, edited)
+      }, onRemove: {
+        guard scope == selection.scope, attachments.contains(selection.attachment) else { return }
+        onRemove(selection.attachment)
+      })
+    }
+    .onChange(of: scope) { _ in clearPreview() }
+    .onChange(of: scenePhase) { phase in
+      if phase == .background { clearPreview() }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      clearPreview()
+    }
+    .onChange(of: attachments.map(\.id)) { [previous = Set(attachments.map(\.id))] _ in
+      if let selected = selection, !attachments.contains(selected.attachment) { selection = nil }
+      pendingID = attachments.last(where: {
+        !previous.contains($0.id) && ($0.sourceDescription == "camera" ||
+          $0.sourceDescription == "photo-library" || $0.sourceDescription.hasPrefix("file:"))
+      })?.id
+    }
+    .task(id: previewCandidate) {
+      guard let candidate = previewCandidate else { return }
+      // The system picker must finish dismissing before presenting the editor.
+      try? await Task.sleep(nanoseconds: 400_000_000)
+      guard !Task.isCancelled, let attachment = attachments.first(where: { $0.id == candidate }) else { return }
+      pendingID = nil
+      selection = Selection(scope: scope, attachment: attachment)
+    }
+  }
+
+  private var strip: some View {
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 8) {
           ForEach(attachments) { attachment in
-            AttachmentPreviewChip(attachment: attachment) {
+            AttachmentPreviewChip(attachment: attachment, onPreview: {
+              pendingID = nil
+              selection = Selection(scope: scope, attachment: attachment)
+            }) {
               onRemove(attachment)
             }
             .id(attachment.id)
@@ -32,6 +87,11 @@ struct AttachmentPreviewStrip: View {
     }
   }
 
+  private func clearPreview() {
+    pendingID = nil
+    selection = nil
+  }
+
   private func scrollToLatest(using proxy: ScrollViewProxy) {
     guard let latestID = attachments.last?.id else { return }
     DispatchQueue.main.async {
@@ -43,10 +103,38 @@ struct AttachmentPreviewStrip: View {
 struct AttachmentPreviewChip: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   var attachment: GalaxySSIDraftAttachment
+  var onPreview: (() -> Void)? = nil
   var onRemove: () -> Void
 
   var body: some View {
     ZStack(alignment: .topTrailing) {
+      if let onPreview {
+        Button(action: onPreview) { previewContent }
+          .buttonStyle(.plain)
+          .accessibilityLabel(Text(attachment.displayName))
+      } else {
+        previewContent
+      }
+      Button(action: onRemove) {
+        Image(systemName: "xmark.circle.fill")
+          .font(.system(size: 18, weight: .semibold))
+          .foregroundColor(.galaxySSITextSecondary)
+          .background(Circle().fill(Color.galaxySSISurface.opacity(0.88)))
+      }
+      .padding(5)
+      .accessibilityLabel(Text(t("agent_attachment_remove", "Remove attachment")))
+    }
+    .background(Color.galaxySSISearchBackground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.galaxySSISeparator, lineWidth: 1)
+        .allowsHitTesting(false)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  @ViewBuilder
+  private var previewContent: some View {
       if attachment.isImage {
         thumbnail
           .frame(width: 70, height: 66)
@@ -69,27 +157,12 @@ struct AttachmentPreviewChip: View {
         .padding(.trailing, 8)
         .frame(width: 190, height: 66)
       }
-      Button(action: onRemove) {
-        Image(systemName: "xmark.circle.fill")
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(.galaxySSITextSecondary)
-          .background(Circle().fill(Color.galaxySSISurface.opacity(0.88)))
-      }
-      .padding(5)
-      .accessibilityLabel(Text(t("agent_attachment_remove", "Remove attachment")))
-    }
-    .background(Color.galaxySSISearchBackground)
-    .overlay(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .stroke(Color.galaxySSISeparator, lineWidth: 1)
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
 
   @ViewBuilder
   private var thumbnail: some View {
     if attachment.isImage,
-       let image = UIImage(data: attachment.data) {
+       let image = ComposerAttachmentCrop.image(from: attachment.data, maxPixelSize: 220) {
       Image(uiImage: image)
         .resizable()
         .scaledToFill()

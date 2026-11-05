@@ -6062,3 +6062,13 @@
 "clipboard_image_copy" = "复制图片";
 "clipboard_image_crop" = "裁剪";
 "clipboard_image_reset" = "重置裁剪";
+"composer_attachment_crop" = "裁剪";
+"composer_attachment_original" = "原图";
+"composer_attachment_retake" = "重拍";
+"composer_attachment_rotate" = "旋转";
+"composer_attachment_fine_rotate" = "微调旋转";
+"composer_attachment_flip" = "翻转";
+"composer_attachment_reset" = "重置";
+"composer_attachment_free" = "自由";
+"composer_attachment_preview_unavailable" = "无法预览此附件";
+"composer_attachment_save_failed" = "无法保存裁剪结果";

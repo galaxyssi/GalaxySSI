@@ -150,6 +150,7 @@ struct AgentHomeView: View {
   @State var screenAssistantAttachmentIDs: Set<String> = []
   @State private var screenAssistantRecoveryRequests: Set<String> = []
   @State var cameraPickerPresented = false
+  @State var cameraAttachmentOwner: String?
   @State var scanShortcutActive = false
   @State var scanSelectionRequestID = UUID()
   @State var pendingScannedAgentIDs: [String] = []
@@ -478,7 +479,14 @@ struct AgentHomeView: View {
           focusScannedAgents(agentIDs)
         },
         onAddAttachment: addAttachment,
-        onAppendAttachment: appendAttachment,
+        onAppendAttachment: { attachment in
+          if attachment.sourceDescription == "camera" {
+            let owner = cameraAttachmentOwner
+            cameraAttachmentOwner = nil
+            guard owner == store.activeAgentConversationId else { return }
+          }
+          appendAttachment(attachment)
+        },
         onUpdatePendingAction: { taskId, actionId, description, input in
           coordinator.updatePendingLocalNativeAction(
             taskId: taskId,
@@ -772,8 +780,14 @@ struct AgentHomeView: View {
       deviceInputPolicy: deviceInputPolicy,
       voiceSettings: agentVoiceSettings,
       focusRequest: composerFocusRequest,
+      attachmentScope: store.activeAgentConversationId,
+      attachmentPreviewBlocked: cameraPickerPresented || photoPickerPresented || fileImporterPresented,
       onRemoveAttachment: { attachment in
         attachments.removeAndWipe(id: attachment.id)
+      },
+      onReplaceAttachment: { scope, expected, edited in
+        guard scope == store.activeAgentConversationId else { return false }
+        return attachments.replaceComposerAttachment(expected, with: edited)
       },
       onImageAttachment: appendAttachment,
       onNewSession: createAgentConversation,
