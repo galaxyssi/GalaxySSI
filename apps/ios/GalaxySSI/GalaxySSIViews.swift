@@ -136,6 +136,10 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) {
+      completionHandler([.banner, .list])
+      return
+    }
     guard GalaxySSIContactNotificationPresentationPolicy.shouldPresent(
       userInfo: notification.request.content.userInfo,
       applicationIsActive: UIApplication.shared.applicationState == .active
@@ -305,6 +309,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .environmentObject(runtime.agentStartupRecovery)
       .environmentObject(runtime.voiceAgentRunRecovery)
       .galaxySSITextScale(runtime.store.displaySettings)
+      .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
       .onAppear {
         galaxySSIStartupLogger.notice("RootView appeared")
         runtime.agentStartupRecovery.start(

@@ -5,6 +5,34 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testDailyHealthReminderDoesNotBackfillAndRejectsStaleActions() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 12)))
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    var settings = try records.loadRecordingReminders(at: now, calendar: calendar).settings
+    settings.enabled = true
+    settings.notifications = true
+    try records.saveRecordingReminderSettings(settings, at: now)
+    XCTAssertTrue(try records.loadRecordingReminders(at: now, calendar: calendar).history.isEmpty)
+    let later = try XCTUnwrap(calendar.date(byAdding: .day, value: 3, to: now))
+    let ledger = try records.loadRecordingReminders(at: later, calendar: calendar)
+    let first = try XCTUnwrap(ledger.history.first)
+    XCTAssertEqual(ledger.history.count, 1)
+    try records.updateRecordingReminder(first, complete: false, at: later, calendar: calendar)
+    XCTAssertThrowsError(try records.updateRecordingReminder(first, complete: true, at: later, calendar: calendar))
+    let refreshed = try records.loadRecordingReminders(at: later, calendar: calendar)
+    XCTAssertEqual(refreshed.history.first?.snoozedUntil, later.addingTimeInterval(3_600))
+    XCTAssertEqual(refreshed.upcoming(at: later, calendar: calendar).first?.1, later.addingTimeInterval(3_600))
+    let snoozed = try XCTUnwrap(refreshed.history.first)
+    try records.updateRecordingReminder(snoozed, complete: true, at: later, calendar: calendar)
+    XCTAssertNotEqual(try records.loadRecordingReminders(at: later, calendar: calendar)
+      .upcoming(at: later, calendar: calendar).first?.0, snoozed.day)
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
