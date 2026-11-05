@@ -2,6 +2,34 @@ import XCTest
 @testable import GalaxySSI
 
 final class VoiceAdaptiveDetectionTests: XCTestCase {
+  func testPassiveRenewalPreservesOwnerAndRejectsStoppedOrOldCapture() throws {
+    var lease = VoicePassiveCaptureLease()
+    let owner = lease.begin()
+    let first = try XCTUnwrap(lease.renew(owner: owner, at: 10))
+    XCTAssertTrue(lease.accepts(owner: owner, capture: first))
+    XCTAssertFalse(lease.needsRenewal(at: 59.9, healthy: true))
+    XCTAssertTrue(lease.needsRenewal(at: 60, healthy: true))
+    XCTAssertTrue(lease.needsRenewal(at: 20, healthy: false))
+    let renewed = try XCTUnwrap(lease.renew(owner: owner, at: 60))
+    XCTAssertEqual(lease.owner, owner)
+    XCTAssertFalse(lease.accepts(owner: owner, capture: first))
+    XCTAssertTrue(lease.accepts(owner: owner, capture: renewed))
+    lease.stop()
+    XCTAssertNil(lease.renew(owner: owner, at: 120))
+    XCTAssertFalse(lease.needsRenewal(at: 120, healthy: false))
+    XCTAssertFalse(lease.accepts(owner: owner, capture: renewed))
+  }
+
+  func testInputCaptionRejectsPlaybackAndSubmittedSessionCallbacks() {
+    var state = VoiceInteractionState(sessionId: "input", phase: .listening, partialText: "User speech")
+    XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: true, submittedSession: ""), "User speech")
+    XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: true, submittedSession: "input"), "")
+    state.phase = .playingTTS
+    state.partialText = "Assistant narration"
+    XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: true, submittedSession: ""), "")
+    state.phase = .listening
+    XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: false, submittedSession: ""), "")
+  }
   func testContinuousEndpointUsesSpokenSpanRatherThanGrowingSilence() {
     for (spokenFrames, silenceFrames) in [(55, 50), (245, 60), (250, 70)] {
       let detector = AdaptiveEndpointDetector(sampleRateHz: 16_000, config: .continuous)
