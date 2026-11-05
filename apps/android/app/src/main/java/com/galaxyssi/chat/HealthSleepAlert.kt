@@ -16,6 +16,8 @@ internal data class HealthSleepAlertEvidence(
     val first: LocalDate get() = end.minusDays(6)
     val baselineFirst: LocalDate get() = first.minusDays(14)
     val baselineLast: LocalDate get() = first.minusDays(1)
+    fun weeklyStamp() = HealthWeeklyStamp(HealthWeeklyScope(end, ZoneId.of(zone), setOf(HealthMetric.SLEEP_DURATION)),
+        mapOf(HealthMetric.SLEEP_DURATION to metricVersion), computedAt)
     init {
         ZoneId.of(zone)
         require(daily.size == 7 && recentDays >= 5 && baselineDays in 10..14 && records >= recentDays)

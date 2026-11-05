@@ -130,7 +130,7 @@ class HealthAssistantActivity : Activity() {
         val content = healthProfileContent(body)
         val scope = selection()
         content.addView(ui.text(getString(R.string.health_assistant_scope), 19f, bold = true))
-        ui.add(content, ui.profileRow(text.range(scope)) { chooseDate() }, 8)
+        ui.add(content, ui.profileRow(text.range(scope)) { chooseDate() }.apply { tag = "health-assistant-date" }, 8)
         if (scope.hasBaseline) ui.add(content, ui.text(getString(R.string.health_assistant_baseline,
             scope.baselineFirst, scope.baselineLast), 13f, muted = true), 4)
         ui.add(content, ui.profileRow(getString(R.string.health_weekly_metrics),
@@ -213,8 +213,11 @@ class HealthAssistantActivity : Activity() {
                     Intent(this, HealthCenterActivity::class.java).putExtra("health_manual", true)
                 HealthAnalysisAction.RECORD_REMINDER -> R.string.health_reminder_title to Intent(this, HealthReminderActivity::class.java)
                 HealthAnalysisAction.WEEKLY_REPORT -> R.string.health_weekly_title to Intent(this, HealthWeeklyActivity::class.java)
+                    .putHealthWeeklyHandoff(result.weekly.stamp).putHealthNavigationFixture(names)
             }
-            ui.add(content, ui.profileRow(getString(label)) { if (names.fixture == null) startActivity(intent) }, 6)
+            ui.add(content, ui.profileRow(getString(label)) {
+                if (names.fixture == null || action == HealthAnalysisAction.WEEKLY_REPORT) startActivity(intent)
+            }.apply { tag = "health-assistant-action-${action.name}" }, 6)
         }
         if (result.hasData && names.fixture == null) ui.add(content, ui.command(R.string.health_assistant_online) {
             chooseProvider(result)

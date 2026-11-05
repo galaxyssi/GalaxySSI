@@ -14,7 +14,9 @@
     <string name="health_sleep_alert_handled">处理于 %1$s</string>
     <string name="health_sleep_alert_basis">为什么收到这条提醒？</string>
     <string name="health_sleep_alert_rule">个人变化规则 v%1$d · 提醒阈值 %2$d 分钟</string>
-    <string name="health_sleep_alert_trigger">首次触发：%1$s 至 %2$s · 较基线少 %3$s 分钟</string>
+    <string name="health_sleep_alert_latest">最新评估</string>
+    <string name="health_sleep_alert_original">首次触发</string>
+    <string name="health_sleep_alert_window">%1$s 至 %2$s · 计算于 %3$s</string>
     <string name="health_sleep_alert_source">查看这 7 天的记录</string>
     <string name="health_sleep_alert_record_note">可以在记录备注中补充入睡时间、起床时间和白天感受。</string>
     <string name="health_sleep_alert_stale">已失效</string>

@@ -92,6 +92,9 @@ class HealthOverviewUiDeviceTest {
                 "health-first-add", "health-first-existing").forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
             assertEquals(View.GONE, views(it.window.decorView).single { view -> view.tag == "health-reminders" }.visibility)
             assertTrue(requireNotNull(find(it, "health-first-existing")).performClick())
+        }
+        await(scenario, "health-import-keep-original")
+        scenario.onActivity {
             assertNotNull(find(it, "health-import-center"))
             listOf("health-import-camera", "health-import-report", "health-import-table", "health-import-restore")
                 .forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
@@ -131,8 +134,8 @@ class HealthOverviewUiDeviceTest {
             assertNull(find(it, "health-overview-first"))
             assertEquals(View.VISIBLE, views(it.window.decorView).single { view -> view.tag == "health-reminders" }.visibility)
             assertTrue(requireNotNull(find(it, "health-overview-import")).performClick())
-            assertNotNull(find(it, "health-import-restore"))
         }
+        await(scenario, "health-import-restore")
     }
     @Test fun revocationClearsVisibleDerivedAlertButKeepsRawRecordCard() = screen(seed = ::seedSleep) { scenario, names ->
         await(scenario, "health-overview-change")

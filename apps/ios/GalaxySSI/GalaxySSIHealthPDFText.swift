@@ -4,7 +4,7 @@ import UIKit
 import Vision
 
 enum GalaxySSIHealthPDFText {
-  enum Failure: Error { case invalid, locked, unavailable }
+  enum Failure: Error { case invalid, locked, incorrectPassword, extractionRestricted, unavailable }
   enum Method: Equatable, Sendable { case native, ocr }
   struct Region: Identifiable, Sendable {
     let id: Int
@@ -21,14 +21,14 @@ enum GalaxySSIHealthPDFText {
     let preview: CGImage?
   }
 
-  static func pageCount(_ data: Data) throws -> Int {
-    let document = try open(data)
+  static func pageCount(_ data: Data, password: String? = nil) throws -> Int {
+    let document = try open(data, password: password)
     return document.pageCount
   }
 
-  static func read(_ data: Data, page index: Int, forceOCR: Bool = false) throws -> Result {
+  static func read(_ data: Data, page index: Int, forceOCR: Bool = false, password: String? = nil) throws -> Result {
     try Task.checkCancellation()
-    let document = try open(data)
+    let document = try open(data, password: password, extracting: true)
     guard index >= 0, index < document.pageCount, let page = document.page(at: index) else { throw Failure.invalid }
     let crop = page.bounds(for: .cropBox)
     guard !crop.isEmpty, crop.width.isFinite, crop.height.isFinite else { throw Failure.invalid }
@@ -105,10 +105,16 @@ enum GalaxySSIHealthPDFText {
     return Rendered(image: image, viewport: viewport, transform: transform)
   }
 
-  private static func open(_ data: Data) throws -> PDFDocument {
+  static func open(_ data: Data, password: String? = nil, extracting: Bool = false) throws -> PDFDocument {
     guard !data.isEmpty, let document = PDFDocument(data: data) else { throw Failure.invalid }
-    guard !document.isLocked else { throw Failure.locked }
+    if document.isLocked {
+      guard let password else { throw Failure.locked }
+      guard document.unlock(withPassword: password), !document.isLocked else { throw Failure.incorrectPassword }
+    } else if document.isEncrypted, extracting, !document.allowsCopying, let password {
+      guard document.unlock(withPassword: password) else { throw Failure.incorrectPassword }
+    }
     guard document.pageCount > 0 else { throw Failure.invalid }
+    if extracting && !document.allowsCopying { throw Failure.extractionRestricted }
     return document
   }
 
@@ -211,6 +217,7 @@ struct GalaxySSIHealthPDFTextView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let store: GalaxySSIHealthOriginalStore
+  var transientReport: GalaxySSIHealthTransientReport?
   @State private var files: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var selected: GalaxySSIHealthOriginalStore.Original?
   @State private var page = 0
@@ -222,14 +229,18 @@ struct GalaxySSIHealthPDFTextView: View {
   @State private var showLimit = 50
   @State private var selectedRegion: Int?
   @State private var focused = false
+  @State private var password: String?
+  @State private var unlocking = false
+  @State private var requestedOCR = false
+  var reviewRecords: GalaxySSIHealthRecords?
 
-  private enum Status { case idle, working, unavailable, locked }
+  private enum Status { case idle, working, unavailable, locked, incorrectPassword, extractionRestricted }
 
   var body: some View {
     List {
       if scene == .active {
-        if let selected {
-          Section(selected.name) {
+        if let name = transientReport?.name ?? selected?.name {
+          Section(name) {
             HStack {
               Button { page -= 1; recognize() } label: {
                 Image(systemName: "chevron.left").frame(minWidth: 44, minHeight: 44)
@@ -248,7 +259,9 @@ struct GalaxySSIHealthPDFTextView: View {
               .accessibilityLabel(Text(t("next", "Next page")))
             }
             .buttonStyle(.borderless)
-            Button(t("back", "Choose another PDF")) { cancel(); self.selected = nil }
+            if transientReport == nil {
+              Button(t("back", "Choose another PDF")) { clearPassword(); cancel(); self.selected = nil }
+            }
           }
           if let result {
             Section(t("source", "Original page")) {
@@ -280,6 +293,24 @@ struct GalaxySSIHealthPDFTextView: View {
               if result.method == .native {
                 Button(t("force_ocr", "Read again with on-device OCR")) { recognize(forceOCR: true) }
               }
+              if let reviewRecords, let selected,
+                 let region = result.regions.first(where: { $0.id == selectedRegion }) {
+                NavigationLink {
+                  GalaxySSIHealthReportItemEditor(records: reviewRecords,
+                    source: .init(original: selected.id, sha256: selected.sha256, page: page,
+                                  region: region.id, fromOCR: result.method == .ocr),
+                    excerpt: String(region.text.prefix(500)))
+                } label: {
+                  Text(GalaxySSIHealthReportReview.text("item", "Review measurement", language: language))
+                }
+              }
+            }
+          }
+          if let reviewRecords, let selected {
+            NavigationLink {
+              GalaxySSIHealthReportBatchView(records: reviewRecords, store: store, original: selected)
+            } label: {
+              Text(GalaxySSIHealthReportReview.text("batch", "Reviewed measurements", language: language))
             }
           }
         } else {
@@ -296,18 +327,21 @@ struct GalaxySSIHealthPDFTextView: View {
         case .working: ProgressView(t("working", "Reading page"))
         case .unavailable:
           Text(t("failed", "The PDF page could not be read."))
-          if selected != nil { Button(t("retry", "Retry this page")) { recognize() } }
-        case .locked: Text(t("locked", "This PDF is password protected."))
+          if selected != nil || transientReport != nil { Button(t("retry", "Retry this page")) { recognize() } }
+        case .locked, .incorrectPassword, .extractionRestricted:
+          Text(passwordStatus)
+          Button(t("unlock", "Enter PDF password")) { unlocking = true }
         }
       }
     }
     .navigationTitle(t("title", "Report PDF Text"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
-    .onDisappear { cancel(); selected = nil; files = [] }
+    .onDisappear(perform: clearPassword)
+    .onDisappear { if status == .working { cancel() } }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
-      else { cancel(); selected = nil; files = [] }
+      else { clearPassword(); cancel(); selected = nil; files = [] }
     }
     .sheet(isPresented: $focused) {
       if scene == .active, let result, let image = result.preview {
@@ -315,10 +349,34 @@ struct GalaxySSIHealthPDFTextView: View {
           highlight: result.regions.first(where: { $0.id == selectedRegion })?.highlight)
       }
     }
+    .sheet(isPresented: $unlocking) {
+      if scene == .active {
+        GalaxySSIHealthPDFPasswordForm { input in
+          unlocking = false
+          password = input
+          recognize(forceOCR: requestedOCR)
+        }
+      }
+    }
+  }
+
+  private var passwordStatus: String {
+    switch status {
+    case .incorrectPassword: return t("incorrect_password", "The PDF password is incorrect.")
+    case .extractionRestricted: return t("extraction_restricted", "This PDF does not permit text extraction.")
+    default: return t("locked", "This PDF is password protected.")
+    }
+  }
+
+  private func clearPassword() {
+    password = nil
+    unlocking = false
+    requestedOCR = false
   }
 
   private func reload() {
     guard scene == .active else { return }
+    if transientReport != nil { recognize(); return }
     do {
       files = try store.list().originals.filter { $0.kind == .pdf }
       status = .idle
@@ -327,18 +385,23 @@ struct GalaxySSIHealthPDFTextView: View {
 
   private func recognize(forceOCR: Bool = false) {
     cancel()
-    guard scene == .active, let selected else { return }
+    guard scene == .active else { return }
     showLimit = 50
     let data: Data
-    do { data = try store.read(selected) }
+    do {
+      if let transientReport { data = transientReport.pdf }
+      else if let selected { data = try store.read(selected) }
+      else { return }
+    }
     catch { status = .unavailable; return }
-    let token = UUID(), index = page
+    requestedOCR = forceOCR
+    let token = UUID(), index = page, credential = password
     requestID = token
     status = .working
     task = Task {
       let worker = Task.detached(priority: .userInitiated) {
-        let pages = try GalaxySSIHealthPDFText.pageCount(data)
-        return (pages, try GalaxySSIHealthPDFText.read(data, page: index, forceOCR: forceOCR))
+        let pages = try GalaxySSIHealthPDFText.pageCount(data, password: credential)
+        return (pages, try GalaxySSIHealthPDFText.read(data, page: index, forceOCR: forceOCR, password: credential))
       }
       do {
         let (pages, pageResult) = try await withTaskCancellationHandler(operation: {
@@ -351,8 +414,12 @@ struct GalaxySSIHealthPDFTextView: View {
         status = .idle
       } catch {
         guard !Task.isCancelled, requestID == token, scene == .active else { return }
-        if case GalaxySSIHealthPDFText.Failure.locked = error { status = .locked }
-        else { status = .unavailable }
+        switch error {
+        case GalaxySSIHealthPDFText.Failure.locked: status = .locked
+        case GalaxySSIHealthPDFText.Failure.incorrectPassword: password = nil; status = .incorrectPassword
+        case GalaxySSIHealthPDFText.Failure.extractionRestricted: password = nil; status = .extractionRestricted
+        default: status = .unavailable
+        }
       }
     }
   }
@@ -365,6 +432,35 @@ struct GalaxySSIHealthPDFTextView: View {
     selectedRegion = nil
     focused = false
     status = .idle
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.pdf_text." + key, fallback: fallback, language: language)
+  }
+}
+
+@MainActor
+struct GalaxySSIHealthPDFPasswordForm: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State private var password = ""
+  var failed = false
+  let submit: (String) -> Void
+
+  var body: some View {
+    Form {
+      SecureField(t("password", "PDF password"), text: $password)
+        .textContentType(.none)
+        .autocorrectionDisabled()
+      if failed { Text(t("incorrect_password", "The PDF password is incorrect.")).foregroundColor(.secondary) }
+      Button(t("unlock", "Enter PDF password")) {
+        let entered = password
+        password = ""
+        submit(entered)
+      }.disabled(password.isEmpty || password.utf8.count > 1_024)
+      Button(t("close_source", "Close"), role: .cancel) { dismiss() }
+    }
+    .onDisappear { password = "" }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
