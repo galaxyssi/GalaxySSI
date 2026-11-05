@@ -82,6 +82,12 @@
 "galaxyssi.health.review_reminder.report" = "报告审阅";
 "galaxyssi.health.review_reminder.table" = "表格审阅";
 "galaxyssi.health.review_reminder.close" = "关闭";
+"galaxyssi.health.review_reminder.connections" = "数据连接";
+"galaxyssi.health.review_reminder.connections_empty" = "没有未解决的同步故障";
+"galaxyssi.health.review_reminder.acknowledge_incident" = "确认提醒";
+"galaxyssi.health.review_reminder.connection_permission" = "需要系统权限";
+"galaxyssi.health.review_reminder.connection_unavailable" = "Apple 健康不可用";
+"galaxyssi.health.review_reminder.connection_failed" = "同步失败";
 "galaxyssi.health.table.save_review_draft" = "保存加密审阅草稿";
 "galaxyssi.health.table.resume_review_draft" = "继续已保存的表格审阅";
 "galaxyssi.health.table.discard_review_draft" = "丢弃已保存的表格审阅";

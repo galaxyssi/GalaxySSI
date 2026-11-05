@@ -68,6 +68,8 @@ struct GalaxySSIHealthReviewReminderView: View {
   @State private var limit = 30
   @State private var failed = false
   @State private var route: Route?
+  @State private var incidents: [GalaxySSIHealthKitSync.Incident] = []
+  @State private var incidentScope: GalaxySSIHealthKitImport.Scope?
 
   private struct Route: Identifiable {
     let job: GalaxySSIHealthReviewReminders.Job
@@ -104,6 +106,23 @@ struct GalaxySSIHealthReviewReminderView: View {
           }
           if jobs.count > limit { Button(t("more", "Show more reviews")) { limit += 30 } }
         }
+        Section(t("connections", "Data Connections")) {
+          if incidents.isEmpty { Text(t("connections_empty", "No unresolved sync failures")).foregroundColor(.secondary) }
+          ForEach(incidents) { incident in
+            VStack(alignment: .leading, spacing: 6) {
+              Button { openIncident(incident) } label: {
+                Label(incident.metric?.title(language: language) ?? "Apple Health", systemImage: "exclamationmark.circle")
+              }
+              Text(incidentStatus(incident.status)).foregroundColor(.secondary)
+              Text(incident.lastFailureAt, style: .date).foregroundColor(.secondary)
+              Button(t("acknowledge_incident", "Acknowledge")) {
+                do { try records.acknowledgeHealthKitIncident(incident); reload() }
+                catch { failed = true }
+              }
+              .buttonStyle(.borderless)
+            }
+          }
+        }
         if failed { Text(t("failed", "The review changed or is unavailable.")).foregroundColor(.secondary) }
       }
     }
@@ -112,7 +131,7 @@ struct GalaxySSIHealthReviewReminderView: View {
     .onAppear(perform: reload)
     .onChange(of: scene) {
       if $0 == .active { reload() }
-      else { jobs = []; originalNames = [:]; tableName = nil; route = nil }
+      else { jobs = []; originalNames = [:]; tableName = nil; route = nil; incidents = []; incidentScope = nil }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.reviewInputsChanged)) {
       if $0.object as? String == records.owner { reload() }
@@ -132,12 +151,41 @@ struct GalaxySSIHealthReviewReminderView: View {
       }
       .navigationViewStyle(.stack)
     }
+    .sheet(item: $incidentScope, onDismiss: reload) { scope in
+      NavigationView {
+        GalaxySSIHealthKitSyncView(records: records, focusedScope: scope)
+          .toolbar { ToolbarItem(placement: .cancellationAction) {
+            Button(t("close", "Close")) { incidentScope = nil }
+          } }
+      }
+      .navigationViewStyle(.stack)
+    }
+  }
+
+  private func openIncident(_ incident: GalaxySSIHealthKitSync.Incident) {
+    do {
+      guard scene == .active, let scope = GalaxySSIHealthKitImport.Scope(rawValue: incident.scope),
+            try records.load().healthKitIncidents?[incident.scope] == incident else {
+        throw GalaxySSIHealthRecords.Failure.stale
+      }
+      incidentScope = scope
+    } catch { reload(); failed = true }
+  }
+
+  private func incidentStatus(_ status: GalaxySSIHealthKitSync.Status) -> String {
+    switch status {
+    case .permission: return t("connection_permission", "System access required")
+    case .unavailable: return t("connection_unavailable", "Apple Health unavailable")
+    default: return t("connection_failed", "Synchronization failed")
+    }
   }
 
   private func reload() {
     guard scene == .active else { return }
     do {
       let archive = try records.load()
+      incidents = (archive.healthKitIncidents ?? [:]).values.filter { !$0.acknowledged }
+        .sorted { ($0.lastFailureAt, $0.scope) > ($1.lastFailureAt, $1.scope) }
       let state = archive.reviewReminderState ?? .init()
       enabled = state.enabled
       jobs = GalaxySSIHealthReviewReminders.visible(GalaxySSIHealthReviewReminders.jobs(in: archive), state: state, now: Date())
@@ -145,7 +193,7 @@ struct GalaxySSIHealthReviewReminderView: View {
       originalNames = jobs.contains { $0.kind == .report }
         ? Dictionary(uniqueKeysWithValues: try originals.list().originals.map { ($0.id, $0.name) }) : [:]
       failed = false
-    } catch { jobs = []; originalNames = [:]; tableName = nil; failed = true }
+    } catch { jobs = []; originalNames = [:]; tableName = nil; incidents = []; failed = true }
   }
 
   private func open(_ job: GalaxySSIHealthReviewReminders.Job) {

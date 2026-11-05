@@ -9,6 +9,19 @@ enum GalaxySSIHealthKitSync {
     case running, empty, success, interrupted, permission, unavailable, failed
   }
 
+  struct Incident: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var version = UUID()
+    let scope: String
+    let startedAt: Date
+    var lastFailureAt: Date
+    var status: Status
+    var attempts = 1
+    var acknowledged = false
+
+    var metric: GalaxySSIHealthMetric? { GalaxySSIHealthKitImport.Scope(rawValue: scope)?.metric }
+  }
+
   struct Checkpoint: Codable, Equatable {
     let floor: Date
     var previousCoverageUnverified = false
@@ -99,6 +112,7 @@ struct GalaxySSIHealthKitSyncView: View {
   @Environment(\.timeZone) private var timeZone
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
+  let focusedScope: GalaxySSIHealthKitImport.Scope?
   @State private var selected: Set<GalaxySSIHealthKitImport.Scope> = []
   @State private var checkpoints: [String: GalaxySSIHealthKitSync.Checkpoint] = [:]
   @State private var task: Task<Void, Never>?
@@ -107,7 +121,17 @@ struct GalaxySSIHealthKitSyncView: View {
   @State private var failure: GalaxySSIHealthKitSync.Status?
   @State private var confirmingReset = false
 
-  private var scopes: [GalaxySSIHealthKitImport.Scope] { GalaxySSIHealthKitImport.Scope.allCases.filter { $0 != .steps } }
+  init(records: GalaxySSIHealthRecords, focusedScope: GalaxySSIHealthKitImport.Scope? = nil) {
+    self.records = records
+    self.focusedScope = focusedScope
+    _selected = State(initialValue: focusedScope.map { [$0] } ?? [])
+  }
+
+  private var scopes: [GalaxySSIHealthKitImport.Scope] {
+    let all = GalaxySSIHealthKitImport.Scope.allCases.filter { $0 != .steps }
+    guard let focusedScope, all.contains(focusedScope) else { return all }
+    return [focusedScope] + all.filter { $0 != focusedScope }
+  }
 
   var body: some View {
     List {

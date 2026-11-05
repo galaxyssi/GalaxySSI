@@ -135,6 +135,7 @@ struct GalaxySSIHealthRecords {
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
     var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
+    var healthKitIncidents: [String: GalaxySSIHealthKitSync.Incident]?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -442,9 +443,11 @@ struct GalaxySSIHealthRecords {
     if !page.more {
       checkpoint.status = checkpoint.readThisRun == 0 ? .empty : .success
       checkpoint.finishedAt = now
+      archive.healthKitIncidents?.removeValue(forKey: scope.rawValue)
     }
     archive.healthKitSync?[scope.rawValue] = checkpoint
     try persist(archive)
+    if !page.more { NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner) }
     if count > 0 { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
     return checkpoint
   }
@@ -455,7 +458,33 @@ struct GalaxySSIHealthRecords {
     guard archive.healthKitSync?[scope.rawValue]?.run == run,
           archive.healthKitSync?[scope.rawValue]?.status == .running else { return }
     archive.healthKitSync?[scope.rawValue]?.status = status
+    let failed = status == .failed || status == .permission || status == .unavailable
+    if failed {
+      let now = Date()
+      var incidents = archive.healthKitIncidents ?? [:]
+      if var previous = incidents[scope.rawValue] {
+        previous.version = UUID()
+        previous.lastFailureAt = now
+        previous.status = status
+        previous.attempts = min(previous.attempts, Int.max - 1) + 1
+        previous.acknowledged = false
+        incidents[scope.rawValue] = previous
+      } else {
+        incidents[scope.rawValue] = .init(scope: scope.rawValue, startedAt: now, lastFailureAt: now, status: status)
+      }
+      archive.healthKitIncidents = incidents
+    }
     try persist(archive)
+    if failed { NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner) }
+  }
+
+  func acknowledgeHealthKitIncident(_ incident: GalaxySSIHealthKitSync.Incident) throws {
+    var archive = try load()
+    guard archive.healthKitIncidents?[incident.scope] == incident else { throw Failure.stale }
+    archive.healthKitIncidents?[incident.scope]?.acknowledged = true
+    archive.healthKitIncidents?[incident.scope]?.version = UUID()
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
   }
 
   func undoTableBatch(_ id: UUID) throws -> Int {

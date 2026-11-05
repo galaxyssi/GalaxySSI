@@ -5,6 +5,35 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthSyncIncidentKeepsIdentityAndResolvesOnEmptySuccess() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let floor = now.addingTimeInterval(-86_400)
+    let interrupted = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: interrupted.run, status: .interrupted)
+    XCTAssertNil(try records.load().healthKitIncidents?["weight"])
+    let failed = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: failed.run, status: .failed)
+    let first = try XCTUnwrap(records.load().healthKitIncidents?["weight"])
+    try records.acknowledgeHealthKitIncident(first)
+    XCTAssertTrue(try XCTUnwrap(records.load().healthKitIncidents?["weight"]).acknowledged)
+    let retry = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: retry.run, status: .permission)
+    let repeated = try XCTUnwrap(records.load().healthKitIncidents?["weight"])
+    XCTAssertEqual(repeated.id, first.id)
+    XCTAssertEqual(repeated.attempts, 2)
+    XCTAssertFalse(repeated.acknowledged)
+    XCTAssertThrowsError(try records.acknowledgeHealthKitIncident(first))
+    let success = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    let page = GalaxySSIHealthKitSync.Page(rows: [], anchor: Data([1]), providerCount: 0, more: false)
+    XCTAssertEqual(try records.commitHealthKitPage(scope: .weight, expected: success, page: page, at: now).status, .empty)
+    XCTAssertNil(try records.load().healthKitIncidents?["weight"])
+    XCTAssertTrue(try records.load().current.isEmpty)
+  }
+
+  @MainActor
   func testHealthKitSyncCommitsPageAndCursorTogetherAndResumesWithoutDeleting() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
