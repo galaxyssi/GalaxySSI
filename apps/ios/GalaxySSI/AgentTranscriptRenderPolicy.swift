@@ -8,6 +8,21 @@ struct AgentTranscriptRenderDiff: Codable, Equatable {
 }
 
 enum AgentProcessClockPolicy {
+  static func pausesLocalClock(_ phase: AgentPhase) -> Bool {
+    [.blocked, .paused, .waitingConfirmation].contains(phase)
+  }
+
+  static func pausesRemoteClock(_ status: String) -> Bool {
+    ["blocked", "paused", "waiting_input", "waiting_approval", "waiting_confirmation"]
+      .contains(AgentRemoteTaskStatusPolicy.normalize(status))
+  }
+
+  static func remotePauseTimestamp(_ task: AgentRemoteTaskStatusSnapshot) -> Int64 {
+    let current = AgentRemoteTaskStatusPolicy.normalize(task.status)
+    return task.history.reversed().prefix {
+      AgentRemoteTaskStatusPolicy.normalize($0.status) == current
+    }.last?.updatedAtMillis ?? task.updatedAtMillis
+  }
   static func sameTurn(_ process: AgentTranscriptEntry, _ candidate: AgentTranscriptEntry) -> Bool {
     guard process.conversationId == candidate.conversationId else { return false }
     if !process.turnId.isBlank { return process.turnId == candidate.turnId }
