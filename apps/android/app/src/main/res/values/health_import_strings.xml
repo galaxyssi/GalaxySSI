@@ -6,6 +6,17 @@
     <string name="health_photo_record">Photo and File Records</string>
     <string name="health_photo_description">Originals, local recognition, and field verification</string>
     <string name="health_record_center">Record Center</string>
+    <string name="health_record_center_heading">Record changes in your health</string>
+    <string name="health_record_center_note">Capture, enter, or import a measurement with its source.</string>
+    <string name="health_record_center_photo">Scan with camera</string>
+    <string name="health_record_center_photo_note">Lab reports and device readings</string>
+    <string name="health_record_center_manual">Enter manually</string>
+    <string name="health_record_center_upload">Import files</string>
+    <string name="health_record_center_devices">Connect a device</string>
+    <string name="health_record_center_import_note">Photos, PDF reports, and tables</string>
+    <string name="health_record_center_sources_note">Health platforms and Bluetooth devices</string>
+    <string name="health_record_center_review">Awaiting review</string>
+    <string name="health_record_center_no_review">No recent imports awaiting review</string>
     <string name="health_capture_heading">Keep a traceable record</string>
     <string name="health_capture_report">Report</string>
     <string name="health_capture_device">Device reading</string>
@@ -16,6 +27,7 @@
     <string name="health_camera_recover">Resume the unfinished photo import</string>
     <string name="health_local_recognition">Recognition stays on this device. Extracted fields are drafts until you verify and save them.</string>
     <string name="health_import_tasks">Import Tasks</string>
+    <string name="health_import_queue_title">Upload and Import</string>
     <string name="health_no_import_tasks">No import tasks yet</string>
     <string name="health_original_library">Photos and Original Files</string>
     <string name="health_no_originals">No originals saved yet</string>

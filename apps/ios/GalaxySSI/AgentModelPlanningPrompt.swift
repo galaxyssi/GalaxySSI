@@ -189,6 +189,7 @@ enum AgentModelPlanningPrompt {
     )
     append(&prompt, "Generic native receipts are observations, not final answers. Stop the graph when later choices require interpreting a receipt. ")
     append(&prompt, "After verified evidence proves completion, return one DRAFT_PLAN with target=task-complete and a concise final answer in the user's language; do not repeat tools merely to produce an answer. ")
+    append(&prompt, "For an answer with no outstanding effects or obligations, a respond envelope with final_response may deliver the answer directly. Keep sources in the answer and never include unexecuted tool markup. ")
     append(&prompt, "Use next_cursor for lists and keep same or nested paths ordered.\n\n")
   }
 

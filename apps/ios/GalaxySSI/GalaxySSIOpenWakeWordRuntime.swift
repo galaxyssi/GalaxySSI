@@ -59,10 +59,15 @@ enum GalaxySSIOpenWakeWordEnvironment {
   private static let lock = NSLock()
   private static var cachedEnvironment: ORTEnv?
 
-  static func makeSession(modelURL: URL) throws -> ORTSession {
+  static func makeSession(modelURL: URL, singleThreaded: Bool = false) throws -> ORTSession {
     do {
       let environment = try sharedEnvironment()
       let options = try ORTSessionOptions()
+      if singleThreaded {
+        try options.setIntraOpNumThreads(1)
+        try options.addConfigEntry(withKey: "session.intra_op.allow_spinning", value: "0")
+        try options.addConfigEntry(withKey: "session.inter_op.allow_spinning", value: "0")
+      }
       return try ORTSession(
         env: environment,
         modelPath: modelURL.path,

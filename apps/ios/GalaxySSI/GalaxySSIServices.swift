@@ -2777,6 +2777,8 @@ final class MessageCoordinator: ObservableObject {
   private func persistRecoveredDesktopResult(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord) {
     let binding = record.binding
     guard currentDesktopReplySource(binding) != nil, let receipt = desktopResultRecovery.receipt(record) else { return }
+    store.persistResearchCheckpoints(payload, sourceId: binding.sourceId,
+      conversation: binding.identity.conversationId, turn: binding.identity.turnId)
     let content = payload.string("content").ifBlank(payload.string("text"))
       .ifBlank(payload.string("terminal_reason")).ifBlank(payload.string("error"))
     let rich = richContentMaterializer.materialize(AgentRichContentCodec.normalize(
@@ -3103,10 +3105,15 @@ final class MessageCoordinator: ObservableObject {
     peerDurationMillis: Int64 = 0,
     requestKind: AgentRequestKind = .conversation,
     readOnlyAnalysis: Bool = false,
+    researchRetrySource: ChatMessage? = nil,
     onOutgoing: ((ChatMessage) -> Void)? = nil
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
+    func retryPrompt(_ goal: String, conversation: String) -> String {
+      guard let source = researchRetrySource, source.conversationId == conversation else { return goal }
+      return goal + store.researchRetryHandoff(for: source)
+    }
     let outgoingMessageId = UUID()
     if contact.id == "hermes" || contact.type.caseInsensitiveCompare("agent") == .orderedSame {
       AgentLatencyTelemetry.shared.record(taskId: outgoingMessageId.uuidString, stage: .phoneSendStarted, deferJournal: true)
@@ -3698,7 +3705,8 @@ final class MessageCoordinator: ObservableObject {
           effectiveAttachments,
           taskId: outgoing.id.uuidString
         )
-        let cloudText = cloudPrompt(text: requestText, attachments: effectiveAttachments)
+        let cloudText = cloudPrompt(text: retryPrompt(requestText, conversation: outgoing.conversationId),
+                                    attachments: effectiveAttachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
           cloudTurns[index].content = cloudText
@@ -3767,9 +3775,10 @@ final class MessageCoordinator: ObservableObject {
         if let export = publicPages.compactMap(\.export).first {
           pendingPhonePublicPageExport = export
         }
+        let retryText = retryPrompt(requestText, conversation: outgoing.conversationId)
         let remoteRequestText = publicPages.isEmpty
-          ? requestText
-          : requestText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: publicPages)
+          ? retryText
+          : retryText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: publicPages)
         for publicPage in publicPages {
           if let archiveName = publicPage.originalSourceArchiveName {
             store.appendDeliveryTrace(
@@ -3842,7 +3851,8 @@ final class MessageCoordinator: ObservableObject {
           requestedModelId: contact.selectedCloudModelId,
           hasImageInput: !cloudImages.isEmpty
         )
-        let cloudText = cloudPrompt(text: requestText, attachments: effectiveAttachments)
+        let cloudText = cloudPrompt(text: retryPrompt(requestText, conversation: outgoing.conversationId),
+                                    attachments: effectiveAttachments)
         var cloudTurns = store.messages(for: contact.id)
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
           cloudTurns[index].content = cloudText
@@ -7617,6 +7627,14 @@ final class MessageCoordinator: ObservableObject {
       hasAttachments: hasAttachments,
       allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly
     )
+    let scopedHistory = planningRequest.executionHistory
+    let answerOnly = AgentCompletionEvidencePolicy.isAnswerOnly(history: scopedHistory) {
+      runtime.registry.lookup($0)?.descriptor
+    }
+    let existingEvidence = AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly)
+    planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && answerOnly && existingEvidence.isEmpty &&
+      !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     for repairAttempt in 0...1 {
       let result = await AgentPlanningTiming.capture(
@@ -7637,12 +7655,23 @@ final class MessageCoordinator: ObservableObject {
          let action = plan.actions.first,
          AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
          AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
-        let missing = AgentCompletionEvidencePolicy.missingEvidence(
+        guard executionMode != .planOnly else { return nil }
+        let proposedMissing = AgentCompletionEvidencePolicy.missingEvidence(
           requirements: plan.completionRequirements,
-          history: executionHistory
+          history: scopedHistory,
+          answerOnly: answerOnly
         )
+        let priorMissing = completionRequirements == nil ? [] : existingEvidence
+        let unsettled = scopedHistory.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome)
+          ? ["a settled result for every outstanding operation"] : []
+        let missing = Array(Set(priorMissing + proposedMissing + unsettled)).sorted()
         if missing.isEmpty {
-          return .plan(plan)
+          var completion = plan
+          let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+            turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+          completion.actions = completion.actions.map(scope.bind)
+          completion.executionMode = executionMode
+          return .plan(completion)
         }
         guard repairAttempt == 0 else { return nil }
         planningRequest.planRequest.completionRequirements = plan.completionRequirements
@@ -11566,6 +11595,8 @@ final class MessageCoordinator: ObservableObject {
        taskIdentityStore.matchesRegistered(payload: appPayload),
        let contact = store.contact(id: appPayload.string("contact_id")), contact.trustState == .verified,
        contact.desktopId == link.desktopId, let sourceId = UUID(uuidString: appPayload.string("source_message_id")) {
+      store.persistResearchCheckpoints(appPayload, sourceId: sourceId,
+        conversation: appPayload.string("conversation_id"), turn: appPayload.string("turn_id"))
       let observation = AgentTeamReplyObservation(payload: appPayload)
       if contact.connectorAgentId == "codex", appPayload.string("agent_id") == "codex",
          observation.valid, observation.generation != nil,
@@ -11741,6 +11772,14 @@ final class MessageCoordinator: ObservableObject {
       appPayload.string("rich_output").ifBlank(appPayload.string("rich_output_json"))
     )
     let remoteTaskStatus = AgentRemoteTaskStatusPolicy.normalize(appPayload.string("task_status"))
+    if object.string("scheme") == "signal", let link, link.paired,
+       appPayload.string("client_route_id") == link.routes.clientRouteId,
+       taskIdentityStore.matchesRegistered(payload: appPayload),
+       let contact = store.contact(id: appPayload.string("contact_id")), contact.trustState == .verified,
+       contact.desktopId == link.desktopId, let sourceId = UUID(uuidString: appPayload.string("source_message_id")) {
+      store.persistResearchCheckpoints(appPayload, sourceId: sourceId,
+        conversation: appPayload.string("conversation_id"), turn: appPayload.string("turn_id"))
+    }
     let numericSlotSourceMessageId = appPayload.int("source_message_id")
     let slotSourceMessageId = appPayload.string("source_message_id")
       .ifBlank(numericSlotSourceMessageId > 0 ? String(numericSlotSourceMessageId) : "")

@@ -662,7 +662,9 @@ struct AgentHomeView: View {
         richActionStatus = t("galaxyssi.agent.original_request_unavailable", "The original Agent request is no longer available.")
         return
       }
-      let sent = await coordinator.send(request, to: contact, requestKind: kind)
+      let source = UUID(uuidString: task.taskId).flatMap { store.chatHistoryDatabase.message(id: $0) }
+      let sent = await coordinator.send(request, to: contact, requestKind: kind,
+                                        researchRetrySource: source?.conversationId == task.sessionId ? source : nil)
       retryingAgentTaskIDs.remove(task.taskId)
       resumePendingAgentDeliveryAfterTaskAction()
       if !sent {
@@ -765,6 +767,7 @@ struct AgentHomeView: View {
       onRemoveAttachment: { attachment in
         attachments.removeAndWipe(id: attachment.id)
       },
+      onImageAttachment: appendAttachment,
       onNewSession: createAgentConversation,
       onOpenSessions: {
         actionTrayPresented = false

@@ -245,6 +245,27 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(GalaxySSIConversationExecutionStatus.completeUnread.systemImage, "checkmark.circle")
   }
 
+  func testRecoverableRunPausesClockWithoutBecomingTerminal() {
+    for phase in [AgentPhase.blocked, .paused, .waitingConfirmation] {
+      XCTAssertTrue(AgentProcessClockPolicy.pausesLocalClock(phase))
+    }
+    XCTAssertFalse(AgentProcessClockPolicy.pausesLocalClock(.executing))
+    for status in ["blocked", "paused", "waiting_input", "waiting_approval", "waiting_confirmation"] {
+      XCTAssertTrue(AgentProcessClockPolicy.pausesRemoteClock(status))
+      XCTAssertFalse(AgentRemoteTaskStatusPolicy.isTerminal(status))
+    }
+    let history = [
+      AgentRemoteTaskStatusEvent(status: "running", currentStep: "", detail: "", updatedAtMillis: 1_000),
+      AgentRemoteTaskStatusEvent(status: "paused", currentStep: "", detail: "", updatedAtMillis: 2_000),
+      AgentRemoteTaskStatusEvent(status: "paused", currentStep: "", detail: "New detail", updatedAtMillis: 5_000),
+    ]
+    let snapshot = AgentRemoteTaskStatusSnapshot(taskId: "task", clientRouteId: "route", contactId: "agent",
+      conversationId: "conversation", turnId: "turn", sourceMessageId: 1, status: "paused",
+      target: "", location: "", currentStep: "", advertisedCancellable: true, detail: "",
+      updatedAtMillis: 5_000, history: history)
+    XCTAssertEqual(AgentProcessClockPolicy.remotePauseTimestamp(snapshot), 2_000)
+  }
+
   func testAgentProcessClockStopsOnceAtMatchingFinalReply() {
     let process = AgentTranscriptEntry(
       id: "process",

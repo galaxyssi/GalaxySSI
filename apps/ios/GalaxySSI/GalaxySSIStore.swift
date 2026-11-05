@@ -905,8 +905,13 @@ final class GalaxySSIStore: ObservableObject {
 
   func deleteMessages(for contactId: String) {
     if contactId == "hermes" { agentReplyUnreadStore.clearAgentReplies() }
-    deletePrivateAttachmentCopies(in: chatHistoryDatabase.messages(contactId: contactId))
+    let messages = chatHistoryDatabase.messages(contactId: contactId)
+    deletePrivateAttachmentCopies(in: messages)
     chatHistoryDatabase.deleteContact(contactId)
+    for message in messages where message.isMine {
+      researchCheckpointStore.remove(conversation: message.conversationId,
+        turn: message.turnId.ifBlank(message.id.uuidString), source: message.id)
+    }
     messagesByContact.removeValue(forKey: contactId)
     readAtByContact.removeValue(forKey: contactId)
     pinnedContactIds.remove(contactId)
@@ -917,6 +922,10 @@ final class GalaxySSIStore: ObservableObject {
   func deleteMessage(_ messageId: UUID, contactId: String? = nil) -> Bool {
     // Commit the scoped deletion and replay marker before changing the UI or removing files.
     guard let removed = chatHistoryDatabase.deleteMessage(id: messageId, contactId: contactId) else { return false }
+    if removed.isMine {
+      researchCheckpointStore.remove(conversation: removed.conversationId,
+        turn: removed.turnId.ifBlank(removed.id.uuidString), source: removed.id)
+    }
     agentReplyUnreadStore.remove(removed)
     deletePrivateAttachmentCopies(in: [removed])
     let id = removed.contactId
@@ -979,6 +988,7 @@ final class GalaxySSIStore: ObservableObject {
     UserDefaultsAgentTranscriptEntryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
     agentReplyUnreadStore.clear()
     agentConversationDatabase.destroyAllData()
+    researchCheckpointStore.removeAll()
     chatHistoryDatabase.destroyAllData()
     AgentDesktopResultRecovery(ownerId: profile.identityFingerprint, secrets: secrets).destroyAllData()
     UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)

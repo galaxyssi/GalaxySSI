@@ -29,12 +29,14 @@ class HealthCenterActivity : Activity() {
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
     private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
+    private val recordCenter by lazy { HealthRecordCenterView(this, overviewNames) }
     private var overviewHasRecords = false
     private var overviewScroll = 0
-    private val reloadOverview = Runnable { if (active && route == "overview") render() }
+    private var recordCenterScroll = 0
+    private val reloadOverview = Runnable { if (active && (route == "overview" || route == "record_center")) render() }
     private val overviewChanges = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
-            if (active && route == "overview") {
+            if (active && (route == "overview" || route == "record_center")) {
                 main.removeCallbacks(reloadOverview)
                 main.postDelayed(reloadOverview, 120)
             }
@@ -101,6 +103,7 @@ class HealthCenterActivity : Activity() {
             recordId = state.getString("record", "").orEmpty()
             undoDeletionRevision = state.getInt("undoDeletionRevision").takeIf { route == "detail" } ?: 0
             overviewScroll = state.getInt("overviewScroll")
+            recordCenterScroll = state.getInt("recordCenterScroll")
             state.getStringArrayList("stack")?.forEach { encoded ->
                 val parts = encoded.split('|')
                 if (parts.size == 3) backStack.addLast(Triple(parts[0], HealthMetric.valueOf(parts[1]), parts[2]))
@@ -125,6 +128,7 @@ class HealthCenterActivity : Activity() {
         super.onStart(); active = true
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, overviewNames.records), false, overviewChanges)
         contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this).buildUpon().appendPath("jobs").build(), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthTableScheduler.changes(this), false, overviewChanges)
         contentResolver.registerContentObserver(HealthReminderStore.changes(this, overviewNames.reminders), false, overviewChanges)
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, overviewNames.privacy), false, overviewPrivacy)
         render()
@@ -150,6 +154,7 @@ class HealthCenterActivity : Activity() {
         keepImportedOriginal?.let { out.putBoolean(HEALTH_KEEP_ORIGINAL, it) }
         out.putString("review", reviewKey)
         retainOverviewScroll(); out.putInt("overviewScroll", overviewScroll)
+        out.putInt("recordCenterScroll", recordCenterScroll)
         out.putStringArrayList("stack", ArrayList(backStack.map { "${it.first}|${it.second.name}|${it.third}" }))
         super.onSaveInstanceState(out)
     }
@@ -223,6 +228,7 @@ class HealthCenterActivity : Activity() {
             "manual" -> R.string.health_manual
             "review" -> R.string.health_review_title
             "records" -> R.string.health_records
+            "record_center" -> R.string.health_record_center
             "metric_records" -> selected.titleResource()
             "detail" -> selected.titleResource()
             "history" -> R.string.health_revision_history
@@ -233,6 +239,14 @@ class HealthCenterActivity : Activity() {
         when (route) {
             "manual", "review" -> renderManual()
             "records", "metric_records" -> renderRecords()
+            "record_center" -> {
+                val content = scrolling()
+                val scroll = (content.parent as ScrollView).apply { tag = "health-record-center-scroll" }
+                recordCenter.show(content) {
+                    val position = recordCenterScroll
+                    if (position > 0) scroll.post { if (active && scroll.parent === body) scroll.scrollTo(0, position) }
+                }
+            }
             "detail" -> renderDetail()
             "history" -> renderHistory()
             "functions" -> renderFunctions()
@@ -256,7 +270,12 @@ class HealthCenterActivity : Activity() {
     }
     internal fun date(time: Long): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))
     private fun retainOverviewScroll() {
-        (body.getChildAt(0) as? ScrollView)?.takeIf { it.tag == "health-overview-scroll" }?.let { overviewScroll = it.scrollY }
+        (body.getChildAt(0) as? ScrollView)?.let {
+            when (it.tag) {
+                "health-overview-scroll" -> overviewScroll = it.scrollY
+                "health-record-center-scroll" -> recordCenterScroll = it.scrollY
+            }
+        }
     }
     private fun renderOverview() {
         val content = scrolling()
@@ -284,7 +303,9 @@ class HealthCenterActivity : Activity() {
             addView(ui.text(getString(R.string.health_management), 20f, bold = true))
             ui.add(this, ui.card().apply {
                 addView(ui.row(getString(R.string.health_title)) { open("overview") })
-                addView(ui.row(getString(R.string.health_photo_record), getString(R.string.health_photo_description)) { openCapture() })
+                addView(ui.row(getString(R.string.health_record_center), getString(R.string.health_record_center_note)) {
+                    open("record_center")
+                }.apply { tag = "health-functions-record-center" })
                 addView(ui.row(getString(R.string.health_original_library)) {
                     startActivity(android.content.Intent(this@HealthCenterActivity, HealthOriginalLibraryActivity::class.java))
                 })
@@ -511,7 +532,6 @@ class HealthCenterActivity : Activity() {
             }
         }
     }
-    private fun openCapture() { startActivity(android.content.Intent(this, HealthCaptureActivity::class.java)) }
     private fun openCatalog() { startActivity(android.content.Intent(this, HealthCatalogActivity::class.java).putHealthNavigationFixture(overviewNames)) }
     private fun source(record: HealthObservation) = getString(healthRecordSourceResource(record.source))
 }

@@ -128,6 +128,7 @@
     B10000000000000000002351 /* VoiceRealtimeASRTurnCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000002351 /* VoiceRealtimeASRTurnCoordinator.swift */; };
     A10000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift */; };
     A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */; };
+    E36380000000000000000001 /* AgentResearchCheckpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36380000000000000000002 /* AgentResearchCheckpointStore.swift */; };
     A10000000000000000000005 /* GalaxySSIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* GalaxySSIViews.swift */; };
     A10000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */; };
     A10000000000000000001762 /* GalaxySSIEncryptedStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001762 /* GalaxySSIEncryptedStateStore.swift */; };
@@ -397,6 +398,7 @@
     A1F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift */; };
     A1F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift */; };
     A1F253200000000000000001 /* GalaxySSIComposerActionTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F253200000000000000001 /* GalaxySSIComposerActionTray.swift */; };
+    E36520000000000000000001 /* GalaxySSIImageClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36520000000000000000002 /* GalaxySSIImageClipboard.swift */; };
     A1F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift */; };
     A10000000000000000000483 /* GalaxySSIPairingLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000483 /* GalaxySSIPairingLifecycle.swift */; };
     A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */; };
@@ -598,11 +600,14 @@
     A10000000000000000000622 /* VoicePcmCaptureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000622 /* VoicePcmCaptureModels.swift */; };
     A10000000000000000000623 /* VoicePcmRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000623 /* VoicePcmRingBuffer.swift */; };
     A10000000000000000000624 /* VoiceActivityDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000624 /* VoiceActivityDetector.swift */; };
+    E36400000000000000000001 /* VoiceNeuralSpeechVad.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36400000000000000000002 /* VoiceNeuralSpeechVad.swift */; };
+    E36400000000000000000003 /* vad in Resources */ = {isa = PBXBuildFile; fileRef = E36400000000000000000004 /* vad */; };
     A10000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */; };
     A10000000000000000000626 /* VoicePcmWaveFileAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */; };
     A10000000000000000000627 /* VoiceAudioHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000627 /* VoiceAudioHub.swift */; };
     A10000000000000000000628 /* VoicePcmTapPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000628 /* VoicePcmTapPipeline.swift */; };
     A10000000000000000000634 /* IOSPcmRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000634 /* IOSPcmRecorder.swift */; };
+    E36390000000000000000001 /* VoicePassiveReplyCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36390000000000000000002 /* VoicePassiveReplyCapture.swift */; };
     A10000000000000000000635 /* VoiceWhisperModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000635 /* VoiceWhisperModelCatalog.swift */; };
     A10000000000000000000636 /* VoiceWhisperAudioDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */; };
     A10000000000000000000637 /* VoiceLocalWhisperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */; };
@@ -1231,6 +1236,7 @@
     B20000000000000000002351 /* VoiceRealtimeASRTurnCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRealtimeASRTurnCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeHeaderPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorStreamUpdate.swift; sourceTree = "<group>"; };
+    E36380000000000000000002 /* AgentResearchCheckpointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResearchCheckpointStore.swift; sourceTree = "<group>"; };
     A20000000000000000000005 /* GalaxySSIViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIViews.swift; sourceTree = "<group>"; };
     A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEncryptedUserDefaultsStore.swift; sourceTree = "<group>"; };
     A20000000000000000001762 /* GalaxySSIEncryptedStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEncryptedStateStore.swift; sourceTree = "<group>"; };
@@ -1502,6 +1508,7 @@
     A2F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerVoiceTranscription.swift; sourceTree = "<group>"; };
     A2F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerVoiceTranscriptionTests.swift; sourceTree = "<group>"; };
     A2F253200000000000000001 /* GalaxySSIComposerActionTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIComposerActionTray.swift; sourceTree = "<group>"; };
+    E36520000000000000000002 /* GalaxySSIImageClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIImageClipboard.swift; sourceTree = "<group>"; };
     A2F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerComposerActionPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000483 /* GalaxySSIPairingLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPairingLifecycle.swift; sourceTree = "<group>"; };
     A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentPublishOrder.swift; sourceTree = "<group>"; };
@@ -1850,11 +1857,14 @@
     A20000000000000000000622 /* VoicePcmCaptureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmCaptureModels.swift; sourceTree = "<group>"; };
     A20000000000000000000623 /* VoicePcmRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmRingBuffer.swift; sourceTree = "<group>"; };
     A20000000000000000000624 /* VoiceActivityDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceActivityDetector.swift; sourceTree = "<group>"; };
+    E36400000000000000000002 /* VoiceNeuralSpeechVad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceNeuralSpeechVad.swift; sourceTree = "<group>"; };
+    E36400000000000000000004 /* vad */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ../android/app/src/main/assets/voice/vad; sourceTree = SOURCE_ROOT; };
     A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAdaptiveEndpointDetector.swift; sourceTree = "<group>"; };
     A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmWaveFileAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000627 /* VoiceAudioHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAudioHub.swift; sourceTree = "<group>"; };
     A20000000000000000000628 /* VoicePcmTapPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmTapPipeline.swift; sourceTree = "<group>"; };
     A20000000000000000000634 /* IOSPcmRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSPcmRecorder.swift; sourceTree = "<group>"; };
+    E36390000000000000000002 /* VoicePassiveReplyCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePassiveReplyCapture.swift; sourceTree = "<group>"; };
     A20000000000000000000635 /* VoiceWhisperModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperAudioDecoder.swift; sourceTree = "<group>"; };
     A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalWhisperRuntime.swift; sourceTree = "<group>"; };
@@ -2590,11 +2600,14 @@
         A20000000000000000000622 /* VoicePcmCaptureModels.swift */,
         A20000000000000000000623 /* VoicePcmRingBuffer.swift */,
         A20000000000000000000624 /* VoiceActivityDetector.swift */,
+        E36400000000000000000002 /* VoiceNeuralSpeechVad.swift */,
+        E36400000000000000000004 /* vad */,
         A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */,
         A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */,
         A20000000000000000000627 /* VoiceAudioHub.swift */,
         A20000000000000000000628 /* VoicePcmTapPipeline.swift */,
         A20000000000000000000634 /* IOSPcmRecorder.swift */,
+        E36390000000000000000002 /* VoicePassiveReplyCapture.swift */,
         A20000000000000000000635 /* VoiceWhisperModelCatalog.swift */,
         A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */,
         A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */,
@@ -2780,6 +2793,7 @@
         A2F250700000000000000001 /* GalaxySSIPeerVoiceOpusCodec.swift */,
         A2F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift */,
         A2F253200000000000000001 /* GalaxySSIComposerActionTray.swift */,
+        E36520000000000000000002 /* GalaxySSIImageClipboard.swift */,
         A20000000000000000000483 /* GalaxySSIPairingLifecycle.swift */,
         A2000000000000000000F505 /* GalaxySSIPeerDeliveryPresentation.swift */,
         A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */,
@@ -2818,6 +2832,7 @@
         B20000000000000000002351 /* VoiceRealtimeASRTurnCoordinator.swift */,
         A20000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift */,
         A20000000000000000000A02 /* AgentConnectorStreamUpdate.swift */,
+        E36380000000000000000002 /* AgentResearchCheckpointStore.swift */,
         A20000000000000000000889 /* Assets.xcassets */,
         A41000000000000000000890 /* Localizable.strings */,
         A20000000000000000000888 /* GalaxySSIAndroidParityUI.swift */,
@@ -3451,7 +3466,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E36400000000000000000003 /* vad in Resources */, A10000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -3772,11 +3787,13 @@
         A10000000000000000000622 /* VoicePcmCaptureModels.swift in Sources */,
         A10000000000000000000623 /* VoicePcmRingBuffer.swift in Sources */,
         A10000000000000000000624 /* VoiceActivityDetector.swift in Sources */,
+        E36400000000000000000001 /* VoiceNeuralSpeechVad.swift in Sources */,
         A10000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift in Sources */,
         A10000000000000000000626 /* VoicePcmWaveFileAdapter.swift in Sources */,
         A10000000000000000000627 /* VoiceAudioHub.swift in Sources */,
         A10000000000000000000628 /* VoicePcmTapPipeline.swift in Sources */,
         A10000000000000000000634 /* IOSPcmRecorder.swift in Sources */,
+        E36390000000000000000001 /* VoicePassiveReplyCapture.swift in Sources */,
         A10000000000000000000635 /* VoiceWhisperModelCatalog.swift in Sources */,
         A10000000000000000000636 /* VoiceWhisperAudioDecoder.swift in Sources */,
         A10000000000000000000637 /* VoiceLocalWhisperRuntime.swift in Sources */,
@@ -4025,6 +4042,7 @@
         A1F250700000000000000001 /* GalaxySSIPeerVoiceOpusCodec.swift in Sources */,
         A1F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift in Sources */,
         A1F253200000000000000001 /* GalaxySSIComposerActionTray.swift in Sources */,
+        E36520000000000000000001 /* GalaxySSIImageClipboard.swift in Sources */,
         A10000000000000000000483 /* GalaxySSIPairingLifecycle.swift in Sources */,
         A1000000000000000000F505 /* GalaxySSIPeerDeliveryPresentation.swift in Sources */,
         A1000000000000000000F502 /* LocalModelArtifactDownloadSources.swift in Sources */,
@@ -4063,6 +4081,7 @@
         B10000000000000000002351 /* VoiceRealtimeASRTurnCoordinator.swift in Sources */,
         A10000000000000000000061 /* GalaxySSIAgentHomeHeaderPresentation.swift in Sources */,
         A10000000000000000000A02 /* AgentConnectorStreamUpdate.swift in Sources */,
+        E36380000000000000000001 /* AgentResearchCheckpointStore.swift in Sources */,
         A10000000000000000000888 /* GalaxySSIAndroidParityUI.swift in Sources */,
         A10000000000000000001880 /* GalaxySSIAgentHomeScanAttachments.swift in Sources */,
         F12661000000000000000001 /* GalaxySSIScannedAgentConversation.swift in Sources */,
