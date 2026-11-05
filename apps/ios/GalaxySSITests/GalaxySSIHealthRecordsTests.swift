@@ -63,6 +63,13 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(export.range(of: Data("original.pdf".utf8)))
     XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
     XCTAssertEqual(removed.current.count, 2)
+    let interrupted = try store.store(pdf, name: "second.pdf")
+    let interruptedPath = root.appendingPathComponent(interrupted.id.uuidString)
+    try records.commitOriginalRemoval(store.previewRemoval(interrupted))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: interruptedPath.path))
+    XCTAssertEqual(try store.list().removed.map(\.id), [interrupted.id, original.id])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: interruptedPath.path))
+    XCTAssertTrue(try records.load().originalIndex?.pendingRemovals.isEmpty == true)
   }
 
   @MainActor

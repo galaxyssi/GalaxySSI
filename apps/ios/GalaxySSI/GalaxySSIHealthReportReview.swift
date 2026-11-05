@@ -113,6 +113,7 @@ struct GalaxySSIHealthReportEvidenceView: View {
   let store: GalaxySSIHealthOriginalStore
   let original: GalaxySSIHealthOriginalStore.Original
   var originalRemoved = false
+  var cleanupPending = false
   @State private var rows: [GalaxySSIHealthReportReview.Linked] = []
   @State private var limit = 30
   @State private var confirming = false
@@ -128,7 +129,9 @@ struct GalaxySSIHealthReportEvidenceView: View {
             Text(original.name)
             Text(original.importedAt, style: .date)
             Text(ByteCountFormatter.string(fromByteCount: Int64(original.bytes), countStyle: .file))
-            Text(t("file_removed", "Original file removed")).foregroundColor(.secondary)
+            Text(cleanupPending
+                 ? t("file_pending_cleanup", "Original access removed; file cleanup is pending")
+                 : t("file_removed", "Original file removed")).foregroundColor(.secondary)
           }
         }
         ForEach(rows.prefix(limit)) { item in

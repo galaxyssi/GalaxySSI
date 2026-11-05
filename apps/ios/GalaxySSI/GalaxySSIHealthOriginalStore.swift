@@ -26,6 +26,7 @@ struct GalaxySSIHealthOriginalStore {
     let originals: [Original]
     let unavailable: Int
     var removed: [Original] = []
+    var pendingCleanup: Set<UUID> = []
   }
 
   struct Index: Codable, Equatable {
@@ -247,16 +248,16 @@ struct GalaxySSIHealthOriginalStore {
     }
     if var index = archive.originalIndex, !index.pendingRemovals.isEmpty {
       let previous = index
-      for id in index.pendingRemovals {
+      for id in previous.pendingRemovals {
         let retainsMetadata = index.removedOriginals?.contains { $0.id == id } == true
         var paths = [try url(id)]
         if !retainsMetadata { paths.append(try cropURL(id)) }
-        for path in paths where fm.fileExists(atPath: path.path) {
-          try fm.removeItem(at: path)
-        }
+        do {
+          for path in paths where fm.fileExists(atPath: path.path) { try fm.removeItem(at: path) }
+          index.pendingRemovals.remove(id)
+        } catch { continue }
       }
-      index.pendingRemovals = []
-      try records.setOriginalIndex(index, expected: previous)
+      if index != previous { try records.setOriginalIndex(index, expected: previous) }
     }
   }
 
@@ -276,7 +277,8 @@ struct GalaxySSIHealthOriginalStore {
     let index = try ensureIndex()
     let removed = (index.removedOriginals ?? []).reversed()
     guard !index.originals.isEmpty else {
-      return Listing(originals: [], unavailable: index.unreadableLegacy.count, removed: Array(removed))
+      return Listing(originals: [], unavailable: index.unreadableLegacy.count, removed: Array(removed),
+        pendingCleanup: index.pendingRemovals)
     }
     let key = try key(create: false)
     let items = index.originals.filter { item in
@@ -284,7 +286,7 @@ struct GalaxySSIHealthOriginalStore {
     }
     return Listing(originals: items.sorted { ($0.importedAt, $0.id.uuidString) > ($1.importedAt, $1.id.uuidString) },
                    unavailable: index.unreadableLegacy.count + index.originals.count - items.count,
-                   removed: Array(removed))
+                   removed: Array(removed), pendingCleanup: index.pendingRemovals)
   }
 
   private func ensureIndex() throws -> Index {
@@ -352,7 +354,8 @@ struct GalaxySSIHealthOriginalStore {
       try indexRecords.commitOriginalRemoval(expected)
       do {
         try reconcileRestores(lease: lease)
-        return .removed
+        let pending = try indexRecords.load().originalIndex?.pendingRemovals.contains(expected.id) == true
+        return pending ? .pendingCleanup : .removed
       } catch {
         return .pendingCleanup
       }

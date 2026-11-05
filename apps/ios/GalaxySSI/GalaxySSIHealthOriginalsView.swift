@@ -112,7 +112,8 @@ struct GalaxySSIHealthOriginalsView: View {
               ForEach(removed.prefix(removedLimit)) { original in
                 NavigationLink {
                   GalaxySSIHealthReportEvidenceView(records: store.indexRecords, store: store,
-                    original: original, originalRemoved: true)
+                    original: original, originalRemoved: true,
+                    cleanupPending: listing.pendingCleanup.contains(original.id))
                 } label: { Text(original.name) }
               }
               if removed.count > removedLimit { Button(t("more", "Show more")) { removedLimit += 30 } }

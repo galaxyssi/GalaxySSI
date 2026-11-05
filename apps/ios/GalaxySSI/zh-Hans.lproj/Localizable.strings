@@ -657,6 +657,7 @@
 "galaxyssi.health.originals.remove_success" = "已删除原件文件。";
 "galaxyssi.health.originals.removed_files" = "已删除文件的原件";
 "galaxyssi.health.report_review.file_removed" = "原件文件已删除";
+"galaxyssi.health.report_review.file_pending_cleanup" = "原件已不可访问，文件仍待清理";
 "galaxyssi.health.report_review.export_measurements" = "导出关联测量";
 "galaxyssi.health.originals.remove_changed" = "文件或关联测量已变更，请重新审阅。";
 "galaxyssi.health.originals.remove_pending" = "原件已不可访问，文件仍待清理。";
