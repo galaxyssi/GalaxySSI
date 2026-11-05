@@ -1,5 +1,24 @@
 import SwiftUI
 
+struct GalaxySSIHealthTrendDevice: Identifiable {
+  let id: UUID
+  let name: String?
+
+  static func options(in readings: [GalaxySSIHealthReading], metric: GalaxySSIHealthMetric) -> [Self] {
+    let receipts = readings.filter { !$0.deleted && $0.metric == metric }.compactMap(\.bluetoothReceipt)
+    return Dictionary(grouping: receipts, by: \.device).map { id, matches in
+      let name = matches.sorted { $0.receivedAt > $1.receivedAt }.lazy
+        .compactMap { $0.deviceName?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
+      return Self(id: id, name: name)
+    }.sorted { $0.id.uuidString < $1.id.uuidString }
+  }
+
+  static func matching(_ readings: [GalaxySSIHealthReading], device: UUID?) -> [GalaxySSIHealthReading] {
+    guard let device else { return readings }
+    return readings.filter { $0.bluetoothReceipt?.device == device }
+  }
+}
+
 struct GalaxySSIHealthTrend {
   enum Aggregation: String, CaseIterable {
     case mean, min, max
@@ -109,6 +128,8 @@ struct GalaxySSIHealthTrendView: View {
   @State private var snapshotTime = Date()
   @State private var focusedDay: Date?
   @State private var allowed = false
+  @State private var device: UUID?
+  @State private var devices: [GalaxySSIHealthTrendDevice] = []
   @State private var trend: GalaxySSIHealthTrend?
   @State private var selected: GalaxySSIHealthTrend.Point?
   @State private var changed = false
@@ -156,6 +177,17 @@ struct GalaxySSIHealthTrendView: View {
               Text(String(format: t("days", "%lld days"), Int64(value))).tag(value)
             }
           }
+          if !devices.isEmpty || device != nil {
+            Picker(t("bluetooth_filter", "Bluetooth device"), selection: $device) {
+              Text(t("all_devices", "No device filter")).tag(nil as UUID?)
+              ForEach(devices) { option in
+                Text(deviceTitle(option)).tag(Optional(option.id))
+              }
+              if let device, !devices.contains(where: { $0.id == device }) {
+                Text(t("device_unavailable", "Selected device unavailable")).tag(Optional(device))
+              }
+            }
+          }
           Picker(t("aggregation", "Aggregation"), selection: $aggregation) {
             ForEach(GalaxySSIHealthTrend.Aggregation.allCases, id: \.self) { Text(aggregationTitle($0)).tag($0) }
           }
@@ -201,6 +233,8 @@ struct GalaxySSIHealthTrendView: View {
     .onChange(of: metric) { _ in component = .value; selectedUnit = nil; reload() }
     .onChange(of: component) { _ in reload() }
     .onChange(of: days) { _ in reload() }
+    .onChange(of: device) { _ in reload() }
+    .onChange(of: scene) { if $0 == .background { device = nil; devices = [] } }
     .onChange(of: source) { _ in reload() }
     .onChange(of: aggregation) { _ in selected = nil; focusedDay = nil }
     .onChange(of: scene) { phase in
@@ -239,9 +273,7 @@ struct GalaxySSIHealthTrendView: View {
                 VStack(alignment: .leading, spacing: 4) {
                   if let value = component.value(in: reading) { Text(number(value) + " " + unit) }
                   Text(reading.measuredAt, style: .time).foregroundColor(.secondary)
-                  Text(reading.tableSource != nil ? t("table", "Source: imported table") :
-                    (reading.bluetoothReceipt == nil ? t("manual", "Source: manual measurements") :
-                      t("bluetooth", "Source: Bluetooth monitor"))).foregroundColor(.secondary)
+                  Text(readingSource(reading)).foregroundColor(.secondary)
                   Text(String(format: t("revision", "Revision %lld"), Int64(reading.revision)))
                     .foregroundColor(.secondary)
                 }
@@ -277,7 +309,8 @@ struct GalaxySSIHealthTrendView: View {
       let archive = try records.load()
       allowed = archive.derivesOverview == true
       error = false
-      guard allowed else { return }
+      guard allowed else { devices = []; return }
+      devices = GalaxySSIHealthTrendDevice.options(in: archive.current, metric: metric)
       snapshotTime = Date()
       trend = makeTrend(archive.current)
     } catch { allowed = false; error = true }
@@ -286,7 +319,7 @@ struct GalaxySSIHealthTrendView: View {
   private func makeTrend(_ current: [GalaxySSIHealthReading]) -> GalaxySSIHealthTrend {
     var local = calendar
     local.timeZone = timeZone
-    return GalaxySSIHealthTrend(current: current, metric: metric, component: component,
+    return GalaxySSIHealthTrend(current: GalaxySSIHealthTrendDevice.matching(current, device: device), metric: metric, component: component,
       now: snapshotTime, dayCount: days, calendar: local, unit: selectedUnit, source: source)
   }
 
@@ -381,6 +414,18 @@ struct GalaxySSIHealthTrendView: View {
 
   private func metricTitle(_ metric: GalaxySSIHealthMetric) -> String {
     metric.title(language: language)
+  }
+
+  private func deviceTitle(_ option: GalaxySSIHealthTrendDevice) -> String {
+    let number = (devices.firstIndex { $0.id == option.id } ?? 0) + 1
+    return (option.name ?? t("unnamed_device", "Unnamed Bluetooth device")) + " · " + String(number)
+  }
+
+  private func readingSource(_ reading: GalaxySSIHealthReading) -> String {
+    if reading.tableSource != nil { return t("table", "Source: imported table") }
+    guard let receipt = reading.bluetoothReceipt else { return t("manual", "Source: manual measurements") }
+    if let option = devices.first(where: { $0.id == receipt.device }) { return deviceTitle(option) }
+    return t("bluetooth", "Source: Bluetooth monitor")
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
