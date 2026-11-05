@@ -161,7 +161,7 @@ struct GalaxySSIHealthTableSourceView: View {
   }
 
   private func batch() throws -> GalaxySSIHealthTableImport.Batch {
-    guard let batch = try records.load().tableBatches?.first(where: { $0.id == batchID }) else {
+    guard let batch = try GalaxySSIHealthTableImport.Batch.original(for: batchID, in: records.load().tableBatches ?? []) else {
       throw GalaxySSIHealthTableImport.Failure.stale
     }
     return batch

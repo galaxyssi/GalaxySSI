@@ -155,6 +155,8 @@ struct GalaxySSIHealthRecords {
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
+    var retainNewImportOriginals: Bool?
+    var retainsNewImportOriginals: Bool { retainNewImportOriginals ?? true }
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var bluetoothErasureLog: [GalaxySSIHealthBluetoothHistory.Erasure]?
@@ -410,6 +412,13 @@ struct GalaxySSIHealthRecords {
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
+  func setRetainNewImportOriginals(_ enabled: Bool) throws {
+    var archive = try load()
+    guard archive.retainsNewImportOriginals != enabled else { return }
+    archive.retainNewImportOriginals = enabled
+    try persist(archive)
+  }
+
   func setPrivacy(_ scope: PrivacyScope, enabled: Bool) throws {
     var archive = try load()
     let previous: Bool?
@@ -550,10 +559,11 @@ struct GalaxySSIHealthRecords {
                    expected: [GalaxySSIHealthTableImport.Status],
                    worksheet: GalaxySSIHealthXLSX.Selection? = nil,
                    linkDuplicates: [Int: GalaxySSIHealthTableImport.EvidenceTarget] = [:],
-                   reviewID: UUID? = nil) throws -> Int {
+                   reviewID: UUID? = nil, retainOriginal: Bool = true) throws -> Int {
     var archive = try load()
     if let reviewID {
-      guard archive.tableReview?.id == reviewID, archive.tableReview?.data == data else { throw Failure.stale }
+      guard let review = archive.tableReview, review.id == reviewID, review.data == data,
+            (review.retainOriginal ?? true) == retainOriginal else { throw Failure.stale }
     }
     let table: GalaxySSIHealthTableImport.Table
     if let worksheet { table = try GalaxySSIHealthXLSX(data).table(worksheet) }
@@ -579,10 +589,10 @@ struct GalaxySSIHealthRecords {
     guard !readings.isEmpty || !links.isEmpty else { return 0 }
     var batches = archive.tableBatches ?? []
     guard batches.count < 30,
-          batches.reduce(data.count, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
+          batches.reduce(retainOriginal ? data.count : 0, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
     else { throw GalaxySSIHealthTableImport.Failure.limit }
-    batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: data,
-                         inserted: readings.count, undone: nil, linked: links.isEmpty ? nil : links.count), at: 0)
+    batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: retainOriginal ? data : Data(),
+                         inserted: readings.count, undone: nil, linked: links.isEmpty ? nil : links.count, sourceDigest: hash), at: 0)
     archive.tableBatches = batches
     if !links.isEmpty { archive.tableEvidence = (archive.tableEvidence ?? []) + links }
     archive.revisions.append(contentsOf: readings)

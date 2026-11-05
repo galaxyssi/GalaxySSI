@@ -9,6 +9,10 @@ struct GalaxySSIHealthTableImportView: View {
   var resumeReviewID: UUID?
   @State private var pendingReview: GalaxySSIHealthReviewReminders.TableDraft?
   @State private var openedReviewID: UUID?
+  var initialRetention: Bool? = nil
+  @State private var usedInitialRetention = false
+  @State private var pickerRetention: Bool?
+  @State private var retainedForReview: Bool?
   @State private var choosing = false
   @State private var input: Input?
   @State private var mapping = GalaxySSIHealthTableImport.Mapping()
@@ -44,7 +48,7 @@ struct GalaxySSIHealthTableImportView: View {
   var body: some View {
     List {
       if scene == .active {
-        Button { choosing = true } label: {
+        Button(action: chooseTable) {
           Label(t("choose_formats", "Choose CSV, JSON or XLSX"), systemImage: "folder")
         }
         if let workbook { workbookSection(workbook) }
@@ -98,8 +102,9 @@ struct GalaxySSIHealthTableImportView: View {
     .onChange(of: mapping) { _ in rows = nil; owned = false; linkedRows = [] }
     .fileImporter(isPresented: $choosing, allowedContentTypes: [.commaSeparatedText, .json,
       UTType(filenameExtension: "xlsx") ?? .spreadsheet]) { result in
-      guard scene != .background else { return }
-      do { try open(result.get()) }
+      defer { pickerRetention = nil }
+      guard scene != .background, let choice = pickerRetention else { return }
+      do { try open(result.get()); retainedForReview = choice }
       catch { clear(); message = t("workbook_failed", "Could not open this measurement table.") }
     }
     .alert(item: $undo) { batch in
@@ -119,6 +124,18 @@ struct GalaxySSIHealthTableImportView: View {
       }
       .navigationViewStyle(.stack)
     }
+  }
+
+  private func chooseTable() {
+    do {
+      if !usedInitialRetention, let initialRetention {
+        pickerRetention = initialRetention
+      } else {
+        pickerRetention = try records.load().retainsNewImportOriginals
+      }
+      usedInitialRetention = true
+      choosing = true
+    } catch { message = t("workbook_failed", "Could not open this measurement table.") }
   }
 
   private func workbookSection(_ workbook: WorkbookInput) -> some View {
@@ -279,11 +296,11 @@ struct GalaxySSIHealthTableImportView: View {
   }
 
   private func saveReviewDraft(_ input: Input) {
-    guard scene == .active, rows != nil else { return }
+    guard scene == .active, rows != nil, let retainedForReview else { return }
     do {
       let draft = GalaxySSIHealthReviewReminders.TableDraft(id: openedReviewID ?? UUID(),
         name: String(input.name.prefix(180)), at: pendingReview?.at ?? Date(), data: input.data,
-        mapping: mapping, worksheet: input.worksheet)
+        mapping: mapping, worksheet: input.worksheet, retainOriginal: retainedForReview)
       try records.saveTableReview(draft, replacing: openedReviewID)
       openedReviewID = draft.id
       pendingReview = draft
@@ -301,6 +318,7 @@ struct GalaxySSIHealthTableImportView: View {
       }
       guard input != nil else { throw GalaxySSIHealthTableImport.Failure.mapping }
       mapping = draft.mapping
+      retainedForReview = draft.retainOriginal ?? true
       openedReviewID = draft.id
     } catch { message = t("workbook_failed", "Could not open this measurement table.") }
   }
@@ -348,7 +366,7 @@ struct GalaxySSIHealthTableImportView: View {
   }
 
   private func save() {
-    guard scene == .active, owned, let input, let rows else { return }
+    guard scene == .active, owned, let input, let rows, let retainOriginal = retainedForReview else { return }
     do {
       let targets = Dictionary(rows.compactMap { row in
         linkedRows.contains(row.id) ? row.duplicateTarget.map { (row.id, $0) } : nil
@@ -356,7 +374,7 @@ struct GalaxySSIHealthTableImportView: View {
       let count = try records.importTable(input.data, name: input.name, json: input.json,
                                           mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet,
                                           linkDuplicates: targets,
-                                          reviewID: openedReviewID)
+                                          reviewID: openedReviewID, retainOriginal: retainOriginal)
       clear()
       reload()
       message = String(format: t("saved", "%lld measurements saved"), Int64(count))
@@ -394,6 +412,7 @@ struct GalaxySSIHealthTableImportView: View {
   }
 
   private func clear() {
+    retainedForReview = nil
     input = nil; rows = nil; owned = false; mapping = .init()
     workbook = nil; sheetID = ""; header = 0; headerChoices = []
     linkedRows = []

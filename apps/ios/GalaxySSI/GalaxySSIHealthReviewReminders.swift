@@ -8,6 +8,7 @@ enum GalaxySSIHealthReviewReminders {
     let data: Data
     let mapping: GalaxySSIHealthTableImport.Mapping
     let worksheet: GalaxySSIHealthXLSX.Selection?
+    var retainOriginal: Bool?
   }
 
   enum Action: Codable, Equatable {
