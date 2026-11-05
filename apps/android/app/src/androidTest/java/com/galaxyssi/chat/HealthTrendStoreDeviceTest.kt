@@ -57,6 +57,32 @@ class HealthTrendStoreDeviceTest {
             HealthTrendRepository.point(store, scope, plotted.field, summary.version)
         }
     }
+    @Test fun platformSourcesArePagedAndFilterTheExactApplicationWithoutMergingDailyTotals() = fixture { store ->
+        val s = spec(HealthMetric.WEIGHT)
+        val origins = (0..34).map { "com.fixture.source$it" }.sorted()
+        val records = origins.mapIndexed { index, origin -> HealthConnectMeasurement("same-id", origin, draft(s, index, "72")) }
+        assertEquals(origins.size, store.importHealthConnect(records) {})
+        store.save(draft(s, 35, "68"))
+        val first = store.trendPlatformOrigins(s)
+        assertEquals(origins.take(31), first)
+        assertEquals(origins.drop(30), store.trendPlatformOrigins(s, first[29]))
+        val selected = s.copy(source = HealthTrendSource(platformOrigin = origins[5]))
+        val intent = android.content.Intent().putHealthTrend(selected)
+        assertEquals(selected, intent.healthTrendSpec())
+        assertFalse(intent.extras!!.keySet().any { intent.extras!!.get(it) == origins[5] })
+        assertNull(intent.putExtra("health_platform_scope", "unverified").healthTrendSpec())
+        assertEquals(origins[5], store.trendRecords(selected, numericOnly = true).records.single().platformOrigin)
+        assertEquals(1L, HealthTrendRepository.load(store, selected).eligible)
+        assertEquals(HealthAccessSource.HEALTH_CONNECT, HealthAccessScope.trend(HealthAccessPurpose.TREND, selected).source)
+        val steps = spec()
+        val daily = HealthConnectMeasurement("day", HEALTH_CONNECT_AGGREGATE_ORIGIN, draft(steps, 0, "1600"))
+        assertEquals(1, store.importHealthConnect(listOf(daily)) {})
+        assertEquals(listOf(HEALTH_CONNECT_AGGREGATE_ORIGIN), store.trendPlatformOrigins(steps))
+        assertEquals(context.getString(R.string.health_connect_platform_aggregate),
+            context.healthConnectTrendLabel(HEALTH_CONNECT_AGGREGATE_ORIGIN, HealthMetric.STEPS))
+        assertNotEquals(context.getString(R.string.health_connect_platform_aggregate),
+            context.healthConnectTrendLabel(HEALTH_CONNECT_AGGREGATE_ORIGIN, HealthMetric.WEIGHT))
+    }
     @Test fun nonNumericResultsRemainAvailableInAllRecordsButNotPointContributors() = fixture { store ->
         val s = spec(HealthMetric.CRP)
         for ((index, value) in listOf("1", "<1", "1-2", "negative").withIndex()) store.save(draft(s, index, value))

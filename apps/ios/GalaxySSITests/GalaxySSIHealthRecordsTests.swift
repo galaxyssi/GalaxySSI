@@ -1,9 +1,271 @@
+import CoreGraphics
 import Foundation
 import UIKit
 import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testHealthKitPreviewBindsSourceMetadataAndRowMultiplicity() {
+    let now = Date()
+    let source = GalaxySSIHealthKitImport.Source(key: "sample", origin: "fixture", name: "Original")
+    let original = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65, healthKitSource: source)
+    let another = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 66, healthKitSource: source)
+    var renamed = original
+    renamed.healthKitSource = .init(key: source.key, origin: source.origin, name: "Updated")
+    var reread = original
+    reread.id = UUID()
+    let stamp = GalaxySSIHealthKitImport.stamp
+    XCTAssertEqual(stamp([original, another]), stamp([another, reread]))
+    XCTAssertNotEqual(stamp([original]), stamp([renamed]))
+    XCTAssertNotEqual(stamp([original]), stamp([original, original]))
+  }
+
+  @MainActor
+  func testHealthKitImportKeepsOriginsEditsAndTombstones() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let first = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture.a", name: "A"))
+    let second = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "b", count: 64), origin: "fixture.b", name: "B"))
+    XCTAssertThrowsError(try records.importHealthKit([first, .init(metric: .weight, value: 60)]))
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertEqual(try records.importHealthKit([first, second]), 2)
+    var edited = try XCTUnwrap(records.load().current.first { $0.id == first.id })
+    edited.value = 67
+    try records.write(edited)
+    var removed = try XCTUnwrap(records.load().current.first { $0.id == second.id })
+    removed.deleted = true
+    try records.write(removed)
+    XCTAssertEqual(try records.importHealthKit([first, second]), 0)
+    XCTAssertEqual(try records.load().current.map(\.value), [67])
+  }
+
+  func testSleepReminderCoverageNormalizationAndRevocation() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 10)))
+    let readings = try (1...21).filter { $0 != 2 && $0 != 8 }.map { offset in
+      let date = try XCTUnwrap(calendar.date(byAdding: .day, value: -offset, to: now))
+      return GalaxySSIHealthReading(revision: 1, metric: .sleepDuration, measuredAt: date,
+        value: offset <= 7 ? 435 : 8, unitOverride: offset <= 7 ? "min" : "h")
+    }
+    var ledger = GalaxySSIHealthSleepReminder.Ledger()
+    ledger.preferences.enabled = true
+    ledger.reconcile(current: readings, allowed: true, now: now, calendar: calendar)
+    let episode = try XCTUnwrap(ledger.episodes.first)
+    XCTAssertEqual(episode.latest.decrease, 45)
+    XCTAssertEqual(episode.latest.days.filter { $0.minutes == nil }.count, 2)
+    ledger.reconcile(current: readings, allowed: true, now: now.addingTimeInterval(60), calendar: calendar)
+    XCTAssertEqual(ledger.episodes, [episode])
+    ledger.reconcile(current: Array(readings.dropFirst(2)), allowed: true, now: now, calendar: calendar)
+    XCTAssertEqual(ledger.episodes.first?.closed, true)
+    ledger.reconcile(current: readings, allowed: false, now: now, calendar: calendar)
+    XCTAssertFalse(ledger.episodes.contains { !$0.closed })
+  }
+
+  @MainActor
+  func testReportReviewBatchIsAtomicAndVersionPinned() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "report.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    let date = Date()
+    func item(_ page: Int, value: Decimal) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: page, region: 0, fromOCR: true)
+      return .init(version: UUID(), source: source, excerpt: "Fixture",
+        reading: .init(metric: .weight, measuredAt: date, value: value, reportSource: source))
+    }
+    let first = item(0, value: 61)
+    let second = item(1, value: 62)
+    try records.stageReportItem(first, replacing: nil)
+    try records.stageReportItem(second, replacing: nil)
+    let updated = item(1, value: 63)
+    try records.stageReportItem(updated, replacing: second.version)
+    XCTAssertThrowsError(try records.confirmReportItems([first.version, second.version], original: original))
+    try records.write(.init(metric: .weight, measuredAt: date, value: 63))
+    XCTAssertThrowsError(try records.confirmReportItems([first.version, updated.version], original: original))
+    XCTAssertEqual(try records.load().current.count, 1)
+    XCTAssertEqual(try records.load().reportReview?.count, 2)
+    try records.confirmReportItems([first.version], original: original)
+    XCTAssertEqual(try records.load().current.count, 2)
+    XCTAssertEqual(try records.load().reportReview?.map(\.version), [updated.version])
+  }
+
+  @MainActor
+  func testHealthBackupHistoryKeepsVerifiedSaveAfterInterruptionAndPruning() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let history = GalaxySSIHealthBackupHistory(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let id = try history.begin()
+    let data = Data("synthetic sealed package".utf8)
+    try history.publish(data, id: id)
+    let first = try history.beginSave(id)
+    let destination = root.appendingPathComponent("external")
+    try data.write(to: destination)
+    XCTAssertTrue(try GalaxySSIHealthBackupHistory.verifyDestination(destination, entry: first))
+    try history.finishSave(id, verified: true)
+    let saved = try XCTUnwrap(history.entries().first?.lastVerifiedAt)
+    _ = try history.beginSave(id)
+    let interrupted = try history.begin()
+    try history.recover()
+    let recovered = try history.entries()
+    XCTAssertEqual(recovered.first { $0.id == interrupted }?.generation, .interrupted)
+    XCTAssertEqual(recovered.first { $0.id == id }?.latestSave, .interrupted)
+    for _ in 0..<2 { try history.publish(data, id: history.begin()) }
+    let old = try XCTUnwrap(history.entries().first { $0.id == id })
+    XCTAssertEqual(old.lastVerifiedAt, saved)
+    XCTAssertFalse(history.hasCopy(old))
+    XCTAssertThrowsError(try history.readCopy(old))
+  }
+
+  @MainActor
+  func testProtectedHealthPDFRetainsExactBytesAndEnforcesExtractionPermission() throws {
+    let bytes = NSMutableData()
+    let consumer = try XCTUnwrap(CGDataConsumer(data: bytes as CFMutableData))
+    let options: [String: Any] = [
+      kCGPDFContextUserPassword as String: "fixture-reader",
+      kCGPDFContextOwnerPassword as String: "fixture-owner",
+      kCGPDFContextAllowsCopying as String: false
+    ]
+    var bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+    let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &bounds, options as CFDictionary))
+    context.beginPDFPage(nil)
+    context.endPDFPage()
+    context.closePDF()
+    let pdf = bytes as Data
+    XCTAssertThrowsError(try GalaxySSIHealthPDFText.pageCount(pdf)) {
+      guard case GalaxySSIHealthPDFText.Failure.locked = $0 else { return XCTFail("Expected locked PDF") }
+    }
+    XCTAssertThrowsError(try GalaxySSIHealthPDFText.pageCount(pdf, password: "wrong")) {
+      guard case GalaxySSIHealthPDFText.Failure.incorrectPassword = $0 else { return XCTFail("Expected wrong password") }
+    }
+    XCTAssertEqual(try GalaxySSIHealthPDFText.pageCount(pdf, password: "fixture-reader"), 1)
+    XCTAssertThrowsError(try GalaxySSIHealthPDFText.read(pdf, page: 0, password: "fixture-reader")) {
+      guard case GalaxySSIHealthPDFText.Failure.extractionRestricted = $0 else { return XCTFail("Expected restricted extraction") }
+    }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    try store.store(pdf, name: "protected.pdf")
+    let original = try XCTUnwrap(store.list().originals.first)
+    XCTAssertEqual(try store.read(original), pdf)
+  }
+
+  @MainActor
+  func testDailyHealthReminderDoesNotBackfillAndRejectsStaleActions() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 12)))
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    var settings = try records.loadRecordingReminders(at: now, calendar: calendar).settings
+    settings.enabled = true
+    settings.notifications = true
+    try records.saveRecordingReminderSettings(settings, at: now)
+    XCTAssertTrue(try records.loadRecordingReminders(at: now, calendar: calendar).history.isEmpty)
+    let later = try XCTUnwrap(calendar.date(byAdding: .day, value: 3, to: now))
+    let ledger = try records.loadRecordingReminders(at: later, calendar: calendar)
+    let first = try XCTUnwrap(ledger.history.first)
+    XCTAssertEqual(ledger.history.count, 1)
+    try records.updateRecordingReminder(first, complete: false, at: later, calendar: calendar)
+    XCTAssertThrowsError(try records.updateRecordingReminder(first, complete: true, at: later, calendar: calendar))
+    let refreshed = try records.loadRecordingReminders(at: later, calendar: calendar)
+    XCTAssertEqual(refreshed.history.first?.snoozedUntil, later.addingTimeInterval(3_600))
+    XCTAssertEqual(refreshed.upcoming(at: later, calendar: calendar).first?.1, later.addingTimeInterval(3_600))
+    let snoozed = try XCTUnwrap(refreshed.history.first)
+    try records.updateRecordingReminder(snoozed, complete: true, at: later, calendar: calendar)
+    XCTAssertNotEqual(try records.loadRecordingReminders(at: later, calendar: calendar)
+      .upcoming(at: later, calendar: calendar).first?.0, snoozed.day)
+  }
+
+  @MainActor
+  func testExactTableDuplicateLinksToReviewedRevisionWithoutRewritingMeasurement() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2025-01-01T12:00:00Z"))
+    try records.write(.init(metric: .weight, measuredAt: date, value: 60))
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n60,2025-01-01T12:00:10Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let table = try GalaxySSIHealthTableImport.parse(data, json: false)
+    let rows = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: records.load().current)
+    XCTAssertEqual(rows.map(\.status), [.duplicate, .duplicate])
+    let target = try XCTUnwrap(rows[0].duplicateTarget)
+    XCTAssertNil(rows[1].duplicateTarget)
+    XCTAssertEqual(try records.importTable(data, name: "fixture.csv", json: false, mapping: mapping,
+      expected: rows.map(\.status), linkDuplicates: [rows[0].id: target]), 0)
+    var archive = try records.load()
+    XCTAssertEqual(archive.revisions.count, 1)
+    let batch = try XCTUnwrap(archive.tableBatches?.first)
+    XCTAssertEqual(batch.linked, 1)
+    var edited = try XCTUnwrap(archive.current.first)
+    edited.notes = "later edit"
+    try records.write(edited)
+    XCTAssertThrowsError(try records.importTable(data, name: "fixture.csv", json: false, mapping: mapping,
+      expected: rows.map(\.status), linkDuplicates: [rows[0].id: target]))
+    archive = try records.load()
+    let linked = GalaxySSIHealthTableImport.linkedReadings(batch: batch, revisions: archive.revisions,
+      current: archive.current, evidence: archive.tableEvidence ?? [])
+    XCTAssertEqual(linked.first?.reading.revision, 1)
+    XCTAssertTrue(linked.first?.secondary == true)
+    let zip = try GalaxySSIHealthTableImport.exportLinkedReadings(linked, batch: batch)
+    XCTAssertNotNil(zip.range(of: data))
+    XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
+    XCTAssertTrue(try records.load().tableEvidence?.isEmpty == true)
+    XCTAssertEqual(try records.load().current.first?.notes, "later edit")
+  }
+
+  @MainActor
+  func testUndoMeasurementRestoresExactSourceAndRejectsConflictsAndStaleVersions() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    XCTAssertEqual(try records.importTable(data, name: "weight.csv", json: false, mapping: mapping,
+                                           expected: [.ready]), 1)
+    let original = try XCTUnwrap(records.load().current.first)
+    let oldEditor = GalaxySSIHealthDraft(existing: original)
+    try records.storeDraft(oldEditor)
+    var tombstone = original
+    tombstone.deleted = true
+    try records.write(tombstone, rememberDeletion: true)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let deletion = try XCTUnwrap(reopened.load().lastMeasurementDeletion)
+    XCTAssertEqual(deletion.revision, 2)
+    XCTAssertTrue(try reopened.load().current.isEmpty)
+    XCTAssertNil(try reopened.load().draft)
+    XCTAssertThrowsError(try reopened.storeDraft(oldEditor)) {
+      guard case GalaxySSIHealthRecords.Failure.stale = $0 else { return XCTFail("Expected stale editor") }
+    }
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(.init(id: UUID(), revision: 2)))
+    let conflict = GalaxySSIHealthReading(metric: .weight, measuredAt: original.measuredAt, value: 60)
+    try reopened.write(conflict)
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
+    XCTAssertEqual(try reopened.load().lastMeasurementDeletion, deletion)
+    var removeConflict = try XCTUnwrap(reopened.load().current.first)
+    removeConflict.deleted = true
+    try reopened.write(removeConflict)
+    let restored = try reopened.undoMeasurementDeletion(deletion)
+    XCTAssertEqual(restored.id, original.id)
+    XCTAssertEqual(restored.revision, 3)
+    XCTAssertEqual(restored.tableSource, original.tableSource)
+    XCTAssertThrowsError(try reopened.storeDraft(oldEditor))
+    try reopened.storeDraft(.init(existing: restored))
+    XCTAssertEqual(try reopened.load().draft?.existing?.revision, 3)
+    XCTAssertNil(try reopened.load().lastMeasurementDeletion)
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
+  }
+
   @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -28,6 +290,31 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(expected.missing, 0)
     XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.verify(sealed + Data([1]), password: "fixture-password"))
     XCTAssertEqual(try records.load().current.count, 1)
+  }
+
+  @MainActor
+  func testHealthBluetoothSameNameAndEqualValuesStaySeparated() throws {
+    let bytes = Data([30, 120, 0, 80, 0, 90, 0, 234, 7, 11, 5, 12, 30, 0, 64, 0, 2, 1, 0])
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(bytes))
+    let now = Date()
+    let a = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Monitor")
+    let b = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Monitor")
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.write(a.reading(conditions: ""))
+    try records.write(b.reading(conditions: ""))
+    let saved = try records.load().current
+    XCTAssertEqual(saved.count, 2)
+    XCTAssertEqual(GalaxySSIHealthTrendDevice.options(in: saved, metric: .bloodPressure).count, 2)
+    let selected = GalaxySSIHealthTrendDevice.matching(saved, device: a.device)
+    XCTAssertEqual(selected.map { $0.bluetoothReceipt?.device }, [a.device])
+    let trend = GalaxySSIHealthTrend(current: selected, metric: .bloodPressure, component: .value,
+                                    now: now, dayCount: 7, calendar: .current)
+    XCTAssertEqual(trend.points.last?.readings.count, 1)
+    let export = try GalaxySSIHealthMeasurementExport.encode(saved, as: .json, includeNotes: false)
+    XCTAssertNil(export.range(of: Data(a.device.uuidString.utf8)))
+    XCTAssertNil(export.range(of: Data("Monitor".utf8)))
   }
 
   @MainActor
@@ -355,6 +642,47 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testSingleOriginalSaveChecksExactBytesAndRejectsReimportedSource() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "private.pdf")
+    let source = try XCTUnwrap(store.list().originals.first)
+    let output = root.appendingPathComponent("destination.pdf")
+    let bytes = try store.read(source)
+    XCTAssertEqual(bytes, pdf)
+    XCTAssertTrue(try store.singleSaveHistory().isEmpty)
+    try bytes.write(to: output)
+    let matched = try GalaxySSIHealthOriginalStore.verifyDestination(output, bytes: source.bytes, sha256: source.sha256)
+    XCTAssertTrue(matched)
+    XCTAssertTrue(try store.finishSingleSave(source, destinationVerified: matched))
+
+    var tampered = bytes
+    tampered[tampered.count - 1] ^= 1
+    try tampered.write(to: output)
+    let corrupted = try GalaxySSIHealthOriginalStore.verifyDestination(output, bytes: source.bytes, sha256: source.sha256)
+    XCTAssertFalse(corrupted)
+    XCTAssertFalse(try store.finishSingleSave(source, destinationVerified: corrupted))
+
+    try store.remove(source)
+    try store.store(pdf, name: source.name)
+    XCTAssertThrowsError(try store.read(source))
+    XCTAssertFalse(try store.finishSingleSave(source, destinationVerified: matched))
+    let history = try store.singleSaveHistory()
+    XCTAssertEqual(history.map(\.verified), [false, false, true])
+    let receipt = try XCTUnwrap(history.first)
+    let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(receipt)) as? [String: Any])
+    XCTAssertEqual(Set(fields.keys), Set(["at", "kind", "bytes", "verified"]))
+    let audit = root.appendingPathComponent("single-save-v1")
+    var sealed = try Data(contentsOf: audit)
+    sealed[sealed.count - 1] ^= 1
+    try sealed.write(to: audit)
+    XCTAssertThrowsError(try store.singleSaveHistory())
+  }
+
+  @MainActor
   func testHealthReportPDFReadsNativePageAndKeepsPageBounds() throws {
     let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 240, height: 200)).pdfData { context in
       context.beginPage()
@@ -508,6 +836,34 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.undoTableBatch(batch.id), 1)
     XCTAssertEqual(try records.load().current.map(\.value), [62])
     XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
+  }
+
+  @MainActor
+  func testReviewOnlyTablePreservesSourceReferenceWithoutArchivingBytes() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: root.appendingPathComponent("records"))
+    let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    XCTAssertEqual(try records.importTable(data, name: "review.csv", json: false, mapping: mapping,
+                                           expected: [.ready], retainOriginal: false), 1)
+    let archive = try records.load()
+    let batch = try XCTUnwrap(archive.tableBatches?.first)
+    let source = try XCTUnwrap(archive.current.first?.tableSource)
+    XCTAssertTrue(batch.data.isEmpty)
+    XCTAssertEqual(source.batch, batch.id)
+    XCTAssertEqual(source.sha256, batch.sourceDigest)
+    XCTAssertNil(GalaxySSIHealthTableImport.Batch.original(for: batch.id, in: [batch]))
+    let independent = GalaxySSIHealthTableImport.Batch(id: UUID(), name: "archived.csv", at: Date(),
+                                                       data: data, inserted: 1, undone: nil)
+    XCTAssertEqual(GalaxySSIHealthTableImport.Batch.original(for: batch.id, in: [batch, independent])?.id, independent.id)
+    let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    let (_, summary) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
+    XCTAssertEqual(summary.tables, 0)
+    XCTAssertEqual(summary.links, 1)
   }
 
   func testStructuredOriginalPreviewBoundsDoNotMutateSourceTable() throws {

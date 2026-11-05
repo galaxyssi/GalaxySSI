@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_measurement_history_delete">Delete local measurements</string>
+    <string name="health_measurement_history_source">%1$s: %2$d</string>
+    <string name="health_measurement_history_preview">%1$s · %2$d measurements\n%3$s to %4$s · all sources\n\n%5$s\n\nThis removes saved measurements, revisions and edit drafts for this data type from this app. This cannot be undone. Report originals, profiles, external sources, backups and exports are unchanged.</string>
+    <string name="health_measurement_history_empty">No local measurements for this data type</string>
+    <string name="health_measurement_history_deleted">Local measurements deleted</string>
     <string name="health_privacy_title">Privacy and data</string>
     <string name="health_privacy_lead">Local health data</string>
     <string name="health_privacy_uses">Analysis permissions</string>

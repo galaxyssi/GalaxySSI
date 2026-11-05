@@ -43,6 +43,7 @@ actor MqttBusinessSendDrain {
     let bindings = Set(peers.map(\.binding))
     cursors = cursors.filter { bindings.contains($0.key) }
     guard !peers.isEmpty else { nextPeer = 0; return result }
+    routes.wakeTransportForTraffic()
     nextPeer %= peers.count
     // Visit a bounded number of peers as well as records, including offline and blocked peers.
     for _ in 0..<min(limit, peers.count) {
@@ -94,9 +95,7 @@ actor MqttBusinessSendDrain {
           _ = try await dispatcher.submit(topic: item.message.topic, delivery: delivery)
           try Task.checkCancellation()
           if closed { result.stopped = true; return result }
-          try routes.withOutgoing(identity: identity, topics: [item.message.topic]) {
-            try outbox.updateRetry(identity: identity, messageID: item.message.messageId, published: true, now: now())
-          }
+          // Submission is a local enqueue, not a physical publication or PUBACK.
           result.submitted += 1
         } catch {
           if error is CancellationError { throw error }

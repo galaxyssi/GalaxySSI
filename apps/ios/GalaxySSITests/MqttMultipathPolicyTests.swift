@@ -57,6 +57,17 @@ final class MqttMultipathPolicyTests: XCTestCase {
     XCTAssertTrue(policy.readyBrokers(receiveTopics: ["inbox", "unsubscribed"]).isEmpty)
   }
 
+  func testAuthorizationFiltersBeforeSinglePathRanking() {
+    let policy = ready()
+    for traffic in [MqttMultipathPolicy.Traffic.receipt, .message] {
+      let ranked = policy.plan(peer: "peer", messageID: "message", traffic: traffic,
+        wireBytes: 100_000, receiveTopics: ["inbox"], now: 0, ingress: "emqx", eligible: ["hivemq": 1])
+      XCTAssertEqual(ranked.map(\.brokerID), ["hivemq"])
+      XCTAssertTrue(policy.plan(peer: "peer", messageID: "message", traffic: traffic,
+        wireBytes: 100_000, receiveTopics: ["inbox"], now: 0, eligible: ["hivemq": 2]).isEmpty)
+    }
+  }
+
   func testStaleGenerationCannotRestoreSubscriptionsOrReleaseNewAttempt() {
     let policy = ready()
     var paths = snapshots()

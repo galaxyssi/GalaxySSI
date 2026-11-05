@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.database.ContentObserver
 import android.os.Bundle
@@ -10,6 +11,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Toast
 import androidx.core.view.OneShotPreDrawListener
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -25,6 +27,10 @@ class HealthTrendRecordsActivity : Activity() {
     private lateinit var body: LinearLayout; private lateinit var spec: HealthTrendSpec
     private var numeric = false; private var active = false; @Volatile private var generation = 0
     private var fixedVersion = false
+    private var manageBluetooth = false
+    private var deletionBusy = false
+    private var deletionDialog: AlertDialog? = null
+    private var deletionPreviewGeneration = 0
     private var pointField: String? = null
     private var audit: HealthTrendPoint? = null
     private var sourceName = ""
@@ -37,6 +43,7 @@ class HealthTrendRecordsActivity : Activity() {
     private val privacyObserver = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
             if (!active) return
+            deletionDialog?.dismiss(); deletionDialog = null
             scrollY = scroll?.scrollY ?: scrollY
             audit = null
             sourceName = ""
@@ -56,6 +63,8 @@ class HealthTrendRecordsActivity : Activity() {
         spec = intent.healthTrendSpec() ?: run { finish(); return }; numeric = intent.getBooleanExtra("health_numeric", false)
         fixedVersion = intent.getBooleanExtra("health_fixed_version", false)
         pointField = intent.getStringExtra("health_point_field")
+        manageBluetooth = intent.getBooleanExtra("health_manage_bluetooth_history", false) &&
+            !fixedVersion && !numeric && spec.metric == HealthMetric.BLOOD_PRESSURE && spec.source.bluetoothGroup.isNotEmpty()
         if (pointField != null && (!numeric || pointField !in spec.metric.requiredFields)) { finish(); return }
         version = state?.getString("version") ?: intent.getStringExtra("health_version")
         if ((numeric || fixedVersion) && version == null) { finish(); return }
@@ -93,6 +102,11 @@ class HealthTrendRecordsActivity : Activity() {
         active = false; generation++; signal?.cancel(); signal = null; if (::body.isInitialized) body.removeAllViews(); super.onStop()
     }
     override fun onDestroy() { worker.shutdown(); super.onDestroy() }
+    override fun onPause() {
+        deletionPreviewGeneration++
+        deletionDialog?.dismiss(); deletionDialog = null
+        super.onPause()
+    }
     override fun onSaveInstanceState(state: Bundle) {
         cursor?.let { state.putLong("cursor_time", it.measuredAt); state.putString("cursor_id", it.id) }
         state.putStringArrayList("previous", ArrayList(previous.map { if (it == null) "" else "${it.measuredAt}|${it.id}" }))
@@ -166,6 +180,67 @@ class HealthTrendRecordsActivity : Activity() {
         startActivity(Intent(this, HealthRecordRevisionActivity::class.java).putExtra("health_record", id)
             .putExtra("health_revision", revision).putHealthNavigationFixture(names))
     }
+    private fun previewBluetoothDeletion(name: String) {
+        if (!active || deletionBusy || deletionDialog?.isShowing == true) return
+        val request = generation
+        val previewRequest = ++deletionPreviewGeneration
+        deletionBusy = true
+        worker.execute {
+            val result = runCatching {
+                HealthPrivacyStore.track(applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND_SOURCES, spec),
+                    privacyDatabase) {
+                    HealthRecordStore(applicationContext, names.records).use { it.bluetoothHistoryPreview(spec.source.bluetoothGroup) }
+                }
+            }
+            main.post {
+                deletionBusy = false
+                if (!active || request != generation || previewRequest != deletionPreviewGeneration || !hasWindowFocus()) return@post
+                result.fold({ preview ->
+                    if (preview.count == 0L) { refreshBluetoothHistory(); return@fold }
+                    val first = Instant.ofEpochMilli(preview.first).atZone(spec.zone).toLocalDate()
+                    val last = Instant.ofEpochMilli(preview.last).atZone(spec.zone).toLocalDate()
+                    deletionDialog = AlertDialog.Builder(this)
+                        .setTitle(R.string.health_sources_delete_history)
+                        .setMessage(getString(R.string.health_sources_delete_preview, name, preview.count, first, last))
+                        .setNegativeButton(R.string.common_cancel, null)
+                        .setPositiveButton(R.string.common_delete) { _, _ -> eraseBluetoothHistory(preview) }
+                        .show()
+                }, { failure ->
+                    if (failure is HealthAccessBlocked) this.failure(failure)
+                    else Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_LONG).show()
+                })
+            }
+        }
+    }
+    private fun eraseBluetoothHistory(preview: HealthBluetoothHistoryPreview) {
+        if (!active || deletionBusy) return
+        deletionBusy = true
+        val access = HealthAccessScope(HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY, setOf(HealthMetric.BLOOD_PRESSURE),
+            preview.first, preview.last + 1, spec.zone.id, count = preview.count, source = HealthAccessSource.BLUETOOTH)
+        worker.execute {
+            val result = runCatching {
+                HealthPrivacyStore.track(applicationContext, access, privacyDatabase) {
+                    HealthRecordStore(applicationContext, names.records).use { it.eraseBluetoothHistory(preview) }
+                }
+            }
+            main.post {
+                deletionBusy = false
+                if (!active) return@post
+                result.fold({
+                    Toast.makeText(this, R.string.health_sources_history_deleted, Toast.LENGTH_SHORT).show()
+                    finish()
+                }, { failure ->
+                    val message = if (failure is HealthBluetoothHistoryChanged) R.string.health_sources_history_changed else R.string.health_storage_error
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                    refreshBluetoothHistory()
+                })
+            }
+        }
+    }
+    private fun refreshBluetoothHistory() {
+        version = null; cursor = null; previous.clear(); scrollY = 0
+        load()
+    }
     private fun pointHeader(content: LinearLayout, point: HealthTrendPoint) {
         val unit = spec.unit.ifBlank { getString(R.string.health_unit_not_applicable) }
         ui.add(content, ui.text(getString(R.string.health_trend_point_result,
@@ -177,6 +252,7 @@ class HealthTrendRecordsActivity : Activity() {
         val source = when {
             spec.source.manualOnly -> getString(R.string.health_source_manual)
             spec.source.bluetoothGroup.isNotEmpty() -> healthBluetoothTrendLabel(spec.source.bluetoothGroup, sourceName)
+            spec.source.platformOrigin.isNotEmpty() -> healthConnectTrendLabel(spec.source.platformOrigin, spec.metric)
             spec.source.originalId.isBlank() -> getString(R.string.health_trend_all_sources)
             else -> sourceName.ifBlank { getString(R.string.health_trend_original_source, spec.source.originalId.take(8)) }
         }
@@ -192,11 +268,20 @@ class HealthTrendRecordsActivity : Activity() {
         val point = audit
         if (point != null) pointHeader(content, point)
         else if (numeric) ui.add(content, ui.text(getString(R.string.health_trend_numeric_records, spec.unit), 13f, muted = true), 8)
+        if (manageBluetooth && page.records.isNotEmpty()) {
+            val name = healthBluetoothTrendLabel(spec.source.bluetoothGroup, page.records.first().platformOrigin)
+            ui.add(content, ui.profileRow(getString(R.string.health_sources_delete_history), name) {
+                previewBluetoothDeletion(name)
+            }.apply { tag = "health-bluetooth-delete-history" }, 8)
+        }
         if (page.records.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_records)), 20)
         page.records.forEach { record ->
             val time = Instant.ofEpochMilli(record.draft.measuredAt).atZone(spec.zone).format(DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm"))
-            val source = if (record.source == "bluetooth") healthBluetoothTrendLabel(record.bluetoothGroup, record.platformOrigin)
-                else getString(healthRecordSourceResource(record.source))
+            val source = when (record.source) {
+                "bluetooth" -> healthBluetoothTrendLabel(record.bluetoothGroup, record.platformOrigin)
+                "health_connect" -> healthConnectTrendLabel(record.platformOrigin, record.draft.metric)
+                else -> getString(healthRecordSourceResource(record.source))
+            }
             ui.add(content, ui.row(healthDisplayValue(record.draft), "$time \u00b7 $source") {
                 if (numeric || fixedVersion) openRevision(record.id, record.revision)
                 else startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", record.id).putHealthNavigationFixture(names))

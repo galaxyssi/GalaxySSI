@@ -2134,6 +2134,16 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(points.count, 2)
     XCTAssertFalse(String(describing: points).contains("private task content"))
     XCTAssertEqual(tracer.summary()["phone_send_prepare_ms"]?.p50Ms, 250)
+    monotonic += 250_000_000
+    tracer.record(taskId: "private task content", stage: .phoneResponseReceived)
+    tracer.visible(taskId: "private task content", final: false)
+    XCTAssertEqual(tracer.summary()["phone_send_first_visible_ms"]?.p50Ms, 500)
+    XCTAssertNil(tracer.summary()["phone_send_complete_visible_ms"]?.p50Ms)
+    monotonic += 1_000_000_000
+    tracer.record(taskId: "private task content", stage: .phoneFinalReceived, outcome: "completed")
+    tracer.visible(taskId: "private task content", final: true)
+    XCTAssertEqual(tracer.summary()["phone_send_first_visible_ms"]?.p50Ms, 500)
+    XCTAssertEqual(tracer.summary()["phone_send_complete_visible_ms"]?.p50Ms, 1_500)
   }
 
   func testAgentLatencySummarySeparatesIncompleteAndFailedSamples() {
