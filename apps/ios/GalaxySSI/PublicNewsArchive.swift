@@ -188,12 +188,22 @@ final class PublicNewsArchive: ObservableObject {
     var byID = [String: PublicNewsArticle]()
     for article in existing { byID[article.id] = article }
     var seen = Set<String>()
-    for var article in incoming where seen.insert(article.id).inserted {
+    for var article in incoming {
+      if !seen.insert(article.id).inserted {
+        if let extra = article.interests, var current = byID[article.id] {
+          current.interests = (current.interests ?? []).union(extra)
+          byID[article.id] = current
+        }
+        continue
+      }
       if let previous = byID[article.id] {
         article.read = previous.read
         article.saved = previous.saved
         article.discoveredAt = previous.discoveredAt
         article.publishedAt = article.publishedAt ?? previous.publishedAt
+        if let previousInterests = previous.interests {
+          article.interests = (article.interests ?? []).union(previousInterests)
+        }
         if article.summary.isEmpty { article.summary = previous.summary }
       }
       byID[article.id] = article

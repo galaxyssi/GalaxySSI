@@ -9,6 +9,7 @@ struct PublicNewsArticle: Codable, Equatable, Identifiable {
   var discoveredAt: Date
   var read = false
   var saved = false
+  var interests: Set<PublicNewsInterest>?
 
   var id: String { url.absoluteString }
   var sortDate: Date { publishedAt ?? discoveredAt }
@@ -17,15 +18,18 @@ struct PublicNewsArticle: Codable, Equatable, Identifiable {
 struct PublicNewsSource {
   let publisher: String
   let url: URL
+  var interest: PublicNewsInterest? = nil
 
   static let builtIn: [PublicNewsSource] = [
-    ("IT Home", "https://www.ithome.com/rss/"),
-    ("GitHub", "https://github.blog/feed/"),
-    ("China News", "https://www.chinanews.com.cn/rss/finance.xml"),
-    ("Federal Reserve", "https://www.federalreserve.gov/feeds/press_all.xml"),
-    ("MIT News", "https://news.mit.edu/rss/research"),
-    ("PLOS Biology", "https://journals.plos.org/plosbiology/feed/atom")
-  ].compactMap { name, address in URL(string: address).map { Self(publisher: name, url: $0) } }
+    ("IT Home", "https://www.ithome.com/rss/", PublicNewsInterest.technology),
+    ("GitHub", "https://github.blog/feed/", .technology),
+    ("China News", "https://www.chinanews.com.cn/rss/finance.xml", .finance),
+    ("Federal Reserve", "https://www.federalreserve.gov/feeds/press_all.xml", .finance),
+    ("MIT News", "https://news.mit.edu/rss/research", .research),
+    ("PLOS Biology", "https://journals.plos.org/plosbiology/feed/atom", .research)
+  ].compactMap { name, address, interest in
+    URL(string: address).map { Self(publisher: name, url: $0, interest: interest) }
+  }
 }
 
 enum PublicNewsFeedError: Error {
@@ -138,7 +142,7 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
       .lazy.compactMap { Self.date($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.first
     entries.append(PublicNewsArticle(
       url: url, title: title, summary: summary, publisher: source.publisher,
-      publishedAt: published, discoveredAt: now
+      publishedAt: published, discoveredAt: now, interests: source.interest.map { Set([$0]) }
     ))
   }
 

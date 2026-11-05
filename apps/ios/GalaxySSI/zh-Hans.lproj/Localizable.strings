@@ -5241,6 +5241,12 @@
 "public_news_refresh" = "刷新新闻";
 "public_news_actions" = "新闻操作";
 "public_news_search" = "搜索新闻";
+"public_news_highlights" = "精选";
+"public_news_highlight_interests" = "精选兴趣";
+"public_news_highlights_empty" = "暂无精选新闻";
+"public_news_interest_technology" = "科技";
+"public_news_interest_finance" = "财经";
+"public_news_interest_research" = "研究";
 "public_news_clear_search" = "清除搜索";
 "public_news_publisher" = "来源";
 "public_news_all_publishers" = "所有来源";
