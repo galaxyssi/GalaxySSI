@@ -11,6 +11,8 @@ struct GalaxySSIDraftAttachment: Identifiable, Equatable {
   var data: Data
   var sourceDescription: String
   var historicalSourceTurnId: String?
+  var composerOriginal: ComposerAttachmentOriginal?
+  var composerCrop: ComposerAttachmentCrop?
 
   init(
     id: String = UUID().uuidString,
@@ -50,6 +52,9 @@ struct GalaxySSIDraftAttachment: Identifiable, Equatable {
 
   mutating func wipeSensitive() {
     data.wipeSensitive()
+    composerOriginal?.data.wipeSensitive()
+    composerOriginal = nil
+    composerCrop = nil
     sourceDescription.removeAll(keepingCapacity: false)
   }
 }

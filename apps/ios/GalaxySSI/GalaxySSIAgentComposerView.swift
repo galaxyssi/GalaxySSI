@@ -22,7 +22,10 @@ struct GalaxySSIAgentComposerView: View {
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var focusRequest: Int = 0
+  var attachmentScope: String
+  var attachmentPreviewBlocked: Bool
   var onRemoveAttachment: (GalaxySSIDraftAttachment) -> Void
+  var onReplaceAttachment: (String, GalaxySSIDraftAttachment, GalaxySSIDraftAttachment) -> Bool
   var onImageAttachment: ((GalaxySSIDraftAttachment) -> Void)? = nil
   var onNewSession: () -> Void
   var onOpenSessions: () -> Void
@@ -139,9 +142,8 @@ struct GalaxySSIAgentComposerView: View {
       if newGlobalInsightCount > 0 {
         GalaxySSIAgentHomeInsightBarView(count: newGlobalInsightCount)
       }
-      if !attachments.isEmpty {
-        AttachmentPreviewStrip(attachments: attachments, onRemove: onRemoveAttachment)
-      }
+      AttachmentPreviewStrip(attachments: attachments, scope: attachmentScope,
+        presentationBlocked: attachmentPreviewBlocked, onRemove: onRemoveAttachment, onReplace: onReplaceAttachment)
       if !attachmentError.isEmpty {
         Text(attachmentError)
           .font(.caption)

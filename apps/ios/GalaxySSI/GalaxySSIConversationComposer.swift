@@ -12,6 +12,8 @@ struct GalaxySSIConversationComposer: View {
   var voiceSettings: VoiceSettings
   var dedicatedPeerVoiceCapture = false
   var attachmentScope = ""
+  var attachmentPreviewBlocked = false
+  var onReplaceAttachment: (String, GalaxySSIDraftAttachment, GalaxySSIDraftAttachment) -> Bool
   var onNewSession: () -> Void
   var onOpenSessions: () -> Void
   var onScan: () -> Void
@@ -60,11 +62,10 @@ struct GalaxySSIConversationComposer: View {
 
   var body: some View {
     VStack(spacing: 8) {
-      if !attachments.isEmpty {
-        AttachmentPreviewStrip(attachments: attachments) { attachment in
+      AttachmentPreviewStrip(attachments: attachments, scope: attachmentScope,
+        presentationBlocked: attachmentPreviewBlocked, onRemove: { attachment in
           attachments.removeAndWipe(id: attachment.id)
-        }
-      }
+        }, onReplace: onReplaceAttachment)
       if !attachmentError.isEmpty {
         Text(attachmentError)
           .font(.caption)

@@ -83,15 +83,20 @@ extension AgentHomeView {
       return
     }
 
+    let owner = store.activeAgentConversationId
     switch AVCaptureDevice.authorizationStatus(for: .video) {
     case .authorized:
+      cameraAttachmentOwner = owner
       cameraPickerPresented = true
     case .notDetermined:
+      cameraAttachmentOwner = owner
       AVCaptureDevice.requestAccess(for: .video) { granted in
         DispatchQueue.main.async {
+          guard cameraAttachmentOwner == owner, store.activeAgentConversationId == owner else { return }
           if granted {
             cameraPickerPresented = true
           } else {
+            cameraAttachmentOwner = nil
             attachmentError = t("galaxyssi.scanner.camera_access_required", "Camera access is required to scan GalaxySSI QR codes.")
           }
         }
@@ -99,6 +104,7 @@ extension AgentHomeView {
     case .denied, .restricted:
       attachmentError = t("galaxyssi.scanner.camera_access_required", "Camera access is required to scan GalaxySSI QR codes.")
     @unknown default:
+      cameraAttachmentOwner = owner
       cameraPickerPresented = true
     }
   }
