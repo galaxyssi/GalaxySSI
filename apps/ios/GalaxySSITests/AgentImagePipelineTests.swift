@@ -1,8 +1,34 @@
+import ImageIO
 import UIKit
 import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testOversizedAnimationCanUsePosterWithoutChangingExportBytes() throws {
+    let data = NSMutableData()
+    let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, "com.compuserve.gif" as CFString, 2, nil))
+    let frame = try XCTUnwrap(testImage().cgImage)
+    CGImageDestinationAddImage(destination, frame, nil)
+    CGImageDestinationAddImage(destination, frame, nil)
+    XCTAssertTrue(CGImageDestinationFinalize(destination))
+    let original = data as Data
+    XCTAssertNotNil(GalaxySSIImageResourceDecoder.frames(from: original))
+    XCTAssertNil(GalaxySSIImageResourceDecoder.frames(from: original, frameLimit: 1))
+    XCTAssertNil(GalaxySSIImageResourceDecoder.frames(from: original, decodedByteLimit: 1))
+    XCTAssertNotNil(GalaxySSIImageResourceDecoder.staticImage(from: original))
+    XCTAssertEqual(GalaxySSIOriginalImageDocument(data: original).originalFileWrapper().regularFileContents, original)
+  }
+
+  func testImageExportKeepsEncodedBytesAndRejectsNonImageData() throws {
+    let png = try XCTUnwrap(testImage().pngData())
+    let jpeg = try XCTUnwrap(testImage().jpegData(compressionQuality: 0.8))
+    XCTAssertEqual(GalaxySSIImageResourceDecoder.originalType(png)?.identifier, "public.png")
+    XCTAssertEqual(GalaxySSIImageResourceDecoder.originalType(jpeg)?.identifier, "public.jpeg")
+    XCTAssertEqual(GalaxySSIOriginalImageDocument(data: png).originalFileWrapper().regularFileContents, png)
+    XCTAssertEqual(GalaxySSIOriginalImageDocument(data: jpeg).originalFileWrapper().regularFileContents, jpeg)
+    XCTAssertNil(GalaxySSIImageResourceDecoder.originalType(Data("not an image".utf8)))
+  }
+
   func testSmallImageKeepsOriginalBytesAndRecordsProbe() throws {
     let data = try XCTUnwrap(testImage().pngData())
     let attachment = GalaxySSIDraftAttachment(

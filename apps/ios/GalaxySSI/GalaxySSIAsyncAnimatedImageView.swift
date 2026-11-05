@@ -5,16 +5,19 @@ import UIKit
 struct GalaxySSIAsyncAnimatedImageView<Failure: View>: View {
   let url: URL
   private let onLoaded: ((Data) -> Void)?
+  private let decodeOffMain: Bool
   private let failure: () -> Failure
   @StateObject private var loader = GalaxySSIAsyncAnimatedImageLoader()
 
   init(
     url: URL,
     onLoaded: ((Data) -> Void)? = nil,
+    decodeOffMain: Bool = false,
     @ViewBuilder failure: @escaping () -> Failure
   ) {
     self.url = url
     self.onLoaded = onLoaded
+    self.decodeOffMain = decodeOffMain
     self.failure = failure
   }
 
@@ -25,8 +28,11 @@ struct GalaxySSIAsyncAnimatedImageView<Failure: View>: View {
         ProgressView()
           .frame(maxWidth: .infinity, minHeight: 80)
       case .loaded(let data):
-        GalaxySSIRemoteAnimatedImageView(data: data)
-          .onAppear { onLoaded?(data) }
+        Group {
+          if decodeOffMain { Color.clear }
+          else { GalaxySSIRemoteAnimatedImageView(data: data) }
+        }
+        .onAppear { onLoaded?(data) }
       case .failed:
         failure()
       }
