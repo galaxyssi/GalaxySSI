@@ -5,6 +5,7 @@ struct GalaxySSIPublicNewsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scenePhase
   @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
+  @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
   @StateObject private var archive = PublicNewsArchive()
   @State private var filter = Filter.all
   @State private var refreshRequest = 0
@@ -44,6 +45,8 @@ struct GalaxySSIPublicNewsView: View {
               Label(t("science_title", "Life sciences"), systemImage: "books.vertical")
             }
             Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
+            Toggle(t("public_news_learn_publishers", "Discover publisher feeds"), isOn: $publisherDiscovery)
+              .disabled(archive.refreshing)
           } label: {
             Image(systemName: "ellipsis").frame(width: 40, height: 44)
           }
@@ -95,7 +98,7 @@ struct GalaxySSIPublicNewsView: View {
       .overlay(alignment: .top) {
         if archive.refreshing && archive.articles.isEmpty { ProgressView().padding() }
       }
-      .refreshable { await archive.refresh(force: true) }
+      .refreshable { await archive.refresh(force: true, learnPublishers: publisherDiscovery) }
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .background {
@@ -111,7 +114,7 @@ struct GalaxySSIPublicNewsView: View {
       .hidden()
     }
     .navigationBarHidden(true)
-    .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0) }
+    .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0, learnPublishers: publisherDiscovery) }
     .task(id: liveNewsEnabled && scenePhase == .active) {
       if liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
     }

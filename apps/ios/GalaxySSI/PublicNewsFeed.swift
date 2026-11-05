@@ -19,6 +19,12 @@ struct PublicNewsSource {
   let publisher: String
   let url: URL
   var interest: PublicNewsInterest? = nil
+  var additionalInterests: Set<PublicNewsInterest> = []
+  var learned = false
+
+  var interests: Set<PublicNewsInterest> {
+    interest.map { additionalInterests.union([$0]) } ?? additionalInterests
+  }
 
   static let builtIn: [PublicNewsSource] = [
     ("IT Home", "https://www.ithome.com/rss/", PublicNewsInterest.technology),
@@ -33,7 +39,7 @@ struct PublicNewsSource {
 }
 
 enum PublicNewsFeedError: Error {
-  case invalidFeed, invalidResponse, bodyTooLarge
+  case invalidFeed, invalidResponse, bodyTooLarge, discussionFeed
 }
 
 final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
@@ -42,6 +48,7 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
   private let source: PublicNewsSource
   private let now: Date
   private var depth = 0
+  private var elementStack: [String] = []
   private var validRoot = false
   private var entryDepth: Int?
   private var field: String?
@@ -50,6 +57,8 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
   private var entries: [PublicNewsArticle] = []
   private var seen = Set<String>()
   private var rejectedDeclaration = false
+  private var headerTitleDepth: Int?
+  private var headerTitle = ""
 
   private init(source: PublicNewsSource, now: Date) {
     self.source = source
@@ -65,6 +74,9 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
     guard parser.parse(), delegate.validRoot, !delegate.rejectedDeclaration else {
       throw PublicNewsFeedError.invalidFeed
     }
+    if source.learned && PublicNewsPublisherDiscovery.discussionTitle(delegate.headerTitle) {
+      throw PublicNewsFeedError.discussionFeed
+    }
     return delegate.entries
   }
 
@@ -74,8 +86,15 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
   ) {
     depth += 1
     let name = localName(elementName)
+    let parent = elementStack.last
+    elementStack.append(name)
     if depth == 1 { validRoot = ["rss", "rdf", "feed"].contains(name) }
     guard validRoot, entries.count < Self.maximumArticles else { return }
+    if source.learned, entryDepth == nil, name == "title",
+       (depth == 2 && parent == "feed") || (depth == 3 && parent == "channel") {
+      headerTitleDepth = depth
+      return
+    }
     if entryDepth == nil, (name == "item" || name == "entry"), (2...3).contains(depth) {
       entryDepth = depth
       values = [:]
@@ -108,7 +127,8 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
   }
 
   func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-    defer { depth -= 1 }
+    defer { depth -= 1; _ = elementStack.popLast() }
+    if headerTitleDepth == depth { headerTitleDepth = nil; return }
     guard let entryDepth else { return }
     if depth == entryDepth + 1, let field {
       if values[field] == nil { values[field] = fieldText }
@@ -128,6 +148,10 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
   }
 
   private func appendField(_ text: String) {
+    if headerTitleDepth != nil, headerTitle.count < 1_000 {
+      headerTitle += text.prefix(1_000 - headerTitle.count)
+      return
+    }
     guard field != nil, fieldText.count < 12_000 else { return }
     fieldText += text.prefix(12_000 - fieldText.count)
   }
@@ -142,7 +166,7 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
       .lazy.compactMap { Self.date($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.first
     entries.append(PublicNewsArticle(
       url: url, title: title, summary: summary, publisher: source.publisher,
-      publishedAt: published, discoveredAt: now, interests: source.interest.map { Set([$0]) }
+      publishedAt: published, discoveredAt: now, interests: source.interests.isEmpty ? nil : source.interests
     ))
   }
 
@@ -186,15 +210,42 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
 
 enum PublicNewsFeedClient {
   static func fetch(_ source: PublicNewsSource, now: Date) async throws -> [PublicNewsArticle] {
+    if source.learned {
+      guard PublicNewsPublisherDiscovery.acceptsFeed(source.url, publisher: source.publisher),
+            AgentIOSWebRenderURLPolicy.resolvesToPublicAddress(source.url.absoluteString) else {
+        throw PublicNewsFeedError.invalidResponse
+      }
+    }
+    let (body, response) = try await fetchBytes(
+      source.url, accept: "application/rss+xml, application/atom+xml, application/xml, text/xml", allowRedirects: !source.learned
+    )
+    let resolved = PublicNewsSource(publisher: source.publisher, url: response.url ?? source.url,
+      interest: source.interest, additionalInterests: source.additionalInterests, learned: source.learned)
+    return try PublicNewsFeedParser.parse(body, source: resolved, now: now)
+  }
+
+  static func probe(_ article: URL) async throws -> [URL] {
+    guard PublicNewsPublisherDiscovery.probeHost(article) != nil,
+          AgentIOSWebRenderURLPolicy.resolvesToPublicAddress(article.absoluteString) else {
+      throw PublicNewsFeedError.invalidResponse
+    }
+    let (body, response) = try await fetchBytes(article, accept: "text/html, application/xhtml+xml", allowRedirects: false)
+    guard ["text/html", "application/xhtml+xml"].contains(response.mimeType ?? "") else {
+      throw PublicNewsFeedError.invalidResponse
+    }
+    return PublicNewsPublisherDiscovery.discover(html: String(decoding: body, as: UTF8.self), origin: article)
+  }
+
+  private static func fetchBytes(_ url: URL, accept: String, allowRedirects: Bool) async throws -> (Data, HTTPURLResponse) {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpShouldSetCookies = false
     configuration.timeoutIntervalForRequest = 12
     configuration.timeoutIntervalForResource = 20
     configuration.urlCache = nil
-    let session = URLSession(configuration: configuration, delegate: FeedRedirectPolicy(), delegateQueue: nil)
+    let session = URLSession(configuration: configuration, delegate: FeedRedirectPolicy(allowed: allowRedirects), delegateQueue: nil)
     defer { session.invalidateAndCancel() }
-    var request = URLRequest(url: source.url)
-    request.setValue("application/rss+xml, application/atom+xml, application/xml, text/xml", forHTTPHeaderField: "Accept")
+    var request = URLRequest(url: url)
+    request.setValue(accept, forHTTPHeaderField: "Accept")
     let (bytes, response) = try await session.bytes(for: request)
     guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
       throw PublicNewsFeedError.invalidResponse
@@ -207,18 +258,20 @@ enum PublicNewsFeedClient {
       body.append(byte)
     }
     try Task.checkCancellation()
-    return try PublicNewsFeedParser.parse(body, source: source, now: now)
+    return (body, response)
   }
 
   private final class FeedRedirectPolicy: NSObject, URLSessionTaskDelegate {
+    let allowed: Bool
+    init(allowed: Bool) { self.allowed = allowed }
     func urlSession(
       _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
       newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
     ) {
       let url = request.url
-      let allowed = url?.scheme == "https" && url?.host == task.originalRequest?.url?.host
+      let valid = allowed && url?.scheme == "https" && url?.host == task.originalRequest?.url?.host
         && url?.user == nil && url?.password == nil && (url?.port == nil || url?.port == 443)
-      completionHandler(allowed ? request : nil)
+      completionHandler(valid ? request : nil)
     }
   }
 }
