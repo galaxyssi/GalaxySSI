@@ -235,6 +235,11 @@ struct GalaxySSIHealthCenterView: View {
   private var privacyOverview: some View {
     List {
       if scenePhase == .active, let archive {
+        NavigationLink {
+          GalaxySSIHealthMetricDeletionView(records: records)
+        } label: {
+          Label(t("metric_deletion.title", "Delete by Measurement Type"), systemImage: "trash")
+        }
         Section(t("privacy.local", "Local analysis")) {
           Toggle(t("derive_overview", "Show local measurement summary"), isOn: Binding(
             get: { self.archive?.derivesOverview == true }, set: { changePrivacy(.overview, enabled: $0) }))
