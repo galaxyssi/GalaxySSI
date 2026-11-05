@@ -269,6 +269,87 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testHealthSyncNotificationAdoptsVisibleAlertAndNeverReplaysSameIncident() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 23)))
+    let floor = now.addingTimeInterval(-86_400)
+    let quietEnd = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 6, hour: 8)))
+    let pausedUntil = quietEnd.addingTimeInterval(600)
+    try records.saveRecordingReminderSettings(.init(pausedUntil: pausedUntil), at: now)
+    try records.updateHealthKitSyncSelection([.weight], enabled: true)
+    try records.setSyncNotificationsEnabled(true)
+    let run = try records.beginHealthKitSync(.weight, floor: floor, reset: false, at: now)
+    try records.finishHealthKitSync(.weight, run: run.run, status: .failed, at: now)
+    let first = try records.reconcileSyncDelivery(now: now, calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    let receipt = try XCTUnwrap(first.pending.first)
+    XCTAssertEqual(receipt.due, pausedUntil)
+    let request = try XCTUnwrap(GalaxySSIHealthSyncDelivery.request(receipt, title: "GalaxySSI reminder",
+      body: "Open GalaxySSI to review.", now: now))
+    XCTAssertTrue(request.content.userInfo.isEmpty)
+    XCTAssertTrue(request.content.attachments.isEmpty)
+    XCTAssertNil(request.content.sound)
+    XCTAssertFalse(request.identifier.contains(receipt.incident.uuidString))
+    let retry = try records.beginHealthKitSync(.weight, floor: floor, reset: false, at: now)
+    try records.finishHealthKitSync(.weight, run: retry.run, status: .permission, at: now.addingTimeInterval(1))
+    let pending = try records.reconcileSyncDelivery(now: now, calendar: calendar, permitted: true,
+      scheduled: [receipt.token], delivered: [])
+    XCTAssertEqual(pending.pending.first?.token, receipt.token)
+    let afterDelivery = pausedUntil.addingTimeInterval(1)
+    let adopted = try records.reconcileSyncDelivery(now: afterDelivery, calendar: calendar, permitted: true,
+      scheduled: [], delivered: [receipt.token])
+    XCTAssertTrue(adopted.pending.isEmpty)
+    XCTAssertEqual(adopted.keepDelivered, [receipt.token])
+    let archive = try records.load()
+    let settings = try XCTUnwrap(archive.recordingReminders?.settings)
+    let delivery = try XCTUnwrap(archive.healthKitSyncDelivery)
+    XCTAssertEqual(GalaxySSIHealthSyncDelivery.target(token: receipt.token, state: delivery, selected: [.weight],
+      incidents: archive.syncIncidents, settings: settings, now: afterDelivery), .weight)
+    XCTAssertNil(GalaxySSIHealthSyncDelivery.target(token: receipt.token, state: delivery, selected: [],
+      incidents: archive.syncIncidents, settings: settings, now: afterDelivery))
+    let dismissed = try records.reconcileSyncDelivery(now: afterDelivery, calendar: calendar, permitted: true,
+      scheduled: [], delivered: [])
+    XCTAssertTrue(dismissed.pending.isEmpty)
+    let current = try XCTUnwrap(archive.syncIncident(.weight))
+    try records.acknowledgeHealthKitIncident(current, at: afterDelivery)
+    XCTAssertThrowsError(try records.markSyncDeliverySubmitted(receipt, calendar: calendar))
+    let handled = try records.reconcileSyncDelivery(now: afterDelivery, calendar: calendar, permitted: true,
+      scheduled: [], delivered: [receipt.token])
+    XCTAssertTrue(handled.keepDelivered.isEmpty)
+    XCTAssertTrue(try records.load().current.isEmpty)
+  }
+
+  @MainActor
+  func testHealthSyncNotificationDenialAndDeselectDoNotReplayPendingOutages() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date(), floor = Date().addingTimeInterval(-86_400)
+    try records.updateHealthKitSyncSelection([.sleep, .weight], enabled: true)
+    try records.recordHealthKitAuthorizationFailure([.sleep], status: .permission, at: now)
+    try records.setSyncNotificationsEnabled(true)
+    try records.recordHealthKitAuthorizationFailure([.sleep, .weight], status: .permission, at: now)
+    let waiting = try XCTUnwrap(records.load().healthKitSyncDelivery)
+    XCTAssertEqual(Set(waiting.receipts.keys), [.weight])
+    try records.updateHealthKitSyncSelection([.weight], enabled: false)
+    try records.updateHealthKitSyncSelection([.weight], enabled: true)
+    try records.recordHealthKitAuthorizationFailure([.weight], status: .failed, at: now)
+    XCTAssertTrue(try XCTUnwrap(records.load().healthKitSyncDelivery).receipts.isEmpty)
+    let checkpoint = try records.beginHealthKitSync(.weight, floor: floor, reset: false, at: now)
+    _ = try records.commitHealthKitPage(scope: .weight, expected: checkpoint,
+      page: .init(rows: [], anchor: nil, providerCount: 0, more: false), at: now)
+    try records.recordHealthKitAuthorizationFailure([.weight], status: .permission, at: now)
+    let denied = try records.reconcileSyncDelivery(now: now, calendar: .current, permitted: false, scheduled: [], delivered: [])
+    XCTAssertTrue(denied.pending.isEmpty)
+    let allowed = try records.reconcileSyncDelivery(now: now, calendar: .current, permitted: true, scheduled: [], delivered: [])
+    XCTAssertTrue(allowed.pending.isEmpty)
+    XCTAssertEqual(try records.load().syncIncidents.count, 2)
+  }
+
+  @MainActor
   func testHealthKitSyncIncidentLegacyFailureSurvivesBeginningARetry() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

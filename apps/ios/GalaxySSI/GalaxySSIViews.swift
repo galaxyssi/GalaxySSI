@@ -141,6 +141,10 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
       completionHandler([.banner, .list])
       return
     }
+    if GalaxySSIHealthSyncDelivery.token(notification.request.identifier) != nil {
+      completionHandler([.banner, .list])
+      return
+    }
     guard GalaxySSIContactNotificationPresentationPolicy.shouldPresent(
       userInfo: notification.request.content.userInfo,
       applicationIsActive: UIApplication.shared.applicationState == .active
@@ -178,6 +182,13 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
           object: nil,
           userInfo: ["contactId": contactId]
         )
+      }
+    }
+    if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+       let token = GalaxySSIHealthSyncDelivery.token(response.notification.request.identifier) {
+      UserDefaults.standard.set(token.uuidString, forKey: GalaxySSIHealthSyncDelivery.pendingKey)
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(name: GalaxySSIHealthSyncDelivery.openNotification, object: nil)
       }
     }
     completionHandler()
@@ -323,6 +334,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .modifier(GalaxySSIHealthReviewNotificationLifecycle(store: runtime.store))
       .galaxySSITextScale(runtime.store.displaySettings)
       .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
+      .modifier(GalaxySSIHealthSyncNotificationLifecycle(store: runtime.store))
       .onAppear {
         galaxySSIStartupLogger.notice("RootView appeared")
         runtime.agentStartupRecovery.start(
