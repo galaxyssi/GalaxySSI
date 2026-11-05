@@ -7,6 +7,7 @@ struct GalaxySSIPublicNewsView: View {
   @State private var filter = Filter.all
   @State private var refreshRequest = 0
   @State private var selected: PublicNewsArticle?
+  @SceneStorage("publicNews.showSearch") private var showSearch = false
 
   private enum Filter: Hashable { case all, unread, saved }
 
@@ -24,11 +25,18 @@ struct GalaxySSIPublicNewsView: View {
         title: t("public_news_title", "Discoveries"),
         leading: { GalaxySSIBackButton() },
         trailing: {
-          Button { refreshRequest += 1 } label: {
-            Image(systemName: "arrow.clockwise").frame(width: 40, height: 44)
+          Menu {
+            Button { showSearch = true } label: {
+              Label(t("public_news_search", "Search news"), systemImage: "magnifyingglass")
+            }
+            Button { refreshRequest += 1 } label: {
+              Label(t("public_news_refresh", "Refresh news"), systemImage: "arrow.clockwise")
+            }
+            .disabled(archive.refreshing)
+          } label: {
+            Image(systemName: "ellipsis").frame(width: 40, height: 44)
           }
-          .disabled(archive.refreshing)
-          .accessibilityLabel(t("public_news_refresh", "Refresh news"))
+          .accessibilityLabel(t("public_news_actions", "News actions"))
         }
       )
       Picker(t("public_news_filter", "News filter"), selection: $filter) {
@@ -61,14 +69,14 @@ struct GalaxySSIPublicNewsView: View {
                     .font(.body.weight(article.read ? .regular : .semibold))
                     .foregroundColor(.galaxySSITextPrimary)
                     .lineLimit(3)
-                  byline(article)
+                  GalaxySSIPublicNewsByline(article: article)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 12)
                 .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
-              bookmark(article)
+              GalaxySSIPublicNewsBookmark(archive: archive, article: article)
             }
             .padding(.leading, 12)
             .background(Color.galaxySSISurface)
@@ -83,28 +91,54 @@ struct GalaxySSIPublicNewsView: View {
       .refreshable { await archive.refresh(force: true) }
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
+    .background {
+      NavigationLink(destination: GalaxySSIPublicNewsSearchView(archive: archive), isActive: $showSearch) {
+        EmptyView()
+      }
+      .hidden()
+    }
     .navigationBarHidden(true)
     .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0) }
-    .sheet(item: $selected) { article in reader(article) }
+    .sheet(item: $selected) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
   }
 
-  private func reader(_ original: PublicNewsArticle) -> some View {
+  private func status(_ text: String) -> some View {
+    Text(text)
+      .font(.callout)
+      .foregroundColor(.galaxySSITextSecondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(12)
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: language)
+  }
+}
+
+@MainActor
+struct GalaxySSIPublicNewsReader: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @ObservedObject var archive: PublicNewsArchive
+  let original: PublicNewsArticle
+
+  var body: some View {
     let article = archive.articles.first { $0.id == original.id } ?? original
     return VStack(spacing: 0) {
       GalaxySSITopBar(
         title: t("public_news_article", "Article"),
         leading: {
-          Button { selected = nil } label: {
+          Button { dismiss() } label: {
             Image(systemName: "xmark").frame(width: 40, height: 44)
           }
           .accessibilityLabel(t("public_news_close", "Close article"))
         },
-        trailing: { bookmark(article) }
+        trailing: { GalaxySSIPublicNewsBookmark(archive: archive, article: article) }
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
           Text(article.title).font(.title2.weight(.semibold)).textSelection(.enabled)
-          byline(article)
+          GalaxySSIPublicNewsByline(article: article)
           if !article.summary.isEmpty {
             Text(article.summary).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
           }
@@ -119,7 +153,15 @@ struct GalaxySSIPublicNewsView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
   }
 
-  private func byline(_ article: PublicNewsArticle) -> some View {
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string(key, fallback: fallback, language: language)
+  }
+}
+
+struct GalaxySSIPublicNewsByline: View {
+  let article: PublicNewsArticle
+
+  var body: some View {
     HStack(spacing: 6) {
       Text(article.publisher)
       if let published = article.publishedAt {
@@ -130,22 +172,21 @@ struct GalaxySSIPublicNewsView: View {
     .font(.caption)
     .foregroundColor(.galaxySSITextSecondary)
   }
+}
 
-  private func bookmark(_ article: PublicNewsArticle) -> some View {
+@MainActor
+struct GalaxySSIPublicNewsBookmark: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  let archive: PublicNewsArchive
+  let article: PublicNewsArticle
+
+  var body: some View {
     Button { archive.toggleSaved(article.id) } label: {
       Image(systemName: article.saved ? "bookmark.fill" : "bookmark")
         .frame(width: 44, height: 44)
     }
     .buttonStyle(.plain)
     .accessibilityLabel(article.saved ? t("public_news_unsave", "Remove bookmark") : t("public_news_save", "Bookmark"))
-  }
-
-  private func status(_ text: String) -> some View {
-    Text(text)
-      .font(.callout)
-      .foregroundColor(.galaxySSITextSecondary)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(12)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

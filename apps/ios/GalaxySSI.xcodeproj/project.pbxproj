@@ -337,6 +337,8 @@
     A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */; };
     E35390000000000000000001 /* PublicNewsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000002 /* PublicNewsFeed.swift */; };
     E35390000000000000000003 /* PublicNewsArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000004 /* PublicNewsArchive.swift */; };
+    E36480000000000000000001 /* PublicNewsSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000002 /* PublicNewsSearch.swift */; };
+    E36480000000000000000003 /* GalaxySSIPublicNewsSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000004 /* GalaxySSIPublicNewsSearchView.swift */; };
     E35390000000000000000005 /* GalaxySSIPublicNewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */; };
     A10000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift */; };
     A10000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift */; };
@@ -999,6 +1001,7 @@
     A10000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift */; };
     A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */; };
     E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000008 /* PublicNewsFeedTests.swift */; };
+    E36480000000000000000005 /* PublicNewsSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000006 /* PublicNewsSearchTests.swift */; };
     A10000000000000000000590 /* VoiceLatencyTracerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000590 /* VoiceLatencyTracerTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
     A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000204 /* AgentWorkspacePlanTests.swift */; };
@@ -1450,6 +1453,8 @@
     A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeInsightBarView.swift; sourceTree = "<group>"; };
     E35390000000000000000002 /* PublicNewsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeed.swift; sourceTree = "<group>"; };
     E35390000000000000000004 /* PublicNewsArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArchive.swift; sourceTree = "<group>"; };
+    E36480000000000000000002 /* PublicNewsSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSearch.swift; sourceTree = "<group>"; };
+    E36480000000000000000004 /* GalaxySSIPublicNewsSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsSearchView.swift; sourceTree = "<group>"; };
     E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsView.swift; sourceTree = "<group>"; };
     A20000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeHeaderView.swift; sourceTree = "<group>"; };
     A20000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeReadinessView.swift; sourceTree = "<group>"; };
@@ -2096,6 +2101,7 @@
     A20000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriptRoutePolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReplyPlaybackPolicyTests.swift; sourceTree = "<group>"; };
     E35390000000000000000008 /* PublicNewsFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeedTests.swift; sourceTree = "<group>"; };
+    E36480000000000000000006 /* PublicNewsSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSearchTests.swift; sourceTree = "<group>"; };
     A20000000000000000000590 /* VoiceLatencyTracerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyTracerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyDiagnosticsStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000629 /* VoicePcmRingBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmRingBufferTests.swift; sourceTree = "<group>"; };
@@ -2887,6 +2893,8 @@
         A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */,
         E35390000000000000000002 /* PublicNewsFeed.swift */,
         E35390000000000000000004 /* PublicNewsArchive.swift */,
+        E36480000000000000000002 /* PublicNewsSearch.swift */,
+        E36480000000000000000004 /* GalaxySSIPublicNewsSearchView.swift */,
         E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */,
         A20000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift */,
         D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */,
@@ -3207,6 +3215,7 @@
         A20000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift */,
         A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */,
         E35390000000000000000008 /* PublicNewsFeedTests.swift */,
+        E36480000000000000000006 /* PublicNewsSearchTests.swift */,
         A20000000000000000000762 /* VoiceTTSRequestRegistryTests.swift */,
         A20000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift */,
         A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */,
@@ -4139,6 +4148,8 @@
         A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */,
         E35390000000000000000001 /* PublicNewsFeed.swift in Sources */,
         E35390000000000000000003 /* PublicNewsArchive.swift in Sources */,
+        E36480000000000000000001 /* PublicNewsSearch.swift in Sources */,
+        E36480000000000000000003 /* GalaxySSIPublicNewsSearchView.swift in Sources */,
         E35390000000000000000005 /* GalaxySSIPublicNewsView.swift in Sources */,
         A10000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift in Sources */,
         D12980000000000000000001 /* GalaxySSIConversationSceneController.swift in Sources */,
@@ -4450,6 +4461,7 @@
         A10000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift in Sources */,
         A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */,
         E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */,
+        E36480000000000000000005 /* PublicNewsSearchTests.swift in Sources */,
         A10000000000000000000762 /* VoiceTTSRequestRegistryTests.swift in Sources */,
         A10000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift in Sources */,
         A10000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift in Sources */,
