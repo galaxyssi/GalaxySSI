@@ -2,6 +2,69 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSILinkProtocolTests: XCTestCase {
+  func testContactReminderEnvelopeUsesAndroidFieldsAndRejectsInvalidLifetimes() throws {
+    let envelope = GalaxySSIContactReminderEnvelope(id: UUID().uuidString.lowercased(),
+      createdAt: 50_000, expiresAt: 170_000, action: .request)
+    var payload = envelope.payload(messageId: "message", recipient: "paired-target", sender: "sender", now: 50_000)
+    XCTAssertEqual(payload["type"] as? String, "peer_attention")
+    XCTAssertEqual(payload["contact_id"] as? String, "paired-target")
+    XCTAssertEqual(GalaxySSIContactReminderEnvelope(payload, now: 50_001), envelope)
+    XCTAssertNil(GalaxySSIContactReminderEnvelope(payload, now: 170_000))
+    XCTAssertNil(GalaxySSIContactReminderEnvelope(payload, now: 19_999))
+    payload["expires_at"] = 170_001
+    XCTAssertNil(GalaxySSIContactReminderEnvelope(payload, now: 50_001))
+    payload["expires_at"] = true
+    XCTAssertNil(GalaxySSIContactReminderEnvelope(payload, now: 50_001))
+  }
+
+  @MainActor
+  func testContactReminderReplayDoesNotAlertTwiceAndCancellationSurvivesReopen() throws {
+    let suite = "contact-reminders-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let store = GalaxySSIContactReminderStore(defaults: defaults, secrets: secrets, owner: "local")
+    let id = UUID().uuidString
+    let request = GalaxySSIContactReminderEnvelope(id: id, createdAt: 5_000, expiresAt: 125_000, action: .request)
+    let first = try XCTUnwrap(store.receive(request, authenticatedPeer: "peer-a", enabled: true, quiet: false, now: 5_001))
+    XCTAssertTrue(first.shouldAlert)
+    XCTAssertEqual(first.record.pendingAction, .received)
+
+    let reopened = GalaxySSIContactReminderStore(defaults: defaults, secrets: secrets, owner: "local")
+    let repeated = try XCTUnwrap(reopened.receive(request, authenticatedPeer: "peer-a", enabled: true, quiet: false, now: 6_000))
+    XCTAssertFalse(repeated.shouldAlert)
+    XCTAssertEqual(repeated.record.historyID, first.record.historyID)
+    XCTAssertNil(try reopened.receive(request, authenticatedPeer: "peer-b", enabled: true, quiet: false, now: 6_000))
+    let foreign = GalaxySSIContactReminderStore(defaults: defaults, secrets: secrets, owner: "other-account")
+    XCTAssertTrue(try foreign.records(now: 6_000).isEmpty)
+
+    let cancelled = GalaxySSIContactReminderEnvelope(id: UUID().uuidString, createdAt: 5_000,
+      expiresAt: 125_000, action: .cancelled)
+    XCTAssertFalse(try XCTUnwrap(reopened.receive(cancelled, authenticatedPeer: "peer-a",
+      enabled: true, quiet: false, now: 6_000)).shouldAlert)
+    let late = GalaxySSIContactReminderEnvelope(id: cancelled.id, createdAt: 5_000, expiresAt: 125_000, action: .request)
+    XCTAssertNil(try reopened.receive(late, authenticatedPeer: "peer-a", enabled: true, quiet: false, now: 6_001))
+    XCTAssertEqual(try reopened.records(now: 125_000).first(where: { $0.id == id })?.status, .expired)
+    let unavailable = GalaxySSIContactReminderStore(defaults: defaults, secrets: InMemorySecretStore(), owner: "local")
+    XCTAssertThrowsError(try unavailable.records(now: 6_000))
+  }
+
+  @MainActor
+  func testContactReminderStaleReceiptCannotClearPendingCancellation() throws {
+    let suite = "contact-reminder-cancel-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = GalaxySSIContactReminderStore(defaults: defaults, secrets: InMemorySecretStore(), owner: "local")
+    let record = try store.create(peerID: "peer", now: 5_000)
+    XCTAssertEqual(try store.act(id: record.id, action: .cancelled, now: 5_001)?.status, .cancelled)
+    let receipt = try XCTUnwrap(store.receive(record.envelope(.received), authenticatedPeer: "peer",
+      enabled: true, quiet: false, now: 5_002))
+    XCTAssertEqual(receipt.record.status, .cancelled)
+    XCTAssertEqual(receipt.record.pendingAction, .cancelled)
+    try store.markQueued(id: record.id, action: .request, now: 5_003)
+    XCTAssertEqual(try store.records(now: 5_004).first?.pendingAction, .cancelled)
+  }
+
   func testValidatesAndroidCompatibleOpaquePairingQRCode() throws {
     let secret = Data(repeating: 7, count: 32).base64URLEncodedString()
     let qr = pairingQR(secret: secret, createdAt: Date())
