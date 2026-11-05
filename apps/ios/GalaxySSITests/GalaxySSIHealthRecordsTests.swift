@@ -5,6 +5,34 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testRecognitionCheckpointResumesAndCancellationRejectsLatePages() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    try records.enqueueRecognition(original: original, pageCount: 2)
+    let job = try XCTUnwrap(records.load().recognitionJobs?.first)
+    let run = try records.beginRecognitionJob(id: job.id, expected: nil)
+    let bounds = CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4)
+    let line = GalaxySSIHealthRecognitionJobs.line(.init(id: 1, text: "fixture value", bounds: bounds, highlight: nil))
+    let reordered = GalaxySSIHealthRecognitionJobs.line(.init(id: 8, text: "fixture value", bounds: bounds, highlight: nil))
+    XCTAssertEqual(line.id, reordered.id)
+    let first = GalaxySSIHealthRecognitionJobs.Page(index: 0, fromOCR: true, lines: [line])
+    let second = GalaxySSIHealthRecognitionJobs.Page(index: 1, fromOCR: true, lines: [line])
+    try records.commitRecognitionPage(id: job.id, run: run, page: first)
+    let resumed = try records.beginRecognitionJob(id: job.id, expected: run)
+    XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: run, page: second))
+    try records.finishRecognitionJob(id: job.id, run: resumed, phase: .cancelled)
+    XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: resumed, page: second))
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: nil))
+    let archive = try records.load()
+    XCTAssertEqual(archive.recognitionJobs?.first?.pages, [first])
+    XCTAssertTrue(archive.current.isEmpty)
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data("fixture value".utf8)))
+  }
+
+  @MainActor
   func testReportReviewBatchIsAtomicAndVersionPinned() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

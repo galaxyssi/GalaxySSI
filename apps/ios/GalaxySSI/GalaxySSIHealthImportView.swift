@@ -42,6 +42,11 @@ struct GalaxySSIHealthImportView: View {
       }
       Section {
         NavigationLink {
+          GalaxySSIHealthRecognitionJobsView(records: records, store: store)
+        } label: {
+          Label(t("recognition", "Local Report Recognition"), systemImage: "text.viewfinder")
+        }
+        NavigationLink {
           GalaxySSIHealthOriginalsView(store: store)
         } label: {
           Label(t("library", "Health Originals"), systemImage: "doc.on.doc")

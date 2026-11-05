@@ -1,3 +1,4 @@
+import ImageIO
 import PDFKit
 import SwiftUI
 import UIKit
@@ -50,6 +51,25 @@ enum GalaxySSIHealthPDFText {
     try Task.checkCancellation()
     guard let image = rendered?.image
     else { throw Failure.unavailable }
+    let regions = try recognize(image)
+    return Result(method: .ocr, regions: regions, crop: crop, rotation: page.rotation, preview: image)
+  }
+
+  static func readImage(_ data: Data) throws -> Result {
+    try Task.checkCancellation()
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: 2_000
+    ]
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else { throw Failure.invalid }
+    let bounds = CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height))
+    return Result(method: .ocr, regions: try recognize(image), crop: bounds, rotation: 0, preview: image)
+  }
+
+  private static func recognize(_ image: CGImage) throws -> [Region] {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     let available = try? request.supportedRecognitionLanguages()
@@ -57,14 +77,12 @@ enum GalaxySSIHealthPDFText {
     if !languages.isEmpty { request.recognitionLanguages = languages }
     try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
     try Task.checkCancellation()
-    let regions = (request.results ?? []).prefix(1_000).enumerated().compactMap { index, observation -> Region? in
+    return (request.results ?? []).prefix(1_000).enumerated().compactMap { index, observation -> Region? in
       guard let text = usable(observation.topCandidates(1).first?.string) else { return nil }
       let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
       return Region(id: index, text: text, bounds: observation.boundingBox,
                     highlight: normalizedTopOrigin(observation.boundingBox, in: unit))
     }
-    // Native bounds are PDF page points; OCR bounds are normalized in the rendered crop.
-    return Result(method: .ocr, regions: regions, crop: crop, rotation: page.rotation, preview: image)
   }
 
   static func normalizedTopOrigin(_ bounds: CGRect, in viewport: CGRect) -> CGRect? {
@@ -286,7 +304,8 @@ struct GalaxySSIHealthPDFTextView: View {
                 NavigationLink {
                   GalaxySSIHealthReportItemEditor(records: reviewRecords,
                     source: .init(original: selected.id, sha256: selected.sha256, page: page,
-                                  region: region.id, fromOCR: result.method == .ocr),
+                                  region: region.id, fromOCR: result.method == .ocr,
+                                  evidenceKey: GalaxySSIHealthRecognitionJobs.line(region).id),
                     excerpt: String(region.text.prefix(500)))
                 } label: {
                   Text(GalaxySSIHealthReportReview.text("item", "Review measurement", language: language))
