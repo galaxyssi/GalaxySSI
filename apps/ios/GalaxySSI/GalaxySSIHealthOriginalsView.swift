@@ -5,6 +5,47 @@ import UIKit
 import UniformTypeIdentifiers
 
 @MainActor
+struct GalaxySSIHealthOriginalRemovalHistoryView: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.scenePhase) private var scene
+  let store: GalaxySSIHealthOriginalStore
+  @State private var history: [GalaxySSIHealthOriginalStore.RemovalAudit]?
+
+  var body: some View {
+    List {
+      if scene == .active {
+        if let history {
+          if history.isEmpty { Text(t("no_removals", "No original removals.")).foregroundColor(.secondary) }
+          ForEach(history) { entry in
+            VStack(alignment: .leading, spacing: 4) {
+              Text(t("removal_confirmed", "Local original removal confirmed"))
+              Text(String(format: t("removal_audit_count", "Linked measurements retained: %lld"),
+                          Int64(entry.linkedMeasurements))).foregroundColor(.secondary)
+              Text(entry.at, format: .dateTime).foregroundColor(.secondary)
+            }
+          }
+        } else {
+          Button(t("removal_history_retry", "Reload removal history"), action: reload)
+        }
+      }
+    }
+    .navigationTitle(t("removal_history", "Original removal history"))
+    .navigationBarTitleDisplayMode(.inline)
+    .onAppear(perform: reload)
+    .onChange(of: scene) { _ in reload() }
+  }
+
+  private func reload() {
+    guard scene == .active else { history = nil; return }
+    history = try? store.removalHistory()
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.originals." + key, fallback: fallback, language: language)
+  }
+}
+
+@MainActor
 struct GalaxySSIHealthOriginalsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
@@ -32,7 +73,9 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var receiptFailed = false
   @State private var preparedForShare = false
   @State private var pending: [GalaxySSIHealthOriginalStore.Original] = []
-  @State private var removal: GalaxySSIHealthOriginalStore.Original?
+  @State private var removal: GalaxySSIHealthOriginalStore.RemovalPreview?
+  @State private var removalAfterPreview: GalaxySSIHealthOriginalStore.Original?
+  @State private var removalNotice: String?
   @State private var error = false
 
   private struct Preview: Identifiable {
@@ -104,15 +147,32 @@ struct GalaxySSIHealthOriginalsView: View {
               }
               .buttonStyle(.borderless)
               .contextMenu { singleSaveButton(item) }
-              .swipeActions {
-                Button(role: .destructive) { removal = item } label: {
+              .swipeActions(allowsFullSwipe: false) {
+                Button(role: .destructive) { reviewRemoval(item) } label: {
                   Label(t("remove", "Remove"), systemImage: "trash")
                 }
               }
             }
           }
           if rows.count > shown { Button(t("more", "Show more")) { shown += 30 } }
+          let removed = filtered(listing.removed)
+          if !removed.isEmpty {
+            Section(t("removed_originals", "Removed originals")) {
+              ForEach(removed.prefix(shown)) { item in
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(item.name)
+                  Text(ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file))
+                    .foregroundColor(.secondary)
+                  if listing.pendingRemovals.contains(item.id) {
+                    Text(t("removal_pending", "Local file cleanup is pending.")).foregroundColor(.secondary)
+                  }
+                }
+              }
+              if removed.count > shown { Button(t("more", "Show more")) { shown += 30 } }
+            }
+          }
         }
+        if let removalNotice { Text(removalNotice).foregroundColor(.secondary) }
         if error {
           Text(t("error", "Could not complete the operation. Check the file or select fewer originals."))
             .foregroundColor(.secondary)
@@ -136,6 +196,8 @@ struct GalaxySSIHealthOriginalsView: View {
         listing = nil
         preview = nil
         removal = nil
+        removalAfterPreview = nil
+        removalNotice = nil
         pending = []
         pendingSingle = nil
         reviewAfterPreview = false
@@ -162,12 +224,9 @@ struct GalaxySSIHealthOriginalsView: View {
         Text(String(format: t("selected_count", "%lld selected originals"), Int64(pending.count)))
       }
     }
-    .alert(item: $removal) { item in
-      Alert(title: Text(t("remove_confirm", "Remove this original?")), message: Text(item.name),
-            primaryButton: .destructive(Text(t("remove", "Remove"))) {
-              guard scene == .active else { return }
-              do { try store.remove(item); reload() } catch { error = true }
-            }, secondaryButton: .cancel())
+    .alert(item: $removal) { review in
+      Alert(title: Text(t("remove_confirm", "Remove this original?")), message: Text(removalMessage(review)),
+            primaryButton: .destructive(Text(t("remove", "Remove"))) { remove(review) }, secondaryButton: .cancel())
     }
     .fileExporter(isPresented: $exporting, document: exportDocument, contentType: exportType,
                   defaultFilename: exportType == .zip ? "GalaxySSI-Health-Originals" : "GalaxySSI-Health-Original") { result in
@@ -188,6 +247,10 @@ struct GalaxySSIHealthOriginalsView: View {
     }
     .onChange(of: exporting) { if !$0 { exportDocument = nil } }
     .sheet(item: $preview, onDismiss: {
+      if let item = removalAfterPreview {
+        removalAfterPreview = nil
+        reviewRemoval(item)
+      }
       if reviewAfterPreview {
         reviewAfterPreview = false
         confirming = scene == .active && pendingSingle != nil
@@ -203,6 +266,12 @@ struct GalaxySSIHealthOriginalsView: View {
           }
           .disabled(verifying)
           .accessibilityLabel(Text(t("save_original", "Save original")))
+          Button(role: .destructive) {
+            removalAfterPreview = item.original
+            preview = nil
+          } label: { Image(systemName: "trash").frame(width: 44, height: 44) }
+          .disabled(verifying)
+          .accessibilityLabel(Text(t("remove", "Remove")))
           Button { preview = nil } label: { Image(systemName: "xmark.circle").font(.title2) }
             .accessibilityLabel(Text(t("close", "Close")))
         }
@@ -251,8 +320,43 @@ struct GalaxySSIHealthOriginalsView: View {
     }
     .contextMenu {
       singleSaveButton(item)
-      Button(role: .destructive) { removal = item } label: { Label(t("remove", "Remove"), systemImage: "trash") }
+      Button(role: .destructive) { reviewRemoval(item) } label: { Label(t("remove", "Remove"), systemImage: "trash") }
     }
+  }
+
+  private func removalMessage(_ review: GalaxySSIHealthOriginalStore.RemovalPreview) -> String {
+    let size = ByteCountFormatter.string(fromByteCount: Int64(review.original.bytes), countStyle: .file)
+    let count = String(format: t("retained_count", "%lld linked measurements will remain."), Int64(review.links.count))
+    return [review.original.name, size, count,
+            t("remove_boundary", "Measurement links, drafts, and existing exports and backups are unchanged.")]
+      .joined(separator: "\n")
+  }
+
+  private func reviewRemoval(_ item: GalaxySSIHealthOriginalStore.Original) {
+    guard scene == .active, !exporting, !verifying else { return }
+    removalNotice = nil
+    do { removal = try store.previewRemoval(item) }
+    catch GalaxySSIHealthOriginalStore.Failure.stale { removalChanged() }
+    catch { error = true }
+  }
+
+  private func remove(_ review: GalaxySSIHealthOriginalStore.RemovalPreview) {
+    guard scene == .active else { return }
+    do {
+      let outcome = try store.remove(review)
+      reload()
+      if case .pendingCleanup = outcome, listing?.pendingRemovals.contains(review.id) != false {
+        removalNotice = t("removal_pending", "Local file cleanup is pending.")
+      } else {
+        removalNotice = t("removal_done", "Original removed. Measurements were kept.")
+      }
+    } catch GalaxySSIHealthOriginalStore.Failure.stale { removalChanged() }
+    catch { error = true }
+  }
+
+  private func removalChanged() {
+    reload()
+    removalNotice = t("removal_changed", "The file or linked measurements changed. Review the removal again.")
   }
 
   private func reload() {

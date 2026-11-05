@@ -529,7 +529,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertFalse(try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files).hasChanges)
     let foreign = GalaxySSIHealthRecords(owner: "different", secrets: secrets, isolatedFile: destination.isolatedFile)
     XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.previewRestore(input, records: foreign, originals: files))
-    try files.remove(manifest)
+    try files.remove(files.previewRemoval(manifest))
     let pendingReceipt = UUID()
     try files.stageRestore([(manifest, pdf)], receipt: pendingReceipt)
     try destination.commitRestore(destination.load(), receipt: pendingReceipt)
@@ -846,7 +846,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root,
+                                             restoreRecordsFile: root.appendingPathComponent("records"))
     let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
     try store.store(pdf, name: "private.pdf")
     let source = try XCTUnwrap(store.list().originals.first)
@@ -866,7 +867,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertFalse(corrupted)
     XCTAssertFalse(try store.finishSingleSave(source, destinationVerified: corrupted))
 
-    try store.remove(source)
+    try store.remove(store.previewRemoval(source))
     try store.store(pdf, name: source.name)
     XCTAssertThrowsError(try store.read(source))
     XCTAssertFalse(try store.finishSingleSave(source, destinationVerified: matched))
@@ -880,6 +881,68 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     sealed[sealed.count - 1] ^= 1
     try sealed.write(to: audit)
     XCTAssertThrowsError(try store.singleSaveHistory())
+  }
+
+  @MainActor
+  func testOriginalRemovalRequiresFreshLinkedRevisionsAndRetainsMetadataAndCopies() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: root.appendingPathComponent("records"))
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root,
+                                             restoreRecordsFile: records.isolatedFile)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "private.pdf")
+    let original = try XCTUnwrap(store.list().originals.first)
+    let (zip, export) = try store.prepareExport([original])
+    let now = Date()
+    func item(_ index: Int) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+                                                      page: index, region: 0, fromOCR: true)
+      let reading = GalaxySSIHealthReading(metric: .weight, measuredAt: now.addingTimeInterval(Double(-120 * index)),
+                                            value: 60, reportSource: source)
+      return .init(version: UUID(), source: source, excerpt: "Fixture", reading: reading)
+    }
+    let linked = (1...35).map(item)
+    for row in linked { try records.stageReportItem(row, replacing: nil) }
+    try records.confirmReportItems(Set(linked.dropLast().map(\.version)), original: original)
+    let initial = try store.previewRemoval(original)
+    XCTAssertEqual(initial.links.count, 34)
+    XCTAssertTrue(try store.removalHistory().isEmpty)
+    XCTAssertEqual(try store.read(original), pdf)
+
+    var edited = try XCTUnwrap(records.load().current.first)
+    edited.notes = "Changed revision"
+    try records.write(edited)
+    XCTAssertThrowsError(try store.remove(initial)) { error in
+      guard case GalaxySSIHealthOriginalStore.Failure.stale = error else { return XCTFail("Expected stale preview") }
+    }
+    let afterEdit = try store.previewRemoval(original)
+    XCTAssertEqual(afterEdit.links.count, 34)
+    try records.confirmReportItems([try XCTUnwrap(linked.last?.version)], original: original)
+    XCTAssertThrowsError(try store.remove(afterEdit))
+    let draft = item(36)
+    try records.stageReportItem(draft, replacing: nil)
+    let fresh = try store.previewRemoval(original)
+    XCTAssertEqual(fresh.links.count, 35)
+    try store.remove(fresh)
+
+    let listing = try store.list()
+    XCTAssertTrue(listing.originals.isEmpty)
+    XCTAssertEqual(listing.removed, [original])
+    XCTAssertTrue(listing.pendingRemovals.isEmpty)
+    XCTAssertThrowsError(try store.read(original))
+    XCTAssertEqual(try records.load().current.count, 35)
+    XCTAssertEqual(try records.load().reportReview?.map(\.version), [draft.version])
+    XCTAssertEqual(try store.readShareArtifact(export), zip)
+    let history = try store.removalHistory()
+    XCTAssertEqual(history.map(\.linkedMeasurements), [35])
+    let encoded = try JSONEncoder().encode(history)
+    let serialized = String(decoding: encoded, as: UTF8.self)
+    XCTAssertFalse(serialized.contains(original.id.uuidString))
+    XCTAssertFalse(serialized.contains(original.name))
+    XCTAssertFalse(serialized.contains(original.sha256))
   }
 
   @MainActor
