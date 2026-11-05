@@ -99,7 +99,8 @@ struct GalaxySSIHealthTrendView: View {
   @Environment(\.timeZone) private var timeZone
   @Environment(\.locale) private var locale
   let records: GalaxySSIHealthRecords
-  @State private var metric = GalaxySSIHealthMetric.bloodPressure
+  private let fixedMetric: GalaxySSIHealthMetric?
+  @State private var metric: GalaxySSIHealthMetric
   @State private var component = GalaxySSIHealthTrend.Component.value
   @State private var selectedUnit: String?
   @State private var days = 7
@@ -115,6 +116,12 @@ struct GalaxySSIHealthTrendView: View {
   @State private var shown = 30
   @State private var jumpTarget: UUID?
 
+  init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil) {
+    self.records = records
+    self.fixedMetric = fixedMetric
+    _metric = State(initialValue: fixedMetric ?? .bloodPressure)
+  }
+
   var body: some View {
     List {
       if scene == .active {
@@ -124,8 +131,12 @@ struct GalaxySSIHealthTrendView: View {
         } else if !allowed {
           Text(t("permission", "Enable the local measurement summary in Health Privacy to view trends."))
         } else {
-          Picker(t("metric", "Measurement"), selection: $metric) {
-            ForEach(GalaxySSIHealthMetric.allCases) { Text(metricTitle($0)).tag($0) }
+          if fixedMetric == nil {
+            Picker(t("metric", "Measurement"), selection: $metric) {
+              ForEach(GalaxySSIHealthMetric.allCases) { Text(metricTitle($0)).tag($0) }
+            }
+          } else {
+            Text(metricTitle(metric))
           }
           if metric == .bloodPressure {
             Picker(t("component", "Component"), selection: $component) {
