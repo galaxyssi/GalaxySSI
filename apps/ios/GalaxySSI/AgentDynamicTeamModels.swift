@@ -1,4 +1,105 @@
 import Foundation
+import CryptoKit
+
+enum AgentCollaborationDecisionContext {
+  static func dependencyLines(_ observations: [(String, String)], maximumBytes: Int = 12_000,
+                              recallAvailable: Bool = true)
+    -> (lines: [String], omitted: Bool) {
+    guard recallAvailable else {
+      let lines = observations.map { id, text in
+        "[\(id) output_truncated=\(text.count > 8_000)] \(String(text.prefix(8_000)))"
+      }
+      return (lines, false)
+    }
+    let references = observations.map { id, _ in
+      "[\(id) output_truncated=true archive_record_id=\(AgentDesktopCollaborationArchiveRecall.recordId(memberId: id))]"
+    }
+    var lines = references
+    var budget = max(0, maximumBytes - references.reduce(0) { $0 + $1.utf8.count + 1 })
+    for index in observations.indices.reversed() {
+      let (id, text) = observations[index]
+      let full = "[\(id) output_truncated=false] \(text)"
+      let cost = max(0, full.utf8.count - references[index].utf8.count)
+      guard text.count <= 8_000, cost <= budget else { continue }
+      lines[index] = full
+      budget -= cost
+    }
+    return (lines, lines.indices.contains { lines[$0] == references[$0] })
+  }
+}
+
+enum AgentCollaborationInlineOriginals {
+  static let contextSections = ["context:assignment", "context:resources", "context:peer_requests"]
+  static let recallSections = ["goal", "criteria", "source"] + contextSections
+  static let maximumContextSectionBytes = 128_000
+
+  static func source(goal: String, criteria: Data) -> Data {
+    let units = Array(goal.utf16)
+    var segments: [String] = []
+    var start = 0
+    var substantive = false
+    func whitespace(_ unit: UInt16) -> Bool {
+      UnicodeScalar(unit).map { CharacterSet.whitespacesAndNewlines.contains($0) } ?? false
+    }
+    for index in units.indices {
+      let unit = units[index]
+      let end = index + 1
+      substantive = substantive || !whitespace(unit)
+      if end < units.count, (0xD800...0xDBFF).contains(unit),
+         (0xDC00...0xDFFF).contains(units[end]) { continue }
+      let final = end == units.count
+      let punctuation = [0x002E, 0x0021, 0x003F].contains(Int(unit)) && (final || whitespace(units[end]))
+      let separator = [0x000A, 0x003B, 0xFF1B, 0x3002, 0xFF01, 0xFF1F].contains(Int(unit))
+      if substantive && (final || punctuation || separator || end - start >= 1_024) {
+        segments.append(String(decoding: units[start..<end], as: UTF16.self))
+        start = end
+        substantive = false
+      }
+    }
+    if start < units.count, !segments.isEmpty {
+      segments[segments.count - 1] += String(decoding: units[start...], as: UTF16.self)
+    }
+    func digest(_ bytes: Data) -> String {
+      SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+    return Data(AgentMcpJSONCodec.stringify([
+      "format": .string("galaxyssi.ios-goal-coverage-source.v1"),
+      "goal_sha256": .string(digest(Data(goal.utf8))),
+      "criteria_sha256": .string(digest(criteria)),
+      "segments": .array(segments.enumerated().map { index, value in
+        .object(["id": .string("source-\(index + 1)"), "text": .string(value)])
+      })
+    ]).utf8)
+  }
+
+  static func prompt(originalGoalPrefix: String, maximumBytes: Int = 12_000,
+                     read: (String) -> AgentMcpJSONObject?) -> String {
+    var sections: [String: AgentMcpJSONValue] = [:]
+    var originals: AgentMcpJSONObject = [:]
+    for section in ["goal", "criteria", "source"] {
+      sections[section] = .string("not_included")
+      guard let page = read(section), page["next_offset"] == .null,
+            page["offset"] == .int(0), page.string("section") == section,
+            let bytes = Data(base64Encoded: page.string("data_b64")), !bytes.isEmpty,
+            page["total_bytes"] == .int(Int64(bytes.count)),
+            let original = String(data: bytes, encoding: .utf8) else { continue }
+      if section == "goal", Data(originalGoalPrefix.utf8) == bytes {
+        sections[section] = .string("complete_in_prompt_prefix")
+        continue
+      }
+      var proposed = originals
+      proposed[section] = .string(original)
+      guard AgentMcpJSONCodec.stringify(proposed).utf8.count <= maximumBytes else { continue }
+      originals = proposed
+      sections[section] = .string("complete_in_originals")
+    }
+    return """
+    Original context availability (host-reported, not evidence validation):
+    \(AgentMcpJSONCodec.stringify(["availability": .object(sections), "originals": .object(originals)]))
+    Use complete originals directly. Retrieve missing relevant sections with scoped goal recall when available.
+    """
+  }
+}
 
 enum AgentCollaborationRuleTopics {
   private struct Topic {
@@ -16,6 +117,12 @@ enum AgentCollaborationRuleTopics {
     capability_gap records category, symptom, needed_capability, learning_options, chosen_option and rationale.
     innovation records origin, hypothesis, mechanism, difference, prior_art, falsifier, domain, applies_when, risks, alternatives
     and predictions (id, statement, test). Use novelty_scope not_checked. Transfer and combination require exact parent records.
+    An action_forecast may declare hypothesis_test with hypotheses (id, claim, prior), event_ids, and likelihoods
+    keyed by action, hypothesis, and event. Use a single report field and include every action, including defer.
+    For a follow-up, use an exact prior_outcome parent and explain conditional_history. Keep the same
+    question, hypothesis claims, and environment scope. Omit explicit priors; the host uses the saved posterior.
+    A prediction_outcome binds an exact forecast parent and one fully recalled original cloud tool observation
+    from its executor. The host computes any posterior; declared probabilities are assumptions, not calibration.
     experiment_plan binds exact innovation and baseline parents, prediction_id, method, environment, budget_unit, budget_limit,
     report_pointer, source and cases. experiment_result binds the plan and completely read original measurement observations.
     capability_lesson binds exact result and rollback parents; retain requires passing target and regression cases,
@@ -106,6 +213,21 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var learning: LearningBinding? = nil
     var review_targets: [String]? = nil
     var workflowExecutionId: String? = nil
+
+    func hasIndependentReviewAuthors(_ author: (String) -> String?) -> Bool {
+      if let review_targets {
+        guard independent_review == true, !review_targets.isEmpty,
+              Set(review_targets).count == review_targets.count,
+              Set(review_targets).isSubset(of: Set(depends_on)) else { return false }
+      }
+      guard independent_review == true else { return true }
+      let targets = review_targets ?? depends_on
+      return !targets.isEmpty && targets.allSatisfy { target in
+        guard let origin = author(target), !origin.isBlank else { return false }
+        return AgentTeamProgressPolicy.stableCollaborationMemberId(origin) !=
+          AgentTeamProgressPolicy.stableCollaborationMemberId(member)
+      }
+    }
   }
 
   struct LearningBinding: Codable, Equatable {
@@ -135,7 +257,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             from: Data(AgentMcpJSONCodec.stringify(instance).utf8)))
         } else {
           let item = try Work(from: decoder)
-          guard item.workflowExecutionId == nil, item.review_targets == nil else {
+          guard item.workflowExecutionId == nil else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
               debugDescription: "Workflow bindings must come from a saved method"))
           }
@@ -163,7 +285,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     guard raw.utf8.count <= 256_000,
           let expansion = try? JSONDecoder().decode(Expansion.self, from: Data(raw.utf8)),
           expansion.format == "galaxyssi.work-expansion.v1", !expansion.work.isEmpty,
-          expansion.work.allSatisfy({ $0.workflowExecutionId == nil && $0.review_targets == nil }) else { return nil }
+          expansion.work.allSatisfy({ $0.workflowExecutionId == nil }) else { return nil }
     return appendingWork(expansion.work, authorizedMembers: authorizedMembers, historicalAuthors: historicalAuthors, settled: settled)
   }
 
@@ -219,14 +341,8 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
       byId[item.id] = item
     }
     for item in additions {
-      for dependency in item.depends_on {
-        guard byId[dependency] != nil || settled[dependency] != nil else { return nil }
-        if item.independent_review == true && (item.review_targets?.contains(dependency) ?? true) {
-          guard let author = byId[dependency]?.member ?? historicalAuthors[dependency],
-                !author.isBlank, AgentTeamProgressPolicy.stableCollaborationMemberId(author) !=
-                  AgentTeamProgressPolicy.stableCollaborationMemberId(item.member) else { return nil }
-        }
-      }
+      guard item.depends_on.allSatisfy({ byId[$0] != nil || settled[$0] != nil }),
+            item.hasIndependentReviewAuthors({ byId[$0]?.member ?? historicalAuthors[$0] }) else { return nil }
     }
     var resolved = Set(settled.keys)
     var remaining = work + additions
@@ -303,13 +419,7 @@ struct AgentCollaborationWorkflowInstance: Codable, Equatable {
     }
     guard compiled.count == steps.count else { return nil }
     let members = Dictionary(uniqueKeysWithValues: compiled.map { ($0.id, $0.member) })
-    for step in compiled where step.independent_review == true {
-      let reviewer = AgentTeamProgressPolicy.stableCollaborationMemberId(step.member)
-      for target in step.review_targets ?? step.depends_on {
-        guard let author = members[target],
-              AgentTeamProgressPolicy.stableCollaborationMemberId(author) != reviewer else { return nil }
-      }
-    }
+    guard compiled.allSatisfy({ $0.hasIndependentReviewAuthors { members[$0] } }) else { return nil }
     return compiled
   }
 }

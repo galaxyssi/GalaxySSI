@@ -35,6 +35,7 @@ internal object HealthImportScheduler {
             if (!context.getDatabasePath("health_records_v1.db").exists() &&
                 !context.getDatabasePath(HealthOriginalStore.LEGACY_DATABASE).exists()) return@thread
             runCatching { HealthOriginalExportScheduler.recover(context) }
+            runCatching { HealthOriginalStore(context).use { it.recoverCropWrites() } }
             runCatching { HealthOriginalRetention.recover(context) }
             runCatching { HealthOriginalStore(context).use { store ->
                 var after: Pair<Long, String>? = null
@@ -72,6 +73,7 @@ private class HealthImportInterrupted : CancellationException()
 internal class HealthImportPipeline(private val context: Context, private val recordDatabase: String = "health_records_v1.db") {
     fun run(store: HealthOriginalStore, id: String, prepareCapture: Boolean = false, stopped: () -> Boolean = { false }): HealthImportOutcome {
             val initial = store.job(id) ?: return HealthImportOutcome.FAILED
+            if (initial.needsPdfPassword()) return HealthImportOutcome.FAILED
             if (initial.state in listOf(HealthImportState.CANCELLED, HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW, HealthImportState.ORIGINAL_ONLY, HealthImportState.CAPTURE_READY)) return HealthImportOutcome.COMPLETE
             if (prepareCapture && initial.captureSubmitted) return HealthImportOutcome.COMPLETE
             if (!prepareCapture && initial.captureBatch.isNotBlank() && !initial.captureSubmitted) return HealthImportOutcome.COMPLETE
@@ -105,7 +107,7 @@ internal class HealthImportPipeline(private val context: Context, private val re
                 }
                 if (prepareCapture) {
                     if (!mime.startsWith("image/")) throw HealthImportFailure("image_unsupported")
-                    val quality = HealthPhotoInspector.inspect(store, original)
+                    val quality = HealthPhotoInspector.inspect(store, original, report = initial.mode == "report")
                     cancelled(); store.inspectCapture(id, quality)
                     return HealthImportOutcome.COMPLETE
                 }

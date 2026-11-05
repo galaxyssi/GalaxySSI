@@ -92,7 +92,122 @@ class HealthOriginalLibraryDeviceTest {
     @Test fun generatedAndSavedAreDistinctAndReopeningDoesNotPretendToSave(): Unit = fixture { _, _, _, originals, library ->
         val s = select(library, listOf(import(originals, 0))); library.queue(s.id); HealthOriginalArchive.generate(originals, library, s.id)
         val ready = library.session(s.id)!!; zip(library, ready); assertEquals(HealthOriginalExportState.GENERATED, library.session(s.id)!!.state)
-        library.saved(ready); assertEquals(HealthOriginalExportState.SAVED, library.session(s.id)!!.state)
+        val output = ByteArrayOutputStream()
+        val saved = HealthOriginalArchive.saveVerified(library, ready, { output }, { output.toByteArray().inputStream() }, { fail("Unexpected cleanup") })
+        assertEquals(HealthOriginalExportState.SAVED, library.session(s.id)!!.state)
+        assertTrue(saved.verifiedSaveAt > 0)
+        assertTrue(saved.pendingSave.isEmpty())
+    }
+    @Test fun truncatedDestinationNeverCreatesAReceiptAndTheGeneratedZipCanBeRetried(): Unit = fixture { _, _, _, originals, library ->
+        val s = select(library, listOf(import(originals, 0)))
+        library.queue(s.id)
+        assertEquals(HealthOriginalArchiveOutcome.COMPLETE, HealthOriginalArchive.generate(originals, library, s.id))
+        val ready = library.session(s.id)!!
+        val output = ByteArrayOutputStream()
+        var cleanup = false
+        assertTrue(runCatching { HealthOriginalArchive.saveVerified(library, ready, { output },
+            { output.toByteArray().copyOf(output.size() - 1).inputStream() }, { cleanup = true }) }.isFailure)
+        assertTrue(cleanup)
+        val failed = library.session(s.id)!!
+        assertEquals(HealthOriginalExportState.GENERATED, failed.state)
+        assertTrue(failed.saveFailed)
+        assertEquals(0L, failed.verifiedSaveAt)
+        assertTrue(library.file(failed).isFile)
+        output.reset()
+        val saved = HealthOriginalArchive.saveVerified(library, failed, { output },
+            { output.toByteArray().inputStream() }, { fail("Unexpected cleanup") })
+        assertFalse(saved.saveFailed)
+        assertTrue(saved.verifiedSaveAt > 0)
+        assertArrayEquals(library.input(saved).use { it.readBytes() }, output.toByteArray())
+        assertTrue(runCatching { HealthOriginalArchive.saveVerified(library, saved, { ByteArrayOutputStream() },
+            { ByteArray(0).inputStream() }, {}) }.isFailure)
+        val failedResave = library.session(s.id)!!
+        assertEquals(HealthOriginalExportState.SAVED, failedResave.state)
+        assertEquals(saved.verifiedSaveAt, failedResave.verifiedSaveAt)
+        assertTrue(failedResave.saveFailed)
+    }
+    @Test fun interruptedAndStaleSaveAttemptsCannotInventAReceipt(): Unit = fixture { name, root, exports, originals, library ->
+        val s = select(library, listOf(import(originals, 0)))
+        library.queue(s.id)
+        assertEquals(HealthOriginalArchiveOutcome.COMPLETE, HealthOriginalArchive.generate(originals, library, s.id))
+        val ready = library.session(s.id)!!
+        val stale = library.beginSave(ready)
+        HealthOriginalStore(context, name, root).use { reopened ->
+            val store = HealthOriginalLibraryStore(context, reopened, exports)
+            val interrupted = store.history().single()
+            assertEquals(stale, interrupted.pendingSave)
+            assertEquals(HealthOriginalExportState.GENERATED, interrupted.state)
+            assertEquals(0L, interrupted.verifiedSaveAt)
+            assertFalse(HealthOriginalArchive.isSaving(s.id))
+            val retry = store.beginSave(interrupted)
+            assertNotEquals(retry, stale)
+            assertTrue(runCatching { store.finishSave(interrupted, stale, verified = true) }.isFailure)
+            assertEquals(retry, store.session(s.id)!!.pendingSave)
+            val output = ByteArrayOutputStream()
+            val done = HealthOriginalArchive.saveVerified(store, interrupted, { output },
+                { output.toByteArray().inputStream() }, { fail("Unexpected cleanup") })
+            assertEquals(done, store.history().single())
+            assertEquals(HealthOriginalExportState.SAVED, done.state)
+        }
+    }
+    @Test fun historyIsIndexedAndPagedAcrossEqualTimestampsWithoutShowingUnsubmittedDrafts(): Unit = fixture { name, root, exports, originals, library ->
+        val original = import(originals, 0)
+        val time = 1_790_000_000_000L
+        val sessions = (1..67).map { select(library, listOf(original)).copy(createdAt = time) }
+        sessions.forEach { session ->
+            originals.libraryDatabase.update("library_exports", ContentValues().apply {
+                put("created_at", time)
+                put("payload", originals.libraryPack("export", session.id, session.json()))
+            }, "id=?", arrayOf(session.id))
+        }
+        library.createSelection()
+        val first = library.history()
+        assertEquals(31, first.size)
+        val second = library.history(first[29].let { it.createdAt to it.id })
+        val third = library.history(second[29].let { it.createdAt to it.id })
+        assertEquals(sessions.sortedByDescending { it.id }, first.take(30) + second.take(30) + third)
+        assertTrue(originals.libraryDatabase.rawQuery("EXPLAIN QUERY PLAN SELECT id FROM library_exports WHERE state<>'SELECTING' " +
+            "ORDER BY created_at DESC,id DESC LIMIT 31", null).use { cursor ->
+            generateSequence { if (cursor.moveToNext()) cursor.getString(3) else null }.any { it.contains("library_export_history") }
+        })
+        originals.libraryDatabase.execSQL("DROP INDEX library_export_history")
+        originals.libraryDatabase.version = 3
+        HealthOriginalStore(context, name, root).use { reopened ->
+            val upgraded = HealthOriginalLibraryStore(context, reopened, exports)
+            assertEquals(4, reopened.libraryDatabase.version)
+            assertEquals(first, upgraded.history())
+            assertTrue(reopened.libraryDatabase.rawQuery("SELECT 1 FROM sqlite_master WHERE name='library_export_history'", null).use { it.moveToFirst() })
+        }
+        val legacy = sessions.first().copy(state = HealthOriginalExportState.SAVED).json().apply {
+            remove("pending_save"); remove("verified_save_at"); remove("save_failed")
+        }
+        assertEquals(R.string.health_library_legacy_save, HealthOriginalExportSession.from(legacy).title())
+    }
+    @Test fun sharedArchiveUpgradeKeepsHistoryAndItsVerifiedReceipt(): Unit = fixture { name, root, exports, originals, library ->
+        val s = select(library, listOf(import(originals, 0)))
+        library.queue(s.id)
+        assertEquals(HealthOriginalArchiveOutcome.COMPLETE, HealthOriginalArchive.generate(originals, library, s.id))
+        val output = ByteArrayOutputStream()
+        val saved = HealthOriginalArchive.saveVerified(library, library.session(s.id)!!, { output },
+            { output.toByteArray().inputStream() }, { fail("Unexpected cleanup") })
+        val sharedName = "$name-shared.db"
+        try {
+            HealthRecordStore(context, sharedName).use { records ->
+                HealthOriginalStore(context, name, root, records).use { migrated ->
+                    assertEquals(saved, HealthOriginalLibraryStore(context, migrated, exports).history().single())
+                    records.tableDatabase.execSQL("DROP INDEX library_export_history")
+                    records.tableDatabase.version = 8
+                }
+            }
+            HealthRecordStore(context, sharedName).use { records ->
+                HealthOriginalStore(context, name, root, records).use { migrated ->
+                    assertEquals(HealthRecordStore.SCHEMA_VERSION, records.tableDatabase.version)
+                    val history = HealthOriginalLibraryStore(context, migrated, exports)
+                    assertEquals(saved, history.history().single())
+                    assertTrue(records.tableDatabase.rawQuery("SELECT 1 FROM sqlite_master WHERE name='library_export_history'", null).use { it.moveToFirst() })
+                }
+            }
+        } finally { context.deleteDatabase(sharedName) }
     }
     @Test fun missingSourceAfterConfirmationFailsInsteadOfProducingAPartialSuccess(): Unit = fixture { _, _, _, originals, library ->
         val file = import(originals, 0); val s = select(library, listOf(file)); library.queue(s.id); originals.removeOriginalBytes(file)
@@ -210,7 +325,7 @@ class HealthOriginalLibraryDeviceTest {
                 db.execSQL("CREATE INDEX original_page ON originals(imported_at DESC,id DESC)"); db.version = 2
             }
             HealthOriginalStore(context, name, root).use { upgraded ->
-                assertEquals(saved, upgraded.library(HealthLibraryFilter(HealthOriginalKind.TABLE)).originals.single()); assertEquals(3, upgraded.libraryDatabase.version)
+                assertEquals(saved, upgraded.library(HealthLibraryFilter(HealthOriginalKind.TABLE)).originals.single()); assertEquals(4, upgraded.libraryDatabase.version)
                 assertEquals(saved, upgraded.original(saved.id)); assertEquals(0L, HealthOriginalLibraryStore(context, upgraded).count(id()))
             }
         } finally { context.deleteDatabase(name); root.deleteRecursively() }

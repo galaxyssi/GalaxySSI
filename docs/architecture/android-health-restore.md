@@ -11,32 +11,40 @@ the current self profile.
 ## Review
 
 Original bytes stream directly into app-encrypted, uniquely named private
-files. Staged record and conflict rows are encrypted individually in a
+files. Staged record, conflict and secondary source rows are encrypted individually in a
 temporary database. No original or record metadata becomes visible to the
 live health views until commit. App cancellation or leaving the screen
 discards uncommitted staging; startup cleanup removes abandoned batch
 directories only when their live database receipt does not exist.
 
 The preview distinguishes new records, equivalent existing records, and
-conflicts. Conflicts have a paged detail view with the backup and local
-values, including differing notes. Existing and deleted record IDs are
-preserved. Missing originals are explicit and require confirmation. A known
+conflicts. Conflicts have a paged detail view with backup and local values,
+including differing notes and measurement time. Every conflict keeps the
+local version by default. Users can select the backup version for a live
+record with the same ID, metric and source when the incoming evidence is
+unambiguous and there is no unfinished local edit. The final confirmation
+states the number selected. Missing originals are explicit and require confirmation. A known
 missing original may be repaired from verified bytes without changing its
 local ID; identical intact originals are reused. Incoming references are
-remapped by verified digest when needed.
+remapped by verified digest when needed. Additional source links are counted
+separately as new, already present, or skipped. The encrypted stage keeps
+candidate links for a selected replacement, and only verified, nonconflicting
+links become associated with its new revision. Link conflicts are reported
+as a partial restore.
 
 ## Commit
 
 The original staging files and their directory entries are synchronized
-before the SQLite write transaction. Selected metadata and record revisions,
-metric-version clocks, and the encrypted restore receipt are committed in
+before the SQLite write transaction. Selected metadata, record revisions,
+secondary links, metric-version clocks, and the encrypted restore receipt are committed in
 the same database transaction. If the observed local data or profile changes
 after the preview, the previous plan cannot be committed. A late write
 failure leaves no partial live observations, originals, or receipt. The
 receipt records the package ID, date range, result counts and time; reopening
-the same package does not duplicate restored records.
+the same package does not duplicate restored records or source links.
 
-The restore operation does not overwrite conflicted measurements or
-resurrect records deleted on this device. Import into a separate profile,
-explicitly applying a conflicting replacement, historical revision export,
-and live-provider identity reconciliation are not covered by this increment.
+An explicitly selected replacement appends a local revision instead of
+erasing history. Unselected, deleted, different-source, or ambiguous
+records are not replaced. The receipt records the replacements separately.
+Import into a separate profile, historical revision export, and live-provider
+identity reconciliation are not covered by this increment.

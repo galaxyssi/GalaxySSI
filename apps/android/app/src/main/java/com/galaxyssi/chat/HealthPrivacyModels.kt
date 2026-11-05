@@ -69,7 +69,7 @@ internal data class HealthAccessScope(
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && format == if (purpose == HealthAccessPurpose.SAVE_WEEKLY_REPORT) HealthAccessFormat.PDF else null)
             HealthAccessPurpose.HEALTH_ANALYSIS, HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && !reportRecords && format == null)
-            HealthAccessPurpose.SAVE_RECORDS -> require(metrics.isNotEmpty() && count != null && format in listOf(HealthAccessFormat.CSV, HealthAccessFormat.JSON, HealthAccessFormat.XLSX))
+            HealthAccessPurpose.SAVE_RECORDS -> require(metrics.isNotEmpty() && count != null && format in listOf(HealthAccessFormat.CSV, HealthAccessFormat.JSON, HealthAccessFormat.XLSX, HealthAccessFormat.ZIP))
             HealthAccessPurpose.SAVE_ORIGINALS -> require(count != null && format in listOf(HealthAccessFormat.ZIP, HealthAccessFormat.ORIGINAL))
             HealthAccessPurpose.GENERATE_BACKUP -> require(count != null && format == HealthAccessFormat.GHBACKUP && fields.isEmpty())
             HealthAccessPurpose.DELETE_PROFILE -> require(count != null && drafts != null && basicCount != null && format == null)
@@ -96,7 +96,7 @@ internal data class HealthAccessScope(
         fun records(session: HealthRecordExportSession) = with(session.scope) {
             HealthAccessScope(HealthAccessPurpose.SAVE_RECORDS, metrics, from, until, zone, count = session.count,
                 source = if (originalId.isEmpty()) HealthAccessSource.ALL else HealthAccessSource.ORIGINAL,
-                format = HealthAccessFormat.valueOf(format.name), annotations = annotations)
+                format = if (bundlesOriginals) HealthAccessFormat.ZIP else HealthAccessFormat.valueOf(format.name), annotations = annotations)
         }
         fun originals(count: Long, zip: Boolean = false) = HealthAccessScope(HealthAccessPurpose.SAVE_ORIGINALS, count = count,
             format = if (zip) HealthAccessFormat.ZIP else HealthAccessFormat.ORIGINAL)

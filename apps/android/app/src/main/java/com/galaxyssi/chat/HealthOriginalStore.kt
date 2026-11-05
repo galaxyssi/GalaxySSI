@@ -259,6 +259,14 @@ internal class HealthOriginalStore(
     @Synchronized fun importOriginal(
         id: String, input: InputStream, name: String, mime: String, source: String,
         checkCancelled: () -> Unit = {}, progress: (Long) -> Unit = {}
+    ): HealthOriginal = writeOriginal(id, input, name, mime, source, checkCancelled, progress)
+
+    private fun writeOriginal(
+        id: String, input: InputStream, name: String, mime: String, source: String,
+        checkCancelled: () -> Unit, progress: (Long) -> Unit = {}, privateReview: Boolean? = null,
+        cropFiles: HealthCropFiles? = null,
+        inspect: ((() -> InputStream) -> Unit)? = null,
+        publish: ((SQLiteDatabase, HealthOriginal) -> Unit)? = null
     ): HealthOriginal {
         require(validId(id))
         originalForJob(id)?.takeIf(::present)?.let { return it }
@@ -266,16 +274,16 @@ internal class HealthOriginalStore(
         val now = System.currentTimeMillis()
         val job = job(id)
         val capturedAt = job?.createdAt ?: now
-        val reviewOnly = job?.let { !it.keepOriginal && !it.originalOnly } == true
+        val reviewOnly = privateReview ?: (job?.let { !it.keepOriginal && !it.originalOnly } == true)
         val folder = SimpleDateFormat("yyyy/MM", Locale.ROOT).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date(capturedAt))
-        val relative = "$folder/$id-$streamId.ghealth"
-        val destination = File(root, relative)
+        val relative = cropFiles?.relativePath ?: "$folder/$id-$streamId.ghealth"
+        val destination = cropFiles?.destination ?: File(root, relative)
         check(destination.parentFile!!.isDirectory || destination.parentFile!!.mkdirs())
         val existing = originalForJob(id)
-        destination.parentFile!!.listFiles().orEmpty().filter {
+        if (cropFiles == null) destination.parentFile!!.listFiles().orEmpty().filter {
             it.name.startsWith("$id-") && it.extension in listOf("partial", "ghealth") && it != existing?.let(::file)
         }.forEach { check(it.delete()) { "Cannot clean interrupted health import" } }
-        val staging = File(destination.parentFile, "$id-$streamId.partial")
+        val staging = cropFiles?.staging ?: File(destination.parentFile, "$id-$streamId.partial")
         val key = ByteArray(32).also(SecureRandom()::nextBytes)
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
@@ -305,6 +313,12 @@ internal class HealthOriginalStore(
             }
             require(total > 0) { "Empty health original" }
             checkCancelled(); progress(total)
+            inspect?.invoke {
+                val raw = staging.inputStream()
+                try { primitive(key).newDecryptingStream(raw, aad("stream", streamId)) }
+                catch (failure: Throwable) { raw.close(); throw failure }
+            }
+            checkCancelled()
             val hash = digest.digest().joinToString("") { "%02x".format(it) }
             val token = if (reviewOnly) "$REVIEW_PREFIX$id" else AgentMemoryIndexKey.token("$databaseName|health-original-digest|$hash")
             val db = helper.writableDatabase
@@ -316,7 +330,9 @@ internal class HealthOriginalStore(
                 } ?: existing?.takeIf { reviewOnly && it.reviewOnly && it.id == id }
                 if (previous != null) check(previous.sha256 == hash && previous.size == total && previous.reviewOnly == reviewOnly) { "Health digest index mismatch" }
                 if (previous != null && present(previous)) {
-                    mapImport(db, id, previous.id); db.setTransactionSuccessful()
+                    mapImport(db, id, previous.id)
+                    publish?.invoke(db, previous)
+                    checkCancelled(); db.setTransactionSuccessful()
                     return previous
                 }
                 val original = HealthOriginal(previous?.id ?: id, streamId, previous?.name ?: name.take(240).ifBlank { "document" }, previous?.mime ?: mime.take(120), total,
@@ -328,8 +344,9 @@ internal class HealthOriginalStore(
                 }
                 if (previous == null) db.insertOrThrow("originals", null, values)
                 else check(db.update("originals", values, "id=?", arrayOf(previous.id)) == 1)
-                Files.move(staging.toPath(), destination.toPath())
+                if (cropFiles == null) Files.move(staging.toPath(), destination.toPath()) else cropFiles.publish()
                 mapImport(db, id, original.id)
+                publish?.invoke(db, original)
                 checkCancelled(); db.setTransactionSuccessful(); committed = true
                 return original
             } finally {
@@ -338,6 +355,54 @@ internal class HealthOriginalStore(
                 notifyChanged("originals")
             }
         } finally { staging.delete(); key.fill(0) }
+    }
+
+    @Synchronized internal fun saveCrop(id: String, input: InputStream, spec: HealthCropSpec,
+        checkCancelled: () -> Unit = {}): HealthOriginal =
+        HealthCropRecovery(root).write(id, ::cropReferenced) { files -> saveCrop(id, input, spec, files, checkCancelled) }
+
+    @Synchronized internal fun recoverCropWrites() = HealthCropRecovery(root).recover(::cropReferenced)
+
+    private fun cropReferenced(id: String, relativePath: String) = originalForJob(id)?.relativePath == relativePath
+
+    private fun saveCrop(id: String, input: InputStream, spec: HealthCropSpec, files: HealthCropFiles,
+        checkCancelled: () -> Unit): HealthOriginal {
+        check(job(id) == null && originalForJob(id) == null)
+        val parent = requireNotNull(original(spec.parentId)).also { check(present(it) && it.mime.startsWith("image/")) }
+        val batch = spec.batchId?.let(::editableCapture)
+        val mode = batch?.mode ?: spec.mode
+        val keepOriginal = batch?.keepOriginal ?: spec.keepOriginal
+        fun pageToReplace(): HealthPhotoPage? = spec.pageId?.let { id ->
+            val page = requireNotNull(capturePage(id))
+            val prior = requireNotNull(job(id))
+            check(page.batchId == spec.batchId && prior.originalId == parent.id &&
+                prior.state == HealthImportState.CAPTURE_READY && page.quality != null)
+            page
+        }
+        pageToReplace()
+        var quality: HealthPhotoQuality? = null
+        val cropped = writeOriginal(id, input, spec.name, spec.mime, "crop:${parent.id}", checkCancelled,
+            privateReview = !keepOriginal, cropFiles = files,
+            inspect = { open -> quality = HealthPhotoInspector.inspect(open, report = batch != null && mode == "report") },
+            publish = { db, derivative ->
+                check(original(parent.id) == parent && present(parent))
+                if (batch != null) check(editableCapture(batch.id) == batch)
+                val page = pageToReplace()
+                val next = HealthImportJob(id, HealthOriginalContentProvider.uri(context, derivative.id, spec.fixture).toString(),
+                    System.currentTimeMillis(), mode = mode, name = derivative.name, mime = derivative.mime,
+                    totalBytes = derivative.size, copiedBytes = derivative.size, originalId = derivative.id,
+                    state = if (page == null) HealthImportState.QUEUED else HealthImportState.CAPTURE_READY,
+                    captureBatch = batch?.id.orEmpty(), keepOriginal = keepOriginal)
+                db.insertOrThrow("jobs", null, jobValues(next))
+                if (page != null) {
+                    check(db.delete("capture_pages", "job_id=?", arrayOf(page.jobId)) == 1)
+                    check(db.delete("jobs", "id=?", arrayOf(page.jobId)) == 1)
+                    db.insertOrThrow("capture_pages", null, pageValues(page.copy(jobId = id, quality = requireNotNull(quality))))
+                }
+            })
+        if (batch != null && parent.reviewOnly) runCatching { releaseReviewOriginal(parent.id) }
+        notifyChanged("capture"); notifyChanged()
+        return cropped
     }
     private fun mapImport(db: SQLiteDatabase, job: String, original: String) {
         db.insertWithOnConflict("imports", null, ContentValues().apply { put("job_id", job); put("original_id", original) }, SQLiteDatabase.CONFLICT_REPLACE)
@@ -521,12 +586,16 @@ internal class HealthOriginalStore(
         } finally { db.endTransaction() }
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String, private val classify: (String, ByteArray) -> String) : SQLiteOpenHelper(context, name, null, 3) {
+    private class Database(context: Context, name: String, private val classify: (String, ByteArray) -> String) : SQLiteOpenHelper(context, name, null, 4) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) = createOriginalTables(db)
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..2 && newVersion == 3)
+            check(oldVersion in 1..3 && newVersion == 4)
+            if (oldVersion == 3) {
+                HealthOriginalLibraryStore.createHistoryIndex(db)
+                return
+            }
             if (oldVersion < 2) captureSchema(db)
             db.execSQL("ALTER TABLE originals ADD COLUMN kind TEXT NOT NULL DEFAULT 'OTHER'")
             db.rawQuery("SELECT id,payload FROM originals", null).use { rows -> while (rows.moveToNext()) {

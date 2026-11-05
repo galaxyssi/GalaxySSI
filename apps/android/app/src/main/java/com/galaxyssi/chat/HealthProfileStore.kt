@@ -9,7 +9,7 @@ import java.util.UUID
 import org.json.JSONObject
 
 /** Self-reported context has its own encrypted rows, never measurement or generic memory records. */
-internal class HealthProfileStore(private val context: Context, private val name: String = "health_profiles_v1.db",
+internal class HealthProfileStore(private val context: Context, private val name: String = DEFAULT_DB,
     private val privacyDatabase: String = HealthPrivacyStore.DEFAULT_DB) : Closeable {
     private val helper = Database(context, name); private val db get() = helper.writableDatabase
     private fun aad(kind: String, key: String) = "$name|health-profile-v1|self|$kind|$key".toByteArray(Charsets.UTF_8)
@@ -143,9 +143,15 @@ internal class HealthProfileStore(private val context: Context, private val name
         if (entry.token != token) throw HealthProfileConflict()
         db.delete("entries", "id=?", arrayOf(id)); db.delete("drafts", "id=?", arrayOf("edit:$id")); tick("drafts"); tick("category:${entry.kind.name}"); tick("profile"); Unit
     }
-    fun capture(fields: Set<HealthProfileField>, entryIds: Set<String>): HealthProfileContext = HealthPrivacyStore.track(context,
+    fun capture(fields: Set<HealthProfileField>, entryIds: Set<String>, expectedEntries: Map<String, String> = emptyMap()): HealthProfileContext = HealthPrivacyStore.track(context,
         HealthAccessScope(HealthAccessPurpose.PROFILE_CONTEXT, fields = fields, count = entryIds.size.toLong()), privacyDatabase) { transaction {
-        val selected = fields.associateWith(::cell); val entries = entryIds.sorted().map { requireNotNull(entry(it)) }
+        require(entryIds.containsAll(expectedEntries.keys))
+        val selected = fields.associateWith(::cell)
+        val entries = entryIds.sorted().map { id ->
+            val saved = entry(id) ?: throw HealthProfileConflict()
+            if (expectedEntries[id]?.let { it != saved.token } == true) throw HealthProfileConflict()
+            saved
+        }
         HealthProfileContext(selected.mapValues { it.value.value }, entries, HealthProfileStamp(generation(),
             selected.mapKeys { "field:${it.key.name}" }.mapValues { it.value.token } + entries.associate { "entry:${it.id}" to it.token }))
     } }
@@ -182,5 +188,8 @@ internal class HealthProfileStore(private val context: Context, private val name
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { error("Unsupported health-profile upgrade") }
     }
-    companion object { fun changes(context: Context, name: String = "health_profiles_v1.db") = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/profiles/" + android.net.Uri.encode(name)) }
+    companion object {
+        const val DEFAULT_DB = "health_profiles_v1.db"
+        fun changes(context: Context, name: String = DEFAULT_DB) = android.net.Uri.parse("content://${context.packageName}.health-originals/changes/profiles/" + android.net.Uri.encode(name))
+    }
 }

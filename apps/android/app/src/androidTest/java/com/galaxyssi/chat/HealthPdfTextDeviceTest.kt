@@ -9,8 +9,12 @@ import android.content.Intent
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.view.inspector.WindowInspector
+import android.widget.EditText
+import android.widget.Button
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
+import androidx.lifecycle.Lifecycle
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -98,6 +102,160 @@ class HealthPdfTextDeviceTest {
         assertEquals(HealthImportOutcome.FAILED, HealthImportPipeline(context, names.records).run(store, encrypted.id))
         assertEquals("pdf_password", store.job(encrypted.id)?.error)
         assertEquals(0, store.job(encrypted.id)?.nextPage)
+    }
+
+    @Test fun protectedMixedPdfResumesWithoutStoringPasswordAndKeepsExactOriginal() = isolated { names, store ->
+        val bytes = pdf {
+            addTextPage(this)
+            addScan(this, header = false)
+            protect(StandardProtectionPolicy("fixture-owner", "fixture-password", AccessPermission()).apply { encryptionKeyLength = 128; setPreferAES(true) })
+        }
+        try {
+            val job = import(store, bytes)
+            val pipeline = HealthImportPipeline(context, names.records)
+            assertEquals(HealthImportOutcome.FAILED, pipeline.run(store, job.id))
+            val wrong = "incorrect-fixture-password".toCharArray()
+            assertEquals(HealthImportOutcome.FAILED, HealthProtectedPdfImport.run(context, store, job.id, wrong, { false }))
+            assertTrue(wrong.all { it == '\u0000' })
+            assertEquals("pdf_password_wrong", store.job(job.id)?.error)
+            assertEquals(0, store.job(job.id)?.nextPage)
+            assertTrue(store.pendingJobs().none { it.id == job.id })
+            val right = "fixture-password".toCharArray()
+            assertEquals(HealthImportOutcome.RETRY, HealthProtectedPdfImport.run(context, store, job.id, right,
+                { store.job(job.id)?.nextPage == 1 }))
+            assertTrue(right.all { it == '\u0000' })
+            assertEquals("pdf_password_interrupted", store.job(job.id)?.error)
+            val first = requireNotNull(store.page(job.id, 1))
+            assertEquals(HealthRecognition.PDF_TEXT, first.recognition)
+            assertTrue(first.lines.any { it.text.contains("Glucose") })
+            assertEquals(HealthImportOutcome.FAILED, pipeline.run(store, job.id))
+            assertEquals("pdf_password_interrupted", store.job(job.id)?.error)
+            val visited = mutableListOf<Int>()
+            assertEquals(HealthImportOutcome.COMPLETE, HealthProtectedPdfImport.run(context, store, job.id,
+                "fixture-password".toCharArray(), { false }) { page, count -> visited += page; assertEquals(2, count) })
+            assertEquals(listOf(2), visited)
+            assertEquals(first, store.page(job.id, 1))
+            val scan = requireNotNull(store.page(job.id, 2))
+            assertEquals(HealthRecognition.OCR, scan.recognition)
+            assertTrue(scan.lines.any { it.text.contains("Glucose", true) })
+            assertEquals(HealthImportState.REVIEW, store.job(job.id)?.state)
+            val original = requireNotNull(store.originalForJob(job.id))
+            ByteArrayOutputStream().use { output ->
+                store.copyVerified(original, output)
+                assertArrayEquals(bytes, output.toByteArray())
+            }
+            HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
+        } finally { bytes.fill(0) }
+    }
+
+    @Test fun protectedPdfHonorsExtractionPermissionButAllowsLocalPreview() = isolated { names, store ->
+        val job = import(store, pdf {
+            addTextPage(this)
+            val permission = AccessPermission().apply { setCanExtractContent(false) }
+            protect(StandardProtectionPolicy("fixture-owner", "fixture-password", permission).apply { encryptionKeyLength = 256 })
+        })
+        assertEquals(HealthImportOutcome.FAILED, HealthImportPipeline(context, names.records).run(store, job.id))
+        assertEquals(HealthImportOutcome.FAILED, HealthProtectedPdfImport.run(context, store, job.id,
+            "fixture-password".toCharArray(), { false }))
+        assertEquals("pdf_permission", store.job(job.id)?.error)
+        assertEquals(0, store.job(job.id)?.nextPage)
+        val original = requireNotNull(store.originalForJob(job.id))
+        val password = "fixture-password".toCharArray()
+        HealthPdfTextReader.openProtected(context, store, original, password) {}.use { pdf ->
+            assertTrue(password.all { it == '\u0000' })
+            assertFalse(pdf.canExtract)
+            val image = pdf.render(0, 600, 400_000)
+            try {
+                val pixels = IntArray(image.width * image.height)
+                image.getPixels(pixels, 0, image.width, 0, 0, image.width, image.height)
+                assertTrue(pixels.count { Color.red(it) < 100 } > 100)
+            } finally { image.recycle() }
+        }
+        assertEquals(HealthImportOutcome.COMPLETE, HealthProtectedPdfImport.run(context, store, job.id,
+            "fixture-owner".toCharArray(), { false }))
+        assertEquals(HealthImportState.REVIEW, store.job(job.id)?.state)
+    }
+
+    @Test fun nativeQueuePasswordDialogCancelsRejectsWrongPasswordAndUnlocksForReview() = isolated { names, store ->
+        assumeFalse("Native unlock requires an unlocked Android 10+ display", android.os.Build.VERSION.SDK_INT < 29 ||
+            context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val job = import(store, pdf {
+            addTextPage(this)
+            protect(StandardProtectionPolicy("fixture-owner", "fixture-password", AccessPermission()))
+        })
+        assertEquals(HealthImportOutcome.FAILED, HealthImportPipeline(context, names.records).run(store, job.id))
+        val intent = Intent(context, HealthCaptureActivity::class.java).putExtra("health_review_test_id", names.fixture)
+        ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
+            fun clickLabel(id: Int, window: Boolean = false) {
+                val deadline = SystemClock.elapsedRealtime() + 12_000
+                do {
+                    var clicked = false
+                    scenario.onActivity {
+                        val views = if (window) WindowInspector.getGlobalWindowViews().flatMap(::descendants) else descendants(it.window.decorView)
+                        val labels = views.filterIsInstance<TextView>().filter { v -> v.isShown && v.text == context.getString(id) }
+                        val label = if (window) labels.filterIsInstance<Button>().lastOrNull() ?: labels.lastOrNull() else labels.lastOrNull()
+                        var target: View? = label
+                        while (target != null && !target.isClickable) target = target.parent as? View
+                        clicked = target?.performClick() == true
+                    }
+                    if (clicked) return
+                    SystemClock.sleep(50)
+                } while (SystemClock.elapsedRealtime() < deadline)
+                fail("Could not click ${context.getString(id)}")
+            }
+            fun password(value: String) {
+                scenario.onActivity {
+                    WindowInspector.getGlobalWindowViews().flatMap(::descendants).filterIsInstance<EditText>()
+                        .single { field -> field.isShown && field.tag == "health-pdf-password-input" }.setText(value)
+                }
+                clickLabel(R.string.health_pdf_unlock, window = true)
+            }
+            fun await(error: String, state: HealthImportState) {
+                val deadline = SystemClock.elapsedRealtime() + 12_000
+                do {
+                    if (store.job(job.id)?.let { it.state == state && it.error == error } == true) return
+                    SystemClock.sleep(50)
+                } while (SystemClock.elapsedRealtime() < deadline)
+                fail("Expected $state / $error, got ${store.job(job.id)?.state} / ${store.job(job.id)?.error}")
+            }
+            clickLabel(R.string.health_pdf_unlock)
+            clickLabel(R.string.common_cancel, window = true)
+            await("pdf_password", HealthImportState.FAILED)
+            clickLabel(R.string.health_pdf_unlock)
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.onActivity {
+                assertFalse(WindowInspector.getGlobalWindowViews().flatMap(::descendants).any { v ->
+                    v.isShown && v.tag == "health-pdf-password-input"
+                })
+            }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            clickLabel(R.string.health_pdf_unlock)
+            password("wrong")
+            await("pdf_password_wrong", HealthImportState.FAILED)
+            clickLabel(R.string.health_pdf_unlock)
+            password("fixture-password")
+            await("", HealthImportState.REVIEW)
+            clickLabel(R.string.health_review_title)
+            fun waitForLabel(label: String) {
+                val deadline = SystemClock.elapsedRealtime() + 12_000
+                do {
+                    var ready = false
+                    scenario.onActivity {
+                        ready = WindowInspector.getGlobalWindowViews().flatMap(::descendants)
+                            .filterIsInstance<TextView>().any { v -> v.isShown && v.text == label }
+                    }
+                    if (ready) return
+                    SystemClock.sleep(50)
+                } while (SystemClock.elapsedRealtime() < deadline)
+                fail("Missing native label: $label")
+            }
+            waitForLabel(context.getString(R.string.health_review_pdf_text_method, 1))
+            clickLabel(R.string.health_view_original)
+            clickLabel(R.string.health_open_original)
+            clickLabel(R.string.health_pdf_unlock, window = true)
+            password("fixture-password")
+            waitForLabel(context.getString(R.string.health_preview_page, 1, 1))
+        }
     }
 
     @Test fun nativeReviewLabelsTheActualSourceOfEachPage() = isolated { names, store ->

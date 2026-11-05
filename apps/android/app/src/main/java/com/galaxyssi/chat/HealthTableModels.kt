@@ -1,16 +1,20 @@
 package com.galaxyssi.chat
 
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
+import java.time.temporal.ChronoField
 import java.util.Locale
 import org.json.JSONObject
 
 internal enum class HealthTableState { READING, SHEET_SELECTION, MAPPING, VALIDATING, READY, SAVING, SAVED, UNDOING, UNDONE, FAILED }
 internal val HealthTableState.working: Boolean get() = this in listOf(HealthTableState.READING, HealthTableState.VALIDATING, HealthTableState.SAVING, HealthTableState.UNDOING)
-internal enum class HealthTableRowState { PENDING, VALID, DUPLICATE, MISSING, INVALID, SAVED, UNDONE, EDITED }
+internal enum class HealthTableRowState { PENDING, VALID, DUPLICATE, MISSING, INVALID, SAVED, LINKED, UNDONE, UNLINKED, EDITED }
 internal enum class HealthTableDate(val pattern: String) {
     ISO("ISO 8601"), YMD("uuuu-MM-dd HH:mm"), YMD_SECONDS("uuuu-MM-dd HH:mm:ss"),
     SLASH_YMD("uuuu/MM/dd HH:mm"), DMY("dd/MM/uuuu HH:mm"), MDY("MM/dd/uuuu HH:mm"), EXCEL("Excel")
@@ -59,18 +63,19 @@ internal data class HealthTableBatch(
     val headers: List<String> = emptyList(), val rows: Long = 0, val cursor: Long = 0,
     val state: HealthTableState = HealthTableState.READING, val mapping: HealthTableMapping = HealthTableMapping(),
     val mappingRevision: Int = 0, val error: String = "", val sheets: List<HealthXlsxSheet> = emptyList(),
-    val sheetIndex: Int = -1, val headerRow: Int = 1, val date1904: Boolean = false
+    val sheetIndex: Int = -1, val headerRow: Int = 1, val date1904: Boolean = false, val linkDuplicates: Boolean = false
 ) {
     fun json() = JSONObject().put("id", id).put("original", originalId).put("sha256", sha256).put("name", name).put("format", format)
         .put("headers", org.json.JSONArray(headers)).put("rows", rows).put("cursor", cursor).put("state", state.name)
         .put("mapping", mapping.json()).put("revision", mappingRevision).put("error", error)
         .put("sheets", org.json.JSONArray(sheets.map { it.json() })).put("sheet_index", sheetIndex).put("header_row", headerRow).put("date_1904", date1904)
+        .put("link_duplicates", linkDuplicates)
     companion object {
         fun from(j: JSONObject) = HealthTableBatch(j.getString("id"), j.getString("original"), j.getString("sha256"), j.getString("name"),
             j.getString("format"), j.getJSONArray("headers").let { a -> (0 until a.length()).map(a::getString) }, j.getLong("rows"),
             j.getLong("cursor"), HealthTableState.valueOf(j.getString("state")), HealthTableMapping.from(j.getJSONObject("mapping")),
             j.getInt("revision"), j.getString("error"), j.optJSONArray("sheets")?.let { a -> (0 until a.length()).map { HealthXlsxSheet.from(a.getJSONObject(it)) } }.orEmpty(),
-            j.optInt("sheet_index", -1), j.optInt("header_row", 1), j.optBoolean("date_1904"))
+            j.optInt("sheet_index", -1), j.optInt("header_row", 1), j.optBoolean("date_1904"), j.optBoolean("link_duplicates"))
     }
 }
 internal data class HealthTablePreview(val row: HealthTableRow, val state: HealthTableRowState, val issue: String, val recordId: String = "")
@@ -111,6 +116,16 @@ internal object HealthTablePolicy {
         require(offsets.size == 1) { "Ambiguous or nonexistent local time; use an ISO timestamp with its offset" }
         return time.toInstant(offsets.single()).toEpochMilli()
     }
+    private fun dateOnlyTime(mapping: HealthTableMapping): LocalTime {
+        require(mapping.dateOnlyTime.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")))
+        return LocalTime.parse(mapping.dateOnlyTime)
+    }
+    private fun xlsxDateOnly(raw: String, mapping: HealthTableMapping): Long? = runCatching {
+        val parsed = DateTimeFormatter.ISO_DATE.parse(raw.trim())
+        val local = LocalDate.from(parsed).atTime(dateOnlyTime(mapping))
+        if (parsed.isSupported(ChronoField.OFFSET_SECONDS)) local.toInstant(ZoneOffset.from(parsed)).toEpochMilli()
+        else localTime(local, mapping.zone)
+    }.getOrNull()
     fun evaluate(batch: HealthTableBatch, row: HealthTableRow, now: Long = System.currentTimeMillis()): HealthTableEvaluation {
         fun error(state: HealthTableRowState, issue: String) = HealthTableEvaluation(null, state, issue)
         if (row.issue.isNotBlank()) return error(HealthTableRowState.INVALID, row.issue)
@@ -124,12 +139,14 @@ internal object HealthTablePolicy {
         val values = m.metric.fields.associateWith { field -> m.columns[field].let { row.numbers[it] ?: row.cells[it] }.orEmpty().trim() }
         if (m.metric.requiredFields.any { values[it].isNullOrBlank() } || row.cells[m.timeColumn].isNullOrBlank())
             return error(HealthTableRowState.MISSING, "missing")
-        val time = if (m.date != HealthTableDate.EXCEL) measuredAt(row.cells[m.timeColumn].orEmpty(), m) else runCatching {
+        val rawTime = row.cells[m.timeColumn].orEmpty()
+        val time = if (m.date != HealthTableDate.EXCEL) {
+            measuredAt(rawTime, m) ?: if (batch.format == "xlsx" && m.date == HealthTableDate.ISO) xlsxDateOnly(rawTime, m) else null
+        } else runCatching {
             require(batch.format == "xlsx")
             var local = LocalDateTime.parse(requireNotNull(row.excelDates[m.timeColumn]))
             if (row.cells[m.timeColumn]?.toBigDecimalOrNull()?.remainder(java.math.BigDecimal.ONE)?.signum() == 0) {
-                require(m.dateOnlyTime.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")))
-                local = local.toLocalDate().atTime(java.time.LocalTime.parse(m.dateOnlyTime))
+                local = local.toLocalDate().atTime(dateOnlyTime(m))
             }
             localTime(local, m.zone)
         }.getOrNull()
@@ -143,7 +160,8 @@ internal object HealthTablePolicy {
         val source = (listOf("Row ${row.sourceRow}", "${m.timeColumn}: ${row.cells[m.timeColumn]}") +
             m.metric.fields.mapNotNull { field -> m.columns[field]?.takeIf(String::isNotBlank)?.let { "$it: ${row.cells[it].orEmpty()}" } } +
             listOf("Unit: $rawUnit") + (if (m.referenceColumn.isBlank()) emptyList() else listOf("Reference [${m.referenceColumn}]: ${row.cells[m.referenceColumn].orEmpty()}")) +
-            if (batch.format == "xlsx") listOf("Sheet: $sheet", "Excel epoch: ${if (batch.date1904) 1904 else 1900}",
+            if (batch.format == "xlsx") listOf("Sheet: $sheet",
+                if (m.date == HealthTableDate.EXCEL) "Excel epoch: ${if (batch.date1904) 1904 else 1900}" else "Time format: ${m.date.pattern}",
                 "Interpreted time: ${java.time.Instant.ofEpochMilli(time)}; zone: ${m.zone}") +
                 (if (m.dateOnlyTime.isBlank()) emptyList() else listOf("Confirmed date-only time: ${m.dateOnlyTime}")) +
                 formulas.map { (column, formula) -> "${row.addresses[column].orEmpty()} $column: =$formula; cached=${row.cells[column].orEmpty()} (not recalculated)" }

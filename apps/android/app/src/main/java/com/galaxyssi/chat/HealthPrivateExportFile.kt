@@ -6,6 +6,7 @@ import java.io.FilterOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Files
+import java.nio.channels.SeekableByteChannel
 import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.UUID
@@ -46,7 +47,19 @@ internal class HealthPrivateExportFile(private val directory: File) {
         val aead = primitive(key); val raw = file(id, attempt).inputStream()
         return try { aead.newDecryptingStream(raw, aad) } catch (failure: Throwable) { raw.close(); throw failure }
     }
+    fun readChannel(id: String, attempt: String, key: ByteArray, aad: ByteArray): SeekableByteChannel {
+        val aead = primitive(key)
+        val raw = Files.newByteChannel(file(id, attempt).toPath())
+        return try { aead.newSeekableDecryptingChannel(raw, aad) }
+        catch (failure: Throwable) { raw.close(); throw failure }
+    }
     companion object {
+        private val discard = object : OutputStream() {
+            override fun write(value: Int) = Unit
+            override fun write(bytes: ByteArray, offset: Int, length: Int) = Unit
+        }
+        fun verify(input: InputStream, expected: HealthExportDigest) = copyVerified(input, discard, expected)
+
         fun primitive(key: ByteArray) = AesGcmHkdfStreaming(key, "HmacSha256", 32, 64 * 1024, 0)
         fun borrowed(output: OutputStream) = object : FilterOutputStream(output) {
             override fun write(bytes: ByteArray, offset: Int, length: Int) = out.write(bytes, offset, length)

@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 
 /** Read-only audit view: a plotted historical point must not silently open a later edited value. */
 class HealthRecordRevisionActivity : Activity() {
+    private val names by lazy { intent.healthNavigationDatabases() }
     private val ui by lazy { HealthCenterViews(this) }; private val worker = Executors.newSingleThreadExecutor(); private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout; private var active = false; private var generation = 0
     private var id = ""; private var revision = 0
@@ -37,7 +38,7 @@ class HealthRecordRevisionActivity : Activity() {
     private fun load() {
         val token = ++generation; body.removeAllViews(); body.addView(ui.text(getString(R.string.health_loading)))
         worker.execute {
-            val result = runCatching { HealthRecordStore(applicationContext).use { it.revision(id, revision) } }
+            val result = runCatching { HealthRecordStore(applicationContext, names.records).use { it.revision(id, revision) } }
             main.post { if (!active || token != generation) return@post
                 body.removeAllViews()
                 result.fold({ record ->
@@ -45,7 +46,7 @@ class HealthRecordRevisionActivity : Activity() {
                     val draft = record.draft
                     val content = ui.column().apply { setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(24)) }
                     content.addView(ui.text(getString(draft.metric.titleResource()), 18f, bold = true))
-                    ui.add(content, ui.text(healthDisplayValue(draft), 23f, bold = true), 8)
+                    ui.add(content, ui.text(healthDisplayValue(draft), 23f, bold = true).apply { tag = "health-revision-value" }, 8)
                     ui.add(content, ui.text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(draft.measuredAt)), 14f, muted = true), 12)
                     ui.add(content, ui.text(getString(R.string.health_revision, record.revision), 13f, muted = true), 6)
                     ui.add(content, ui.text(getString(healthRecordSourceResource(record.source))), 12)
@@ -57,11 +58,11 @@ class HealthRecordRevisionActivity : Activity() {
                     if (draft.reference.isNotBlank()) { ui.add(content, ui.text(getString(R.string.health_report_reference), 13f, muted = true), 12); content.addView(ui.text(draft.reference)) }
                     if (draft.note.isNotBlank()) ui.add(content, ui.text(draft.note), 12)
                     draft.evidence?.let { evidence ->
-                        ui.add(content, ui.row(getString(R.string.health_view_original)) { startActivity(Intent(this, HealthCaptureActivity::class.java).putExtra("original", evidence.originalId)) }, 12)
+                        ui.add(content, ui.row(getString(R.string.health_view_original)) { startActivity(Intent(this, HealthCaptureActivity::class.java).putExtra("original", evidence.originalId).putHealthNavigationFixture(names)) }, 12)
                         ui.add(content, ui.text(evidence.rawText, 13f, muted = true).apply { setTextIsSelectable(true) }, 8)
                     }
-                    ui.add(content, ui.row(getString(R.string.health_trend_current_record)) { startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", id)) }, 16)
-                    ui.add(content, ui.row(getString(R.string.health_revision_history)) { startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", id).putExtra("health_metric", draft.metric.name).putExtra("health_history", true)) })
+                    ui.add(content, ui.row(getString(R.string.health_trend_current_record)) { startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", id).putHealthNavigationFixture(names)) }, 16)
+                    ui.add(content, ui.row(getString(R.string.health_revision_history)) { startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_record", id).putExtra("health_metric", draft.metric.name).putExtra("health_history", true).putHealthNavigationFixture(names)) })
                     body.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
                 }, { body.addView(ui.text(getString(R.string.health_storage_error))); body.addView(ui.command(R.string.common_retry) { load() }) })
             }

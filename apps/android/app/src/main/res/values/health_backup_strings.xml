@@ -25,6 +25,7 @@
     <string name="health_backup_owner">Profile owner: %1$s</string>
     <string name="health_backup_self">Self (unnamed)</string>
     <string name="health_backup_counts">%1$d records · %2$d originals\n%3$d linked records · %4$d missing originals</string>
+    <string name="health_backup_secondary_count">%1$d additional source links</string>
     <string name="health_backup_dates">Measurements: %1$s to %2$s</string>
     <string name="health_backup_password">Backup password</string>
     <string name="health_backup_repeat">Repeat backup password</string>

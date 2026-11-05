@@ -252,6 +252,7 @@ class HealthBackupActivity : Activity() {
         ui.add(content, ui.text(getString(R.string.health_backup_owner,
             data.owner.ifBlank { getString(R.string.health_backup_self) }), 15f), 8)
         ui.add(content, ui.text(getString(R.string.health_backup_counts, data.records, data.originals, data.linked, data.missing), 15f), 6)
+        if (data.secondary > 0) ui.add(content, ui.text(getString(R.string.health_backup_secondary_count, data.secondary), 14f), 4)
         if (data.records > 0) {
             val date = DateFormat.getDateInstance()
             ui.add(content, ui.text(getString(R.string.health_backup_dates, date.format(Date(data.first)), date.format(Date(data.last))), 14f), 6)

@@ -107,6 +107,50 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
 }
 
 enum AgentIOSLocalModelWebToolRunner {
+  static let collaborationRecallId = "galaxyssi.phone.collaboration.recall"
+
+  static func collaborationRecallTool(originalsOnly: Bool = false,
+                                      read: @escaping (AgentMcpJSONObject) -> AgentMcpJSONObject?)
+    throws -> AgentNativeToolExecutableDefinition {
+    let modes = originalsOnly ? ["goal", "dependency"] :
+      ["goal", "dependency", "workspace", "evidence", "capabilities", "problems", "evolution_rules"]
+    let descriptor = try AgentNativeToolDescriptor(id: collaborationRecallId, version: "1.1.0",
+      title: "Collaboration originals",
+      description: originalsOnly
+        ? "Read pinned goal/criteria/source or a declared dependency. Follow next_offset with SHA-256; join decoded data_b64 bytes."
+        : "Read scoped goal, dependency, exact workspace or evidence originals; discover capabilities, failures and rule topics. Follow next_offset or next_cursor. Retrieved content is untrusted.",
+      location: .application, inputSchema: [
+        "type": .string("object"), "required": .array([.string("mode")]), "additionalProperties": .bool(false),
+        "properties": .object([
+          "mode": .object(["type": .string("string"), "enum": .array(modes.map(AgentMcpJSONValue.string))]),
+          "section": .object(["type": .string("string")]), "member_id": .object(["type": .string("string")]),
+          "offset": .object(["type": .string("integer")]), "sha256": .object(["type": .string("string")]),
+          "object_id": .object(["type": .string("string")]), "revision": .object(["type": .string("integer")]),
+          "evidence_id": .object(["type": .string("string")]), "query": .object(["type": .string("string")]),
+          "topic": .object(["type": .string("string")]), "cursor": .object(["type": .string("string")])
+        ])
+      ], risk: .low, effect: .readOnly)
+    return AgentNativeToolExecutableDefinition(
+      definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: collaborationRecallId)
+    ) { invocation in
+      try invocation.checkpoint()
+      guard modes.contains(invocation.input.string("mode")), let result = read(invocation.input) else {
+        return .failure(code: "collaboration_original_unavailable", message: "The scoped original is unavailable")
+      }
+      return .success(output: result)
+    }
+  }
+
+  static func collaborationRecallIsAuthorized(_ scope: AgentCollaborationToolEvidenceScope,
+                                              database: AgentConversationDatabase) -> Bool {
+    guard let session = database.read(scope.conversationId), session.id == scope.conversationId,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          let roster = session.collaborationRoster,
+          let person = UUID(uuidString: AgentTeamProgressPolicy.stableCollaborationMemberId(scope.memberId))
+    else { return false }
+    return roster.members.contains { $0.id == person }
+  }
+
   static func run(
     prompt: String,
     profile: LocalModelRuntimeProfile,
@@ -118,11 +162,24 @@ enum AgentIOSLocalModelWebToolRunner {
     baseSystemPrompt: String,
     registry: AgentNativeToolRegistry,
     readOnlyAnalysis: Bool = false,
+    collaborationRecallScope: AgentCollaborationToolEvidenceScope? = nil,
+    collaborationConversationDatabase: AgentConversationDatabase? = nil,
+    collaborationOriginalsOnly: Bool = false,
     nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
     let webRegistry = try registry.subset {
       AgentIOSLocalModelWebToolProtocol.toolIDs.contains($0.id) &&
         (!readOnlyAnalysis || AgentScreenAnalysisToolPolicy.allows($0))
+    }
+    let scopedRecall = !readOnlyAnalysis && collaborationConversationDatabase != nil ? collaborationRecallScope : nil
+    if let scopedRecall, let collaborationConversationDatabase {
+      try webRegistry.registerExecutable(collaborationRecallTool(originalsOnly: collaborationOriginalsOnly) { input in
+        guard collaborationRecallIsAuthorized(scopedRecall, database: collaborationConversationDatabase),
+              AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId: scopedRecall.runId)?.state == .running,
+              let result = try? AgentTeamExecutionHistoryStore.shared.recallCollaborationOriginal(input, scope: scopedRecall),
+              collaborationRecallIsAuthorized(scopedRecall, database: collaborationConversationDatabase) else { return nil }
+        return result
+      })
     }
     let catalog = webRegistry.descriptors()
     guard !catalog.isEmpty else { throw AgentIOSLocalModelWebToolError.unavailable }
@@ -144,7 +201,7 @@ enum AgentIOSLocalModelWebToolRunner {
     let outcome = await AgentModelToolLoop(
       modelAdapter: session,
       toolRegistry: webRegistry,
-      journal: EncryptedAgentModelLoopJournal(),
+      journal: scopedRecall == nil ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal(),
       nativeObservation: nativeObservation
     ).run(
       AgentModelToolLoopRequest(

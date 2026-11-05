@@ -36,6 +36,7 @@ class HealthCaptureActivity : Activity() {
         HealthOverviewDatabases(fixture)
     }
     private val originals by lazy { HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)) }
+    private val pdfPasswords by lazy { HealthPdfPasswordUi(this) }
     private lateinit var body: LinearLayout
     private lateinit var title: TextView
     private var route = "capture"
@@ -52,7 +53,6 @@ class HealthCaptureActivity : Activity() {
     private var dirty = false
     private var pendingCamera = ""
     private var exportId = ""
-    private var cropId = ""
     private var preview: android.app.Dialog? = null
     private var sourceView: HealthReviewSourceView? = null
     private var sourceBitmap: Bitmap? = null
@@ -100,7 +100,7 @@ class HealthCaptureActivity : Activity() {
         pickOnStart = state == null && intent.getBooleanExtra("health_pick_files", false)
         if (state == null) firstEntry = HealthCaptureEntry.entries.firstOrNull { it.name == intent.getStringExtra("health_capture_entry") }
         pendingCamera = state?.getString("camera") ?: getSharedPreferences("health_capture_pending", MODE_PRIVATE).getString("token", "").orEmpty()
-        exportId = state?.getString("export").orEmpty(); cropId = state?.getString("crop").orEmpty()
+        exportId = state?.getString("export").orEmpty()
         fun restore(key: String) = state?.getStringArrayList(key).orEmpty().mapNotNull { value ->
             val parts = value.split('|'); val time = parts.firstOrNull()?.toLongOrNull()
             if (parts.size == 2 && time != null && runCatching { UUID.fromString(parts[1]) }.isSuccess) time to parts[1] else null
@@ -137,6 +137,7 @@ class HealthCaptureActivity : Activity() {
     }
     override fun onStop() {
         active = false; generation++; contentResolver.unregisterContentObserver(observer)
+        pdfPasswords.cancel()
         preview?.dismiss(); preview = null; rawDialog?.dismiss(); rawDialog = null; actionDialog?.dismiss(); actionDialog = null
         clearReviewSource()
         taskViews.clear(); renderedKey = ""; nextReviewPage = null; body.removeAllViews()
@@ -150,7 +151,7 @@ class HealthCaptureActivity : Activity() {
         out.putString("review_selection_job", reviewSelectionJob)
         out.putStringArrayList("review_selection", ArrayList(reviewSelection.values.map { it.encode() }))
         out.putBoolean("original_only", originalOnly)
-        out.putString("camera", pendingCamera); out.putString("export", exportId); out.putString("crop", cropId)
+        out.putString("camera", pendingCamera); out.putString("export", exportId)
         out.putStringArrayList("job_pages", ArrayList(jobPages.map { "${it.first}|${it.second}" }))
         out.putStringArrayList("record_pages", ArrayList(recordPages.map { "${it.measuredAt}|${it.id}" }))
         out.putStringArrayList("stack", ArrayList(stack.map { "${it.first}|${it.second}|${it.third}" }))
@@ -190,7 +191,7 @@ class HealthCaptureActivity : Activity() {
                 when (currentRoute) {
                     "original" -> {
                         val original = originals.original(id)
-                        val records = HealthRecordStore(applicationContext).use { it.page(after = recordCursor, originalId = id) }
+                        val records = HealthRecordStore(applicationContext, names.records).use { it.originalPage(id, after = recordCursor) }
                         CaptureSnapshot(original = original, available = original?.let(originals::present) == true,
                             saved = records.records, recordsNext = records.next)
                     }
@@ -229,7 +230,8 @@ class HealthCaptureActivity : Activity() {
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
             "review" -> "review|$selectedId|$page|$candidateOffset|${data.page?.page}|${data.available}|" +
-                data.review.joinToString { row -> row.saved?.let { "${it.id}:${it.revision}" } ?: row.version }
+                data.review.joinToString { row -> row.saved?.let { "${it.id}:${it.revision}:${row.linked}" } ?:
+                    "${row.version}:${row.link?.id}:${row.link?.revision}" }
             else -> ""
         }
         if (key.isNotBlank() && key == renderedKey && body.childCount > 0) {
@@ -292,7 +294,7 @@ class HealthCaptureActivity : Activity() {
                     startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", value.id))
                 } else open("review", value.id) }, { open("original", it.originalId) }, { value ->
                     startActivity(Intent(this, HealthCameraActivity::class.java).putExtra("capture_batch", value.captureBatch))
-                })
+                }, ::manualEntry)
             view.bind(job, jobState(job, batches[job.id])); taskViews[job.id] = view; ui.add(content, view, 12)
         }
         if (jobPages.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { jobPages.removeAt(jobPages.lastIndex); generation++; refresh() }, 16)
@@ -328,7 +330,7 @@ class HealthCaptureActivity : Activity() {
             val save: (() -> Unit)? = if (original.reviewOnly) null else ({ export(original) })
             val dialog = if (HealthTableParser.format(original.name, original.mime) != null)
                 HealthStructuredOriginalPreview(this, original, names, save)
-            else HealthOriginalPreview(this, original, save)
+            else HealthOriginalPreview(this, original, save, names)
             preview = dialog.also { it.show() }
         }.apply { tag = "health-open-original" }, 14)
         if (!original.reviewOnly) {
@@ -354,6 +356,12 @@ class HealthCaptureActivity : Activity() {
     }
     private fun renderReview(content: LinearLayout, data: CaptureSnapshot) {
         val job = data.job; val original = data.original; val scanned = data.page
+        if (job?.needsPdfPassword() == true) {
+            content.addView(ui.text(jobState(job)))
+            ui.add(content, ui.row(getString(R.string.health_pdf_unlock)) { retry(job) }, 8)
+            ui.add(content, ui.row(getString(R.string.health_manual)) { manualEntry() }, 8)
+            return
+        }
         if (job == null || original == null || scanned == null) { content.addView(ui.text(getString(R.string.health_review_not_ready))); return }
         val displayedPage = if (job.documentPage > 0) job.documentPage else scanned.page
         if (reviewSelectionJob != job.id) { reviewSelection.clear(); reviewSelectionJob = job.id }
@@ -398,13 +406,23 @@ class HealthCaptureActivity : Activity() {
                     source.mark(evidence.boxes)
                     openReviewSource(evidence, displayedPage)
                 }.apply { tag = "health-review-mark-${evidence.candidateId}" }, 4)
-                ui.add(this, ui.row(getString(if (previous == null) R.string.health_check_fields else R.string.health_review_saved_item)) {
+                ui.add(this, ui.row(getString(when {
+                    previous == null -> R.string.health_check_fields
+                    row.linked -> R.string.health_review_linked_item
+                    else -> R.string.health_review_saved_item
+                })) {
                     if (previous != null) startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", previous.id))
                     else editSuggestion(draft, stage = true)
                 }, 8)
+                row.link?.let { target ->
+                    ui.add(this, ui.row(getString(R.string.health_review_view_duplicate)) {
+                        startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", target.id))
+                    }, 8)
+                }
                 if (selection != null) ui.add(this, CheckBox(this@HealthCaptureActivity).apply {
                     tag = "health-review-pick-${evidence.candidateId}"
-                    text = getString(R.string.health_review_select_item, getString(draft.metric.titleResource()))
+                    text = getString(if (selection.link == null) R.string.health_review_select_item else R.string.health_review_select_link,
+                        getString(draft.metric.titleResource()))
                     setTextColor(getColor(R.color.text_primary))
                     isChecked = reviewSelection[selection.key] == selection
                     setOnClickListener {
@@ -458,10 +476,15 @@ class HealthCaptureActivity : Activity() {
         }
         fun resetConsent() {
             val count = reviewSelection.size
+            val linked = reviewSelection.values.count { it.link != null }
             confirmed.isChecked = false
             confirmed.isEnabled = count > 0 && !savingReview
-            confirmed.text = if (count > 0) getString(R.string.health_review_batch_consent, count) else getString(R.string.health_review_batch_idle)
-            button.text = getString(R.string.health_review_batch_save, count)
+            confirmed.text = when {
+                linked > 0 -> getString(R.string.health_review_link_consent, count - linked, linked)
+                count > 0 -> getString(R.string.health_review_batch_consent, count)
+                else -> getString(R.string.health_review_batch_idle)
+            }
+            button.text = if (linked > 0) getString(R.string.health_review_save_links) else getString(R.string.health_review_batch_save, count)
             updateButton()
         }
         confirmed.setOnCheckedChangeListener { _, _ -> updateButton() }
@@ -489,7 +512,8 @@ class HealthCaptureActivity : Activity() {
                 val message = when (val outcome = result.getOrNull()) {
                     is HealthOcrBatchResult.Saved -> {
                         selected.forEach { reviewSelection.remove(it.key) }
-                        getString(R.string.health_review_batch_saved, outcome.count)
+                        if (outcome.linked > 0) getString(R.string.health_review_batch_linked, outcome.count, outcome.linked)
+                        else getString(R.string.health_review_batch_saved, outcome.count)
                     }
                     is HealthOcrBatchResult.Duplicate -> {
                         reviewSelection.remove(outcome.key)
@@ -529,16 +553,42 @@ class HealthCaptureActivity : Activity() {
             addView(status, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         }
         ui.add(content, container, 8)
-        image.setOnClickListener {
-            sourceEvidence?.let { openReviewSource(it, displayedPage) }
-        }
+        fun openSource() { sourceEvidence?.let { openReviewSource(it, displayedPage) } }
+        image.setOnClickListener { openSource() }
         worker.execute {
-            val decoded = runCatching { HealthReviewRaster.load(originals, original, selected.page) }.getOrNull()
+            val result = runCatching { HealthReviewRaster.load(originals, original, selected.page) }
+            val decoded = result.getOrNull()
             main.post {
                 if (!active || sourceView !== image) { decoded?.recycle(); return@post }
                 sourceBitmap = decoded
                 image.bitmap = decoded
-                if (decoded == null) status.setText(R.string.health_original_preview_failed) else status.visibility = View.GONE
+                if (decoded != null) status.visibility = View.GONE
+                else if (original.mime == "application/pdf" && result.exceptionOrNull() is SecurityException) {
+                    status.setText(R.string.health_pdf_unlock)
+                    val unlock = View.OnClickListener {
+                        pdfPasswords.request(
+                            work = { password, signal, _ ->
+                                HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)).use { store ->
+                                    HealthPdfTextReader.openProtected(applicationContext, store, original, password, signal::throwIfCanceled)
+                                        .use { it.render(selected.page - 1, 1600, 2_000_000) }
+                                }
+                            }, discard = Bitmap::recycle
+                        ) { unlocked ->
+                            val bitmap = unlocked.getOrNull()
+                            if (!active || sourceView !== image) { bitmap?.recycle(); return@request }
+                            if (bitmap == null) showFailure((unlocked.exceptionOrNull() as? HealthImportFailure)?.code ?: "pdf_unsupported")
+                            else {
+                                sourceBitmap = bitmap
+                                image.bitmap = bitmap
+                                status.visibility = View.GONE
+                                image.setOnClickListener { openSource() }
+                                openSource()
+                            }
+                        }
+                    }
+                    status.setOnClickListener(unlock)
+                    image.setOnClickListener(unlock)
+                } else status.setText(R.string.health_original_preview_failed)
             }
         }
         return image
@@ -642,8 +692,9 @@ class HealthCaptureActivity : Activity() {
                 main.post { if (active) result.fold({ Toast.makeText(this, R.string.health_original_saved, Toast.LENGTH_LONG).show() }, { showFailure("save_failed") }) }
             }
         } else if (requestCode == CROP && resultCode == RESULT_OK) {
-            val items = data?.getStringExtra(ComposerAttachmentEditorActivity.ITEMS)?.let { ComposerAttachmentItem.decode(it) }.orEmpty()
-            items.singleOrNull()?.let { importSource(Uri.parse(it.uri)) }
+            val job = data?.getStringExtra(HEALTH_CROP_RESULT)?.takeIf(HealthProfilePolicy::uuid) ?: return
+            if (names.fixture == null) HealthImportScheduler.enqueue(applicationContext, job)
+            jobPages.clear(); route = "capture"; generation++; refresh()
         }
     }
     private fun importSource(uri: Uri, cameraToken: String = "", originalOnly: Boolean = this.originalOnly) {
@@ -663,21 +714,40 @@ class HealthCaptureActivity : Activity() {
             }, { showFailure("source_permission") }) }
         }
     }
-    private fun retry(job: HealthImportJob) { worker.execute {
-        originals.updateJob(job.id, restartCancelled = true) { it.copy(state = HealthImportState.QUEUED, error = "") }
-        HealthImportScheduler.enqueue(applicationContext, job.id, job.captureBatch.isNotBlank() && !job.captureSubmitted)
-    } }
+    private fun retry(job: HealthImportJob) {
+        if (job.needsPdfPassword()) {
+            pdfPasswords.request(work = { password, signal, progress ->
+                HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)).use { store ->
+                    HealthProtectedPdfImport.run(applicationContext, store, job.id, password, { signal.isCanceled }, progress).also {
+                        if (it == HealthImportOutcome.COMPLETE && names.fixture == null)
+                            runCatching { HealthReminderWork.reportReady(applicationContext, job.id) }
+                    }
+                }
+            }) { result ->
+                if (result.isFailure) showFailure("pdf_unsupported")
+                refresh()
+            }
+            return
+        }
+        worker.execute {
+            originals.updateJob(job.id, restartCancelled = true) { it.copy(state = HealthImportState.QUEUED, error = "") }
+            HealthImportScheduler.enqueue(applicationContext, job.id, job.captureBatch.isNotBlank() && !job.captureSubmitted)
+        }
+    }
+    private fun manualEntry() {
+        startActivity(Intent(this, HealthCenterActivity::class.java).putExtra("health_manual", true))
+    }
     private fun export(original: HealthOriginal) {
         exportId = original.id
         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
             .setType(original.mime.ifBlank { "application/octet-stream" }).putExtra(Intent.EXTRA_TITLE, original.name), EXPORT)
     }
     private fun crop(original: HealthOriginal) {
-        cropId = original.id
-        val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id).toString(), original.name, original.mime, original.size, sendOriginal = true)
+        val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id, names.fixture).toString(), original.name, original.mime, original.size, sendOriginal = true)
         startActivityForResult(Intent(this, ComposerAttachmentEditorActivity::class.java)
             .putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(listOf(item)))
-            .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id), CROP)
+            .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id)
+            .putExtra(HEALTH_CROP_MODE, mode).putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal), CROP)
     }
     private fun jobState(job: HealthImportJob, table: HealthTableBatch? = null): String = when {
         job.state == HealthImportState.TABLE_REVIEW && table != null -> healthTableTaskLabel(this, table)
@@ -704,6 +774,10 @@ class HealthCaptureActivity : Activity() {
     private fun failureText(code: String): Int = when (code) {
         "image_unsupported" -> R.string.health_import_image_unsupported
         "pdf_password" -> R.string.health_import_pdf_password
+        "pdf_password_wrong" -> R.string.health_pdf_password_wrong
+        "pdf_password_interrupted" -> R.string.health_pdf_password_interrupted
+        "pdf_permission" -> R.string.health_pdf_permission
+        "pdf_password_memory" -> R.string.health_import_memory_pressure
         "pdf_unsupported" -> R.string.health_import_pdf_unsupported
         "source_permission", "source_unavailable" -> R.string.health_import_source_unavailable
         "camera_permission" -> R.string.health_import_camera_permission

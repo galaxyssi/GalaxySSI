@@ -42,7 +42,7 @@ class HealthRecordExportDeviceTest {
     private fun generate(f: Fixture, scope: HealthRecordExportScope = HealthRecordExportScope(format = HealthRecordExportFormat.JSON)): HealthRecordExportSession {
         val s = prepare(f, scope); assertEquals(HealthRecordExportState.REVIEW, s.state)
         val queued = f.exports.queue(s.id)
-        assertEquals(HealthOriginalArchiveOutcome.COMPLETE, HealthRecordExportPipeline.generate(f.exports, s.id, queued.dispatch))
+        assertEquals(HealthOriginalArchiveOutcome.COMPLETE, HealthRecordExportPipeline.generate(f.exports, s.id, queued.dispatch, originals = f.originals))
         return requireNotNull(f.exports.session(s.id)).also { assertEquals(HealthRecordExportState.GENERATED, it.state) }
     }
     private fun bytes(f: Fixture, s: HealthRecordExportSession): ByteArray = ByteArrayOutputStream().use { output ->
@@ -95,6 +95,125 @@ class HealthRecordExportDeviceTest {
         val original = f.originals.importOriginal(id(), "report".byteInputStream(), "report.bin", "application/octet-stream", "file")
         save(f, evidence = evidence(original, "f".repeat(64)))
         val s = prepare(f); assertEquals(1L, s.sourceWarnings); assertEquals(HealthExportSourceStatus.HASH_MISMATCH, f.exports.items(s.id).single().sourceStatus)
+    }
+    @Test fun bundleKeepsScopedCsvAndOriginalBytesSeparateAndDeduplicatesAcrossPages(): Unit = fixture { f ->
+        val photo = f.originals.importOriginal(id(), "exact-photo-bytes".byteInputStream(), "fixture-camera.jpg", "image/jpeg", "camera")
+        val file = f.originals.importOriginal(id(), "exact-file-bytes".byteInputStream(), "fixture-report.pdf", "application/pdf", "file")
+        val missing = f.originals.importOriginal(id(), "missing-bytes".byteInputStream(), "removed.pdf", "application/pdf", "file")
+        val unrelated = f.originals.importOriginal(id(), "not-selected-record".byteInputStream(), "unrelated.pdf", "application/pdf", "file")
+        val kept = (0..33).map { n -> save(f, n, evidence = evidence(photo).copy(candidateId = "value-$n"), note = "not exported") }
+        val report = save(f, 40, evidence = evidence(file))
+        val unavailable = save(f, 41, evidence = evidence(missing))
+        val outside = save(f, 42, HealthMetric.STEPS, evidence = evidence(unrelated))
+        f.originals.removeOriginalBytes(missing)
+        val result = generate(f, HealthRecordExportScope(metrics = setOf(HealthMetric.WEIGHT), cameraOriginals = true, uploadedOriginals = true))
+        assertEquals(36L, result.count)
+        assertEquals(3L, result.attachmentCount); assertEquals(2L, result.attachmentAvailable); assertEquals(1L, result.attachmentWarnings)
+        assertEquals(photo.size + file.size, result.attachmentBytes)
+        assertEquals(HealthAccessFormat.ZIP, HealthAccessScope.records(result).format)
+        val archive = bytes(f, result)
+        ZipFile(SeekableInMemoryByteChannel(archive)).use { zip ->
+            fun entry(name: String) = zip.getInputStream(requireNotNull(zip.getEntry(name))).use { it.readBytes() }
+            val csv = entry("records.csv").toString(Charsets.UTF_8)
+            (kept + report + unavailable).forEach { assertTrue(csv.contains(it.id)) }
+            assertFalse(csv.contains(outside.id)); assertFalse(csv.contains("not exported"))
+            assertTrue(csv.contains("MISSING")); assertTrue(csv.contains(missing.id))
+            assertArrayEquals("exact-photo-bytes".toByteArray(), entry(HealthOriginalArchiveNames.entry(photo)))
+            assertArrayEquals("exact-file-bytes".toByteArray(), entry(HealthOriginalArchiveNames.entry(file)))
+            assertNull(zip.getEntry(HealthOriginalArchiveNames.entry(missing))); assertNull(zip.getEntry(HealthOriginalArchiveNames.entry(unrelated)))
+            val lines = entry("manifest.ndjson").toString(Charsets.UTF_8).lineSequence().filter(String::isNotBlank).map(::JSONObject).toList()
+            assertEquals(4, lines.size); assertEquals(2, lines.first().getInt("included_originals"))
+            assertEquals(1, lines.first().getInt("unavailable_originals"))
+            val missingLine = lines.drop(1).single { it.getString("original_id") == missing.id }
+            assertEquals("MISSING", missingLine.getString("status")); assertFalse(missingLine.has("entry"))
+            assertFalse(lines.any { it.has("path") || it.has("stream") })
+            assertEquals(4, zip.entries.toList().size)
+        }
+        val encrypted = f.exports.artifacts.file(result.id, result.attempt).readBytes().toString(Charsets.ISO_8859_1)
+        assertFalse(encrypted.contains("manifest.ndjson")); assertFalse(encrypted.contains("fixture-camera.jpg"))
+    }
+
+    @Test fun bundleOmitsUnselectedAndReviewOnlySourcesAndFlagsCorruptOrMismatchedBytes(): Unit = fixture { f ->
+        val photo = f.originals.importOriginal(id(), "camera".byteInputStream(), "camera.jpg", "image/jpeg", "camera")
+        val corrupt = f.originals.importOriginal(id(), "tamper".byteInputStream(), "tamper.pdf", "application/pdf", "file")
+        val mismatch = f.originals.importOriginal(id(), "report".byteInputStream(), "report.pdf", "application/pdf", "file")
+        val job = HealthImportJob(id(), "content://fixture/source", time, keepOriginal = false)
+        f.originals.createJob(job)
+        val review = f.originals.importOriginal(job.id, "preview only".byteInputStream(), "review-only.jpg", "image/jpeg", "file")
+        assertTrue(review.reviewOnly)
+        val retained = f.originals.importOriginal(id(), "valid".byteInputStream(), "valid.pdf", "application/pdf", "file")
+        listOf(photo, corrupt, mismatch, review, retained).forEachIndexed { i, original ->
+            save(f, i, evidence = if (original == mismatch) evidence(original, "f".repeat(64)) else evidence(original))
+        }
+        RandomAccessFile(File(f.root, "originals/${corrupt.relativePath}"), "rw").use { it.setLength(it.length() - 1) }
+        val result = generate(f, HealthRecordExportScope(format = HealthRecordExportFormat.XLSX, uploadedOriginals = true))
+        assertEquals(5L, result.count)
+        assertEquals(1L, result.attachmentAvailable); assertEquals(3L, result.attachmentWarnings)
+        assertEquals(mapOf(photo.id to HealthExportSourceStatus.NOT_SELECTED, corrupt.id to HealthExportSourceStatus.UNREADABLE,
+            mismatch.id to HealthExportSourceStatus.HASH_MISMATCH, review.id to HealthExportSourceStatus.MISSING,
+            retained.id to HealthExportSourceStatus.AVAILABLE), f.exports.attachments(result.id).associate { it.originalId to it.status })
+        ZipFile(SeekableInMemoryByteChannel(bytes(f, result))).use { zip ->
+            assertEquals(setOf("records.xlsx", HealthOriginalArchiveNames.entry(retained), "manifest.ndjson"), zip.entries.toList().map { it.name }.toSet())
+            val nested = zip.getInputStream(zip.getEntry("records.xlsx")).use { stream ->
+                f.originals.importOriginal(id(), stream, "nested.xlsx", HealthRecordExportFormat.XLSX.mime, "file")
+            }
+            assertEquals(listOf("Metadata", "Records 1"), HealthXlsxReader.inspect(f.originals, nested).first.map { it.name })
+        }
+    }
+
+    @Test fun removingAConfirmedOriginalRequiresFreshPreviewAndStillAllowsARecordsBundle(): Unit = fixture { f ->
+        val original = f.originals.importOriginal(id(), "report".byteInputStream(), "report.pdf", "application/pdf", "file")
+        save(f, evidence = evidence(original))
+        val preview = prepare(f, HealthRecordExportScope(format = HealthRecordExportFormat.JSON, uploadedOriginals = true))
+        val queued = f.exports.queue(preview.id)
+        f.originals.removeOriginalBytes(original)
+        assertEquals(HealthOriginalArchiveOutcome.FAILED, HealthRecordExportPipeline.generate(f.exports, queued.id, queued.dispatch, originals = f.originals))
+        val failed = f.exports.session(queued.id)!!
+        assertEquals("originals_changed", failed.error)
+        assertFalse(f.exports.artifacts.file(failed.id, failed.attempt).exists())
+        assertTrue(runCatching { f.exports.queue(failed.id) }.isFailure)
+        val fresh = f.exports.retryPreparation(failed.id)
+        assertEquals(HealthOriginalArchiveOutcome.COMPLETE, HealthRecordExportPipeline.prepare(f.records, f.originals, f.exports, fresh.id, fresh.dispatch))
+        assertEquals(1L, f.exports.session(fresh.id)!!.attachmentWarnings)
+        val next = f.exports.queue(fresh.id)
+        assertEquals(HealthOriginalArchiveOutcome.COMPLETE, HealthRecordExportPipeline.generate(f.exports, next.id, next.dispatch, originals = f.originals))
+        val ready = f.exports.session(next.id)!!
+        ZipFile(SeekableInMemoryByteChannel(bytes(f, ready))).use { zip ->
+            val json = zip.getInputStream(zip.getEntry("records.json")).bufferedReader().use { JSONObject(it.readText()) }
+            assertEquals("MISSING", json.getJSONArray("records").getJSONObject(0).getString("source_status_at_preview"))
+        }
+    }
+
+    @Test fun bundleMarksSavedOnlyAfterVerifiedDestinationReadback(): Unit = fixture { f ->
+        save(f)
+        val session = generate(f, HealthRecordExportScope(uploadedOriginals = true))
+        val target = ByteArrayOutputStream()
+        var deleted = false
+        assertTrue(runCatching { HealthRecordExportPipeline.saveVerified(f.exports, session, { target },
+            { target.toByteArray().copyOf(target.size() - 1).inputStream() }, { deleted = true }) }.isFailure)
+        assertTrue(deleted)
+        assertEquals(HealthRecordExportState.GENERATED, f.exports.session(session.id)!!.state)
+        target.reset()
+        HealthRecordExportPipeline.saveVerified(f.exports, session, { target }, { target.toByteArray().inputStream() }, { fail("Unexpected deletion") })
+        assertEquals(HealthRecordExportState.SAVED, f.exports.session(session.id)!!.state)
+        assertArrayEquals(bytes(f, session), target.toByteArray())
+    }
+
+    @Test fun upgradingAnExistingExportDatabasePreservesItsHistoryAndRecordOnlyDefault(): Unit = fixture { f ->
+        save(f)
+        val old = generate(f)
+        context.openOrCreateDatabase(f.exportsName, 0, null).use { db ->
+            db.execSQL("DROP TABLE export_attachments")
+            db.version = 1
+        }
+        HealthRecordExportStore(context, f.exportsName, File(f.root, "exports")).use { migrated ->
+            assertEquals(old, migrated.session(old.id))
+            assertFalse(migrated.session(old.id)!!.scope.bundlesOriginals)
+            assertTrue(migrated.attachments(old.id).isEmpty())
+            assertEquals(1, migrated.items(old.id).size)
+        }
+        val json = old.scope.json().apply { remove("camera_originals"); remove("uploaded_originals") }
+        assertFalse(HealthRecordExportScope.from(json).bundlesOriginals)
     }
     @Test fun previewDetectsAnObservationMutationDuringStreaming(): Unit = fixture { f ->
         repeat(35) { save(f, it) }; val s = f.exports.create(HealthRecordExportScope()); var changed = false

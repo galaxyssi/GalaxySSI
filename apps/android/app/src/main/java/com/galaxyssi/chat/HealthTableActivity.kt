@@ -222,21 +222,44 @@ class HealthTableActivity : Activity() {
             HealthTableState.READY -> {
                 ui.add(content, ui.text(getString(R.string.health_table_skip_notice), 13f, muted = true), 16)
                 val confirmed = CheckBox(this).apply { text = getString(R.string.health_confirm_source); setTextColor(getColor(R.color.text_primary)); textSize = 13f }
+                val linkDuplicates = CheckBox(this).apply {
+                    text = getString(R.string.health_table_link_duplicates)
+                    setTextColor(getColor(R.color.text_primary))
+                    textSize = 13f
+                    tag = "health-table-link-duplicates"
+                }
+                if (counts[HealthTableRowState.DUPLICATE] > 0) ui.add(footer, linkDuplicates)
                 ui.add(footer, confirmed)
-                ui.add(footer, ui.command(R.string.health_table_save) {
+                val save = ui.command(R.string.health_table_save) {
                     if (!confirmed.isChecked) Toast.makeText(this, R.string.health_confirm_source_required, Toast.LENGTH_LONG).show()
-                    else change({ it.confirmSave(id, batch.mappingRevision) }, true)
-                }.apply { text = getString(R.string.health_table_save_count, counts[HealthTableRowState.VALID]); isEnabled = counts[HealthTableRowState.VALID] > 0; alpha = if (isEnabled) 1f else .45f }, 8)
+                    else {
+                        val link = linkDuplicates.isChecked
+                        change({ it.confirmSave(id, batch.mappingRevision, link) }, true)
+                    }
+                }
+                val valid = counts[HealthTableRowState.VALID]
+                fun updateSave() {
+                    save.text = if (valid > 0) getString(R.string.health_table_save_count, valid) else getString(R.string.health_table_save_links)
+                    save.isEnabled = valid > 0 || linkDuplicates.isChecked
+                    save.alpha = if (save.isEnabled) 1f else .45f
+                }
+                linkDuplicates.setOnCheckedChangeListener { _, _ -> updateSave() }
+                updateSave()
+                ui.add(footer, save, 8)
             }
             HealthTableState.SAVED -> {
                 ui.add(content, ui.text(getString(R.string.health_table_saved, counts[HealthTableRowState.SAVED]), 16f, bold = true), 20)
+                if (batch.linkDuplicates) ui.add(content, ui.text(getString(R.string.health_table_links_saved, counts[HealthTableRowState.LINKED]), 14f), 8)
                 ui.add(content, ui.row(getString(R.string.health_table_undo)) {
                     dialog = AlertDialog.Builder(this).setTitle(R.string.health_table_undo).setMessage(R.string.health_table_undo_notice)
                         .setNegativeButton(R.string.common_cancel, null).setPositiveButton(R.string.health_table_undo) { _, _ -> change({ it.undo(id) }, true) }.show()
                 }, 10)
             }
-            HealthTableState.UNDONE -> ui.add(content, ui.text(getString(R.string.health_table_undone,
-                counts[HealthTableRowState.UNDONE], counts[HealthTableRowState.EDITED]), 16f, bold = true), 20)
+            HealthTableState.UNDONE -> {
+                ui.add(content, ui.text(getString(R.string.health_table_undone,
+                    counts[HealthTableRowState.UNDONE], counts[HealthTableRowState.EDITED]), 16f, bold = true), 20)
+                if (batch.linkDuplicates) ui.add(content, ui.text(getString(R.string.health_table_links_removed, counts[HealthTableRowState.UNLINKED]), 14f), 8)
+            }
             else -> Unit
         }
         if (footer.childCount > 0) body.addView(footer, LinearLayout.LayoutParams(-1, -2))
@@ -314,7 +337,7 @@ class HealthTableActivity : Activity() {
                 fun label(value: HealthTableDate) = if (value == HealthTableDate.EXCEL) getString(R.string.health_xlsx_date_format) else value.pattern.replace("uuuu", "yyyy")
                 choose(R.string.health_table_date, dates.map(::label), label(m.date)) { mapping(batch, m.copy(date = dates[it])) }
             })
-            if (m.date == HealthTableDate.EXCEL) addView(ui.row(getString(R.string.health_xlsx_date_only), m.dateOnlyTime.ifBlank { getString(R.string.health_xlsx_time_required) }) {
+            if (m.date == HealthTableDate.EXCEL || batch.format == "xlsx" && m.date == HealthTableDate.ISO) addView(ui.row(getString(R.string.health_xlsx_date_only), m.dateOnlyTime.ifBlank { getString(R.string.health_xlsx_time_required) }) {
                 val initial = m.dateOnlyTime.split(':').mapNotNull(String::toIntOrNull)
                 dialog = android.app.TimePickerDialog(this@HealthTableActivity, { _, hour, minute ->
                     mapping(batch, m.copy(dateOnlyTime = String.format(java.util.Locale.ROOT, "%02d:%02d", hour, minute)))
@@ -362,7 +385,9 @@ class HealthTableActivity : Activity() {
         HealthTableRowState.MISSING -> R.string.health_table_missing
         HealthTableRowState.INVALID -> R.string.health_table_invalid
         HealthTableRowState.SAVED -> R.string.health_table_row_saved
+        HealthTableRowState.LINKED -> R.string.health_table_row_linked
         HealthTableRowState.UNDONE -> R.string.health_table_row_undone
+        HealthTableRowState.UNLINKED -> R.string.health_table_row_unlinked
         HealthTableRowState.EDITED -> R.string.health_table_row_edited
     }
     private fun rowIssue(issue: String) = when (issue) {

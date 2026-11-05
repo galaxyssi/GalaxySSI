@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import java.io.File
-import java.io.InputStream
 import java.security.SecureRandom
 import java.util.UUID
 
@@ -27,10 +26,15 @@ internal class HealthOriginalLibraryStore(private val context: Context, private 
     }
     fun session(id: String): HealthOriginalExportSession? {
         valid(id)
-        return db.rawQuery("SELECT state,attempt,payload FROM library_exports WHERE id=?", arrayOf(id)).use {
-            if (!it.moveToFirst()) null else HealthOriginalExportSession.from(originals.libraryUnpack("export", id, it.getBlob(2))).also { s ->
-                check(s.id == id && s.state.name == it.getString(0) && s.attempt == it.getString(1))
-            }
+        return db.rawQuery("SELECT id,state,attempt,created_at,payload FROM library_exports WHERE id=?", arrayOf(id)).use {
+            if (it.moveToFirst()) session(it) else null
+        }
+    }
+    private fun session(row: android.database.Cursor): HealthOriginalExportSession {
+        val id = row.getString(0)
+        return HealthOriginalExportSession.from(originals.libraryUnpack("export", id, row.getBlob(4))).also { session ->
+            check(session.id == id && session.state.name == row.getString(1) && session.attempt == row.getString(2) &&
+                session.createdAt == row.getLong(3))
         }
     }
     private fun put(s: HealthOriginalExportSession) {
@@ -96,8 +100,12 @@ internal class HealthOriginalLibraryStore(private val context: Context, private 
     }
     fun active(after: String = ""): List<String> = db.rawQuery("SELECT id FROM library_exports WHERE state IN ('QUEUED','GENERATING') AND id>? ORDER BY id LIMIT 100", arrayOf(after))
         .use { buildList { while (it.moveToNext()) add(it.getString(0)) } }
-    fun latest(): HealthOriginalExportSession? = db.rawQuery("SELECT id FROM library_exports WHERE state<>'SELECTING' ORDER BY created_at DESC,id DESC LIMIT 1", null)
-        .use { if (it.moveToFirst()) session(it.getString(0)) else null }
+    fun history(before: Pair<Long, String>? = null): List<HealthOriginalExportSession> {
+        val filter = if (before == null) "" else " AND (created_at<? OR (created_at=? AND id<?))"
+        val args = before?.let { arrayOf(it.first.toString(), it.first.toString(), it.second) }
+        return db.rawQuery("SELECT id,state,attempt,created_at,payload FROM library_exports WHERE state<>'SELECTING'$filter " +
+            "ORDER BY created_at DESC,id DESC LIMIT 31", args).use { rows -> buildList { while (rows.moveToNext()) add(session(rows)) } }
+    }
     fun claim(id: String, dispatch: String? = null): Pair<HealthOriginalExportSession, ByteArray>? {
         var pending: ByteArray? = null
         try {
@@ -124,19 +132,30 @@ internal class HealthOriginalLibraryStore(private val context: Context, private 
     fun interrupted(s: HealthOriginalExportSession) = transaction {
         if (current(s.id, s.attempt)) put(requireNotNull(session(s.id)).copy(state = HealthOriginalExportState.QUEUED))
     }
-    fun saved(s: HealthOriginalExportSession) = transaction {
-        val latest = requireNotNull(session(s.id)); check(latest.attempt == s.attempt && latest.state in listOf(HealthOriginalExportState.GENERATED, HealthOriginalExportState.SAVED))
-        put(latest.copy(state = HealthOriginalExportState.SAVED))
+    fun beginSave(s: HealthOriginalExportSession): String = transaction {
+        val latest = requireNotNull(session(s.id))
+        check(latest.attempt == s.attempt && latest.archiveBytes == s.archiveBytes && latest.sha256 == s.sha256 &&
+            latest.state in listOf(HealthOriginalExportState.GENERATED, HealthOriginalExportState.SAVED))
+        UUID.randomUUID().toString().also { token -> put(latest.copy(pendingSave = token, saveFailed = false)) }
+    }
+    fun finishSave(s: HealthOriginalExportSession, token: String, verified: Boolean): HealthOriginalExportSession = transaction {
+        val latest = requireNotNull(session(s.id))
+        check(token.isNotBlank() && latest.attempt == s.attempt && latest.pendingSave == token &&
+            latest.state in listOf(HealthOriginalExportState.GENERATED, HealthOriginalExportState.SAVED))
+        if (verified) latest.copy(state = HealthOriginalExportState.SAVED, pendingSave = "", verifiedSaveAt = System.currentTimeMillis(), saveFailed = false).also(::put)
+        else latest.copy(pendingSave = "", saveFailed = true).also(::put)
     }
     fun file(s: HealthOriginalExportSession, partial: Boolean = false): File {
         return artifacts.file(s.id, s.attempt, partial)
     }
     fun aad(s: HealthOriginalExportSession) = "health-original-export-v1|${s.id}|${s.attempt}".toByteArray(Charsets.UTF_8)
-    fun input(s: HealthOriginalExportSession): InputStream {
+    fun input(s: HealthOriginalExportSession) = withArtifactKey(s) { artifacts.input(s.id, s.attempt, it, aad(s)) }
+    fun readChannel(s: HealthOriginalExportSession) = withArtifactKey(s) { artifacts.readChannel(s.id, s.attempt, it, aad(s)) }
+    private fun <T> withArtifactKey(s: HealthOriginalExportSession, read: (ByteArray) -> T): T {
         check(s.state in listOf(HealthOriginalExportState.GENERATED, HealthOriginalExportState.SAVED))
         val encrypted = db.rawQuery("SELECT key_payload FROM library_exports WHERE id=? AND attempt=?", arrayOf(s.id, s.attempt)).use { check(it.moveToFirst()); it.getBlob(0) }
         val key = AgentStorageCipher.decryptBinary(encrypted, originals.libraryKeyAad("${s.id}:${s.attempt}"))
-        return try { artifacts.input(s.id, s.attempt, key, aad(s)) } finally { key.fill(0) }
+        return try { read(key) } finally { key.fill(0) }
     }
     fun cleanupAbandoned(s: HealthOriginalExportSession) {
         artifacts.cleanup(s.id, s.attempt)
@@ -146,6 +165,9 @@ internal class HealthOriginalLibraryStore(private val context: Context, private 
             db.execSQL("CREATE TABLE library_exports(id TEXT PRIMARY KEY,state TEXT NOT NULL,attempt TEXT NOT NULL,created_at INTEGER NOT NULL,payload BLOB NOT NULL,key_payload BLOB)")
             db.execSQL("CREATE INDEX library_export_state ON library_exports(state,id)")
             db.execSQL("CREATE TABLE library_export_items(session_id TEXT NOT NULL REFERENCES library_exports(id) ON DELETE CASCADE,original_id TEXT NOT NULL REFERENCES originals(id),snapshot BLOB,PRIMARY KEY(session_id,original_id))")
+            createHistoryIndex(db)
         }
+        fun createHistoryIndex(db: SQLiteDatabase) =
+            db.execSQL("CREATE INDEX IF NOT EXISTS library_export_history ON library_exports(created_at DESC,id DESC) WHERE state<>'SELECTING'")
     }
 }

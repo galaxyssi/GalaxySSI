@@ -142,15 +142,116 @@ class HealthReviewSourceDeviceTest {
             store.saveDraft(hemoglobin.copy(note = "Corrected after selection"))
             assertEquals(HealthOcrBatchResult.Stale(stale[1].key), store.saveOcrReviewBatch(job.id, job.originalId, stale))
             assertEquals(0L, store.count())
+            val valid = selected()
             val otherSource = hemoglobin.copy(evidence = hemoglobin.evidence!!.copy(originalId = id(), jobId = id()))
             assertTrue(store.save(otherSource) is HealthSaveResult.Saved)
-            val valid = selected()
             val clock = store.metricVersion(HealthMetric.GLUCOSE)
             assertEquals(HealthOcrBatchResult.Duplicate(valid[1].key), store.saveOcrReviewBatch(job.id, job.originalId, valid))
             assertEquals(1L, store.count())
             assertEquals(clock, store.metricVersion(HealthMetric.GLUCOSE))
             assertEquals(glucose, store.draft(valid[0].key))
             assertNull(store.recordForEvidence(glucose))
+        }
+    }
+
+    @Test fun verifiedDuplicateCanLinkAnOriginalFromNativeReviewWithoutCreatingAnotherRecord() = isolated { names, originals ->
+        assumeFalse("Native review requires an unlocked display", context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val first = seed(originals)
+        val second = seed(originals, "Second synthetic report")
+        assertNotEquals(first.originalId, second.originalId)
+        val firstDraft = approved(recognized(originals, first).first { it.metric == HealthMetric.GLUCOSE })
+        val secondDraft = approved(recognized(originals, second).first { it.metric == HealthMetric.GLUCOSE })
+        val secondEvidence = requireNotNull(secondDraft.evidence)
+        HealthRecordStore(context, names.records).use { records ->
+            val primary = (records.save(firstDraft) as HealthSaveResult.Saved).record
+            records.saveDraft(secondDraft)
+            val intent = Intent(context, HealthCaptureActivity::class.java).putExtra("health_job", second.id)
+                .putExtra("health_review_test_id", names.fixture)
+            val tag = "health-review-pick-${secondEvidence.candidateId}"
+            ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
+                await {
+                    var ready = false
+                    scenario.onActivity { ready = it.window.decorView.findViewWithTag<View>(tag) != null }
+                    ready
+                }
+                scenario.onActivity { activity ->
+                    val root = activity.window.decorView
+                    val pick = root.findViewWithTag<CheckBox>(tag)
+                    assertFalse(pick.isChecked)
+                    assertEquals(activity.getString(R.string.health_review_select_link, activity.getString(secondDraft.metric.titleResource())), pick.text)
+                    assertTrue(pick.performClick())
+                    assertFalse(root.findViewWithTag<View>("health-review-batch-save").isEnabled)
+                }
+                assertTrue(records.originalPage(second.originalId).records.isEmpty())
+                scenario.recreate()
+                await {
+                    var selected = false
+                    scenario.onActivity { selected = it.window.decorView.findViewWithTag<CheckBox>(tag)?.isChecked == true }
+                    selected
+                }
+                screenshot("health-ocr-source-link-confirmation.png")
+                scenario.onActivity { activity ->
+                    val root = activity.window.decorView
+                    val consent = root.findViewWithTag<CheckBox>("health-review-batch-consent")
+                    assertFalse(consent.isChecked)
+                    assertEquals(activity.getString(R.string.health_review_link_consent, 0, 1), consent.text)
+                    consent.performClick()
+                    assertTrue(consent.isChecked)
+                    val save = root.findViewWithTag<View>("health-review-batch-save")
+                    assertTrue(save.isEnabled)
+                    assertTrue(save.performClick())
+                }
+                await { records.originalPage(second.originalId).records.size == 1 }
+                await {
+                    var linked = false
+                    scenario.onActivity { activity ->
+                        linked = views(activity.window.decorView).filterIsInstance<TextView>()
+                            .any { it.text == activity.getString(R.string.health_review_linked_item) }
+                    }
+                    linked
+                }
+            }
+            assertEquals(1L, records.count())
+            val exported = records.exportChunk(HealthRecordExportScope(originalId = second.originalId)).records.single()
+            assertEquals(primary.id, exported.id)
+            assertEquals(secondEvidence, exported.draft.evidence)
+            assertEquals(firstDraft.evidence, records.record(primary.id)?.draft?.evidence)
+            assertNull(records.draft(HealthRecordStore.draftKey(secondDraft)))
+            assertEquals(HealthSaveResult.Duplicate(primary.id), records.save(secondDraft))
+            val predicted = secondDraft.copy(metric = HealthMetric.HEMOGLOBIN)
+            val reopened = records.prepareOcrReviewPage(listOf(predicted)).single()
+            assertTrue(reopened.linked)
+            assertEquals(primary.id, reopened.saved?.id)
+            assertEquals(HealthMetric.GLUCOSE, reopened.draft.metric)
+        }
+    }
+
+    @Test fun linkingRejectsChangedTargetsAndRollsBackWithTheRestOfTheBatch() = isolated { names, originals ->
+        val job = seed(originals)
+        val suggestions = recognized(originals, job).filter { it.metric in setOf(HealthMetric.GLUCOSE, HealthMetric.HEMOGLOBIN) }.map(::approved)
+        val glucose = suggestions.single { it.metric == HealthMetric.GLUCOSE }
+        val hemoglobin = suggestions.single { it.metric == HealthMetric.HEMOGLOBIN }
+        fun otherSource(draft: HealthDraft) = draft.copy(evidence = draft.evidence!!.copy(originalId = id(), jobId = id()))
+        HealthRecordStore(context, names.records).use { records ->
+            val primary = (records.save(otherSource(glucose)) as HealthSaveResult.Saved).record
+            listOf(glucose, hemoglobin).forEach(records::saveDraft)
+            val items = records.prepareOcrReviewPage(listOf(glucose, hemoglobin)).map { requireNotNull(it.selection) }
+            assertEquals(HealthOcrLinkTarget(primary.id, primary.revision), items[0].link)
+            assertNull(items[1].link)
+            assertTrue(records.save(otherSource(hemoglobin)) is HealthSaveResult.Saved)
+            assertEquals(HealthOcrBatchResult.Duplicate(items[1].key), records.saveOcrReviewBatch(job.id, job.originalId, items))
+            assertTrue(records.originalPage(job.originalId).records.isEmpty())
+            assertEquals(glucose, records.draft(items[0].key))
+            assertTrue(records.save(primary.draft.copy(recordId = primary.id, revision = primary.revision, note = "Corrected")) is HealthSaveResult.Saved)
+            assertEquals(HealthOcrBatchResult.Stale(items[0].key), records.saveOcrReviewBatch(job.id, job.originalId, items.take(1)))
+            val fresh = requireNotNull(records.prepareOcrReviewPage(listOf(glucose)).single().selection)
+            assertEquals(HealthOcrBatchResult.Saved(0, 1), records.saveOcrReviewBatch(job.id, job.originalId, listOf(fresh)))
+            val revised = requireNotNull(records.record(primary.id))
+            assertEquals(primary.revision + 1, revised.revision)
+            assertEquals(revised.revision, records.originalPage(job.originalId).records.single().revision)
+            assertTrue(records.save(revised.editable().copy(note = "Reviewed again")) is HealthSaveResult.Saved)
+            assertTrue(records.originalPage(job.originalId).records.isEmpty())
+            assertEquals(2L, records.count())
         }
     }
 
@@ -307,7 +408,7 @@ class HealthReviewSourceDeviceTest {
 
     private fun approved(draft: HealthDraft) = draft.copy(measuredAt = 1_790_000_000_000L, evidence = draft.evidence!!.copy(confirmed = true))
 
-    private fun seed(store: HealthOriginalStore): HealthImportJob {
+    private fun seed(store: HealthOriginalStore, heading: String = "Synthetic report"): HealthImportJob {
         val id = id()
         store.createJob(HealthImportJob(id, "content://fixture/report", System.currentTimeMillis()))
         val report = Bitmap.createBitmap(720, 480, Bitmap.Config.ARGB_8888)
@@ -317,7 +418,7 @@ class HealthReviewSourceDeviceTest {
             val canvas = Canvas(report)
             canvas.drawColor(Color.WHITE)
             val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 36f }
-            canvas.drawText("Synthetic report", 42f, 80f, text)
+            canvas.drawText(heading, 42f, 80f, text)
             lines.forEachIndexed { index, value -> canvas.drawText(value, 42f, 160f + 90 * index, text) }
             assertTrue(report.compress(Bitmap.CompressFormat.PNG, 100, output))
         } finally { report.recycle() }

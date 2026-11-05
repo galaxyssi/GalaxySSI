@@ -21,7 +21,7 @@ struct AgentTeamReplyObservation: Equatable {
     valid = valid && (rawGeneration == nil || generation != nil) && (rawSequence == nil || sequence != nil)
   }
 
-  private static func integer(_ value: Any?) -> Int64? {
+  static func integer(_ value: Any?) -> Int64? {
     if let text = value as? String { return Int64(text) }
     guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
           number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 9_007_199_254_740_991,
@@ -40,6 +40,32 @@ struct AgentTeamReplyOwner: Codable, Equatable {
   var deliveryMode: AgentDeliveryMode
   var observedGeneration: Int64? = nil
   var observedSequence: Int64? = nil
+  var closedRecallGeneration: Int64? = nil
+  var recallEventGeneration: Int64? = nil
+
+  func observingPrimaryRecall(_ observation: AgentTeamReplyObservation, terminal: Bool) -> Self {
+    guard deliveryMode == .respond, observation.valid, let generation = observation.generation else { return self }
+    var next = accepts(observation) ? advancing(observation) : self
+    if terminal, max(next.observedGeneration ?? 0, next.recallEventGeneration ?? 0) == generation {
+      next.closedRecallGeneration = generation
+    }
+    return next
+  }
+
+  func permitsRecall(generation: Int64) -> Bool {
+    AgentRemoteOutcomePolicy.validGeneration(generation) &&
+      max(observedGeneration ?? 0, recallEventGeneration ?? 0) == generation && closedRecallGeneration != generation
+  }
+
+  func observingRecallEvent(_ observation: AgentTeamReplyObservation, terminal: Bool) -> Self {
+    guard deliveryMode == .respond || deliveryMode == .observe,
+          observation.valid, let generation = observation.generation,
+          generation >= max(observedGeneration ?? 0, recallEventGeneration ?? 0) else { return self }
+    var next = self
+    next.recallEventGeneration = generation
+    if terminal { next.closedRecallGeneration = generation }
+    return next
+  }
 
   func accepts(_ observation: AgentTeamReplyObservation) -> Bool {
     guard observation.valid else { return false }
@@ -128,7 +154,9 @@ final class AgentTeamExecutionHistoryStore {
           for member in current.members where member.dispatchCheckpoint != nil {
             guard let replacement = incoming.members.first(where: { $0.memberId == member.memberId }),
                   replacement.sourceMessageId == member.sourceMessageId,
-                  replacement.dispatchCheckpoint == member.dispatchCheckpoint else {
+                  replacement.dispatchCheckpoint == member.dispatchCheckpoint,
+                  replacement.dispatchDependencyMemberIds == member.dispatchDependencyMemberIds,
+                  replacement.dispatchResourceObservation == member.dispatchResourceObservation else {
               throw AgentTeamHistoryDatabase.Failure.stale
             }
           }
@@ -185,6 +213,50 @@ final class AgentTeamExecutionHistoryStore {
     } catch { return false }
   }
 
+  func recordDispatchResourceObservation(_ observation: AgentMcpJSONObject,
+                                         scope: AgentCollaborationToolEvidenceScope,
+                                         sections: [String: String] = [:]) throws {
+    guard sections.allSatisfy({ AgentCollaborationInlineOriginals.contextSections.contains($0.key) &&
+      $0.value.utf8.count <= AgentCollaborationInlineOriginals.maximumContextSectionBytes }) else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    try access { database in
+      guard var snapshot = try database.snapshots(runId: scope.runId).first,
+            snapshot.conversationId == scope.conversationId, snapshot.taskId == scope.turnId,
+            !snapshot.state.isTerminal,
+            let index = snapshot.members.firstIndex(where: {
+              $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+                $0.dispatchCheckpoint == .dispatching && !$0.status.isTerminal
+            }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
+      if !sections.isEmpty {
+        let key = Self.dispatchContextKey(scope)
+        let originals = sections.mapValues { Data($0.utf8) }
+        if let saved = try database.researchRecord([String: Data].self, conversationId: scope.conversationId,
+          key: key, revision: 0) {
+          guard saved == originals else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else {
+          try database.insertResearchRecord(originals, conversationId: scope.conversationId, key: key, revision: 0)
+        }
+      }
+      if let saved = snapshot.members[index].dispatchResourceObservation {
+        guard saved == observation else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return
+      }
+      snapshot.members[index].dispatchResourceObservation = observation
+      snapshot.updatedAtMillis = max(snapshot.updatedAtMillis, observation.int64("observed_at_unix_ms"))
+      try database.put(snapshot)
+    }
+  }
+
+  private static func dispatchContextKey(_ scope: AgentCollaborationToolEvidenceScope) -> String {
+    "dispatch-context:" + AgentMcpJSONCodec.sha256([
+      "run": .string(scope.runId), "turn": .string(scope.turnId),
+      "member": .string(scope.memberId), "source": .string(scope.sourceId)
+    ])
+  }
+
   func applyReply(supervisorRunId: String, source: String, conversation: String, turn: String,
                   task: String, contact: String, content: String, richOutputJson: String = "",
                   success: Bool, now: Int64) -> AgentTeamExecutionSnapshot? {
@@ -213,7 +285,13 @@ final class AgentTeamExecutionHistoryStore {
       guard let saved = try database.snapshots(runId: owner.supervisorRunId).first,
             let member = saved.members.first(where: { $0.memberId == owner.memberId &&
               $0.sourceMessageId == source && $0.agentId == contact }), saved.state != .cancelled else { return .retired }
-      if owner.deliveryMode == .respond { return .primary }
+      if owner.deliveryMode == .respond {
+        if persistObservation {
+          let next = owner.observingPrimaryRecall(observation, terminal: terminal)
+          if next != owner { try database.updateReplyOwner(next) }
+        }
+        return .primary
+      }
       guard owner.accepts(observation) else { return .observerStale }
       if (member.status.isTerminal && member.status != .interrupted) || saved.state.deliverable {
         let expected = success ? AgentSubagentStatus.succeeded : .failed
@@ -272,8 +350,22 @@ final class AgentTeamExecutionHistoryStore {
     }
   }
 
-  func recoveryContext(source: String, conversation: String, turn: String, contact: String) throws -> AgentTeamReplyRecoveryContext? {
+  func observeDesktopRecallEvent(source: String, conversation: String, turn: String, contact: String,
+                                 observation: AgentTeamReplyObservation, terminal: Bool) throws {
     try access { database in
+      guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact)
+      else { return }
+      let next = owner.observingRecallEvent(observation, terminal: terminal)
+      if next != owner { try database.updateReplyOwner(next) }
+    }
+  }
+
+  func recoveryContext(source: String, conversation: String, turn: String, contact: String,
+                       requireResearchAccess: Bool = false) throws -> AgentTeamReplyRecoveryContext? {
+    try access { database in
+      if requireResearchAccess,
+         try database.researchRecord(Bool.self, conversationId: conversation,
+           key: "native-evidence-revoked", revision: 0) == true { return nil }
       guard let owner = try database.replyOwner(source: source, conversation: conversation, turn: turn, contact: contact),
             let team = try database.snapshots(runId: owner.supervisorRunId).first,
             team.conversationId == conversation, team.taskId == turn,
@@ -405,6 +497,7 @@ final class AgentTeamExecutionHistoryStore {
   func recallCollaborationOriginal(_ input: AgentMcpJSONObject,
                                    scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
     let mode = input.string("mode")
+    if mode == "dependency" { return try recallDependencyOriginal(input, scope: scope) }
     if mode == "capabilities" { return try recallCapabilities(input, scope: scope) }
     if mode == "evolution_rules" {
       guard Set(input.keys).isSubset(of: ["mode", "topic", "offset"]),
@@ -460,7 +553,9 @@ final class AgentTeamExecutionHistoryStore {
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
-              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }) else {
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
       if mode == "workspace" {
@@ -517,6 +612,37 @@ final class AgentTeamExecutionHistoryStore {
       )
     }
     return result
+  }
+
+  private func recallDependencyOriginal(_ input: AgentMcpJSONObject,
+                                        scope: AgentCollaborationToolEvidenceScope) throws -> AgentMcpJSONObject {
+    let id = input.string("member_id")
+    guard Set(input.keys).isSubset(of: ["mode", "member_id", "offset", "sha256"]),
+          !id.isBlank, id.utf8.count <= 256, id != scope.memberId,
+          case .int(let offset) = input["offset"] ?? .int(0), offset >= 0,
+          offset == 0 || input["sha256"] != nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      guard let team = try database.snapshots(runId: scope.runId).first,
+            team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
+            team.members.contains(where: { $0.memberId == scope.memberId && $0.sourceMessageId == scope.sourceId &&
+              !$0.status.isTerminal && ($0.dispatchCheckpoint == .dispatching || $0.dispatchCheckpoint == .accepted) &&
+              $0.dispatchDependencyMemberIds?.contains(id) == true }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true,
+            let author = team.members.first(where: { $0.memberId == id && $0.status == .succeeded }),
+            let original = author.replyContent else { throw AgentTeamHistoryDatabase.Failure.stale }
+      let bytes = Data(original.utf8)
+      let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+      guard offset <= Int64(bytes.count), input["sha256"] == nil || input["sha256"] == .string(hash) else {
+        throw AgentTeamHistoryDatabase.Failure.stale
+      }
+      let start = Int(offset)
+      let end = start + min(8_192, bytes.count - start)
+      return ["member_id": .string(id), "sha256": .string(hash), "offset": .int(offset),
+        "data_b64": .string(bytes.subdata(in: start..<end).base64EncodedString()),
+        "total_bytes": .int(Int64(bytes.count)), "next_offset": end < bytes.count ? .int(Int64(end)) : .null,
+        "trust": .string("untrusted_group_evidence")]
+    }
   }
 
   func initialCollaborationCapabilities(scope: AgentCollaborationToolEvidenceScope) throws -> [AgentMcpJSONValue] {
@@ -615,7 +741,9 @@ final class AgentTeamExecutionHistoryStore {
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             team.members.contains(where: { $0.memberId == scope.memberId &&
-              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }) else {
+              $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else {
         throw AgentTeamHistoryDatabase.Failure.stale
       }
       let ids = try database.cloudProblemIds(scope: scope, after: cursor, limit: 9)
@@ -726,6 +854,9 @@ final class AgentTeamExecutionHistoryStore {
         let references = draft.observations ?? []
         var frozenReads: [AgentCollaborationFrozenCloudRead]? = nil
         var expectedUtilities: [String: Double]? = nil
+        var expectedInformation: [String: Double]? = nil
+        var hypothesisFeedback: AgentMcpJSONObject? = nil
+        var carriedPosterior: AgentMcpJSONObject? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
         var trialAuthors: [String]? = nil
         if draft.kind == .acceptanceReview {
@@ -827,6 +958,19 @@ final class AgentTeamExecutionHistoryStore {
             else { throw AgentTeamHistoryDatabase.Failure.stale }
             model = savedModel
             expectedUtilities = utilities
+            if value["hypothesis_test"] != nil {
+              let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+                turnId: turnId, memberId: memberId, sourceId: sourceId)
+              if let test = value["hypothesis_test"]?.objectValue, let prior = test["prior_outcome"] {
+                carriedPosterior = try Self.loadHypothesisPosterior(prior, test: test, model: savedModel,
+                  parents: draft.parents, scope: scope, database: database)
+              }
+              guard let information = AgentCollaborationForecastIntake.hypothesisInformation(value,
+                carriedPosterior: carriedPosterior) else {
+                throw AgentTeamHistoryDatabase.Failure.corrupt
+              }
+              expectedInformation = information
+            }
           }
           let goalHash = SHA256.hash(data: Data(snapshot.goal.utf8)).map { String(format: "%02x", $0) }.joined()
           guard model.string("goal_sha256") == goalHash,
@@ -887,6 +1031,36 @@ final class AgentTeamExecutionHistoryStore {
             return record
           }
           guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else if draft.kind == .predictionOutcome {
+          let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
+            turnId: turnId, memberId: memberId, sourceId: sourceId)
+          guard draft.objectId?.isBlank != false, draft.baseRevision == 0, references.count == 1,
+                let value = draft.body["prediction_outcome"]?.objectValue, Set(value.keys) == ["forecast"],
+                let ref = Self.forecastReference(value["forecast"]), draft.parents.contains(ref),
+                let forecast = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                  conversationId: conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+                forecast.reference == ref, forecast.draft.kind == .actionForecast,
+                forecast.turnId != turnId || (forecast.runId == runId && forecast.authorId == memberId),
+                forecast.expectedInformationGainBits != nil, let registered = forecast.registeredAtMillis,
+                let spec = forecast.draft.body["action_forecast"]?.objectValue,
+                let deadline = spec["valid_until"]?.intValue,
+                let tool = spec["source"]?.objectValue?.string("tool"),
+                let ids = spec["hypothesis_test"]?.objectValue?["event_ids"]?.arrayValue?.compactMap(\.strictStringValue),
+                let event = spec["events"]?.arrayValue?.compactMap(\.objectValue).first(where: { ids.contains($0.string("id")) })
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          let reads = try Self.freezeCloudReads(references, scope: scope, database: database)
+          guard let read = reads.first, let original = try database.cloudEvidence(id: read.evidenceId, conversationId: conversationId),
+                original.succeeded, original.call.name == tool, original.scope.memberId == spec.string("executor"),
+                original.scope.runId == forecast.runId, original.scope.turnId == forecast.turnId,
+                original.startedAtMillis >= registered, original.finishedAtMillis >= original.startedAtMillis,
+                forecast.carriedHypothesisPosterior == nil || original.startedAtMillis > registered,
+                let feedback = AgentCollaborationForecastIntake.hypothesisFeedback(spec,
+                  observed: Self.measurementValue(original.output, pointer: event.string("pointer")),
+                  withinValidity: original.finishedAtMillis <= deadline,
+                  carriedPosterior: forecast.carriedHypothesisPosterior)
+          else { throw AgentTeamHistoryDatabase.Failure.stale }
+          hypothesisFeedback = feedback
+          frozenReads = reads
         } else if draft.kind == .experimentResult {
           guard draft.objectId?.isBlank != false, draft.baseRevision == 0, !references.isEmpty,
                 let value = draft.body["experiment_result"]?.objectValue,
@@ -977,7 +1151,10 @@ final class AgentTeamExecutionHistoryStore {
           revision: draft.baseRevision + 1, sha256: ""), previousHash: head?.reference.sha256,
           runId: runId, turnId: turnId, authorId: memberId, sourceId: sourceId, draft: draft,
           frozenCloudReads: frozenReads, declaredExpectedUtilities: expectedUtilities,
-          registeredAtMillis: draft.kind == .experimentPlan ? AgentControlPlaneClock.nowMillis() : nil,
+          expectedInformationGainBits: expectedInformation,
+          hypothesisFeedback: hypothesisFeedback,
+          carriedHypothesisPosterior: carriedPosterior,
+          registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
           measuredCases: measuredCases, trialAuthors: trialAuthors)
         revision.reference.sha256 = try digest(revision)
         revisions.append(revision)
@@ -1062,6 +1239,13 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   private static func measurementReport(_ raw: String, pointer: String) -> AgentMcpJSONObject? {
+    guard let node = measurementValue(raw, pointer: pointer) else { return nil }
+    if let report = node.objectValue { return report }
+    guard let encoded = node.stringValue else { return nil }
+    return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(encoded.utf8))
+  }
+
+  private static func measurementValue(_ raw: String, pointer: String) -> AgentMcpJSONValue? {
     guard var node = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: Data(raw.utf8)),
           pointer.isEmpty || pointer.hasPrefix("/") else { return nil }
     for part in pointer.split(separator: "/", omittingEmptySubsequences: false).dropFirst() {
@@ -1074,9 +1258,39 @@ final class AgentTeamExecutionHistoryStore {
         return nil
       }
     }
-    if let report = node.objectValue { return report }
-    guard let encoded = node.stringValue else { return nil }
-    return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(encoded.utf8))
+    return node
+  }
+
+  private static func loadHypothesisPosterior(_ prior: AgentMcpJSONValue, test: AgentMcpJSONObject,
+    model: AgentMcpJSONObject, parents: [AgentCollaborationResearchReference],
+    scope: AgentCollaborationToolEvidenceScope, database: AgentTeamHistoryDatabase) throws -> AgentMcpJSONObject {
+    func exact(_ value: AgentMcpJSONValue?, kind: AgentCollaborationResearchDraft.Kind)
+      throws -> AgentCollaborationResearchRevision? {
+      guard let ref = forecastReference(value),
+            let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+              conversationId: scope.conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+            saved.reference == ref, saved.draft.kind == kind,
+            saved.turnId != scope.turnId || (saved.runId == scope.runId && saved.authorId == scope.memberId)
+      else { return nil }
+      return saved
+    }
+    guard let ref = forecastReference(prior), parents.contains(ref),
+          let outcome = try exact(prior, kind: .predictionOutcome),
+          let feedback = outcome.hypothesisFeedback, feedback.string("state") == "updated_from_observation",
+          let posterior = feedback["posterior"]?.objectValue,
+          let observation = outcome.frozenCloudReads?.first,
+          let original = try database.cloudEvidence(id: observation.evidenceId, conversationId: scope.conversationId),
+          original.finishedAtMillis < AgentControlPlaneClock.nowMillis(),
+          let previous = try exact(outcome.draft.body["prediction_outcome"]?.objectValue?["forecast"], kind: .actionForecast),
+          let forecast = previous.draft.body["action_forecast"]?.objectValue,
+          let oldTest = forecast["hypothesis_test"]?.objectValue,
+          AgentCollaborationForecastIntake.sameHypothesisQuestion(oldTest, test),
+          let environment = try exact(forecast["task_environment_model"], kind: .environmentModel),
+          let oldModel = environment.draft.body["task_environment_model"]?.objectValue,
+          ["goal_sha256", "criterion_id", "requirement", "domain", "environment", "scope"].allSatisfy({
+            Data(oldModel.string($0).utf8) == Data(model.string($0).utf8)
+          }) else { throw AgentTeamHistoryDatabase.Failure.stale }
+    return posterior
   }
 
   private static func forecastReference(_ value: AgentMcpJSONValue?) -> AgentCollaborationResearchReference? {
@@ -1188,7 +1402,9 @@ final class AgentTeamExecutionHistoryStore {
           throw AgentTeamHistoryDatabase.Failure.corrupt
         }
         if let citations = revision.draft.observations, !citations.isEmpty {
-          guard [.acceptanceReview, .environmentModel, .teamExchange, .failureExperience, .innovationOpportunity, .experimentResult, .capabilityLesson].contains(revision.draft.kind), let reads = revision.frozenCloudReads,
+          guard [.acceptanceReview, .environmentModel, .teamExchange, .failureExperience, .innovationOpportunity,
+                 .experimentResult, .predictionOutcome, .capabilityLesson].contains(revision.draft.kind),
+                let reads = revision.frozenCloudReads,
                 reads.count == citations.count,
                 zip(reads, citations).allSatisfy({ pair in
                   pair.0.evidenceId == pair.1.string("evidence_id") &&
@@ -1366,10 +1582,14 @@ final class AgentTeamExecutionHistoryStore {
   }
 
   func collaborationResults(conversationId: String, limit: Int) -> [AgentTeamExecutionSnapshot] {
+    (try? readCollaborationResults(conversationId: conversationId, limit: limit)) ?? []
+  }
+
+  func readCollaborationResults(conversationId: String, limit: Int) throws -> [AgentTeamExecutionSnapshot] {
     guard !conversationId.isBlank, limit > 0 else { return [] }
-    return (try? access {
+    return try access {
       try $0.snapshots(conversation: conversationId, limit: min(limit, Self.maxSnapshots))
-    }) ?? []
+    }
   }
 
   func latestCollaborationRun(conversationId: String) -> AgentTeamExecutionSnapshot? {
@@ -1422,22 +1642,31 @@ final class AgentTeamExecutionHistoryStore {
 
   func readPinnedCollaborationGoal(scope: AgentCollaborationToolEvidenceScope, section: String,
                                    offset: Int = 0, expectedHash: String? = nil) throws -> AgentMcpJSONObject {
-    guard ["goal", "criteria"].contains(section), offset >= 0,
+    guard AgentCollaborationInlineOriginals.recallSections.contains(section), offset >= 0,
           offset == 0 || expectedHash != nil else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let bytes = try access { database -> Data in
       guard let team = try database.snapshots(runId: scope.runId).first,
             team.conversationId == scope.conversationId, team.taskId == scope.turnId, !team.state.isTerminal,
             let member = team.members.first(where: { $0.memberId == scope.memberId &&
               $0.sourceMessageId == scope.sourceId && !$0.status.isTerminal }),
-            !team.goal.isBlank else { throw AgentTeamHistoryDatabase.Failure.stale }
+            !team.goal.isBlank,
+            try database.researchRecord(Bool.self, conversationId: scope.conversationId,
+              key: "native-evidence-revoked", revision: 0) != true else { throw AgentTeamHistoryDatabase.Failure.stale }
       if section == "goal", member.dispatchCheckpoint != nil { return Data(team.goal.utf8) }
+      if AgentCollaborationInlineOriginals.contextSections.contains(section) {
+        guard let originals = try database.researchRecord([String: Data].self,
+          conversationId: scope.conversationId, key: Self.dispatchContextKey(scope), revision: 0),
+          let original = originals[section] else { throw AgentTeamHistoryDatabase.Failure.stale }
+        return original
+      }
       guard let pinned = try database.goalCheckpoints(runId: scope.runId, revision: 1, newestOnly: true).first,
             pinned.conversationId == scope.conversationId, pinned.turnId == scope.turnId,
             !pinned.contract.isEmpty else { throw AgentTeamHistoryDatabase.Failure.stale }
       if section == "goal" { return Data(team.goal.utf8) }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
-      return try encoder.encode(pinned.contract)
+      let criteria = try encoder.encode(pinned.contract)
+      return section == "source" ? AgentCollaborationInlineOriginals.source(goal: team.goal, criteria: criteria) : criteria
     }
     let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     guard offset <= bytes.count, expectedHash == nil || expectedHash == digest else {
@@ -1475,9 +1704,13 @@ final class AgentTeamExecutionHistoryStore {
         let priorWorkflows = prior.first?.liveGraph?.workflowInstances ?? [:]
         let workflows = checkpoint.liveGraph?.workflowInstances ?? [:]
         let additions = updated.dropFirst(existing.count)
+        let authors = Dictionary(updated.map { ($0.id, $0.member) }, uniquingKeysWith: { first, _ in first })
         guard priorWorkflows.allSatisfy({ workflows[$0.key] == $0.value }),
+              authors.count == updated.count,
               additions.allSatisfy({ item in
-                guard let id = item.workflowExecutionId else { return item.review_targets == nil }
+                guard let id = item.workflowExecutionId else {
+                  return item.review_targets == nil || item.hasIndependentReviewAuthors { authors[$0] }
+                }
                 return priorWorkflows[id] == nil && workflows[id] != nil
               }) else { return false }
         for (id, instance) in workflows where priorWorkflows[id] == nil {

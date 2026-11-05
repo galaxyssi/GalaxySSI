@@ -10,6 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -30,7 +31,11 @@ class HealthCameraActivity : Activity() {
     private val ui by lazy { HealthCenterViews(this) }
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
-    private val store by lazy { HealthOriginalStore(applicationContext) }
+    private val names by lazy {
+        val fixture = intent.getStringExtra("health_camera_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) }
+        HealthOverviewDatabases(fixture)
+    }
+    private val store by lazy { HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)) }
     private lateinit var camera: HealthCameraController
     private lateinit var cameraArea: FrameLayout
     private lateinit var pages: LinearLayout
@@ -49,7 +54,6 @@ class HealthCameraActivity : Activity() {
     private var busy = false
     private var pendingId = ""
     private var replacement: String? = null
-    private var editingId = ""
     private var exportId = ""
     private var light = false
     private var generation = 0
@@ -66,7 +70,6 @@ class HealthCameraActivity : Activity() {
         super.onCreate(state)
         batchId = state?.getString("batch") ?: intent.getStringExtra("capture_batch").orEmpty()
         inCamera = state?.getBoolean("camera", false) ?: intent.getBooleanExtra("capture_camera", batchId.isBlank())
-        editingId = state?.getString("editing").orEmpty()
         exportId = state?.getString("export").orEmpty()
         replacement = state?.getString("replacement")
         state?.getIntegerArrayList("page_cursors")?.let(pageCursors::addAll)
@@ -181,7 +184,7 @@ class HealthCameraActivity : Activity() {
         io.shutdown(); super.onDestroy()
     }
     override fun onSaveInstanceState(out: Bundle) {
-        out.putString("batch", batchId); out.putBoolean("camera", inCamera); out.putString("editing", editingId)
+        out.putString("batch", batchId); out.putBoolean("camera", inCamera)
         out.putString("replacement", replacement); out.putString("export", exportId); out.putIntegerArrayList("page_cursors", pageCursors); super.onSaveInstanceState(out)
     }
     @Deprecated("Native camera back dispatch") override fun onBackPressed() = back()
@@ -270,7 +273,21 @@ class HealthCameraActivity : Activity() {
         photos.forEachIndexed { index, row ->
             ui.add(content, ui.card().apply {
                 addView(ui.line().apply {
-                    val image = ImageView(this@HealthCameraActivity).apply { scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = row.original?.name }
+                    val suggestion = if (submitted) null else row.page.quality?.suggestedCrop
+                    val image = object : ImageView(this@HealthCameraActivity) {
+                        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color = 0xff10836e.toInt(); strokeWidth = ui.dp(2).toFloat(); style = Paint.Style.STROKE
+                        }
+                        override fun onDraw(canvas: Canvas) {
+                            super.onDraw(canvas)
+                            val rendered = drawable ?: return
+                            val crop = suggestion ?: return
+                            val b = crop.pixels(rendered.intrinsicWidth, rendered.intrinsicHeight)
+                            val box = RectF(b[0].toFloat(), b[1].toFloat(), b[2].toFloat(), b[3].toFloat())
+                            imageMatrix.mapRect(box)
+                            canvas.drawRect(box, stroke)
+                        }
+                    }.apply { scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = row.original?.name }
                     addView(image, LinearLayout.LayoutParams(ui.dp(80), ui.dp(104)).apply { marginEnd = ui.dp(12) })
                     addView(ui.column().apply {
                         addView(ui.text(getString(R.string.health_photo_page, row.number), 17f, bold = true))
@@ -291,7 +308,10 @@ class HealthCameraActivity : Activity() {
                     if (!submitted) {
                         addView(action(R.drawable.ic_agent_arrow_up, R.string.health_photo_move_up) { mutate { store.moveCapturePage(row.page.jobId, -1) } })
                         addView(action(R.drawable.ic_agent_arrow_up, R.string.health_photo_move_down) { mutate { store.moveCapturePage(row.page.jobId, 1) } }.apply { rotation = 180f })
-                        addView(action(R.drawable.ic_composer_crop, R.string.composer_crop) { row.original?.let { crop(row.page.jobId, it) } }.apply { isEnabled = row.original != null })
+                        val suggested = row.page.quality?.suggestedCrop
+                        addView(action(R.drawable.ic_composer_crop, if (suggested == null) R.string.composer_crop else R.string.health_photo_suggested_crop) {
+                            row.original?.let { crop(row.page.jobId, it, suggested) }
+                        }.apply { isEnabled = row.original != null })
                         addView(action(R.drawable.ic_agent_camera, R.string.health_photo_retake) { openCamera(row.page.jobId) })
                         addView(action(R.drawable.ic_delete, R.string.health_photo_remove) { confirmRemove(row.page.jobId) })
                     } else addView(ui.row(getString(R.string.health_review_title)) {
@@ -315,7 +335,9 @@ class HealthCameraActivity : Activity() {
     private fun qualityText(row: PhotoRow): String {
         if (row.page.quality != null && row.original == null) return getString(R.string.health_original_missing)
         val quality = row.page.quality ?: return getString(if (row.job?.state == HealthImportState.FAILED) R.string.health_photo_failed else R.string.health_photo_inspecting)
-        return listOfNotNull(if (quality.lowDetail) getString(R.string.health_photo_low_detail) else null,
+        return listOfNotNull(if (quality.suggestedCrop != null) getString(R.string.health_photo_edges_found)
+            else if (quality.reportChecked) getString(R.string.health_photo_edges_unclear) else null,
+            if (quality.lowDetail) getString(R.string.health_photo_low_detail) else null,
             if (quality.dark) getString(R.string.health_photo_dark) else null, if (quality.small) getString(R.string.health_photo_small) else null)
             .joinToString("\n").ifBlank { getString(R.string.health_photo_check_original) }
     }
@@ -326,22 +348,23 @@ class HealthCameraActivity : Activity() {
                 store.removeCapturePage(id); HealthImportScheduler.cancel(applicationContext, id)
             } }.show()
     }
-    private fun crop(id: String, original: HealthOriginal) {
-        editingId = id
-        val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id).toString(), original.name, original.mime, original.size, sendOriginal = true)
+    private fun crop(id: String, original: HealthOriginal, suggested: HealthReportCrop?) {
+        val item = ComposerAttachmentItem(original.id, HealthOriginalContentProvider.uri(this, original.id, names.fixture).toString(), original.name, original.mime, original.size, sendOriginal = true)
         startActivityForResult(Intent(this, ComposerAttachmentEditorActivity::class.java).putExtra(ComposerAttachmentEditorActivity.ITEMS, ComposerAttachmentItem.encode(listOf(item)))
-            .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id), CROP)
+            .putExtra("crop_immediately", true).putExtra("health_original_parent", original.id)
+            .putExtra(HEALTH_CROP_BATCH, batchId).putExtra(HEALTH_CROP_PAGE, id)
+            .putExtra(HEALTH_REPORT_CROP, suggested?.encode()), CROP)
     }
     @Deprecated("Native picker/crop callback") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
         if (requestCode == PICK) {
             val uris = data?.clipData?.let { clip -> (0 until clip.itemCount).map { clip.getItemAt(it).uri } } ?: listOfNotNull(data?.data)
-            uris.distinct().forEach { uri -> collect(uri, null) }
+            uris.distinct().forEach(::collect)
         } else if (requestCode == CROP) {
-            val item = data?.getStringExtra(ComposerAttachmentEditorActivity.ITEMS)?.let(ComposerAttachmentItem::decode)?.singleOrNull()
-            if (item != null && editingId.isNotBlank()) collect(android.net.Uri.parse(item.uri), editingId)
-            editingId = ""
+            if (data?.getStringExtra(HEALTH_CROP_RESULT)?.let(HealthProfilePolicy::uuid) == true) {
+                rendered = ""; load()
+            }
         } else if (requestCode == EXPORT) {
             val uri = data?.data ?: return; val id = exportId
             io.execute {
@@ -359,12 +382,12 @@ class HealthCameraActivity : Activity() {
         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(original.mime)
             .putExtra(Intent.EXTRA_TITLE, original.name), EXPORT)
     }
-    private fun collect(uri: android.net.Uri, replace: String?) {
+    private fun collect(uri: android.net.Uri) {
         io.execute {
             val result = runCatching {
                 runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 val owner = requireNotNull(store.captureBatch(batchId)); val id = UUID.randomUUID().toString()
-                store.addCaptureJob(batchId, HealthImportJob(id, uri.toString(), System.currentTimeMillis(), mode = owner.mode, captureBatch = batchId), replace)
+                store.addCaptureJob(batchId, HealthImportJob(id, uri.toString(), System.currentTimeMillis(), mode = owner.mode, captureBatch = batchId))
                 HealthImportScheduler.enqueue(applicationContext, id, prepareCapture = true)
             }
             main.post { if (active) { result.onFailure { message(R.string.health_photo_changed) }; pageCursors.clear(); rendered = ""; load() } }
@@ -381,3 +404,5 @@ class HealthCameraActivity : Activity() {
     private data class PhotoRow(val page: HealthPhotoPage, val job: HealthImportJob?, val original: HealthOriginal?, val number: Int)
     companion object { private const val PERMISSION = 88; private const val PICK = 89; private const val CROP = 90; private const val EXPORT = 91 }
 }
+
+internal const val HEALTH_REPORT_CROP = "health_report_crop"

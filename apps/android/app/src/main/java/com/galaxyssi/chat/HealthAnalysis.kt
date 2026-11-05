@@ -11,22 +11,39 @@ import org.json.JSONObject
 
 internal enum class HealthAnalysisFocus { CHANGES, COVERAGE, NEXT_RECORDS }
 internal enum class HealthAnalysisAction { ADD_RECORD, RECORD_REMINDER, WEEKLY_REPORT }
+internal val healthAnalysisProfileFields = HealthProfileField.entries.filter { it != HealthProfileField.NAME }
+internal const val healthAnalysisBackgroundLimit = 30
 internal data class HealthAnalysisReference(val id: String, val revision: Int, val time: Long, val source: String, val baseline: Boolean)
 internal data class HealthAnalysisFact(val key: String, val stat: HealthWeeklyStat, val refs: List<HealthAnalysisReference>)
 internal data class HealthAnalysisPreview(val weekly: HealthWeeklySnapshot, val facts: List<HealthAnalysisFact>,
-    val focus: HealthAnalysisFocus, val policyVersion: String) {
+    val focus: HealthAnalysisFocus, val policyVersion: String, val profile: HealthProfileContext? = null) {
     val hasData get() = facts.any { it.stat.validDays > 0 }
 }
 internal data class HealthAnalysisPlan(val factKeys: List<String>, val actions: List<HealthAnalysisAction>)
 internal class HealthAnalysisInvalidReply : IllegalStateException()
 internal class HealthAnalysisNoModel : IllegalStateException()
+internal class HealthAnalysisProfileChanged : IllegalStateException("Health analysis profile context changed")
+internal class HealthAnalysisProfileBlocked : IllegalStateException("Health analysis profile context is disabled")
 
 internal object HealthAnalysis {
     fun prepare(context: Context, names: HealthOverviewDatabases, scope: HealthWeeklyScope,
-        focus: HealthAnalysisFocus, signal: CancellationSignal? = null): HealthAnalysisPreview =
-        HealthPrivacyStore(context, names.privacy).use { privacy ->
+        focus: HealthAnalysisFocus, signal: CancellationSignal? = null,
+        profileFields: Set<HealthProfileField> = emptySet(), profileEntries: Map<String, String> = emptyMap()): HealthAnalysisPreview {
+        require(profileFields.all { it in healthAnalysisProfileFields })
+        require(profileEntries.size <= healthAnalysisBackgroundLimit && profileEntries.all { (id, token) ->
+            HealthProfilePolicy.uuid(id) && HealthProfilePolicy.uuid(token)
+        })
+        return HealthPrivacyStore(context, names.privacy).use { privacy ->
             privacy.track(HealthAccessScope.analysis(scope)) {
                 val version = privacy.policy().version
+                val profile = if (profileFields.isEmpty() && profileEntries.isEmpty()) null else {
+                    try {
+                        HealthProfileStore(context, names.profile, names.privacy).use {
+                            it.capture(profileFields, profileEntries.keys, profileEntries)
+                        }
+                    } catch (_: HealthAccessBlocked) { throw HealthAnalysisProfileBlocked() }
+                    catch (_: HealthProfileConflict) { throw HealthAnalysisProfileChanged() }
+                }
                 HealthRecordStore(context, names.records).use { store ->
                     val weekly = HealthWeeklyRepository.calculate(store, scope, signal = signal)
                     val facts = weekly.stats.mapIndexed { index, stat ->
@@ -36,10 +53,13 @@ internal object HealthAnalysis {
                         HealthAnalysisFact("f${index + 1}", stat, listOfNotNull(recent, baseline))
                     }
                     HealthWeeklyRepository.requireCurrent(store, weekly.stamp)
-                    HealthAnalysisPreview(weekly, facts, focus, version)
+                    HealthAnalysisPreview(weekly, facts, focus, version, profile).also {
+                        if (!profileIsCurrent(context, names, it)) throw HealthAnalysisProfileChanged()
+                    }
                 }
             }
         }
+    }
 
     private fun latestReference(store: HealthRecordStore, scope: HealthRecordExportScope,
         baseline: Boolean, signal: CancellationSignal?): HealthAnalysisReference? {
@@ -64,8 +84,25 @@ internal object HealthAnalysis {
     fun requireCurrent(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview, online: Boolean) {
         val policy = HealthPrivacyStore(context, names.privacy).use { it.policy() }
         if (!policy.metrics || (online && !policy.online)) throw HealthAccessBlocked()
+        if (preview.profile != null && !policy.profile) throw HealthAnalysisProfileBlocked()
         if (policy.version != preview.policyVersion) throw HealthWeeklyChanged()
         HealthRecordStore(context, names.records).use { HealthWeeklyRepository.requireCurrent(it, preview.weekly.stamp) }
+        if (!profileIsCurrent(context, names, preview)) throw HealthAnalysisProfileChanged()
+    }
+
+    fun profileIsCurrent(context: Context, names: HealthOverviewDatabases, preview: HealthAnalysisPreview): Boolean =
+        preview.profile?.let { profile ->
+            HealthProfileStore(context, names.profile, names.privacy).use { it.isCurrent(profile.stamp) }
+        } ?: true
+
+    fun backgroundPage(context: Context, names: HealthOverviewDatabases, kind: HealthBackgroundKind,
+        after: HealthBackgroundCursor?): HealthBackgroundPage {
+        val policy = HealthPrivacyStore(context, names.privacy).use { it.policy() }
+        if (!policy.profile) throw HealthAnalysisProfileBlocked()
+        val page = HealthProfileStore(context, names.profile, names.privacy).use { it.page(kind, after) }
+        val current = HealthPrivacyStore(context, names.privacy).use { it.policy() }
+        if (!current.profile || current.version != policy.version) throw HealthAnalysisProfileBlocked()
+        return page
     }
 
     fun payload(preview: HealthAnalysisPreview): JSONObject {

@@ -13,13 +13,24 @@ internal data class HealthPhotoPage(val jobId: String, val batchId: String, val 
     fun json() = JSONObject().put("job", jobId).put("batch", batchId).put("position", position).apply { quality?.let { put("quality", it.json()) } }
     companion object { fun from(j: JSONObject) = HealthPhotoPage(j.getString("job"), j.getString("batch"), j.getInt("position"), j.optJSONObject("quality")?.let(HealthPhotoQuality::from)) }
 }
-internal data class HealthPhotoQuality(val width: Int, val height: Int, val rotation: Int, val detail: Double, val luminance: Double) {
+internal data class HealthPhotoQuality(val width: Int, val height: Int, val rotation: Int, val detail: Double, val luminance: Double,
+    val reportChecked: Boolean = false, val suggestedCrop: HealthReportCrop? = null) {
     val lowDetail get() = detail < 45.0
     val dark get() = luminance < 35.0
     val small get() = minOf(width, height) < 800
     val needsReview get() = lowDetail || dark || small
     fun json() = JSONObject().put("width", width).put("height", height).put("rotation", rotation).put("detail", detail).put("luminance", luminance)
-    companion object { fun from(j: JSONObject) = HealthPhotoQuality(j.getInt("width"), j.getInt("height"), j.getInt("rotation"), j.getDouble("detail"), j.getDouble("luminance")) }
+        .put("report_checked", reportChecked).apply {
+            suggestedCrop?.let { put("paper_bounds", org.json.JSONArray(it.encode().toList())) }
+        }
+    companion object {
+        fun from(j: JSONObject): HealthPhotoQuality {
+            val bounds = j.optJSONArray("paper_bounds")?.takeIf { it.length() == 4 }
+                ?.let { a -> IntArray(4) { a.optInt(it, -1) } }
+            return HealthPhotoQuality(j.getInt("width"), j.getInt("height"), j.getInt("rotation"), j.getDouble("detail"),
+                j.getDouble("luminance"), j.optBoolean("report_checked"), HealthReportCrop.from(bounds))
+        }
+    }
 }
 
 /** A capture-quality hint, not a diagnosis or a guarantee of OCR accuracy. */

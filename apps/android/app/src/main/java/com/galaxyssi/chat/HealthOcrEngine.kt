@@ -43,6 +43,7 @@ internal class HealthOcrEngine : Closeable {
     }
     fun pdf(store: HealthOriginalStore, original: HealthOriginal, firstPage: Int, cancelled: () -> Unit,
         onCount: (Int) -> Unit, onPage: (HealthOcrPage) -> Unit, textSource: HealthPdfTextReader? = null) {
+        if (textSource?.canExtract == false) throw HealthImportFailure("pdf_permission")
         val descriptor = store.descriptor(original)
         val renderer = try { PdfRenderer(descriptor) } catch (failure: Exception) {
             descriptor.close()
@@ -70,6 +71,11 @@ internal class HealthOcrEngine : Closeable {
                 }
             }
         }
+    }
+    fun protectedPdfPage(pdf: HealthPdfTextReader, index: Int, cancelled: () -> Unit): HealthOcrPage {
+        pdf.page(index)?.let { return it }
+        val bitmap = pdf.render(index, 4000, 6_000_000)
+        return try { cancelled(); recognize(bitmap, index + 1) } finally { release(bitmap) }
     }
     private fun recognize(bitmap: Bitmap, number: Int): HealthOcrPage {
         val task = recognizer.value.process(InputImage.fromBitmap(bitmap, 0))

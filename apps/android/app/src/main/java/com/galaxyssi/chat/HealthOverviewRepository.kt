@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import android.content.Intent
 import java.io.File
 import java.time.ZoneId
 
@@ -9,9 +10,17 @@ internal data class HealthOverviewDatabases(val fixture: String? = null) {
     val originals get() = fixture?.let { "health-overview-originals-$it.db" } ?: "health_originals_v1.db"
     val reminders get() = fixture?.let { "health-reminder-test-$it.db" } ?: HealthReminderStore.DEFAULT_DB
     val privacy get() = fixture?.let { "health-privacy-test-$it.db" } ?: HealthPrivacyStore.DEFAULT_DB
+    val profile get() = fixture?.let { "health-profile-test-$it.db" } ?: HealthProfileStore.DEFAULT_DB
     val prefs get() = fixture?.let { "health-overview-test-$it" } ?: "health-overview"
     val backups get() = fixture?.let { "health-backup-history-test-$it.db" } ?: "health_backup_history_v1.db"
     fun originalRoot(context: Context) = File(context.filesDir, fixture?.let { "health-overview-test-$it" } ?: "health-originals-v1")
+}
+
+internal fun Intent.healthNavigationDatabases() = HealthOverviewDatabases(
+    getStringExtra("health_overview_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) })
+
+internal fun Intent.putHealthNavigationFixture(names: HealthOverviewDatabases) = apply {
+    if (BuildConfig.DEBUG && names.fixture != null) putExtra("health_overview_test_id", names.fixture)
 }
 
 internal data class HealthOverviewMetric(val metric: HealthMetric, val record: HealthObservation?, val freshness: HealthOverviewFreshness)
