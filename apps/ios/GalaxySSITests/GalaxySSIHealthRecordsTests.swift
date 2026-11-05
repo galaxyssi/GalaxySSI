@@ -508,6 +508,60 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
   }
 
+  func testSavedBluetoothHistoryKeepsExactDeviceAndBothDates() throws {
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let now = Date()
+    let sameName = (0..<34).map { index -> GalaxySSIHealthReading in
+      let receipt = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now.addingTimeInterval(Double(index)),
+        packet: packet, deviceName: "Same monitor")
+      var reading = receipt.reading(conditions: "")
+      reading.measuredAt = now.addingTimeInterval(Double(-index - 60))
+      return reading
+    }
+    var tombstone = sameName[0]
+    tombstone.id = UUID()
+    tombstone.deleted = true
+    let history = GalaxySSIHealthBluetoothHistory(current: sameName + [tombstone,
+      .init(metric: .bloodPressure, value: 120, diastolic: 80)])
+    XCTAssertEqual(history.devices.count, 34)
+    XCTAssertEqual(history.devices.dropFirst(30).count, 4)
+    let device = try XCTUnwrap(history.devices.first)
+    XCTAssertEqual(device.name, "Same monitor")
+    XCTAssertEqual(history.readings(for: device.id).map(\.id), [sameName[0].id])
+    XCTAssertEqual(device.latest.measuredAt, now.addingTimeInterval(-60))
+    XCTAssertEqual(device.latest.bluetoothReceipt?.receivedAt, now)
+    XCTAssertEqual(Set(history.devices.map(\.ordinal)).count, 34)
+  }
+
+  @MainActor
+  func testSavedBluetoothHistoryTracksPrivacyAndOrdersOnlySelectedDeviceRecords() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let now = Date()
+    let id = UUID()
+    let newest = GalaxySSIHealthBluetoothReceipt(device: id, receivedAt: now, packet: packet, deviceName: " ")
+      .reading(conditions: "")
+    let older = GalaxySSIHealthBluetoothReceipt(device: id, receivedAt: now.addingTimeInterval(-90),
+                                                 packet: packet, deviceName: "Monitor")
+      .reading(conditions: "")
+    let other = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Monitor")
+      .reading(conditions: "")
+    try records.write(newest)
+    try records.write(older)
+    try records.write(other)
+    XCTAssertNil(try GalaxySSIHealthBluetoothHistory(visibleArchive: records.load()))
+    try records.setOverviewPermission(true)
+    let history = try XCTUnwrap(GalaxySSIHealthBluetoothHistory(visibleArchive: records.load()))
+    XCTAssertEqual(history.devices.first { $0.id == id }?.name, "Monitor")
+    XCTAssertEqual(history.readings(for: id).map(\.id), [newest.id, older.id])
+    XCTAssertEqual(history.readings(for: UUID()).count, 0)
+    try records.setOverviewPermission(false)
+    XCTAssertNil(try GalaxySSIHealthBluetoothHistory(visibleArchive: records.load()))
+    XCTAssertEqual(try records.load().current.count, 3)
+  }
+
   @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

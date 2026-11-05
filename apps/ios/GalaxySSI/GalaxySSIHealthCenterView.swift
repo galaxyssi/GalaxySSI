@@ -363,6 +363,7 @@ struct GalaxySSIHealthCenterView: View {
           } label: {
             Label(t("bluetooth.title", "Bluetooth Blood Pressure"), systemImage: "waveform.path.ecg")
           }
+          GalaxySSIHealthBluetoothHistorySection(records: records)
         }
         Section(t("local_sources", "On this device")) {
           if let archive {
