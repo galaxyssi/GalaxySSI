@@ -841,6 +841,9 @@ extension GalaxySSIStore {
     guard !ids.isEmpty else { return 0 }
     let knownConversations = ids.compactMap { agentConversationDatabase.read($0) }
     let removedConversations = agentConversationDatabase.delete(ids)
+    for id in ids where agentConversationDatabase.read(id) == nil {
+      researchCheckpointStore.remove(conversation: id)
+    }
     for session in knownConversations where session.collaborationRoster != nil &&
       agentConversationDatabase.read(session.id) == nil {
       AgentTeamExecutionHistoryStore.shared.removeCloudEvidence(conversationId: session.id)
@@ -889,6 +892,29 @@ extension GalaxySSIStore {
     let clean = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { return [] }
     return chatHistoryDatabase.messages(conversationId: clean)
+  }
+
+  var researchCheckpointStore: AgentResearchCheckpointStore {
+    AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: profile.identityFingerprint)
+  }
+
+  func persistResearchCheckpoints(_ payload: [String: Any], sourceId: UUID, conversation: String, turn: String) {
+    let rows = AgentResearchCheckpoint.entries(payload)
+    guard !rows.isEmpty, !conversation.isBlank, !turn.isBlank,
+          let session = agentSession(id: conversation), !session.privateMode, !session.trackingPaused,
+          let source = chatHistoryDatabase.message(id: sourceId), source.isMine, !source.isSystem,
+          source.conversationId == conversation, source.turnId.ifBlank(source.id.uuidString) == turn else { return }
+    researchCheckpointStore.merge(rows, conversation: conversation, turn: turn, source: sourceId)
+  }
+
+  func researchRetryHandoff(for source: ChatMessage) -> String {
+    let conversation = source.conversationId
+    guard source.isMine, !source.isSystem, conversation == activeAgentConversationId,
+          let session = agentSession(id: conversation), !session.privateMode, !session.trackingPaused,
+          let current = chatHistoryDatabase.message(id: source.id), current.isMine, !current.isSystem,
+          current.conversationId == conversation, current.turnId == source.turnId, current.content == source.content else { return "" }
+    return researchCheckpointStore.handoff(conversation: conversation,
+      turn: source.turnId.ifBlank(source.id.uuidString), source: source.id)
   }
 
   func latestAgentSessionMessage(_ conversationId: String) -> ChatMessage? {

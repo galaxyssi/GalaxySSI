@@ -4,6 +4,40 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  @MainActor
+  func testResearchCheckpointsRecoverTerminalPacketsWithScopedRevisionAndDeletion() throws {
+    let name = "research-checkpoint-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let secrets = InMemorySecretStore()
+    let source = UUID()
+    let store = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "owner")
+    func packet(_ revision: Int, _ text: String) -> [String: Any] {
+      ["contract": AgentResearchCheckpoint.contract, "entries": [
+        ["id": "finding", "kind": "finding", "text": text, "revision": revision,
+         "provenance": "verified", "url": "https://user:secret@example.com/"]
+      ]]
+    }
+    let progress: [String: Any] = ["progress_event": ["metadata": ["research_checkpoint": packet(1, "Old evidence")]]]
+    let terminal: [String: Any] = ["research_checkpoints": [packet(2, "Updated private evidence")]]
+    let rows = AgentResearchCheckpoint.entries(terminal)
+    XCTAssertEqual(rows.first?.provenance, "model_reported_unverified")
+    XCTAssertEqual(rows.first?.url, "")
+    store.merge(AgentResearchCheckpoint.entries(progress), conversation: "a", turn: "one", source: source)
+    store.merge(rows, conversation: "a", turn: "one", source: source)
+    store.merge(AgentResearchCheckpoint.entries(progress), conversation: "a", turn: "one", source: source)
+    let reopened = AgentResearchCheckpointStore(defaults: defaults, secrets: secrets, owner: "owner")
+    let handoff = reopened.handoff(conversation: "a", turn: "one", source: source)
+    XCTAssertTrue(handoff.contains("Updated private evidence"))
+    XCTAssertFalse(handoff.contains("Old evidence"))
+    XCTAssertFalse(defaults.dictionaryRepresentation().description.contains("Updated private evidence"))
+    XCTAssertTrue(reopened.handoff(conversation: "b", turn: "one", source: source).isEmpty)
+    XCTAssertTrue(reopened.handoff(conversation: "a", turn: "two", source: source).isEmpty)
+    XCTAssertTrue(reopened.handoff(conversation: "a", turn: "one", source: UUID()).isEmpty)
+    reopened.remove(conversation: "a")
+    XCTAssertTrue(reopened.handoff(conversation: "a", turn: "one", source: source).isEmpty)
+  }
+
   func testDesktopToolEvidenceRejectsForeignNonceGenerationAndInnerScope() throws {
     let source = UUID().uuidString.lowercased()
     let owner = AgentTeamReplyOwner(supervisorRunId: "run", memberId: "member",
@@ -150,12 +184,15 @@ extension GalaxySSIStoreTests {
       ["event_id": "heartbeat", "kind": "tool", "code": "heartbeat", "title": "Working"],
       ["event_id": "internal", "kind": "research_checkpoint", "detail": "private checkpoint"],
       ["event_id": "hidden", "kind": "narration", "detail": "hidden", "user_visible": false],
-      ["event_id": "checkpoint", "kind": "tool", "code": "dynamic_tool", "detail": "research_checkpoint"]
+      ["event_id": "checkpoint", "kind": "tool", "code": "dynamic_tool", "detail": "research_checkpoint"],
+      ["event_id": "search", "kind": "tool", "code": "web_search", "status": "running"],
+      ["event_id": "planning", "kind": "plan", "title": "Planning"],
+      ["event_id": "search-failed", "kind": "tool", "code": "web_search", "status": "failed"]
     ]
     let payload: [String: Any] = ["type": "agent_task_event", "execution_generation": 2, "status_seq": 3, "events": events]
     let updates = AgentConnectorPublicProgress.entries(payload) { _, fallback in fallback }
-    XCTAssertEqual(updates.map(\.eventId), ["comment", "command"])
-    XCTAssertEqual(updates.map(\.text), ["I will inspect the image.", "Running command"])
+    XCTAssertEqual(updates.map(\.eventId), ["comment", "command", "search-failed"])
+    XCTAssertEqual(updates.map(\.text), ["I will inspect the image.", "Running command", "Failed: Searching the web"])
     XCTAssertFalse(updates.map(\.text).joined().contains("SECRET"))
   }
 
