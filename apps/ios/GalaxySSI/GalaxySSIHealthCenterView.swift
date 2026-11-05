@@ -132,6 +132,11 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("privacy.title", "Health Privacy"), systemImage: "lock.shield")
       }
       NavigationLink {
+        GalaxySSIHealthAssistantView(records: records)
+      } label: {
+        Label(t("assistant.title", "Health Assistant"), systemImage: "chart.bar.xaxis")
+      }
+      NavigationLink {
         GalaxySSIHealthBackupView(records: records, originals:
           GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
       } label: {
