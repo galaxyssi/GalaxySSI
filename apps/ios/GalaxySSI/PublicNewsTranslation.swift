@@ -40,7 +40,7 @@ struct PublicNewsBodyCheckpoint: Codable, Equatable {
 
 actor PublicNewsBodyStore {
   static let shared = PublicNewsBodyStore()
-  private let root: URL?
+  private nonisolated let root: URL?
 
   init(root: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
     .first?.appendingPathComponent("PublicNewsBodies", isDirectory: true)) {
@@ -48,13 +48,13 @@ actor PublicNewsBodyStore {
   }
 
   func load(_ articleID: String) -> PublicNewsBodyCheckpoint? {
-    guard let file = file(for: articleID), let saved = loadValidated(file), saved.articleID == articleID else { return nil }
+    guard let file = file(for: articleID), let saved = Self.loadValidated(file), saved.articleID == articleID else { return nil }
     return saved
   }
 
-  func speechDocument(for item: PublicNewsSpeechBookmark.Item) -> PublicNewsSpeechDocument? {
+  nonisolated func speechDocument(for item: PublicNewsSpeechBookmark.Item) -> PublicNewsSpeechDocument? {
     guard PublicNewsSpeechBookmark.isKey(item.articleKey),
-          let root, let saved = loadValidated(root.appendingPathComponent(item.articleKey).appendingPathExtension("json")),
+          let root, let saved = Self.loadValidated(root.appendingPathComponent(item.articleKey).appendingPathExtension("json")),
           PublicNewsSpeechBookmark.key(for: saved.articleID) == item.articleKey,
           let url = URL(string: saved.articleID), PublicNewsArticleBody.supports(url) else { return nil }
     return PublicNewsSpeechDocument(checkpoint: saved, edition: item.edition)
@@ -73,7 +73,7 @@ actor PublicNewsBodyStore {
     return items
   }
 
-  private func loadValidated(_ file: URL) -> PublicNewsBodyCheckpoint? {
+  private static func loadValidated(_ file: URL) -> PublicNewsBodyCheckpoint? {
     guard let data = try? Data(contentsOf: file), data.count <= 1_500_000,
           let saved = try? JSONDecoder().decode(PublicNewsBodyCheckpoint.self, from: data),
           saved.fingerprint == saved.source.fingerprint,

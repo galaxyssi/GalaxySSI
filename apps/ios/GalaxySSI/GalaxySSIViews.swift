@@ -280,6 +280,7 @@ final class GalaxySSIStartupHandoff: ObservableObject {
       store.restoreRuntimePlaintextAfterForeground()
       GalaxySSIRuntimePlaintextProtection.leaveRuntimeBoundary()
     } else {
+      runtime?.coordinator.voiceAppContexts.clear()
       store.clearRuntimePlaintextForBackground()
       GalaxySSIRuntimePlaintextProtection.enterRuntimeBoundary()
     }

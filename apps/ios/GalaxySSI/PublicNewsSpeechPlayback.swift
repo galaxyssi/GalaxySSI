@@ -7,6 +7,16 @@ final class PublicNewsSpeechPlayback: ObservableObject {
 
   @Published private(set) var queue: PublicNewsSpeechQueue
   @Published private(set) var controlsVisible = false
+  var appControlState: String {
+    switch queue.phase {
+    case .stopped: return "stopped"
+    case .paused: return "paused"
+    case .loading: return "loading"
+    case .playing: return "playing"
+    case .failed: return "failed"
+    case .finished: return "finished"
+    }
+  }
   private let bookmarks: PublicNewsSpeechBookmarkStore
   private let media = AppSpokenMediaSession.shared
   private lazy var speech = VoiceProgressiveReplySpeechService()
@@ -54,7 +64,9 @@ final class PublicNewsSpeechPlayback: ObservableObject {
       next: { [weak self] in self?.next() }
     ))
     loadTask = Task { [weak self] in
-      let document = await PublicNewsBodyStore.shared.speechDocument(for: item)
+      let document = await Task.detached(priority: .userInitiated) {
+        PublicNewsBodyStore.shared.speechDocument(for: item)
+      }.value
       guard let self, !Task.isCancelled, self.queue.revision == token else { return }
       self.loadTask = nil
       guard let document, self.queue.prepare(documentKey: document.key,

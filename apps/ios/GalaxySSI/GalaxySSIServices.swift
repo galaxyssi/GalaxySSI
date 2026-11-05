@@ -9,6 +9,7 @@ import UIKit
 
 @MainActor
 final class MessageCoordinator: ObservableObject {
+  let voiceAppContexts = VoiceAppContextStore()
   @Published var pairingStatus = ""
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
@@ -160,7 +161,7 @@ final class MessageCoordinator: ObservableObject {
       if Thread.isMainThread { return MainActor.assumeIsolated { load() } }
       return DispatchQueue.main.sync { load() }
     }
-    return try? AgentPhoneNativeToolCatalog.defaultRuntime(
+    guard let runtime = try? AgentPhoneNativeToolCatalog.defaultRuntime(
       actionExecutor: controlPlaneExecutor,
       screenProvider: { [weak self] _ in
         self?.currentAgentScreenContext ?? AgentScreenContext(
@@ -172,7 +173,20 @@ final class MessageCoordinator: ObservableObject {
         settingsStore.homeAssistantSettings
       },
       voiceReminderTool: reminderTool
-    )
+    ) else { return nil }
+    if let appTools = try? VoiceAppNativeTools.executables(invoke: { [weak self, weak settingsStore] operation, invocation in
+      let execute: @MainActor () -> AgentNativeToolExecutionResult = {
+        guard let self, let settingsStore else {
+          return .failure(code: "voice_context_unavailable", message: "The voice runtime is unavailable.")
+        }
+        return self.executeVoiceAppTool(operation, invocation: invocation, store: settingsStore)
+      }
+      if Thread.isMainThread { return MainActor.assumeIsolated { execute() } }
+      return DispatchQueue.main.sync { execute() }
+    }) {
+      _ = try? runtime.registry.registerExecutables(appTools)
+    }
+    return runtime
   }()
   private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()
   private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
@@ -3291,6 +3305,7 @@ final class MessageCoordinator: ObservableObject {
     attachments: [GalaxySSIDraftAttachment] = [],
     agentGoalOverride: String = "",
     voiceSessionId: String = "",
+    voiceAppAnchor: VoiceAppCaptureAnchor? = nil,
     peerMessageKind: String = "",
     peerDurationMillis: Int64 = 0,
     requestKind: AgentRequestKind = .conversation,
@@ -3300,6 +3315,10 @@ final class MessageCoordinator: ObservableObject {
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
+    if let voiceAppAnchor {
+      guard contact.id == "hermes", voiceAppContexts.isForegroundOwner(voiceAppAnchor),
+            store.activeAgentConversationId == voiceAppAnchor.conversationID else { return false }
+    }
     func retryPrompt(_ goal: String, conversation: String) -> String {
       guard let source = researchRetrySource, source.conversationId == conversation else { return goal }
       return goal + store.researchRetryHandoff(for: source)
@@ -3423,6 +3442,10 @@ final class MessageCoordinator: ObservableObject {
       sendAttachments,
       source: isPeerSend ? "peer_message" : "user_attachment"
     )
+    if let voiceAppAnchor {
+      guard voiceAppContexts.isForegroundOwner(voiceAppAnchor),
+            store.activeAgentConversationId == voiceAppAnchor.conversationID else { return false }
+    }
     let outgoing = store.appendOutgoing(
       displayText,
       to: contact.id,
@@ -3432,6 +3455,9 @@ final class MessageCoordinator: ObservableObject {
       requestKind: requestKind,
       readOnlyAnalysis: readOnlyAnalysis
     )
+    if let voiceAppAnchor, !readOnlyAnalysis {
+      voiceAppContexts.bind(voiceAppAnchor, conversationID: outgoing.conversationId, turnID: outgoing.turnId)
+    }
     onOutgoing?(outgoing)
     guard !Task.isCancelled else { return false }
     if isPeerSend {

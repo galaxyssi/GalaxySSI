@@ -177,6 +177,8 @@ struct AgentHomeView: View {
   @State var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
   @State var modelSelection = AgentModelSelection()
   @State var voiceAttachmentSnapshot: [GalaxySSIDraftAttachment] = []
+  @State var voiceAppAnchor: VoiceAppCaptureAnchor?
+  @State var voiceAppCaptureInvalidated = false
   @State var voicePendingAttachments: [GalaxySSIDraftAttachment] = []
   @State var agentVoiceDraftSnapshot: AgentVoiceDraftSnapshot?
   @State var runtimeArtifactPreview: GalaxySSIRuntimeArtifactPreview?
@@ -352,6 +354,7 @@ struct AgentHomeView: View {
       }
       .onDisappear {
         cancelScreenPagePDFImport()
+        invalidateVoiceAppAnchor()
         homeVisible = false
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
@@ -819,6 +822,7 @@ struct AgentHomeView: View {
       onPendingPrimaryAction: handlePendingAgentTaskAction,
       onVoiceStart: beginAgentVoiceCapture,
       onVoiceCancelled: {
+        invalidateVoiceAppAnchor()
         voiceTranscriptionPending = false
         voicePendingAttachments.removeAll()
         agentVoiceDraftSnapshot = nil

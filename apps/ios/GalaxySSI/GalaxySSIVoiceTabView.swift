@@ -10,6 +10,7 @@ private struct GalaxySSIVoiceRiskConfirmation: Identifiable {
   var risk: VoiceCommandRisk
   var sessionId: String
   var correctionReview: VoiceTranscriptCorrectionReview?
+  var appAnchor: VoiceAppCaptureAnchor?
 }
 
 struct GalaxySSIVoiceTabView: View {
@@ -48,6 +49,8 @@ struct GalaxySSIVoiceTabView: View {
   @State private var wakeWelcomeTimeoutTask: Task<Void, Never>?
   @State private var pendingRiskConfirmation: GalaxySSIVoiceRiskConfirmation?
   @State private var viewVisible = false
+  @State private var voiceAppAnchor: VoiceAppCaptureAnchor?
+  @State private var voiceAppCaptureInvalidated = false
   @State private var reminderSnapshot: VoiceReminderSnapshot?
   @State private var reminderPrivacyLocked = false
 
@@ -134,7 +137,11 @@ struct GalaxySSIVoiceTabView: View {
         syncPassiveListening()
       }
       .onChange(of: activeVoiceReplySessionId) { _ in syncPassiveListening() }
-      .onChange(of: wakeListener.isCommandCapturing) { _ in syncPassiveListening() }
+      .onChange(of: wakeListener.isCommandCapturing) { capturing in
+        if capturing { captureVoiceAppContext() }
+        syncPassiveListening()
+      }
+      .onChange(of: store.activeAgentConversationId) { _ in invalidateVoiceAppContext() }
       .onChange(of: holdToTalk.isPending) { _ in syncPassiveListening() }
       .onChange(of: holdToTalk.isRecording) { _ in syncPassiveListening() }
       .onChange(of: scenePhase) { phase in
@@ -163,6 +170,7 @@ struct GalaxySSIVoiceTabView: View {
         }
       }
       .onDisappear {
+        invalidateVoiceAppContext()
         viewVisible = false
         reminderSnapshot = nil
         cancelRiskConfirmation(pendingRiskConfirmation, reportStatus: false)
@@ -173,6 +181,7 @@ struct GalaxySSIVoiceTabView: View {
         NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)
       ) { _ in
         reminderPrivacyLocked = true
+        invalidateVoiceAppContext()
         reminderSnapshot = nil
         holdToTalk.clearRuntimePlaintext()
         stopInputAcknowledgement()
@@ -770,10 +779,11 @@ struct GalaxySSIVoiceTabView: View {
           settings: settings,
           messages: holdToTalkMessages,
           onStart: {
+            captureVoiceAppContext()
             submitStatus = ""
           },
           onFinish: submitVoiceTranscript,
-          onCancel: {}
+          onCancel: invalidateVoiceAppContext
         )
       }
       .onEnded { value in
@@ -955,8 +965,11 @@ struct GalaxySSIVoiceTabView: View {
     sessionId: String
   ) {
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !cleanText.isEmpty else { return }
+    guard !cleanText.isEmpty, !voiceAppCaptureInvalidated else { return }
     let contact = voiceTargetContact
+    if let anchor = voiceAppAnchor {
+      guard anchor.contactID.ifBlank("hermes") == contact.id else { return }
+    }
     let risk = DefaultVoiceCommandRiskClassifier.classify(cleanText)
     let registeredSessionId = VoiceExecutionLedgerBridge.register(
       sessionId: sessionId,
@@ -978,7 +991,8 @@ struct GalaxySSIVoiceTabView: View {
         contact: contact,
         risk: risk,
         sessionId: registeredSessionId,
-        correctionReview: correctionReview
+        correctionReview: correctionReview,
+        appAnchor: voiceAppAnchor
       )
       submitStatus = t("galaxyssi.voice.risk_confirmation_required", "Voice command requires confirmation")
       return
@@ -988,7 +1002,8 @@ struct GalaxySSIVoiceTabView: View {
       to: contact,
       correctionReview: correctionReview,
       risk: risk,
-      preferredSessionId: registeredSessionId
+      preferredSessionId: registeredSessionId,
+      appAnchor: voiceAppAnchor
     )
   }
 
@@ -998,7 +1013,8 @@ struct GalaxySSIVoiceTabView: View {
       to: confirmation.contact,
       correctionReview: confirmation.correctionReview,
       risk: confirmation.risk,
-      preferredSessionId: confirmation.sessionId
+      preferredSessionId: confirmation.sessionId,
+      appAnchor: confirmation.appAnchor
     )
   }
 
@@ -1026,8 +1042,13 @@ struct GalaxySSIVoiceTabView: View {
     to contact: GalaxySSIContact,
     correctionReview: VoiceTranscriptCorrectionReview?,
     risk: VoiceCommandRisk,
-    preferredSessionId: String
+    preferredSessionId: String,
+    appAnchor: VoiceAppCaptureAnchor?
   ) {
+    if let appAnchor {
+      guard coordinator.voiceAppContexts.isForegroundOwner(appAnchor),
+            appAnchor.conversationID == store.activeAgentConversationId else { return }
+    }
     let ledgerSessionId = VoiceExecutionLedgerBridge.register(
       sessionId: preferredSessionId,
       text: cleanText,
@@ -1078,7 +1099,8 @@ struct GalaxySSIVoiceTabView: View {
         cleanText,
         to: contact,
         agentGoalOverride: cleanText,
-        voiceSessionId: session.decision.kind == .remoteAgent ? session.sessionId : ""
+        voiceSessionId: session.decision.kind == .remoteAgent ? session.sessionId : "",
+        voiceAppAnchor: contact.id == "hermes" ? appAnchor : nil
       )
       await MainActor.run {
         guard activeVoiceReplySessionId == session.sessionId else { return }
@@ -1095,6 +1117,25 @@ struct GalaxySSIVoiceTabView: View {
         }
       }
     }
+  }
+
+  private func captureVoiceAppContext() {
+    invalidateVoiceAppContext()
+    voiceAppCaptureInvalidated = false
+    guard viewVisible, scenePhase == .active else { return }
+    let target = voiceTargetContact
+    voiceAppAnchor = coordinator.voiceAppContexts.capture(
+      conversationID: store.activeAgentConversationId,
+      contactID: target.id == "hermes" ? "" : target.id,
+      surface: .voice,
+      playbackState: PublicNewsSpeechPlayback.shared.appControlState
+    )
+  }
+
+  private func invalidateVoiceAppContext() {
+    if voiceAppAnchor != nil { voiceAppCaptureInvalidated = true }
+    coordinator.voiceAppContexts.invalidate(voiceAppAnchor)
+    voiceAppAnchor = nil
   }
 
   private func acknowledgeVoiceInput(_ input: String, sessionId: String) {
