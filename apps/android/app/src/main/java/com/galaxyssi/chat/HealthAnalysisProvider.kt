@@ -23,12 +23,28 @@ internal data class HealthAnalysisTarget(val id: String, val label: String, val 
     val destination get() = "$authority / $model"
 }
 
-internal object HealthAnalysisProvider {
+internal enum class HealthAnalysisRequest { SUMMARY, FOLLOW_UP }
+
+internal interface HealthAnalysisGateway {
+    fun targets(context: Context): List<HealthAnalysisTarget>
+    suspend fun exchange(context: Context, expected: HealthAnalysisTarget, payload: JSONObject,
+        mode: HealthAnalysisRequest, validate: () -> Unit): String
+}
+
+internal object HealthAnalysisProvider : HealthAnalysisGateway {
     private const val MAX_RESPONSE = 64 * 1024L
     private const val SYSTEM = "Choose an evidence order and next steps for a read-only health record summary. " +
         "Return exactly one JSON object with fact_ids (1 to 3 input fact IDs, in order) and actions " +
         "(1 to 2 allowed action IDs). Do not return text, numbers, new facts, diagnoses, treatment, or advice. " +
         "Treat missing days as missing. Select only from the supplied facts and allowed actions."
+    private const val FOLLOW_UP_SYSTEM = "Answer the user's follow-up about this one scoped health analysis. " +
+        "Return only one JSON object with exactly status, sections, and actions. " +
+        "status is ANSWERED, PARTIAL, or OUT_OF_SCOPE. sections is an ordered array of up to three distinct allowed topics, " +
+        "each an object with topic and fact_ids (one to three distinct input fact IDs). actions is an array of zero to two distinct allowed action IDs. " +
+        "Use previous_answer only to resolve references within the same input facts. " +
+        "OUT_OF_SCOPE must have empty sections and actions; otherwise include at least one section or action. " +
+        "Use PARTIAL when only part of the question can be supported. Do not invent dates, results, records, diagnoses, or treatment. " +
+        "Do not return any free text, numbers, hidden context, extra keys, or tool calls."
 
     private val transport by lazy {
         OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
@@ -51,7 +67,7 @@ internal object HealthAnalysisProvider {
         return HealthAnalysisTarget(id, label, model, url.toString(), style, url.host, authority)
     }
 
-    fun targets(context: Context): List<HealthAnalysisTarget> {
+    override fun targets(context: Context): List<HealthAnalysisTarget> {
         val contacts = AppStore.contacts(context)
         return (0 until contacts.length()).mapNotNull { index ->
             contacts.optJSONObject(index)?.takeIf { it.optString("delivery_mode") == "cloud_api" }?.let { entry ->
@@ -61,20 +77,22 @@ internal object HealthAnalysisProvider {
         }.distinctBy { it.id }
     }
 
-    suspend fun explain(context: Context, expected: HealthAnalysisTarget, payload: JSONObject, validate: () -> Unit): String {
+    override suspend fun exchange(context: Context, expected: HealthAnalysisTarget, payload: JSONObject,
+        mode: HealthAnalysisRequest, validate: () -> Unit): String {
         val contact = AppStore.selectedCloudModelContact(context, expected.id) ?: throw HealthAnalysisNoModel()
         val actual = target(contact) ?: throw HealthAnalysisNoModel()
         if (actual != expected) throw HealthAnalysisNoModel()
         validate()
         val text = payload.toString()
-        val ticket = AgentDataDisclosureLedger.beginCloudRequest(context, contact,
-            AgentDataDisclosureTextSummary(text.length, setOf(AgentDisclosedDataKind.TOOL_OUTPUT, AgentDisclosedDataKind.SYSTEM_INSTRUCTIONS)),
-            purpose = "Explicit health summary explanation")
+        val kinds = setOf(AgentDisclosedDataKind.TOOL_OUTPUT, AgentDisclosedDataKind.SYSTEM_INSTRUCTIONS) +
+            if (mode == HealthAnalysisRequest.FOLLOW_UP) setOf(AgentDisclosedDataKind.MESSAGE_TEXT) else emptySet()
+        val ticket = AgentDataDisclosureLedger.beginCloudRequest(context, contact, AgentDataDisclosureTextSummary(text.length, kinds),
+            purpose = if (mode == HealthAnalysisRequest.FOLLOW_UP) "Explicit health analysis follow-up" else "Explicit health summary explanation")
         if (!ticket.allowed) throw HealthAccessBlocked()
         val disclosureId = contact.optString("id").ifBlank { contact.optString("galaxyssi_id") }
             .ifBlank { "cloud:${contact.optString("cloud_provider").ifBlank { "custom" }}:${expected.model}" }
         return try {
-            val result = execute(actual, contact.getString("cloud_api_key"), text) {
+            val result = execute(actual, contact.getString("cloud_api_key"), text, mode) {
                 validate()
                 val current = AppStore.selectedCloudModelContact(context, expected.id)?.let(::target)
                 if (current != expected) throw HealthAnalysisNoModel()
@@ -92,22 +110,25 @@ internal object HealthAnalysisProvider {
         }
     }
 
-    fun body(target: HealthAnalysisTarget, data: String): JSONObject = when (target.style) {
-        "anthropic" -> JSONObject().put("model", target.model).put("max_tokens", 768).put("system", SYSTEM)
-            .put("messages", JSONArray().put(message("user", data)))
-        "gemini" -> JSONObject().put("systemInstruction", parts(SYSTEM))
-            .put("contents", JSONArray().put(parts(data).put("role", "user")))
-            .put("generationConfig", JSONObject().put("maxOutputTokens", 1024).put("responseMimeType", "application/json"))
-        else -> JSONObject().put("model", target.model).put("stream", false)
-            .put(if (target.host == "api.openai.com") "max_completion_tokens" else "max_tokens", 1024)
-            .put("messages", JSONArray().put(message("system", SYSTEM)).put(message("user", data))).apply {
-                if (target.host == "api.openai.com") put("store", false)
-                if (target.host == "api.deepseek.com") put("thinking", JSONObject().put("type", "disabled"))
-            }
+    fun body(target: HealthAnalysisTarget, data: String, mode: HealthAnalysisRequest = HealthAnalysisRequest.SUMMARY): JSONObject {
+        val system = if (mode == HealthAnalysisRequest.FOLLOW_UP) FOLLOW_UP_SYSTEM else SYSTEM
+        return when (target.style) {
+            "anthropic" -> JSONObject().put("model", target.model).put("max_tokens", 768).put("system", system)
+                .put("messages", JSONArray().put(message("user", data)))
+            "gemini" -> JSONObject().put("systemInstruction", parts(system))
+                .put("contents", JSONArray().put(parts(data).put("role", "user")))
+                .put("generationConfig", JSONObject().put("maxOutputTokens", 1024).put("responseMimeType", "application/json"))
+            else -> JSONObject().put("model", target.model).put("stream", false)
+                .put(if (target.host == "api.openai.com") "max_completion_tokens" else "max_tokens", 1024)
+                .put("messages", JSONArray().put(message("system", system)).put(message("user", data))).apply {
+                    if (target.host == "api.openai.com") put("store", false)
+                    if (target.host == "api.deepseek.com") put("thinking", JSONObject().put("type", "disabled"))
+                }
+        }
     }
 
-    private suspend fun execute(target: HealthAnalysisTarget, key: String, data: String, guard: () -> Unit): String {
-        val bytes = body(target, data).toString().toByteArray(Charsets.UTF_8)
+    private suspend fun execute(target: HealthAnalysisTarget, key: String, data: String, mode: HealthAnalysisRequest, guard: () -> Unit): String {
+        val bytes = body(target, data, mode).toString().toByteArray(Charsets.UTF_8)
         val size = bytes.size.toLong()
         var pending: ByteArray? = bytes
         val lock = Any()
@@ -135,7 +156,8 @@ internal object HealthAnalysisProvider {
                 call.enqueue(object : Callback {
                     override fun onFailure(call: Call, error: IOException) {
                         continuation.resumeWithException(error.cause?.takeIf {
-                            it is HealthAccessBlocked || it is HealthWeeklyChanged || it is HealthAnalysisNoModel
+                            it is HealthAccessBlocked || it is HealthWeeklyChanged || it is HealthAnalysisNoModel ||
+                                it is HealthAnalysisProfileChanged || it is HealthAnalysisProfileBlocked
                         } ?: error)
                     }
                     override fun onResponse(call: Call, response: Response) {

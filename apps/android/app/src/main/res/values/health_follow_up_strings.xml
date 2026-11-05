@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_follow_up_hint">Ask about this analysis…</string>
+    <string name="health_follow_up_send">Send follow-up</string>
+    <string name="health_follow_up_checking">Checking available models…</string>
+    <string name="health_follow_up_model">Choose a model for this follow-up</string>
+    <string name="health_follow_up_disclosure">Destination: %1$s\n\nThe question you typed, the selected aggregates below, and the previous answer\'s verified references (if any) will be sent. Profile fields, original files, raw records, and earlier questions are not added.\n\n%2$s</string>
+    <string name="health_follow_up_changes">Changes in the selected records</string>
+    <string name="health_follow_up_coverage">Data coverage</string>
+    <string name="health_follow_up_sources">Record evidence</string>
+    <string name="health_follow_up_no_source">No confirmed source record for this item.</string>
+    <string name="health_follow_up_outside">This analysis does not contain enough evidence to answer that question.</string>
+    <string name="health_follow_up_partial">The selected records support only part of this question.</string>
+    <string name="health_follow_up_actions">Next steps</string>
+</resources>
