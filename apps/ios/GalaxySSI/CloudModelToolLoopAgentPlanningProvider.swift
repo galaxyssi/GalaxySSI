@@ -92,6 +92,9 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   }
 
   func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
+    if invocation.completionShapeRepairOnly == true {
+      return try await fallbackProvider.rawPlan(invocation: invocation)
+    }
     let recoveryIdentity = Self.recoveryIdentity(invocation.request)
     let loopId = Self.boundedIdentifier(
       "planner-\(recoveryIdentity)",

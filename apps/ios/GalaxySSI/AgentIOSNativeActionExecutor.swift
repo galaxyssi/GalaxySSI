@@ -851,6 +851,13 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
         return timerRejection(action, current: current, code: "timer_operation_id_required")
       }
       if operation == "cancel" {
+        if current.state == .scheduling {
+          reconcilePendingTimer(current, conversation: conversation)
+          guard let settled = timerStore.current(conversationId: conversation),
+                settled.id == current.id, settled.state != .scheduling else {
+            return timerRejection(action, current: current, code: "timer_scheduling_unsettled")
+          }
+        }
         guard timerStore.update(conversationId: conversation, id: current.id, to: .cancelled) else {
           return timerRejection(action, current: current, code: "timer_not_cancellable")
         }
@@ -862,6 +869,9 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       }
       let latest = timerStore.current(conversationId: conversation)
       let observed = latest?.id == current.id ? latest ?? current : current
+      if observed.state == .cancelled {
+        return cancelledTimerResult(action, record: observed)
+      }
       return success(action, message: operation == "cancel" ? "Phone timer cancelled" : "Phone timer state observed",
                      metadata: observed.evidence(now: nowMillis()))
     }
@@ -946,6 +956,20 @@ struct AgentIOSNativeActionExecutor: AgentActionExecutor {
       message: "The phone has not verified an active timer. Inspect the existing operation; do not start it again.",
       metadata: evidence.merging(["error_code": "timer_not_verified",
         "dispatch_accepted": record.state == .scheduling ? "unknown" : "false"]) { _, new in new })
+  }
+
+  private func cancelledTimerResult(_ action: AgentAction, record: AgentIOSTimerCheckpoint) -> AgentActionResult {
+    let gate = DispatchSemaphore(value: 0)
+    notificationCenter.getPendingNotificationRequests { requests in
+      if !requests.contains(where: { $0.identifier == record.notificationId }) { gate.signal() }
+    }
+    var evidence = record.evidence(now: nowMillis())
+    guard gate.wait(timeout: .now() + .milliseconds(500)) == .success else {
+      evidence["error_code"] = "timer_cancellation_unverified"
+      return AgentActionResult(actionId: action.id, success: false, message: "Timer cancellation has not been verified.", metadata: evidence)
+    }
+    evidence["completion_verified"] = "true"
+    return success(action, message: "Phone timer cancelled", metadata: evidence)
   }
 
   private func timerRejection(_ action: AgentAction, current: AgentIOSTimerCheckpoint?, code: String) -> AgentActionResult {

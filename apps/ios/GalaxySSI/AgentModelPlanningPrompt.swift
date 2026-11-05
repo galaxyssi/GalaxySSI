@@ -37,6 +37,7 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "\n\n")
     if request.phoneOwnsExecution {
       append(&prompt, "The model reasons; iOS owns execution. Never use a Desktop app, host shell, web timer, or cloud scheduler as a substitute for a phone operation. Decide from meaning and context, not exact command phrases. Use only listed CALL_NATIVE_TOOL actions and wait for their receipts. A one-time countdown is not a recurring alarm. For a new countdown use galaxyssi.agent_action.set.alarm with timer_operation=start and timer_seconds; omit operation_id. For inspection or cancellation reuse only a scoped operation_id from phone evidence. Never guess IDs or repeat an unsettled operation.\n\n")
+      append(&prompt, "For side effects, declare completion_requirements.outcomes once the subject identity is known. Each outcome has id, tool_id, subject, checks and after_tool_id. subject and checks are JSON objects mapping actual receipt JSON pointers to observed string identities and expected typed scalar values respectively. after_tool_id identifies the mutation, or is empty for a pure read. For a running timer, use /metadata/operation_id with the observed ID, /metadata/timer_state=running and /metadata/completion_verified=true (string). Dispatch acceptance is not proof. A newer failed observation overrides earlier success. Fix malformed receipt checks without rerunning the tool.\n\n")
     }
     appendSchema(to: &prompt, request: request)
     appendActionRules(to: &prompt, request: request, settings: normalizedSettings)

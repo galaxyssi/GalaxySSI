@@ -754,6 +754,26 @@ extension GalaxySSIStoreTests {
       )]
     ).isEmpty)
   }
+  func testObservedCompletionUsesLatestMatchingReceiptAndTypedFields() {
+    let tool = "galaxyssi.device.state"
+    func receipt(_ subject: String, _ state: String, status: AgentActionStatus = .completed) -> AgentAction {
+      let evidence = "{\"device\":\"\(subject)\",\"state\":\(state)}"
+      return AgentAction(id: UUID().uuidString, kind: .callNativeTool, target: tool, risk: .low,
+        status: status, description: "Observation", parameters: ["tool_id": tool],
+        requiresConfirmation: false, result: "", evidence: evidence)
+    }
+    var requirements = AgentCompletionRequirements(publication: .none, phoneLinux: false)
+    requirements.outcomes = [AgentObservedCompletion(id: "state", toolId: tool, subject: ["/device": "phone-1"],
+      checks: ["/state": .bool(true)], afterToolId: tool)]
+    let first = receipt("phone-1", "true")
+    let unrelated = receipt("phone-2", "false")
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [first, unrelated]).isEmpty)
+    for newer in [receipt("phone-1", "false"), receipt("phone-1", #""true""#), receipt("phone-1", "true", status: .failed)] {
+      XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [first, newer]).isEmpty)
+    }
+    XCTAssertFalse(AgentCompletionRequirements(publication: .none, phoneLinux: false, reason: "Changed").canReplace(requirements))
+  }
+
   func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
     let desktop = AgentExecutionPresentationPolicy.local(
       routeKind: .desktopAgent,

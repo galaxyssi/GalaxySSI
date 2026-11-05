@@ -573,11 +573,26 @@ enum AgentPublicationRequirement: String, Codable, CaseIterable {
   case pullRequest = "pull_request"
 }
 
+struct AgentObservedCompletion: Codable, Equatable {
+  var id: String
+  var toolId: String
+  var subject: [String: String]
+  var checks: AgentMcpJSONObject
+  var afterToolId: String
+
+  enum CodingKeys: String, CodingKey {
+    case id, subject, checks
+    case toolId = "tool_id"
+    case afterToolId = "after_tool_id"
+  }
+}
+
 /// Completion obligations interpreted by the planning model, never inferred from goal keywords.
 struct AgentCompletionRequirements: Codable, Equatable {
   var publication: AgentPublicationRequirement
   var phoneLinux: Bool
   var reason: String
+  var outcomes: [AgentObservedCompletion]? = nil
 
   init(
     publication: AgentPublicationRequirement,
@@ -595,13 +610,17 @@ struct AgentCompletionRequirements: Codable, Equatable {
 
   func canReplace(_ previous: AgentCompletionRequirements?) -> Bool {
     guard let previous else { return true }
-    return !changesOutcome(from: previous) || !reason.isEmpty
+    let currentOutcomes = outcomes ?? []
+    let priorOutcomes = previous.outcomes ?? []
+    guard Set(currentOutcomes.map(\.id)).isSuperset(of: priorOutcomes.map(\.id)) else { return false }
+    return (!changesOutcome(from: previous) && currentOutcomes == priorOutcomes) || !reason.isEmpty
   }
 
   enum CodingKeys: String, CodingKey {
     case publication
     case phoneLinux = "phone_linux"
     case reason
+    case outcomes
   }
 }
 

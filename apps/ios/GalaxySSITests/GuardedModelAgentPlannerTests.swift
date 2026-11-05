@@ -226,6 +226,29 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertTrue(provider.invocations.singleValue().prompt.contains("receipt-id"))
   }
 
+  func testPhoneOwnedCompletionShapeRepairCannotChangeActionsOrRunTools() async throws {
+    let tool = try nativeToolDescriptor(id: "galaxyssi.safe.read", risk: .low)
+    let raw = #"{"completion_requirements":{"publication":"none","phone_linux":false,"outcomes":[{"id":"state","tool_id":"galaxyssi.safe.read","subject":"invalid","checks":{"/state":true}}]},"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"galaxyssi.safe.read","arguments":{}}}]}"#
+    let corrected = raw.replacingOccurrences(of: #""subject":"invalid""#, with: #""subject":{"/device":"phone"}"#)
+    let provider = RecordingModelPlanningProvider(raw: raw)
+    provider.repairedRaw = corrected
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(nativeTools: [tool])
+    request.phoneOwnsExecution = true
+    let result = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan())
+    XCTAssertEqual(result.actionPlan?.completionRequirements?.outcomes?.first?.subject, ["/device": "phone"])
+    XCTAssertEqual(provider.invocations.count, 2)
+    XCTAssertEqual(provider.invocations.last?.completionShapeRepairOnly, true)
+    XCTAssertTrue(provider.invocations.last?.nativeTools.isEmpty == true)
+    XCTAssertTrue(provider.invocations.last?.prompt.contains("outcomes[0].subject must be a JSON object") == true)
+
+    provider.repairedRaw = corrected.replacingOccurrences(of: #""arguments":{}"#, with: #""arguments":{"x":1}"#)
+    let rejected = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan())
+    XCTAssertTrue(rejected.actionPlan?.actions.isEmpty == true)
+  }
+
   func testGuardedModelAgentPlannerPassesOnlySafeAvailableNativeTools() async throws {
     let low = try nativeToolDescriptor(id: "galaxyssi.safe.read", risk: .low)
     let medium = try nativeToolDescriptor(id: "galaxyssi.medium.write", risk: .medium)
@@ -417,6 +440,7 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
 
 private final class RecordingModelPlanningProvider: AgentModelPlanningProviding {
   var raw: String
+  var repairedRaw: String?
   var error: AgentModelPlanningProviderError?
   var invocations: [AgentModelPlanningInvocation] = []
 
@@ -430,7 +454,7 @@ private final class RecordingModelPlanningProvider: AgentModelPlanningProviding 
     if let error {
       throw error
     }
-    return raw
+    return invocation.completionShapeRepairOnly == true ? repairedRaw ?? raw : raw
   }
 }
 

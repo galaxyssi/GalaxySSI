@@ -154,7 +154,7 @@ struct GuardedModelAgentPlanner {
       ).request
     } ?? screenEnrichedRequest
     let prompt = AgentModelPlanningPrompt.build(request: safeRequest, settings: normalizedSettings)
-    let raw: String
+    var raw: String
     do {
       raw = try await provider.rawPlan(invocation: AgentModelPlanningInvocation(
         systemPrompt: AgentModelPlanningPrompt.systemPrompt,
@@ -167,6 +167,22 @@ struct GuardedModelAgentPlanner {
         profile: "rule-based-model-error",
         rationale: "Model planning failed; the deterministic local planner was used."
       ))
+    }
+
+    if safeRequest.phoneOwnsExecution, let repair = AgentModelPlanParser.completionShapeRepair(raw) {
+      var invocation = AgentModelPlanningInvocation(
+        systemPrompt: "Repair JSON structure only. Do not use tools, take actions, or invent observations. Return one JSON object.",
+        prompt: prompt + "\nRepair only completion_requirements.outcomes in the following invalid plan. Preserve all actions and other fields verbatim. \(repair.diagnostic)\nInvalid plan data:\n\(AgentMcpJSONCodec.stringify(repair.original))",
+        nativeTools: [],
+        request: safeRequest.withNativeTools([])
+      )
+      invocation.completionShapeRepairOnly = true
+      guard !Task.isCancelled,
+            let corrected = try? await provider.rawPlan(invocation: invocation),
+            AgentModelPlanParser.repairedOnlyCompletionShape(corrected, original: repair.original) else {
+        return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-invalid-completion-shape"))
+      }
+      raw = corrected
     }
 
     if safeRequest.allowsDirectResponse,
