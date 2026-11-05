@@ -114,6 +114,10 @@
 "galaxyssi.health.table.resume_review_draft" = "继续已保存的表格审阅";
 "galaxyssi.health.table.discard_review_draft" = "丢弃已保存的表格审阅";
 "galaxyssi.health.table.review_draft_saved" = "已保存加密审阅草稿";
+"galaxyssi.health.pdf_text.password" = "PDF 密码";
+"galaxyssi.health.pdf_text.unlock" = "输入 PDF 密码";
+"galaxyssi.health.pdf_text.incorrect_password" = "PDF 密码不正确。";
+"galaxyssi.health.pdf_text.extraction_restricted" = "此 PDF 不允许提取文本。";
 "galaxyssi.health.pdf_text.previous" = "上一页";
 "galaxyssi.health.pdf_text.next" = "下一页";
 "galaxyssi.health.pdf_text.page" = "第 %lld 页，共 %lld 页";

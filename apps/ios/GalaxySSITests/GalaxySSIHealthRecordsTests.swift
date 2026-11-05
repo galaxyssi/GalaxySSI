@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import UIKit
 import XCTest
@@ -616,6 +617,40 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.updateRecordingReminder(snoozed, complete: true, at: later, calendar: calendar)
     XCTAssertNotEqual(try records.loadRecordingReminders(at: later, calendar: calendar)
       .upcoming(at: later, calendar: calendar).first?.0, snoozed.day)
+  }
+
+  @MainActor
+  func testProtectedHealthPDFRetainsExactBytesAndEnforcesExtractionPermission() throws {
+    let bytes = NSMutableData()
+    let consumer = try XCTUnwrap(CGDataConsumer(data: bytes as CFMutableData))
+    let options: [String: Any] = [
+      kCGPDFContextUserPassword as String: "fixture-reader",
+      kCGPDFContextOwnerPassword as String: "fixture-owner",
+      kCGPDFContextAllowsCopying as String: false
+    ]
+    var bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+    let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &bounds, options as CFDictionary))
+    context.beginPDFPage(nil)
+    context.endPDFPage()
+    context.closePDF()
+    let pdf = bytes as Data
+    XCTAssertThrowsError(try GalaxySSIHealthPDFText.pageCount(pdf)) {
+      guard case GalaxySSIHealthPDFText.Failure.locked = $0 else { return XCTFail("Expected locked PDF") }
+    }
+    XCTAssertThrowsError(try GalaxySSIHealthPDFText.pageCount(pdf, password: "wrong")) {
+      guard case GalaxySSIHealthPDFText.Failure.incorrectPassword = $0 else { return XCTFail("Expected wrong password") }
+    }
+    XCTAssertEqual(try GalaxySSIHealthPDFText.pageCount(pdf, password: "fixture-reader"), 1)
+    XCTAssertThrowsError(try GalaxySSIHealthPDFText.read(pdf, page: 0, password: "fixture-reader")) {
+      guard case GalaxySSIHealthPDFText.Failure.extractionRestricted = $0 else { return XCTFail("Expected restricted extraction") }
+    }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    try store.store(pdf, name: "protected.pdf")
+    let original = try XCTUnwrap(store.list().originals.first)
+    XCTAssertEqual(try store.read(original), pdf)
   }
 
   @MainActor
