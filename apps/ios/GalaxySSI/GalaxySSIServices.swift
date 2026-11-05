@@ -11532,6 +11532,16 @@ final class MessageCoordinator: ObservableObject {
        !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
       return
     }
+    if appPayload.string("type") == "agent_task_evidence" {
+      if object.string("scheme") == "signal", let link, link.paired,
+         appPayload.string("client_route_id") == link.routes.clientRouteId,
+         let pending = desktopEvidenceRequests[appPayload.string("request_id")], pending.0 == link.desktopId,
+         let bytes = try? JSONSerialization.data(withJSONObject: appPayload),
+         let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes) {
+        pending.1.yield(response)
+      }
+      return
+    }
     if appPayload.string("type") == "agent_task_recovery_result" {
       if object.string("scheme") == "signal", let link, link.paired,
          appPayload.string("client_route_id") == link.routes.clientRouteId,
@@ -11545,16 +11555,6 @@ final class MessageCoordinator: ObservableObject {
                queryNonce: appPayload.string("request_id")) { _ = desktopReplyRecovery.attachManifest(manifest, to: record) }
           Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
         }
-      }
-      return
-    }
-    if appPayload.string("type") == "agent_task_evidence" {
-      if object.string("scheme") == "signal", let link, link.paired,
-         appPayload.string("client_route_id") == link.routes.clientRouteId,
-         let pending = desktopEvidenceRequests[appPayload.string("request_id")], pending.0 == link.desktopId,
-         let bytes = try? JSONSerialization.data(withJSONObject: appPayload),
-         let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes) {
-        pending.1.yield(response)
       }
       return
     }
