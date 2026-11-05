@@ -2,6 +2,14 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testPhoneAssistantDialTargetRejectsControlCodesAndNonTelephoneLinks() {
+    XCTAssertEqual(GalaxySSIPhoneDialTarget.url(for: "+1 (415) 555-0100")?.absoluteString, "tel:+14155550100")
+    for input in ["", "+", "*21*5550100#", "5550100,123", "5550100%23", "https://example.com",
+                  String(repeating: "1", count: 25)] {
+      XCTAssertNil(GalaxySSIPhoneDialTarget.url(for: input), input)
+    }
+  }
+
   func testScreenAnalysisAllowsOnlyExplicitLowRiskReadOnlyIdempotentTools() throws {
     let descriptors = AgentIOSWebIntelligenceNativeToolCatalog.definitions().map(\.descriptor)
     let read = try XCTUnwrap(descriptors.first { $0.id == AgentIOSWebIntelligenceNativeToolCatalog.search })

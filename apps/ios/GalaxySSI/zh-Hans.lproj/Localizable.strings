@@ -4575,6 +4575,15 @@
 "galaxyssi.voice.live_transcript" = "实时转写";
 "voice_reminders_title" = "提醒";
 "voice_reminders_personal" = "个人提醒";
+"phone_assistant_title" = "电话";
+"phone_assistant_entry" = "通话状态与拨号";
+"phone_assistant_audio_unavailable" = "无法访问通话音频";
+"phone_assistant_number" = "电话号码";
+"phone_assistant_dial" = "拨号";
+"phone_assistant_handoff_failed" = "系统拨号不可用";
+"phone_assistant_idle" = "无可见通话";
+"phone_assistant_active" = "正在通话";
+"phone_assistant_held" = "通话保持中";
 "voice_reminders_untitled_event" = "日历日程";
 "voice_reminders_calendar_unavailable" = "无法读取日历";
 "voice_reminders_unread_news" = "未读动态：%lld";

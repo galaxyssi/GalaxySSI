@@ -677,6 +677,15 @@ struct GalaxySSIVoiceTabView: View {
     VStack(alignment: .leading, spacing: 8) {
       GalaxySSISecuritySectionTitle(title: t("galaxyssi.voice.quick_controls", "Quick Controls"))
       GalaxySSISecurityNavigationRow(
+        title: t("phone_assistant_title", "Phone"),
+        subtitle: t("phone_assistant_entry", "Call status and dialing"),
+        systemImage: "phone",
+        tint: .galaxySSIAccent,
+        badge: ""
+      ) {
+        GalaxySSIPhoneAssistantView()
+      }
+      GalaxySSISecurityNavigationRow(
         title: t("cc_voice_title", "Voice & Interaction"),
         subtitle: t("cc_voice_subtitle", "Wake word, ASR, TTS, and task routing"),
         systemImage: "waveform",
