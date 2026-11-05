@@ -3,6 +3,67 @@ import XCTest
 @testable import GalaxySSI
 
 final class GuardedModelAgentPlannerTests: XCTestCase {
+  func testPhoneOwnedPlanningRejectsConnectorAndNeverUsesHostFallback() async {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"CALL_CONNECTOR","target":"desktop","parameters":{"connector_id":"desktop"}}]}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(allowsDirectResponse: true)
+    request.phoneOwnsExecution = true
+    let fallback = fallbackPlan(actions: [fallbackAction(id: "desktop", kind: .callConnector)])
+    let result = await planner.planOrRespond(
+      request: request,
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallback
+    )
+    XCTAssertTrue(result.actionPlan?.actions.isEmpty == true)
+    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("iOS owns execution"))
+  }
+
+  func testPhoneOwnedPlannerKeepsTimerEvidenceAndOnlyOffersAllowlistedHandoffs() async throws {
+    let timerID = AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm)
+    let timer = try nativeToolDescriptor(id: timerID, risk: .medium)
+    let other = try nativeToolDescriptor(id: "galaxyssi.other.write", risk: .medium)
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"disposition":"respond","final_response":"Hello"}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(nativeTools: [timer, other], allowsDirectResponse: true)
+    request.phoneOwnsExecution = true
+    request.timerCheckpoint = ["operation_id": "receipt-id", "timer_state": "running"]
+    let result = await planner.planOrRespond(
+      request: request,
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan()
+    )
+    XCTAssertEqual(result, .directResponse("Hello"))
+    XCTAssertEqual(provider.invocations.singleValue().nativeTools.map(\.id), [timerID])
+    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("receipt-id"))
+  }
+
+  func testPhoneOwnedCompletionShapeRepairCannotChangeActionsOrRunTools() async throws {
+    let tool = try nativeToolDescriptor(id: "galaxyssi.safe.read", risk: .low)
+    let raw = #"{"completion_requirements":{"publication":"none","phone_linux":false,"outcomes":[{"id":"state","tool_id":"galaxyssi.safe.read","subject":"invalid","checks":{"/state":true}}]},"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"galaxyssi.safe.read","arguments":{}}}]}"#
+    let corrected = raw.replacingOccurrences(of: #""subject":"invalid""#, with: #""subject":{"/device":"phone"}"#)
+    let provider = RecordingModelPlanningProvider(raw: raw)
+    provider.repairedRaw = corrected
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(nativeTools: [tool])
+    request.phoneOwnsExecution = true
+    let result = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan())
+    XCTAssertEqual(result.actionPlan?.completionRequirements?.outcomes?.first?.subject, ["/device": "phone"])
+    XCTAssertEqual(provider.invocations.count, 2)
+    XCTAssertEqual(provider.invocations.last?.completionShapeRepairOnly, true)
+    XCTAssertTrue(provider.invocations.last?.nativeTools.isEmpty == true)
+    XCTAssertTrue(provider.invocations.last?.prompt.contains("outcomes[0].subject must be a JSON object") == true)
+
+    provider.repairedRaw = corrected.replacingOccurrences(of: #""arguments":{}"#, with: #""arguments":{"x":1}"#)
+    let rejected = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan())
+    XCTAssertTrue(rejected.actionPlan?.actions.isEmpty == true)
+  }
+
   func testGuardedModelAgentPlannerUsesParsedModelPlanWhenEnabled() async throws {
     let provider = RecordingModelPlanningProvider(raw: """
     {"actions":[{"ref":"open","kind":"OPEN_URL","description":"Open docs","parameters":{"url":"https://galaxyssi.com/docs"}}]}
@@ -186,67 +247,6 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     }
     XCTAssertEqual(plan.actions.singleValue().kind, .readScreen)
     XCTAssertEqual(provider.invocations.count, 1)
-  }
-
-  func testPhoneOwnedPlanningRejectsConnectorAndNeverUsesHostFallback() async {
-    let provider = RecordingModelPlanningProvider(
-      raw: #"{"actions":[{"kind":"CALL_CONNECTOR","target":"desktop","parameters":{"connector_id":"desktop"}}]}"#
-    )
-    let planner = GuardedModelAgentPlanner(provider: provider)
-    var request = promptRequest(allowsDirectResponse: true)
-    request.phoneOwnsExecution = true
-    let fallback = fallbackPlan(actions: [fallbackAction(id: "desktop", kind: .callConnector)])
-    let result = await planner.planOrRespond(
-      request: request,
-      settings: AgentModelPlannerSettings(enabled: true),
-      fallbackPlan: fallback
-    )
-    XCTAssertTrue(result.actionPlan?.actions.isEmpty == true)
-    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("iOS owns execution"))
-  }
-
-  func testPhoneOwnedPlannerKeepsTimerEvidenceAndOnlyOffersAllowlistedHandoffs() async throws {
-    let timerID = AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm)
-    let timer = try nativeToolDescriptor(id: timerID, risk: .medium)
-    let other = try nativeToolDescriptor(id: "galaxyssi.other.write", risk: .medium)
-    let provider = RecordingModelPlanningProvider(
-      raw: #"{"disposition":"respond","final_response":"Hello"}"#
-    )
-    let planner = GuardedModelAgentPlanner(provider: provider)
-    var request = promptRequest(nativeTools: [timer, other], allowsDirectResponse: true)
-    request.phoneOwnsExecution = true
-    request.timerCheckpoint = ["operation_id": "receipt-id", "timer_state": "running"]
-    let result = await planner.planOrRespond(
-      request: request,
-      settings: AgentModelPlannerSettings(enabled: true),
-      fallbackPlan: fallbackPlan()
-    )
-    XCTAssertEqual(result, .directResponse("Hello"))
-    XCTAssertEqual(provider.invocations.singleValue().nativeTools.map(\.id), [timerID])
-    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("receipt-id"))
-  }
-
-  func testPhoneOwnedCompletionShapeRepairCannotChangeActionsOrRunTools() async throws {
-    let tool = try nativeToolDescriptor(id: "galaxyssi.safe.read", risk: .low)
-    let raw = #"{"completion_requirements":{"publication":"none","phone_linux":false,"outcomes":[{"id":"state","tool_id":"galaxyssi.safe.read","subject":"invalid","checks":{"/state":true}}]},"actions":[{"kind":"CALL_NATIVE_TOOL","parameters":{"tool_id":"galaxyssi.safe.read","arguments":{}}}]}"#
-    let corrected = raw.replacingOccurrences(of: #""subject":"invalid""#, with: #""subject":{"/device":"phone"}"#)
-    let provider = RecordingModelPlanningProvider(raw: raw)
-    provider.repairedRaw = corrected
-    let planner = GuardedModelAgentPlanner(provider: provider)
-    var request = promptRequest(nativeTools: [tool])
-    request.phoneOwnsExecution = true
-    let result = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
-      fallbackPlan: fallbackPlan())
-    XCTAssertEqual(result.actionPlan?.completionRequirements?.outcomes?.first?.subject, ["/device": "phone"])
-    XCTAssertEqual(provider.invocations.count, 2)
-    XCTAssertEqual(provider.invocations.last?.completionShapeRepairOnly, true)
-    XCTAssertTrue(provider.invocations.last?.nativeTools.isEmpty == true)
-    XCTAssertTrue(provider.invocations.last?.prompt.contains("outcomes[0].subject must be a JSON object") == true)
-
-    provider.repairedRaw = corrected.replacingOccurrences(of: #""arguments":{}"#, with: #""arguments":{"x":1}"#)
-    let rejected = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
-      fallbackPlan: fallbackPlan())
-    XCTAssertTrue(rejected.actionPlan?.actions.isEmpty == true)
   }
 
   func testGuardedModelAgentPlannerPassesOnlySafeAvailableNativeTools() async throws {

@@ -234,14 +234,27 @@ struct GuardedModelAgentPlanner {
   private func safeNativeTools(
     for request: AgentModelPlanningPromptRequest
   ) -> [AgentNativeToolDescriptor] {
+    let ordinary = standardNativeTools(for: request)
+    guard request.phoneOwnsExecution else { return ordinary }
+    let ordinaryIDs = Set(ordinary.map(\.id))
+    let additional = request.planRequest.nativeTools.filter {
+      !ordinaryIDs.contains($0.id) && $0.availability.status == .available &&
+        $0.risk != .high && $0.risk != .blocked &&
+        AgentPhoneRuntimePolicy.directPhoneActionTools.contains($0.id)
+    }
+    return (ordinary + additional).sorted { $0.id < $1.id }
+  }
+
+  private func standardNativeTools(
+    for request: AgentModelPlanningPromptRequest
+  ) -> [AgentNativeToolDescriptor] {
     let allowsPhoneRuntimeTools = request.allowsPhoneRuntimeTools &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: request.planRequest.goal)
     return request.planRequest.nativeTools
       .filter { descriptor in
         descriptor.availability.status == .available &&
-        ((descriptor.risk == .low && descriptor.requiredConsents.allSatisfy { !$0.required }) ||
-          (request.phoneOwnsExecution && descriptor.risk != .high && descriptor.risk != .blocked &&
-            AgentPhoneRuntimePolicy.directPhoneActionTools.contains(descriptor.id))) &&
+        descriptor.risk == .low &&
+        descriptor.requiredConsents.allSatisfy { !$0.required } &&
           (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
       }
       .sorted { $0.id < $1.id }
