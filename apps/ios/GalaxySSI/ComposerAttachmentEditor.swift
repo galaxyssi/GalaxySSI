@@ -106,25 +106,27 @@ struct ComposerAttachmentEditor: View {
   }
 
   private var previewActions: some View {
-    VStack(spacing: 8) {
-      HStack(spacing: 18) {
+    let count = 1 + (source != nil ? 1 : 0) + (attachment.composerOriginal != nil ? 1 : 0)
+    let columns = Array(repeating: GridItem(.flexible(minimum: 0), spacing: 0, alignment: .top), count: count)
+    return VStack(spacing: 8) {
+      LazyVGrid(columns: columns, spacing: 0) {
         if source != nil {
           Button {
             crop = attachment.composerCrop ?? ComposerAttachmentCrop()
             editing = true
             updatePreview()
           } label: {
-            Label(t("composer_attachment_crop", "Crop"), systemImage: "crop")
+            previewActionLabel(t("composer_attachment_crop", "Crop"), icon: "crop")
           }
         }
         Button(role: .destructive) { onRemove(); dismiss() } label: {
-          Label(t("galaxyssi.common.delete", "Delete"), systemImage: "trash")
+          previewActionLabel(t("galaxyssi.common.delete", "Delete"), icon: "trash")
         }
         if attachment.composerOriginal != nil {
           Button {
             if onReplace(attachment.restoringComposerOriginal()) { dismiss() }
           } label: {
-            Label(t("composer_attachment_original", "Original"), systemImage: "photo")
+            previewActionLabel(t("composer_attachment_original", "Original"), icon: "photo")
           }
         }
       }
@@ -132,12 +134,26 @@ struct ComposerAttachmentEditor: View {
          UIImagePickerController.isSourceTypeAvailable(.camera),
          AVCaptureDevice.authorizationStatus(for: .video) == .authorized {
         Button { retake = true } label: {
-          Label(t("composer_attachment_retake", "Retake"), systemImage: "camera")
+          previewActionLabel(t("composer_attachment_retake", "Retake"), icon: "camera")
         }
       }
     }
     .font(.subheadline)
     .padding(.horizontal, 12)
+  }
+
+  private func previewActionLabel(_ title: String, icon: String) -> some View {
+    VStack(spacing: 4) {
+      Image(systemName: icon)
+        .imageScale(.medium)
+        .accessibilityHidden(true)
+      Text(title)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(.horizontal, 4)
+    .frame(maxWidth: .infinity, minHeight: 48)
+    .contentShape(Rectangle())
   }
 
   private var cropControls: some View {
