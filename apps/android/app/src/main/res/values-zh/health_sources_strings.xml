@@ -19,6 +19,12 @@
     <string name="health_sources_system_settings">打开系统设置</string>
     <string name="health_sources_open_store">在 Google Play 中查看</string>
     <string name="health_sources_devices">我的设备</string>
+    <string name="health_sources_saved_devices">有记录的设备</string>
+    <string name="health_sources_devices_expanded">已展开</string>
+    <string name="health_sources_devices_collapsed">已收起</string>
+    <string name="health_sources_no_saved_devices">暂无可识别设备的测量记录</string>
+    <string name="health_sources_device_measurement">最近测量：%1$s</string>
+    <string name="health_sources_device_receipt">接收于：%1$s</string>
     <string name="health_sources_bluetooth">蓝牙设备</string>
     <string name="health_sources_ble_supported">添加兼容的蓝牙血压计</string>
     <string name="health_sources_ble_unavailable">本机不支持低功耗蓝牙。</string>
