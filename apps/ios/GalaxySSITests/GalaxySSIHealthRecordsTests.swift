@@ -5,6 +5,32 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthKitCoverageKeepsSelectionReadEvidenceAndSyncHistorySeparate() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.setHealthKitSelection([.weight, .steps])
+    let now = Date()
+    let checkpoint = try records.beginHealthKitSync(.weight, floor: now.addingTimeInterval(-86_400), reset: false)
+    let page = GalaxySSIHealthKitSync.Page(rows: [], anchor: Data([1]), providerCount: 0, more: false)
+    _ = try records.commitHealthKitPage(scope: .weight, expected: checkpoint, page: page, at: now)
+    var archive = try records.load()
+    var coverage = GalaxySSIHealthKitSync.Coverage(scope: .weight, selection: archive.healthKitSelection ?? [],
+      reads: archive.healthKitReadAt ?? [:], checkpoints: archive.healthKitSync ?? [:])
+    XCTAssertTrue(coverage.selected)
+    XCTAssertNil(coverage.lastReadableAt)
+    XCTAssertEqual(coverage.lastCompletedAt, now)
+    try records.setHealthKitSelection([.steps])
+    _ = try records.beginHealthKitSync(.weight, floor: now, reset: true)
+    archive = try records.load()
+    coverage = GalaxySSIHealthKitSync.Coverage(scope: .weight, selection: archive.healthKitSelection ?? [],
+      reads: archive.healthKitReadAt ?? [:], checkpoints: archive.healthKitSync ?? [:])
+    XCTAssertFalse(coverage.selected)
+    XCTAssertEqual(coverage.lastCompletedAt, now)
+    XCTAssertNil(coverage.lastReadableAt)
+  }
+
+  @MainActor
   func testHealthKitSyncCommitsPageAndCursorTogetherAndResumesWithoutDeleting() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

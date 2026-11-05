@@ -7,6 +7,7 @@ struct GalaxySSIHealthKitImportView: View {
   @Environment(\.calendar) private var calendar
   @Environment(\.timeZone) private var timeZone
   let records: GalaxySSIHealthRecords
+  var focusedScope: GalaxySSIHealthKitImport.Scope?
   @State private var scopes: Set<GalaxySSIHealthKitImport.Scope> = []
   @State private var days = 14
   @State private var preview: Preview?
@@ -27,10 +28,18 @@ struct GalaxySSIHealthKitImportView: View {
       if scene == .active {
         if GalaxySSIHealthKitImport.available {
           Section(t("scopes", "Read scopes")) {
-            ForEach(GalaxySSIHealthKitImport.Scope.allCases) { scope in
+            ForEach(orderedScopes) { scope in
               Toggle(scope.metric.title(language: language), isOn: Binding(get: { scopes.contains(scope) }, set: { enabled in
-                if enabled { scopes.insert(scope) } else { scopes.remove(scope) }
-                preview = nil
+                var updated = scopes
+                if enabled { updated.insert(scope) } else { updated.remove(scope) }
+                do {
+                  let stored = try records.load().healthKitSelection ?? []
+                  var saved = Set(stored.compactMap(GalaxySSIHealthKitImport.Scope.init(rawValue:)))
+                  if enabled { saved.insert(scope) } else { saved.remove(scope) }
+                  try records.setHealthKitSelection(saved)
+                  scopes = updated; preview = nil
+                }
+                catch { problem = t("failed", "The read failed or data changed. Prepare a fresh preview.") }
               }))
             }
           }
@@ -56,7 +65,11 @@ struct GalaxySSIHealthKitImportView: View {
               Button(t("save", "Confirm local import")) { save(preview) }.disabled(task != nil || preview.rows.isEmpty)
             }
           }
-          Button(t("disconnect", "Clear import selection")) { clear(); scopes = [] }
+          Button(t("disconnect", "Clear import selection")) {
+            clear()
+            do { try records.setHealthKitSelection([]); scopes = [] }
+            catch { problem = t("failed", "The read failed or data changed. Prepare a fresh preview.") }
+          }
         } else {
           Text(t("unavailable", "HealthKit is unavailable on this device or in this build."))
         }
@@ -67,8 +80,20 @@ struct GalaxySSIHealthKitImportView: View {
     }
     .navigationTitle("Apple Health")
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      if let focusedScope { scopes = [focusedScope] }
+      else if let archive = try? records.load() {
+        scopes = Set((archive.healthKitSelection ?? []).compactMap(GalaxySSIHealthKitImport.Scope.init(rawValue:)))
+      }
+    }
     .onChange(of: scene) { if $0 == .background { clear() } }
     .onDisappear { clear() }
+  }
+
+  private var orderedScopes: [GalaxySSIHealthKitImport.Scope] {
+    let all = GalaxySSIHealthKitImport.Scope.allCases
+    guard let focusedScope else { return all }
+    return [focusedScope] + all.filter { $0 != focusedScope }
   }
 
   private func prepare() {

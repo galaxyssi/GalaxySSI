@@ -274,11 +274,34 @@ struct GalaxySSIHealthCenterView: View {
                 .foregroundColor(.secondary)
             }
           }
-          sourceStatus(t("bluetooth_devices", "Bluetooth devices"), detail: bluetoothAuthorization)
+          VStack(alignment: .leading, spacing: 4) {
+            Text(t("bluetooth_devices", "Bluetooth devices"))
+            Text(bluetoothAuthorization).foregroundColor(.secondary)
+            Text(t("coverage_no_live_bluetooth", "No live session in this screen")).foregroundColor(.secondary)
+            if let latest = archive?.current.compactMap(\.bluetoothReceipt).map(\.receivedAt).max() {
+              Text(t("coverage_last_bluetooth", "Latest saved Bluetooth receipt") + ": " +
+                latest.formatted(date: .abbreviated, time: .shortened)).foregroundColor(.secondary)
+            }
+          }
           NavigationLink {
             GalaxySSIHealthBluetoothView(records: records)
           } label: {
             Label(t("bluetooth.title", "Bluetooth Blood Pressure"), systemImage: "waveform.path.ecg")
+          }
+        }
+        if let archive {
+          Section(t("coverage_scopes", "Apple Health by measurement")) {
+            ForEach(GalaxySSIHealthKitImport.Scope.allCases) { scope in
+              if scope == .steps {
+                NavigationLink {
+                  GalaxySSIHealthKitImportView(records: records, focusedScope: scope)
+                } label: { healthKitCoverage(scope, archive: archive) }
+              } else {
+                NavigationLink {
+                  GalaxySSIHealthKitSyncView(records: records, focusedScope: scope)
+                } label: { healthKitCoverage(scope, archive: archive) }
+              }
+            }
           }
         }
         Section(t("local_sources", "On this device")) {
@@ -289,7 +312,9 @@ struct GalaxySSIHealthCenterView: View {
               Spacer()
               Text(current.count.formatted(.number.locale(locale))).foregroundColor(.secondary)
             }
-            if let latest = current.first(where: { $0.bluetoothReceipt == nil && $0.tableSource == nil }) {
+            if let latest = current.first(where: {
+              $0.bluetoothReceipt == nil && $0.tableSource == nil && $0.healthKitSource == nil
+            }) {
               VStack(alignment: .leading, spacing: 4) {
                 Text(t("latest_manual", "Latest manual measurement"))
                 Text(title(latest.metric)).foregroundColor(.secondary)
@@ -309,6 +334,30 @@ struct GalaxySSIHealthCenterView: View {
     }
     .navigationTitle(t("sources", "Devices & Data Sources"))
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear(perform: reload)
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.healthKitCoverageChanged)) {
+      if $0.object as? String == records.owner && scenePhase == .active { reload() }
+    }
+  }
+
+  private func healthKitCoverage(_ scope: GalaxySSIHealthKitImport.Scope, archive: GalaxySSIHealthRecords.Archive) -> some View {
+    let coverage = GalaxySSIHealthKitSync.Coverage(scope: scope, selection: archive.healthKitSelection ?? [],
+      reads: archive.healthKitReadAt ?? [:], checkpoints: archive.healthKitSync ?? [:])
+    return VStack(alignment: .leading, spacing: 4) {
+      Text(title(scope.metric))
+      Text(coverage.selected ? t("coverage_selected", "Selected in GalaxySSI") : t("coverage_unselected", "Not selected in GalaxySSI"))
+      Text(GalaxySSIHealthKitImport.available ? t("coverage_read_unknown", "Current system read access is not disclosed") :
+        t("platform_unavailable", "Not available on this device"))
+      if let at = coverage.lastReadableAt {
+        Text(t("coverage_last_read", "Last verified read") + ": " + at.formatted(date: .abbreviated, time: .shortened))
+      } else { Text(t("coverage_no_read", "No verified read yet")) }
+      if scope == .steps {
+        Text(t("coverage_steps_manual", "Daily step totals are imported separately"))
+      } else if let at = coverage.lastCompletedAt {
+        Text(t("coverage_last_sync", "Last completed sync") + ": " + at.formatted(date: .abbreviated, time: .shortened))
+      } else { Text(t("coverage_no_sync", "No completed sync yet")) }
+    }
+    .font(.subheadline)
   }
 
   private func overview(_ current: [GalaxySSIHealthReading], now: Date) -> some View {
@@ -344,14 +393,6 @@ struct GalaxySSIHealthCenterView: View {
           }
         }
       }
-    }
-  }
-
-  private func sourceStatus(_ name: String, detail: String) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(name)
-      Text(detail).foregroundColor(.secondary)
-      Text(t("source_not_connected", "Not connected to Health Center")).foregroundColor(.secondary)
     }
   }
 

@@ -27,6 +27,19 @@ enum GalaxySSIHealthKitSync {
     let more: Bool
   }
 
+  struct Coverage {
+    let selected: Bool
+    let lastReadableAt: Date?
+    let lastCompletedAt: Date?
+
+    init(scope: GalaxySSIHealthKitImport.Scope, selection: Set<String>, reads: [String: Date],
+         checkpoints: [String: Checkpoint]) {
+      selected = selection.contains(scope.rawValue)
+      lastReadableAt = reads[scope.rawValue]
+      lastCompletedAt = checkpoints[scope.rawValue]?.finishedAt
+    }
+  }
+
   enum Failure: Error { case invalidAnchor, unavailable, stalled }
 
   static func classification(_ error: Error) -> Status {
@@ -99,6 +112,7 @@ struct GalaxySSIHealthKitSyncView: View {
   @Environment(\.timeZone) private var timeZone
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
+  let focusedScope: GalaxySSIHealthKitImport.Scope?
   @State private var selected: Set<GalaxySSIHealthKitImport.Scope> = []
   @State private var checkpoints: [String: GalaxySSIHealthKitSync.Checkpoint] = [:]
   @State private var task: Task<Void, Never>?
@@ -106,8 +120,18 @@ struct GalaxySSIHealthKitSyncView: View {
   @State private var current: GalaxySSIHealthKitImport.Scope?
   @State private var failure: GalaxySSIHealthKitSync.Status?
   @State private var confirmingReset = false
+  @State private var loadedSelection = false
 
-  private var scopes: [GalaxySSIHealthKitImport.Scope] { GalaxySSIHealthKitImport.Scope.allCases.filter { $0 != .steps } }
+  init(records: GalaxySSIHealthRecords, focusedScope: GalaxySSIHealthKitImport.Scope? = nil) {
+    self.records = records
+    self.focusedScope = focusedScope
+  }
+
+  private var scopes: [GalaxySSIHealthKitImport.Scope] {
+    let all = GalaxySSIHealthKitImport.Scope.allCases.filter { $0 != .steps }
+    guard let focusedScope, all.contains(focusedScope) else { return all }
+    return [focusedScope] + all.filter { $0 != focusedScope }
+  }
 
   var body: some View {
     List {
@@ -116,7 +140,7 @@ struct GalaxySSIHealthKitSyncView: View {
           Section(t("scopes", "Apple Health scopes")) {
             ForEach(scopes) { scope in
               Toggle(isOn: Binding(get: { selected.contains(scope) }, set: {
-                if $0 { selected.insert(scope) } else { selected.remove(scope) }
+                setSelected(scope, enabled: $0)
               })) {
                 VStack(alignment: .leading) {
                   Text(scope.metric.title(language: language))
@@ -224,8 +248,27 @@ struct GalaxySSIHealthKitSyncView: View {
 
   private func reload() {
     guard scene == .active else { return }
-    do { checkpoints = try records.load().healthKitSync ?? [:] }
+    do {
+      let archive = try records.load()
+      checkpoints = archive.healthKitSync ?? [:]
+      if !loadedSelection {
+        let saved = Set((archive.healthKitSelection ?? []).compactMap(GalaxySSIHealthKitImport.Scope.init(rawValue:)))
+        if let focusedScope { selected = [focusedScope] }
+        else { selected = saved.subtracting([.steps]) }
+        loadedSelection = true
+      }
+    }
     catch { failure = .failed }
+  }
+
+  private func setSelected(_ scope: GalaxySSIHealthKitImport.Scope, enabled: Bool) {
+    do {
+      let archived = try records.load().healthKitSelection ?? []
+      var saved = Set(archived.compactMap(GalaxySSIHealthKitImport.Scope.init(rawValue:)))
+      if enabled { saved.insert(scope) } else { saved.remove(scope) }
+      try records.setHealthKitSelection(saved)
+      if enabled { selected.insert(scope) } else { selected.remove(scope) }
+    } catch { failure = .failed }
   }
 
   private func statusText(_ status: GalaxySSIHealthKitSync.Status, running: Bool) -> String {

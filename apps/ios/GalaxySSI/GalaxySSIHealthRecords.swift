@@ -131,6 +131,8 @@ struct GalaxySSIHealthRecords {
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
     var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
+    var healthKitSelection: Set<String>?
+    var healthKitReadAt: [String: Date]?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -329,9 +331,16 @@ struct GalaxySSIHealthRecords {
   func importHealthKit(_ readings: [GalaxySSIHealthReading]) throws -> Int {
     var archive = try load()
     let count = try appendHealthKit(readings, to: &archive)
-    guard count > 0 else { return 0 }
+    guard !readings.isEmpty else { return 0 }
+    let metrics = Set(readings.map(\.metric))
+    var readAt = archive.healthKitReadAt ?? [:]
+    for scope in GalaxySSIHealthKitImport.Scope.allCases where metrics.contains(scope.metric) {
+      readAt[scope.rawValue] = Date()
+    }
+    archive.healthKitReadAt = readAt
     try persist(archive)
-    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    if count > 0 { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
+    NotificationCenter.default.post(name: Self.healthKitCoverageChanged, object: owner)
     return count
   }
 
@@ -355,7 +364,9 @@ struct GalaxySSIHealthRecords {
     var archive = try load()
     var checkpoints = archive.healthKitSync ?? [:]
     var checkpoint = checkpoints[scope.rawValue] ?? .init(floor: floor)
-    if reset { checkpoint = .init(floor: floor, previousCoverageUnverified: true) }
+    if reset {
+      checkpoint = .init(floor: floor, previousCoverageUnverified: true, finishedAt: checkpoint.finishedAt)
+    }
     checkpoint.run = UUID()
     checkpoint.status = .running
     checkpoint.insertedThisRun = 0
@@ -363,6 +374,7 @@ struct GalaxySSIHealthRecords {
     checkpoints[scope.rawValue] = checkpoint
     archive.healthKitSync = checkpoints
     try persist(archive)
+    NotificationCenter.default.post(name: Self.healthKitCoverageChanged, object: owner)
     return checkpoint
   }
 
@@ -378,12 +390,18 @@ struct GalaxySSIHealthRecords {
     checkpoint.anchor = page.anchor
     checkpoint.insertedThisRun += count
     checkpoint.readThisRun += page.rows.count
+    if !page.rows.isEmpty {
+      var readAt = archive.healthKitReadAt ?? [:]
+      readAt[scope.rawValue] = now
+      archive.healthKitReadAt = readAt
+    }
     if !page.more {
       checkpoint.status = checkpoint.readThisRun == 0 ? .empty : .success
       checkpoint.finishedAt = now
     }
     archive.healthKitSync?[scope.rawValue] = checkpoint
     try persist(archive)
+    NotificationCenter.default.post(name: Self.healthKitCoverageChanged, object: owner)
     if count > 0 { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
     return checkpoint
   }
@@ -395,6 +413,18 @@ struct GalaxySSIHealthRecords {
           archive.healthKitSync?[scope.rawValue]?.status == .running else { return }
     archive.healthKitSync?[scope.rawValue]?.status = status
     try persist(archive)
+    NotificationCenter.default.post(name: Self.healthKitCoverageChanged, object: owner)
+  }
+
+  static let healthKitCoverageChanged = Notification.Name("galaxyssi.health.healthKitCoverageChanged")
+
+  func setHealthKitSelection(_ selection: Set<GalaxySSIHealthKitImport.Scope>) throws {
+    var archive = try load()
+    let scopes = Set(selection.map(\.rawValue))
+    guard archive.healthKitSelection != scopes else { return }
+    archive.healthKitSelection = scopes
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.healthKitCoverageChanged, object: owner)
   }
 
   func undoTableBatch(_ id: UUID) throws -> Int {

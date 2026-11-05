@@ -298,6 +298,17 @@
 "galaxyssi.health.healthkit.excessive" = "记录过多，请缩小读取范围或缩短时段。";
 "galaxyssi.health.healthkit.failed" = "读取失败或数据已变更，请重新预览。";
 "galaxyssi.health.healthkit_sync.title" = "同步与数据覆盖";
+"galaxyssi.health.coverage_scopes" = "Apple 健康分项状态";
+"galaxyssi.health.coverage_selected" = "已在 GalaxySSI 中选择";
+"galaxyssi.health.coverage_unselected" = "未在 GalaxySSI 中选择";
+"galaxyssi.health.coverage_read_unknown" = "系统不披露当前读取权限";
+"galaxyssi.health.coverage_last_read" = "上次成功读取记录";
+"galaxyssi.health.coverage_no_read" = "尚无成功读取记录的证据";
+"galaxyssi.health.coverage_last_sync" = "上次完成同步";
+"galaxyssi.health.coverage_no_sync" = "尚未完成同步";
+"galaxyssi.health.coverage_steps_manual" = "每日步数汇总单独导入";
+"galaxyssi.health.coverage_no_live_bluetooth" = "此页面未进行实时蓝牙采集";
+"galaxyssi.health.coverage_last_bluetooth" = "最近保存的蓝牙测量";
 "galaxyssi.health.healthkit_sync.scopes" = "Apple 健康同步范围";
 "galaxyssi.health.healthkit_sync.coverage_floor" = "覆盖起点";
 "galaxyssi.health.healthkit_sync.old_unverified" = "游标重启后无法核实更早的数据覆盖。";
