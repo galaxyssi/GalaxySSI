@@ -4,6 +4,7 @@ struct AgentPlannerModelSnapshot: Codable, Equatable {
   var settings: AgentModelPlannerSettings
   var route: AgentPlannerProviderRoute?
   var localProfileId: String?
+  var selectedForPhoneTurn: Bool? = nil
 
   var configurationSha256: String {
     AgentModelLoopRecoveryIdentity.sha256(self)

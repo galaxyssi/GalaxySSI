@@ -107,6 +107,25 @@ struct AgentModelPlannerContactResolver {
   }
 
   @MainActor
+  func capturePhoneTurnSnapshot(
+    settings: AgentModelPlannerSettings,
+    selectedContact: GalaxySSIContact
+  ) -> AgentPlannerModelSnapshot? {
+    guard settings.enabled,
+          let resolution = Self.candidate(
+            for: selectedContact,
+            apiKey: { store.apiKey(for: $0) },
+            preferredModelId: selectedContact.selectedCloudModelId
+          )?.resolution else { return nil }
+    return AgentPlannerModelSnapshot(
+      settings: settings.normalized,
+      route: AgentPlannerProviderRoute(resolution: resolution),
+      localProfileId: nil,
+      selectedForPhoneTurn: true
+    )
+  }
+
+  @MainActor
   func makePlanner(
     snapshot: AgentPlannerModelSnapshot,
     sender: CloudModelStructuredSending = CloudModelClient()

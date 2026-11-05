@@ -84,6 +84,40 @@ final class AgentModelPlannerContactResolverTests: XCTestCase {
     XCTAssertEqual(preferredMissing?.contact.id, "cloud:zeta")
   }
 
+  func testPhoneTurnSnapshotPinsTheSelectedProviderInsteadOfPlannerDefault() throws {
+    let store = makeStore(secrets: InMemorySecretStore())
+    _ = try store.addCloudModelContact(
+      displayName: "Default Planner",
+      provider: "OpenAI",
+      modelId: "default-model",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "sk-live-default",
+      apiStyle: .openAICompatible
+    )
+    _ = try store.addCloudModelContact(
+      displayName: "Selected Planner",
+      provider: "Anthropic",
+      modelId: "selected-model",
+      endpoint: "https://api.anthropic.com/v1/messages",
+      apiKey: "sk-live-selected",
+      apiStyle: .anthropic
+    )
+    var selected = try XCTUnwrap(store.contact(id: "cloud:anthropic"))
+    let resolver = AgentModelPlannerContactResolver(store: store)
+    let settings = AgentModelPlannerSettings(enabled: true, cloudContactId: "cloud:openai")
+    let snapshot = try XCTUnwrap(resolver.capturePhoneTurnSnapshot(settings: settings, selectedContact: selected))
+    let reopened = try JSONDecoder().decode(AgentPlannerModelSnapshot.self, from: JSONEncoder().encode(snapshot))
+
+    XCTAssertEqual(reopened, snapshot)
+    XCTAssertEqual(reopened.configurationSha256, snapshot.configurationSha256)
+    XCTAssertEqual(reopened.selectedForPhoneTurn, true)
+    XCTAssertEqual(reopened.route?.contactId, selected.id)
+    XCTAssertEqual(try resolver.makePlanner(snapshot: reopened).modelProfile, "selected-model")
+
+    selected.selectedCloudModelId = "missing-model"
+    XCTAssertNil(resolver.capturePhoneTurnSnapshot(settings: settings, selectedContact: selected))
+  }
+
   func testAgentModelPlannerContactResolverRejectsUnsafeCandidates() {
     var missingModel = makeCloudContact(id: "cloud:missing-model")
     missingModel.cloudModels = []
