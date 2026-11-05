@@ -3,6 +3,26 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testSourceImageIndicesMatchOriginalOrderInEveryCloudFormat() throws {
+    let images = try [1, 2].map { value in
+      try CloudImagePayload(displayName: "fixture.png", mimeType: "image/png", data: Data([UInt8(value)]))
+    }
+    var openAI: [[String: Any]] = [["role": "user", "content": "Mark the second image"]]
+    var anthropic = openAI
+    var gemini: [[String: Any]] = [["role": "user", "parts": [["text": "Mark the second image"]]]]
+    CloudVisionPayloadEncoder.attachOpenAI(to: &openAI, images: images)
+    CloudVisionPayloadEncoder.attachAnthropic(to: &anthropic, images: images)
+    CloudVisionPayloadEncoder.attachGemini(to: &gemini, images: images)
+    for (messages, key) in [(openAI, "content"), (anthropic, "content"), (gemini, "parts")] {
+      let parts = try XCTUnwrap(messages.first?[key] as? [[String: Any]])
+      XCTAssertEqual(parts.count, 5)
+      XCTAssertEqual(parts[2]["text"] as? String, "Source image index: 0.")
+      XCTAssertEqual(parts[4]["text"] as? String, "Source image index: 1.")
+    }
+    XCTAssertTrue(CloudImageAnnotationPlan.instruction(imageCount: 2).contains("cannot be annotated"))
+    XCTAssertTrue(CloudImageAnnotationPlan.instruction(imageCount: 0).isEmpty)
+  }
+
   func testSmallImageKeepsOriginalBytesAndRecordsProbe() throws {
     let data = try XCTUnwrap(testImage().pngData())
     let attachment = GalaxySSIDraftAttachment(
