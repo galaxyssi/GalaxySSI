@@ -1372,6 +1372,61 @@ final class GalaxySSIStore: ObservableObject {
     return true
   }
 
+  @discardableResult
+  func reconcileCloudDispatches(sourceId: UUID? = nil) -> Int {
+    var count = 0
+    for receipt in chatHistoryDatabase.pendingCloudDispatches(sourceId: sourceId) {
+      guard !AgentCloudDispatchRegistry.shared.contains(receipt.identity) else { continue }
+      guard var source = chatHistoryDatabase.message(id: receipt.sourceId) else {
+        if chatHistoryDatabase.isDeletedCloudDispatchSource(receipt),
+           chatHistoryDatabase.retireCloudDispatch(receipt) { count += 1 }
+        continue
+      }
+      guard receipt.matchesSource(source) else { continue }
+      if let session = agentSession(id: receipt.conversationId), session.privateMode || session.trackingPaused { continue }
+      guard let replies = chatHistoryDatabase.cloudDispatchReplies(receipt) else { continue }
+      let completed = replies.contains(where: receipt.isCommittedReply)
+      let interruption = GalaxySSILocalization.string(
+        "galaxyssi.agent.cloud_request_interrupted",
+        fallback: "The previous cloud request was interrupted. It was not sent again.",
+        language: languagePolicy.interfaceLanguage
+      )
+      let stage = sourceId == nil ? "cloud_request_interrupted" : "cloud_error"
+      let partialDetail = sourceId == nil ? interruption : (source.deliveryTrace.last?.detail ?? interruption)
+      var savedPartials = true
+      for var partial in replies where receipt.isPartialReply(partial) {
+        partial.deliveryStatus = .failed
+        partial.deliveryTrace.append(DeliveryTraceEvent(stage: stage, detail: partialDetail))
+        if !persistRecoveredCloudMessage(partial) { savedPartials = false }
+      }
+      guard savedPartials else { continue }
+      if completed && ![.delivered, .read].contains(source.deliveryStatus) {
+        source.deliveryStatus = .delivered
+        source.deliveryTrace.append(DeliveryTraceEvent(stage: "cloud_reply", detail: receipt.modelId))
+        guard persistRecoveredCloudMessage(source) else { continue }
+      } else if !completed && source.deliveryStatus != .failed {
+        source.deliveryStatus = .failed
+        source.deliveryTrace.append(DeliveryTraceEvent(stage: stage, detail: interruption))
+        guard persistRecoveredCloudMessage(source) else { continue }
+      }
+      if chatHistoryDatabase.retireCloudDispatch(receipt) { count += 1 }
+    }
+    return count
+  }
+
+  private func persistRecoveredCloudMessage(_ message: ChatMessage) -> Bool {
+    guard chatHistoryDatabase.upsert(message) else { return false }
+    if !runtimePlaintextCleared, var cached = messagesByContact[message.contactId],
+       let index = cached.firstIndex(where: { $0.id == message.id }) {
+      cached[index] = message
+      let previous = suppressMessageDatabaseSync
+      suppressMessageDatabaseSync = true
+      defer { suppressMessageDatabaseSync = previous }
+      messagesByContact[message.contactId] = cached
+    }
+    return true
+  }
+
   // The MQTT completion drain consumes its event only after this throws-or-succeeds boundary.
   func persistTransportDelivery(_ event: MqttDeliveryCompletions.Event) throws {
     let saved = try chatHistoryDatabase.persistTransportDelivery(event)

@@ -3903,20 +3903,13 @@ final class MessageCoordinator: ObservableObject {
         }
         let modelDetail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
         let requestDetail = cloudText == displayText ? modelDetail : "\(modelDetail); attachments described"
-        store.appendDeliveryTrace(
-          outgoing.id,
-          contactId: outgoing.contactId,
-          stage: "cloud_request",
-          detail: requestDetail,
-          status: .sent
-        )
-        try await receiveCloudStreamReply(
+        try await dispatchCloudReply(
           contact: cloudContact,
           turns: cloudTurns,
           images: cloudImages,
           outgoing: outgoing,
           modelDetail: modelDetail,
-          displayContactId: outgoing.contactId
+          requestDetail: requestDetail
         )
         finishPendingAgentReply(for: outgoing)
         return true
@@ -4049,20 +4042,13 @@ final class MessageCoordinator: ObservableObject {
         }
         let modelDetail = cloudContact.selectedCloudModel?.modelId ?? cloudContact.cloudProvider.ifBlank(cloudContact.id)
         let requestDetail = cloudText == displayText ? modelDetail : "\(modelDetail); attachments described"
-        store.appendDeliveryTrace(
-          outgoing.id,
-          contactId: contact.id,
-          stage: "cloud_request",
-          detail: requestDetail,
-          status: .sent
-        )
-        try await receiveCloudStreamReply(
+        try await dispatchCloudReply(
           contact: cloudContact,
           turns: cloudTurns,
           images: cloudImages,
           outgoing: outgoing,
           modelDetail: modelDetail,
-          displayContactId: contact.id
+          requestDetail: requestDetail
         )
         finishPendingAgentReply(for: outgoing)
         return true
@@ -4163,6 +4149,7 @@ final class MessageCoordinator: ObservableObject {
         detail: error.localizedDescription,
         status: .failed
       )
+      store.reconcileCloudDispatches(sourceId: outgoing.id)
       store.appendSystem(error.localizedDescription, to: contact.id, conversationId: outgoing.conversationId)
       return false
     }
@@ -9534,6 +9521,34 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
+  private func dispatchCloudReply(
+    contact: GalaxySSIContact, turns: [ChatMessage], images: [CloudImagePayload],
+    outgoing: ChatMessage, modelDetail: String, requestDetail: String
+  ) async throws {
+    let receipt = AgentCloudDispatchReceipt(sourceId: outgoing.id, contactId: outgoing.contactId,
+      conversationId: outgoing.conversationId, turnId: outgoing.turnId, providerId: contact.id,
+      modelId: contact.selectedCloudModel?.modelId ?? "")
+    let registry = AgentCloudDispatchRegistry.shared
+    guard let lease = registry.register(receipt.identity) else { throw CancellationError() }
+    defer { registry.release(receipt.identity, lease: lease) }
+    let session = store.agentSession(id: outgoing.conversationId)
+    let recoverable = session?.privateMode != true && session?.trackingPaused != true
+    if recoverable && !store.chatHistoryDatabase.registerCloudDispatch(receipt) {
+      throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.agent.cloud_dispatch_not_saved",
+        fallback: "The cloud request was not sent because its recovery record could not be saved."))
+    }
+    store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "cloud_request",
+                              detail: requestDetail, status: .sent)
+    try await receiveCloudStreamReply(contact: contact, turns: turns, images: images, outgoing: outgoing,
+      modelDetail: modelDetail, displayContactId: outgoing.contactId, dispatchLease: lease)
+    if recoverable,
+       let source = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
+       [.delivered, .read].contains(source.deliveryStatus),
+       store.chatHistoryDatabase.cloudDispatchReplies(receipt)?.contains(where: receipt.isCommittedReply) == true {
+      _ = store.chatHistoryDatabase.retireCloudDispatch(receipt)
+    }
+  }
+
   private func receiveCloudStreamReply(
     contact: GalaxySSIContact,
     turns: [ChatMessage],
@@ -9541,7 +9556,8 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     modelDetail: String,
     displayContactId: String,
-    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil
+    collaborationModelAudit: AgentCollaborationToolEvidenceScope? = nil,
+    dispatchLease: AgentCloudDispatchLease? = nil
   ) async throws {
     var scopedTurns = turns
     if outgoing.readOnlyAnalysis {
@@ -9569,6 +9585,7 @@ final class MessageCoordinator: ObservableObject {
     }
     for try await event in events {
       try Task.checkCancellation()
+      try dispatchLease?.checkActive()
       switch event {
       case .connected, .usage, .toolCallDelta:
         continue
@@ -9619,7 +9636,7 @@ final class MessageCoordinator: ObservableObject {
           incoming = store.appendIncoming(
             content,
             from: destinationId,
-            remoteMessageId: event.requestId,
+            remoteMessageId: requestId,
             status: .sent,
             traceStage: "cloud_reply",
             conversationId: outgoing.conversationId,
@@ -9631,26 +9648,25 @@ final class MessageCoordinator: ObservableObject {
         }
 
       case .completed:
+        if completed { continue }
         let clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, let current = incoming else {
           throw GalaxySSIError.unsupportedResponse
         }
-        completed = true
-        store.appendDeliveryTrace(
-          outgoing.id,
-          contactId: destinationId,
-          stage: "cloud_reply",
-          detail: modelDetail,
-          status: .delivered
-        )
-        let final = store.updateMessageContent(
+        if let dispatchLease, !dispatchLease.claimCompletion() { throw CancellationError() }
+        guard let final = store.updateMessageContent(
           current.id,
           contactId: destinationId,
           content: clean,
           status: .delivered,
           traceStage: "cloud_reply_received",
-          detail: modelDetail
-        ) ?? current
+          detail: modelDetail,
+          remoteMessageId: requestId
+        ) else { throw GalaxySSIError.unsupportedResponse }
+        completed = true
+        store.appendDeliveryTrace(
+          outgoing.id, contactId: destinationId, stage: "cloud_reply", detail: modelDetail, status: .delivered
+        )
         onIncomingMessage?(final)
 
       case .failed(let failure):

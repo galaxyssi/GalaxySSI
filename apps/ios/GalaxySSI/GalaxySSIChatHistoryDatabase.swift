@@ -117,6 +117,88 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     }
   }
 
+  func registerCloudDispatch(_ receipt: AgentCloudDispatchReceipt) -> Bool {
+    locked {
+      let id = receipt.sourceId.uuidString
+      guard let source = message(id: receipt.sourceId), receipt.matchesSource(source),
+            let data = try? JSONEncoder().encode(receipt),
+            let encrypted = try? cipher.encrypt(data, purpose: "cloud-dispatch-v1:\(id)"),
+            encrypted.count < 8_192,
+            execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"),
+            let statement = prepare("""
+              INSERT INTO cloud_dispatch_pending(source_id, encrypted_payload)
+              SELECT ?, ? WHERE (SELECT COUNT(*) FROM cloud_dispatch_pending) < 512
+              """) else { return false }
+      defer { sqlite3_finalize(statement) }
+      bind(id, at: 1, to: statement)
+      encrypted.withUnsafeBytes { bytes in
+        sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(encrypted.count), Self.transient)
+      }
+      return sqlite3_step(statement) == SQLITE_DONE && sqlite3_changes(database) == 1
+    }
+  }
+
+  func pendingCloudDispatches(sourceId: UUID? = nil) -> [AgentCloudDispatchReceipt] {
+    locked {
+      let condition = sourceId == nil ? "" : " WHERE source_id = ?"
+      guard let statement = prepare("SELECT source_id, encrypted_payload FROM cloud_dispatch_pending" + condition) else {
+        return []
+      }
+      defer { sqlite3_finalize(statement) }
+      if let sourceId { bind(sourceId.uuidString, at: 1, to: statement) }
+      var pending: [AgentCloudDispatchReceipt] = []
+      while sqlite3_step(statement) == SQLITE_ROW {
+        guard let rawId = sqlite3_column_text(statement, 0), let bytes = sqlite3_column_blob(statement, 1) else { continue }
+        let id = String(cString: rawId)
+        let size = Int(sqlite3_column_bytes(statement, 1))
+        guard size > 0, size < 8_192,
+              let payload = try? cipher.decrypt(Data(bytes: bytes, count: size), expectedPurpose: "cloud-dispatch-v1:\(id)"),
+              let receipt = try? JSONDecoder().decode(AgentCloudDispatchReceipt.self, from: payload),
+              receipt.sourceId.uuidString == id else { continue }
+        pending.append(receipt)
+      }
+      return pending
+    }
+  }
+
+  func cloudDispatchReplies(_ receipt: AgentCloudDispatchReceipt) -> [ChatMessage]? {
+    locked {
+      guard let statement = prepare("""
+        SELECT message_id, encrypted_payload FROM chat_messages
+        WHERE contact_id = ? AND remote_message_id IN (?, ?) AND is_mine = 0 AND is_system = 0
+        AND conversation_id = ?
+        """) else { return nil }
+      defer { sqlite3_finalize(statement) }
+      bind(receipt.contactId, at: 1, to: statement)
+      bind(receipt.requestId, at: 2, to: statement)
+      bind(receipt.previewId, at: 3, to: statement)
+      bind(receipt.conversationId, at: 4, to: statement)
+      var replies: [ChatMessage] = []
+      while true {
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return replies }
+        guard step == SQLITE_ROW, let id = sqlite3_column_text(statement, 0),
+              let message = decode(statement, id: String(cString: id), payloadColumn: 1) else { return nil }
+        if receipt.matchesReply(message) { replies.append(message) }
+      }
+    }
+  }
+
+  func isDeletedCloudDispatchSource(_ receipt: AgentCloudDispatchReceipt) -> Bool {
+    locked {
+      (try? isLocallyDeleted(contactId: receipt.contactId, messageId: receipt.sourceId.uuidString, isMine: true)) == true
+    }
+  }
+
+  func retireCloudDispatch(_ receipt: AgentCloudDispatchReceipt) -> Bool {
+    locked {
+      guard let statement = prepare("DELETE FROM cloud_dispatch_pending WHERE source_id = ?") else { return false }
+      defer { sqlite3_finalize(statement) }
+      bind(receipt.sourceId.uuidString, at: 1, to: statement)
+      return sqlite3_step(statement) == SQLITE_DONE
+    }
+  }
+
   func writeLinkDeliveryState(_ data: Data) -> Bool {
     locked {
       guard let encrypted = try? cipher.encrypt(data, purpose: "link-delivery-state-v1"), encrypted.count <= Int(Int32.max),
@@ -690,6 +772,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     locked { _ = execute("DELETE FROM chat_message_deletions") }
     locked { _ = execute("DELETE FROM desktop_reply_recovery") }
     locked { _ = execute("DELETE FROM link_delivery_state") }
+    locked { _ = execute("DELETE FROM cloud_dispatch_pending") }
     cipher.destroyEncryptionKey()
   }
 
@@ -727,6 +810,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     _ = execute("CREATE INDEX IF NOT EXISTS chat_message_deletions_remote ON chat_message_deletions(contact_id, remote_message_id, is_mine)")
     _ = execute("CREATE TABLE IF NOT EXISTS desktop_reply_recovery (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE TABLE IF NOT EXISTS link_delivery_state (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), encrypted_payload BLOB NOT NULL)")
+    _ = execute("CREATE TABLE IF NOT EXISTS cloud_dispatch_pending (source_id TEXT PRIMARY KEY NOT NULL, encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_outgoing_discovery ON chat_messages(created_at DESC, message_id DESC) WHERE is_mine = 1 AND is_system = 0")
   }
 
