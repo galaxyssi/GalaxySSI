@@ -1,6 +1,49 @@
 import AVFoundation
 import Combine
 import Foundation
+import UIKit
+import OSLog
+
+struct VoicePassiveCaptureLease {
+  private(set) var owner: UUID?
+  private(set) var capture: UUID?
+  private var startedAt: TimeInterval?
+
+  mutating func begin() -> UUID {
+    let id = UUID()
+    owner = id
+    capture = nil
+    startedAt = nil
+    return id
+  }
+
+  mutating func renew(owner id: UUID, at now: TimeInterval) -> UUID? {
+    guard owner == id else { return nil }
+    let captureID = UUID()
+    capture = captureID
+    startedAt = now
+    return captureID
+  }
+
+  func accepts(owner id: UUID, capture captureID: UUID) -> Bool { owner == id && capture == captureID }
+
+  func needsRenewal(at now: TimeInterval, healthy: Bool) -> Bool {
+    guard owner != nil else { return false }
+    guard healthy, let startedAt else { return true }
+    return now >= startedAt && now - startedAt >= 50
+  }
+
+  mutating func stop() { owner = nil; capture = nil; startedAt = nil }
+}
+
+enum VoiceInputCaptionPolicy {
+  static func text(_ state: VoiceInteractionState, capturing: Bool, submittedSession: String) -> String {
+    guard capturing, !state.sessionId.isEmpty, state.sessionId != submittedSession,
+          [.preparing, .listening, .endpointing, .finalizingASR].contains(state.phase) else { return "" }
+    return (state.correctedText ?? "").ifBlank(state.finalText ?? "")
+      .ifBlank(state.stableText).ifBlank(state.partialText)
+  }
+}
 
 /// Foreground-only, echo-processed speech detection. This path does not save PCM,
 /// start ASR, or create a voice interaction trace.
@@ -8,19 +51,45 @@ import Foundation
 final class VoicePassiveReplyCapture: ObservableObject {
   @Published private(set) var isListening = false
   private var engine: AVAudioEngine?
-  private var token: UUID?
+  private var lease = VoicePassiveCaptureLease()
+  private var maintenance: Task<Void, Never>?
+  private let logger = Logger(subsystem: "com.galaxyssi.ios", category: "passive-voice-capture")
+  var isArmed: Bool { lease.owner != nil }
 
   @discardableResult
   func start(onSpeech: @escaping () -> Void) -> Bool {
-    if isListening { return true }
+    if isArmed { return isListening }
+    let owner = lease.begin()
+    guard launch(owner: owner, onSpeech: onSpeech) else { stop(); return false }
+    maintenance = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+        guard let self, self.lease.owner == owner else { return }
+        guard UIApplication.shared.applicationState == .active else { self.stop(); return }
+        let session = AVAudioSession.sharedInstance()
+        let healthy = self.engine?.isRunning == true && session.category == .playAndRecord &&
+          session.mode == .voiceChat && self.engine?.inputNode.isVoiceProcessingEnabled == true
+        if self.lease.needsRenewal(at: ProcessInfo.processInfo.systemUptime, healthy: healthy) {
+          if self.launch(owner: owner, onSpeech: onSpeech) {
+            self.logger.info("Passive voice capture renewed")
+          }
+        }
+      }
+    }
+    return true
+  }
+
+  private func launch(owner: UUID, onSpeech: @escaping () -> Void) -> Bool {
+    guard let captureID = lease.renew(owner: owner, at: ProcessInfo.processInfo.systemUptime) else { return false }
+    releaseEngine()
+    isListening = false
     let session = AVAudioSession.sharedInstance()
-    guard session.recordPermission == .granted, session.isInputAvailable else { return false }
+    guard session.recordPermission == .granted else { return false }
     let engine = AVAudioEngine()
-    let id = UUID()
-    token = id
     do {
       try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
       try session.setActive(true)
+      guard session.isInputAvailable else { throw CaptureFailure.unprotected }
       let input = engine.inputNode
       try input.setVoiceProcessingEnabled(true)
       guard input.isVoiceProcessingEnabled else { throw CaptureFailure.unprotected }
@@ -32,7 +101,8 @@ final class VoicePassiveReplyCapture: ObservableObject {
         guard detector.accept(VoicePcmTapPipeline.int16Samples(from: buffer),
                               now: ProcessInfo.processInfo.systemUptime) else { return }
         Task { @MainActor [weak self] in
-          guard let self, self.token == id, self.isListening, self.engine?.isRunning == true else { return }
+          guard let self, self.lease.accepts(owner: owner, capture: captureID),
+                self.isListening, self.engine?.isRunning == true else { return }
           onSpeech()
         }
       }
@@ -42,22 +112,28 @@ final class VoicePassiveReplyCapture: ObservableObject {
       isListening = true
       return true
     } catch {
-      stop()
+      releaseEngine()
       return false
     }
   }
 
   func stop(deactivateSession: Bool = true) {
-    guard token != nil else { return }
-    token = nil
+    guard isArmed else { return }
+    lease.stop()
+    maintenance?.cancel()
+    maintenance = nil
     isListening = false
+    releaseEngine()
+    if deactivateSession {
+      try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    }
+  }
+
+  private func releaseEngine() {
     if let engine {
       engine.inputNode.removeTap(onBus: 0)
       engine.stop()
       self.engine = nil
-    }
-    if deactivateSession {
-      try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
   }
 

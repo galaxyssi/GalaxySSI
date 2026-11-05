@@ -30,6 +30,7 @@ struct GalaxySSIVoiceTabView: View {
   @State private var voiceAgentRunListenerId = ""
   @State private var submitStatus = ""
   @State private var lastVoiceTranscript = ""
+  @State private var submittedInputSessionId = ""
   @State private var lastVoiceTargetId = ""
   @State private var lastVoiceTargetName = ""
   @State private var lastVoiceSubmissionAt = Date.distantFuture
@@ -148,6 +149,7 @@ struct GalaxySSIVoiceTabView: View {
         stopPassiveListening(resumeWake: false)
         submitStatus.removeAll(keepingCapacity: false)
         lastVoiceTranscript.removeAll(keepingCapacity: false)
+        submittedInputSessionId = ""
         progressiveVoiceReplyText.removeAll(keepingCapacity: false)
         pendingRiskConfirmation = nil
       }
@@ -666,7 +668,7 @@ struct GalaxySSIVoiceTabView: View {
           !activeVoiceReplySessionId.isEmpty, activeVoiceReplySessionId != passiveBlockedSessionId else { return }
     passiveIdleTask?.cancel()
     passiveIdleTask = nil
-    guard !passiveCapture.isListening else { return }
+    guard !passiveCapture.isArmed else { return }
     wakeListener.pauseForManualCapture()
     if !passiveCapture.start(onSpeech: {
       guard viewVisible, scenePhase == .active, passiveCapture.isListening else { return }
@@ -681,7 +683,7 @@ struct GalaxySSIVoiceTabView: View {
   private func stopPassiveListening(resumeWake: Bool) {
     passiveIdleTask?.cancel()
     passiveIdleTask = nil
-    guard passiveCapture.isListening else { return }
+    guard passiveCapture.isArmed else { return }
     passiveCapture.stop(deactivateSession: !replySpeech.isSpeaking)
     if resumeWake { wakeListener.resumeAfterManualCapture() }
   }
@@ -747,10 +749,9 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private var visibleTranscript: String {
-    (voiceState.correctedText ?? "")
-      .ifBlank(voiceState.finalText ?? "")
-      .ifBlank(voiceState.stableText)
-      .ifBlank(voiceState.partialText)
+    VoiceInputCaptionPolicy.text(voiceState,
+      capturing: wakeListener.isCommandCapturing || holdToTalk.isRecording || holdToTalk.isPending,
+      submittedSession: submittedInputSessionId)
   }
 
   private var phaseTint: Color {
@@ -909,6 +910,8 @@ struct GalaxySSIVoiceTabView: View {
       return
     }
     VoiceExecutionLedgerBridge.recordRoute(sessionId: ledgerSessionId, decision: session.decision)
+    submittedInputSessionId = session.sessionId
+    syncPassiveListening()
     lastVoiceTranscript = cleanText
     lastVoiceTargetId = contact.id
     lastVoiceTargetName = contact.displayName
@@ -1230,7 +1233,7 @@ struct GalaxySSIVoiceTabView: View {
       activeVoiceReplySessionId = ""
       activeVoiceReplyContactId = ""
       activeVoiceReplyRouteKind = nil
-      if passiveCapture.isListening {
+      if passiveCapture.isArmed {
         passiveIdleTask?.cancel()
         passiveIdleTask = Task { @MainActor in
           do { try await Task.sleep(nanoseconds: 12_000_000_000) } catch { return }
