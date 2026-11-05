@@ -20,6 +20,7 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var referenceInterval: String?
   var healthKitSource: GalaxySSIHealthKitImport.Source?
   var reportSource: GalaxySSIHealthReportReview.Source?
+  var secondarySources: GalaxySSIHealthPortableBackup.SecondarySources?
 
   var unit: String { unitOverride ?? metric.unit }
   var resultKind: String { reported?.kind.rawValue ?? "number" }
@@ -143,6 +144,7 @@ struct GalaxySSIHealthRecords {
     var reviewReminderState: GalaxySSIHealthReviewReminders.State?
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
+    var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
     var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
@@ -456,7 +458,7 @@ struct GalaxySSIHealthRecords {
     if let latest {
       guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
             latest.healthKitSource == input.healthKitSource,
-            latest.reportSource == input.reportSource
+            latest.reportSource == input.reportSource, latest.secondarySources == input.secondarySources
       else { throw Failure.invalid }
     } else if let receipt = input.bluetoothReceipt, archive.revisions.contains(where: {
       $0.bluetoothReceipt.map { receipt.isReplay(of: $0) } == true
@@ -916,6 +918,14 @@ struct GalaxySSIHealthRecords {
     archive.recordingReminders = ledger
     try persist(archive)
     NotificationCenter.default.post(name: GalaxySSIHealthRecordingReminders.changed, object: owner)
+  }
+
+  func commitRestore(_ archive: Archive, receipt: UUID) throws {
+    var updated = archive
+    var receipts = updated.restoreReceipts ?? []
+    receipts.insert(receipt)
+    updated.restoreReceipts = receipts
+    try persist(updated)
   }
 
   private func persist(_ archive: Archive) throws {

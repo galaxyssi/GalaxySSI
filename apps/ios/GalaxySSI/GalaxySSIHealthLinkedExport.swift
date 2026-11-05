@@ -84,7 +84,7 @@ enum GalaxySSIHealthLinkedExport {
       return status
     }
     for reading in readings {
-      let reportSources = (reading.reportSource.map { [$0] } ?? []) +
+      let reportSources = (reading.reportSource.map { [$0] } ?? []) + (reading.secondarySources?.reports ?? []) +
         (reportLinks[reading.id] ?? []).filter { $0.target.revision == reading.revision }.map(\.source)
       for report in reportSources {
         guard let original = originals[report.original] else {
@@ -107,7 +107,7 @@ enum GalaxySSIHealthLinkedExport {
         append(reading, original: original.id, source: original.acquisition?.rawValue ?? "unknown",
                location: report.page, expected: report.sha256, path: path, status: status)
       }
-      let tableSources = (reading.tableSource.map { [$0] } ?? []) +
+      let tableSources = (reading.tableSource.map { [$0] } ?? []) + (reading.secondarySources?.tables ?? []) +
         (tableLinks[reading.id] ?? []).filter { $0.target.revision == reading.revision }.map(\.source)
       for table in tableSources {
         let batch = tables[table.batch]
