@@ -16,6 +16,8 @@ final class VoicePcmTapPipeline {
   private let lock = NSLock()
   private var sequence: Int64 = 0
 
+  var capturedFrameCount: Int64 { locked { sequence } }
+
   init(
     config: VoiceAudioSessionConfig,
     vad: VoiceActivityDetector = AdaptiveSpeechVad(),
