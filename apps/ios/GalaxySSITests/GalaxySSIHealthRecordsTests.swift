@@ -1167,6 +1167,67 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(restored.draft?.existing?.id, selected.id)
   }
 
+  @MainActor
+  func testLinkedHealthExportDeduplicatesExactOriginalsAndDetectsRemoval() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData {
+      $0.beginPage()
+      $0.beginPage()
+    }
+    try store.store(pdf, name: "camera.pdf", acquisition: .camera)
+    let original = try XCTUnwrap(store.list().originals.first)
+    let readings = (0..<2).map { page in
+      GalaxySSIHealthReading(revision: 1, metric: .weight, value: Decimal(65 + page),
+        reportSource: .init(original: original.id, sha256: original.sha256, page: page, region: 0, fromOCR: true))
+    }
+    let uploadOnly = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [], store: store, choices: .init(uploaded: true))
+    XCTAssertEqual(uploadOnly.links.map(\.status), [.unselected, .unselected])
+    let camera = GalaxySSIHealthLinkedExport.Choices(camera: true)
+    let package = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [], store: store, choices: camera)
+    XCTAssertEqual(package.links.map(\.status), [.included, .included])
+    XCTAssertEqual(package.files.map(\.data), [pdf])
+    let data = try GalaxySSIHealthMeasurementExport.encode(readings, as: .csv, includeNotes: false)
+    let zip = try package.zip(measurements: data, format: .csv)
+    XCTAssertNotNil(zip.range(of: Data("manifest.json".utf8)))
+    for format in GalaxySSIHealthMeasurementExport.Format.allCases {
+      let content = try GalaxySSIHealthMeasurementExport.encode(readings, as: format, includeNotes: false)
+      let archive = try package.zip(measurements: content, format: format)
+      XCTAssertNotNil(archive.range(of: Data(("measurements." + format.rawValue).utf8)))
+      XCTAssertNotNil(archive.range(of: content))
+      XCTAssertNotNil(archive.range(of: pdf))
+    }
+    let artifact = try store.stageScopedExport(zip)
+    XCTAssertNil(try Data(contentsOf: artifact.file).range(of: pdf))
+    XCTAssertEqual(try artifact.read(), zip)
+    artifact.discard()
+    XCTAssertThrowsError(try artifact.read())
+    let selected = readings[0]
+    let csv = Data("value\n65\n".utf8)
+    let table = GalaxySSIHealthTableImport.Batch(id: UUID(), name: "fixture.csv", at: Date(), data: csv, inserted: 0)
+    let secondary: [GalaxySSIHealthTableImport.Evidence] = [1, 2].map { revision in
+      .init(target: .init(record: selected.id, revision: revision),
+        source: .init(batch: table.id, row: revision, sha256: GalaxySSIHealthTableImport.digest(csv), columns: ["value": 0]))
+    }
+    let mixed = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [table], store: store,
+      choices: .init(camera: true, uploaded: true), tableEvidence: secondary)
+    XCTAssertEqual(mixed.links.filter(\.secondary).map(\.location), [1])
+    XCTAssertEqual(mixed.files.count, 2)
+    let proof = GalaxySSIHealthOriginalStore.ExportAttempt(id: UUID(), at: Date(), originals: [], bytes: zip.count,
+      sha256: GalaxySSIHealthLinkedExport.digest(zip), outcome: .prepared)
+    let destination = root.appendingPathComponent("export.zip")
+    try zip.write(to: destination)
+    XCTAssertTrue(try GalaxySSIHealthOriginalStore.verifyDestination(destination, for: proof))
+    try Data(zip.dropLast()).write(to: destination)
+    XCTAssertFalse(try GalaxySSIHealthOriginalStore.verifyDestination(destination, for: proof))
+    try store.remove(store.previewRemoval(original))
+    let stale = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [], store: store, choices: camera)
+    XCTAssertEqual(stale.links.map(\.status), [.missing, .missing])
+    XCTAssertNotEqual(package.links, stale.links)
+  }
+
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
     var reading = GalaxySSIHealthReading(metric: .bloodPressure, value: 120, diastolic: 80, pulse: 65)
     reading.conditions = " =2+2"

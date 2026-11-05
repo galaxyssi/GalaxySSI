@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 @MainActor
 struct GalaxySSIHealthOriginalStore {
   enum Kind: String, Codable, CaseIterable, Sendable { case image, pdf }
+  enum Acquisition: String, Codable, Sendable { case camera, uploaded }
   struct Original: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     let name: String
@@ -16,6 +17,7 @@ struct GalaxySSIHealthOriginalStore {
     let importedAt: Date
     let bytes: Int
     let sha256: String
+    var acquisition: Acquisition?
 
     var entryPath: String { "originals/" + id.uuidString.lowercased() + "." + fileExtension }
   }
@@ -59,6 +61,27 @@ struct GalaxySSIHealthOriginalStore {
     var outcome: Outcome
   }
 
+  struct ScopedExport: Sendable {
+    let file: URL
+    let bytes: Int
+    let sha256: String
+    fileprivate let key: SymmetricKey
+    fileprivate let binding: Data
+
+    func read() throws -> Data {
+      let handle = try FileHandle(forReadingFrom: file)
+      defer { try? handle.close() }
+      guard let sealed = try handle.read(upToCount: bytes + 29), sealed.count == bytes + 28 else {
+        throw Failure.invalid
+      }
+      let data = try AES.GCM.open(AES.GCM.SealedBox(combined: sealed), using: key, authenticating: binding)
+      guard data.count == bytes, GalaxySSIHealthOriginalStore.digest(data) == sha256 else { throw Failure.invalid }
+      return data
+    }
+
+    func discard() { try? FileManager.default.removeItem(at: file) }
+  }
+
   enum Failure: Error { case invalid, limit, stale, restoreBusy }
 
   final class RestoreLease {
@@ -93,14 +116,14 @@ struct GalaxySSIHealthOriginalStore {
     try store(data, name: url.lastPathComponent)
   }
 
-  func store(_ data: Data, name: String) throws {
+  func store(_ data: Data, name: String, acquisition: Acquisition = .uploaded) throws {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
-      try store(data, name: name, lease: lease)
+      try store(data, name: name, acquisition: acquisition, lease: lease)
     }
   }
 
-  private func store(_ data: Data, name: String, lease: RestoreLease) throws {
+  private func store(_ data: Data, name: String, acquisition: Acquisition, lease: RestoreLease) throws {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
     let (kind, fileExtension) = try Self.format(of: data)
     let listing = try list(lease: lease)
@@ -110,7 +133,7 @@ struct GalaxySSIHealthOriginalStore {
           listing.originals.reduce(data.count, { $0 + $1.bytes }) <= 512 * 1024 * 1024
     else { throw Failure.limit }
     let item = Original(id: UUID(), name: String(name.prefix(180)), kind: kind, fileExtension: fileExtension,
-                        importedAt: Date(), bytes: data.count, sha256: digest)
+                        importedAt: Date(), bytes: data.count, sha256: digest, acquisition: acquisition)
     try writeOriginal(item, data: data, to: url(item.id))
   }
 
@@ -235,6 +258,10 @@ struct GalaxySSIHealthOriginalStore {
           let data = try handle.read(upToCount: Int(length)), data.count == Int(length)
     else { throw Failure.invalid }
     try data.write(to: url(id), options: [.atomic, .completeFileProtection])
+  }
+
+  func containsOriginalFile(_ id: UUID) throws -> Bool {
+    FileManager.default.fileExists(atPath: try url(id).path)
   }
 
   func list() throws -> Listing {
@@ -418,6 +445,32 @@ struct GalaxySSIHealthOriginalStore {
     }
     pruneArtifacts(history)
     return (zip, attempt)
+  }
+
+  func stageScopedExport(_ data: Data) throws -> ScopedExport {
+    guard !data.isEmpty, data.count <= Self.maximumZIPBytes + 1024 * 1024 else { throw Failure.limit }
+    let root = try directory().appendingPathComponent("scoped-exports-v1", isDirectory: true)
+    let manager = FileManager.default
+    try manager.createDirectory(at: root, withIntermediateDirectories: true,
+                                attributes: [.protectionKey: FileProtectionType.complete])
+    let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+    var occupied = 0
+    for file in try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: Array(keys)) {
+      guard UUID(uuidString: file.lastPathComponent) != nil else { continue }
+      let values = try file.resourceValues(forKeys: keys)
+      if let date = values.contentModificationDate, Date().timeIntervalSince(date) > 86_400 {
+        try manager.removeItem(at: file)
+      } else { occupied += values.fileSize ?? 0 }
+    }
+    guard occupied + data.count + 28 <= 160 * 1024 * 1024 else { throw Failure.limit }
+    let id = UUID()
+    let hash = Self.digest(data)
+    let binding = Data("galaxyssi.health.scoped-export.v1:\(owner):\(id):\(hash)".utf8)
+    let key = try key(create: true)
+    guard let sealed = try AES.GCM.seal(data, using: key, authenticating: binding).combined else { throw Failure.invalid }
+    let file = root.appendingPathComponent(id.uuidString)
+    try sealed.write(to: file, options: [.atomic, .completeFileProtection])
+    return .init(file: file, bytes: data.count, sha256: hash, key: key, binding: binding)
   }
 
   func hasShareArtifact(_ attempt: ExportAttempt) -> Bool {
@@ -604,7 +657,7 @@ struct GalaxySSIHealthOriginalStore {
     return key
   }
 
-  private static func digest(_ data: Data) -> String {
+  private nonisolated static func digest(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 }

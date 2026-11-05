@@ -88,11 +88,18 @@ struct GalaxySSIHealthMeasurementExportView: View {
   @State private var exporting = false
   @State private var document: HealthMeasurementDocument?
   @State private var failure = false
+  @State private var originals = GalaxySSIHealthLinkedExport.Choices()
+  @State private var pendingExport: GalaxySSIHealthOriginalStore.ScopedExport?
+  @State private var verifying = false
+  @State private var saved = false
+  @State private var manifestLimit = 30
 
   private struct Snapshot {
     var scope: GalaxySSIHealthMeasurementExport.Scope
     var format: GalaxySSIHealthMeasurementExport.Format
     var revisions: [String]
+    var originals: GalaxySSIHealthLinkedExport.Choices
+    var manifest: [GalaxySSIHealthLinkedExport.Link]
   }
 
   var body: some View {
@@ -113,28 +120,60 @@ struct GalaxySSIHealthMeasurementExportView: View {
           }
         }
         Toggle(t("notes", "Include conditions and notes"), isOn: $notes)
-        Button(t("prepare", "Prepare export"), action: prepare).disabled(metrics.isEmpty)
-        if failure {
-          Text(t("failed", "Unable to export. Check the dates, narrow the range, or prepare again."))
-            .foregroundColor(.secondary)
+        Section(t("linked_originals", "Linked originals")) {
+          Toggle(t("include_camera", "Include camera originals"), isOn: $originals.camera)
+          Toggle(t("include_uploaded", "Include uploaded originals and tables"), isOn: $originals.uploaded)
+          Toggle(t("include_unknown", "Include older originals with unknown origin"), isOn: $originals.unknown)
+        }
+        Button(t("prepare", "Prepare export"), action: prepare).disabled(metrics.isEmpty || verifying)
+        if let snapshot, snapshot.originals.enabled {
+          manifestSection(snapshot)
+        }
+        Group {
+          if verifying { ProgressView(t("verify", "Verifying saved file")) }
+          if saved { Text(t("verified", "Saved file verified")) }
+          if failure {
+            Text(t("failed", "Unable to export. Check the dates, narrow the range, or prepare again."))
+              .foregroundColor(.secondary)
+          }
         }
       }
     }
     .navigationTitle(t("title", "Export Measurements"))
     .navigationBarTitleDisplayMode(.inline)
+    .onChange(of: originals) { _ in snapshot = nil }
+    .onChange(of: format) { _ in snapshot = nil }
+    .onChange(of: metrics) { _ in snapshot = nil }
+    .onChange(of: from) { _ in snapshot = nil }
+    .onChange(of: to) { _ in snapshot = nil }
+    .onChange(of: notes) { _ in snapshot = nil }
     .confirmationDialog(t("confirm", "Save an unencrypted file?"), isPresented: $confirming, titleVisibility: .visible) {
       Button(t("save", "Choose save location"), action: save)
     } message: {
       if let snapshot {
-        Text(String(format: t("count", "%lld confirmed measurements"), Int64(snapshot.revisions.count)))
+        Text(confirmationText(snapshot))
       }
     }
     .fileExporter(isPresented: $exporting, document: document, contentType: document?.type ?? format.contentType,
                   defaultFilename: "GalaxySSI-Health-Measurements") { result in
       document = nil
-      if case .failure = result { failure = true }
+      guard let proof = pendingExport else { return }
+      pendingExport = nil
+      proof.discard()
+      if case .success(let url) = result {
+        verifying = true
+        Task {
+          let match = await Task.detached(priority: .utility) {
+            (try? GalaxySSIHealthOriginalStore.verifyDestination(url, bytes: proof.bytes, sha256: proof.sha256)) == true
+          }.value
+          verifying = false
+          saved = match
+          failure = !match
+        }
+      } else { failure = true }
     }
     .onChange(of: exporting) { if !$0 { document = nil } }
+    .onDisappear { if !exporting { discardPendingExport() } }
     .onChange(of: scene) { phase in
       if phase != .active {
         snapshot = nil
@@ -148,6 +187,9 @@ struct GalaxySSIHealthMeasurementExportView: View {
     guard scene == .active else { return }
     snapshot = nil
     failure = false
+    saved = false
+    discardPendingExport()
+    manifestLimit = 30
     var local = calendar
     local.timeZone = timeZone
     let start = local.startOfDay(for: from)
@@ -156,11 +198,14 @@ struct GalaxySSIHealthMeasurementExportView: View {
     let scope = GalaxySSIHealthMeasurementExport.Scope(interval: DateInterval(start: start, end: end),
                                                         metrics: metrics, includeNotes: notes)
     do {
-      let readings = scope.select(try records.load().current)
+      let archive = try records.load()
+      let readings = scope.select(archive.current)
       guard !readings.isEmpty, readings.count <= GalaxySSIHealthMeasurementExport.maximumRows
       else { failure = true; return }
-      snapshot = Snapshot(scope: scope, format: format, revisions: stamps(readings))
-      confirming = true
+      let manifest = originals.enabled ? try linked(readings, archive: archive, choices: originals).links : []
+      snapshot = Snapshot(scope: scope, format: format, revisions: stamps(readings), originals: originals,
+                          manifest: manifest)
+      confirming = !originals.enabled
     } catch { failure = true }
   }
 
@@ -168,17 +213,79 @@ struct GalaxySSIHealthMeasurementExportView: View {
     guard scene == .active, let snapshot else { return }
     self.snapshot = nil
     do {
-      let live = snapshot.scope.select(try records.load().current)
+      let archive = try records.load()
+      let live = snapshot.scope.select(archive.current)
       guard stamps(live) == snapshot.revisions else { failure = true; return }
-      let data = try GalaxySSIHealthMeasurementExport.encode(live, as: snapshot.format,
+      let recordsData = try GalaxySSIHealthMeasurementExport.encode(live, as: snapshot.format,
                                                               includeNotes: snapshot.scope.includeNotes)
-      document = HealthMeasurementDocument(data: data, type: snapshot.format.contentType)
+      let data: Data
+      let type: UTType
+      if snapshot.originals.enabled {
+        let package = try linked(live, archive: archive, choices: snapshot.originals)
+        guard package.links == snapshot.manifest else { failure = true; return }
+        data = try package.zip(measurements: recordsData, format: snapshot.format)
+        type = .zip
+      } else { data = recordsData; type = snapshot.format.contentType }
+      let artifact = try originalStore.stageScopedExport(data)
+      pendingExport = artifact
+      document = HealthMeasurementDocument(artifact: artifact, type: type)
       exporting = true
     } catch { failure = true }
   }
 
   private func stamps(_ readings: [GalaxySSIHealthReading]) -> [String] {
     readings.map { "\($0.id.uuidString):\($0.revision)" }
+  }
+
+  private func linked(_ readings: [GalaxySSIHealthReading], archive: GalaxySSIHealthRecords.Archive,
+                      choices: GalaxySSIHealthLinkedExport.Choices) throws -> GalaxySSIHealthLinkedExport.Package {
+    try GalaxySSIHealthLinkedExport.prepare(readings, batches: archive.tableBatches ?? [], store: originalStore,
+      choices: choices, reportEvidence: archive.reportEvidence ?? [], tableEvidence: archive.tableEvidence ?? [])
+  }
+
+  private var originalStore: GalaxySSIHealthOriginalStore {
+    .init(owner: records.owner, secrets: records.secrets, restoreRecordsFile: records.isolatedFile)
+  }
+
+  private func discardPendingExport() {
+    pendingExport?.discard()
+    pendingExport = nil
+  }
+
+  private func confirmationText(_ snapshot: Snapshot) -> String {
+    let count = String(format: t("count", "%lld confirmed measurements"), Int64(snapshot.revisions.count))
+    guard snapshot.originals.enabled else { return count }
+    let counts = Dictionary(grouping: snapshot.manifest, by: \.status).mapValues(\.count)
+    return count + "\n" + String(format: t("linked_counts",
+      "%lld included links, %lld unselected, %lld missing, %lld unreadable, %lld mismatched"),
+      Int64(counts[.included] ?? 0), Int64(counts[.unselected] ?? 0), Int64(counts[.missing] ?? 0),
+      Int64(counts[.unreadable] ?? 0), Int64(counts[.mismatched] ?? 0))
+  }
+
+  private func manifestSection(_ snapshot: Snapshot) -> some View {
+    Section(t("manifest", "Source manifest")) {
+      Text(confirmationText(snapshot))
+      ForEach(Array(snapshot.manifest.prefix(manifestLimit).enumerated()), id: \.offset) { _, link in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(link.path ?? String(link.original.uuidString.prefix(8)))
+          Text(statusTitle(link.status)).foregroundColor(.secondary)
+        }
+      }
+      if snapshot.manifest.count > manifestLimit {
+        Button(t("manifest_more", "Show more source links")) { manifestLimit += 30 }
+      }
+      Button(t("save", "Choose save location")) { confirming = true }.disabled(verifying)
+    }
+  }
+
+  private func statusTitle(_ status: GalaxySSIHealthLinkedExport.Status) -> String {
+    switch status {
+    case .included: return t("link_included", "Included")
+    case .unselected: return t("link_unselected", "Unselected")
+    case .missing: return t("link_missing", "Missing")
+    case .unreadable: return t("link_unreadable", "Unreadable")
+    case .mismatched: return t("link_mismatched", "Mismatched")
+    }
   }
 
   private func metricTitle(_ metric: GalaxySSIHealthMetric) -> String {
@@ -191,14 +298,27 @@ struct GalaxySSIHealthMeasurementExportView: View {
 }
 
 private struct HealthMeasurementDocument: FileDocument {
-  static var readableContentTypes: [UTType] { GalaxySSIHealthMeasurementExport.Format.allCases.map(\.contentType) }
-  let data: Data
+  static var readableContentTypes: [UTType] { GalaxySSIHealthMeasurementExport.Format.allCases.map(\.contentType) + [.zip] }
+  private enum Content {
+    case bytes(Data)
+    case encrypted(GalaxySSIHealthOriginalStore.ScopedExport)
+  }
+  private let content: Content
   let type: UTType
 
-  init(data: Data, type: UTType) { self.data = data; self.type = type }
+  init(artifact: GalaxySSIHealthOriginalStore.ScopedExport, type: UTType) {
+    self.content = .encrypted(artifact)
+    self.type = type
+  }
   init(configuration: ReadConfiguration) throws {
     guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
-    self.init(data: data, type: configuration.contentType)
+    self.content = .bytes(data)
+    self.type = configuration.contentType
   }
-  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { FileWrapper(regularFileWithContents: data) }
+  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    switch content {
+    case .bytes(let data): return FileWrapper(regularFileWithContents: data)
+    case .encrypted(let artifact): return FileWrapper(regularFileWithContents: try artifact.read())
+    }
+  }
 }
