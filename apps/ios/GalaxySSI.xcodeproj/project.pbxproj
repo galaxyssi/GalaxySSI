@@ -153,6 +153,8 @@
     A10000000000000000009836 /* GalaxySSIHealthKitSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009836 /* GalaxySSIHealthKitSync.swift */; };
     A10000000000000000009844 /* GalaxySSIHealthKitCopies.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009844 /* GalaxySSIHealthKitCopies.swift */; };
     A10000000000000000009832 /* GalaxySSIHealthKitImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009832 /* GalaxySSIHealthKitImportView.swift */; };
+    A10000000000000000009825 /* GalaxySSIHealthAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009825 /* GalaxySSIHealthAnalysis.swift */; };
+    A10000000000000000009826 /* GalaxySSIHealthAssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009826 /* GalaxySSIHealthAssistantView.swift */; };
     A10000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift */; };
     A10000000000000000009822 /* GalaxySSIHealthMetricCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009822 /* GalaxySSIHealthMetricCatalogView.swift */; };
     A10000000000000000009823 /* GalaxySSIHealthPortableBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009823 /* GalaxySSIHealthPortableBackup.swift */; };
@@ -167,6 +169,8 @@
     A10000000000000000009812 /* GalaxySSIHealthBluetooth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */; };
     A10000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift */; };
     A10000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift */; };
+    A10000000000000000009829 /* GalaxySSIHealthSleepReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009829 /* GalaxySSIHealthSleepReminder.swift */; };
+    A10000000000000000009830 /* GalaxySSIHealthSleepReminderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009830 /* GalaxySSIHealthSleepReminderView.swift */; };
     A10000000000000000009808 /* GalaxySSIHealthMeasurementExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009808 /* GalaxySSIHealthMeasurementExport.swift */; };
     A10000000000000000009820 /* GalaxySSIHealthXLSXExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009820 /* GalaxySSIHealthXLSXExport.swift */; };
     A10000000000000000009816 /* GalaxySSIHealthTableImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009816 /* GalaxySSIHealthTableImport.swift */; };
@@ -1249,6 +1253,8 @@
     A20000000000000000009836 /* GalaxySSIHealthKitSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthKitSync.swift; sourceTree = "<group>"; };
     A20000000000000000009844 /* GalaxySSIHealthKitCopies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthKitCopies.swift; sourceTree = "<group>"; };
     A20000000000000000009832 /* GalaxySSIHealthKitImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthKitImportView.swift; sourceTree = "<group>"; };
+    A20000000000000000009825 /* GalaxySSIHealthAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAnalysis.swift; sourceTree = "<group>"; };
+    A20000000000000000009826 /* GalaxySSIHealthAssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAssistantView.swift; sourceTree = "<group>"; };
     A20000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMetricCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000009822 /* GalaxySSIHealthMetricCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMetricCatalogView.swift; sourceTree = "<group>"; };
     A20000000000000000009823 /* GalaxySSIHealthPortableBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthPortableBackup.swift; sourceTree = "<group>"; };
@@ -1263,6 +1269,8 @@
     A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBluetooth.swift; sourceTree = "<group>"; };
     A20000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBluetoothHistory.swift; sourceTree = "<group>"; };
     A20000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIWeeklyHealthReport.swift; sourceTree = "<group>"; };
+    A20000000000000000009829 /* GalaxySSIHealthSleepReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthSleepReminder.swift; sourceTree = "<group>"; };
+    A20000000000000000009830 /* GalaxySSIHealthSleepReminderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthSleepReminderView.swift; sourceTree = "<group>"; };
     A20000000000000000009808 /* GalaxySSIHealthMeasurementExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementExport.swift; sourceTree = "<group>"; };
     A20000000000000000009820 /* GalaxySSIHealthXLSXExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthXLSXExport.swift; sourceTree = "<group>"; };
     A20000000000000000009816 /* GalaxySSIHealthTableImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthTableImport.swift; sourceTree = "<group>"; };
@@ -2883,6 +2891,8 @@
         A20000000000000000009836 /* GalaxySSIHealthKitSync.swift */,
         A20000000000000000009844 /* GalaxySSIHealthKitCopies.swift */,
         A20000000000000000009832 /* GalaxySSIHealthKitImportView.swift */,
+        A20000000000000000009825 /* GalaxySSIHealthAnalysis.swift */,
+        A20000000000000000009826 /* GalaxySSIHealthAssistantView.swift */,
         A20000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift */,
         A20000000000000000009822 /* GalaxySSIHealthMetricCatalogView.swift */,
         A20000000000000000009823 /* GalaxySSIHealthPortableBackup.swift */,
@@ -2897,6 +2907,8 @@
         A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */,
         A20000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift */,
         A20000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift */,
+        A20000000000000000009829 /* GalaxySSIHealthSleepReminder.swift */,
+        A20000000000000000009830 /* GalaxySSIHealthSleepReminderView.swift */,
         A20000000000000000009808 /* GalaxySSIHealthMeasurementExport.swift */,
         A20000000000000000009820 /* GalaxySSIHealthXLSXExport.swift */,
         A20000000000000000009816 /* GalaxySSIHealthTableImport.swift */,
@@ -4119,6 +4131,8 @@
         A10000000000000000009836 /* GalaxySSIHealthKitSync.swift in Sources */,
         A10000000000000000009844 /* GalaxySSIHealthKitCopies.swift in Sources */,
         A10000000000000000009832 /* GalaxySSIHealthKitImportView.swift in Sources */,
+        A10000000000000000009825 /* GalaxySSIHealthAnalysis.swift in Sources */,
+        A10000000000000000009826 /* GalaxySSIHealthAssistantView.swift in Sources */,
         A10000000000000000009821 /* GalaxySSIHealthMetricCatalog.swift in Sources */,
         A10000000000000000009822 /* GalaxySSIHealthMetricCatalogView.swift in Sources */,
         A10000000000000000009823 /* GalaxySSIHealthPortableBackup.swift in Sources */,
@@ -4133,6 +4147,8 @@
         A10000000000000000009812 /* GalaxySSIHealthBluetooth.swift in Sources */,
         A10000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift in Sources */,
         A10000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift in Sources */,
+        A10000000000000000009829 /* GalaxySSIHealthSleepReminder.swift in Sources */,
+        A10000000000000000009830 /* GalaxySSIHealthSleepReminderView.swift in Sources */,
         A10000000000000000009808 /* GalaxySSIHealthMeasurementExport.swift in Sources */,
         A10000000000000000009820 /* GalaxySSIHealthXLSXExport.swift in Sources */,
         A10000000000000000009816 /* GalaxySSIHealthTableImport.swift in Sources */,

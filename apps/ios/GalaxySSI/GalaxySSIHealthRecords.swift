@@ -139,6 +139,7 @@ struct GalaxySSIHealthRecords {
     var healthKitSelection: Set<String>?
     var healthKitReadAt: [String: Date]?
     var healthKitErasureLog: [GalaxySSIHealthKitCopies.Erasure]?
+    var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -146,6 +147,7 @@ struct GalaxySSIHealthRecords {
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var bluetoothErasureLog: [GalaxySSIHealthBluetoothHistory.Erasure]?
+    var healthOnlinePermission: UUID?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -323,12 +325,18 @@ struct GalaxySSIHealthRecords {
     try setPrivacy(.weeklyReport, enabled: enabled)
   }
 
-  func prepareWeeklyExport(_ preview: GalaxySSIWeeklyHealthReport, includeRows: Bool) throws {
+  func prepareWeeklyExport(_ preview: GalaxySSIWeeklyHealthReport, includeRows: Bool,
+                           link: GalaxySSIWeeklyHealthReport.Link? = nil) throws {
     var archive = try load()
     guard archive.weeklyReportAllowed == true else { throw Failure.permission }
+    if let link {
+      guard archive.derivesOverview == true, link.interval == preview.interval, link.comparison == preview.comparison,
+            preview.metrics.isSubset(of: link.metrics), link.isCurrent(archive.current) else { throw Failure.stale }
+    }
     let current = GalaxySSIWeeklyHealthReport(current: archive.current, interval: preview.interval,
-                                              metrics: preview.metrics, through: Date())
-    guard current.readings == preview.readings, !preview.readings.isEmpty else { throw Failure.stale }
+                                              metrics: preview.metrics, through: Date(), comparison: preview.comparison)
+    guard current.readings == preview.readings, current.comparisonReadings == preview.comparisonReadings,
+          !preview.readings.isEmpty else { throw Failure.stale }
     var requests = archive.weeklyExportRequests ?? []
     requests.append(.init(at: Date(), interval: preview.interval, metrics: preview.metrics,
                           includeRows: includeRows, revisionCount: preview.readings.count))
@@ -338,6 +346,14 @@ struct GalaxySSIHealthRecords {
 
   func setOverviewPermission(_ enabled: Bool) throws {
     try setPrivacy(.overview, enabled: enabled)
+  }
+
+  func setHealthOnlinePermission(_ enabled: Bool) throws {
+    var archive = try load()
+    guard (archive.healthOnlinePermission != nil) != enabled else { return }
+    archive.healthOnlinePermission = enabled ? UUID() : nil
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
   func setPrivacy(_ scope: PrivacyScope, enabled: Bool) throws {
@@ -629,6 +645,44 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return tombstones.count
+  }
+
+  @discardableResult
+  func reconcileSleepReminders(at now: Date, calendar: Calendar) throws -> GalaxySSIHealthSleepReminder.Ledger {
+    var archive = try load()
+    let before = archive.sleepReminders ?? .init()
+    var ledger = before
+    ledger.reconcile(current: archive.current, allowed: archive.derivesOverview == true, now: now, calendar: calendar)
+    if before != ledger { archive.sleepReminders = ledger; try persist(archive) }
+    return ledger
+  }
+
+  func setSleepPreferences(_ preferences: GalaxySSIHealthSleepReminder.Preferences) throws {
+    guard GalaxySSIHealthSleepReminder.thresholds.contains(preferences.threshold),
+          (0..<24).contains(preferences.quietStart), (0..<24).contains(preferences.quietEnd) else { throw Failure.invalid }
+    var archive = try load()
+    var ledger = archive.sleepReminders ?? .init()
+    ledger.preferences = preferences
+    if !preferences.enabled, let active = ledger.episodes.firstIndex(where: { !$0.closed }) { ledger.close(active) }
+    archive.sleepReminders = ledger
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func updateSleepEpisode(version: UUID, completion: Bool = false, snooze: Date? = nil, delivered: Date? = nil) throws {
+    var archive = try load()
+    guard archive.derivesOverview == true, var ledger = archive.sleepReminders, ledger.preferences.enabled,
+          let index = ledger.episodes.firstIndex(where: { $0.version == version && !$0.closed }),
+          !ledger.episodes[index].completed else { throw Failure.stale }
+    if completion { ledger.episodes[index].completed = true }
+    if let snooze {
+      ledger.episodes[index].snoozedUntil = snooze
+      ledger.episodes[index].deliveredAt = nil
+    }
+    if let delivered { ledger.episodes[index].deliveredAt = delivered }
+    ledger.episodes[index].version = UUID()
+    archive.sleepReminders = ledger
+    try persist(archive)
   }
 
   private func persist(_ archive: Archive) throws {

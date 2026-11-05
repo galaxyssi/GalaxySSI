@@ -4,6 +4,38 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testSleepReminderCoverageNormalizationAndRevocation() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 10)))
+    let readings = try (1...21).filter { $0 != 2 && $0 != 8 }.map { offset in
+      let date = try XCTUnwrap(calendar.date(byAdding: .day, value: -offset, to: now))
+      return GalaxySSIHealthReading(revision: 1, metric: .sleepDuration, measuredAt: date,
+        value: offset <= 7 ? 435 : 8, unitOverride: offset <= 7 ? "min" : "h")
+    }
+    var ledger = GalaxySSIHealthSleepReminder.Ledger()
+    ledger.preferences.enabled = true
+    ledger.reconcile(current: readings, allowed: true, now: now, calendar: calendar)
+    let episode = try XCTUnwrap(ledger.episodes.first)
+    XCTAssertEqual(episode.latest.decrease, 45)
+    XCTAssertEqual(episode.latest.days.filter { $0.minutes == nil }.count, 2)
+    let link = try XCTUnwrap(episode.first.reportLink())
+    XCTAssertFalse(link.allowsRefresh)
+    XCTAssertEqual(link.metrics, [.sleepDuration])
+    XCTAssertEqual(episode.first.contributors(readings, baseline: true)?.count, 13)
+    XCTAssertEqual(episode.first.contributors(readings, baseline: false)?.count, 6)
+    var edited = readings
+    edited[0].revision += 1
+    XCTAssertFalse(link.isCurrent(edited))
+    XCTAssertNil(episode.first.contributors(edited, baseline: true))
+    ledger.reconcile(current: readings, allowed: true, now: now.addingTimeInterval(60), calendar: calendar)
+    XCTAssertEqual(ledger.episodes, [episode])
+    ledger.reconcile(current: Array(readings.dropFirst(2)), allowed: true, now: now, calendar: calendar)
+    XCTAssertEqual(ledger.episodes.first?.closed, true)
+    ledger.reconcile(current: readings, allowed: false, now: now, calendar: calendar)
+    XCTAssertFalse(ledger.episodes.contains { !$0.closed })
+  }
+
   @MainActor
   func testHealthKitEraseInvalidatesPreviewWhenReportEvidenceChanges() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -527,6 +559,29 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testWeeklyReportLinkPinsHistoricalCalendarAndComparisonRevisions() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 8)))
+    let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 2, to: start))
+    let prior = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: start))
+    let recent = GalaxySSIHealthReading(revision: 1, metric: .weight, measuredAt: start, value: 65)
+    var baseline = GalaxySSIHealthReading(revision: 1, metric: .weight, measuredAt: prior, value: 66)
+    let other = GalaxySSIHealthReading(revision: 1, metric: .glucose, measuredAt: start, value: 6)
+    let link = GalaxySSIWeeklyHealthReport.Link(interval: DateInterval(start: start, end: end),
+      metrics: [.weight], calendar: calendar, compare: true, current: [recent, baseline, other])
+    XCTAssertEqual(link.calendar.timeZone.identifier, "America/New_York")
+    XCTAssertEqual(link.comparison?.end, start)
+    XCTAssertTrue(link.isCurrent([baseline, recent]))
+    let report = GalaxySSIWeeklyHealthReport(current: [recent, baseline, other], interval: link.interval,
+      metrics: link.metrics, through: end, comparison: link.comparison)
+    XCTAssertEqual(report.readings.map(\.id), [recent.id])
+    XCTAssertEqual(report.comparisonReadings.map(\.id), [baseline.id])
+    baseline.revision += 1
+    XCTAssertFalse(link.isCurrent([recent, baseline]))
+  }
+
+  @MainActor
   func testWeeklyExportRequiresPermissionAndUnchangedSelectedRevisions() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
@@ -763,6 +818,30 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     var revised = readings
     revised[33].revision += 1
     XCTAssertNotEqual(original.revisions, try point(revised).revisions)
+  }
+
+  func testHealthAssistantSendsOnlyAggregatesAndRejectsUnknownEvidence() throws {
+    let now = Date()
+    let reading = GalaxySSIHealthReading(revision: 2, metric: .glucose, measuredAt: now, value: 6)
+    let other = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 100, unitOverride: "mg/dL")
+    let unrelated = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 72)
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: now, duration: 86_400), metrics: [.glucose])
+    let analysis = GalaxySSIHealthAnalysis(scope: scope, current: [reading, other, unrelated], calendar: .current)
+    XCTAssertEqual(analysis.evidence.count, 2)
+    XCTAssertEqual(analysis.evidence.first?.aggregate.mean, "6")
+    XCTAssertEqual(analysis.evidence.first?.readings.map(\.id), [reading.id])
+    XCTAssertTrue(analysis.isCurrent([other, reading]))
+    XCTAssertFalse(analysis.isCurrent([other]))
+    let data = try analysis.requestJSON()
+    let packet = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(Set(packet.keys), ["requestedDays", "aggregates"])
+    let aggregates = try XCTUnwrap(packet["aggregates"] as? [[String: Any]])
+    XCTAssertEqual(Set(try XCTUnwrap(aggregates.first).keys),
+      ["id", "metric", "component", "unit", "count", "observedDays", "minimum", "maximum", "mean"])
+    let output = #"{"evidence":["e1"],"next_step":"review_sources"}"#
+    XCTAssertEqual(try analysis.recommendation(output).evidence, ["e1"])
+    XCTAssertThrowsError(try analysis.recommendation(#"{"evidence":["e99"],"next_step":"review_sources"}"#))
+    XCTAssertThrowsError(try analysis.recommendation(#"{"evidence":["e1"],"next_step":"review_sources","text":"extra"}"#))
   }
 
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
