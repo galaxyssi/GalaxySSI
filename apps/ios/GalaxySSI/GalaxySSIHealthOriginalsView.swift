@@ -16,6 +16,7 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var recentDays = 0
   @State private var grid = false
   @State private var shown = 30
+  @State private var removedLimit = 30
   @State private var selection: Set<UUID> = []
   @State private var preview: Preview?
   @State private var importing = false
@@ -76,7 +77,8 @@ struct GalaxySSIHealthOriginalsView: View {
         }
         if let listing {
           let rows = filtered(listing.originals)
-          if rows.isEmpty { Text(t("empty", "No originals found")).foregroundColor(.secondary) }
+          let removed = filtered(listing.removed)
+          if rows.isEmpty && removed.isEmpty { Text(t("empty", "No originals found")).foregroundColor(.secondary) }
           if listing.unavailable > 0 {
             Text(t("unreadable", "Some encrypted originals could not be opened.")).foregroundColor(.secondary)
           }
@@ -98,13 +100,24 @@ struct GalaxySSIHealthOriginalsView: View {
               }
               .buttonStyle(.borderless)
               .swipeActions {
-                Button(role: .destructive) { removal = item } label: {
+                Button(role: .destructive) { prepareRemoval(item) } label: {
                   Label(t("remove", "Remove"), systemImage: "trash")
                 }
               }
             }
           }
           if rows.count > shown { Button(t("more", "Show more")) { shown += 30 } }
+          if !removed.isEmpty {
+            Section(t("removed_files", "Removed original files")) {
+              ForEach(removed.prefix(removedLimit)) { original in
+                NavigationLink {
+                  GalaxySSIHealthReportEvidenceView(records: store.indexRecords, store: store,
+                    original: original, originalRemoved: true)
+                } label: { Text(original.name) }
+              }
+              if removed.count > removedLimit { Button(t("more", "Show more")) { removedLimit += 30 } }
+            }
+          }
         }
         if let removalNotice {
           Text(removalNotice == .removed
@@ -235,12 +248,9 @@ struct GalaxySSIHealthOriginalsView: View {
       }
     }
     .contextMenu {
-      Button(role: .destructive) {
-        removalNotice = nil
-        do { removal = try store.previewRemoval(item) }
-        catch GalaxySSIHealthOriginalStore.Failure.stale { reload(); removalNotice = .changed }
-        catch { error = true }
-      } label: { Label(t("remove", "Remove"), systemImage: "trash") }
+      Button(role: .destructive) { prepareRemoval(item) } label: {
+        Label(t("remove", "Remove"), systemImage: "trash")
+      }
     }
   }
 
@@ -252,6 +262,14 @@ struct GalaxySSIHealthOriginalsView: View {
       selection.formIntersection(current.originals.map(\.id))
       error = false
     } catch { listing = nil; error = true }
+  }
+
+  private func prepareRemoval(_ item: GalaxySSIHealthOriginalStore.Original) {
+    guard scene == .active else { return }
+    removalNotice = nil
+    do { removal = try store.previewRemoval(item) }
+    catch GalaxySSIHealthOriginalStore.Failure.stale { reload(); removalNotice = .changed }
+    catch { error = true }
   }
 
   private func open(_ item: GalaxySSIHealthOriginalStore.Original) {

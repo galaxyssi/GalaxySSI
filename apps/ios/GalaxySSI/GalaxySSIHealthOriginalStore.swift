@@ -25,6 +25,7 @@ struct GalaxySSIHealthOriginalStore {
   struct Listing {
     let originals: [Original]
     let unavailable: Int
+    var removed: [Original] = []
   }
 
   struct Index: Codable, Equatable {
@@ -86,7 +87,7 @@ struct GalaxySSIHealthOriginalStore {
   var fixtureDirectory: URL? = nil
   var restoreRecordsFile: URL? = nil
 
-  private var indexRecords: GalaxySSIHealthRecords {
+  var indexRecords: GalaxySSIHealthRecords {
     GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: restoreRecordsFile ??
       fixtureDirectory?.appendingPathComponent("original-record-index"))
   }
@@ -271,13 +272,17 @@ struct GalaxySSIHealthOriginalStore {
   func list(lease: RestoreLease) throws -> Listing {
     try check(lease)
     let index = try ensureIndex()
-    guard !index.originals.isEmpty else { return Listing(originals: [], unavailable: index.unreadableLegacy.count) }
+    let removed = (index.removedOriginals ?? []).reversed()
+    guard !index.originals.isEmpty else {
+      return Listing(originals: [], unavailable: index.unreadableLegacy.count, removed: Array(removed))
+    }
     let key = try key(create: false)
     let items = index.originals.filter { item in
       (try? withFile(item.id) { try readHeader($0, id: item.id, key: key) }) == item
     }
     return Listing(originals: items.sorted { ($0.importedAt, $0.id.uuidString) > ($1.importedAt, $1.id.uuidString) },
-                   unavailable: index.unreadableLegacy.count + index.originals.count - items.count)
+                   unavailable: index.unreadableLegacy.count + index.originals.count - items.count,
+                   removed: Array(removed))
   }
 
   private func ensureIndex() throws -> Index {

@@ -84,18 +84,20 @@ enum GalaxySSIHealthReportReview {
     return (primary + secondary).sorted { ($0.source.page, $0.source.region, $0.id) < ($1.source.page, $1.source.region, $1.id) }
   }
 
-  static func export(_ linked: [Linked], pdf: Data) throws -> Data {
+  static func export(_ linked: [Linked], pdf: Data?) throws -> Data {
     struct Entry: Encodable { let target: Target; let source: Source; let secondary: Bool }
-    struct Manifest: Encodable { let version = 1; let links: [Entry] }
+    struct Manifest: Encodable { let version = 1; let links: [Entry]; let originalIncluded: Bool }
     var seen = Set<String>()
     let readings = linked.map(\.reading).filter { seen.insert("\($0.id):\($0.revision)").inserted }
     let csv = try GalaxySSIHealthMeasurementExport.encode(readings, as: .csv, includeNotes: false)
     let links = linked.map { Entry(target: .init(record: $0.reading.id, revision: $0.reading.revision),
                                   source: $0.source, secondary: $0.secondary) }
-    return AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: [
-      .init(path: "measurements.csv", data: csv), .init(path: "original.pdf", data: pdf),
-      .init(path: "manifest.json", data: try JSONEncoder().encode(Manifest(links: links)))
-    ])
+    var entries: [AgentRuntimeProjectArchiveEntry] = [
+      .init(path: "measurements.csv", data: csv),
+      .init(path: "manifest.json", data: try JSONEncoder().encode(Manifest(links: links, originalIncluded: pdf != nil)))
+    ]
+    if let pdf { entries.append(.init(path: "original.pdf", data: pdf)) }
+    return AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: entries)
   }
 
   static func text(_ key: String, _ fallback: String, language: String) -> String {
@@ -110,6 +112,7 @@ struct GalaxySSIHealthReportEvidenceView: View {
   let records: GalaxySSIHealthRecords
   let store: GalaxySSIHealthOriginalStore
   let original: GalaxySSIHealthOriginalStore.Original
+  var originalRemoved = false
   @State private var rows: [GalaxySSIHealthReportReview.Linked] = []
   @State private var limit = 30
   @State private var confirming = false
@@ -120,6 +123,14 @@ struct GalaxySSIHealthReportEvidenceView: View {
   var body: some View {
     List {
       if scene == .active {
+        if originalRemoved {
+          Section {
+            Text(original.name)
+            Text(original.importedAt, style: .date)
+            Text(ByteCountFormatter.string(fromByteCount: Int64(original.bytes), countStyle: .file))
+            Text(t("file_removed", "Original file removed")).foregroundColor(.secondary)
+          }
+        }
         ForEach(rows.prefix(limit)) { item in
           VStack(alignment: .leading, spacing: 4) {
             Text(item.reading.metric.title(language: language))
@@ -130,7 +141,7 @@ struct GalaxySSIHealthReportEvidenceView: View {
           }
         }
         if rows.count > limit { Button(t("more_links", "Show more links")) { limit += 30 } }
-        if !rows.isEmpty { Button(t("export_links", "Export linked measurements and PDF")) { confirming = true } }
+        if !rows.isEmpty { Button(exportTitle) { confirming = true } }
         else if !failed { Text(t("no_links", "No linked measurements")) }
         if failed { Text(t("batch_error", "Nothing was saved. Check for duplicate or changed measurements.")) }
       }
@@ -144,7 +155,7 @@ struct GalaxySSIHealthReportEvidenceView: View {
       if $0.object as? String == records.owner { confirming = false; reload() }
     }
     .confirmationDialog(t("plain_export", "Save an unencrypted ZIP?"), isPresented: $confirming, titleVisibility: .visible) {
-      Button(t("export_links", "Export linked measurements and PDF"), action: export)
+      Button(exportTitle, action: export)
     }
     .fileExporter(isPresented: $exporting, document: document, contentType: .zip,
                   defaultFilename: "GalaxySSI-Health-Report.zip") { result in
@@ -171,9 +182,15 @@ struct GalaxySSIHealthReportEvidenceView: View {
     do {
       let fresh = try linked()
       guard !fresh.isEmpty, fresh == rows else { throw GalaxySSIHealthRecords.Failure.stale }
-      document = ArchiveDocument(data: try GalaxySSIHealthReportReview.export(fresh, pdf: store.read(original)))
+      let pdf = originalRemoved ? nil : try store.read(original)
+      document = ArchiveDocument(data: try GalaxySSIHealthReportReview.export(fresh, pdf: pdf))
       exporting = true
     } catch { reload(); failed = true }
+  }
+
+  private var exportTitle: String {
+    originalRemoved ? t("export_measurements", "Export linked measurements")
+                    : t("export_links", "Export linked measurements and PDF")
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

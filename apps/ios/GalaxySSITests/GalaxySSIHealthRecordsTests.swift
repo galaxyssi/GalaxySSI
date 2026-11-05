@@ -55,6 +55,12 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(removed.originalIndex?.removedOriginals, [original])
     XCTAssertEqual(removed.originalRemovalLog?.last?.linkedMeasurements, 1)
     XCTAssertEqual(removed.current.first(where: { $0.id == reading.id })?.reportSource, reading.reportSource)
+    XCTAssertEqual(try store.list().removed, [original])
+    let links = GalaxySSIHealthReportReview.linked(original: original, revisions: removed.revisions,
+      current: removed.current, evidence: removed.reportEvidence ?? [])
+    let export = try GalaxySSIHealthReportReview.export(links, pdf: nil)
+    XCTAssertNotNil(export.range(of: Data("measurements.csv".utf8)))
+    XCTAssertNil(export.range(of: Data("original.pdf".utf8)))
     XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
     XCTAssertEqual(removed.current.count, 2)
   }
