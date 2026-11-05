@@ -1,0 +1,216 @@
+import SwiftUI
+import UIKit
+import UserNotifications
+
+@MainActor
+struct GalaxySSIHealthSleepReminderLifecycle: ViewModifier {
+  @Environment(\.scenePhase) private var scene
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  let store: GalaxySSIStore
+  @State private var delivering: UUID?
+
+  func body(content: Content) -> some View {
+    content
+      .onAppear(perform: refresh)
+      .onChange(of: scene) { if $0 == .active { refresh() } }
+      .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in refresh() }
+      .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
+        if $0.object as? String == store.profile.identityFingerprint { refresh() }
+      }
+  }
+
+  private func refresh() {
+    guard scene == .active else { return }
+    let records = GalaxySSIHealthRecords(owner: store.profile.identityFingerprint, secrets: store.secrets)
+    let now = Date()
+    let calendar = Calendar.autoupdatingCurrent
+    guard let ledger = try? records.reconcileSleepReminders(at: now, calendar: calendar) else { return }
+    let center = UNUserNotificationCenter.current()
+    let inactive = ledger.episodes.filter { !ledger.preferences.notifications || $0.closed || $0.completed ||
+      ($0.snoozedUntil ?? .distantPast) > now }.map { notificationID($0.id) }
+    center.removeDeliveredNotifications(withIdentifiers: inactive)
+    center.removePendingNotificationRequests(withIdentifiers: inactive)
+    guard ledger.preferences.notifications, !ledger.preferences.isQuiet(at: now, calendar: calendar),
+          let episode = ledger.episodes.first(where: { !$0.closed && !$0.completed && $0.deliveredAt == nil &&
+            ($0.snoozedUntil ?? .distantPast) <= now }), delivering == nil else { return }
+    delivering = episode.id
+    Task {
+      defer { delivering = nil }
+      let settings = await center.notificationSettings()
+      guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional,
+            scene == .active, records.owner == store.profile.identityFingerprint,
+            let fresh = try? records.reconcileSleepReminders(at: Date(), calendar: calendar),
+            fresh.preferences.notifications, !fresh.preferences.isQuiet(at: Date(), calendar: calendar),
+            fresh.episodes.contains(where: { $0.version == episode.version && !$0.closed }) else { return }
+      let content = UNMutableNotificationContent()
+      content.title = GalaxySSIHealthSleepReminderView.text("generic_title", "GalaxySSI reminder", language: language)
+      content.body = GalaxySSIHealthSleepReminderView.text("generic_body", "Open GalaxySSI to review.", language: language)
+      let id = notificationID(episode.id)
+      do {
+        try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        try records.updateSleepEpisode(version: episode.version, delivered: Date())
+      } catch {
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+      }
+    }
+  }
+
+  private func notificationID(_ id: UUID) -> String { "galaxyssi.health.sleep." + id.uuidString }
+}
+
+@MainActor
+struct GalaxySSIHealthSleepReminderView: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.scenePhase) private var scene
+  let records: GalaxySSIHealthRecords
+  @State private var ledger = GalaxySSIHealthSleepReminder.Ledger()
+  @State private var allowed = false
+  @State private var failed = false
+
+  var body: some View {
+    Form {
+      if scene == .active {
+        Section(t("settings", "Reminder settings")) {
+          Toggle(t("enabled", "Sleep duration changes"), isOn: setting(\.enabled))
+          if ledger.preferences.enabled {
+            Picker(t("threshold", "Decrease threshold"), selection: setting(\.threshold)) {
+              ForEach(GalaxySSIHealthSleepReminder.thresholds, id: \.self) { Text(minutes(Decimal($0))).tag($0) }
+            }
+            Toggle(t("merge", "Combine continuing changes"), isOn: setting(\.merge))
+            Toggle(t("notifications", "System notifications"), isOn: setting(\.notifications))
+            if ledger.preferences.notifications {
+              hourPicker(t("quiet_start", "Quiet hours begin"), selection: setting(\.quietStart))
+              hourPicker(t("quiet_end", "Quiet hours end"), selection: setting(\.quietEnd))
+            }
+          }
+        }
+        if allowed {
+          Section(t("history", "Sleep change history")) {
+            if ledger.episodes.isEmpty { Text(t("empty", "No qualifying changes")) }
+            ForEach(ledger.episodes) { episode in
+              NavigationLink {
+                detail(episode.id)
+              } label: {
+                VStack(alignment: .leading) {
+                  Text(episode.latest.day, style: .date)
+                  Text(status(episode)).foregroundColor(.secondary)
+                }
+              }
+            }
+          }
+        } else { Text(t("permission", "Enable the local measurement summary in Health Privacy to see evidence.")) }
+        if failed { Text(t("error", "Could not update reminders.")).foregroundColor(.secondary) }
+      }
+    }
+    .navigationTitle(t("title", "Sleep Change Reminders"))
+    .navigationBarTitleDisplayMode(.inline)
+    .onAppear(perform: reload)
+    .onChange(of: scene) { if $0 == .active { reload() } else { allowed = false; ledger = .init() } }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
+      if $0.object as? String == records.owner { reload() }
+    }
+  }
+
+  @ViewBuilder
+  private func detail(_ id: UUID) -> some View {
+    List {
+      if scene == .active && allowed, let episode = ledger.episodes.first(where: { $0.id == id }) {
+        evidence(t("first", "Initial evidence"), episode.first)
+        if episode.first != episode.latest { evidence(t("latest", "Latest evidence"), episode.latest) }
+        if !episode.closed && !episode.completed {
+          Button(t("complete", "Complete")) { update(episode, complete: true) }
+          Button(t("snooze", "Snooze for 24 hours")) { update(episode, complete: false) }
+        }
+      }
+    }
+    .navigationTitle(t("evidence", "Sleep Evidence"))
+  }
+
+  private func evidence(_ title: String, _ evidence: GalaxySSIHealthSleepReminder.Evidence) -> some View {
+    Section(title) {
+      Text(t("decrease", "Average decrease") + ": " + minutes(evidence.decrease))
+      Text(evidence.zone).foregroundColor(.secondary)
+      chart(evidence.days)
+      ForEach(evidence.days) { day in
+        HStack {
+          Text(day.date, style: .date)
+          Spacer()
+          Text(day.minutes.map(minutes) ?? t("missing", "No reading")).foregroundColor(.secondary)
+        }
+      }
+    }
+    .environment(\.timeZone, TimeZone(identifier: evidence.zone) ?? .current)
+  }
+
+  private func chart(_ days: [GalaxySSIHealthSleepReminder.Day]) -> some View {
+    Canvas { context, size in
+      let values = days.compactMap(\.minutes).map { NSDecimalNumber(decimal: $0).doubleValue }
+      guard let low = values.min(), let high = values.max(), low.isFinite, high.isFinite else { return }
+      var last: CGPoint?
+      for (index, day) in days.enumerated() {
+        guard let value = day.minutes else { last = nil; continue }
+        let number = NSDecimalNumber(decimal: value).doubleValue
+        let fraction = high > low ? (number - low) / (high - low) : 0.5
+        let point = CGPoint(x: 4 + CGFloat(index) / CGFloat(max(1, days.count - 1)) * (size.width - 8),
+                            y: 4 + CGFloat(1 - fraction) * (size.height - 8))
+        if let last {
+          var path = Path()
+          path.move(to: last)
+          path.addLine(to: point)
+          context.stroke(path, with: .color(.accentColor), lineWidth: 2)
+        }
+        context.fill(Path(ellipseIn: CGRect(x: point.x - 2, y: point.y - 2, width: 4, height: 4)),
+                     with: .color(.accentColor))
+        last = point
+      }
+    }
+    .frame(height: 100)
+    .accessibilityHidden(true)
+  }
+
+  private func setting<Value>(_ key: WritableKeyPath<GalaxySSIHealthSleepReminder.Preferences, Value>) -> Binding<Value> {
+    Binding(get: { ledger.preferences[keyPath: key] }, set: { value in
+      var updated = ledger.preferences
+      updated[keyPath: key] = value
+      do { try records.setSleepPreferences(updated); reload() }
+      catch { failed = true }
+    })
+  }
+
+  private func hourPicker(_ title: String, selection: Binding<Int>) -> some View {
+    Picker(title, selection: selection) {
+      ForEach(0..<24) { Text(String(format: "%02d:00", $0)).tag($0) }
+    }
+  }
+
+  private func update(_ episode: GalaxySSIHealthSleepReminder.Episode, complete: Bool) {
+    do {
+      try records.updateSleepEpisode(version: episode.version, completion: complete,
+                                     snooze: complete ? nil : Date().addingTimeInterval(86_400))
+      NotificationCenter.default.post(name: GalaxySSIHealthRecords.trendInputsChanged, object: records.owner)
+      reload()
+    } catch { failed = true; reload() }
+  }
+
+  private func reload() {
+    guard scene == .active else { return }
+    do {
+      allowed = try records.load().derivesOverview == true
+      ledger = try records.reconcileSleepReminders(at: Date(), calendar: .autoupdatingCurrent)
+    } catch { failed = true; allowed = false; ledger = .init() }
+  }
+
+  private func status(_ episode: GalaxySSIHealthSleepReminder.Episode) -> String {
+    if episode.completed { return t("completed", "Completed") }
+    if episode.closed { return t("closed", "Closed") }
+    if (episode.snoozedUntil ?? .distantPast) > Date() { return t("snoozed", "Snoozed") }
+    return t("open", "Open")
+  }
+
+  private func minutes(_ value: Decimal) -> String { value.formatted(.number.precision(.fractionLength(0...1))) + " " + t("min", "min") }
+  private func t(_ key: String, _ fallback: String) -> String { Self.text(key, fallback, language: language) }
+  static func text(_ key: String, _ fallback: String, language: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.sleep_reminder." + key, fallback: fallback, language: language)
+  }
+}

@@ -14,7 +14,9 @@
     <string name="health_sleep_alert_handled">Handled %1$s</string>
     <string name="health_sleep_alert_basis">Why this reminder appeared</string>
     <string name="health_sleep_alert_rule">Personal change rule v%1$d · Reminder threshold %2$d min</string>
-    <string name="health_sleep_alert_trigger">First trigger: %1$s to %2$s · %3$s min below baseline</string>
+    <string name="health_sleep_alert_latest">Latest assessment</string>
+    <string name="health_sleep_alert_original">First trigger</string>
+    <string name="health_sleep_alert_window">%1$s to %2$s · Calculated %3$s</string>
     <string name="health_sleep_alert_source">View records for these seven days</string>
     <string name="health_sleep_alert_record_note">You can add bedtimes, wake times, and how you felt to your record notes.</string>
     <string name="health_sleep_alert_stale">No longer current</string>

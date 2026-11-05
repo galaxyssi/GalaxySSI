@@ -19,6 +19,60 @@ enum GalaxySSIHealthTableImport {
     var columns: [String: Int]?
   }
 
+  struct EvidenceTarget: Codable, Equatable {
+    let record: UUID
+    let revision: Int
+  }
+
+  struct Evidence: Codable, Equatable {
+    let target: EvidenceTarget
+    let source: Source
+  }
+
+  struct LinkedReading: Equatable, Identifiable {
+    let reading: GalaxySSIHealthReading
+    let source: Source
+    let secondary: Bool
+    var id: String { "\(reading.id):\(reading.revision):\(source.row):\(secondary)" }
+  }
+
+  static func linkedReadings(batch: Batch, revisions: [GalaxySSIHealthReading],
+                             current: [GalaxySSIHealthReading], evidence: [Evidence]) -> [LinkedReading] {
+    guard batch.undone == nil else { return [] }
+    let hash = digest(batch.data)
+    let live = Set(current.map(\.id))
+    let primary = current.compactMap { reading -> LinkedReading? in
+      guard let source = reading.tableSource, source.batch == batch.id, source.sha256 == hash else { return nil }
+      return .init(reading: reading, source: source, secondary: false)
+    }
+    let secondary = evidence.compactMap { link -> LinkedReading? in
+      guard link.source.batch == batch.id, link.source.sha256 == hash, live.contains(link.target.record),
+            let reading = revisions.last(where: {
+              $0.id == link.target.record && $0.revision == link.target.revision && !$0.deleted
+            }) else { return nil }
+      return .init(reading: reading, source: link.source, secondary: true)
+    }
+    return (primary + secondary).sorted { ($0.source.row, $0.id) < ($1.source.row, $1.id) }
+  }
+
+  static func exportLinkedReadings(_ linked: [LinkedReading], batch: Batch) throws -> Data {
+    struct Manifest: Encodable {
+      let version = 1
+      let sourcePath: String
+      let links: [Evidence]
+    }
+    var seen = Set<String>()
+    let readings = linked.map(\.reading).filter { seen.insert("\($0.id):\($0.revision)").inserted }
+    let csv = try GalaxySSIHealthMeasurementExport.encode(readings, as: .csv, includeNotes: false)
+    let ext = URL(fileURLWithPath: batch.name).pathExtension.lowercased()
+    let path = "original." + (["csv", "xlsx", "json"].contains(ext) ? ext : "data")
+    let links = linked.map { Evidence(target: .init(record: $0.reading.id, revision: $0.reading.revision), source: $0.source) }
+    return AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: [
+      .init(path: "measurements.csv", data: csv), .init(path: path, data: batch.data),
+      .init(path: "manifest.json", data: try JSONEncoder().encode(Manifest(sourcePath: path, links: links)))
+    ])
+  }
+
   struct Batch: Codable, Identifiable {
     let id: UUID
     let name: String
@@ -26,6 +80,15 @@ enum GalaxySSIHealthTableImport {
     let data: Data
     let inserted: Int
     var undone: Int?
+    var linked: Int?
+    var sourceDigest: String?
+
+    static func original(for id: UUID, in batches: [Self]) -> Self? {
+      guard let entry = batches.first(where: { $0.id == id }) else { return nil }
+      if !entry.data.isEmpty { return entry }
+      guard let digest = entry.sourceDigest else { return nil }
+      return batches.first { !$0.data.isEmpty && GalaxySSIHealthTableImport.digest($0.data) == digest }
+    }
   }
 
   struct Table {
@@ -66,6 +129,7 @@ enum GalaxySSIHealthTableImport {
     let reading: GalaxySSIHealthReading?
     let rawValue: String
     let rawDate: String
+    var duplicateTarget: EvidenceTarget?
   }
 
   static func parse(_ data: Data, json: Bool) throws -> Table {
@@ -124,7 +188,15 @@ enum GalaxySSIHealthTableImport {
         diastolic: lower, pulse: pulse, notes: cell(mapping.notes), reported: reported, reportedNotation: rawValue,
         unitOverride: reported?.kind == .qualitative ? "" : mapping.unitOverride)
       guard reading.isValid else { return row(.invalid) }
-      guard !accepted.contains(where: { $0.sameMeasurement(as: reading) }) else { return row(.duplicate, reading) }
+      guard !accepted.contains(where: { $0.sameMeasurement(as: reading) }) else {
+        var duplicate = row(.duplicate, reading)
+        let exact = current.filter { !$0.deleted && $0.revision > 0 && $0.measuredAt == reading.measuredAt &&
+          $0.sameMeasurement(as: reading) }
+        if exact.count == 1, let match = exact.first {
+          duplicate.duplicateTarget = EvidenceTarget(record: match.id, revision: match.revision)
+        }
+        return duplicate
+      }
       accepted.append(reading)
       return row(.ready, reading)
     }

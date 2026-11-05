@@ -18,9 +18,22 @@ internal data class HealthSourcesSnapshot(
     val platform: HealthPlatformAvailability,
     val bluetoothLe: Boolean,
     val local: HealthLocalSources?,
-    val platformScopes: Int?,
+    val scopes: List<HealthSourceScope>,
+    val grantVerified: Boolean,
+    val syncHistory: HealthSourceSyncHistory?,
     val lastConfirmedImport: Long,
 )
+
+internal enum class HealthSourceAccess { NOT_SELECTED, GRANTED, MISSING_GRANT, UNVERIFIED, PLATFORM_UNAVAILABLE }
+
+internal data class HealthSourceScope(val scope: HealthConnectScope, val access: HealthSourceAccess)
+
+internal data class HealthSourceSyncHistory(
+    val checkpoints: Map<HealthConnectScope, HealthSourceSyncTime>,
+    val bluetoothReceipt: Long,
+)
+
+internal data class HealthSourceSyncTime(val lastAttempt: Long, val lastSuccess: Long)
 
 internal object HealthSourcesRepository {
     const val PROVIDER_PACKAGE = "com.google.android.apps.healthdata"
@@ -36,23 +49,52 @@ internal object HealthSourcesRepository {
         HealthPlatformAvailability.CHECK_FAILED
     }
 
+    fun scopes(platform: HealthPlatformAvailability, selected: Set<HealthConnectScope>, granted: Set<String>?) =
+        HealthConnectScope.entries.map { scope ->
+            val access = when {
+                scope !in selected -> HealthSourceAccess.NOT_SELECTED
+                platform == HealthPlatformAvailability.CHECK_FAILED -> HealthSourceAccess.UNVERIFIED
+                platform != HealthPlatformAvailability.AVAILABLE -> HealthSourceAccess.PLATFORM_UNAVAILABLE
+                granted == null -> HealthSourceAccess.UNVERIFIED
+                scope.permission in granted -> HealthSourceAccess.GRANTED
+                else -> HealthSourceAccess.MISSING_GRANT
+            }
+            HealthSourceScope(scope, access)
+        }
+
     fun load(context: Context, names: HealthOverviewDatabases, now: Long): HealthSourcesSnapshot {
-        val local = runCatching {
-            val records = if (context.getDatabasePath(names.records).isFile) {
-                HealthRecordStore(context, names.records).use { it.latestManualMeasurement(now) to it.confirmedImportCount() }
-            } else null to 0L
-            val originals = if (context.getDatabasePath(names.originals).isFile) {
-                HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { it.originalCount() }
-            } else 0L
-            HealthLocalSources(records.first, records.second, originals)
-        }.getOrNull()
+        val (records, sync) = if (!context.getDatabasePath(names.records).isFile) {
+            (null to 0L) to HealthSourceSyncHistory(emptyMap(), 0)
+        } else runCatching {
+            HealthRecordStore(context, names.records).use { store ->
+                val stats = runCatching { store.latestManualMeasurement(now) to store.confirmedImportCount() }.getOrNull()
+                val history = runCatching {
+                    val checkpoints = HealthConnectScope.entries.associateWith { scope ->
+                        val mark = store.healthSyncCheckpoint(scope)
+                        HealthSourceSyncTime(mark.lastAttempt, mark.lastSuccess)
+                    }
+                    HealthSourceSyncHistory(checkpoints, store.lastBluetoothReceipt())
+                }.getOrNull()
+                stats to history
+            }
+        }.getOrElse { null to null }
+        val local = records?.let { (manual, imports) ->
+            runCatching {
+                val originals = if (context.getDatabasePath(names.originals).isFile) {
+                    HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { it.originalCount() }
+                } else 0L
+                HealthLocalSources(manual, imports, originals)
+            }.getOrNull()
+        }
         val status = platform(context)
-        val scopes = if (status == HealthPlatformAvailability.AVAILABLE) runCatching {
+        val selected = if (names.fixture == null) HealthConnectSettings.selection(context) else emptySet()
+        val grants = if (names.fixture == null && status == HealthPlatformAvailability.AVAILABLE) runCatching {
             runBlocking {
-                withTimeout(5_000) { HealthConnectImport.allowed(HealthConnectScope.entries.toSet(), AndroidHealthConnectReader(context).granted()).size }
+                withTimeout(5_000) { AndroidHealthConnectReader(context).granted() }
             }
         }.getOrNull() else null
         val lastImport = if (names.fixture == null) HealthConnectSettings.lastImport(context) else 0
-        return HealthSourcesSnapshot(status, context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE), local, scopes, lastImport)
+        return HealthSourcesSnapshot(status, context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE), local,
+            scopes(status, selected, grants), grants != null, sync, lastImport)
     }
 }
