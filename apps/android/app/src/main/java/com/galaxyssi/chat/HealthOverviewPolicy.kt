@@ -11,7 +11,7 @@ internal enum class HealthOverviewReviewKind { OCR, TABLE }
 internal sealed interface HealthOverviewAttention {
     val time: Long
     data class Change(val alert: HealthSleepAlert) : HealthOverviewAttention { override val time get() = alert.evidence.computedAt }
-    data class Review(val jobId: String, val kind: HealthOverviewReviewKind, override val time: Long) : HealthOverviewAttention
+    data class Review(val jobId: String, val kind: HealthOverviewReviewKind, override val time: Long, val name: String = "") : HealthOverviewAttention
 }
 
 internal object HealthOverviewPolicy {

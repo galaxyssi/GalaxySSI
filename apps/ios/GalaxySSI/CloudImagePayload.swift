@@ -97,7 +97,10 @@ enum CloudVisionPayloadEncoder {
     }()
     var message = conversation[index]
     var content = contentParts(message["content"], textType: "text")
-    for image in currentImages {
+    let reference = CloudVisionOrientationSheet.make(for: images)
+    let payloads = currentImages.map { (Optional($0.offset), $0.element) } + (reference.map { [(nil, $0)] } ?? [])
+    for (sourceIndex, image) in payloads {
+      if sourceIndex == nil { content.append(["type": "text", "text": CloudVisionOrientationSheet.guidance]) }
       content.append([
         "type": "image_url",
         "image_url": [
@@ -105,6 +108,7 @@ enum CloudVisionPayloadEncoder {
           "detail": "auto"
         ]
       ])
+      if let sourceIndex { content.append(["type": "text", "text": sourceLabel(sourceIndex)]) }
     }
     message["content"] = content
     conversation[index] = message
@@ -127,7 +131,10 @@ enum CloudVisionPayloadEncoder {
     }()
     var message = conversation[index]
     var content = contentParts(message["content"], textType: "text")
-    for image in currentImages {
+    let reference = CloudVisionOrientationSheet.make(for: images)
+    let payloads = currentImages.map { (Optional($0.offset), $0.element) } + (reference.map { [(nil, $0)] } ?? [])
+    for (sourceIndex, image) in payloads {
+      if sourceIndex == nil { content.append(["type": "text", "text": CloudVisionOrientationSheet.guidance]) }
       content.append([
         "type": "image",
         "source": [
@@ -136,6 +143,7 @@ enum CloudVisionPayloadEncoder {
           "data": image.base64
         ]
       ])
+      if let sourceIndex { content.append(["type": "text", "text": sourceLabel(sourceIndex)]) }
     }
     message["content"] = content
     conversation[index] = message
@@ -145,7 +153,8 @@ enum CloudVisionPayloadEncoder {
     to conversation: inout [[String: Any]],
     images: [CloudImagePayload]
   ) {
-    let currentImages = insertHistoricalReferences(into: &conversation, images: images) { label, image in
+    let currentImages = insertHistoricalReferences(into: &conversation, images: images,
+      emptyUser: ["role": "user", "parts": [[String: Any]]()]) { label, image in
       ["role": "user", "parts": [
         ["text": label],
         ["inline_data": ["mime_type": image.mimeType, "data": image.base64]]
@@ -158,13 +167,17 @@ enum CloudVisionPayloadEncoder {
     }()
     var message = conversation[index]
     var parts = message["parts"] as? [[String: Any]] ?? []
-    for image in currentImages {
+    let reference = CloudVisionOrientationSheet.make(for: images)
+    let payloads = currentImages.map { (Optional($0.offset), $0.element) } + (reference.map { [(nil, $0)] } ?? [])
+    for (sourceIndex, image) in payloads {
+      if sourceIndex == nil { parts.append(["text": CloudVisionOrientationSheet.guidance]) }
       parts.append([
         "inline_data": [
           "mime_type": image.mimeType,
           "data": image.base64
         ]
       ])
+      if let sourceIndex { parts.append(["text": sourceLabel(sourceIndex)]) }
     }
     message["parts"] = parts
     conversation[index] = message
@@ -172,12 +185,13 @@ enum CloudVisionPayloadEncoder {
 
   private static func insertHistoricalReferences(
     into conversation: inout [[String: Any]], images: [CloudImagePayload],
+    emptyUser: [String: Any] = ["role": "user", "content": ""],
     message: (String, CloudImagePayload) -> [String: Any]
-  ) -> [CloudImagePayload] {
+  ) -> [(offset: Int, element: CloudImagePayload)] {
     var references: [[String: Any]] = []
-    var current: [CloudImagePayload] = []
+    var current: [(offset: Int, element: CloudImagePayload)] = []
     for (index, image) in images.enumerated() {
-      guard let turn = image.historicalSourceTurnId else { current.append(image); continue }
+      guard let turn = image.historicalSourceTurnId else { current.append((index, image)); continue }
       let safeTurn = String(turn.unicodeScalars.filter {
         CharacterSet.alphanumerics.contains($0) || "-_.:".unicodeScalars.contains($0)
       }.prefix(128).map(String.init).joined())
@@ -186,10 +200,14 @@ enum CloudVisionPayloadEncoder {
       references.append(message(label, image))
     }
     if !references.isEmpty {
-      if latestUserIndex(in: conversation) == nil { conversation.append(["role": "user", "content": ""]) }
+      if !current.isEmpty && latestUserIndex(in: conversation) == nil { conversation.append(emptyUser) }
       conversation.insert(contentsOf: references, at: latestUserIndex(in: conversation) ?? conversation.endIndex)
     }
     return current
+  }
+
+  private static func sourceLabel(_ index: Int) -> String {
+    "Source image index: \(index)."
   }
 
   private static func latestUserIndex(in conversation: [[String: Any]]) -> Int? {
@@ -269,7 +287,7 @@ struct CloudImageAnnotationPlan: Equatable {
   static func instruction(imageCount: Int) -> String {
     guard imageCount > 0 else { return "" }
     return """
-    This turn contains \(imageCount) attached images indexed from 0. When the user requests grading or annotations on an image, call image_annotate with normalized answer bounds. The bounds locate answers but are never drawn. Use correct, incorrect, uncertain, or note. Incorrect marks require a short replacement answer in correction; put reasoning in note. Do not add boxes, numbering, legends, extra pages, replacement worksheets, links, or duplicate images. The app appends one annotated copy of each source image.
+    There are \(imageCount) available source images indexed from 0. Historical references are not new uploads. Use the source image index in its label, not its position in the conversation. Derived orientation references have no source index and cannot be annotated. Only annotate when the latest user request asks for grading or annotations; call image_annotate with normalized bounds on the source image. The bounds locate answers but are never drawn. Use correct, incorrect, uncertain, or note. Incorrect marks require a short replacement answer in correction; put reasoning in note. Do not add boxes, numbering, legends, extra pages, replacement worksheets, links, or duplicate images. The app appends one annotated copy of each source image.
     """
   }
 }

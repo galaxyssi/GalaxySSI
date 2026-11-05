@@ -61,6 +61,7 @@ class HealthSyncActivity : Activity() {
     private var dialog: AlertDialog? = null
     private var notice: Int? = null
     private var focusScope: HealthConnectScope? = null
+    private var focusScrollPending = true
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -212,7 +213,9 @@ class HealthSyncActivity : Activity() {
         }, 4)
         ui.add(body, ui.text(getString(R.string.health_sync_coverage), 18f, bold = true), 18)
         val marks = current.marks.associateBy { it.scope }
-        val displayed = HealthConnectScope.entries.filter { it in current.selected || marks[it]?.lastAttempt?.let { time -> time > 0 } == true }
+        val displayed = HealthConnectScope.entries.filter { scope ->
+            scope == focusScope || scope in current.selected || marks[scope]?.let { it.lastAttempt > 0 || it.lastSuccess > 0 } == true
+        }
         if (displayed.isEmpty()) ui.add(body, ui.text(getString(R.string.health_sync_no_coverage), 14f, muted = true), 8)
         displayed.forEach { scope ->
             val mark = marks[scope] ?: VisibleCheckpoint(scope)
@@ -224,6 +227,8 @@ class HealthSyncActivity : Activity() {
                 val result = if (outcome == HealthSyncOutcome.UPDATED) getString(R.string.health_sync_updated, mark.lastInserts)
                     else getString(outcome.statusResource(running))
                 ui.add(this, ui.text(result, 14f), 4)
+                if (mark.lastSuccess > 0) ui.add(this, ui.text(getString(R.string.health_sync_success_time, date(mark.lastSuccess)),
+                    13f, muted = true).apply { tag = "health-sync-scope-success" }, 4)
                 if (mark.latestMeasurement > 0) ui.add(this, ui.text(getString(R.string.health_sync_latest, date(mark.latestMeasurement)), 13f, muted = true), 4)
                 if (mark.lastAttempt > 0) ui.add(this, ui.text(getString(R.string.health_sync_attempt, date(mark.lastAttempt)), 13f, muted = true), 4)
                 if (mark.pendingInserts > 0) ui.add(this, ui.text(getString(R.string.health_sync_pending, mark.pendingInserts), 13f), 4)
@@ -231,10 +236,10 @@ class HealthSyncActivity : Activity() {
                 if (mark.historyGap) ui.add(this, ui.text(getString(R.string.health_sync_gap), 13f), 4)
             }, 8)
         }
-        focusScope?.let { scope ->
+        focusScope?.takeIf { focusScrollPending }?.let { scope ->
             val card = body.findViewWithTag<View>("health-sync-scope-${scope.name}")
             if (card != null) {
-                focusScope = null
+                focusScrollPending = false
                 scroll.post { if (active && card.isAttachedToWindow) scroll.scrollTo(0, body.top + card.top) }
             }
         }

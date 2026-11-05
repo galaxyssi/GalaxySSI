@@ -33,6 +33,53 @@ final class CloudModelClientStreamingTests: XCTestCase {
     }
   }
 
+  func testDefaultImagePromptAvoidsTextOnlyGroundingWithoutDroppingLanguageOrTools() throws {
+    let language = LanguagePolicySettings(responseLanguage: "zh-CN")
+    let image = try CloudImagePayload(displayName: "fixture.png", mimeType: "image/png", data: Data([1]))
+    var groundingCalls = 0
+    func evidence() -> String { groundingCalls += 1; return "Text-only grounding" }
+    let visual = CloudModelClient.conversationSystemPrompt(languagePolicy: language, images: [image],
+      textOnlyEvidence: evidence)
+    XCTAssertEqual(groundingCalls, 0)
+    XCTAssertTrue(visual.contains(LanguagePolicySettings.modelLanguageName("zh-CN")))
+    XCTAssertTrue(visual.contains("native visual evidence"))
+    XCTAssertTrue(visual.contains("without a tool result"))
+    XCTAssertFalse(visual.contains("Text-only grounding"))
+    let text = CloudModelClient.conversationSystemPrompt(languagePolicy: language, images: [],
+      textOnlyEvidence: evidence)
+    XCTAssertEqual(groundingCalls, 1)
+    XCTAssertEqual(text, CloudModelClient.systemPrompt(languagePolicy: language) + "\nText-only grounding")
+  }
+
+  func testAllCloudProvidersAddVisionGuidanceToCustomImageRequestsOnly() throws {
+    let styles: [GalaxySSICloudAPIStyle] = [.openAICompatible, .anthropic, .gemini]
+    let bytes = Data([1, 2, 3])
+    let image = try CloudImagePayload(displayName: "fixture.png", mimeType: "image/png", data: bytes)
+    for style in styles {
+      for images in [[image], []] {
+        let request = try CloudModelClient().conversationStreamingRequest(
+          model: model(apiStyle: style), apiKey: "fixture",
+          turns: [ChatMessage(contactId: "contact", content: "Describe", isMine: true)],
+          systemPrompt: "Custom instructions", requestId: "vision-fixture", images: images)
+        let body = try object(request.bodyJson)
+        let system: String?
+        switch style {
+        case .openAICompatible:
+          system = (body["messages"] as? [[String: Any]])?.first?["content"] as? String
+        case .anthropic:
+          system = body["system"] as? String
+        case .gemini:
+          let instruction = body["system_instruction"] as? [String: Any]
+          system = (instruction?["parts"] as? [[String: String]])?.first?["text"]
+        }
+        let prompt = try XCTUnwrap(system)
+        XCTAssertTrue(prompt.hasPrefix("Custom instructions"))
+        XCTAssertEqual(prompt.contains("reading orientation"), !images.isEmpty)
+        XCTAssertEqual(request.bodyJson.contains(bytes.base64EncodedString()), !images.isEmpty)
+      }
+    }
+  }
+
   func testOpenAICompatibleStreamingRequestUsesBearerHeadersAndStreamBody() throws {
     let request = try CloudModelClient().conversationStreamingRequest(
       model: model(apiStyle: .openAICompatible),

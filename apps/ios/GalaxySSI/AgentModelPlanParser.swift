@@ -32,8 +32,13 @@ enum AgentModelPlanParser {
     settings: AgentModelPlannerSettings,
     context: AgentModelPlanParsingContext = .empty
   ) -> AgentPlan? {
-    guard let json = extractJson(raw),
-          let actionValues = json["actions"]?.arrayValue,
+    guard var json = extractJson(raw) else { return nil }
+    if json["actions"] == nil, AgentRollingPlanPolicy.isBatchBoundaryReason(context.replanReason),
+       let response = AgentModelDirectResponseCodec.parse(raw, envelopeOnly: true) {
+      json["actions"] = .array([.object(["kind": .string(AgentActionKind.draftPlan.rawValue),
+                                        "target": .string(taskCompleteTarget), "description": .string(response)])])
+    }
+    guard let actionValues = json["actions"]?.arrayValue,
           !actionValues.isEmpty else {
       return nil
     }
@@ -90,6 +95,7 @@ enum AgentModelPlanParser {
     guard hasValidDraftPlanSemantics(context: context, actions: actions) else {
       return nil
     }
+    if actions.contains(where: { $0.kind == .draftPlan }), extractJson(raw, exact: true) == nil { return nil }
 
     var plan = AgentPlanningTiming.measure("plan") {
       AgentPlanFactory.actions(request: request, actions)
@@ -144,11 +150,15 @@ enum AgentModelPlanParser {
     refs: [String: AgentModelPlanRef],
     allowCoordination: Bool
   ) -> AgentAction? {
-    let kindName = json.string("kind").trimmedForModelPlan.uppercased()
+    let rawKind = json.string("kind").trimmedForModelPlan.uppercased()
+    let isAlias = rawKind.replacingOccurrences(of: "-", with: "_") == "TASK_COMPLETE"
+    let kindName = isAlias ? AgentActionKind.draftPlan.rawValue : rawKind
     guard let kind = AgentActionKind.allCases.first(where: { $0.rawValue == kindName }),
           allowedKinds.contains(kind) else {
       return nil
     }
+    let completion = kind == .draftPlan ? completionAnswer(json) : nil
+    if kind == .draftPlan && completion == nil { return nil }
     let dependencyRefs = stringArray(json["depends_on"])
     let outputRefs = stringArray(json["use_outputs_from"])
     if !allowCoordination && (!dependencyRefs.isEmpty || !outputRefs.isEmpty) {
@@ -176,14 +186,14 @@ enum AgentModelPlanParser {
     resolvedParameters["node_ref"] = nodeRef
     resolvedParameters["depends_on"] = dependencyIds.joined(separator: ",")
     resolvedParameters["use_outputs_from"] = outputSourceIds.joined(separator: ",")
-    let target = resolveTarget(
+    let target = completion != nil ? taskCompleteTarget : resolveTarget(
       kind: kind,
       proposed: json.string("target"),
       parameters: resolvedParameters,
       request: request,
       context: context
     )
-    let description = json.string("description")
+    let description = completion ?? json.string("description")
       .trimmedForModelPlan
       .prefixString(300)
       .ifBlank(defaultDescription(kind: kind, target: target))
@@ -421,6 +431,30 @@ enum AgentModelPlanParser {
       drafts[0].target.caseInsensitiveCompare(taskCompleteTarget) == .orderedSame
   }
 
+  static func answerOnlyAction(_ raw: String) -> String? {
+    guard let json = extractJson(raw, exact: true),
+          Set(json.keys).isSubset(of: ["actions", "expected_result", "rollback_strategy"]),
+          let actions = json["actions"]?.arrayValue, actions.count == 1,
+          let action = actions[0].objectValue else { return nil }
+    return completionAnswer(action)
+  }
+
+  private static func completionAnswer(_ action: AgentMcpJSONObject) -> String? {
+    let rawKind = action.string("kind").trimmedForModelPlan.uppercased().replacingOccurrences(of: "-", with: "_")
+    let alias = rawKind == "TASK_COMPLETE"
+    let target = action.string("target").trimmedForModelPlan.lowercased()
+    guard alias || rawKind == AgentActionKind.draftPlan.rawValue,
+          target == taskCompleteTarget || (alias && target.isEmpty && action["target"]?.stringValue != nil) ||
+            (alias && action["target"] == nil),
+          Set(action.keys).isSubset(of: ["ref", "kind", "target", "description", "parameters", "depends_on",
+                                       "use_outputs_from", "completes_goal"]),
+          action["parameters"] == nil || action["parameters"]?.objectValue?.isEmpty == true,
+          action["depends_on"] == nil || action["depends_on"]?.arrayValue?.isEmpty == true,
+          action["use_outputs_from"] == nil || action["use_outputs_from"]?.arrayValue?.isEmpty == true
+    else { return nil }
+    return AgentModelDirectResponseCodec.answer(action.string("description"))
+  }
+
   private static func swipeParameters(direction: String) -> [String: String]? {
     switch direction.trimmedForModelPlan.lowercased() {
     case "up":
@@ -516,13 +550,18 @@ enum AgentModelPlanParser {
     return maximumDepth
   }
 
-  private static func extractJson(_ raw: String) -> AgentMcpJSONObject? {
+  private static func extractJson(_ raw: String, exact: Bool = false) -> AgentMcpJSONObject? {
     let trimmed = raw
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .removingPrefix("```json")
+      .removingPrefix("```JSON")
       .removingPrefix("```")
       .removingSuffix("```")
       .trimmingCharacters(in: .whitespacesAndNewlines)
+    if exact {
+      guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}") else { return nil }
+      return try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(trimmed.utf8))
+    }
     guard let start = trimmed.firstIndex(of: "{"),
           let end = trimmed.lastIndex(of: "}"),
           start < end else {

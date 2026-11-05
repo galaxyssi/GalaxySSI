@@ -27,9 +27,11 @@ internal class HealthTrendChart(context: Context, private val selected: (HealthT
     private var focus = -1; private var downX = 0f; private var downY = 0f
     private var minimum = 0.0; private var maximum = 1.0
     init { isFocusable = true; isClickable = true; isSaveEnabled = false; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES }
-    fun bind(value: HealthTrendSummary?) {
-        summary = value; focus = -1; unavailable = null; isEnabled = value != null; isClickable = value?.points?.isNotEmpty() == true
+    fun bind(value: HealthTrendSummary?, selectedPoint: HealthTrendPoint? = null) {
+        summary = value; focus = selectedPoint?.let { value?.points?.indexOf(it) } ?: -1
+        unavailable = null; isEnabled = value != null; isClickable = value?.points?.isNotEmpty() == true
         contentDescription = if (value == null) context.getString(R.string.health_loading)
+            else if (focus >= 0 && selectedPoint != null) describe(selectedPoint, value.spec.unit)
             else context.getString(R.string.health_trend_chart_description, value.eligible, value.numericDays)
         rebuild(); invalidate()
     }
@@ -92,7 +94,9 @@ internal class HealthTrendChart(context: Context, private val selected: (HealthT
         MotionEvent.ACTION_MOVE -> abs(event.y - downY) < android.view.ViewConfiguration.get(context).scaledTouchSlop
         MotionEvent.ACTION_UP -> {
             if (hypot(event.x - downX, event.y - downY) <= android.view.ViewConfiguration.get(context).scaledTouchSlop) hit(event.x, event.y)?.let { point ->
-                focus = anchors.indexOfFirst { it.point == point }; performClick(); selected(point); invalidate()
+                focus = anchors.indexOfFirst { it.point == point }
+                contentDescription = describe(point, summary!!.spec.unit)
+                performClick(); selected(point); invalidate()
             }; true
         }
         MotionEvent.ACTION_CANCEL -> true
@@ -105,12 +109,14 @@ internal class HealthTrendChart(context: Context, private val selected: (HealthT
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT -> {
                 focus = (focus + if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1).coerceIn(0, anchors.lastIndex)
                 val point = anchors[focus].point
-                contentDescription = context.getString(R.string.health_trend_point, context.getString(healthFieldResource(point.field)), point.value.toPlainString(), summary!!.spec.unit, point.count)
+                contentDescription = describe(point, summary!!.spec.unit)
                 announceForAccessibility(contentDescription); invalidate(); return true
             }
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER -> { anchors.getOrNull(focus)?.let { selected(it.point) }; return true }
         }
         return super.onKeyDown(keyCode, event)
     }
+    private fun describe(point: HealthTrendPoint, unit: String) = context.getString(R.string.health_trend_point,
+        context.getString(healthFieldResource(point.field)), point.value.toPlainString(), unit, point.count)
     companion object { const val GREEN = 0xff169d70.toInt(); const val BLUE = 0xff4b86b6.toInt() }
 }

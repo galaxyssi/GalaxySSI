@@ -338,6 +338,39 @@ final class AgentDesktopArtifactStore {
     )
   }
 
+  static func isHTMLArtifact(name: String, mimeType: String) -> Bool {
+    let type = mimeType.split(separator: ";", maxSplits: 1).first?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return type == "text/html" || ["html", "htm"].contains((name as NSString).pathExtension.lowercased())
+  }
+
+  func hasStoredArtifact(_ block: AgentRichBlock) -> Bool {
+    let uri = block.metadata["artifact_source_uri"] ?? block.uri
+    return (try? locked {
+      guard Self.isGalaxySSIArtifactURI(uri), let record = try existingRecord(artifactURI: uri),
+            let file = try artifactFile(record: record) else { return false }
+      return fileManager.fileExists(atPath: file.path)
+    }) == true
+  }
+
+  func inlineHTML(for block: AgentRichBlock) throws -> String? {
+    let uri = block.metadata["artifact_source_uri"] ?? block.uri
+    return try locked {
+      let maximum = 256 * 1024
+      guard block.type == .file, Self.isGalaxySSIArtifactURI(uri),
+            let record = try existingRecord(artifactURI: uri),
+            Self.isHTMLArtifact(name: record.name, mimeType: record.mimeType),
+            record.sizeBytes > 0, record.sizeBytes <= Int64(maximum),
+            let file = try artifactFile(record: record),
+            let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+            size <= maximum + 4_096 else { return nil }
+      if let expected = block.metadata["sha256"], !expected.isEmpty,
+         expected.caseInsensitiveCompare(record.sha256) != .orderedSame { return nil }
+      let plaintext = try cipher.read(from: file, purpose: artifactPurpose(record.artifactId))
+      guard Int64(plaintext.count) == record.sizeBytes, sha256(plaintext) == record.sha256 else { return nil }
+      return String(data: plaintext, encoding: .utf8)
+    }
+  }
+
   func saveArtifactUriToDownloads(sourceURI: String) throws -> String {
     try locked {
       guard let record = try existingRecord(artifactURI: sourceURI),

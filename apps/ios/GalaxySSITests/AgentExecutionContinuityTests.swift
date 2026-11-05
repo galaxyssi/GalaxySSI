@@ -300,6 +300,21 @@ extension GalaxySSIStoreTests {
     let restored = try XCTUnwrap(restarted.restore(transaction.rootRecords).first)
     XCTAssertEqual(restored.activePlan?.actionHistory.count, 1_024)
     XCTAssertEqual(restored.activePlan?.checkpoints.count, 128)
+
+    var updated = record
+    updated.activePlan?.checkpoints.append(AgentExecutionCheckpoint(id: "new-checkpoint",
+      actionId: "action-1099", planRevision: 1, createdAtMillis: 10_000))
+    let pending = try persistence.prepare(records: [updated])
+    let pendingManifest = try XCTUnwrap(pending.rootRecords.first?.historyManifest)
+    XCTAssertEqual(pendingManifest.activeActionPageIds, manifest.activeActionPageIds)
+    XCTAssertEqual(pendingManifest.actionPageIds, manifest.actionPageIds)
+    XCTAssertNotEqual(pendingManifest.checkpointPageIds, manifest.checkpointPageIds)
+    persistence.rollback(pending)
+    XCTAssertEqual(persistence.manifest(taskId: record.taskId), manifest)
+    let retried = try persistence.prepare(records: [updated])
+    persistence.commit(retried)
+    let reloaded = AgentTaskHistoryPersistence(defaults: defaults, secrets: secrets).restore(retried.rootRecords)
+    XCTAssertEqual(reloaded.first?.activePlan?.checkpoints.last?.id, "new-checkpoint")
   }
 
   func testAgentLongTaskHistoryCompactsOversizedTextAndRejectsMissingPages() throws {

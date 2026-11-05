@@ -233,6 +233,28 @@ final class MqttPeerRouteSessionTests: XCTestCase {
     XCTAssertTrue(session.ready(readyGenerations: paths))
   }
 
+  func testSurvivingBrokerRemainsVerifiedWhileReconnectedBrokerNeedsItsOwnACK() throws {
+    let session = try makeSession()
+    let initial = ["emqx": Int64(1), "hivemq": Int64(1)]
+    var inbound = remote()
+    inbound.receiveBrokers = Set(initial.keys)
+    let local = try advertised(session, generations: initial)
+    _ = try receive(session, ack(local: local, advertisement: inbound), generations: initial)
+    XCTAssertEqual(session.verifiedGenerations(initial), ["emqx": 1])
+
+    let changed = ["emqx": Int64(1), "hivemq": Int64(2)]
+    let renewed = try advertised(session, generations: changed)
+    XCTAssertEqual(session.verifiedGenerations(changed), ["emqx": 1])
+    let confirmation = try ack(local: renewed, advertisement: inbound)
+    XCTAssertThrowsError(try session.receiveVerified(confirmation, brokerID: "hivemq", generation: 1,
+      authenticationID: "trusted-pair", readyGenerations: changed))
+    _ = try session.receiveVerified(confirmation, brokerID: "hivemq", generation: 2,
+      authenticationID: "trusted-pair", readyGenerations: changed)
+    XCTAssertEqual(session.verifiedGenerations(changed), changed)
+    session.setEnabled(false)
+    XCTAssertTrue(session.verifiedGenerations(changed).isEmpty)
+  }
+
   func testRetiredSessionRejectsTrafficWithoutResettingEpoch() throws {
     let session = try makeSession()
     let first = try advertised(session)

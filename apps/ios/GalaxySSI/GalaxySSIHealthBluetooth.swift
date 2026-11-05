@@ -56,6 +56,7 @@ struct GalaxySSIHealthBluetoothReceipt: Codable, Equatable {
   let device: UUID
   let receivedAt: Date
   let packet: GalaxySSIHealthBluetoothPacket
+  var deviceName: String? = nil
 
   func isReplay(of previous: Self) -> Bool {
     guard device == previous.device else { return false }
@@ -205,7 +206,8 @@ final class GalaxySSIHealthBluetoothSession: NSObject, ObservableObject, CBCentr
     guard peripheral === selected, characteristic === self.characteristic, characteristic.isNotifying, state == .listening,
           error == nil, reading == nil, let data = characteristic.value,
           let packet = GalaxySSIHealthBluetoothPacket.decode(data) else { return }
-    reading = .init(device: peripheral.identifier, receivedAt: Date(), packet: packet)
+    reading = .init(device: peripheral.identifier, receivedAt: Date(), packet: packet,
+                    deviceName: peripheral.name.map { String($0.prefix(100)) })
   }
 }
 

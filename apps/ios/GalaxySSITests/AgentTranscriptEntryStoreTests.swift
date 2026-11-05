@@ -3,6 +3,27 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentTranscriptEntryStoreTests: XCTestCase {
+  func testEncryptedRowCacheRequiresIdenticalCiphertextAndEvictsWithinBounds() {
+    var cache = GalaxySSIChatHistoryDatabase.RowCache(maximumRows: 2, maximumBytes: 8)
+    let message = ChatMessage(contactId: "fixture", content: "private", isMine: false)
+    var decryptions = 0
+    func decode() -> (message: ChatMessage, plaintextBytes: Int)? {
+      decryptions += 1
+      return (message, 3)
+    }
+    XCTAssertEqual(cache.read(id: "row-a", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(cache.read(id: "row-a", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(decryptions, 1)
+    XCTAssertEqual(cache.read(id: "row-b", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(decryptions, 2)
+    XCTAssertNil(cache.read(id: "row-a", ciphertext: Data([2])) { nil })
+    XCTAssertEqual(cache.read(id: "row-c", ciphertext: Data([3, 4]), decode: decode), message)
+    XCTAssertEqual(cache.read(id: "row-b", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(decryptions, 4)
+    cache.clear()
+    XCTAssertEqual(cache.read(id: "row-b", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(decryptions, 5)
+  }
   func testRetainsAndPagesEveryEntryWithoutCountLimits() throws {
     let store = makeStore()
     let expectedIds = (0..<2_105).map { "entry-\($0)" }
@@ -430,6 +451,20 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     XCTAssertEqual(Set(found), Set(outgoing.map(\.id)))
     XCTAssertEqual(try database.deliveredDesktopReplyTurns(contactId: "hermes", conversationId: "conversation"), ["turn-1", "turn-4"])
     XCTAssertTrue(try database.deliveredDesktopReplyTurns(contactId: "other", conversationId: "conversation").isEmpty)
+    var matched: Set<String> = []
+    var replyCursor: GalaxySSIChatHistoryCursor?
+    var visited = 0
+    repeat {
+      let batch = try database.deliveredDesktopReplyTurnPage(contactId: "hermes",
+        conversationId: "conversation", before: replyCursor, pageSize: 1)
+      XCTAssertLessThanOrEqual(batch.turns.count, 1)
+      matched.formUnion(batch.turns)
+      replyCursor = batch.next
+      visited += 1
+      XCTAssertLessThanOrEqual(visited, 3)
+    } while replyCursor != nil && visited < 4
+    XCTAssertEqual(visited, 3)
+    XCTAssertEqual(matched, ["turn-1", "turn-4"])
   }
 
   func testLocalDeletionIsContactScopedAndBlocksReplayAfterReopen() throws {

@@ -22,18 +22,23 @@ class HealthWeeklyActivity : Activity() {
     private val text by lazy { HealthWeeklyText(this) }
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
+    private val names by lazy { intent.healthNavigationDatabases() }
     private val database by lazy {
         val name = intent.getStringExtra("health_weekly_test_db").orEmpty()
         if (BuildConfig.DEBUG && name.startsWith("health-weekly-test-") && name.endsWith(".db") &&
-            HealthProfilePolicy.uuid(name.removePrefix("health-weekly-test-").removeSuffix(".db"))) name else "health_records_v1.db"
+            HealthProfilePolicy.uuid(name.removePrefix("health-weekly-test-").removeSuffix(".db"))) name else names.records
     }
-    private val privacy by lazy { healthPrivacyDatabaseName() }
+    private val privacy by lazy { if (names.fixture == null) healthPrivacyDatabaseName() else names.privacy }
     private lateinit var body: LinearLayout
     private lateinit var title: TextView
     private lateinit var zone: ZoneId
     private lateinit var end: LocalDate
     private var screen = Screen.SUMMARY
     private var metrics = healthWeeklyMetrics.toSet()
+    private var summaryMetrics = healthWeeklyMetrics.toSet()
+    private var summaryComparison = true
+    private var linked: HealthWeeklyStamp? = null
+    private val fromSleepReminder by lazy { intent.getBooleanExtra("health_weekly_from_sleep_reminder", false) }
     private var includeRecords = false
     private var comparison = true
     private var active = false
@@ -55,32 +60,50 @@ class HealthWeeklyActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        zone = state?.getString("zone")?.let(ZoneId::of) ?: ZoneId.systemDefault()
-        end = state?.getString("end")?.let(LocalDate::parse) ?: LocalDate.now(zone).minusDays(1)
+        linked = if (state != null) state.getBundle("linked")?.weeklyStamp()
+            else intent.getBundleExtra(HEALTH_WEEKLY_HANDOFF)?.weeklyStamp()?.takeUnless { it.scope.records }
+        if (state == null && intent.hasExtra(HEALTH_WEEKLY_HANDOFF) && linked == null) {
+            Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+        val initial = linked?.scope
+        zone = state?.getString("zone")?.let(ZoneId::of) ?: initial?.zone ?: ZoneId.systemDefault()
+        end = state?.getString("end")?.let(LocalDate::parse) ?: initial?.end ?: LocalDate.now(zone).minusDays(1)
         screen = state?.getString("screen")?.let(Screen::valueOf) ?: Screen.SUMMARY
-        state?.getStringArrayList("metrics")?.let { metrics = it.map(HealthMetric::valueOf).toSet() }
+        summaryMetrics = state?.getStringArrayList("summary_metrics")?.map(HealthMetric::valueOf)?.toSet()
+            ?: initial?.metrics ?: healthWeeklyMetrics.toSet()
+        summaryComparison = state?.getBoolean("summary_comparison", initial?.comparison ?: true) ?: initial?.comparison ?: true
+        metrics = state?.getStringArrayList("metrics")?.map(HealthMetric::valueOf)?.toSet() ?: summaryMetrics
         includeRecords = state?.getBoolean("records") ?: false
-        comparison = state?.getBoolean("comparison", true) ?: true
+        comparison = state?.getBoolean("comparison", true) ?: summaryComparison
         stamp = state?.getBundle("stamp")?.weeklyStamp()
         pendingSave = state?.getBundle("save")?.weeklyStamp()
         body = healthProfileBody(R.string.health_weekly_title) { back() }
         title = ((body.parent as LinearLayout).getChildAt(0) as LinearLayout).getChildAt(1) as TextView
     }
     override fun onSaveInstanceState(state: Bundle) {
+        if (!::body.isInitialized) { super.onSaveInstanceState(state); return }
         state.putString("zone", zone.id); state.putString("end", end.toString()); state.putString("screen", screen.name)
         state.putStringArrayList("metrics", ArrayList(metrics.map { it.name }))
+        state.putStringArrayList("summary_metrics", ArrayList(summaryMetrics.map { it.name }))
+        state.putBoolean("summary_comparison", summaryComparison)
+        linked?.let { state.putBundle("linked", it.bundle()) }
         state.putBoolean("records", includeRecords); state.putBoolean("comparison", comparison)
         stamp?.let { state.putBundle("stamp", it.bundle()) }
         pendingSave?.let { state.putBundle("save", it.bundle()) }
         super.onSaveInstanceState(state)
     }
     override fun onStart() {
-        super.onStart(); active = true
+        super.onStart()
+        if (!::body.isInitialized) return
+        active = true
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, database), false, observer)
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, privacy), false, observer)
         refresh()
     }
     override fun onStop() {
+        if (!active) { super.onStop(); return }
         active = false; request++; signal?.cancel(); signal = null; body.removeAllViews()
         contentResolver.unregisterContentObserver(observer)
         super.onStop()
@@ -111,13 +134,14 @@ class HealthWeeklyActivity : Activity() {
         }
     }
     private fun scope(review: Boolean) = if (review) HealthWeeklyScope(end, zone, metrics, includeRecords, comparison)
-        else HealthWeeklyScope(end, zone)
+        else HealthWeeklyScope(end, zone, summaryMetrics, comparison = summaryComparison)
     private fun status(message: Int): LinearLayout = healthProfileContent(body).apply { addView(ui.text(getString(message), 15f, muted = true)) }
     private fun load(known: HealthWeeklySnapshot? = null) {
         if (!active) return
         val review = screen == Screen.REVIEW
         val selected = scope(review)
-        val expected = if (review) stamp else null
+        val reference = linked
+        val expected = if (review) stamp else reference
         val after = cursor
         val token = ++request
         signal?.cancel()
@@ -127,8 +151,14 @@ class HealthWeeklyActivity : Activity() {
             val result = runCatching {
                 HealthPrivacyStore.track(applicationContext, HealthAccessScope.weekly(selected), privacy) {
                     HealthRecordStore(applicationContext, database).use { store ->
+                        val bound = expected ?: reference?.let { base ->
+                            val versions = store.metricVersions(selected.metrics)
+                            if (base.versions.any { (metric, version) -> metric in selected.metrics && versions[metric] != version })
+                                throw HealthWeeklyChanged()
+                            HealthWeeklyStamp(selected, versions, System.currentTimeMillis())
+                        }
                         val snapshot = known?.also { HealthWeeklyRepository.requireCurrent(store, it.stamp) }
-                            ?: HealthWeeklyRepository.calculate(store, selected, expected, cancellation)
+                            ?: HealthWeeklyRepository.calculate(store, selected, bound, cancellation)
                         val rows = if (selected.records && snapshot.recordCount <= HealthWeeklyScope.MAX_PDF_RECORDS)
                             HealthWeeklyRepository.page(store, snapshot.stamp, after, cancellation) else null
                         snapshot to rows
@@ -153,9 +183,14 @@ class HealthWeeklyActivity : Activity() {
         val content = healthProfileContent(body)
         content.addView(ui.text(text.range(snapshot.scope), 19f, bold = true).apply { tag = "health-weekly-range" })
         ui.add(content, ui.text(text.version(snapshot), 12f, muted = true), 6)
+        if (linked != null && !review) ui.add(content,
+            ui.text(getString(if (fromSleepReminder) R.string.health_weekly_reminder_scope else R.string.health_weekly_assistant_scope), 13f, muted = true)
+                .apply { tag = "health-weekly-linked" }, 4)
         if (!review) ui.add(content, ui.line().apply {
-            val previous = action(R.string.health_weekly_previous, "health-weekly-previous", true) { end = end.minusDays(7); load() }
-            val next = action(R.string.health_weekly_next, "health-weekly-next", true) { end = minOf(end.plusDays(7), LocalDate.now(zone).minusDays(1)); load() }
+            val previous = action(R.string.health_weekly_previous, "health-weekly-previous", true) { linked = null; end = end.minusDays(7); load() }
+            val next = action(R.string.health_weekly_next, "health-weekly-next", true) {
+                linked = null; end = minOf(end.plusDays(7), LocalDate.now(zone).minusDays(1)); load()
+            }
             previous.isEnabled = !end.minusDays(27).isBefore(LocalDate.of(1970, 1, 2))
             next.isEnabled = end.isBefore(LocalDate.now(zone).minusDays(1))
             addView(previous, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(4) })
@@ -222,7 +257,7 @@ class HealthWeeklyActivity : Activity() {
             s.zone, metric.units.first())
         startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(spec)
             .putExtra("health_fixed_version", true).putExtra("health_version", snapshot.versions.getValue(metric))
-            .putExtra("health_privacy_test_db", privacy))
+            .putExtra("health_privacy_test_db", privacy).putHealthNavigationFixture(names))
     }
     private fun renderOptions() {
         val content = healthProfileContent(body)
@@ -304,27 +339,44 @@ class HealthWeeklyActivity : Activity() {
         else -> R.string.health_storage_error
     }
     private fun renderError(failure: Throwable) {
-        val content = status(errorResource(failure))
+        val staleLink = failure is HealthWeeklyChanged && linked != null && screen == Screen.SUMMARY
+        val content = status(when {
+            staleLink && fromSleepReminder -> R.string.health_weekly_reminder_changed
+            staleLink -> R.string.health_weekly_assistant_changed
+            else -> errorResource(failure)
+        })
         if (failure is HealthAccessBlocked) ui.add(content, action(R.string.health_privacy_title, "health-weekly-blocked") { startActivity(healthPrivacyIntent()) }, 16)
         if (failure is HealthWeeklyChanged && screen == Screen.REVIEW) {
             ui.add(content, action(R.string.health_weekly_review_again, "health-weekly-review-again") {
-                stamp = null; resetPages(); saveError = null; saved = false; load()
+                linked = null; stamp = null; resetPages(); saveError = null; saved = false; load()
+            }, 16)
+        } else if (staleLink) {
+            ui.add(content, action(R.string.health_weekly_review_again, "health-weekly-refresh-link") {
+                linked = null; load()
             }, 16)
         } else ui.add(content, action(R.string.common_retry, "health-weekly-retry") { load() }, 16)
     }
 
-    private fun HealthWeeklyStamp.bundle() = Bundle().apply {
-        putString("end", scope.end.toString()); putString("zone", scope.zone.id); putLong("created", calculatedAt)
-        putBoolean("records", scope.records); putBoolean("comparison", scope.comparison)
-        putBundle("versions", Bundle().apply { versions.forEach { (metric, version) -> putString(metric.name, version) } })
-    }
-    private fun Bundle.weeklyStamp(): HealthWeeklyStamp? = runCatching {
-        val tokens = requireNotNull(getBundle("versions"))
-        val versions = tokens.keySet().associate { HealthMetric.valueOf(it) to requireNotNull(tokens.getString(it)) }
-        val selected = HealthWeeklyScope(LocalDate.parse(getString("end")), ZoneId.of(getString("zone")), versions.keys,
-            getBoolean("records"), getBoolean("comparison"))
-        HealthWeeklyStamp(selected, versions, getLong("created"))
-    }.getOrNull()
-
     companion object { private const val SAVE = 65 }
 }
+
+private const val HEALTH_WEEKLY_HANDOFF = "health_weekly_handoff"
+
+internal fun Intent.putHealthWeeklyHandoff(stamp: HealthWeeklyStamp, fromSleepReminder: Boolean = false): Intent {
+    require(!stamp.scope.records)
+    if (fromSleepReminder) putExtra("health_weekly_from_sleep_reminder", true)
+    return putExtra(HEALTH_WEEKLY_HANDOFF, stamp.bundle())
+}
+
+private fun HealthWeeklyStamp.bundle() = Bundle().apply {
+    putString("end", scope.end.toString()); putString("zone", scope.zone.id); putLong("created", calculatedAt)
+    putBoolean("records", scope.records); putBoolean("comparison", scope.comparison)
+    putBundle("versions", Bundle().apply { versions.forEach { (metric, version) -> putString(metric.name, version) } })
+}
+private fun Bundle.weeklyStamp(): HealthWeeklyStamp? = runCatching {
+    val tokens = requireNotNull(getBundle("versions"))
+    val versions = tokens.keySet().associate { HealthMetric.valueOf(it) to requireNotNull(tokens.getString(it)) }
+    val selected = HealthWeeklyScope(LocalDate.parse(getString("end")), ZoneId.of(getString("zone")), versions.keys,
+        getBoolean("records"), getBoolean("comparison"))
+    HealthWeeklyStamp(selected, versions, getLong("created"))
+}.getOrNull()
