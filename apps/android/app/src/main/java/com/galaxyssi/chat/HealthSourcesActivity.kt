@@ -287,6 +287,7 @@ class HealthSourcesActivity : Activity() {
             val detail = listOfNotNull(getString(HealthMetric.BLOOD_PRESSURE.titleResource()), measurement, receipt).joinToString("\n")
             ui.add(output, ui.profileRow(healthBluetoothTrendLabel(device.group, device.name), detail) {
                 startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(page.history(device))
+                    .putExtra("health_manage_bluetooth_history", true)
                     .putHealthNavigationFixture(names))
             }.apply { tag = "health-sources-device-${device.group}" }, 4)
         }

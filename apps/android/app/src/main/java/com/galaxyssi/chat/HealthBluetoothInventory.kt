@@ -13,6 +13,16 @@ internal data class HealthSavedBluetoothDevice(
     val receivedAt: Long?,
 )
 
+internal data class HealthBluetoothHistoryPreview(
+    val group: String,
+    val version: String,
+    val count: Long,
+    val first: Long,
+    val last: Long,
+)
+
+internal class HealthBluetoothHistoryChanged : IllegalStateException("Bluetooth history changed after preview")
+
 internal data class HealthBluetoothInventoryPage(
     val scope: HealthTrendSpec,
     val devices: List<HealthSavedBluetoothDevice>,
