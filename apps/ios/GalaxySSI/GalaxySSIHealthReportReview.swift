@@ -65,12 +65,21 @@ enum GalaxySSIHealthReportReview {
             seen.insert(reading.id).inserted else { return nil }
       return .init(reading: reading, source: source, secondary: false)
     }
-    let secondary = evidence.compactMap { link -> Linked? in
+    var secondary = evidence.compactMap { link -> Linked? in
       guard belongs(link.source), live.contains(link.target.record),
             let reading = revisions.last(where: {
               $0.id == link.target.record && $0.revision == link.target.revision && !$0.deleted
             }) else { return nil }
       return .init(reading: reading, source: link.source, secondary: true)
+    }
+    var restored: [UUID: [Source]] = [:]
+    for link in primary + secondary { restored[link.reading.id, default: []].append(link.source) }
+    for reading in revisions where live.contains(reading.id) && !reading.deleted {
+      for source in reading.secondarySources?.reports ?? [] where belongs(source) {
+        guard !(restored[reading.id]?.contains(source) ?? false) else { continue }
+        restored[reading.id, default: []].append(source)
+        secondary.append(.init(reading: reading, source: source, secondary: true))
+      }
     }
     return (primary + secondary).sorted { ($0.source.page, $0.source.region, $0.id) < ($1.source.page, $1.source.region, $1.id) }
   }

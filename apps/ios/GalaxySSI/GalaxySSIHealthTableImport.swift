@@ -45,12 +45,21 @@ enum GalaxySSIHealthTableImport {
       guard let source = reading.tableSource, source.batch == batch.id, source.sha256 == hash else { return nil }
       return .init(reading: reading, source: source, secondary: false)
     }
-    let secondary = evidence.compactMap { link -> LinkedReading? in
+    var secondary = evidence.compactMap { link -> LinkedReading? in
       guard link.source.batch == batch.id, link.source.sha256 == hash, live.contains(link.target.record),
             let reading = revisions.last(where: {
               $0.id == link.target.record && $0.revision == link.target.revision && !$0.deleted
             }) else { return nil }
       return .init(reading: reading, source: link.source, secondary: true)
+    }
+    var restored: [UUID: [Source]] = [:]
+    for link in primary + secondary { restored[link.reading.id, default: []].append(link.source) }
+    for reading in revisions where live.contains(reading.id) && !reading.deleted {
+      for source in reading.secondarySources?.tables ?? [] where source.batch == batch.id && source.sha256 == hash {
+        guard !(restored[reading.id]?.contains(source) ?? false) else { continue }
+        restored[reading.id, default: []].append(source)
+        secondary.append(.init(reading: reading, source: source, secondary: true))
+      }
     }
     return (primary + secondary).sorted { ($0.source.row, $0.id) < ($1.source.row, $1.id) }
   }

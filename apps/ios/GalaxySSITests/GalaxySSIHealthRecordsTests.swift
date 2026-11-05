@@ -700,6 +700,11 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let restored = try XCTUnwrap(destination.load().current.first)
     XCTAssertEqual(restored.revision, 2)
     XCTAssertEqual(restored.secondarySources?.reports.first?.original, local.id)
+    let restoredArchive = try destination.load()
+    let linked = GalaxySSIHealthReportReview.linked(original: local, revisions: restoredArchive.revisions,
+      current: restoredArchive.current, evidence: [])
+    XCTAssertEqual(linked.map(\.reading.revision), [2])
+    XCTAssertEqual(linked.map(\.secondary), [true])
     let repeated = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files)
     XCTAssertFalse(repeated.hasChanges)
     XCTAssertEqual(repeated.reusedLinks, 1)

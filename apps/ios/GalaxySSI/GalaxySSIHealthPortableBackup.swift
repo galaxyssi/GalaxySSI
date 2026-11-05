@@ -437,7 +437,9 @@ extension GalaxySSIHealthPortableBackup {
     else { throw Failure.limit }
     func mappedReport(_ link: GalaxySSIHealthReportReview.Source) -> GalaxySSIHealthReportReview.Source {
       guard let target = originalTargets[link.sha256] else { return link }
-      return .init(original: target, sha256: link.sha256, page: link.page, region: link.region, fromOCR: link.fromOCR)
+      return .init(original: target, sha256: link.sha256, page: link.page, region: link.region,
+        fromOCR: link.fromOCR, evidenceKey: link.evidenceKey, documentOrder: link.documentOrder,
+        cropRevision: link.cropRevision)
     }
     func mappedTable(_ link: GalaxySSIHealthTableImport.Source) -> GalaxySSIHealthTableImport.Source {
       guard let target = tableIDs[link.batch] ?? tableTargets[link.sha256], combinedHashes[target] == link.sha256
