@@ -18,6 +18,7 @@ struct GalaxySSIHealthCenterView: View {
   @State private var privacySaveFailed = false
   @State private var privacyLimit = 20
   @State private var sourceAttention: [GalaxySSIHealthSourceAttention.Incident] = []
+  @State private var sourceCoverage: GalaxySSIHealthSourceAttention?
   @State private var sourceAttentionUnavailable = false
   @State private var sourceRecovery: GalaxySSIHealthSourceAttention.Incident?
 
@@ -211,6 +212,7 @@ struct GalaxySSIHealthCenterView: View {
         alert = nil
         archive = nil
         sourceAttention = []
+        sourceCoverage = nil
         sourceAttentionUnavailable = false
         if phase == .background { sourceRecovery = nil }
         overviewPermissionFailed = false
@@ -357,13 +359,23 @@ struct GalaxySSIHealthCenterView: View {
           } label: {
             Label(t("metric_deletion.apple_health_title", "Local Apple Health Copies"), systemImage: "tray.full")
           }
-          sourceStatus(t("bluetooth_devices", "Bluetooth devices"), detail: bluetoothAuthorization)
+          bluetoothSourceStatus
           NavigationLink {
             GalaxySSIHealthBluetoothView(records: records)
           } label: {
             Label(t("bluetooth.title", "Bluetooth Blood Pressure"), systemImage: "waveform.path.ecg")
           }
           GalaxySSIHealthBluetoothHistorySection(records: records)
+        }
+        Section(t("healthkit.coverage_title", "Apple Health Coverage")) {
+          ForEach(GalaxySSIHealthKitImport.Scope.allCases) { scope in
+            NavigationLink {
+              GalaxySSIHealthKitImportView(records: records, focusedScope: scope)
+            } label: {
+              GalaxySSIHealthKitCoverageRow(scope: scope, ledger: sourceCoverage,
+                importHistory: archive.map { $0.healthKitImportedAt ?? [:] })
+            }
+          }
         }
         Section(t("local_sources", "On this device")) {
           if let archive {
@@ -373,7 +385,9 @@ struct GalaxySSIHealthCenterView: View {
               Spacer()
               Text(current.count.formatted(.number.locale(locale))).foregroundColor(.secondary)
             }
-            if let latest = current.first(where: { $0.bluetoothReceipt == nil && $0.tableSource == nil }) {
+            if let latest = current.first(where: {
+              $0.bluetoothReceipt == nil && $0.tableSource == nil && $0.healthKitSource == nil && $0.reportSource == nil
+            }) {
               VStack(alignment: .leading, spacing: 4) {
                 Text(t("latest_manual", "Latest manual measurement"))
                 Text(title(latest.metric)).foregroundColor(.secondary)
@@ -393,6 +407,7 @@ struct GalaxySSIHealthCenterView: View {
     }
     .navigationTitle(t("sources", "Devices & Data Sources"))
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear(perform: reload)
   }
 
   private func overview(_ current: [GalaxySSIHealthReading], now: Date) -> some View {
@@ -431,11 +446,16 @@ struct GalaxySSIHealthCenterView: View {
     }
   }
 
-  private func sourceStatus(_ name: String, detail: String) -> some View {
+  private var bluetoothSourceStatus: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(name)
-      Text(detail).foregroundColor(.secondary)
-      Text(t("source_not_connected", "Not connected to Health Center")).foregroundColor(.secondary)
+      Text(t("bluetooth_devices", "Bluetooth devices"))
+      Text(bluetoothAuthorization).foregroundColor(.secondary)
+      Text(t("coverage_no_live_bluetooth", "No live Bluetooth session on this screen")).foregroundColor(.secondary)
+      if let archive, archive.derivesOverview == true,
+         let latest = archive.current.compactMap(\.bluetoothReceipt?.receivedAt).max() {
+        Text(t("coverage_last_bluetooth", "Latest saved Bluetooth receipt") + ": " +
+          latest.formatted(date: .abbreviated, time: .shortened)).foregroundColor(.secondary)
+      }
     }
   }
 
@@ -663,10 +683,13 @@ struct GalaxySSIHealthCenterView: View {
 
   private func reloadSourceAttention() {
     do {
-      sourceAttention = try records.loadSourceAttention().active
+      let state = try records.loadSourceAttention()
+      sourceAttention = state.active
+      sourceCoverage = state
       sourceAttentionUnavailable = false
     } catch {
       sourceAttention = []
+      sourceCoverage = nil
       sourceAttentionUnavailable = true
     }
   }

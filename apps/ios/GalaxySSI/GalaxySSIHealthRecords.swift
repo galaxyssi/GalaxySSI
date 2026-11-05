@@ -151,6 +151,7 @@ struct GalaxySSIHealthRecords {
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var healthOnlinePermission: UUID?
+    var healthKitImportedAt: [GalaxySSIHealthKitImport.Scope: Date]?
     var retainImportOriginals: Bool?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
@@ -527,7 +528,7 @@ struct GalaxySSIHealthRecords {
     return readings.count
   }
 
-  func importHealthKit(_ readings: [GalaxySSIHealthReading]) throws -> Int {
+  func importHealthKit(_ readings: [GalaxySSIHealthReading], at now: Date = Date()) throws -> Int {
     guard readings.count <= GalaxySSIHealthKitImport.limit else { throw Failure.invalid }
     var archive = try load()
     var seen = Set(archive.revisions.compactMap { $0.healthKitSource?.key })
@@ -541,6 +542,12 @@ struct GalaxySSIHealthRecords {
     }
     guard !additions.isEmpty else { return 0 }
     archive.revisions.append(contentsOf: additions)
+    let metrics = Set(additions.map(\.metric))
+    var importedAt = archive.healthKitImportedAt ?? [:]
+    for scope in GalaxySSIHealthKitImport.Scope.allCases where metrics.contains(scope.metric) {
+      importedAt[scope] = now
+    }
+    archive.healthKitImportedAt = importedAt
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return additions.count

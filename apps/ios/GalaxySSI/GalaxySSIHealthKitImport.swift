@@ -60,21 +60,24 @@ struct GalaxySSIHealthKitImport {
   }
 
   func read(_ scopes: Set<Scope>, interval: DateInterval, calendar: Calendar,
-            onSourceRead: ((Scope, Bool) -> Void)? = nil) async throws -> [GalaxySSIHealthReading] {
+            onSourceRead: ((Scope, GalaxySSIHealthSourceAttention.ReadResult) -> Void)? = nil)
+    async throws -> [GalaxySSIHealthReading] {
     guard Self.available, !scopes.isEmpty, interval.duration <= 31 * 86_400 else { throw Failure.unavailable }
     var rows: [GalaxySSIHealthReading] = []
     for scope in Scope.allCases where scopes.contains(scope) {
       try Task.checkCancellation()
+      let scopeRows: [GalaxySSIHealthReading]
       do {
-        rows.append(contentsOf: try await readScope(scope, interval: interval, calendar: calendar))
+        scopeRows = try await readScope(scope, interval: interval, calendar: calendar)
       } catch {
         if !Task.isCancelled, (error as NSError).domain == HKErrorDomain {
-          onSourceRead?(scope, false)
+          onSourceRead?(scope, .failed)
         }
         throw error
       }
       try Task.checkCancellation()
-      onSourceRead?(scope, true)
+      onSourceRead?(scope, scopeRows.isEmpty ? .empty : .samples)
+      rows.append(contentsOf: scopeRows)
       guard rows.count <= Self.limit else { throw Failure.excessive }
     }
     return rows.sorted { ($0.healthKitSource?.key ?? "") < ($1.healthKitSource?.key ?? "") }

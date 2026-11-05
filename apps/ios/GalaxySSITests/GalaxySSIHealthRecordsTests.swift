@@ -9,11 +9,11 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     var ledger = GalaxySSIHealthSourceAttention()
     ledger.selected = [.weight, .sleep]
-    ledger.readFinished(.heartRate, succeeded: false, now: now)
-    ledger.readFinished(.weight, succeeded: false, now: now)
+    ledger.readFinished(.heartRate, result: .failed, now: now)
+    ledger.readFinished(.weight, result: .failed, now: now)
     let original = try XCTUnwrap(ledger.active.first)
-    ledger.readFinished(.sleep, succeeded: false, now: now.addingTimeInterval(5))
-    ledger.readFinished(.weight, succeeded: false, now: now.addingTimeInterval(10))
+    ledger.readFinished(.sleep, result: .failed, now: now.addingTimeInterval(5))
+    ledger.readFinished(.weight, result: .failed, now: now.addingTimeInterval(10))
     ledger.acknowledge(original)
     XCTAssertEqual(ledger.active.map(\.scope), [.weight, .sleep])
     ledger.selected.remove(.sleep)
@@ -21,8 +21,45 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     ledger.acknowledge(try XCTUnwrap(ledger.active.first))
     XCTAssertTrue(ledger.active.isEmpty)
     ledger.selected.insert(.sleep)
-    ledger.readFinished(.sleep, succeeded: true, now: now)
+    ledger.readFinished(.sleep, result: .empty, now: now)
     XCTAssertTrue(ledger.active.isEmpty)
+  }
+
+  @MainActor
+  func testAppleHealthCoverageKeepsSelectionQueryAndImportHistoryIndependent() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records")
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let start = Date(timeIntervalSince1970: 1_750_000_000)
+    let later = start.addingTimeInterval(120)
+    try records.updateSourceAttention { $0.selected = [.weight] }
+    XCTAssertNil(try records.loadSourceAttention().readHistory)
+
+    try records.updateSourceAttention {
+      $0.readFinished(.sleep, result: .failed, now: start)
+      $0.readFinished(.weight, result: .samples, now: start)
+      $0.readFinished(.weight, result: .empty, now: later)
+    }
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let coverage = try reopened.loadSourceAttention()
+    XCTAssertEqual(coverage.selected, [.weight])
+    XCTAssertTrue(coverage.active.isEmpty)
+    XCTAssertEqual(coverage.readHistory?[.sleep]?.result, .failed)
+    XCTAssertNil(coverage.readHistory?[.sleep]?.lastSamplesAt)
+    XCTAssertEqual(coverage.readHistory?[.weight]?.result, .empty)
+    XCTAssertEqual(coverage.readHistory?[.weight]?.at, later)
+    XCTAssertEqual(coverage.readHistory?[.weight]?.lastSamplesAt, start)
+    XCTAssertNil(try reopened.load().healthKitImportedAt)
+
+    let copy = GalaxySSIHealthReading(metric: .weight, measuredAt: start, value: 65,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: nil, name: nil))
+    XCTAssertEqual(try reopened.importHealthKit([copy], at: later), 1)
+    XCTAssertEqual(try reopened.importHealthKit([copy], at: later.addingTimeInterval(100)), 0)
+    XCTAssertEqual(try reopened.load().healthKitImportedAt, [.weight: later])
+    XCTAssertEqual(try reopened.loadSourceAttention(), coverage)
   }
 
   @MainActor
@@ -39,7 +76,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     try records.write(.init(metric: .weight, measuredAt: now, value: 60))
     try records.updateSourceAttention {
       $0.selected = [.weight]
-      $0.readFinished(.weight, succeeded: false, now: now)
+      $0.readFinished(.weight, result: .failed, now: now)
     }
     let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
     XCTAssertEqual(try reopened.loadSourceAttention().active.map(\.scope), [.weight])
