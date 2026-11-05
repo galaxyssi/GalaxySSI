@@ -291,8 +291,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
               timeoutMillis: min(4_000, remaining),
               invocation: invocation
             )
-            let charset = charsetName(from: resource.selectedHeaders)
-            let html = decode(resource.body, charset: charset)
+            let html = decodedText(resource).text
             accumulator.append(
               AgentIOSWebSearchAttempt(
                 index: index,
@@ -451,7 +450,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         nowMillis: nowMillis()
       )
       var output = commonOutput(resource).merging(browserSessionOutput(snapshot)) { current, _ in current }
-      let html = decode(resource.body, charset: charsetName(from: resource.selectedHeaders))
+      let html = decodedText(resource).text
       output["text"] = .string(boundedText(readableText(html), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters))
       output["html_sha256"] = .string(sha256(resource.body))
       return AgentNativeToolExecutionResult.success(
@@ -490,7 +489,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         nowMillis: nowMillis()
       )
       var output = commonOutput(resource).merging(browserSessionOutput(snapshot)) { current, _ in current }
-      let html = decode(resource.body, charset: charsetName(from: resource.selectedHeaders))
+      let html = decodedText(resource).text
       output["text"] = .string(boundedText(readableText(html), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters))
       output["html_sha256"] = .string(sha256(resource.body))
       return AgentNativeToolExecutionResult.success(
@@ -598,7 +597,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     guard let finalURL = URL(string: resource.finalURL),
           AgentIOSWeChatArticlePDF.articleURL(resource.finalURL) != nil,
           let document = AgentIOSPublicArticleParser.weChatPDFBlocks(url: finalURL,
-            source: decode(resource.body, charset: charsetName(from: resource.selectedHeaders))) else {
+            source: decodedText(resource).text) else {
       throw AgentIOSWeChatArticlePDF.ExportError.articleUnavailable
     }
     return document
@@ -633,19 +632,20 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         invocation: invocation
       )
       let resource = resolution.resource
-      let charset = charsetName(from: resource.selectedHeaders)
       var output = commonOutput(resource)
       switch operation {
       case .webHead:
         break
       case .webFetch:
-        output["text"] = .string(boundedText(decode(resource.body, charset: charset), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes))
-        output["charset"] = .string(charset)
+        let decoded = decodedText(resource)
+        output["text"] = .string(boundedText(decoded.text, maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes))
+        output["charset"] = .string(decoded.charset)
+        output["text_decoding_lossless"] = .bool(decoded.lossless)
         output["size_bytes"] = .int(Int64(resource.body.count))
         output["sha256"] = .string(sha256(resource.body))
       case .httpRequest:
         if method == .get {
-          output["text"] = .string(boundedText(decode(resource.body, charset: charset), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes))
+          output["text"] = .string(boundedText(decodedText(resource).text, maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes))
         }
       case .webOpen, .browserRender:
         let mediaType = resource.contentType.split(separator: ";").first?
@@ -654,7 +654,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
            mediaType == "text/html" || mediaType == "application/xhtml+xml" {
           captureHTML?(resource.body)
         }
-        let html = decode(resource.body, charset: charset)
+        let decoded = decodedText(resource)
+        let html = decoded.text
+        output["charset"] = .string(decoded.charset)
+        output["text_decoder_version"] = .int(AgentIOSWebTextDecoder.version)
+        output["text_decoding_lossless"] = .bool(decoded.lossless)
         let article = AgentIOSPublicArticleParser.parse(url: URL(string: resource.finalURL) ?? url, source: html)
         output["text"] = .string(article?.content ?? boundedText(
           readableText(html),
@@ -763,7 +767,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let reason = operation == .browserRender
         ? "explicit_browser_render"
         : AgentIOSDynamicWebFallbackPolicy.reason(
-          contentType: staticResource.contentType,
+          contentType: header(staticResource.selectedHeaders, "content-type") ?? staticResource.contentType,
           body: staticResource.body
         )
       guard let reason else { return AgentIOSWebOpenResourceResolution(resource: staticResource) }
@@ -1589,57 +1593,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     ].contains(contentType)
   }
 
-  private func charsetName(from headers: [String: String]) -> String {
-    let raw = header(headers, "content-type") ?? ""
-    for segment in raw.split(separator: ";") {
-      let parts = segment.split(separator: "=", maxSplits: 1)
-      guard parts.count == 2 else { continue }
-      let key = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-      guard key == "charset" else { continue }
-      let value = String(parts[1]).trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'")))
-      return canonicalCharset(value)
-    }
-    return "UTF-8"
-  }
-
-  private func canonicalCharset(_ value: String) -> String {
-    switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-    case "utf-8", "utf8":
-      return "UTF-8"
-    case "us-ascii", "ascii":
-      return "US-ASCII"
-    case "iso-8859-1", "latin1", "latin-1":
-      return "ISO-8859-1"
-    case "utf-16":
-      return "UTF-16"
-    case "utf-16le":
-      return "UTF-16LE"
-    case "utf-16be":
-      return "UTF-16BE"
-    default:
-      return "UTF-8"
-    }
-  }
-
-  private func decode(_ data: Data, charset: String) -> String {
-    let encoding: String.Encoding
-    switch charset {
-    case "US-ASCII":
-      encoding = .ascii
-    case "ISO-8859-1":
-      encoding = .isoLatin1
-    case "UTF-16":
-      encoding = .utf16
-    case "UTF-16LE":
-      encoding = .utf16LittleEndian
-    case "UTF-16BE":
-      encoding = .utf16BigEndian
-    default:
-      encoding = .utf8
-    }
-    return String(data: data, encoding: encoding)
-      ?? String(data: data, encoding: .utf8)
-      ?? String(decoding: data, as: UTF8.self)
+  private func decodedText(_ resource: AgentIOSURLSessionWebResource) -> AgentIOSWebTextDecoder.Decoded {
+    AgentIOSWebTextDecoder.decode(resource.body,
+      contentType: header(resource.selectedHeaders, "content-type") ?? resource.contentType)
   }
 
   private func readableText(_ source: String) -> String {
