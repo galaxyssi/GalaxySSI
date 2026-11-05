@@ -593,71 +593,64 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         check(db.delete("observations", "id=?", key) == 1)
     }
 
-    fun healthConnectHistoryPreview(scope: HealthConnectScope, ensureActive: () -> Unit = {}): HealthConnectHistoryPreview {
+    fun measurementHistoryPreview(scope: HealthMeasurementHistoryScope, ensureActive: () -> Unit = {}): HealthMeasurementHistoryPreview {
         val version = metricVersion(scope.metric)
-        var count = 0L
-        var first = Long.MAX_VALUE
-        var last = 0L
-        visitHealthConnectHistory(helper.readableDatabase, scope.metric, ensureActive) { page ->
-            for (row in page) {
-                val time = row.draft.measuredAt
-                first = minOf(first, time)
-                last = maxOf(last, time)
-                count++
-            }
-        }
-        ensureActive()
-        if (metricVersion(scope.metric) != version) throw HealthConnectHistoryChanged()
-        return HealthConnectHistoryPreview(scope, version, count, if (count > 0) first else 0L, last)
+        val preview = scanMeasurementHistory(helper.readableDatabase, scope, version, ensureActive)
+        if (metricVersion(scope.metric) != version) throw HealthMeasurementHistoryChanged()
+        return preview
     }
 
-    @Synchronized fun eraseHealthConnectHistory(preview: HealthConnectHistoryPreview, ensureActive: () -> Unit = {}): Long {
+    @Synchronized fun eraseMeasurementHistory(preview: HealthMeasurementHistoryPreview, ensureActive: () -> Unit = {}): Long {
         require(preview.count > 0)
         val metric = preview.scope.metric
         val db = helper.writableDatabase
         db.beginTransaction()
         return try {
-            if (metricVersion(metric) != preview.version) throw HealthConnectHistoryChanged()
-            var removed = 0L
-            var first = Long.MAX_VALUE
-            var last = 0L
-            visitHealthConnectHistory(db, metric, ensureActive) { page ->
-                for (row in page) {
-                    first = minOf(first, row.draft.measuredAt)
-                    last = maxOf(last, row.draft.measuredAt)
-                    eraseStoredMeasurement(db, row.id)
-                    removed++
-                }
+            if (metricVersion(metric) != preview.version) throw HealthMeasurementHistoryChanged()
+            val erased = scanMeasurementHistory(db, preview.scope, preview.version, ensureActive) {
+                eraseStoredMeasurement(db, it.id)
             }
-            ensureActive()
-            if (removed != preview.count || first != preview.first || last != preview.last) throw HealthConnectHistoryChanged()
+            if (erased != preview) throw HealthMeasurementHistoryChanged()
             changed(metric)
             db.setTransactionSuccessful()
-            removed
+            erased.count
         } finally { db.endTransaction(); publishCommittedChanges() }
     }
 
-    private fun visitHealthConnectHistory(db: SQLiteDatabase, metric: HealthMetric, ensureActive: () -> Unit,
-        consume: (List<HealthObservation>) -> Unit) {
+    private fun scanMeasurementHistory(db: SQLiteDatabase, scope: HealthMeasurementHistoryScope, version: String,
+        ensureActive: () -> Unit, consume: (HealthObservation) -> Unit = {}): HealthMeasurementHistoryPreview {
         // Legacy Bluetooth observations can also have external keys without a group. Authenticate before filtering.
+        val filter = if (scope.healthConnectOnly) " AND external_key IS NOT NULL AND bluetooth_group IS NULL" else ""
+        val counts = mutableMapOf<HealthMeasurementSource, Long>()
+        var first = Long.MAX_VALUE
+        var last = 0L
         for (deleted in 0..1) {
             var after: HealthPageCursor? = null
             do {
                 ensureActive()
-                val args = arrayListOf(metric.name, deleted.toString())
+                val args = arrayListOf(scope.metric.name, deleted.toString())
                 val cursorFilter = after?.let {
                     args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id)
                     " AND (measured_at<? OR (measured_at=? AND id<?))"
                 }.orEmpty()
                 val page = db.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations WHERE metric=? AND deleted=? " +
-                    "AND external_key IS NOT NULL AND bluetooth_group IS NULL$cursorFilter ORDER BY measured_at DESC,id DESC LIMIT $PAGE_SIZE",
+                    "$filter$cursorFilter ORDER BY measured_at DESC,id DESC LIMIT $PAGE_SIZE",
                     args.toTypedArray()).use { rows -> buildList {
                         while (rows.moveToNext()) { ensureActive(); add(decode(rows)) }
                     } }
                 after = page.lastOrNull()?.let { HealthPageCursor(it.draft.measuredAt, it.id) }
-                consume(page.filter { it.profileId == "self" && it.source == "health_connect" })
+                for (row in page) {
+                    if (row.profileId != "self" || scope.healthConnectOnly && row.source != "health_connect") continue
+                    val source = HealthMeasurementSource.from(row.source)
+                    counts[source] = (counts[source] ?: 0L) + 1
+                    first = minOf(first, row.draft.measuredAt)
+                    last = maxOf(last, row.draft.measuredAt)
+                    consume(row)
+                }
             } while (page.size == PAGE_SIZE)
         }
+        ensureActive()
+        return HealthMeasurementHistoryPreview(scope, version, counts.toMap(), if (counts.isEmpty()) 0L else first, last)
     }
 
     fun trendPlatformOrigins(spec: HealthTrendSpec, after: String = "", signal: android.os.CancellationSignal? = null): List<String> {
