@@ -750,8 +750,24 @@ final class GalaxySSIStore: ObservableObject {
     agentReplyUnreadStore.count(conversationId: conversationId)
   }
 
-  func markAgentRepliesRead(conversationId: String, rendered: [ChatMessage]) {
-    agentReplyUnreadStore.read(conversationId: conversationId, rendered: rendered)
+  func markAgentRepliesRead(
+    conversationId: String, rendered: [ChatMessage], through cursor: GalaxySSIChatHistoryCursor? = nil
+  ) {
+    agentReplyUnreadStore.read(conversationId: conversationId, rendered: rendered, through: cursor)
+  }
+
+  func markLegacyAgentRepliesRead(through boundary: AgentReplyUnreadPolicy.Boundary) async {
+    var cursor: GalaxySSIChatHistoryCursor? = boundary.cursor
+    while let before = cursor,
+          !Task.isCancelled, activeAgentConversationId == boundary.conversationId,
+          agentReplyUnreadStore.hasLegacyPending(conversationId: boundary.conversationId) {
+      let page = chatHistoryDatabase.page(
+        contactId: "hermes", conversationId: boundary.conversationId, before: before, pageSize: 48
+      )
+      agentReplyUnreadStore.readLegacyPage(conversationId: boundary.conversationId, messages: page.messages)
+      cursor = page.nextCursor
+      await Task.yield()
+    }
   }
 
   func removeAgentReplyUnreadConversations(_ ids: Set<String>) {

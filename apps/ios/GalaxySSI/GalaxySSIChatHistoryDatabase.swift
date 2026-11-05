@@ -1,9 +1,23 @@
 import Foundation
 import SQLite3
 
-struct GalaxySSIChatHistoryCursor: Codable, Equatable {
+struct GalaxySSIChatHistoryCursor: Codable, Comparable {
   var createdAtMillis: Int64
   var messageId: String
+
+  init(_ message: ChatMessage) {
+    self.init(createdAtMillis: Int64((message.createdAt.timeIntervalSince1970 * 1_000).rounded()),
+              messageId: message.id.uuidString)
+  }
+
+  init(createdAtMillis: Int64, messageId: String) {
+    self.createdAtMillis = createdAtMillis
+    self.messageId = messageId
+  }
+
+  static func < (lhs: Self, rhs: Self) -> Bool {
+    (lhs.createdAtMillis, lhs.messageId) < (rhs.createdAtMillis, rhs.messageId)
+  }
 }
 
 struct GalaxySSIChatHistoryPage: Equatable {
@@ -443,9 +457,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       let descending = Array(rows.prefix(safeSize))
       let retained = descending.reversed()
       let oldest = descending.last
-      let next = hasMore ? oldest.map {
-        GalaxySSIChatHistoryCursor(createdAtMillis: Self.millis($0.createdAt), messageId: $0.id.uuidString)
-      } : nil
+      let next = hasMore ? oldest.map(GalaxySSIChatHistoryCursor.init) : nil
       return GalaxySSIChatHistoryPage(messages: Array(retained), nextCursor: next, hasMore: hasMore)
     }
   }
