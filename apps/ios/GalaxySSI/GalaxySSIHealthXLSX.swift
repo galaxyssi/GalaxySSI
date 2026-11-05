@@ -7,7 +7,7 @@ struct GalaxySSIHealthXLSX {
     let path: String
   }
 
-  struct Selection {
+  struct Selection: Codable, Equatable {
     let sheet: String
     let header: Int
   }

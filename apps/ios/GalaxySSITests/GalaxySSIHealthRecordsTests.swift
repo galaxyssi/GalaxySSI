@@ -457,6 +457,83 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testReviewReminderActionsDoNotConfirmAndTableCommitClearsDraft() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let draft = GalaxySSIHealthReviewReminders.TableDraft(id: UUID(), name: "fixture.csv", at: now,
+      data: data, mapping: mapping, worksheet: nil, retainOriginal: false)
+    try records.saveTableReview(draft, replacing: nil)
+    try records.setReviewRemindersEnabled(true)
+    var archive = try records.load()
+    let job = try XCTUnwrap(GalaxySSIHealthReviewReminders.jobs(in: archive).first)
+    try records.updateReviewReminder(job, action: .snoozed(now.addingTimeInterval(60)))
+    archive = try records.load()
+    let state = try XCTUnwrap(archive.reviewReminderState)
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.visible([job], state: state, now: now).isEmpty)
+    XCTAssertEqual(GalaxySSIHealthReviewReminders.visible([job], state: state, now: now.addingTimeInterval(61)), [job])
+    try records.updateReviewReminder(job, action: .handled)
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertEqual(try records.load().tableReviews?.first?.id, draft.id)
+    let sibling = GalaxySSIHealthReviewReminders.TableDraft(id: UUID(), name: "another.csv", at: now,
+      data: data, mapping: mapping, worksheet: nil, retainOriginal: true)
+    try records.saveTableReview(sibling, replacing: nil)
+    var changed = draft
+    changed.version = UUID()
+    try records.saveTableReview(changed, replacing: draft.version)
+    XCTAssertThrowsError(try records.discardTableReview(draft))
+    XCTAssertThrowsError(try records.importTable(data, name: draft.name, json: false, mapping: mapping,
+      expected: [.ready], reviewVersion: draft.version))
+    let refreshed = try records.load()
+    let visible = GalaxySSIHealthReviewReminders.visible(GalaxySSIHealthReviewReminders.jobs(in: refreshed),
+      state: try XCTUnwrap(refreshed.reviewReminderState), now: now)
+    XCTAssertEqual(Set(visible.map(\.target)), [draft.id, sibling.id])
+    XCTAssertEqual(try records.importTable(data, name: draft.name, json: false, mapping: mapping,
+                                           expected: [.ready], retainOriginal: false, reviewVersion: changed.version), 1)
+    XCTAssertEqual(try records.load().tableBatches?.first?.data, Data())
+    XCTAssertEqual(GalaxySSIHealthReviewReminders.jobs(in: try records.load()).map(\.target), [sibling.id])
+    XCTAssertEqual(try records.undoTableBatch(XCTUnwrap(records.load().tableBatches?.first?.id)), 1)
+    XCTAssertEqual(GalaxySSIHealthReviewReminders.jobs(in: try records.load()).map(\.target), [sibling.id])
+    XCTAssertThrowsError(try records.updateReviewReminder(job, action: .handled))
+  }
+
+  @MainActor
+  func testReportReviewReminderUsesExactVersionsAndStableCursor() throws {
+    let now = Date()
+    var archive = GalaxySSIHealthRecords.Archive()
+    func item(original: UUID, region: Int) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original, sha256: String(repeating: "a", count: 64),
+        page: 0, region: region, fromOCR: true)
+      return .init(version: UUID(), source: source, excerpt: "fixture",
+                   reading: .init(metric: .weight, measuredAt: now, value: 65, reportSource: source))
+    }
+    let original = UUID()
+    archive.reportReview = (0..<32).map { _ in item(original: UUID(), region: 0) } + [item(original: original, region: 0)]
+    let all = GalaxySSIHealthReviewReminders.jobs(in: archive)
+    let first = GalaxySSIHealthReviewReminders.page(all, after: nil)
+    let second = GalaxySSIHealthReviewReminders.page(all, after: try XCTUnwrap(first.jobs.last))
+    XCTAssertEqual(first.jobs.count, 30)
+    XCTAssertTrue(first.hasMore)
+    XCTAssertEqual(second.jobs.count, 3)
+    XCTAssertFalse(second.hasMore)
+    XCTAssertEqual(first.jobs + second.jobs, all)
+    let job = try XCTUnwrap(all.first { $0.target == original })
+    var state = GalaxySSIHealthReviewReminders.State()
+    state.enabled = true
+    state.actions[job.key] = .init(versions: job.versions, action: .handled)
+    XCTAssertFalse(GalaxySSIHealthReviewReminders.visible(all, state: state, now: now).contains(job))
+    archive.reportReview?.append(item(original: original, region: 1))
+    let next = GalaxySSIHealthReviewReminders.jobs(in: archive)
+    XCTAssertEqual(next.count, all.count)
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.visible(next, state: state, now: now).contains {
+      $0.target == original && $0.versions.count == 2
+    })
+  }
+
+  @MainActor
   func testReportReviewBatchIsAtomicAndVersionPinned() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
