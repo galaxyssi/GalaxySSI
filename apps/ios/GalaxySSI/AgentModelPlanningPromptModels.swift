@@ -11,6 +11,8 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
   var hasAttachments: Bool
   var allowsPhoneRuntimeTools: Bool
   var allowsDirectResponse: Bool
+  var phoneOwnsExecution: Bool
+  var timerCheckpoint: [String: String]?
 
   init(
     planRequest: AgentPlanRequest,
@@ -27,7 +29,9 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     requirements: AgentTaskRequirements? = nil,
     hasAttachments: Bool? = nil,
     allowsPhoneRuntimeTools: Bool? = nil,
-    allowsDirectResponse: Bool = false
+    allowsDirectResponse: Bool = false,
+    phoneOwnsExecution: Bool = false,
+    timerCheckpoint: [String: String]? = nil
   ) {
     let resolvedRequirements = requirements ?? AgentTaskRequirementAnalyzer.analyze(planRequest.goal)
     let resolvedHasAttachments = hasAttachments ?? conversationContext.hasAttachments
@@ -42,6 +46,8 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     self.allowsPhoneRuntimeTools = (allowsPhoneRuntimeTools ?? true) &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: planRequest.goal)
     self.allowsDirectResponse = allowsDirectResponse
+    self.phoneOwnsExecution = phoneOwnsExecution
+    self.timerCheckpoint = timerCheckpoint
   }
 
   enum CodingKeys: String, CodingKey {
@@ -55,6 +61,8 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     case hasAttachments = "has_attachments"
     case allowsPhoneRuntimeTools = "allows_phone_runtime_tools"
     case allowsDirectResponse = "allows_direct_response"
+    case phoneOwnsExecution = "phone_owns_execution"
+    case timerCheckpoint = "timer_checkpoint"
   }
 
   init(from decoder: Decoder) throws {
@@ -70,7 +78,9 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       requirements: try container.decodeIfPresent(AgentTaskRequirements.self, forKey: .requirements),
       hasAttachments: try container.decodeIfPresent(Bool.self, forKey: .hasAttachments),
       allowsPhoneRuntimeTools: try container.decodeIfPresent(Bool.self, forKey: .allowsPhoneRuntimeTools),
-      allowsDirectResponse: try container.decodeIfPresent(Bool.self, forKey: .allowsDirectResponse) ?? false
+      allowsDirectResponse: try container.decodeIfPresent(Bool.self, forKey: .allowsDirectResponse) ?? false,
+      phoneOwnsExecution: try container.decodeIfPresent(Bool.self, forKey: .phoneOwnsExecution) ?? false,
+      timerCheckpoint: try container.decodeIfPresent([String: String].self, forKey: .timerCheckpoint)
     )
   }
 }

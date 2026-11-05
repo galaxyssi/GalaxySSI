@@ -139,8 +139,10 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   ) throws -> (registry: AgentNativeToolRegistry, catalog: [AgentNativeToolDescriptor])? {
     let allowsPhoneRuntimeTools = invocation.request.allowsPhoneRuntimeTools &&
       AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: invocation.request.planRequest.goal)
+    let phoneOwnsExecution = invocation.request.phoneOwnsExecution
     let requestedIds = Set(invocation.nativeTools
-      .filter { Self.isSafePlannerTool($0, allowsPhoneRuntimeTools: allowsPhoneRuntimeTools) }
+      .filter { Self.isSafePlannerTool($0, allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
+                                       phoneOwnsExecution: phoneOwnsExecution) }
       .map(\.id))
     guard !requestedIds.isEmpty else {
       return nil
@@ -148,7 +150,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
 
     let registry = try toolRegistry.subset { descriptor in
       requestedIds.contains(descriptor.id) &&
-        Self.isSafePlannerTool(descriptor, allowsPhoneRuntimeTools: allowsPhoneRuntimeTools)
+        Self.isSafePlannerTool(descriptor, allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
+                               phoneOwnsExecution: phoneOwnsExecution)
     }
     let catalog = registry.descriptors()
     return catalog.isEmpty ? nil : (registry, catalog)
@@ -206,11 +209,14 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
 
   private static func isSafePlannerTool(
     _ descriptor: AgentNativeToolDescriptor,
-    allowsPhoneRuntimeTools: Bool
+    allowsPhoneRuntimeTools: Bool,
+    phoneOwnsExecution: Bool
   ) -> Bool {
     descriptor.availability.status == .available &&
       descriptor.risk == .low &&
       descriptor.requiredConsents.allSatisfy { !$0.required } &&
+      (!phoneOwnsExecution || (!descriptor.requiresEffectClaim &&
+        !AgentPhoneRuntimePolicy.directPhoneActionTools.contains(descriptor.id))) &&
       (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
   }
 

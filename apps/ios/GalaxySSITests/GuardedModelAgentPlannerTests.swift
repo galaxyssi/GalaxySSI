@@ -188,6 +188,44 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertEqual(provider.invocations.count, 1)
   }
 
+  func testPhoneOwnedPlanningRejectsConnectorAndNeverUsesHostFallback() async {
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"CALL_CONNECTOR","target":"desktop","parameters":{"connector_id":"desktop"}}]}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(allowsDirectResponse: true)
+    request.phoneOwnsExecution = true
+    let fallback = fallbackPlan(actions: [fallbackAction(id: "desktop", kind: .callConnector)])
+    let result = await planner.planOrRespond(
+      request: request,
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallback
+    )
+    XCTAssertTrue(result.actionPlan?.actions.isEmpty == true)
+    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("iOS owns execution"))
+  }
+
+  func testPhoneOwnedPlannerKeepsTimerEvidenceAndOnlyOffersAllowlistedHandoffs() async throws {
+    let timerID = AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm)
+    let timer = try nativeToolDescriptor(id: timerID, risk: .medium)
+    let other = try nativeToolDescriptor(id: "galaxyssi.other.write", risk: .medium)
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"disposition":"respond","final_response":"Hello"}"#
+    )
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(nativeTools: [timer, other], allowsDirectResponse: true)
+    request.phoneOwnsExecution = true
+    request.timerCheckpoint = ["operation_id": "receipt-id", "timer_state": "running"]
+    let result = await planner.planOrRespond(
+      request: request,
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan()
+    )
+    XCTAssertEqual(result, .directResponse("Hello"))
+    XCTAssertEqual(provider.invocations.singleValue().nativeTools.map(\.id), [timerID])
+    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("receipt-id"))
+  }
+
   func testGuardedModelAgentPlannerPassesOnlySafeAvailableNativeTools() async throws {
     let low = try nativeToolDescriptor(id: "galaxyssi.safe.read", risk: .low)
     let medium = try nativeToolDescriptor(id: "galaxyssi.medium.write", risk: .medium)

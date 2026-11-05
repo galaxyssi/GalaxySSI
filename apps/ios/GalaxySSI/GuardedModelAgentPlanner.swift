@@ -96,14 +96,19 @@ struct GuardedModelAgentPlanner {
     fallbackPlan: AgentPlan
   ) async -> GuardedModelAgentPlanningResult {
     let normalizedSettings = settings.normalized
-    let fallback = fallbackPlan
+    var fallback = fallbackPlan
+    if request.phoneOwnsExecution {
+      fallback = AgentPlanFactory.actions(request: request.planRequest, [])
+      fallback.actions = []
+      fallback.validation = AgentPlanValidator.validate(fallback)
+    }
     let replanning = !request.parsingContext.replanReason
       .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
     if fallback.plannerProfile.hasPrefix("specialized-adapter:") {
       return .plan(fallback)
     }
-    if !replanning,
+    if !request.phoneOwnsExecution, !replanning,
        safetySettings.localActionsAllowed,
        safetySettings.deviceControlAllowed,
        let directNativeToolPlan = AgentDirectNativeToolPlanner.shortcutPlan(
@@ -124,7 +129,7 @@ struct GuardedModelAgentPlanner {
         rationale: "Cloud planning was skipped because the task requires a private route."
       ))
     }
-    if !replanning,
+    if !request.phoneOwnsExecution, !replanning,
       (request.requirements.mode == .fast || request.requirements.mode == .economy) &&
       !fallback.actions.contains(where: { $0.kind == .draftPlan }) {
       return .plan(fallback.copyForGuardedPlanner(
@@ -165,7 +170,8 @@ struct GuardedModelAgentPlanner {
     }
 
     if safeRequest.allowsDirectResponse,
-       let response = AgentModelDirectResponseCodec.parse(raw) ?? AgentModelPlanParser.answerOnlyAction(raw) {
+       let response = AgentModelDirectResponseCodec.parse(raw, envelopeOnly: safeRequest.phoneOwnsExecution)
+         ?? AgentModelPlanParser.answerOnlyAction(raw) {
       return .directResponse(response)
     }
 
@@ -179,6 +185,12 @@ struct GuardedModelAgentPlanner {
         profile: "rule-based-invalid-model-plan",
         rationale: "Model output failed local ActionPlan validation; deterministic fallback used."
       ))
+    }
+
+    guard !request.phoneOwnsExecution || parsed.actions.allSatisfy({
+      $0.kind == .callNativeTool || AgentRollingPlanPolicy.closesFromVerifiedEvidence($0)
+    }) else {
+      return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-phone-execution-rejected"))
     }
 
     guard AgentPhoneRuntimePolicy.acceptsModelPlan(
@@ -211,8 +223,9 @@ struct GuardedModelAgentPlanner {
     return request.planRequest.nativeTools
       .filter { descriptor in
         descriptor.availability.status == .available &&
-        descriptor.risk == .low &&
-        descriptor.requiredConsents.allSatisfy { !$0.required } &&
+        ((descriptor.risk == .low && descriptor.requiredConsents.allSatisfy { !$0.required }) ||
+          (request.phoneOwnsExecution && descriptor.risk != .high && descriptor.risk != .blocked &&
+            AgentPhoneRuntimePolicy.directPhoneActionTools.contains(descriptor.id))) &&
           (allowsPhoneRuntimeTools || !AgentPhoneRuntimePolicy.isPhoneRuntimeTool(descriptor.id))
       }
       .sorted { $0.id < $1.id }
@@ -241,20 +254,9 @@ struct GuardedModelAgentPlanner {
 
 private extension AgentModelPlanningPromptRequest {
   func withNativeTools(_ nativeTools: [AgentNativeToolDescriptor]) -> AgentModelPlanningPromptRequest {
-    var nextPlanRequest = planRequest
-    nextPlanRequest.nativeTools = nativeTools
-    return AgentModelPlanningPromptRequest(
-      planRequest: nextPlanRequest,
-      parsingContext: parsingContext,
-      conversationContext: conversationContext,
-      executionTurnId: executionTurnId,
-      executionHistory: executionHistory,
-      globalRealtimeContext: globalRealtimeContext,
-      requirements: requirements,
-      hasAttachments: hasAttachments,
-      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
-      allowsDirectResponse: allowsDirectResponse
-    )
+    var copy = self
+    copy.planRequest.nativeTools = nativeTools
+    return copy
   }
 
   func withScreenElements() -> AgentModelPlanningPromptRequest {
@@ -268,18 +270,9 @@ private extension AgentModelPlanningPromptRequest {
     if nextContext.focusedInputField == nil {
       nextContext.focusedInputField = planRequest.screen.focusedInputField
     }
-    return AgentModelPlanningPromptRequest(
-      planRequest: planRequest,
-      parsingContext: nextContext,
-      conversationContext: conversationContext,
-      executionTurnId: executionTurnId,
-      executionHistory: executionHistory,
-      globalRealtimeContext: globalRealtimeContext,
-      requirements: requirements,
-      hasAttachments: hasAttachments,
-      allowsPhoneRuntimeTools: allowsPhoneRuntimeTools,
-      allowsDirectResponse: allowsDirectResponse
-    )
+    var copy = self
+    copy.parsingContext = nextContext
+    return copy
   }
 }
 

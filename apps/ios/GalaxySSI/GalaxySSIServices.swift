@@ -7744,6 +7744,13 @@ final class MessageCoordinator: ObservableObject {
       return nil
     }
     let requirements = AgentTaskRequirementAnalyzer.analyze(requestText)
+    let turnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let timerCheckpoint = AgentIOSTimerCheckpointStore.shared.current(conversationId: outgoing.conversationId)
+      .flatMap { checkpoint -> [String: String]? in
+        guard checkpoint.sourceTurnId == turnId, !outgoing.readOnlyAnalysis else { return nil }
+        return checkpoint.evidence(now: Int64(Date().timeIntervalSince1970 * 1_000))
+          .filter { ["operation_id", "timer_state", "remaining_seconds", "completion_verified"].contains($0.key) }
+      }
     let nativeIntentCapabilities: Set<AgentCapability> = [
       .toolUse,
       .deviceControl,
@@ -7756,7 +7763,7 @@ final class MessageCoordinator: ObservableObject {
       .code,
       .taskExecution
     ]
-    guard !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
+    guard timerCheckpoint != nil || !requirements.capabilities.isDisjoint(with: nativeIntentCapabilities) else {
       return nil
     }
     let resolver = AgentModelPlannerContactResolver(store: store)
@@ -7797,7 +7804,7 @@ final class MessageCoordinator: ObservableObject {
         maximumActionsOverride: AgentPlanExecutionBatchPolicy.maximumModelBatchActions
       ),
       conversationContext: conversation,
-      executionTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      executionTurnId: turnId,
       executionHistory: executionHistory.filter {
         AgentPlanContinuationScope(
           conversationId: outgoing.conversationId,
@@ -7815,7 +7822,9 @@ final class MessageCoordinator: ObservableObject {
           )
         ),
       hasAttachments: hasAttachments,
-      allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly
+      allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly,
+      phoneOwnsExecution: true,
+      timerCheckpoint: timerCheckpoint
     )
     let scopedHistory = planningRequest.executionHistory
     let answerOnly = AgentCompletionEvidencePolicy.isAnswerOnly(history: scopedHistory) {
@@ -7823,7 +7832,8 @@ final class MessageCoordinator: ObservableObject {
     }
     let existingEvidence = AgentCompletionEvidencePolicy.missingEvidence(
       requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly)
-    planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && answerOnly && existingEvidence.isEmpty &&
+    planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && timerCheckpoint == nil &&
+      answerOnly && existingEvidence.isEmpty &&
       !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     for repairAttempt in 0...1 {
@@ -7832,7 +7842,7 @@ final class MessageCoordinator: ObservableObject {
       ) {
         await planner.planOrRespond(
           request: planningRequest,
-          settings: store.modelPlannerSettings,
+          settings: plannerSettings,
           safetySettings: store.agentSafetySettings,
           fallbackPlan: fallbackPlan
         )
