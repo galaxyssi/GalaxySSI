@@ -71,6 +71,8 @@ class HealthPrivacyActivity : Activity() {
         setting(content, policy, HealthPrivacyOption.ONLINE_ANALYSIS, R.string.health_privacy_online, R.string.health_privacy_online_detail)
         setting(content, policy, HealthPrivacyOption.ORIGINAL_IMAGES, R.string.health_privacy_images, R.string.health_privacy_images_detail, policy.online)
         ui.add(content, ui.text(getString(R.string.health_privacy_storage), 17f, bold = true), 24)
+        setting(content, policy, HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS, R.string.health_privacy_retain_originals,
+            R.string.health_privacy_retain_originals_detail)
         ui.add(content, ui.profileRow(getString(R.string.health_privacy_export)) { startActivity(Intent(this, HealthRecordExportActivity::class.java)) })
         ui.add(content, ui.profileRow(getString(R.string.health_original_library)) { startActivity(Intent(this, HealthOriginalLibraryActivity::class.java)) })
         ui.add(content, ui.profileRow(getString(R.string.health_privacy_history)) { history = true; load() }.apply { tag = "health-privacy-history" })

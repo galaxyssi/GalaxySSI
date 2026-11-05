@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_privacy_retain_originals">默认保留报告原件</string>
+    <string name="health_privacy_retain_originals_detail">仅用于新导入，不改变已有原件或进行中的任务。可在单次导入时另选。</string>
     <string name="health_retention_title">原件保存方式</string>
     <string name="health_retention_switch">同时保存照片与上传原件</string>
     <string name="health_retention_note">关闭后，原件仅为核对加密暂存，确认保存或取消时删除。未选项目保留识别草稿。</string>
