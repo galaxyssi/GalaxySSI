@@ -120,7 +120,8 @@ class HealthPrivacyActivity : Activity() {
         }
         if (scope.fields.isNotEmpty()) add(scope.fields.joinToString(", ") { getString(it.titleResource()) })
         scope.count?.let { count -> add(when (scope.purpose) {
-            HealthAccessPurpose.SAVE_RECORDS, HealthAccessPurpose.GENERATE_BACKUP, HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY ->
+            HealthAccessPurpose.SAVE_RECORDS, HealthAccessPurpose.GENERATE_BACKUP, HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY,
+            HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY ->
                 getString(R.string.health_privacy_scope_records, count)
             HealthAccessPurpose.SAVE_ORIGINALS -> getString(R.string.health_privacy_scope_originals, count)
             HealthAccessPurpose.DELETE_PROFILE -> getString(R.string.health_privacy_scope_delete, scope.basicCount, count, scope.drafts)
@@ -162,6 +163,7 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.GENERATE_BACKUP -> R.string.health_backup_create
     HealthAccessPurpose.DELETE_PROFILE -> R.string.health_privacy_delete_profile
     HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY -> R.string.health_sources_delete_history
+    HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY -> R.string.health_connect_history_delete
 }
 private fun HealthAccessOutcome.title() = when (this) {
     HealthAccessOutcome.STARTED -> R.string.health_privacy_started
