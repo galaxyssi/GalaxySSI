@@ -175,6 +175,8 @@ final class AgentReplySpeechController {
     active?.enabled == true
   }
 
+  var footerEntryId: String? { active?.target.entryId }
+
   func disable(sessionId: String) -> Set<String> {
     guard var session = active, session.playbackSessionId == sessionId else { return [] }
     session.enabled = false
@@ -187,12 +189,8 @@ final class AgentReplySpeechController {
     active?.target.responseId == target.responseId && active?.enabled == true
   }
 
-  func isActive(_ target: AgentReplySpeechTarget) -> Bool {
-    active?.target.responseId == target.responseId
-  }
-
   private func session(for target: AgentReplySpeechTarget) -> Session {
-    if var current = active, current.target.responseId == target.responseId {
+    if var current = active, current.target.responseId == target.responseId, current.target.entryId == target.entryId {
       current.target = target
       current.observedText = target.text
       return current
@@ -209,7 +207,7 @@ final class AgentReplySpeechController {
     complete: Bool
   ) -> AgentReplySpeechCommand {
     var session = initialSession
-    let previousPlaybackSessionId = session.enabled ? session.playbackSessionId : ""
+    let previousPlaybackSessionId = active.flatMap { $0.enabled ? $0.playbackSessionId : nil } ?? ""
     playbackSequence &+= 1
     session.playbackSessionId = playbackSessionId(
       session.target.responseId,
