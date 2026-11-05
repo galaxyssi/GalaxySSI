@@ -1181,11 +1181,24 @@ extension GalaxySSIStoreTests {
     var foreign = scope
     foreign.sourceId = "foreign"
     XCTAssertThrowsError(try history.recordDispatchResourceObservation(observation, scope: foreign))
-    try history.recordDispatchResourceObservation(observation, scope: scope)
+    let originalContext = String(repeating: "x", count: 8_191) + "\u{1F642} end"
+    try history.recordDispatchResourceObservation(observation, scope: scope,
+      sections: ["context:assignment": originalContext])
     let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
       executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[index].dispatchCheckpoint, .dispatching)
     XCTAssertEqual(reopened.snapshot(supervisorRunId: "run")?.members[index].dispatchResourceObservation, observation)
+    let firstPage = try reopened.readPinnedCollaborationGoal(scope: scope, section: "context:assignment")
+    let next = Int(firstPage.int64("next_offset"))
+    XCTAssertGreaterThan(next, 0)
+    let lastPage = try reopened.readPinnedCollaborationGoal(scope: scope, section: "context:assignment",
+      offset: next, expectedHash: firstPage.string("sha256"))
+    let bytes = try XCTUnwrap(Data(base64Encoded: firstPage.string("data_b64"))) +
+      (try XCTUnwrap(Data(base64Encoded: lastPage.string("data_b64"))))
+    XCTAssertEqual(bytes, Data(originalContext.utf8))
+    XCTAssertThrowsError(try reopened.readPinnedCollaborationGoal(scope: foreign, section: "context:assignment"))
+    XCTAssertThrowsError(try reopened.recordDispatchResourceObservation(observation, scope: scope,
+      sections: ["context:assignment": "Replaced"]))
     XCTAssertNoThrow(try reopened.recordDispatchResourceObservation(observation, scope: scope))
     XCTAssertThrowsError(try reopened.recordDispatchResourceObservation(["observed_at_unix_ms": .int(22)], scope: scope))
     XCTAssertFalse(reopened.advanceDispatchCheckpoint(runId: "run", conversationId: snapshot.conversationId,
@@ -1537,6 +1550,22 @@ extension GalaxySSIStoreTests {
     let resumed = closed.observingPrimaryRecall(.init(generation: 2, sequence: 1), terminal: false)
     XCTAssertFalse(resumed.permitsRecall(generation: 1))
     XCTAssertTrue(resumed.permitsRecall(generation: 2))
+  }
+
+  func testDesktopRecallReplayPreservesResponseAndRejectsChangedIdentity() {
+    var cache = AgentDesktopCollaborationResponseReplay()
+    let result: AgentMcpJSONObject = ["success": .bool(true), "data_b64": .string("original")]
+    cache.remember(result, key: "nonce", fingerprint: "assignment-1", expiresAt: 20, now: 10)
+    XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-1", now: 11), .response(result))
+    XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-2", now: 11), .identityMismatch)
+    XCTAssertEqual(cache.lookup(key: "nonce", fingerprint: "assignment-1", now: 20), .missing)
+    cache.remember(["success": .bool(false)], key: "failed", fingerprint: "assignment-1", expiresAt: 30, now: 20)
+    XCTAssertEqual(cache.lookup(key: "failed", fingerprint: "assignment-1", now: 21), .missing)
+    for _ in 0..<4 { XCTAssertTrue(cache.begin(desktopId: "desktop")) }
+    XCTAssertFalse(cache.begin(desktopId: "desktop"))
+    XCTAssertTrue(cache.begin(desktopId: "other"))
+    cache.end(desktopId: "desktop")
+    XCTAssertTrue(cache.begin(desktopId: "desktop"))
   }
 
   func testDesktopGoalRecallCursorBindsOriginalSectionAndAssignment() {

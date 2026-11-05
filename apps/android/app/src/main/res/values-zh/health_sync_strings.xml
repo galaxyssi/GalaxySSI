@@ -15,7 +15,7 @@
     <string name="health_sync_pending">中断前已保存 %1$d 条测量</string>
     <string name="health_sync_source_deleted">Health Connect 报告了来源删除，已有本机副本保留。</string>
     <string name="health_sync_gap">部分较早日期超出默认恢复范围，无法确认这些日期的数据覆盖。</string>
-    <string name="health_sync_ble_disconnected">蓝牙设备未连接</string>
+    <string name="health_sync_ble_disconnected">未检查蓝牙实时连接</string>
     <string name="health_sync_ble_receipt">最近已保存的蓝牙接收时间：%1$s</string>
     <string name="health_sync_ble_no_receipt">此版本还没有记录蓝牙接收时间。</string>
     <string name="health_sync_retry">立即同步</string>

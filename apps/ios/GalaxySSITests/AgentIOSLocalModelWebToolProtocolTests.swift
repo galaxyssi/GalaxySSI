@@ -28,5 +28,28 @@ final class AgentIOSLocalModelWebToolProtocolTests: XCTestCase {
     XCTAssertTrue(AgentIOSLocalModelWebToolProtocol.toolIDs.contains(AgentIOSWebMediaNativeToolCatalog.webFetch))
     XCTAssertFalse(AgentIOSLocalModelWebToolProtocol.toolIDs.contains(AgentIOSWebMediaNativeToolCatalog.webDownload))
     XCTAssertFalse(AgentIOSLocalModelWebToolProtocol.toolIDs.contains(AgentIOSWebMediaNativeToolCatalog.fileDownload))
+    XCTAssertFalse(AgentIOSLocalModelWebToolProtocol.toolIDs.contains(AgentIOSLocalModelWebToolRunner.collaborationRecallId))
+  }
+
+  func testScopedRecallUsesCurrentRosterAndPrivacyState() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = AgentConversationDatabase(fileURL: root.appendingPathComponent("conversations.sqlite"),
+      secrets: InMemorySecretStore())
+    let leader = AgentCollaborationRoster.Member(name: "Lead", resourceId: "codex")
+    let reviewer = AgentCollaborationRoster.Member(name: "Reviewer", resourceId: "local-llm")
+    var conversation = AgentConversation(id: "group", title: "Group", createdAt: 1, updatedAt: 1,
+      collaborationRoster: .init(members: [leader, reviewer], coordinatorId: leader.id))
+    XCTAssertTrue(database.upsert(conversation))
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "group", turnId: "turn",
+      memberId: reviewer.id.uuidString.lowercased() + ":recheck", sourceId: "source")
+    XCTAssertTrue(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
+    conversation.trackingPaused = true
+    XCTAssertTrue(database.upsert(conversation))
+    XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
+    conversation.trackingPaused = false
+    conversation.collaborationRoster = .init(members: [leader], coordinatorId: leader.id)
+    XCTAssertTrue(database.upsert(conversation))
+    XCTAssertFalse(AgentIOSLocalModelWebToolRunner.collaborationRecallIsAuthorized(scope, database: database))
   }
 }

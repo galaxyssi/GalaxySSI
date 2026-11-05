@@ -9,10 +9,13 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
   private let synthesizer: AVSpeechSynthesizer
   private let edgeTTS: VoiceMicrosoftEdgeTTS
   private let latencyTracer: VoiceLatencyTracer?
+  private let tracksRuntimeHealth: Bool
   private let systemTTSRequests = VoiceTTSRequestRegistry()
   private var activeRequest: VoiceReplyPlaybackRequest?
   private var activeSystemUtterance: AVSpeechUtterance?
   private var edgePlayer: AVAudioPlayer?
+  private var edgeReferenceId: UUID?
+  weak var echoReference: VoicePlaybackEchoReference?
   private var activeEdgeAudioData: Data?
   private var edgeSynthesisTask: Task<Void, Never>?
   private var onPlaybackStarted: ((VoiceReplyPlaybackRequest) -> Void)?
@@ -21,11 +24,13 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
   init(
     synthesizer: AVSpeechSynthesizer = AVSpeechSynthesizer(),
     edgeTTS: VoiceMicrosoftEdgeTTS = VoiceMicrosoftEdgeTTS(),
-    latencyTracer: VoiceLatencyTracer? = VoiceLatencyTelemetry.tracer()
+    latencyTracer: VoiceLatencyTracer? = VoiceLatencyTelemetry.tracer(),
+    tracksRuntimeHealth: Bool = true
   ) {
     self.synthesizer = synthesizer
     self.edgeTTS = edgeTTS
     self.latencyTracer = latencyTracer
+    self.tracksRuntimeHealth = tracksRuntimeHealth
     super.init()
     self.synthesizer.delegate = self
   }
@@ -50,7 +55,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     self.onPlaybackStarted = onPlaybackStarted
     self.onDone = onDone
     lastErrorDescription = ""
-    VoiceRuntimeHealthRegistry.begin(request.runtimeChannel)
+    if tracksRuntimeHealth { VoiceRuntimeHealthRegistry.begin(request.runtimeChannel) }
     recordLatency(
       request,
       event: VoiceTraceEvents.ttsRequestStarted,
@@ -78,12 +83,13 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
       edgeSynthesisTask != nil ||
       isSpeaking ||
       synthesizer.isSpeaking
-    if synthesizer.isSpeaking {
+    if activeSystemUtterance != nil || synthesizer.isSpeaking {
       synthesizer.stopSpeaking(at: .immediate)
     }
     if let request = activeRequest, request.providerId == VoiceTTSProvider.microsoftEdge.rawValue {
       edgeSynthesisTask?.cancel()
       edgeSynthesisTask = nil
+      finishEdgeReference(played: edgePlayer?.currentTime ?? 0)
       edgePlayer?.stop()
       edgePlayer = nil
       completeActiveRequest(request, success: false, error: "Speech playback was cancelled", errorCode: "tts_cancelled")
@@ -125,7 +131,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
       self.isSpeaking = false
       self.activeRequest = nil
       self.activeSystemUtterance = nil
-      VoiceRuntimeHealthRegistry.success(request.runtimeChannel)
+      if self.tracksRuntimeHealth { VoiceRuntimeHealthRegistry.success(request.runtimeChannel) }
       self.recordLatency(
         request,
         event: VoiceTraceEvents.ttsCompleted,
@@ -156,6 +162,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
   func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
     DispatchQueue.main.async {
       guard self.edgePlayer === player, let request = self.activeRequest else { return }
+      self.finishEdgeReference(played: flag ? player.duration : player.currentTime)
       self.edgePlayer = nil
       self.completeActiveRequest(
         request,
@@ -169,6 +176,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
   func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
     DispatchQueue.main.async {
       guard self.edgePlayer === player, let request = self.activeRequest else { return }
+      self.finishEdgeReference(played: player.currentTime)
       self.edgePlayer = nil
       self.completeActiveRequest(
         request,
@@ -191,7 +199,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     self.onDone = onDone
     edgeSynthesisTask?.cancel()
     lastErrorDescription = ""
-    VoiceRuntimeHealthRegistry.begin(request.runtimeChannel)
+    if tracksRuntimeHealth { VoiceRuntimeHealthRegistry.begin(request.runtimeChannel) }
 
     edgeSynthesisTask = Task {
       do {
@@ -234,7 +242,7 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     self.onPlaybackStarted = onPlaybackStarted
     self.onDone = onDone
     lastErrorDescription = ""
-    VoiceRuntimeHealthRegistry.begin(request.runtimeChannel)
+    if tracksRuntimeHealth { VoiceRuntimeHealthRegistry.begin(request.runtimeChannel) }
     playEdgeAudio(audioData, request: request)
   }
 
@@ -246,6 +254,14 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
       player.delegate = self
       edgePlayer = player
       player.prepareToPlay()
+      let reference = echoReference
+      let referenceSamples = reference.flatMap { _ in
+        try? GalaxySSIAppleInMemoryAudioDecoder.decode(
+          audioData, fileExtension: "mp3", targetSampleRateHz: VoicePlaybackEchoReference.sampleRate,
+          maximumFrames: VoicePlaybackEchoReference.maximumFrames
+        ).samples
+      }
+      let startedAt = ProcessInfo.processInfo.systemUptime
       guard player.play() else {
         completeActiveRequest(
           request,
@@ -254,6 +270,11 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
           errorCode: "edge_audio_playback_failed"
         )
         return
+      }
+      if let reference, let referenceSamples {
+        let id = UUID()
+        edgeReferenceId = id
+        reference.begin(id: id, samples: referenceSamples, at: startedAt)
       }
       isSpeaking = true
       recordLatency(
@@ -273,6 +294,12 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     }
   }
 
+  private func finishEdgeReference(played: TimeInterval) {
+    guard let id = edgeReferenceId else { return }
+    edgeReferenceId = nil
+    echoReference?.end(id: id, played: played, at: ProcessInfo.processInfo.systemUptime)
+  }
+
   private func completeActiveRequest(
     _ request: VoiceReplyPlaybackRequest,
     success: Bool,
@@ -288,10 +315,10 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     clearActiveEdgeAudio()
     if success {
       lastErrorDescription = ""
-      VoiceRuntimeHealthRegistry.success(request.runtimeChannel)
+      if tracksRuntimeHealth { VoiceRuntimeHealthRegistry.success(request.runtimeChannel) }
     } else {
       lastErrorDescription = error ?? "Speech playback failed"
-      VoiceRuntimeHealthRegistry.failure(request.runtimeChannel, reason: lastErrorDescription)
+      if tracksRuntimeHealth { VoiceRuntimeHealthRegistry.failure(request.runtimeChannel, reason: lastErrorDescription) }
     }
     var attributes = [
       "tts_provider": request.providerId,
@@ -354,6 +381,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
   @Published private(set) var isSpeaking = false
 
   private let inner: VoiceReplySpeechService
+  func setEchoReference(_ reference: VoicePlaybackEchoReference) { inner.echoReference = reference }
   private var cancellables = Set<AnyCancellable>()
   private var generation: UInt64 = 0
   private var activeRequest: VoiceReplyPlaybackRequest?

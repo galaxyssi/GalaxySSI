@@ -794,6 +794,16 @@ struct SettingsView: View {
     VStack(alignment: .leading, spacing: 8) {
       SettingsSectionTitle(title: t("settings_control_general", "General"))
       SettingsNavigationRow(
+        title: t("galaxyssi.health.title", "Health Center"),
+        subtitle: t("galaxyssi.health.subtitle", "Personal health measurements"),
+        systemImage: "heart",
+        tint: .red,
+        badge: t("galaxyssi.common.open", "Open")
+      ) {
+        GalaxySSIHealthCenterView(records: GalaxySSIHealthRecords(
+          owner: store.profile.identityFingerprint, secrets: store.secrets))
+      }
+      SettingsNavigationRow(
         title: t("cc_general_page_title", "General"),
         subtitle: t("galaxyssi.general_settings.subtitle", "Language, appearance, text size, notifications, and app information"),
         systemImage: "gearshape",

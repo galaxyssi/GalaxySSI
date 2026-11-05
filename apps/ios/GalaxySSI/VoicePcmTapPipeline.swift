@@ -15,6 +15,13 @@ final class VoicePcmTapPipeline {
   private let elapsedClock: () -> Int64
   private let lock = NSLock()
   private var sequence: Int64 = 0
+  private var confirmedSpeech = false
+
+  var shouldRejectNoiseOnly: Bool {
+    locked { (vad as? VoiceNeuralSpeechVad)?.usingNeural == true && !confirmedSpeech }
+  }
+
+  var capturedFrameCount: Int64 { locked { sequence } }
 
   init(
     config: VoiceAudioSessionConfig,
@@ -47,6 +54,7 @@ final class VoicePcmTapPipeline {
       sequence += 1
       store.append(frame)
       let decision = vad.accept(frame)
+      confirmedSpeech = confirmedSpeech || decision.speechStarted || decision.isSpeech
       let endpointUpdate = endpoint.accept(frame, vad: decision)
       if endpointUpdate.speechStarted {
         store.markSpeechStart(sequence: frame.sequence)
@@ -80,6 +88,7 @@ final class VoicePcmTapPipeline {
   func reset() {
     locked {
       sequence = 0
+      confirmedSpeech = false
       store.clear()
       vad.reset()
       endpoint.reset()

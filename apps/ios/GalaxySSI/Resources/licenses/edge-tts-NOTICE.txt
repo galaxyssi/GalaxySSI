@@ -1,0 +1,21 @@
+Microsoft Edge TTS Sec-MS-GEC v2
+
+VoiceMicrosoftEdgeTTSChecksum.swift is a Swift adaptation of the Android
+implementation in GalaxySSI PR #3630 and of edge-tts src/edge_tts/drm.py.
+Upstream: https://github.com/rany2/edge-tts
+Reference revision: b2ffbdd9f43f28f03cc939b5de0f3964aa62d60e
+Copyright (c) rany <rany@riseup.net> and edge-tts contributors.
+Swift adaptation Copyright (c) 2026 GalaxySSI contributors.
+
+This component is licensed under GNU LGPL version 3. The accompanying
+LGPL-3.0.txt and GPL-3.0.txt apply. The adaptation uses Swift fixed-width
+arithmetic and the iOS request builder and adds known-answer tests.
+
+Corresponding source and build instructions:
+https://github.com/galaxyssi/GalaxySSI
+apps/ios/GalaxySSI/VoiceMicrosoftEdgeTTSChecksum.swift
+
+Open apps/ios/GalaxySSI.xcodeproj in Xcode and build the GalaxySSI scheme.
+Use a simulator or your own signing configuration for a modified build.
+GalaxySSI imposes no restriction on modifying or reverse engineering
+this component for debugging those modifications.

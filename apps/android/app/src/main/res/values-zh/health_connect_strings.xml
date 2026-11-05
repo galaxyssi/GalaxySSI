@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_connect_history_title">Health Connect 本机副本</string>
+    <string name="health_connect_history_delete">删除 Health Connect 本机副本</string>
+    <string name="health_connect_history_preview">%1$s · %2$d 条已保存测量\n%3$s 至 %4$s\n\n仅删除此指标的本机副本、修订和编辑草稿，无法撤销。不影响来源 App、授权、同步设置、备份和导出。以后仍可重新导入。</string>
+    <string name="health_connect_history_empty">此指标没有 Health Connect 本机副本</string>
+    <string name="health_connect_history_changed">记录已变化，请重新预览后再删除。</string>
+    <string name="health_connect_history_deleted">已删除 Health Connect 本机副本</string>
     <string name="health_connect_authorize">授权数据来源</string>
     <string name="health_connect_privacy">Health Connect 隐私说明</string>
     <string name="health_connect_intro">选择要读取的测量类型，汇入本机健康档案。</string>

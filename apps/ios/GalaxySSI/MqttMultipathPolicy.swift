@@ -126,14 +126,22 @@ final class MqttMultipathPolicy {
     locked { Set(paths.filter { $0.value.connected && !receiveTopics.isEmpty && $0.value.topics.isSuperset(of: receiveTopics) }.keys) }
   }
 
+  func readyPathGenerations(receiveTopics: Set<String>) -> [String: Int64] {
+    locked { paths.filter { $0.value.connected && !receiveTopics.isEmpty &&
+      $0.value.topics.isSuperset(of: receiveTopics) }.mapValues(\.generation) }
+  }
+
   func plan(peer: String, messageID: String, traffic: Traffic, wireBytes: Int, receiveTopics: Set<String>, now: Int64,
-            ingress: String? = nil, attempted: Set<String> = []) -> [Dispatch] {
+            ingress: String? = nil, attempted: Set<String> = [], eligible: [String: Int64]? = nil) -> [Dispatch] {
     locked {
       chunks.expire(now: now)
       guard now >= 0, !messageID.isEmpty, (1...MqttRouteProtocol.packetBytes).contains(wireBytes), let route = routes[peer],
             route.expiresAt > now, wireBytes <= route.packetBytes, traffic != .chunk || route.chunkACKs else { return [] }
       let common = readyBrokers(receiveTopics: receiveTopics).intersection(route.receiveBrokers)
-        .filter { wireBytes <= (paths[$0]?.packetBytes ?? 0) }
+        .filter { broker in
+          guard let path = paths[broker], wireBytes <= path.packetBytes else { return false }
+          return eligible.map { $0[broker] == path.generation } ?? true
+        }
       let unused = common.subtracting(attempted)
       var candidates = Array(unused.isEmpty ? common : unused).sorted {
         let left = score(peer: peer, broker: $0, traffic: traffic, bytes: wireBytes, now: now)

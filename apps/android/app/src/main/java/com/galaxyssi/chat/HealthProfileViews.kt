@@ -17,7 +17,7 @@ internal fun Activity.healthProfileDatabaseName(): String {
     val requested = intent.getStringExtra("health_profile_test_db").orEmpty()
     // Instrumentation may use a separate private database, never arbitrary paths or another profile.
     return if (BuildConfig.DEBUG && requested.matches(Regex("health-profile-test-[0-9a-f-]{36}\\.db")) &&
-        HealthProfilePolicy.uuid(requested.removePrefix("health-profile-test-").removeSuffix(".db"))) requested else "health_profiles_v1.db"
+        HealthProfilePolicy.uuid(requested.removePrefix("health-profile-test-").removeSuffix(".db"))) requested else HealthProfileStore.DEFAULT_DB
 }
 
 internal fun Activity.healthProfileBody(title: Int, back: () -> Unit): LinearLayout {

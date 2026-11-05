@@ -13,20 +13,26 @@ import java.util.UUID
 
 internal data class HealthRestoreOriginalPlan(val input: HealthBackupOriginal, val state: HealthRestoreOriginalState,
     val targetId: String, val prepared: HealthRestorePreparedOriginal?)
+internal enum class HealthRestoreCommitPoint { BEFORE_COMMIT, AFTER_COMMIT }
 
 internal class HealthRestorePlan internal constructor(
     val id: String, val manifest: HealthBackupManifest, val owner: String, val counts: HealthRestoreCounts,
     internal val versions: Map<HealthMetric, String>, internal val originals: List<HealthRestoreOriginalPlan>,
-    internal val stage: HealthRestoreStage, internal val repository: HealthRestoreRepository
+    internal val stage: HealthRestoreStage, internal val repository: HealthRestoreRepository,
+    private val lease: HealthRestoreLeases.Lease
 ) : Closeable {
     internal var closed = false
         private set
     @Synchronized fun conflicts(after: String = ""): HealthRestoreConflictPage { check(!closed); return stage.conflicts(after) }
-    @Synchronized fun commit(signal: CancellationSignal): HealthRestoreReceipt { check(!closed); return repository.commit(this, signal) }
+    @Synchronized fun commit(signal: CancellationSignal, replacements: Set<String> = emptySet(),
+        checkpoint: ((HealthRestoreCommitPoint) -> Unit)? = null): HealthRestoreReceipt {
+        check(!closed)
+        return repository.commit(this, signal, replacements, checkpoint)
+    }
     @Synchronized override fun close() {
         if (closed) return
         closed = true
-        try { stage.close() } finally { repository.dispose(id) }
+        try { stage.close() } finally { repository.dispose(id, lease) }
     }
 }
 
@@ -37,6 +43,7 @@ internal class HealthRestoreRepository(private val context: Context, private val
     private val metrics = HealthMetric.entries.toSet()
     private val stageRoot = File(context.cacheDir, if (names.fixture == null) "health-restore-stage" else "health-restore-stage-${names.fixture}")
     private val originalRoot = File(names.originalRoot(context), "restore")
+    private val leases = HealthRestoreLeases(File(names.originalRoot(context), "restore-pending"))
 
     private fun owner() = profileName().trim()
 
@@ -44,7 +51,7 @@ internal class HealthRestoreRepository(private val context: Context, private val
         val id = UUID.randomUUID().toString()
         val stageFolder = child(stageRoot, id)
         val originalFolder = child(originalRoot, id)
-        synchronized(active) { check(active.add(id)) }
+        val lease = checkNotNull(leases.tryAcquire(id))
         var stage: HealthRestoreStage? = null
         try {
             check(stageFolder.mkdirs() && originalFolder.mkdirs())
@@ -57,6 +64,7 @@ internal class HealthRestoreRepository(private val context: Context, private val
                 val targetIds = hashSetOf<String>()
                 var added = 0L; var duplicates = 0L; var conflicts = 0L
                 var originalsAdded = 0; var originalsReused = 0; var repaired = 0; var missing = 0
+                var sourcesAdded = 0L; var sourcesReused = 0L; var sourcesSkipped = 0L
                 fun prepareOriginal(item: HealthBackupOriginal): OutputStream? {
                     if (!digests.add(item.sha256)) throw HealthBackupException(HealthBackupIssue.DAMAGED)
                     val match = originals.restorationState(item)
@@ -76,7 +84,9 @@ internal class HealthRestoreRepository(private val context: Context, private val
                     return sink
                 }
                 val manifest = spool.fill {
-                    open().use { stream ->
+                    var sourceTarget: HealthObservation? = null
+                    var sourceConflictId: String? = null
+                    val verified = open().use { stream ->
                         HealthBackupCodec.verify(stream, password, signal::throwIfCanceled,
                             onManifest = {
                                 if (it.owner.isNotBlank() && targetOwner.isNotBlank() && !it.owner.trim().equals(targetOwner, ignoreCase = true))
@@ -101,24 +111,54 @@ internal class HealthRestoreRepository(private val context: Context, private val
                                     HealthRestoreKind.DUPLICATE -> duplicates++
                                     HealthRestoreKind.CONFLICT -> conflicts++
                                 }
-                                spool.add(row, match, dedupe, evidenceKey)
+                                val replaceable = match.kind == HealthRestoreKind.CONFLICT && !match.deleted &&
+                                    match.existing?.let { records.canReplaceRestored(row, it) } == true
+                                spool.add(row, match, dedupe, evidenceKey, replaceable)
+                                sourceConflictId = row.id.takeIf { replaceable }
+                                sourceTarget = when (match.kind) {
+                                    HealthRestoreKind.NEW -> row
+                                    HealthRestoreKind.DUPLICATE -> requireNotNull(match.existing)
+                                    HealthRestoreKind.CONFLICT -> if (replaceable) row.copy(revision = requireNotNull(match.existing).revision + 1) else null
+                                }
+                            }, onSourceLink = { _, evidence ->
+                                val target = sourceTarget
+                                if (target == null || sourceConflictId != null) sourcesSkipped++
+                                if (target != null) spool.stageSource(HealthRestoreSourceLink(target.id, target.revision, target.draft.metric,
+                                    evidence.copy(originalId = requireNotNull(originalPlans[evidence.originalId]).targetId)), sourceConflictId)
                             })
                     }
+                    for ((seq, link) in spool.sourceLinks()) {
+                        signal.throwIfCanceled()
+                        val primary = spool.colliding(null, records.restorePrimarySourceKey(link))
+                        val match = if (primary != null) {
+                            if (primary.id == link.recordId && primary.revision == link.revision) HealthRestoreKind.DUPLICATE
+                            else HealthRestoreKind.CONFLICT
+                        } else records.restoreSourceMatch(link)
+                        when (if (match == HealthRestoreKind.NEW) spool.planSource(seq, records.restoreSourceSlot(link), link) else match) {
+                            HealthRestoreKind.NEW -> sourcesAdded++
+                            HealthRestoreKind.DUPLICATE -> sourcesReused++
+                            HealthRestoreKind.CONFLICT -> sourcesSkipped++
+                        }
+                    }
+                    verified
                 }
                 signal.throwIfCanceled()
                 if (records.metricVersions(metrics) != expected || owner() != targetOwner) throw HealthRestoreChanged()
-                val counts = HealthRestoreCounts(added, duplicates, conflicts, originalsAdded, originalsReused, repaired, missing)
+                val counts = HealthRestoreCounts(added, duplicates, conflicts, originalsAdded, originalsReused, repaired, missing,
+                    sourcesAdded, sourcesReused, sourcesSkipped)
                 check(added + duplicates + conflicts == manifest.records)
-                HealthRestorePlan(id, manifest, targetOwner, counts, expected, originalPlans.values.toList(), spool, this)
+                check(sourcesAdded + sourcesReused + sourcesSkipped == manifest.secondary)
+                HealthRestorePlan(id, manifest, targetOwner, counts, expected, originalPlans.values.toList(), spool, this, lease)
             }
         } catch (failure: Throwable) {
             runCatching { stage?.close() }.exceptionOrNull()?.let(failure::addSuppressed)
-            runCatching { dispose(id) }.exceptionOrNull()?.let(failure::addSuppressed)
+            runCatching { dispose(id, lease) }.exceptionOrNull()?.let(failure::addSuppressed)
             throw failure
         }
     }
 
-    internal fun commit(plan: HealthRestorePlan, signal: CancellationSignal): HealthRestoreReceipt = storage { records, originals ->
+    internal fun commit(plan: HealthRestorePlan, signal: CancellationSignal, replacements: Set<String>,
+        checkpoint: ((HealthRestoreCommitPoint) -> Unit)?): HealthRestoreReceipt = storage { records, originals ->
         signal.throwIfCanceled()
         if (owner() != plan.owner) throw HealthRestoreChanged()
         val directory = child(originalRoot, plan.id)
@@ -132,6 +172,13 @@ internal class HealthRestoreRepository(private val context: Context, private val
         try {
             check(!HealthRestoreReceipts.committed(db, plan.id))
             if (records.metricVersions(metrics) != plan.versions) throw HealthRestoreChanged()
+            val selected = replacements.sorted()
+            if (selected.size.toLong() > plan.counts.conflicts) throw HealthRestoreChanged()
+            for (id in selected) {
+                signal.throwIfCanceled()
+                val row = plan.stage.conflict(id)?.takeIf { it.replaceable } ?: throw HealthRestoreChanged()
+                records.replaceRestored(row)
+            }
             for (file in plan.originals) {
                 signal.throwIfCanceled()
                 if (originals.restorationState(file.input) != file.state ||
@@ -149,16 +196,39 @@ internal class HealthRestoreRepository(private val context: Context, private val
                 inserted++
             }
             check(inserted == plan.counts.added)
+            var linked = 0L
+            for ((_, link) in plan.stage.sourceLinks(planned = true)) {
+                signal.throwIfCanceled()
+                records.insertRestoredSource(link)
+                linked++
+            }
+            check(linked == plan.counts.sourcesAdded)
+            var reused = plan.counts.sourcesReused
+            var skipped = plan.counts.sourcesSkipped
+            for (id in selected) {
+                for ((_, link) in plan.stage.sourceLinks(conflictId = id)) {
+                    signal.throwIfCanceled()
+                    when (records.restoreSourceMatch(link)) {
+                        HealthRestoreKind.NEW -> { records.insertRestoredSource(link); linked++; skipped-- }
+                        HealthRestoreKind.DUPLICATE -> { reused++; skipped-- }
+                        HealthRestoreKind.CONFLICT -> Unit
+                    }
+                }
+            }
+            check(skipped >= 0 && linked + reused + skipped == plan.manifest.secondary)
             if (owner() != plan.owner) throw HealthRestoreChanged()
             signal.throwIfCanceled()
             receipt = HealthRestoreReceipt(plan.id, plan.manifest.id, System.currentTimeMillis(),
-                plan.counts, plan.manifest.first, plan.manifest.last)
+                plan.counts.copy(conflicts = plan.counts.conflicts - selected.size, replaced = selected.size.toLong(),
+                    sourcesAdded = linked, sourcesReused = reused, sourcesSkipped = skipped), plan.manifest.first, plan.manifest.last)
             HealthRestoreReceipts.insert(db, receipt)
+            checkpoint?.invoke(HealthRestoreCommitPoint.BEFORE_COMMIT)
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
             records.publishCommittedChanges()
         }
+        checkpoint?.invoke(HealthRestoreCommitPoint.AFTER_COMMIT)
         originals.notifyRestored()
         receipt
     }
@@ -166,23 +236,36 @@ internal class HealthRestoreRepository(private val context: Context, private val
     fun recent() = HealthRecordStore(context, names.records).use { HealthRestoreReceipts.recent(it.tableDatabase) }
 
     fun recoverAbandoned() {
-        val folders = (stageRoot.list()?.asList().orEmpty() + originalRoot.list()?.asList().orEmpty()).toSet()
-        for (id in folders.filter(HealthProfilePolicy::uuid)) synchronized(active) {
-            if (id !in active) removeStaging(id)
+        fun recover(id: String) { runCatching { leases.tryAcquire(id)?.let { dispose(id, it) } } }
+        val pending = (stageRoot.list().orEmpty().filter(HealthProfilePolicy::uuid) + leases.pending()).toSet()
+        pending.forEach(::recover)
+        val legacy = originalRoot.list().orEmpty().filter { it !in pending && HealthProfilePolicy.uuid(it) }
+        if (legacy.isEmpty()) return
+        // Older builds did not leave markers. Do not create a lease for every retained batch.
+        HealthRecordStore(context, names.records).use { records ->
+            for (id in legacy) runCatching {
+                val files = child(originalRoot, id).list()
+                if (!HealthRestoreReceipts.committed(records.tableDatabase, id) || files?.isEmpty() == true) recover(id)
+            }
         }
     }
 
-    internal fun dispose(id: String) = synchronized(active) {
-        try { removeStaging(id) } finally { active.remove(id) }
+    internal fun dispose(id: String, lease: HealthRestoreLeases.Lease) {
+        var clean = false
+        try { clean = removeStaging(id) } finally { leases.release(lease, clean) }
     }
 
-    private fun removeStaging(id: String) {
-        runCatching { child(stageRoot, id).deleteRecursively() }
+    private fun removeStaging(id: String): Boolean {
+        val stageCleared = runCatching { child(stageRoot, id).deleteRecursively() }.getOrDefault(false)
         val folder = child(originalRoot, id)
-        if (!folder.exists()) return
+        if (!folder.exists()) return stageCleared
         val committed = runCatching { HealthRecordStore(context, names.records).use { HealthRestoreReceipts.committed(it.tableDatabase, id) } }
-        if (committed.getOrNull() == false) runCatching { folder.deleteRecursively() }
-        else if (committed.getOrNull() == true && folder.list().orEmpty().isEmpty()) folder.delete()
+        val originalSettled = when (committed.getOrNull()) {
+            false -> runCatching { folder.deleteRecursively() }.getOrDefault(false)
+            true -> folder.list()?.let { it.isNotEmpty() || folder.delete() } == true
+            null -> false
+        }
+        return stageCleared && originalSettled
     }
 
     private fun <T> storage(block: (HealthRecordStore, HealthOriginalStore) -> T): T =
@@ -205,7 +288,6 @@ internal class HealthRestoreRepository(private val context: Context, private val
     }
 
     companion object {
-        private val active = hashSetOf<String>()
         private val discardBytes = object : OutputStream() {
             override fun write(value: Int) = Unit
             override fun write(bytes: ByteArray, offset: Int, length: Int) = Unit

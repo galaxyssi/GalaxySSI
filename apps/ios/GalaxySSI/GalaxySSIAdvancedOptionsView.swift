@@ -297,6 +297,7 @@ struct GalaxySSIAgentLatencyDashboardView: View {
     case "phone_context_route_ms": return t("agent_latency_context", "Context and route")
     case "phone_send_prepare_ms": return t("agent_latency_send_prepare", "Total send preparation")
     case "phone_send_first_visible_ms": return t("agent_latency_user_first", "Send to first visible output")
+    case "phone_send_complete_visible_ms": return t("agent_latency_user_complete", "Send to complete visible reply")
     case "phone_publish_prepare_ms": return t("agent_latency_publish_prepare", "Publish preparation")
     case "phone_response_roundtrip_ms": return t("agent_latency_roundtrip", "Connector round trip")
     case "phone_connector_first_visible_ms": return t("agent_latency_first_visible", "Publish to first visible output")

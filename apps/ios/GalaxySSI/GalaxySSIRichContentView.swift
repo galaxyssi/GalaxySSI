@@ -503,6 +503,7 @@ private struct GalaxySSIRichBlockView: View {
   @State private var formValues: [String: String] = [:]
   @State private var imageViewerItem: GalaxySSIImageViewerItem?
   @State private var inlineImageSize: CGSize?
+  @State private var loadedClipboardImageData: Data?
   @State private var extractedArchiveURLs: [URL] = []
   @State private var extractedArchivePresented = false
   @State private var archiveExtractionError = ""
@@ -813,6 +814,7 @@ private struct GalaxySSIRichBlockView: View {
                 block: block,
                 onLoaded: { loadedData in
                   inlineImageSize = GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
+                  if loadedData.count <= GalaxySSIImageClipboard.maximumBytes { loadedClipboardImageData = loadedData }
                 }
               ) {
                 GalaxySSIRichImageFailureView()
@@ -822,6 +824,7 @@ private struct GalaxySSIRichBlockView: View {
                 url: url,
                 onLoaded: { loadedData in
                   inlineImageSize = GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
+                  if loadedData.count <= GalaxySSIImageClipboard.maximumBytes { loadedClipboardImageData = loadedData }
                 }
               ) {
                 GalaxySSIRichImageFailureView()
@@ -847,6 +850,17 @@ private struct GalaxySSIRichBlockView: View {
             title: block.title
           ) else { return }
           imageViewerItem = item
+        }
+        .contextMenu {
+          if let bytes = data ?? loadedClipboardImageData ?? (usesPeerThumbnailCache ? localImageData : nil) {
+            Button { _ = GalaxySSIImageClipboard.copy(bytes) } label: {
+              Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
+            }
+          }
+        }
+        .onDisappear { loadedClipboardImageData = nil }
+        .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+          loadedClipboardImageData = nil
         }
         .fullScreenCover(item: $imageViewerItem) { item in
           GalaxySSIImageLightboxView(item: item)
@@ -876,6 +890,11 @@ private struct GalaxySSIRichBlockView: View {
             title: block.title,
             onSave: { onArtifactSave(block) }
           )
+        }
+        .contextMenu {
+          Button { _ = GalaxySSIImageClipboard.copy(data) } label: {
+            Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
+          }
         }
         .fullScreenCover(item: $imageViewerItem) { item in
           GalaxySSIImageLightboxView(item: item)
@@ -926,7 +945,7 @@ private struct GalaxySSIRichBlockView: View {
         selectableText(block.title)
           .font(.subheadline.weight(.semibold))
       }
-      GalaxySSIInlineHTMLView(html: block.text)
+      GalaxySSIInlineHTMLView(html: String(block.text.prefix(32_000)))
         .frame(maxWidth: .infinity)
         .frame(height: 280)
         .background(Color.galaxySSISurface)
@@ -989,6 +1008,13 @@ private struct GalaxySSIRichBlockView: View {
                 }
               }
               .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+              .contextMenu {
+                if let bytes = item.data {
+                  Button { _ = GalaxySSIImageClipboard.copy(bytes) } label: {
+                    Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
+                  }
+                }
+              }
             }
           }
           .padding(.vertical, 1)
@@ -1405,11 +1431,16 @@ private struct GalaxySSIRichBlockView: View {
   }
 
   private var desktopArtifactBlock: some View {
-    let available = localArtifactFile != nil
+    let inlineHTML = isHTMLFileArtifact
+    let available = inlineHTML ? coordinator.desktopArtifactStore.hasStoredArtifact(block) : localArtifactFile != nil
     let previewActions = available
       ? []
       : block.actions.filter { $0.verb == "preview_runtime_artifact" }
     return VStack(alignment: .leading, spacing: 8) {
+      if inlineHTML, available {
+        GalaxySSIManagedHTMLArtifactPreview(block: block, artifactStore: coordinator.desktopArtifactStore)
+          .id(block.id + "|" + (block.metadata["sha256"] ?? "") + "|" + block.uri)
+      }
       GalaxySSIRichResourceRow(
         icon: "doc.richtext",
         title: resourceTitle,
@@ -1503,7 +1534,13 @@ private struct GalaxySSIRichBlockView: View {
   }
 
   private var isZipArtifact: Bool {
-    localArtifactFile?.pathExtension.caseInsensitiveCompare("zip") == .orderedSame
+    if isHTMLFileArtifact { return false }
+    return localArtifactFile?.pathExtension.caseInsensitiveCompare("zip") == .orderedSame
+  }
+
+  private var isHTMLFileArtifact: Bool {
+    block.type == .file && AgentDesktopArtifactStore.isHTMLArtifact(
+      name: block.metadata["artifact_name"] ?? block.title, mimeType: block.mimeType)
   }
 
   private func requestArtifactDownload() {
@@ -2448,6 +2485,34 @@ private struct GalaxySSIRichImageFailureView: View {
   }
 }
 
+private struct GalaxySSIManagedHTMLArtifactPreview: View {
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var html: String?
+  let block: AgentRichBlock
+  let artifactStore: AgentDesktopArtifactStore
+
+  var body: some View {
+    Group {
+      if scenePhase == .active, let html {
+        GalaxySSIInlineHTMLView(html: html)
+          .frame(maxWidth: .infinity)
+          .frame(height: 280)
+          .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+      }
+    }
+    .task(id: scenePhase) {
+      html = nil
+      guard scenePhase == .active else { return }
+      let result = await Task.detached(priority: .utility) { [block, artifactStore] in
+        try? artifactStore.inlineHTML(for: block)
+      }.value
+      guard !Task.isCancelled, scenePhase == .active else { return }
+      html = result
+    }
+    .onDisappear { html = nil }
+  }
+}
+
 private struct GalaxySSIInlineHTMLView: UIViewRepresentable {
   let html: String
 
@@ -2485,6 +2550,14 @@ private struct GalaxySSIInlineHTMLView: UIViewRepresentable {
     webView.loadHTMLString(Self.isolatedDocument(html), baseURL: nil)
   }
 
+  static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+    coordinator.deactivate()
+    coordinator.loadedHTML = nil
+    webView.stopLoading()
+    webView.navigationDelegate = nil
+    webView.loadHTMLString("", baseURL: nil)
+  }
+
   private static func isolatedDocument(_ fragment: String) -> String {
     """
     <!doctype html>
@@ -2499,7 +2572,7 @@ private struct GalaxySSIInlineHTMLView: UIViewRepresentable {
         </style>
       </head>
       <body>
-        (fragment.prefix(32_000))
+        \(fragment)
       </body>
     </html>
     """
@@ -2524,7 +2597,10 @@ private struct GalaxySSIInlineHTMLView: UIViewRepresentable {
       decidePolicyFor navigationAction: WKNavigationAction,
       decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-      decisionHandler(navigationAction.navigationType == .other ? .allow : .cancel)
+      let isInitialDocument = navigationAction.navigationType == .other &&
+        navigationAction.request.url?.absoluteString == "about:blank" &&
+        navigationAction.targetFrame?.isMainFrame == true
+      decisionHandler(isInitialDocument ? .allow : .cancel)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

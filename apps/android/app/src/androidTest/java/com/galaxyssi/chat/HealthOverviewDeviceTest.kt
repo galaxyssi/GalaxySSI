@@ -22,7 +22,7 @@ internal fun overviewOcrJob(context: Context, names: HealthOverviewDatabases, ti
 
 internal fun clearHealthOverviewFixture(context: Context, names: HealthOverviewDatabases) {
     check(names.fixture != null)
-    listOf(names.records, names.originals, names.reminders, names.privacy, names.backups).forEach(context::deleteDatabase)
+    listOf(names.records, names.originals, names.reminders, names.privacy, names.profile, names.backups).forEach(context::deleteDatabase)
     context.deleteSharedPreferences(names.prefs)
     names.originalRoot(context).deleteRecursively()
 }

@@ -187,7 +187,7 @@ class HealthBluetoothActivity : ComponentActivity() {
             try {
                 val (receipt, auto) = withContext(Dispatchers.IO) {
                     val deviceToken = AgentMemoryIndexKey.token("health-bluetooth-device-v1|${value.device.device.address}")
-                    val receipt = HealthBluetoothReceipt(value.packet, deviceName(value.device), deviceToken,
+                    val receipt = HealthBluetoothReceipt(value.packet, value.device.label.ifBlank { getString(R.string.health_ble_title) }, deviceToken,
                         value.capture, value.bonded, value.receivedAt, ZoneId.systemDefault())
                     receipt to HealthBluetoothTrust.enabled(this@HealthBluetoothActivity, receipt)
                 }

@@ -824,7 +824,12 @@ struct GalaxySSIGlobalAgentInsightInboxView: View {
       GalaxySSITopBar(
         title: t("agent_global_insights_title", "GalaxySSI insights"),
         leading: { GalaxySSIBackButton() },
-        trailing: { Color.clear }
+        trailing: {
+          NavigationLink(destination: GalaxySSIPublicNewsView()) {
+            Image(systemName: "newspaper").frame(width: 40, height: 44)
+          }
+          .accessibilityLabel(t("public_news_title", "Discoveries"))
+        }
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {

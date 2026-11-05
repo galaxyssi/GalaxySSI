@@ -35,6 +35,7 @@ internal object HealthImportScheduler {
             if (!context.getDatabasePath("health_records_v1.db").exists() &&
                 !context.getDatabasePath(HealthOriginalStore.LEGACY_DATABASE).exists()) return@thread
             runCatching { HealthOriginalExportScheduler.recover(context) }
+            runCatching { HealthOriginalStore(context).use { it.recoverCropWrites() } }
             runCatching { HealthOriginalRetention.recover(context) }
             runCatching { HealthOriginalStore(context).use { store ->
                 var after: Pair<Long, String>? = null
@@ -106,7 +107,7 @@ internal class HealthImportPipeline(private val context: Context, private val re
                 }
                 if (prepareCapture) {
                     if (!mime.startsWith("image/")) throw HealthImportFailure("image_unsupported")
-                    val quality = HealthPhotoInspector.inspect(store, original)
+                    val quality = HealthPhotoInspector.inspect(store, original, report = initial.mode == "report")
                     cancelled(); store.inspectCapture(id, quality)
                     return HealthImportOutcome.COMPLETE
                 }

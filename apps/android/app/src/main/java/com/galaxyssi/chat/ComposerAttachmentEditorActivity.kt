@@ -52,6 +52,9 @@ class ComposerAttachmentEditorActivity : Activity() {
     private var rotationLabel: TextView? = null
     private var cameraId: String = ""
     private var pendingCropFile: File? = null
+    private var pendingHealthCrop: HealthReportCrop? = null
+    private var healthOutput: HealthCropOutput? = null
+    private var healthCropJob: String? = null
 
     override fun onCreate(state: Bundle?) {
         AppDisplaySettings.applyToResources(this)
@@ -63,6 +66,12 @@ class ComposerAttachmentEditorActivity : Activity() {
         cameraId = state?.getString("camera_id") ?: items[selected].id
         cropping = state?.getBoolean("cropping") ?: intent.getBooleanExtra("crop_immediately", false)
         if (!items[selected].isImage) cropping = false
+        val original = android.net.Uri.parse(items[selected].source)
+        if (cropping && items.size == 1 && original.authority == "$packageName.health-originals" &&
+            original.pathSegments.singleOrNull() == intent.getStringExtra("health_original_parent")) {
+            pendingHealthCrop = HealthReportCrop.from(if (state == null) intent.getIntArrayExtra(HEALTH_REPORT_CROP)
+                else state.getIntArray(HEALTH_REPORT_CROP))
+        }
         fineRotation = state?.getInt("fine_rotation") ?: 0
         selectedRatio = state?.getInt("ratio") ?: 0
         advancedCrop = state?.getBoolean("advanced_crop") ?: false
@@ -90,9 +99,17 @@ class ComposerAttachmentEditorActivity : Activity() {
                 loaded = error == null
                 if (error != null) showError(error)
                 if (loaded && pendingRotation != 0) { rotateImage(pendingRotation); pendingRotation = 0 }
+                if (loaded && cropping) {
+                    pendingHealthCrop?.let { applyHealthReportCrop(it) }
+                    pendingHealthCrop = null
+                }
                 done.isEnabled = !saving && (!cropping || loaded)
             }
-            setOnCropImageCompleteListener { _, result -> persistCrop(result) }
+            setOnCropImageCompleteListener { _, result ->
+                if (intent.hasExtra("health_original_parent")) {
+                    healthOutput?.let { it.finishEncoding(result.error == null && result.uriContent == it.uri) }
+                } else persistCrop(result)
+            }
         }
         canvas.addView(image, FrameLayout.LayoutParams(-1, -1))
         document = label(R.string.composer_attachment_preview)
@@ -334,6 +351,10 @@ class ComposerAttachmentEditorActivity : Activity() {
             if (!loaded) return
             saving = true; done.isEnabled = false; title.setText(R.string.composer_crop_saving)
             val png = items[selected].mime.equals("image/png", true)
+            if (intent.hasExtra("health_original_parent")) {
+                startHealthCrop(png)
+                return
+            }
             val temporary = File(cacheDir, "composer-crops/crop-${UUID.randomUUID()}.${if (png) "png" else "jpg"}")
             pendingCropFile = temporary
             runCatching {
@@ -347,9 +368,48 @@ class ComposerAttachmentEditorActivity : Activity() {
         } else {
             accepted = true
             setResult(RESULT_OK, Intent().putExtra(ITEMS, ComposerAttachmentItem.encode(items))
-                .putExtra(ROUTE, intent.getStringExtra(ROUTE)).putExtra(TARGET, intent.getStringExtra(TARGET)))
+                .putExtra(ROUTE, intent.getStringExtra(ROUTE)).putExtra(TARGET, intent.getStringExtra(TARGET))
+                .putExtra(HEALTH_CROP_RESULT, healthCropJob))
             finish()
         }
+    }
+
+    private fun startHealthCrop(png: Boolean) {
+        val current = items[selected]
+        val mime = if (png) "image/png" else "image/jpeg"
+        val name = current.name.substringBeforeLast('.', current.name).removeSuffix("-cropped") + "-cropped." + if (png) "png" else "jpg"
+        val owner = java.lang.ref.WeakReference(this)
+        runCatching {
+            val original = android.net.Uri.parse(current.source)
+            val parent = requireNotNull(intent.getStringExtra("health_original_parent"))
+            check(original.scheme == "content" && original.authority == "$packageName.health-originals" && original.pathSegments == listOf(parent))
+            val spec = HealthCropSpec(parent, name, mime, intent.getStringExtra(HEALTH_CROP_BATCH), intent.getStringExtra(HEALTH_CROP_PAGE),
+                intent.getStringExtra(HEALTH_CROP_MODE) ?: "report", intent.getBooleanExtra(HEALTH_KEEP_ORIGINAL, true),
+                original.getQueryParameter("fixture"))
+            val output = HealthCropOutput.start(this, spec) { job, result ->
+                owner.get()?.let { activity ->
+                    if (!activity.isDestroyed && !activity.isFinishing) activity.healthCropFinished(job, current, spec.fixture, result)
+                }
+            }
+            healthOutput = output
+            image.croppedImageAsync(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 95,
+                options = CropImageView.RequestSizeOptions.NONE, customOutputUri = output.uri)
+        }.onFailure {
+            if (healthOutput == null) healthCropFinished("", current, null, Result.failure(it))
+            else healthOutput?.cancel()
+        }
+    }
+
+    private fun healthCropFinished(job: String, item: ComposerAttachmentItem, fixture: String?, result: Result<HealthOriginal>) {
+        healthOutput = null
+        saving = false; done.isEnabled = true; title.setText(R.string.composer_crop)
+        result.onSuccess { original ->
+            healthCropJob = job
+            items[selected] = item.cropped(HealthOriginalContentProvider.uri(this, original.id, fixture).toString(),
+                original.name, original.size, original.mime)
+            cropping = false; fineRotation = 0
+            complete()
+        }.onFailure(::showError)
     }
 
     private fun persistCrop(result: CropImageView.CropResult) {
@@ -365,37 +425,28 @@ class ComposerAttachmentEditorActivity : Activity() {
             showError(IllegalStateException("Crop output is unavailable")); return
         }
         val app = applicationContext
-        val healthParent = intent.getStringExtra("health_original_parent").orEmpty().takeIf {
-            runCatching { UUID.fromString(it).toString() == it }.getOrDefault(false) &&
-                android.net.Uri.parse(current.source).authority == "$packageName.health-originals"
-        }
         val activity = java.lang.ref.WeakReference(this)
         thread(name = "composer-crop-save") {
-            val file = if (healthParent == null) File(app.filesDir, "composer-attachments-v1/${UUID.randomUUID()}.${if (current.mime.equals("image/png", true)) "png" else "jpg"}") else null
+            val file = File(app.filesDir, "composer-attachments-v1/${UUID.randomUUID()}.${if (current.mime.equals("image/png", true)) "png" else "jpg"}")
             val stored = runCatching {
                 val name = current.name.substringBeforeLast('.', current.name).removeSuffix("-cropped") +
                     "-cropped.${if (current.mime.equals("image/png", true)) "png" else "jpg"}"
                 val mime = if (current.mime.equals("image/png", true)) "image/png" else "image/jpeg"
-                if (healthParent != null) HealthOriginalStore(app).use { store ->
-                    val original = temporary.inputStream().use { store.importOriginal(UUID.randomUUID().toString(), it, name, mime, "crop:$healthParent") }
-                    current.cropped(HealthOriginalContentProvider.uri(app, original.id).toString(), name, original.size, mime)
-                } else {
-                    AttachmentLocalStore.storeFile(temporary, requireNotNull(file))
-                    current.cropped(LocalAttachmentUris.forFile(app, file, name, mime).toString(), name, file.length(), mime)
-                }
+                AttachmentLocalStore.storeFile(temporary, file)
+                current.cropped(LocalAttachmentUris.forFile(app, file, name, mime).toString(), name, file.length(), mime)
             }
             temporary.delete()
             val owner = activity.get()
-            if (owner == null || owner.isFinishing || owner.isDestroyed) { file?.delete(); return@thread }
+            if (owner == null || owner.isFinishing || owner.isDestroyed) { file.delete(); return@thread }
             owner.runOnUiThread {
-                if (owner.isFinishing || owner.isDestroyed) { file?.delete(); return@runOnUiThread }
+                if (owner.isFinishing || owner.isDestroyed) { file.delete(); return@runOnUiThread }
                 saving = false; done.isEnabled = true; title.setText(R.string.composer_crop)
                 pendingCropFile = null
                 stored.onSuccess { item ->
-                    file?.let { createdFiles.add(it.absolutePath) }
+                    createdFiles.add(file.absolutePath)
                     items[selected] = item; cropping = false; fineRotation = 0
                     complete()
-                }.onFailure { file?.delete(); showError(it) }
+                }.onFailure { file.delete(); showError(it) }
             }
         }
     }
@@ -403,6 +454,7 @@ class ComposerAttachmentEditorActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (saving) return
+        if (intent.hasExtra("health_original_parent")) { finish(); return }
         if (cropping) { cropping = false; fineRotation = 0; showSelected() } else super.onBackPressed()
     }
 
@@ -412,11 +464,14 @@ class ComposerAttachmentEditorActivity : Activity() {
         out.putBoolean("advanced_crop", advancedCrop)
         out.putInt("ratio", selectedRatio)
         out.putString("camera_id", cameraId)
+        out.putIntArray(HEALTH_REPORT_CROP, pendingHealthCrop?.encode())
         out.putStringArrayList("created", ArrayList(createdFiles))
         super.onSaveInstanceState(out)
     }
 
     override fun onDestroy() {
+        healthOutput?.cancel()
+        healthOutput = null
         previewRevision++
         previewTask?.cancel(false)
         if (::image.isInitialized) {
