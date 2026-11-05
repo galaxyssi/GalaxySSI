@@ -28,7 +28,7 @@ enum GalaxySSIHealthReportReview {
     let reading: GalaxySSIHealthReading
   }
 
-  struct Target: Codable, Equatable {
+  struct Target: Codable, Hashable {
     let record: UUID
     let revision: Int
   }
@@ -65,11 +65,17 @@ enum GalaxySSIHealthReportReview {
             seen.insert(reading.id).inserted else { return nil }
       return .init(reading: reading, source: source, secondary: false)
     }
-    var secondary = evidence.compactMap { link -> Linked? in
-      guard belongs(link.source), live.contains(link.target.record),
-            let reading = revisions.last(where: {
-              $0.id == link.target.record && $0.revision == link.target.revision && !$0.deleted
-            }) else { return nil }
+    let candidates = evidence.filter { belongs($0.source) && live.contains($0.target.record) }
+    let targets = Set(candidates.map(\.target))
+    var byRevision: [Target: GalaxySSIHealthReading] = [:]
+    if !targets.isEmpty {
+      for reading in revisions where !reading.deleted {
+        let target = Target(record: reading.id, revision: reading.revision)
+        if targets.contains(target) { byRevision[target] = reading }
+      }
+    }
+    var secondary = candidates.compactMap { link -> Linked? in
+      guard let reading = byRevision[link.target] else { return nil }
       return .init(reading: reading, source: link.source, secondary: true)
     }
     var restored: [UUID: [Source]] = [:]

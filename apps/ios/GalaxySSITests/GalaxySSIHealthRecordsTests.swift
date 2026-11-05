@@ -47,13 +47,33 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       reportSource: .init(original: original.id, sha256: original.sha256, page: 0, region: 0, fromOCR: true))
     try records.write(reading)
     XCTAssertThrowsError(try store.remove(stale))
+    var targets: [UUID: GalaxySSIHealthReportReview.Target] = [:]
+    for region in 1...30 {
+      let manual = GalaxySSIHealthReading(metric: .weight, value: Decimal(66 + region))
+      try records.write(manual)
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: 0, region: region, fromOCR: true)
+      var extracted = manual
+      extracted.reportSource = source
+      let item = GalaxySSIHealthReportReview.Item(version: UUID(), source: source, excerpt: "fixture",
+        reading: extracted)
+      try records.stageReportItem(item, replacing: nil)
+      targets[item.version] = .init(record: manual.id, revision: 1)
+    }
+    try records.linkReportDuplicates(targets, original: original)
+    let multiPage = try store.previewRemoval(original)
+    XCTAssertEqual(multiPage.count, 31)
+    var last = try XCTUnwrap(multiPage.linked.last?.reading)
+    last.notes = "changed after preview"
+    try records.write(last)
+    XCTAssertThrowsError(try store.remove(multiPage))
     let reviewed = try store.previewRemoval(original)
-    XCTAssertEqual(reviewed.count, 1)
+    XCTAssertEqual(reviewed.count, 31)
     XCTAssertEqual(try store.remove(reviewed), .removed)
     let removed = try records.load()
     XCTAssertTrue(removed.originalIndex?.originals.isEmpty == true)
     XCTAssertEqual(removed.originalIndex?.removedOriginals, [original])
-    XCTAssertEqual(removed.originalRemovalLog?.last?.linkedMeasurements, 1)
+    XCTAssertEqual(removed.originalRemovalLog?.last?.linkedMeasurements, 31)
     XCTAssertEqual(removed.current.first(where: { $0.id == reading.id })?.reportSource, reading.reportSource)
     XCTAssertEqual(try store.list().removed, [original])
     let links = GalaxySSIHealthReportReview.linked(original: original, revisions: removed.revisions,
@@ -66,7 +86,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(combinedExport.links.map(\.status), [.missing])
     XCTAssertTrue(combinedExport.files.isEmpty)
     XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
-    XCTAssertEqual(removed.current.count, 2)
+    XCTAssertEqual(removed.current.count, 32)
     let interrupted = try store.store(pdf, name: "second.pdf")
     let interruptedPath = root.appendingPathComponent(interrupted.id.uuidString)
     try records.commitOriginalRemoval(store.previewRemoval(interrupted))
