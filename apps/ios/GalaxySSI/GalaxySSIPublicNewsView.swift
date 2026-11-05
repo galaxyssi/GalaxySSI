@@ -15,9 +15,9 @@ struct GalaxySSIPublicNewsView: View {
 
   private var visibleArticles: [PublicNewsArticle] {
     switch filter {
-    case .all: return archive.articles
-    case .unread: return archive.articles.filter { !$0.read }
-    case .saved: return archive.articles.filter(\.saved)
+    case .all: return archive.eligibleArticles
+    case .unread: return archive.eligibleArticles.filter { !$0.read }
+    case .saved: return archive.eligibleArticles.filter(\.saved)
     }
   }
 
@@ -63,22 +63,18 @@ struct GalaxySSIPublicNewsView: View {
           }
           ForEach(visibleArticles) { article in
             HStack(spacing: 8) {
-              Button {
+              GalaxySSIPublicNewsHeadline(archive: archive, article: article, onOpen: {
                 selected = article
                 archive.markRead(article.id)
-              } label: {
-                VStack(alignment: .leading, spacing: 6) {
-                  Text(article.title)
-                    .font(.body.weight(article.read ? .regular : .semibold))
-                    .foregroundColor(.galaxySSITextPrimary)
-                    .lineLimit(3)
-                  GalaxySSIPublicNewsByline(article: article)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
+              }) {
+                Text(article.title)
+                  .font(.body.weight(article.read ? .regular : .semibold))
+                  .foregroundColor(.galaxySSITextPrimary)
+                  .lineLimit(3)
+              } detail: {
+                GalaxySSIPublicNewsByline(article: article)
               }
-              .buttonStyle(.plain)
+              .padding(.vertical, 12)
               GalaxySSIPublicNewsBookmark(archive: archive, article: article)
             }
             .padding(.leading, 12)
@@ -143,8 +139,13 @@ struct GalaxySSIPublicNewsReader: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
-          Text(article.title).font(.title2.weight(.semibold)).textSelection(.enabled)
-          GalaxySSIPublicNewsByline(article: article)
+          GalaxySSIPublicNewsHeadline(archive: archive, article: article, reader: true, onDismissArticle: {
+            dismiss()
+          }) {
+            Text(article.title).font(.title2.weight(.semibold))
+          } detail: {
+            GalaxySSIPublicNewsByline(article: article)
+          }
           if !article.summary.isEmpty {
             Text(article.summary).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
           }
