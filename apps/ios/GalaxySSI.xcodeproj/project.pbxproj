@@ -135,6 +135,8 @@
     A10000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */; };
     A100000000000000000F3600 /* GalaxySSIContactReminderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000F3600 /* GalaxySSIContactReminderStore.swift */; };
     A100000000000000000E3600 /* GalaxySSIContactReminderTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000E3600 /* GalaxySSIContactReminderTransport.swift */; };
+    A100000000000000000D3600 /* GalaxySSIContactReminderAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000D3600 /* GalaxySSIContactReminderAlert.swift */; };
+    A100000000000000000C3600 /* GalaxySSIContactReminderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000C3600 /* GalaxySSIContactReminderViews.swift */; };
     A10000000000000000001762 /* GalaxySSIEncryptedStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001762 /* GalaxySSIEncryptedStateStore.swift */; };
     A10000000000000000001761 /* GalaxySSIContactRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001761 /* GalaxySSIContactRowView.swift */; };
     A10000000000000000001760 /* GalaxySSIContactAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001760 /* GalaxySSIContactAvatarView.swift */; };
@@ -1300,6 +1302,8 @@
     A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEncryptedUserDefaultsStore.swift; sourceTree = "<group>"; };
     A200000000000000000F3600 /* GalaxySSIContactReminderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderStore.swift; sourceTree = "<group>"; };
     A200000000000000000E3600 /* GalaxySSIContactReminderTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderTransport.swift; sourceTree = "<group>"; };
+    A200000000000000000D3600 /* GalaxySSIContactReminderAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderAlert.swift; sourceTree = "<group>"; };
+    A200000000000000000C3600 /* GalaxySSIContactReminderViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactReminderViews.swift; sourceTree = "<group>"; };
     A20000000000000000001762 /* GalaxySSIEncryptedStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEncryptedStateStore.swift; sourceTree = "<group>"; };
     A20000000000000000001761 /* GalaxySSIContactRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactRowView.swift; sourceTree = "<group>"; };
     A20000000000000000001760 /* GalaxySSIContactAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactAvatarView.swift; sourceTree = "<group>"; };
@@ -3227,6 +3231,8 @@
         A20000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift */,
         A200000000000000000F3600 /* GalaxySSIContactReminderStore.swift */,
         A200000000000000000E3600 /* GalaxySSIContactReminderTransport.swift */,
+        A200000000000000000D3600 /* GalaxySSIContactReminderAlert.swift */,
+        A200000000000000000C3600 /* GalaxySSIContactReminderViews.swift */,
         A20000000000000000001762 /* GalaxySSIEncryptedStateStore.swift */,
         A20000000000000000001761 /* GalaxySSIContactRowView.swift */,
         A20000000000000000001760 /* GalaxySSIContactAvatarView.swift */,
@@ -4531,6 +4537,8 @@
         A10000000000000000001763 /* GalaxySSIEncryptedUserDefaultsStore.swift in Sources */,
         A100000000000000000F3600 /* GalaxySSIContactReminderStore.swift in Sources */,
         A100000000000000000E3600 /* GalaxySSIContactReminderTransport.swift in Sources */,
+        A100000000000000000D3600 /* GalaxySSIContactReminderAlert.swift in Sources */,
+        A100000000000000000C3600 /* GalaxySSIContactReminderViews.swift in Sources */,
         A10000000000000000001762 /* GalaxySSIEncryptedStateStore.swift in Sources */,
         A10000000000000000001761 /* GalaxySSIContactRowView.swift in Sources */,
         A10000000000000000001760 /* GalaxySSIContactAvatarView.swift in Sources */,

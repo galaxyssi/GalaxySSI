@@ -128,6 +128,7 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     GalaxySSIAttachmentAtRestCipher.removeLegacyPlaintextRoots()
     GalaxySSIRuntimePlaintextProtection.clearKnownTemporaryFiles()
     UNUserNotificationCenter.current().delegate = self
+    GalaxySSIContactReminderNotification.register()
     return true
   }
 
@@ -136,6 +137,10 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    if GalaxySSIContactReminderNotification.reminderID(notification.request.identifier) != nil {
+      completionHandler([])
+      return
+    }
     if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) ||
       GalaxySSIHealthReviewDelivery.token(notification.request.identifier) != nil {
       completionHandler([.banner, .list])
@@ -160,6 +165,11 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
+    if let reminderID = GalaxySSIContactReminderNotification.reminderID(response.notification.request.identifier) {
+      GalaxySSIContactReminderNotification.recordAction(id: reminderID, action: response.actionIdentifier)
+      completionHandler()
+      return
+    }
     if let token = GalaxySSIHealthReviewDelivery.token(response.notification.request.identifier) {
       if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
         UserDefaults.standard.set(token.uuidString, forKey: GalaxySSIHealthReviewDelivery.pendingKey)
@@ -335,6 +345,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .galaxySSITextScale(runtime.store.displaySettings)
       .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthSyncNotificationLifecycle(store: runtime.store))
+      .modifier(GalaxySSIContactReminderOverlay(coordinator: runtime.coordinator, store: runtime.store))
       .onAppear {
         galaxySSIStartupLogger.notice("RootView appeared")
         runtime.agentStartupRecovery.start(
@@ -545,6 +556,7 @@ struct ConversationView: View {
   @State private var cameraPickerPresented = false
   @State private var cameraAttachmentOwner: String?
   @State private var attachmentError = ""
+  @State private var contactReminderSettingsPresented = false
   @State private var composerTextModeActive = false
   @State private var retryingMessageIDs: Set<UUID> = []
   @State private var transcribingVoiceMessageIDs: Set<UUID> = []
@@ -750,6 +762,25 @@ struct ConversationView: View {
           .padding(.horizontal, 14)
           .padding(.top, 8)
         }
+        if let reminder = coordinator.contactReminders.last(where: {
+          $0.peerID == contact.id && $0.outgoing && !$0.status.terminal
+        }) {
+          HStack {
+            Label(t(reminder.status.localizationKey, reminder.status.defaultTitle), systemImage: "bell.badge")
+              .foregroundColor(.galaxySSITextSecondary)
+            Spacer()
+            Button {
+              coordinator.actOnContactReminder(id: reminder.id, action: .cancelled)
+            } label: {
+              Label(t("galaxyssi.contact_reminder.cancel", "Cancel reminder"), systemImage: "xmark")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ios.chat.contact-reminder.cancel")
+          }
+          .font(.footnote)
+          .padding(.horizontal, 14)
+          .padding(.top, 6)
+        }
         GalaxySSIConversationComposer(
           draft: $draft,
           attachments: $attachments,
@@ -764,6 +795,8 @@ struct ConversationView: View {
           ),
           attachmentScope: composerAttachmentScope,
           attachmentPreviewBlocked: cameraPickerPresented || fileImporterPresented,
+          onContactReminder: coordinator.canSendContactReminder(to: contact) ? sendContactReminder : nil,
+          onContactReminderSettings: { contactReminderSettingsPresented = true },
           onReplaceAttachment: { scope, expected, edited in
             guard scope == composerAttachmentScope else { return false }
             return attachments.replaceComposerAttachment(expected, with: edited)
@@ -802,6 +835,9 @@ struct ConversationView: View {
     }
     .onChange(of: coordinator.pairingRevocationRevision) { _ in
       dismissIfRevoked()
+    }
+    .sheet(isPresented: $contactReminderSettingsPresented) {
+      GalaxySSIContactReminderSettingsView(coordinator: coordinator, t: t)
     }
     .fileImporter(
       isPresented: $fileImporterPresented,
@@ -897,6 +933,12 @@ struct ConversationView: View {
           .environmentObject(store)
       }
       .navigationViewStyle(StackNavigationViewStyle())
+    }
+  }
+
+  private func sendContactReminder() {
+    if !coordinator.sendContactReminder(to: contact) {
+      attachmentError = t("galaxyssi.contact_reminder.status.failed", "Could not send")
     }
   }
 

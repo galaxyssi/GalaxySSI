@@ -1,4 +1,3 @@
-import CallKit
 import Foundation
 
 enum GalaxySSIContactReminderOutbox {
@@ -29,7 +28,19 @@ enum GalaxySSIContactReminderOutbox {
 extension MessageCoordinator {
   var contactReminderReceivingEnabled: Bool {
     get { store.defaults.object(forKey: contactReminderReceivingKey) as? Bool ?? true }
-    set { store.defaults.set(newValue, forKey: contactReminderReceivingKey) }
+    set {
+      store.defaults.set(newValue, forKey: contactReminderReceivingKey)
+      if !newValue {
+        contactReminderAlert.stop()
+        contactReminders.filter { !$0.outgoing }.forEach { GalaxySSIContactReminderNotification.remove($0.id) }
+      }
+      objectWillChange.send()
+    }
+  }
+
+  var contactReminderSoundInSilentMode: Bool {
+    get { store.defaults.object(forKey: contactReminderReceivingKey + ".silent-mode-sound") as? Bool ?? true }
+    set { store.defaults.set(newValue, forKey: contactReminderReceivingKey + ".silent-mode-sound") }
   }
 
   private var contactReminderReceivingKey: String {
@@ -84,13 +95,16 @@ extension MessageCoordinator {
     let accepted: GalaxySSIContactReminderStore.Acceptance?
     do {
       accepted = try contactReminderStore.receive(envelope, authenticatedPeer: authenticatedContact.id,
-        enabled: contactReminderReceivingEnabled, quiet: CXCallObserver().calls.contains { !$0.hasEnded }, now: now)
+        enabled: contactReminderReceivingEnabled, quiet: contactReminderAlert.mustBeQuiet, now: now)
     } catch { return false }
     guard let accepted else { return true }
     syncContactReminderHistory(accepted.record, now: now)
     queueContactReminder(accepted.record, contact: authenticatedContact, now: now)
     refreshContactReminderPresentation(now: now)
-    if accepted.shouldAlert { onContactReminderAlert?(accepted.record) }
+    if accepted.shouldAlert {
+      contactReminderAlert.show(accepted.record, language: store.languagePolicy.interfaceLanguage,
+        audibleInSilentMode: contactReminderSoundInSilentMode)
+    }
     return true
   }
 
@@ -122,7 +136,13 @@ extension MessageCoordinator {
   private func refreshContactReminderPresentation(now: Int64) {
     contactReminderExpiryTask?.cancel()
     contactReminderExpiryTask = nil
+    let previous = contactReminders
     contactReminders = (try? contactReminderStore.records(now: now)) ?? []
+    let presentableIDs = Set(contactReminders.filter { !$0.outgoing && !$0.status.terminal && $0.status != .muted }.map(\.id))
+    for record in previous where !record.outgoing && !presentableIDs.contains(record.id) {
+      GalaxySSIContactReminderNotification.remove(record.id)
+    }
+    contactReminderAlert.reconcile(contactReminders)
     guard let next = contactReminders.filter({ !$0.status.terminal }).map(\.expiresAt).min() else { return }
     let interval = max(1, min(next - now, GalaxySSIContactReminderEnvelope.lifetime))
     contactReminderExpiryTask = Task { @MainActor [weak self] in
