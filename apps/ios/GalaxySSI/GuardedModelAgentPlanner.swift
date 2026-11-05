@@ -11,7 +11,7 @@ enum GuardedModelAgentPlanningResult: Equatable {
 }
 
 enum AgentModelDirectResponseCodec {
-  static func parse(_ rawResponse: String) -> String? {
+  static func parse(_ rawResponse: String, envelopeOnly: Bool = false) -> String? {
     let normalized = rawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return nil }
 
@@ -24,17 +24,30 @@ enum AgentModelDirectResponseCodec {
       unwrapped.removeLast(3)
     }
     unwrapped = unwrapped.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard unwrapped.hasPrefix("{") else { return normalized }
+    guard unwrapped.hasPrefix("{") else {
+      return !envelopeOnly && answer(unwrapped) != nil ? answer(normalized) : nil
+    }
     guard let data = unwrapped.data(using: .utf8),
           let object = try? JSONSerialization.jsonObject(with: data),
           let json = object as? [String: Any],
+          Set(json.keys).isSubset(of: ["disposition", "final_response"]),
           let disposition = json["disposition"] as? String,
           disposition.caseInsensitiveCompare("respond") == .orderedSame,
           let response = json["final_response"] as? String else {
       return nil
     }
-    let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
+    return answer(response)
+  }
+
+  static func answer(_ value: String) -> String? {
+    let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, text.utf8.count <= 32_768 else { return nil }
+    let lower = text.lowercased()
+    let arrayObject = lower.hasPrefix("[") && lower.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{")
+    guard !lower.hasPrefix("{"), !arrayObject,
+          !["<tool_call", "<tool_use", "<function_call", "<invoke", "recipient=functions.",
+            "[tool_call", "\"tool_calls\"", "\"actions\":"].contains(where: lower.contains) else { return nil }
+    return text
   }
 }
 
@@ -152,7 +165,7 @@ struct GuardedModelAgentPlanner {
     }
 
     if safeRequest.allowsDirectResponse,
-       let response = AgentModelDirectResponseCodec.parse(raw) {
+       let response = AgentModelDirectResponseCodec.parse(raw) ?? AgentModelPlanParser.answerOnlyAction(raw) {
       return .directResponse(response)
     }
 

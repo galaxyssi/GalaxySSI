@@ -700,6 +700,12 @@ extension GalaxySSIStoreTests {
       AgentCompletionEvidencePolicy.missingEvidence(requirements: nil, history: []),
       ["model-declared completion_requirements (publication and phone_linux)"]
     )
+    XCTAssertTrue(AgentCompletionEvidencePolicy.isAnswerOnly(history: []) { _ in nil })
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: nil, history: [], answerOnly: true).isEmpty)
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: linux, history: [], answerOnly: true).isEmpty)
+    XCTAssertFalse(AgentCompletionEvidencePolicy.isAnswerOnly(history: [runtimeReceipt]) { _ in nil })
+    XCTAssertTrue(AgentCompletionEvidencePolicy.hasUnverifiedOutcome(
+      completed("tool", evidence: #"{"code":"effect_outcome_unknown"}"#)))
     XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(
       requirements: local,
       history: []
