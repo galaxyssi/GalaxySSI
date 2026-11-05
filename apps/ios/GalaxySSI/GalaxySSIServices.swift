@@ -9655,7 +9655,8 @@ final class MessageCoordinator: ObservableObject {
         }
 
       case .completed:
-        var clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+        var deliveryText = clean
         if let current = incoming {
           do {
             if let visual = try richContentMaterializer.prepareVisualReply(clean) {
@@ -9663,7 +9664,7 @@ final class MessageCoordinator: ObservableObject {
                                                richOutputJson: visual.richOutput) != nil else {
                 throw AgentVisualOutputPolicy.DeliveryError.unavailableHTML
               }
-              clean = visual.content.ifBlank(localizedReply("rich_output_visual_saved", fallback: "Visual reply saved"))
+              deliveryText = visual.content.ifBlank(localizedReply("rich_output_visual_saved", fallback: "Visual reply saved"))
             }
           } catch {
             let message = visualDeliveryFailure(error)
@@ -9686,7 +9687,7 @@ final class MessageCoordinator: ObservableObject {
         let final = store.updateMessageContent(
           current.id,
           contactId: destinationId,
-          content: clean,
+          content: deliveryText,
           status: .delivered,
           traceStage: "cloud_reply_received",
           detail: modelDetail
