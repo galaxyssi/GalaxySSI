@@ -464,6 +464,7 @@ struct GalaxySSIHealthRecords {
     let ids = current.ids
     archive.revisions.removeAll { ids.contains($0.id) }
     archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    archive.reportEvidence?.removeAll { ids.contains($0.target.record) }
     if filter == nil { archive.reportReview?.removeAll { $0.reading.metric == metric } }
     if let draft = archive.draft, GalaxySSIHealthMetricDeletion.includes(draft, metric: metric, filter: filter, ids: ids) {
       archive.draft = nil
@@ -489,6 +490,7 @@ struct GalaxySSIHealthRecords {
 
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {
     var archive = try load()
+    guard archive.reportEvidence?.contains(where: { $0.source == input.source }) != true else { throw Failure.duplicate }
     var pending = archive.reportReview ?? []
     let index = pending.firstIndex { $0.source == input.source }
     guard index.map({ pending[$0].version }) == expected else { throw Failure.stale }
@@ -525,6 +527,7 @@ struct GalaxySSIHealthRecords {
       var reading = item.reading
       guard reading.isValid, reading.revision == 0, !reading.deleted, reading.reportSource == item.source,
             !archive.revisions.contains(where: { $0.id == reading.id || $0.reportSource == item.source }),
+            archive.reportEvidence?.contains(where: { $0.source == item.source }) != true,
             !(existing + appended).contains(where: { $0.sameMeasurement(as: reading) }) else { throw Failure.duplicate }
       reading.revision = 1
       appended.append(reading)
@@ -536,7 +539,9 @@ struct GalaxySSIHealthRecords {
   }
 
   func linkReportDuplicates(_ selected: [UUID: GalaxySSIHealthReportReview.Target],
-                            original: GalaxySSIHealthOriginalStore.Original) throws {
+                            original: GalaxySSIHealthOriginalStore.Original, store: GalaxySSIHealthOriginalStore) throws {
+    guard store.owner == owner, store.restoreRecordsFile == isolatedFile, original.kind == .pdf else { throw Failure.invalid }
+    _ = try store.read(original)
     var archive = try load()
     let pending = archive.reportReview ?? []
     let current = archive.current

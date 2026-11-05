@@ -31,6 +31,7 @@ struct GalaxySSIHealthOriginalStore {
     struct Link: Equatable { let record: UUID; let revision: Int }
     let original: Original
     let links: [Link]
+    let secondary: [GalaxySSIHealthReportReview.Evidence]
     var id: UUID { original.id }
   }
 
@@ -304,12 +305,19 @@ struct GalaxySSIHealthOriginalStore {
       else { throw Failure.stale }
     } catch let error as CocoaError where Self.missingFile(error) { throw Failure.stale }
     let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: restoreRecordsFile)
-    let links = try records.load().current.compactMap { reading -> RemovalPreview.Link? in
-      guard let source = reading.reportSource, source.original == original.id, source.sha256 == original.sha256
-      else { return nil }
+    let archive = try records.load()
+    let current = archive.current
+    let live = Set(current.map(\.id))
+    let secondary = (archive.reportEvidence ?? []).filter {
+      $0.source.original == original.id && $0.source.sha256 == original.sha256 && live.contains($0.target.record)
+    }
+    let targets = Set(secondary.map(\.target.record))
+    let links = current.compactMap { reading -> RemovalPreview.Link? in
+      let primary = reading.reportSource.map { $0.original == original.id && $0.sha256 == original.sha256 } == true
+      guard primary || targets.contains(reading.id) else { return nil }
       return .init(record: reading.id, revision: reading.revision)
     }.sorted { $0.record.uuidString < $1.record.uuidString }
-    return RemovalPreview(original: original, links: links)
+    return RemovalPreview(original: original, links: links, secondary: secondary)
   }
 
   @discardableResult

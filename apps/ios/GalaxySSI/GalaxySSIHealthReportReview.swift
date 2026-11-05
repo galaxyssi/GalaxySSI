@@ -18,7 +18,7 @@ enum GalaxySSIHealthReportReview {
     let reading: GalaxySSIHealthReading
   }
 
-  struct Target: Codable, Equatable {
+  struct Target: Codable, Hashable {
     let record: UUID
     let revision: Int
   }
@@ -55,11 +55,15 @@ enum GalaxySSIHealthReportReview {
             seen.insert(reading.id).inserted else { return nil }
       return .init(reading: reading, source: source, secondary: false)
     }
-    let secondary = evidence.compactMap { link -> Linked? in
-      guard belongs(link.source), live.contains(link.target.record),
-            let reading = revisions.last(where: {
-              $0.id == link.target.record && $0.revision == link.target.revision && !$0.deleted
-            }) else { return nil }
+    let scoped = evidence.filter { belongs($0.source) && live.contains($0.target.record) }
+    let targets = Set(scoped.map(\.target))
+    var byRevision: [Target: GalaxySSIHealthReading] = [:]
+    for reading in revisions where !reading.deleted {
+      let target = Target(record: reading.id, revision: reading.revision)
+      if targets.contains(target) { byRevision[target] = reading }
+    }
+    let secondary = scoped.compactMap { link -> Linked? in
+      guard let reading = byRevision[link.target] else { return nil }
       return .init(reading: reading, source: link.source, secondary: true)
     }
     return (primary + secondary).sorted { ($0.source.page, $0.source.region, $0.id) < ($1.source.page, $1.source.region, $1.id) }
@@ -70,6 +74,7 @@ enum GalaxySSIHealthReportReview {
     struct Manifest: Encodable { let version = 1; let links: [Entry] }
     var seen = Set<String>()
     let readings = linked.map(\.reading).filter { seen.insert("\($0.id):\($0.revision)").inserted }
+    guard !readings.isEmpty else { throw GalaxySSIHealthRecords.Failure.invalid }
     let csv = try GalaxySSIHealthMeasurementExport.encode(readings, as: .csv, includeNotes: false)
     let links = linked.map { Entry(target: .init(record: $0.reading.id, revision: $0.reading.revision),
                                   source: $0.source, secondary: $0.secondary) }
@@ -104,6 +109,7 @@ struct GalaxySSIHealthReportEvidenceView: View {
         ForEach(rows.prefix(limit)) { item in
           VStack(alignment: .leading, spacing: 4) {
             Text(item.reading.metric.title(language: language))
+            Text(item.reading.measuredAt, format: .dateTime).foregroundColor(.secondary)
             Text(String(format: t("source_revision", "Page %lld · revision %lld"),
                         Int64(min(item.source.page, Int.max - 1) + 1), Int64(item.reading.revision)))
             Text(item.secondary ? t("secondary", "Additional source") : t("primary", "Primary source"))
@@ -288,7 +294,6 @@ struct GalaxySSIHealthReportBatchView: View {
   @State private var duplicateTargets: [UUID: GalaxySSIHealthReportReview.Target] = [:]
   @State private var linkedSelection: Set<UUID> = []
   @State private var linkConfirmation: [UUID: GalaxySSIHealthReportReview.Target] = [:]
-  @State private var confirmingLinks = false
   @State private var confirming = false
   @State private var failed = false
 
@@ -321,13 +326,15 @@ struct GalaxySSIHealthReportBatchView: View {
           }
         }
         Button(t("save", "Save selected measurements")) {
+          linkConfirmation = [:]
           confirmation = selected
           confirming = true
         }.disabled(selected.isEmpty)
         if !duplicateTargets.isEmpty {
           Button(t("link_selected", "Link selected report items")) {
             linkConfirmation = duplicateTargets.filter { linkedSelection.contains($0.key) }
-            confirmingLinks = !linkConfirmation.isEmpty
+            confirmation = []
+            confirming = !linkConfirmation.isEmpty
           }.disabled(linkedSelection.isEmpty)
         }
         if failed { Text(t("batch_error", "Nothing was saved. Check for duplicate or changed measurements.")).foregroundColor(.secondary) }
@@ -340,15 +347,17 @@ struct GalaxySSIHealthReportBatchView: View {
       if $0 == .active { reload() }
       else {
         items = []; confirmation = []; confirming = false
-        duplicateTargets = [:]; linkedSelection = []; linkConfirmation = [:]; confirmingLinks = false
+        duplicateTargets = [:]; linkedSelection = []; linkConfirmation = [:]
       }
     }
-    .confirmationDialog(t("confirm", "Confirm these measurements?"), isPresented: $confirming, titleVisibility: .visible) {
-      Button(t("save", "Save selected measurements"), action: save)
-    }
-    .confirmationDialog(t("confirm_links", "Add report evidence without adding measurements?"),
-                        isPresented: $confirmingLinks, titleVisibility: .visible) {
-      Button(t("link_selected", "Link selected report items"), action: saveLinks)
+    .confirmationDialog(linkConfirmation.isEmpty ? t("confirm", "Confirm these measurements?") :
+      t("confirm_links", "Add report evidence without adding measurements?"),
+      isPresented: $confirming, titleVisibility: .visible) {
+      if linkConfirmation.isEmpty {
+        Button(t("save", "Save selected measurements"), action: save)
+      } else {
+        Button(t("link_selected", "Link selected report items"), action: saveLinks)
+      }
     }
   }
 
@@ -373,8 +382,7 @@ struct GalaxySSIHealthReportBatchView: View {
     guard scene == .active, !linkConfirmation.isEmpty else { return }
     defer { linkConfirmation = [] }
     do {
-      _ = try store.read(original)
-      try records.linkReportDuplicates(linkConfirmation, original: original)
+      try records.linkReportDuplicates(linkConfirmation, original: original, store: store)
       failed = false
       reload()
     } catch { failed = true; reload() }

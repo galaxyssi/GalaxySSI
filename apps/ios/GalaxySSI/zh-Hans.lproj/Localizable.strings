@@ -109,6 +109,7 @@
 "galaxyssi.health.report_review.export_links" = "导出关联测量和 PDF";
 "galaxyssi.health.report_review.no_links" = "没有关联测量";
 "galaxyssi.health.report_review.evidence" = "关联报告来源";
+"galaxyssi.health.report_review.already_linked" = "此区域已关联到测量。";
 "galaxyssi.health.report_review.plain_export" = "保存未加密的 ZIP？";
 "galaxyssi.health.pdf_text.previous" = "上一页";
 "galaxyssi.health.pdf_text.next" = "下一页";

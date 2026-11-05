@@ -231,6 +231,7 @@ struct GalaxySSIHealthPDFTextView: View {
   @State private var selectedRegion: Int?
   @State private var sourceContext = GalaxySSIHealthOCRSourceContext()
   @State private var reviewedSources: Set<GalaxySSIHealthReportReview.Source> = []
+  @State private var linkedSources: Set<GalaxySSIHealthReportReview.Source> = []
   @State private var focused = false
   @State private var password: String?
   @State private var unlocking = false
@@ -303,13 +304,18 @@ struct GalaxySSIHealthPDFTextView: View {
                  let region = result.regions.first(where: { $0.id == selectedRegion }) {
                 let source = GalaxySSIHealthReportReview.Source(original: selected.id, sha256: selected.sha256,
                   page: page, region: region.id, fromOCR: result.method == .ocr)
-                NavigationLink {
-                  GalaxySSIHealthReportItemEditor(records: reviewRecords, source: source,
-                    excerpt: String(region.text.prefix(500)), sourceContext: sourceContext)
-                } label: {
-                  let reviewed = reviewedSources.contains(source)
-                  Text(GalaxySSIHealthReportReview.text(reviewed ? "edit_item" : "item",
-                    reviewed ? "Edit reviewed measurement" : "Review measurement", language: language))
+                if linkedSources.contains(source) {
+                  Text(GalaxySSIHealthReportReview.text("already_linked", "This region is already linked.", language: language))
+                    .foregroundColor(.secondary)
+                } else {
+                  NavigationLink {
+                    GalaxySSIHealthReportItemEditor(records: reviewRecords, source: source,
+                      excerpt: String(region.text.prefix(500)), sourceContext: sourceContext)
+                  } label: {
+                    let reviewed = reviewedSources.contains(source)
+                    Text(GalaxySSIHealthReportReview.text(reviewed ? "edit_item" : "item",
+                      reviewed ? "Edit reviewed measurement" : "Review measurement", language: language))
+                  }
                 }
               }
             }
@@ -401,11 +407,16 @@ struct GalaxySSIHealthPDFTextView: View {
   }
 
   private func reloadReviewedSources() {
-    guard scene == .active, let reviewRecords, let selected else { reviewedSources = []; return }
-    let items = (try? reviewRecords.load())?.reportReview ?? []
-    reviewedSources = Set(items.lazy.map(\.source).filter {
-      $0.original == selected.id && $0.sha256 == selected.sha256
-    })
+    guard scene == .active, let reviewRecords, let selected, let archive = try? reviewRecords.load() else {
+      reviewedSources = []; linkedSources = []; return
+    }
+    func matches(_ source: GalaxySSIHealthReportReview.Source) -> Bool {
+      source.original == selected.id && source.sha256 == selected.sha256
+    }
+    reviewedSources = Set((archive.reportReview ?? []).lazy.map(\.source).filter(matches))
+    let primary = archive.revisions.compactMap(\.reportSource)
+    let secondary = (archive.reportEvidence ?? []).map(\.source)
+    linkedSources = Set((primary + secondary).filter(matches))
   }
 
   private func recognize(forceOCR: Bool = false) {
@@ -461,6 +472,7 @@ struct GalaxySSIHealthPDFTextView: View {
     selectedRegion = nil
     sourceContext = .init()
     reviewedSources = []
+    linkedSources = []
     focused = false
     status = .idle
   }
