@@ -83,6 +83,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let old = try records.previewHealthKitErase(.weight)
     var updated = try XCTUnwrap(records.load().current.first { $0.id == weight.id })
     updated.notes = "edited after preview"
+    updated.measuredAt = now.addingTimeInterval(60)
     try records.write(updated)
     XCTAssertThrowsError(try records.eraseHealthKitCopies(old))
     let latest = try XCTUnwrap(records.load().current.first { $0.id == weight.id })
@@ -91,6 +92,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let plan = try records.previewHealthKitErase(.weight)
     XCTAssertEqual(plan.count, 1)
     XCTAssertEqual(plan.versions.count, 2)
+    XCTAssertEqual(plan.start, now)
+    XCTAssertEqual(plan.end, updated.measuredAt)
     XCTAssertEqual(try records.eraseHealthKitCopies(plan), 1)
     let archive = try records.load()
     XCTAssertFalse(archive.derivesOverview == true)

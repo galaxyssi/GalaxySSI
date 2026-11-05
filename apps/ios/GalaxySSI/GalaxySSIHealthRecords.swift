@@ -272,8 +272,7 @@ struct GalaxySSIHealthRecords {
     guard !ids.isEmpty,
           archive.revisions.allSatisfy({ !ids.contains($0.id) || GalaxySSIHealthKitCopies.includes($0, scope: scope) })
     else { throw Failure.stale }
-    var seen = Set<UUID>()
-    let dates = versions.reversed().filter { seen.insert($0.id).inserted }.map(\.measuredAt)
+    let dates = versions.map(\.measuredAt)
     guard let start = dates.min(), let end = dates.max() else { throw Failure.stale }
     let draft = archive.draft.flatMap { draft in
       draft.existing.map { ids.contains($0.id) } == true ? draft : nil
