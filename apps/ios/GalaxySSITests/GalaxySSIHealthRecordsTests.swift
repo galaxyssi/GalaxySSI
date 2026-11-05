@@ -880,7 +880,15 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
     try originals.store(pdf, name: "fixture.pdf")
     let manifest = try XCTUnwrap(originals.list().originals.first)
-    try files.stageRestore([(manifest, pdf)], receipt: UUID())
+    let abandonedReceipt = UUID()
+    try files.withRestoreLease { lease in
+      try files.stageRestore([(manifest, pdf)], receipt: abandonedReceipt, lease: lease)
+      XCTAssertThrowsError(try files.list()) { error in
+        guard case GalaxySSIHealthOriginalStore.Failure.restoreBusy = error else { return XCTFail("Expected active restore lease") }
+      }
+      let staged = target.appendingPathComponent("restore-staging").appendingPathComponent(abandonedReceipt.uuidString)
+      XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path))
+    }
     XCTAssertTrue(try files.list().originals.isEmpty)
     let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
     let (payload, _) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
@@ -901,10 +909,49 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.previewRestore(input, records: foreign, originals: files))
     try files.remove(files.previewRemoval(manifest))
     let pendingReceipt = UUID()
-    try files.stageRestore([(manifest, pdf)], receipt: pendingReceipt)
-    try destination.commitRestore(destination.load(), receipt: pendingReceipt)
+    try files.withRestoreLease { lease in
+      try files.stageRestore([(manifest, pdf)], receipt: pendingReceipt, lease: lease)
+      try destination.commitRestore(destination.load(), receipt: pendingReceipt, notify: false)
+    }
     XCTAssertEqual(try files.list().originals, [manifest])
     XCTAssertEqual(try files.read(manifest), pdf)
+  }
+
+  @MainActor
+  func testCommittedHealthRestoreAuthenticatesStagedOriginalBeforePublishing() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records")
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets,
+                                             fixtureDirectory: root, restoreRecordsFile: file)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "fixture.pdf")
+    let original = try XCTUnwrap(store.list().originals.first)
+    try store.remove(store.previewRemoval(original))
+    let receipt = UUID()
+    try store.withRestoreLease { lease in
+      try store.stageRestore([(original, pdf)], receipt: receipt, lease: lease)
+      try records.commitRestore(records.load(), receipt: receipt, notify: false)
+    }
+    let folder = root.appendingPathComponent("restore-staging").appendingPathComponent(receipt.uuidString)
+    let staged = folder.appendingPathComponent(original.id.uuidString)
+    let valid = try Data(contentsOf: staged)
+    var corrupted = valid
+    corrupted[corrupted.count - 1] ^= 1
+    try corrupted.write(to: staged)
+    XCTAssertThrowsError(try store.list())
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(original.id.uuidString).path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path))
+    XCTAssertTrue(try records.load().restoreReceipts?.contains(receipt) == true)
+
+    try valid.write(to: staged)
+    XCTAssertEqual(try store.list().originals, [original])
+    XCTAssertEqual(try store.read(original), pdf)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+    XCTAssertEqual(try store.list().originals, [original])
   }
 
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
