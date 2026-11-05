@@ -182,6 +182,54 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testAssistantWeeklyReportKeepsHistoricalScopeAndRechecksSelectedComparisonRows() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 7)))
+    let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 7, to: start))
+    let earlier = try XCTUnwrap(calendar.date(byAdding: .day, value: -7, to: start))
+    let recentWeight = GalaxySSIHealthReading(metric: .weight, measuredAt: start, value: 65)
+    let previousWeight = GalaxySSIHealthReading(metric: .weight, measuredAt: earlier, value: 64)
+    let heart = GalaxySSIHealthReading(metric: .heartRate, measuredAt: start, value: 70)
+    for row in [recentWeight, previousWeight, heart] { try records.write(row) }
+    try records.setOverviewPermission(true)
+    try records.setWeeklyReportAllowed(true)
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: start, end: end), metrics: [.weight, .heartRate])
+    let current = try records.load().current
+    let link = GalaxySSIHealthAnalysis.ReportScope(scope: scope, calendar: calendar, compare: true, current: current)
+    XCTAssertEqual(link.comparison, DateInterval(start: earlier, end: start))
+    XCTAssertEqual(link.calendar.timeZone, calendar.timeZone)
+    XCTAssertEqual(link.interval.duration, 7 * 86_400 - 3_600)
+    let weight = try XCTUnwrap(GalaxySSIWeeklyHealthReport(current: current, assistantScope: link, selected: [.weight]))
+    XCTAssertNil(weight.sleepEvidence)
+    XCTAssertEqual(weight.readings.map(\.id), [recentWeight.id])
+    XCTAssertEqual(weight.comparisonReadings.map(\.id), [previousWeight.id])
+    XCTAssertNil(GalaxySSIWeeklyHealthReport(current: current, assistantScope: link, selected: [.glucose]))
+
+    var updatedHeart = try XCTUnwrap(current.first { $0.id == heart.id })
+    updatedHeart.value = 71
+    try records.write(updatedHeart)
+    XCTAssertFalse(link.isCurrent(try records.load().current, selected: scope.metrics))
+    try records.prepareWeeklyExport(weight, includeRows: false)
+
+    var updatedComparison = try XCTUnwrap(current.first { $0.id == previousWeight.id })
+    updatedComparison.value = 63
+    try records.write(updatedComparison)
+    XCTAssertThrowsError(try records.prepareWeeklyExport(weight, includeRows: true))
+    let latest = try records.load().current
+    let refreshed = link.refreshed(latest)
+    let report = try XCTUnwrap(GalaxySSIWeeklyHealthReport(current: latest, assistantScope: refreshed, selected: [.weight]))
+    XCTAssertEqual(report.comparisonReadings.first?.revision, 2)
+    XCTAssertEqual(report.interval, scope.interval)
+    try records.setOverviewPermission(false)
+    XCTAssertThrowsError(try records.prepareWeeklyExport(report, includeRows: true))
+    XCTAssertEqual(try records.load().weeklyExportRequests?.count, 1)
+  }
+
+  @MainActor
   func testSleepEvidencePinsBothCohortsAcrossDSTAndProtectsWeeklyExport() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
@@ -203,6 +251,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(baseline.count, 14)
     XCTAssertEqual(recent.count, 7)
     let report = try XCTUnwrap(GalaxySSIWeeklyHealthReport(current: current, sleepEvidence: initial))
+    XCTAssertNil(report.assistantScope)
     XCTAssertEqual(report.metrics, [.sleepDuration])
     XCTAssertEqual(report.readings, recent)
     XCTAssertEqual(report.interval.duration, 7 * 86_400 - 3_600)

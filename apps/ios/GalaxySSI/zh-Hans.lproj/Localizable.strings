@@ -460,6 +460,8 @@
 "galaxyssi.health.assistant.step_review" = "查看来源记录";
 "galaxyssi.health.assistant.step_collect" = "查看缺少记录的时段";
 "galaxyssi.health.assistant.step_compare" = "比较另一时段";
+"galaxyssi.health.assistant.compare_previous" = "在周报中比较上一时段";
+"galaxyssi.health.assistant.open_weekly_report" = "打开此范围的周报";
 "galaxyssi.health.bluetooth_history.title" = "已保存的蓝牙设备";
 "galaxyssi.health.bluetooth_history.failed" = "无法读取已保存的蓝牙历史。";
 "galaxyssi.health.bluetooth_history.retry" = "重新加载";
@@ -723,6 +725,14 @@
 "galaxyssi.health.weekly.export" = "导出 PDF";
 "galaxyssi.health.weekly.failed" = "周报不可用或数据已更改，请在导出前检查更新后的记录。";
 "galaxyssi.health.weekly.reload" = "重新加载周报";
+"galaxyssi.health.weekly.assistant_permission" = "查看此关联周报需要本机测量摘要权限。";
+"galaxyssi.health.weekly.assistant_stale" = "关联分析已变化，请核对同一范围的更新记录后再导出。";
+"galaxyssi.health.weekly.assistant_refresh" = "核对更新后的范围";
+"galaxyssi.health.weekly.assistant_comparison" = "上一时段";
+"galaxyssi.health.weekly.assistant_contributors" = "关联记录";
+"galaxyssi.health.weekly.assistant_revision" = "修订版本 %lld";
+"galaxyssi.health.weekly.assistant_close" = "关闭";
+"galaxyssi.health.weekly.assistant_more" = "显示更多";
 "galaxyssi.health.weekly.linked_fixed_stale" = "保存的睡眠证据已与关联记录不一致。";
 "galaxyssi.health.weekly.sleep_baseline_coverage" = "基线（%@）：覆盖 %lld / 14 天";
 "galaxyssi.health.weekly.sleep_baseline" = "基线日均：%@ 分钟";
