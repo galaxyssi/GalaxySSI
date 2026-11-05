@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 enum VoiceMicrosoftEdgeTTSWire {
@@ -8,12 +7,9 @@ enum VoiceMicrosoftEdgeTTSWire {
   static let origin = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"
   static let chromiumFullVersion = "143.0.3650.75"
   static let chromiumMajorVersion = "143"
-  static let secMSGECVersion = "1-\(chromiumFullVersion)"
+  static let secMSGECVersion = "2-\(chromiumFullVersion)"
   static let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/\(chromiumMajorVersion).0.0.0 Safari/537.36 Edg/\(chromiumMajorVersion).0.0.0"
   static let defaultOutputFormat = "audio-24khz-48kbitrate-mono-mp3"
-  private static let windowsEpochSeconds: Int64 = 11_644_473_600
-  private static let gecWindowSeconds: Int64 = 300
-  private static let filetimeTicksPerSecond: Int64 = 10_000_000
 
   static func request(
     text: String,
@@ -78,10 +74,7 @@ enum VoiceMicrosoftEdgeTTSWire {
   }
 
   static func secMSGEC(epochSeconds: Int64) -> String {
-    let roundedSeconds = (epochSeconds / gecWindowSeconds) * gecWindowSeconds
-    let ticks = (roundedSeconds + windowsEpochSeconds) * filetimeTicksPerSecond
-    let digest = SHA256.hash(data: Data("\(ticks)\(trustedClientToken)".utf8))
-    return digest.map { String(format: "%02X", $0) }.joined()
+    VoiceMicrosoftEdgeTTSChecksum.token(epochSeconds: epochSeconds, clientToken: trustedClientToken)
   }
 
   static func speechConfigMessage(

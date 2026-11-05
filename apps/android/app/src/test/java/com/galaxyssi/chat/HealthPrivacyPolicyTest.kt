@@ -26,6 +26,15 @@ class HealthPrivacyPolicyTest {
         val p = HealthPrivacyPolicy(metrics = false, profile = false, online = true, images = true, version = "revision")
         assertEquals(p, HealthPrivacyPolicy.from(p.json()))
     }
+    @Test fun localRetentionDefaultsOnForExistingPoliciesAndIsIndependentOfOnlineImages() {
+        val current = HealthPrivacyPolicy(online = true, images = true, version = "existing")
+        val legacy = current.json().also { it.remove("retain_import_originals") }
+        assertEquals(current, HealthPrivacyPolicy.from(legacy))
+        val disabled = current.change(HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS, false)
+        assertTrue(disabled.online && disabled.images)
+        assertFalse(disabled.retainImportOriginals)
+        assertEquals(disabled, HealthPrivacyPolicy.from(disabled.json()))
+    }
     @Test fun trendScopeUsesTheRequestedTimeZoneAndSourceWithoutFileIdentity() {
         val day = LocalDate.of(2026, 3, 8)
         val zone = ZoneId.of("America/New_York")

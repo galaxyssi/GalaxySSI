@@ -64,7 +64,10 @@
     <string name="health_latest_revisions">最新修订</string>
     <string name="health_older_revisions">较早修订</string>
     <string name="health_delete_title">删除这次测量？</string>
-    <string name="health_delete_description">从当前记录中移除本次测量，本机修订历史仍保留用于核对。</string>
+    <string name="health_delete_description">从当前记录中移除本次测量，保留本机修订历史。离开详情前可以撤销。</string>
+    <string name="health_record_deleted">本次测量已从当前记录中移除。</string>
+    <string name="health_undo_record_delete">撤销删除</string>
+    <string name="health_undo_record_unavailable">无法恢复这次测量：可能已存在相同记录，或原记录已不可恢复。</string>
     <string name="health_duplicate">相同数值、时间和来源的记录已存在，没有重复保存。</string>
     <string name="health_view_existing">查看已有记录</string>
     <string name="health_conflict">记录已修改或删除，请重新打开后再保存。</string>

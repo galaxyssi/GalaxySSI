@@ -67,6 +67,13 @@ final class GalaxySSIMqttBrokerPool {
     }
   }
 
+  func wakeForTraffic() {
+    queue.async {
+      guard self.running else { return }
+      self.paths.values.forEach { $0.wakeForTraffic() }
+    }
+  }
+
   // The route session chooses a broker and generation; the pool never silently reroutes it.
   func publish(_ publication: MqttPathPublication, brokerID: String) async -> MqttPublishResult {
     let selected: (MqttBrokerPathTransport, MqttPathPublication)? = await withCheckedContinuation { continuation in

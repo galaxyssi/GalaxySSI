@@ -117,7 +117,7 @@ final class MqttPeerRoutesTests: XCTestCase {
     XCTAssertEqual(result.submitted, 1)
     XCTAssertTrue(result.failures.isEmpty)
     let saved = try XCTUnwrap(f.outbox.entry(identity: f.entry.identity, messageID: "message"))
-    XCTAssertEqual(saved.message.status, "published")
+    XCTAssertEqual(saved.message.status, "publishing")
     XCTAssertEqual(saved.message.attempts, 1)
     XCTAssertEqual(saved.wireHash, f.entry.wireHash)
     XCTAssertTrue(try f.outbox.completions.pending().isEmpty)

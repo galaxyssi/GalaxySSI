@@ -7,6 +7,8 @@ final class AgentDirectVisionPolicyTests: XCTestCase {
 
     XCTAssertTrue(instruction.contains("native visual model input"))
     XCTAssertTrue(instruction.contains("inspect the image twice"))
+    XCTAssertTrue(instruction.contains("reading orientation"))
+    XCTAssertTrue(instruction.contains("connected handwriting, equations, table rows"))
     XCTAssertTrue(instruction.contains("visible shape, logos, and readable text"))
     XCTAssertTrue(instruction.contains("unrelated prior images and memories"))
     XCTAssertFalse(instruction.localizedCaseInsensitiveContains("OCR"))
@@ -14,6 +16,14 @@ final class AgentDirectVisionPolicyTests: XCTestCase {
 
   func testNonImageAttachmentDoesNotAddVisionInstructions() {
     XCTAssertTrue(AgentDirectVisionPolicy.instructionForMimeTypes(["application/pdf"]).isEmpty)
+  }
+
+  func testAppendingVisionGuidanceIsIdempotentAndPreservesCustomPrompt() {
+    let prompt = "Custom instructions"
+    XCTAssertEqual(AgentDirectVisionPolicy.appendingInstruction(to: prompt, mimeTypes: []), prompt)
+    let enriched = AgentDirectVisionPolicy.appendingInstruction(to: prompt, mimeTypes: ["image/png"])
+    XCTAssertTrue(enriched.hasPrefix(prompt + "\n\n"))
+    XCTAssertEqual(AgentDirectVisionPolicy.appendingInstruction(to: enriched, mimeTypes: ["image/png"]), enriched)
   }
 
   func testRetiredCodexImageUsesDesktopDefaultAndPreservesEffort() {

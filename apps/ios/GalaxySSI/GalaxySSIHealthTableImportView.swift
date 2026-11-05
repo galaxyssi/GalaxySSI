@@ -6,12 +6,17 @@ struct GalaxySSIHealthTableImportView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let records: GalaxySSIHealthRecords
+  var sharedRetentionChoice: Binding<GalaxySSIHealthImportRetentionChoice>?
+  @State private var localRetentionChoice = GalaxySSIHealthImportRetentionChoice.useDefault
+  @State private var retentionDefault: Bool?
+  @State private var fileRetention: Bool?
   @State private var choosing = false
   @State private var input: Input?
   @State private var mapping = GalaxySSIHealthTableImport.Mapping()
   @State private var rows: [GalaxySSIHealthTableImport.Row]?
   @State private var batches: [GalaxySSIHealthTableImport.Batch] = []
   @State private var owned = false
+  @State private var linkedRows: Set<Int> = []
   @State private var limit = 30
   @State private var undo: GalaxySSIHealthTableImport.Batch?
   @State private var message: String?
@@ -28,6 +33,7 @@ struct GalaxySSIHealthTableImportView: View {
     let data: Data
     let json: Bool
     let table: GalaxySSIHealthTableImport.Table
+    let retainOriginal: Bool
     var worksheet: GalaxySSIHealthXLSX.Selection?
   }
 
@@ -35,12 +41,18 @@ struct GalaxySSIHealthTableImportView: View {
     let name: String
     let data: Data
     let contents: GalaxySSIHealthXLSX
+    let retainOriginal: Bool
+  }
+
+  private var retentionChoice: Binding<GalaxySSIHealthImportRetentionChoice> {
+    sharedRetentionChoice ?? $localRetentionChoice
   }
 
   var body: some View {
     List {
       if scene == .active {
-        Button { choosing = true } label: {
+        GalaxySSIHealthImportRetentionPicker(currentDefault: retentionDefault, choice: retentionChoice)
+        Button(action: chooseFile) {
           Label(t("choose_formats", "Choose CSV, JSON or XLSX"), systemImage: "folder")
         }
         if let workbook { workbookSection(workbook) }
@@ -56,6 +68,9 @@ struct GalaxySSIHealthTableImportView: View {
                 Text(batch.name)
                 Text(batch.at, style: .date).foregroundColor(.secondary)
                 Text(String(format: t("saved", "%lld measurements saved"), Int64(batch.inserted)))
+                if let linked = batch.linked {
+                  Text(String(format: t("linked", "%lld source links"), Int64(linked))).foregroundColor(.secondary)
+                }
                 Button(t("open_source", "View table original")) { original = OriginalSelection(id: batch.id) }
                 if let count = batch.undone {
                   Text(String(format: t("undone", "%lld measurements removed"), Int64(count)))
@@ -75,14 +90,23 @@ struct GalaxySSIHealthTableImportView: View {
     .onAppear(perform: reload)
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
-      else if phase == .background { clear(); batches = []; undo = nil; original = nil; message = nil }
+      else if phase == .background {
+        choosing = false; fileRetention = nil
+        clear(); batches = []; undo = nil; original = nil; message = nil
+      }
     }
     .onDisappear { clear(); batches = []; undo = nil; message = nil }
-    .onChange(of: mapping) { _ in rows = nil; owned = false }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
+      if scene == .active, notification.object as? String == records.owner {
+        retentionDefault = (try? records.load())?.keepsNewImportOriginals
+      }
+    }
+    .onChange(of: mapping) { _ in rows = nil; owned = false; linkedRows = [] }
     .fileImporter(isPresented: $choosing, allowedContentTypes: [.commaSeparatedText, .json,
       UTType(filenameExtension: "xlsx") ?? .spreadsheet]) { result in
-      guard scene != .background else { return }
-      do { try open(result.get()) }
+      defer { fileRetention = nil }
+      guard scene != .background, let retainOriginal = fileRetention else { return }
+      do { try open(result.get(), retainOriginal: retainOriginal) }
       catch { clear(); message = t("workbook_failed", "Could not open this measurement table.") }
     }
     .alert(item: $undo) { batch in
@@ -122,6 +146,9 @@ struct GalaxySSIHealthTableImportView: View {
 
   private func mappingSection(_ input: Input) -> some View {
     Section(input.name) {
+      Text(input.retainOriginal ? t("retention_keep", "Original will be kept")
+                                : t("retention_review", "Original will not be kept"))
+        .foregroundColor(.secondary)
       Picker(t("metric", "Measurement"), selection: $mapping.metric) {
         ForEach(GalaxySSIHealthMetric.allCases) { Text(metricTitle($0)).tag($0) }
       }
@@ -205,11 +232,18 @@ struct GalaxySSIHealthTableImportView: View {
             Text(row.rawValue).lineLimit(2).foregroundColor(.secondary)
           }
           Text(t("source_time", "Source time") + ": " + row.rawDate).lineLimit(2).foregroundColor(.secondary)
+          if row.duplicateTarget != nil {
+            Toggle(t("link_duplicate", "Link this row to the existing measurement"), isOn: Binding(
+              get: { linkedRows.contains(row.id) }, set: {
+                owned = false
+                if $0 { linkedRows.insert(row.id) } else { linkedRows.remove(row.id) }
+              }))
+          }
         }
       }
       if rows.count > limit { Button(t("more", "Show more")) { limit += 30 } }
       Toggle(t("owned", "These measurements are mine and I checked values, units and times"), isOn: $owned)
-      Button(t("save", "Save valid rows"), action: save).disabled(!owned || ready == 0)
+      Button(t("save", "Save valid rows"), action: save).disabled(!owned || (ready == 0 && linkedRows.isEmpty))
     }
   }
 
@@ -230,7 +264,17 @@ struct GalaxySSIHealthTableImportView: View {
     }
   }
 
-  private func open(_ url: URL) throws {
+  private func chooseFile() {
+    guard scene == .active else { return }
+    retentionDefault = (try? records.load())?.keepsNewImportOriginals
+    let choice = retentionChoice
+    guard let retain = choice.wrappedValue.resolve(default: retentionDefault) else { return }
+    fileRetention = retain
+    choice.wrappedValue = .useDefault
+    choosing = true
+  }
+
+  private func open(_ url: URL, retainOriginal: Bool) throws {
     clear()
     message = nil
     let scoped = url.startAccessingSecurityScopedResource()
@@ -240,13 +284,13 @@ struct GalaxySSIHealthTableImportView: View {
     let data = try file.read(upToCount: GalaxySSIHealthTableImport.maximumBytes + 1) ?? Data()
     if url.pathExtension.lowercased() == "xlsx" {
       let contents = try GalaxySSIHealthXLSX(data)
-      workbook = WorkbookInput(name: url.lastPathComponent, data: data, contents: contents)
+      workbook = WorkbookInput(name: url.lastPathComponent, data: data, contents: contents, retainOriginal: retainOriginal)
       if let first = contents.sheets.first { selectSheet(first.id) }
       return
     }
     let json = url.pathExtension.lowercased() == "json"
     input = Input(name: url.lastPathComponent, data: data, json: json,
-                  table: try GalaxySSIHealthTableImport.parse(data, json: json))
+                  table: try GalaxySSIHealthTableImport.parse(data, json: json), retainOriginal: retainOriginal)
   }
 
   private func selectSheet(_ id: String) {
@@ -272,7 +316,8 @@ struct GalaxySSIHealthTableImportView: View {
     mapping = .init()
     do {
       input = Input(name: workbook.name, data: workbook.data, json: false,
-                    table: try workbook.contents.table(selection), worksheet: selection)
+                    table: try workbook.contents.table(selection), retainOriginal: workbook.retainOriginal,
+                    worksheet: selection)
       message = nil
     } catch {
       input = nil
@@ -283,6 +328,7 @@ struct GalaxySSIHealthTableImportView: View {
   private func prepare() {
     guard scene == .active, let input else { return }
     rows = nil
+    linkedRows = []
     owned = false
     message = nil
     limit = 30
@@ -293,11 +339,19 @@ struct GalaxySSIHealthTableImportView: View {
   private func save() {
     guard scene == .active, owned, let input, let rows else { return }
     do {
+      let targets = Dictionary(rows.compactMap { row in
+        linkedRows.contains(row.id) ? row.duplicateTarget.map { (row.id, $0) } : nil
+      }, uniquingKeysWith: { first, _ in first })
       let count = try records.importTable(input.data, name: input.name, json: input.json,
-                                          mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet)
+                                          mapping: mapping, expected: rows.map(\.status), worksheet: input.worksheet,
+                                          retainOriginal: input.retainOriginal,
+                                          linkDuplicates: targets)
       clear()
       reload()
       message = String(format: t("saved", "%lld measurements saved"), Int64(count))
+      if !targets.isEmpty {
+        message = (message ?? "") + " · " + String(format: t("linked", "%lld source links"), Int64(targets.count))
+      }
     } catch {
       prepare()
       message = t("save_failed", "Could not save this batch. Review the rows again.")
@@ -317,13 +371,21 @@ struct GalaxySSIHealthTableImportView: View {
 
   private func reload() {
     guard scene == .active else { return }
-    do { batches = try records.load().tableBatches ?? [] }
-    catch { batches = []; message = t("read_failed", "Could not open this CSV or JSON table.") }
+    do {
+      let archive = try records.load()
+      batches = archive.tableBatches ?? []
+      retentionDefault = archive.keepsNewImportOriginals
+    } catch {
+      batches = []
+      retentionDefault = nil
+      message = t("read_failed", "Could not open this CSV or JSON table.")
+    }
   }
 
   private func clear() {
     input = nil; rows = nil; owned = false; mapping = .init()
     workbook = nil; sheetID = ""; header = 0; headerChoices = []
+    linkedRows = []
   }
   private func statusTitle(_ status: GalaxySSIHealthTableImport.Status) -> String {
     switch status {

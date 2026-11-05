@@ -102,9 +102,12 @@ final class MqttBrokerPoolTests: XCTestCase {
 
   func testLostSUBACKExpiresOnlyTimedOutRequests() {
     let pending: [UInt16: Int64] = [1: 1_000, 2: 12_000, 3: 20_000]
-    XCTAssertEqual(MqttBrokerPathPolicy.expiredSubscriptionIDs(pending, now: 15_999), [])
-    XCTAssertEqual(MqttBrokerPathPolicy.expiredSubscriptionIDs(pending, now: 16_000), [1])
-    XCTAssertEqual(MqttBrokerPathPolicy.expiredSubscriptionIDs(pending, now: 27_000), [1, 2])
+    XCTAssertEqual(MqttBrokerPathPolicy.expiredSubscriptionIDs(pending, now: 20_999), [])
+    XCTAssertEqual(MqttBrokerPathPolicy.expiredSubscriptionIDs(pending, now: 21_000), [1])
+    XCTAssertEqual(MqttBrokerPathPolicy.expiredSubscriptionIDs(pending, now: 32_000), [1, 2])
+    XCTAssertFalse(MqttBrokerPathPolicy.handshakeExpired(startedAt: nil, now: 30_000))
+    XCTAssertFalse(MqttBrokerPathPolicy.handshakeExpired(startedAt: 1_000, now: 20_999))
+    XCTAssertTrue(MqttBrokerPathPolicy.handshakeExpired(startedAt: 1_000, now: 21_000))
   }
 
   func testPathAuthorizationBindsGenerationSubscriptionsAndKey() {

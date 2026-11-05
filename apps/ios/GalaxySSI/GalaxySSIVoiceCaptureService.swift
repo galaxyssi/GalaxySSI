@@ -53,6 +53,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var currentRecognitionModelProfileId = ""
   private var currentRecognitionProvider = iosSpeechProviderId
   private var currentIOSSpeechTranscript = ""
+  private var currentIOSSpeechHasFinal = false
   private var currentRuntimeChannel = VoiceRuntimeChannel.androidSystemASR
   private var pcmTapPipeline: VoicePcmTapPipeline?
   private var pcmTapSpeechStarted = false
@@ -64,7 +65,20 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var onlineRealtimeHasTranscript = false
   private var onlineRealtimeProvider = "galaxyssi_realtime"
   private var onlineRealtimeModelProfileId = ""
-  private var onlineRealtimeSession: VoiceOnlineRealtimeASRSession?
+  private var onlineRealtimeSession: VoiceOnlineRealtimeASRSession? {
+    didSet {
+      if onlineRealtimeSession == nil {
+        onlineRealtimeCaptureID = nil
+        replaceOnlinePCMInput(nil)
+        onlinePCMPump?.cancel()
+        onlinePCMPump = nil
+      }
+    }
+  }
+  private let onlinePCMInputLock = NSLock()
+  private var onlinePCMInput: AsyncStream<AudioFrame>.Continuation?
+  private var onlinePCMPump: Task<Void, Never>?
+  private var onlineRealtimeCaptureID: UUID?
   private var onlineRealtimeTurnCoordinator: VoiceRealtimeASRTurnCoordinator?
   private var preparedOnlineRealtimeConfig: VoiceOnlineRealtimeASRConfig?
   private var onlineRealtimeTimeoutTask: Task<Void, Never>?
@@ -272,6 +286,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     unstableTranscript = ""
     replaceCompletedPCMSnapshot(with: nil)
     currentIOSSpeechTranscript = ""
+    currentIOSSpeechHasFinal = false
     correctionReviewsBySession.removeAll()
     updateAudioLevel(0)
     currentRecognitionModelProfileId = useLocalWhisper ? settings?.asrModelId ?? "" : localeIdentifier
@@ -311,15 +326,19 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let input = audioEngine.inputNode
     let format = input.outputFormat(forBus: 0)
     inputSampleRateHz = max(1, Int(format.sampleRate.rounded()))
+      let neuralVad = coordinatorConfig.map { $0.source != "ios_voice_wake" } == true
+        ? VoiceNeuralSpeechVad(sourceRateHz: inputSampleRateHz) : nil
     let pcmCaptureEnabled = coordinatorConfig != nil &&
-      (VoiceFeatureFlags.isPcmCaptureEnabled() || useLocalWhisper || useOnlineRealtime || useRemoteWhisper)
+        (neuralVad != nil || VoiceFeatureFlags.isPcmCaptureEnabled() || useLocalWhisper || useOnlineRealtime || useRemoteWhisper)
     if pcmCaptureEnabled {
       pcmTapPipeline = VoicePcmTapPipeline(
         config: VoiceAudioSessionConfig(
           capture: PcmCaptureConfig(sampleRateHz: max(1, Int(format.sampleRate.rounded()))),
-          endpoint: AdaptiveEndpointConfig(),
+            endpoint: coordinatorConfig?.source.localizedCaseInsensitiveContains("wake") == true
+              ? .continuous : AdaptiveEndpointConfig(),
           autoEndpoint: coordinatorConfig?.source.localizedCaseInsensitiveContains("wake") == true
-        )
+          ),
+          vad: neuralVad.map { $0 as VoiceActivityDetector } ?? AdaptiveSpeechVad()
       )
     } else {
       pcmTapPipeline = nil
@@ -339,10 +358,23 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         requestServerDataDeletion: settings.onlineAsrRequestServerDeletion
       )
       onlineRealtimeTurnCoordinator = VoiceRealtimeASRTurnCoordinator(transcriptID: config.transcriptID)
+      let captureID = UUID()
+      onlineRealtimeCaptureID = captureID
       let session = onlineRealtimePreconnector.acquire(config: config) { [weak self] event in
-        Task { @MainActor in self?.handleOnlineRealtimeEvent(event) }
+        Task { @MainActor in
+          guard let self, self.onlineRealtimeCaptureID == captureID else { return }
+          self.handleOnlineRealtimeEvent(event)
+        }
       }
       onlineRealtimeSession = session
+      let rate = inputSampleRateHz
+      let stream = AsyncStream<AudioFrame>(bufferingPolicy: .bufferingOldest(64)) { replaceOnlinePCMInput($0) }
+      onlinePCMPump = Task.detached {
+        for await frame in stream {
+          guard !Task.isCancelled else { return }
+          await session.push(frame: frame, sourceSampleRateHz: rate)
+        }
+      }
       preparedOnlineRealtimeConfig = nil
       Task { await session.start() }
     } else {
@@ -424,10 +456,12 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     guard let recognizer = recognizer, let request = request else { return }
     task = recognizer.recognitionTask(with: request) { [weak self] result, error in
       DispatchQueue.main.async {
-        guard let self = self else { return }
+        guard let self = self, self.request === request else { return }
+        if result?.isFinal == true, self.rejectNoiseOnlyCapture() { return }
         if let result = result {
           let text = result.bestTranscription.formattedString
           self.currentIOSSpeechTranscript = text
+          self.currentIOSSpeechHasFinal = result.isFinal
           if !self.liveWhisperActive && !self.onlineRealtimeHasTranscript {
             self.transcript = text
           }
@@ -546,6 +580,11 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   func stopForHoldToTalk(completion: @escaping (String) -> Void) {
     guard isRecording else {
       completion(currentIOSSpeechTranscript.ifBlank(transcript))
+      return
+    }
+    if pcmTapPipeline?.shouldRejectNoiseOnly == true {
+      holdToTalkCompletion = completion
+      _ = rejectNoiseOnlyCapture()
       return
     }
     if liveWhisperActive || onlineRealtimeActive || onlineRealtimeFinalizing || remoteWhisperActive {
@@ -688,6 +727,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     if !preservingHoldToTalkCompletion {
       holdToTalkCompletion = nil
     }
+    if isRecording, rejectNoiseOnlyCapture() { return }
     if isRecording {
       replaceCompletedPCMSnapshot(with: pcmTapPipeline?.snapshot())
     }
@@ -783,13 +823,19 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     audioEngine.inputNode.removeTap(onBus: 0)
     releaseCommunicationCapture()
     request?.endAudio()
+    let expectedFrameCount = pcmTapPipeline?.capturedFrameCount
     onlineRealtimeTurnCoordinator?.onPcmBufferIntegrity(complete: pcmTapPipeline != nil)
     pcmTapPipeline = nil
     pcmTapSpeechStarted = false
     pcmTapSpeechEnded = false
     pcmTapEndpointRequested = false
     if let onlineRealtimeSession {
-      Task { await onlineRealtimeSession.finishInput() }
+      let pump = onlinePCMPump
+      replaceOnlinePCMInput(nil)
+      Task {
+        await pump?.value
+        await onlineRealtimeSession.finishInput(expectedFrameCount: expectedFrameCount)
+      }
     }
     onlineRealtimeTimeoutTask?.cancel()
     onlineRealtimeTimeoutTask = Task { @MainActor [weak self] in
@@ -831,6 +877,9 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         .onlineRealtimeASR,
         reason: failure.message.ifBlank(failure.code)
       )
+      if failure.code == "online_input_incomplete", onlineRealtimeActive {
+        beginOnlineRealtimeFinalization()
+      }
     }
     guard onlineRealtimeActive || onlineRealtimeFinalizing else { return }
     guard let turnCoordinator = onlineRealtimeTurnCoordinator else { return }
@@ -870,6 +919,16 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       transcript = hypothesis.text.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(transcript)
     case .requestLocalFallback(let reasonCode):
       if onlineRealtimeFinalizing {
+        if reasonCode == "online_input_incomplete", !currentIOSSpeechHasFinal {
+          onlineRealtimeTimeoutTask?.cancel()
+          onlineRealtimeTimeoutTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 900_000_000) } catch { return }
+            guard let self else { return }
+            self.completeOnlineRealtimeFinalization(text: "", provider: iosSpeechProviderId,
+              modelProfileID: self.currentRecognitionModelProfileId, succeeded: false, failureReason: reasonCode)
+          }
+          return
+        }
         completeOnlineRealtimeFinalization(
           text: "",
           provider: iosSpeechProviderId,
@@ -912,8 +971,13 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     guard onlineRealtimeFinalizing else { return }
     onlineRealtimeTimeoutTask?.cancel()
     onlineRealtimeTimeoutTask = nil
-    let fallback = currentIOSSpeechTranscript.ifBlank(transcript)
+    let fallback = currentIOSSpeechHasFinal ? currentIOSSpeechTranscript : ""
     let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(fallback)
+    if !succeeded, finalText.isEmpty {
+      coordinatorBridge.failCurrent(code: failureReason, detail: "No complete local transcript is available.")
+      finishOnlineRealtimeCleanup(finalText: "", succeeded: false, failureReason: failureReason)
+      return
+    }
     if !succeeded, !finalText.isEmpty, let turnCoordinator = onlineRealtimeTurnCoordinator {
       let localHypothesis = TranscriptHypothesis(
         text: finalText,
@@ -1097,15 +1161,12 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   }
 
   private func processPcmTap(_ buffer: AVAudioPCMBuffer) {
-    guard let update = pcmTapPipeline?.accept(buffer: buffer) else { return }
-    if onlineRealtimeActive, let onlineRealtimeSession {
-      let sampleRateHz = inputSampleRateHz
-      Task {
-        await onlineRealtimeSession.push(
-          frame: update.frame,
-          sourceSampleRateHz: sampleRateHz
-        )
-      }
+    guard let pipeline = pcmTapPipeline, let update = pipeline.accept(buffer: buffer) else { return }
+    if onlineRealtimeActive {
+      onlinePCMInputLock.lock()
+      let input = onlinePCMInput
+      onlinePCMInputLock.unlock()
+      input?.yield(update.frame)
     }
     updateAudioLevel(Float(update.decision.peak) / Float(Int16.max))
     coordinatorBridge.dispatchAudioLevel(update.decision.rms)
@@ -1142,7 +1203,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     pcmTapEndpointRequested = true
     Task { [weak self] in
       await MainActor.run {
-        guard let self = self, self.isRecording else { return }
+        guard let self = self, self.isRecording, self.pcmTapPipeline === pipeline else { return }
         if reason == .noSpeechTimeout {
           _ = self.coordinatorBridge.cancelCurrent(reasonCode: code)
         }
@@ -1155,6 +1216,24 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     audioLevelLock.lock()
     latestAudioLevel = min(max(value, 0), 1)
     audioLevelLock.unlock()
+  }
+
+  private func replaceOnlinePCMInput(_ input: AsyncStream<AudioFrame>.Continuation?) {
+    onlinePCMInputLock.lock()
+    let previous = onlinePCMInput
+    onlinePCMInput = input
+    onlinePCMInputLock.unlock()
+    previous?.finish()
+  }
+
+  @MainActor
+  private func rejectNoiseOnlyCapture() -> Bool {
+    guard pcmTapPipeline?.shouldRejectNoiseOnly == true else { return false }
+    let completion = holdToTalkCompletion
+    _ = coordinatorBridge.cancelCurrent(reasonCode: "no_speech_detected")
+    cancel()
+    completion?("")
+    return true
   }
 
   private func replaceCompletedPCMSnapshot(with snapshot: PcmSnapshot?) {

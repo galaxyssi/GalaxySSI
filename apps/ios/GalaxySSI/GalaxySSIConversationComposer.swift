@@ -11,6 +11,7 @@ struct GalaxySSIConversationComposer: View {
   var deviceInputPolicy: AgentDeviceInputTargetPolicy
   var voiceSettings: VoiceSettings
   var dedicatedPeerVoiceCapture = false
+  var attachmentScope = ""
   var onNewSession: () -> Void
   var onOpenSessions: () -> Void
   var onScan: () -> Void
@@ -154,7 +155,16 @@ struct GalaxySSIConversationComposer: View {
       placeholder: t("galaxyssi.message.input_hint", "Message or hold to talk..."),
       focus: $inputFocused,
       accessibilityIdentifier: "ios.chat.message-input",
-      onTap: { attachmentMenuPresented = false }
+      onTap: { attachmentMenuPresented = false },
+      attachmentScope: attachmentScope,
+      onImageAttachment: { attachment in
+        guard GalaxySSIAttachmentPayloadBuilder.accepted(attachment, existing: attachments) else {
+          attachmentError = t("agent_attachment_rejected", "Some attachments were skipped. You can add up to 10 files, 64 MB each.")
+          return
+        }
+        attachments.append(attachment)
+        attachmentError = ""
+      }
     )
     .contentShape(Rectangle())
     .simultaneousGesture(holdToTalkGesture)

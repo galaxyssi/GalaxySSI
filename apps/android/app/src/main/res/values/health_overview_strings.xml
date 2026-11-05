@@ -20,6 +20,7 @@
     <string name="health_overview_no_data_warning">Missing data or reminders do not indicate a normal result.</string>
     <string name="health_overview_ocr_review">Recognition results to review</string>
     <string name="health_overview_table_review">Table import to review</string>
+    <string name="health_overview_connection_title">Data source needs recovery · %1$s</string>
     <string name="health_overview_sleep_mean">%1$s min</string>
     <string name="health_overview_sleep_days">7-day average · %1$d usable days</string>
     <string name="health_overview_source">%1$s · %2$s</string>

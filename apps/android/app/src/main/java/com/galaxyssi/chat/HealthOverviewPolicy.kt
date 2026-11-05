@@ -11,7 +11,8 @@ internal enum class HealthOverviewReviewKind { OCR, TABLE }
 internal sealed interface HealthOverviewAttention {
     val time: Long
     data class Change(val alert: HealthSleepAlert) : HealthOverviewAttention { override val time get() = alert.evidence.computedAt }
-    data class Review(val jobId: String, val kind: HealthOverviewReviewKind, override val time: Long) : HealthOverviewAttention
+    data class Review(val jobId: String, val kind: HealthOverviewReviewKind, override val time: Long, val name: String = "") : HealthOverviewAttention
+    data class Connection(val incident: HealthSyncIncident) : HealthOverviewAttention { override val time get() = incident.failedAt }
 }
 
 internal object HealthOverviewPolicy {
@@ -40,6 +41,13 @@ internal object HealthOverviewPolicy {
             HealthOverviewOrder.REVIEW_FIRST -> if (item is HealthOverviewAttention.Review) 0 else 1
         }
         return items.sortedWith(compareBy<HealthOverviewAttention> { priority(it) }.thenByDescending { it.time }
-            .thenBy { if (it is HealthOverviewAttention.Change) it.alert.id else (it as HealthOverviewAttention.Review).jobId })
+            .thenBy { when (it) {
+                is HealthOverviewAttention.Change -> it.alert.id
+                is HealthOverviewAttention.Review -> it.jobId
+                is HealthOverviewAttention.Connection -> it.incident.id
+            } })
     }
+
+    fun activeConnections(incidents: List<HealthSyncIncident>, selected: Set<HealthConnectScope>): List<HealthOverviewAttention.Connection> =
+        incidents.filter { it.scope in selected && !it.handled }.map { HealthOverviewAttention.Connection(it) }
 }

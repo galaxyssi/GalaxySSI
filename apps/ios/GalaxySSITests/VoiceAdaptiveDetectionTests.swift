@@ -2,6 +2,114 @@ import XCTest
 @testable import GalaxySSI
 
 final class VoiceAdaptiveDetectionTests: XCTestCase {
+  func testPassiveRenewalPreservesOwnerAndRejectsStoppedOrOldCapture() throws {
+    var lease = VoicePassiveCaptureLease()
+    let owner = lease.begin()
+    let first = try XCTUnwrap(lease.renew(owner: owner, at: 10))
+    XCTAssertTrue(lease.accepts(owner: owner, capture: first))
+    XCTAssertFalse(lease.needsRenewal(at: 59.9, healthy: true))
+    XCTAssertTrue(lease.needsRenewal(at: 60, healthy: true))
+    XCTAssertTrue(lease.needsRenewal(at: 20, healthy: false))
+    let renewed = try XCTUnwrap(lease.renew(owner: owner, at: 60))
+    XCTAssertEqual(lease.owner, owner)
+    XCTAssertFalse(lease.accepts(owner: owner, capture: first))
+    XCTAssertTrue(lease.accepts(owner: owner, capture: renewed))
+    lease.stop()
+    XCTAssertNil(lease.renew(owner: owner, at: 120))
+    XCTAssertFalse(lease.needsRenewal(at: 120, healthy: false))
+    XCTAssertFalse(lease.accepts(owner: owner, capture: renewed))
+  }
+
+  func testInputCaptionRejectsPlaybackAndSubmittedSessionCallbacks() {
+    var state = VoiceInteractionState(sessionId: "input", phase: .listening, partialText: "User speech")
+    XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: true, submittedSession: ""), "User speech")
+    XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: true, submittedSession: "input"), "")
+    state.phase = .playingTTS
+    state.partialText = "Assistant narration"
+    XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: true, submittedSession: ""), "")
+    state.phase = .listening
+    XCTAssertEqual(VoiceInputCaptionPolicy.text(state, capturing: false, submittedSession: ""), "")
+  }
+  func testContinuousEndpointUsesSpokenSpanRatherThanGrowingSilence() {
+    for (spokenFrames, silenceFrames) in [(55, 50), (245, 60), (250, 70)] {
+      let detector = AdaptiveEndpointDetector(sampleRateHz: 16_000, config: .continuous)
+      let samples = [Int16](repeating: 0, count: 320)
+      for sequence in 0..<spokenFrames {
+        XCTAssertNil(detector.accept(frame(sequence: Int64(sequence), samples: samples), vad: speechDecision()).endpointReason)
+      }
+      var pause = silenceDecision()
+      pause.speechEndedCandidate = true
+      for sequence in 0..<(silenceFrames - 1) {
+        let update = detector.accept(frame(sequence: Int64(spokenFrames + sequence), samples: samples), vad: pause)
+        XCTAssertNil(update.endpointReason)
+        XCTAssertFalse(update.speechEndedCandidate)
+      }
+      let final = detector.accept(frame(sequence: Int64(spokenFrames + silenceFrames - 1), samples: samples), vad: pause)
+      XCTAssertEqual(final.endpointReason, .trailingSilence)
+      XCTAssertTrue(final.speechEndedCandidate)
+    }
+  }
+
+  func testRealtimeInputIntegrityRejectsGapsQueueLossAndMissingTail() {
+    var input = VoiceRealtimeInputIntegrity()
+    input.observe(0)
+    input.observe(1)
+    input.finish(expectedFrameCount: 2)
+    XCTAssertFalse(input.incomplete)
+    input.observe(3)
+    input.observe(4)
+    XCTAssertTrue(input.incomplete)
+
+    var tail = VoiceRealtimeInputIntegrity()
+    tail.observe(0)
+    tail.finish(expectedFrameCount: 2)
+    XCTAssertTrue(tail.incomplete)
+
+    var overflow = VoiceRealtimeInputIntegrity()
+    overflow.markLoss()
+    overflow.observe(0)
+    overflow.finish(expectedFrameCount: 1)
+    XCTAssertTrue(overflow.incomplete)
+  }
+
+  func testNeuralVadResamplesAcrossTapsAndAppliesAttackAndReleaseHysteresis() {
+    var scores: [Float] = [0.7, 0.7, 0.4, 0.1, 0.1, 0.1, 0.1]
+    var resets = 0
+    let vad = VoiceNeuralSpeechVad(sourceRateHz: 48_000, probability: { window in
+      XCTAssertEqual(window.count, 512)
+      XCTAssertEqual(window.first, 0.25)
+      return scores.removeFirst()
+    }, resetModel: { resets += 1 })
+    let samples = [Int16](repeating: 8192, count: 768)
+    func read(_ sequence: Int64) -> VadDecision { vad.accept(frame(sequence: sequence, samples: samples)) }
+    XCTAssertFalse(read(0).speechStarted)
+    XCTAssertFalse(read(1).speechStarted)
+    XCTAssertFalse(read(2).speechStarted)
+    XCTAssertTrue(read(3).speechStarted)
+    for sequence in 4..<13 { XCTAssertFalse(read(Int64(sequence)).speechEndedCandidate) }
+    XCTAssertTrue(read(13).speechEndedCandidate)
+    XCTAssertTrue(scores.isEmpty)
+    XCTAssertFalse(read(15).isSpeech)
+    XCTAssertEqual(resets, 1)
+  }
+
+  func testBundledSileroRunsSilenceThroughThePinnedModel() throws {
+    let model = try XCTUnwrap(VoiceSileroProbability())
+    for _ in 0..<8 {
+      XCTAssertLessThan(try model.probability(Array(repeating: 0, count: 512)), 0.35)
+    }
+    model.reset()
+  }
+
+  func testPassiveSpeechDetectorIgnoresWarmupAndFiresOnlyOnceAfterSustainedInput() {
+    let detector = VoicePassiveSpeechDetector(startedAt: 10)
+    let speech = (0..<320).map { Int16(sin(2.0 * Double.pi * Double($0) / 37.0) * 7_000) }
+    for _ in 0..<8 { XCTAssertFalse(detector.accept(speech, now: 10.2)) }
+    for _ in 0..<8 { XCTAssertFalse(detector.accept(Array(repeating: 0, count: 320), now: 10.4)) }
+    for _ in 0..<3 { XCTAssertFalse(detector.accept(speech, now: 10.5)) }
+    XCTAssertTrue(detector.accept(speech, now: 10.6))
+    XCTAssertFalse(detector.accept(speech, now: 10.7))
+  }
   func testVadAdaptsToSilenceAndDetectsSpeechBoundaries() {
     let vad = AdaptiveSpeechVad()
     for index in 0..<12 {
