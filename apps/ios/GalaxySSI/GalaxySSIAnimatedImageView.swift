@@ -60,16 +60,21 @@ enum GalaxySSIImageResourceDecoder {
     return type
   }
 
-  static func frames(from source: Data) -> AgentAnimatedImageFrames? {
+  static func frames(from source: Data, frameLimit: Int = .max, decodedByteLimit: Int = .max)
+    -> AgentAnimatedImageFrames? {
     let data = AgentAnimatedImageTiming.normalizeZeroFrameDelays(source)
     guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
     let count = CGImageSourceGetCount(imageSource)
-    guard count > 1 else { return nil }
+    guard count > 1, count <= frameLimit else { return nil }
 
     var images: [UIImage] = []
     var duration: TimeInterval = 0
+    var remainingBytes = decodedByteLimit
     for index in 0..<count {
+      guard !Task.isCancelled else { return nil }
       guard let image = thumbnail(imageSource: imageSource, index: index) else { continue }
+      guard image.height > 0, image.bytesPerRow <= remainingBytes / image.height else { return nil }
+      remainingBytes -= image.bytesPerRow * image.height
       images.append(UIImage(cgImage: image))
       duration += frameDelay(imageSource: imageSource, index: index)
     }
@@ -152,7 +157,7 @@ struct GalaxySSIAnimatedImageView: UIViewRepresentable {
     if decodeOffMain {
       let bytes = data
       context.coordinator.task = Task { @MainActor [weak imageView] in
-        let work = Task.detached(priority: .userInitiated) { Self.decode(bytes) }
+        let work = Task.detached(priority: .userInitiated) { Self.decode(bytes, bounded: true) }
         let result = await withTaskCancellationHandler(operation: { await work.value },
                                                        onCancel: { work.cancel() })
         guard !Task.isCancelled, let imageView, imageView.accessibilityIdentifier == identity else { return }
@@ -168,8 +173,12 @@ struct GalaxySSIAnimatedImageView: UIViewRepresentable {
     let image: UIImage?
   }
 
-  private nonisolated static func decode(_ data: Data) -> Decoded {
-    if let frames = GalaxySSIImageResourceDecoder.frames(from: data) { return .init(frames: frames, image: nil) }
+  private nonisolated static func decode(_ data: Data, bounded: Bool = false) -> Decoded {
+    if let frames = GalaxySSIImageResourceDecoder.frames(from: data,
+      frameLimit: bounded ? 64 : .max, decodedByteLimit: bounded ? 32 * 1024 * 1024 : .max) {
+      return .init(frames: frames, image: nil)
+    }
+    guard !Task.isCancelled else { return .init(frames: nil, image: nil) }
     return .init(frames: nil, image: GalaxySSIImageResourceDecoder.staticImage(from: data))
   }
 
