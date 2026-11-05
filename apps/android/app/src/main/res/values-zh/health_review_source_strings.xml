@@ -8,4 +8,12 @@
     <string name="health_review_full_page">查看整页</string>
     <string name="health_review_location_unknown">这项没有原图坐标</string>
     <string name="health_review_source_not_ready">原件预览暂不可用。</string>
+    <string name="health_ocr_context_title">核对原件信息</string>
+    <string name="health_ocr_owner_detected">原件姓名：%1$s</string>
+    <string name="health_ocr_owner_unknown">未识别到标注的姓名，请确认这是本人的资料。</string>
+    <string name="health_ocr_sample_detected">原件采样或测量时间：%1$s</string>
+    <string name="health_ocr_sample_unknown">未识别到标注的采样或测量时间。</string>
+    <string name="health_ocr_sample_needs_review">测量时间待核对</string>
+    <string name="health_ocr_use_sample_time">使用原件时间（%1$s）</string>
+    <string name="health_ocr_context_more">本页还有其他值，请查看原件核对。</string>
 </resources>

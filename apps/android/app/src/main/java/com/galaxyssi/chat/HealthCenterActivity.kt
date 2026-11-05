@@ -467,11 +467,24 @@ class HealthCenterActivity : Activity() {
         val metric = selected
         val key = if (route == "review") reviewKey else if (id.isBlank()) "new:${metric.name}" else "edit:$id"
         val reviewing = route == "review"
-        query({ store -> if (reviewing) store.draft(key) else if (id.isBlank()) store.draft(key) ?: HealthDraft(metric)
-            else store.record(id)?.let { store.draft(key) ?: it.editable() } }) { draft ->
+        query({ store ->
+            val draft = if (reviewing) store.draft(key) else if (id.isBlank()) store.draft(key) ?: HealthDraft(metric)
+                else store.record(id)?.let { store.draft(key) ?: it.editable() }
+            val sourceContext = if (reviewing) draft?.evidence?.takeIf { it.kind == "ocr" }?.let { evidence ->
+                runCatching {
+                    HealthOriginalStore(applicationContext, overviewNames.originals, overviewNames.originalRoot(applicationContext)).use { originals ->
+                        val original = originals.originalForJob(evidence.jobId)
+                        if (original == null || original.id != evidence.originalId || original.sha256 != evidence.sha256) null
+                        else originals.page(evidence.jobId, evidence.page)?.takeIf { it.recognition == evidence.recognition }
+                            ?.let { HealthOcrSourceContext.inspect(it, java.time.ZoneId.systemDefault()) }
+                    }
+                }.getOrNull() ?: HealthOcrSourceContext()
+            } else null
+            draft to sourceContext
+        }) { (draft, sourceContext) ->
             if (draft == null) { body.addView(ui.text(getString(R.string.health_record_missing))); return@query }
             selected = draft.metric
-            editor = HealthManualEditor(this, draft).also { it.render() }
+            editor = HealthManualEditor(this, draft, sourceContext).also { it.render() }
         }
     }
     internal fun saveMeasurement(draft: HealthDraft) {
@@ -486,7 +499,7 @@ class HealthCenterActivity : Activity() {
                 main.post {
                     saving = false
                     if (isDestroyed) return@post
-                    if (result.isSuccess) { editor = null; finish() }
+                    if (result.isSuccess) { editor = null; setResult(RESULT_OK); finish() }
                     else if (active) {
                         editor?.setSaving(false)
                         Toast.makeText(this, R.string.health_draft_error, Toast.LENGTH_LONG).show()

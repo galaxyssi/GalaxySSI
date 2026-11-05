@@ -17,7 +17,8 @@ import android.widget.TextView
 import android.widget.CheckBox
 import java.util.Calendar
 
-internal class HealthManualEditor(private val activity: HealthCenterActivity, private val draft: HealthDraft) {
+internal class HealthManualEditor(private val activity: HealthCenterActivity, private val draft: HealthDraft,
+    private val sourceContext: HealthOcrSourceContext? = null) {
     private val ui get() = activity.ui
     private val fields = linkedMapOf<String, EditText>()
     private val unitLabels = linkedMapOf<String, TextView>()
@@ -56,6 +57,7 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
                 }, 8)
             })
         }
+        sourceContext?.let { ui.add(content, ui.sourceContext(activity, it), 8) }
         if (draft.recordId.isBlank() && draft.evidence == null) {
             val metrics = ui.line().apply { background = ui.background(activity.getColor(R.color.button_soft), radius = 10) }
             HealthMetric.entries.take(3).forEach { metric ->
@@ -101,6 +103,11 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
             setPadding(ui.dp(12), 0, ui.dp(12), 0); setOnClickListener { chooseTime() }; isFocusable = true
         }
         card.addView(time)
+        sourceContext?.sample?.takeIf { it.millis in 1..System.currentTimeMillis() }?.let { source ->
+            ui.add(card, ui.row(activity.getString(R.string.health_ocr_use_sample_time, source.zone)) {
+                setMeasurementTime(source.millis)
+            }.apply { tag = "health-ocr-use-source-time" }, 4)
+        }
         ui.add(card, ui.text(activity.getString(R.string.health_condition), 13f, muted = true), 16)
         condition = spinner(conditions.map { activity.getString(healthContextResource(it)) }, conditions.indexOf(draft.condition))
         card.addView(condition)
@@ -219,8 +226,14 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
         DatePickerDialog(activity, { _, year, month, day ->
             activity.showHealthDialog(TimePickerDialog(activity, { _, hour, minute ->
                 calendar.set(year, month, day, hour, minute, 0); calendar.set(Calendar.MILLISECOND, 0)
-                measuredAt = calendar.timeInMillis; time.text = activity.date(measuredAt); confirmation?.isChecked = false; changed()
+                setMeasurementTime(calendar.timeInMillis)
             }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(activity)))
         }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).let(activity::showHealthDialog)
+    }
+    private fun setMeasurementTime(value: Long) {
+        measuredAt = value
+        time.text = activity.date(value)
+        confirmation?.isChecked = false
+        changed()
     }
 }
