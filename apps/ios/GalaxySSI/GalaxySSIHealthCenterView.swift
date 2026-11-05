@@ -17,6 +17,9 @@ struct GalaxySSIHealthCenterView: View {
   @State private var overviewPermissionFailed = false
   @State private var privacySaveFailed = false
   @State private var privacyLimit = 20
+  @State private var sourceAttention: [GalaxySSIHealthSourceAttention.Incident] = []
+  @State private var sourceAttentionUnavailable = false
+  @State private var sourceRecovery: GalaxySSIHealthSourceAttention.Incident?
 
   private enum Notice: String, Identifiable {
     case unavailable, invalid, stale, duplicate, delete, discardDraft, undoConflict
@@ -103,6 +106,9 @@ struct GalaxySSIHealthCenterView: View {
         } label: {
           Label(t("report_crop.title", "Report Crop Preview"), systemImage: "crop")
         }
+      }
+      if scenePhase == .active, !sourceAttention.isEmpty || sourceAttentionUnavailable {
+        sourceAttentionSection
       }
       if scenePhase == .active, let archive {
         let current = archive.current
@@ -191,6 +197,9 @@ struct GalaxySSIHealthCenterView: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if notification.object as? String == records.owner, editor == nil, scenePhase == .active { reload() }
     }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.sourceAttentionChanged)) { notification in
+      if notification.object as? String == records.owner, scenePhase == .active { reloadSourceAttention() }
+    }
     .onChange(of: scenePhase) { phase in
       if phase == .active {
         reload()
@@ -201,6 +210,9 @@ struct GalaxySSIHealthCenterView: View {
         editor = nil
         alert = nil
         archive = nil
+        sourceAttention = []
+        sourceAttentionUnavailable = false
+        if phase == .background { sourceRecovery = nil }
         overviewPermissionFailed = false
         privacySaveFailed = false
         privacyLimit = 20
@@ -211,6 +223,12 @@ struct GalaxySSIHealthCenterView: View {
         .navigationViewStyle(.stack)
         .interactiveDismissDisabled()
         .alert(item: $alert, content: editorAlert)
+    }
+    .sheet(item: $sourceRecovery) { incident in
+      NavigationView {
+        GalaxySSIHealthKitImportView(records: records, recoveryScope: incident.scope)
+      }
+      .navigationViewStyle(.stack)
     }
   }
 
@@ -612,6 +630,40 @@ struct GalaxySSIHealthCenterView: View {
     guard scenePhase == .active else { return }
     do { archive = try records.load() }
     catch { archive = nil }
+    reloadSourceAttention()
+  }
+
+  private func reloadSourceAttention() {
+    do {
+      sourceAttention = try records.loadSourceAttention().active
+      sourceAttentionUnavailable = false
+    } catch {
+      sourceAttention = []
+      sourceAttentionUnavailable = true
+    }
+  }
+
+  private var sourceAttentionSection: some View {
+    Section(t("source_attention", "Data source attention")) {
+      ForEach(sourceAttention) { incident in
+        Button { sourceRecovery = incident } label: {
+          Label {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(incident.scope.metric.title(language: language))
+              Text(t("healthkit.recovery_failed", "The last Apple Health query failed."))
+                .foregroundColor(.secondary)
+              Text(incident.failedAt, style: .relative).font(.caption).foregroundColor(.secondary)
+            }
+          } icon: {
+            Image(systemName: "exclamationmark.arrow.circlepath")
+          }
+        }
+      }
+      if sourceAttentionUnavailable {
+        Text(t("healthkit.recovery_unavailable", "Source recovery information is unavailable."))
+          .foregroundColor(.secondary)
+      }
+    }
   }
 
   private func parse(_ text: String) -> Decimal? {

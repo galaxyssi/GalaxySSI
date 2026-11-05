@@ -352,6 +352,13 @@
 "galaxyssi.health.healthkit.saved" = "已导入 %lld 条新测量记录";
 "galaxyssi.health.healthkit.excessive" = "记录过多，请缩小读取范围或缩短时段。";
 "galaxyssi.health.healthkit.failed" = "读取失败或数据已变更，请重新预览。";
+"galaxyssi.health.source_attention" = "数据来源待处理";
+"galaxyssi.health.healthkit.recovery_title" = "恢复数据来源";
+"galaxyssi.health.healthkit.recovery_failed" = "上次读取 Apple 健康失败。";
+"galaxyssi.health.healthkit.recovery_acknowledge" = "确认已知晓";
+"galaxyssi.health.healthkit.recovery_clear" = "该数据类型没有待处理的读取失败。";
+"galaxyssi.health.healthkit.recovery_unavailable" = "暂时无法读取数据来源的恢复信息。";
+"galaxyssi.health.healthkit.recovery_close" = "关闭";
 "galaxyssi.health.sleep_reminder.title" = "睡眠变化提醒";
 "galaxyssi.health.sleep_reminder.generic_title" = "GalaxySSI 提醒";
 "galaxyssi.health.sleep_reminder.generic_body" = "打开 GalaxySSI 查看。";

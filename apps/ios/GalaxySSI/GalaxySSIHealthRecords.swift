@@ -187,6 +187,35 @@ struct GalaxySSIHealthRecords {
 
   private var profileContext: Data { Data("galaxyssi.health.profile.v1:\(owner)".utf8) }
   private var profileAccount: String { "health.profile.v1." + owner }
+  static let sourceAttentionChanged = Notification.Name("galaxyssi.health.sourceAttentionChanged")
+  private var sourceAttentionContext: Data { Data("galaxyssi.health.sourceAttention.v1:\(owner)".utf8) }
+  private var sourceAttentionAccount: String { "health.sourceAttention.v1." + owner }
+
+  func loadSourceAttention() throws -> GalaxySSIHealthSourceAttention {
+    let file = try storageFile(context: sourceAttentionContext, fixtureExtension: "source-attention")
+    let data: Data
+    do { data = try Data(contentsOf: file) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+      return GalaxySSIHealthSourceAttention()
+    }
+    let box = try AES.GCM.SealedBox(combined: data)
+    let payload = try AES.GCM.open(box, using: key(create: false, account: sourceAttentionAccount),
+                                  authenticating: sourceAttentionContext)
+    return try JSONDecoder().decode(GalaxySSIHealthSourceAttention.self, from: payload)
+  }
+
+  func updateSourceAttention(_ update: (inout GalaxySSIHealthSourceAttention) -> Void) throws {
+    let current = try loadSourceAttention()
+    var next = current
+    update(&next)
+    guard current != next else { return }
+    let payload = try JSONEncoder().encode(next)
+    guard let sealed = try AES.GCM.seal(payload, using: key(create: true, account: sourceAttentionAccount),
+                                        authenticating: sourceAttentionContext).combined else { throw Failure.unavailable }
+    try sealed.write(to: storageFile(context: sourceAttentionContext, fixtureExtension: "source-attention"),
+                     options: [.atomic, .completeFileProtection])
+    NotificationCenter.default.post(name: Self.sourceAttentionChanged, object: owner)
+  }
 
   func loadProfile() throws -> GalaxySSIHealthProfile {
     let file = try storageFile(context: profileContext, fixtureExtension: "profile")
