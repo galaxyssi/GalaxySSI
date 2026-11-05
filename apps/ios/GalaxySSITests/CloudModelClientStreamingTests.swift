@@ -2,6 +2,24 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudModelClientStreamingTests: XCTestCase {
+  func testDefaultImagePromptAvoidsTextOnlyGroundingWithoutDroppingLanguageOrTools() throws {
+    let language = LanguagePolicySettings(responseLanguage: "zh-CN")
+    let image = try CloudImagePayload(displayName: "fixture.png", mimeType: "image/png", data: Data([1]))
+    var groundingCalls = 0
+    func evidence() -> String { groundingCalls += 1; return "Text-only grounding" }
+    let visual = CloudModelClient.conversationSystemPrompt(languagePolicy: language, images: [image],
+      textOnlyEvidence: evidence)
+    XCTAssertEqual(groundingCalls, 0)
+    XCTAssertTrue(visual.contains(LanguagePolicySettings.modelLanguageName("zh-CN")))
+    XCTAssertTrue(visual.contains("native visual evidence"))
+    XCTAssertTrue(visual.contains("without a tool result"))
+    XCTAssertFalse(visual.contains("Text-only grounding"))
+    let text = CloudModelClient.conversationSystemPrompt(languagePolicy: language, images: [],
+      textOnlyEvidence: evidence)
+    XCTAssertEqual(groundingCalls, 1)
+    XCTAssertEqual(text, CloudModelClient.systemPrompt(languagePolicy: language) + "\nText-only grounding")
+  }
+
   func testAllCloudProvidersAddVisionGuidanceToCustomImageRequestsOnly() throws {
     let styles: [GalaxySSICloudAPIStyle] = [.openAICompatible, .anthropic, .gemini]
     let bytes = Data([1, 2, 3])
