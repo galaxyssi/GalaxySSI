@@ -21,7 +21,12 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var importing = false
   @State private var confirming = false
   @State private var exporting = false
-  @State private var zip: OriginalZIP?
+  @State private var exportDocument: OriginalExportDocument?
+  @State private var exportType: UTType = .zip
+  @State private var singleAttempt: GalaxySSIHealthOriginalStore.Original?
+  @State private var pendingSingle: GalaxySSIHealthOriginalStore.Original?
+  @State private var reviewAfterPreview = false
+  @State private var singleVerified = false
   @State private var exportAttempt: GalaxySSIHealthOriginalStore.ExportAttempt?
   @State private var verifying = false
   @State private var receiptFailed = false
@@ -31,8 +36,9 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var error = false
 
   private struct Preview: Identifiable {
-    let id: UUID
-    let name: String
+    let original: GalaxySSIHealthOriginalStore.Original
+    var id: UUID { original.id }
+    var name: String { original.name }
     var image: UIImage?
     var pdf: PDFDocument?
   }
@@ -63,12 +69,14 @@ struct GalaxySSIHealthOriginalsView: View {
             }
             .disabled(verifying)
             Button {
+              pendingSingle = nil
               pending = listing?.originals.filter { selection.contains($0.id) } ?? []
               confirming = !pending.isEmpty
             } label: { Label(t("export", "Export selected ZIP"), systemImage: "square.and.arrow.up") }
             .disabled(verifying)
           }
-          if verifying { ProgressView(t("verifying", "Verifying saved ZIP")) }
+          if verifying { ProgressView(t("verifying_destination", "Verifying saved file")) }
+          if singleVerified { Text(t("verified", "Save verified")).foregroundColor(.secondary) }
           if preparedForShare { Text(t("ready_to_share", "ZIP ready in export history.")).foregroundColor(.secondary) }
           if receiptFailed { Text(t("verify_failed", "The destination could not be verified.")).foregroundColor(.secondary) }
         }
@@ -95,6 +103,7 @@ struct GalaxySSIHealthOriginalsView: View {
                 }
               }
               .buttonStyle(.borderless)
+              .contextMenu { singleSaveButton(item) }
               .swipeActions {
                 Button(role: .destructive) { removal = item } label: {
                   Label(t("remove", "Remove"), systemImage: "trash")
@@ -113,7 +122,7 @@ struct GalaxySSIHealthOriginalsView: View {
       NavigationLink {
         OriginalExportHistory(store: store)
       } label: {
-        Label(t("export_history", "ZIP export history"), systemImage: "clock.arrow.circlepath")
+        Label(t("file_save_history", "File save history"), systemImage: "clock.arrow.circlepath")
       }
     }
     .navigationTitle(t("title", "Health Originals"))
@@ -128,8 +137,11 @@ struct GalaxySSIHealthOriginalsView: View {
         preview = nil
         removal = nil
         pending = []
+        pendingSingle = nil
+        reviewAfterPreview = false
         confirming = false
-        if !exporting { zip = nil }
+        singleVerified = false
+        if !exporting { exportDocument = nil }
       }
     }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.image, .pdf]) { result in
@@ -137,11 +149,18 @@ struct GalaxySSIHealthOriginalsView: View {
       do { try store.importFile(result.get()); reload() }
       catch { error = true }
     }
-    .confirmationDialog(t("plain_zip", "Save an unencrypted ZIP of these originals?"),
+    .confirmationDialog(pendingSingle == nil ? t("plain_zip", "Save an unencrypted ZIP of these originals?") :
+                        t("plain_original", "Save an unencrypted copy of this original?"),
                         isPresented: $confirming, titleVisibility: .visible) {
-      Button(t("save", "Choose save location"), action: export)
+      Button(t("save", "Choose save location")) {
+        if let item = pendingSingle { exportSingle(item) } else { export() }
+      }
     } message: {
-      Text(String(format: t("selected_count", "%lld selected originals"), Int64(pending.count)))
+      if let item = pendingSingle {
+        Text(item.name + "\n" + ByteCountFormatter.string(fromByteCount: Int64(item.bytes), countStyle: .file))
+      } else {
+        Text(String(format: t("selected_count", "%lld selected originals"), Int64(pending.count)))
+      }
     }
     .alert(item: $removal) { item in
       Alert(title: Text(t("remove_confirm", "Remove this original?")), message: Text(item.name),
@@ -150,9 +169,14 @@ struct GalaxySSIHealthOriginalsView: View {
               do { try store.remove(item); reload() } catch { error = true }
             }, secondaryButton: .cancel())
     }
-    .fileExporter(isPresented: $exporting, document: zip, contentType: .zip,
-                  defaultFilename: "GalaxySSI-Health-Originals") { result in
-      zip = nil
+    .fileExporter(isPresented: $exporting, document: exportDocument, contentType: exportType,
+                  defaultFilename: exportType == .zip ? "GalaxySSI-Health-Originals" : "GalaxySSI-Health-Original") { result in
+      exportDocument = nil
+      if let item = singleAttempt {
+        singleAttempt = nil
+        verifySingle(result, item: item)
+        return
+      }
       guard let attempt = exportAttempt else { return }
       exportAttempt = nil
       switch result {
@@ -162,13 +186,23 @@ struct GalaxySSIHealthOriginalsView: View {
         receiptFailed = true
       }
     }
-    .onChange(of: exporting) { if !$0 { zip = nil } }
-    .sheet(item: $preview) { item in
+    .onChange(of: exporting) { if !$0 { exportDocument = nil } }
+    .sheet(item: $preview, onDismiss: {
+      if reviewAfterPreview {
+        reviewAfterPreview = false
+        confirming = scene == .active && pendingSingle != nil
+      }
+    }) { item in
       if scene == .active {
         VStack {
         HStack {
           Text(item.name).font(.headline).lineLimit(2).truncationMode(.middle)
           Spacer()
+          Button { reviewSingle(item.original, fromPreview: true) } label: {
+            Image(systemName: "square.and.arrow.down").frame(width: 44, height: 44)
+          }
+          .disabled(verifying)
+          .accessibilityLabel(Text(t("save_original", "Save original")))
           Button { preview = nil } label: { Image(systemName: "xmark.circle").font(.title2) }
             .accessibilityLabel(Text(t("close", "Close")))
         }
@@ -216,6 +250,7 @@ struct GalaxySSIHealthOriginalsView: View {
       }
     }
     .contextMenu {
+      singleSaveButton(item)
       Button(role: .destructive) { removal = item } label: { Label(t("remove", "Remove"), systemImage: "trash") }
     }
   }
@@ -236,12 +271,70 @@ struct GalaxySSIHealthOriginalsView: View {
       let data = try store.read(item)
       if item.kind == .pdf {
         guard let pdf = PDFDocument(data: data), pdf.pageCount > 0 else { error = true; return }
-        preview = Preview(id: item.id, name: item.name, pdf: pdf)
+        preview = Preview(original: item, pdf: pdf)
       } else {
         guard let image = Self.thumbnail(data, maximum: 1_200) else { error = true; return }
-        preview = Preview(id: item.id, name: item.name, image: image)
+        preview = Preview(original: item, image: image)
       }
     } catch { error = true }
+  }
+
+  private func singleSaveButton(_ item: GalaxySSIHealthOriginalStore.Original) -> some View {
+    Button { reviewSingle(item) } label: {
+      Label(t("save_original", "Save original"), systemImage: "square.and.arrow.down")
+    }
+    .disabled(verifying)
+  }
+
+  private func reviewSingle(_ item: GalaxySSIHealthOriginalStore.Original, fromPreview: Bool = false) {
+    guard scene == .active, !exporting, !verifying else { return }
+    pending = []
+    pendingSingle = item
+    singleVerified = false
+    receiptFailed = false
+    if fromPreview {
+      reviewAfterPreview = true
+      preview = nil
+    } else {
+      confirming = true
+    }
+  }
+
+  private func exportSingle(_ item: GalaxySSIHealthOriginalStore.Original) {
+    pendingSingle = nil
+    guard scene == .active, !verifying else { return }
+    do {
+      let data = try store.read(item)
+      guard let type = UTType(filenameExtension: item.fileExtension),
+            (item.kind == .pdf ? type.conforms(to: .pdf) : type.conforms(to: .image))
+      else { throw GalaxySSIHealthOriginalStore.Failure.invalid }
+      exportAttempt = nil
+      singleAttempt = item
+      exportType = type
+      exportDocument = OriginalExportDocument(data: data)
+      exporting = true
+    } catch { receiptFailed = true }
+  }
+
+  private func verifySingle(_ result: Result<URL, Error>, item: GalaxySSIHealthOriginalStore.Original) {
+    if case .failure(let error) = result, (error as? CocoaError)?.code == .userCancelled { return }
+    verifying = true
+    Task {
+      let matched: Bool
+      if case .success(let url) = result {
+        matched = await Task.detached(priority: .utility) {
+          (try? GalaxySSIHealthOriginalStore.verifyDestination(url, bytes: item.bytes, sha256: item.sha256)) == true
+        }.value
+      } else {
+        matched = false
+      }
+      let verified = (try? store.finishSingleSave(item, destinationVerified: matched)) == true
+      if scene == .active {
+        singleVerified = verified
+        receiptFailed = !verified
+      }
+      verifying = false
+    }
   }
 
   private func export() {
@@ -251,8 +344,10 @@ struct GalaxySSIHealthOriginalsView: View {
     receiptFailed = false
     do {
       let (data, attempt) = try store.prepareExport(selected)
+      singleAttempt = nil
       exportAttempt = attempt
-      zip = OriginalZIP(data: data)
+      exportType = .zip
+      exportDocument = OriginalExportDocument(data: data)
       exporting = true
     }
     catch { error = true }
@@ -364,6 +459,8 @@ private struct OriginalExportHistory: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let store: GalaxySSIHealthOriginalStore
   @State private var history: [GalaxySSIHealthOriginalStore.ExportAttempt] = []
+  @State private var singleHistory: [GalaxySSIHealthOriginalStore.SingleSaveReceipt] = []
+  @State private var singleHistoryUnavailable = false
   @State private var selected: GalaxySSIHealthOriginalStore.ExportAttempt?
   @State private var limit = 20
   @State private var scopeLimit = 30
@@ -383,7 +480,7 @@ private struct OriginalExportHistory: View {
         if unavailable {
           Text(t("history_unavailable", "Export history unavailable"))
           Button(t("retry_history", "Reload history"), action: reload)
-        } else if history.isEmpty {
+        } else if history.isEmpty && singleHistory.isEmpty && !singleHistoryUnavailable {
           Text(t("history_empty", "No ZIP export attempts")).foregroundColor(.secondary)
         } else {
           ForEach(history.prefix(limit)) { entry in
@@ -398,14 +495,33 @@ private struct OriginalExportHistory: View {
           }
           if history.count > limit { Button(t("more", "Show more")) { limit += 20 } }
         }
+        if singleHistoryUnavailable || !singleHistory.isEmpty {
+          Section(t("single_save_history", "Single original saves")) {
+            if singleHistoryUnavailable {
+              Text(t("history_unavailable", "Export history unavailable"))
+              Button(t("retry_history", "Reload history"), action: reload)
+            } else {
+              ForEach(singleHistory.prefix(limit).indices, id: \.self) { index in
+                let receipt = singleHistory[index]
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(receipt.verified ? t("verified", "Save verified") : t("not_verified", "Save could not be verified"))
+                  Text(receipt.at.formatted(date: .abbreviated, time: .shortened)).foregroundColor(.secondary)
+                  Text(ByteCountFormatter.string(fromByteCount: Int64(receipt.bytes), countStyle: .file))
+                    .foregroundColor(.secondary)
+                }
+              }
+              if singleHistory.count > limit { Button(t("more", "Show more")) { limit += 20 } }
+            }
+          }
+        }
       }
     }
-    .navigationTitle(t("export_history", "ZIP export history"))
+    .navigationTitle(t("file_save_history", "File save history"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
     .onChange(of: scene) {
       if $0 == .active { reload() }
-      else { selected = nil; history = []; confirmShare = false; sharing = nil }
+      else { selected = nil; history = []; singleHistory = []; confirmShare = false; sharing = nil }
     }
     .sheet(item: $selected) { entry in
       NavigationView {
@@ -460,6 +576,8 @@ private struct OriginalExportHistory: View {
     guard scene == .active else { return }
     do { history = try store.exportHistory(); unavailable = false }
     catch { history = []; unavailable = true }
+    do { singleHistory = try store.singleSaveHistory(); singleHistoryUnavailable = false }
+    catch { singleHistory = []; singleHistoryUnavailable = true }
   }
 
   private func outcome(_ entry: GalaxySSIHealthOriginalStore.ExportAttempt) -> String {
@@ -492,8 +610,8 @@ private struct OriginalZIPShareSheet: UIViewControllerRepresentable {
   func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-private struct OriginalZIP: FileDocument {
-  static var readableContentTypes: [UTType] { [.zip] }
+private struct OriginalExportDocument: FileDocument {
+  static var readableContentTypes: [UTType] { [.zip, .pdf, .image] }
   let data: Data
 
   init(data: Data) { self.data = data }
