@@ -124,6 +124,12 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     var sentAtMillis: Int64
   }
   private var connection: NWConnection?
+  private var connectWatchdog: DispatchWorkItem?
+  private var subscriptionWatchdog: DispatchWorkItem?
+  private var connectStartedAt: Int64?
+  private var networkMonitor: NWPathMonitor?
+  private var networkWasAvailable: Bool?
+  private var lastReconnectWake: Int64?
   private var brokerAckWorkItem: DispatchWorkItem?
   private var reconnectWorkItem: DispatchWorkItem?
   private var topicRotationWorkItem: DispatchWorkItem?
@@ -179,7 +185,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   func publishOnPath(_ publication: MqttPathPublication) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
-        guard self.authorizes(publication), publication.payload.count <= MqttRouteProtocol.packetBytes,
+        self.checkTransportOnDemand()
+        guard self.hasLiveTransport(), self.authorizes(publication), publication.payload.count <= MqttRouteProtocol.packetBytes,
               self.pendingPacketPublishes.count + self.inFlightPublishes.count < 4_096,
               self.pendingPacketPublishes.reduce(0, { $0 + $1.payload.count }) +
                 self.inFlightPublishes.values.reduce(0, { $0 + $1.payload.count }) + publication.payload.count <= 8_388_608,
@@ -199,7 +206,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     await withCheckedContinuation { continuation in
       queue.async {
         let packet = publication.publication
-        guard let secret = self.relationshipSecret(forSendingTopic: packet.topic),
+        self.checkTransportOnDemand()
+        guard self.hasLiveTransport(), let secret = self.relationshipSecret(forSendingTopic: packet.topic),
               publication.accepts(snapshot: self.pathSnapshot, secretFingerprint: MqttRouteProtocol.digest(Data(secret.utf8))),
               self.authorizes(publication.authorization),
               self.pendingPacketPublishes.count + self.inFlightPublishes.count < 4_096,
@@ -239,6 +247,10 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
 
   private func stopTransport() {
     intentionallyDisconnected = true
+    networkMonitor?.cancel()
+    networkMonitor = nil
+    networkWasAvailable = nil
+    lastReconnectWake = nil
     reconnectWorkItem?.cancel()
     reconnectWorkItem = nil
     brokerAckWorkItem?.cancel()
@@ -296,12 +308,14 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     )
     queue.async {
       self.intentionallyDisconnected = false
+      self.monitorNetwork()
       let clientIdChanged = self.clientId != nextClientId
       self.clientId = nextClientId
       if self.connection != nil {
-        if clientIdChanged {
-          self.connection?.cancel()
+        if clientIdChanged, let connection = self.connection {
+          self.handleTransportFailure(for: connection)
         }
+        self.checkTransportOnDemand()
         return
       }
       self.reconnectWorkItem?.cancel()
@@ -339,13 +353,14 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   func publish(topic: String, payload: Data) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
+        var submitted = false
         guard !self.intentionallyDisconnected,
               let secret = self.relationshipSecret(forSendingTopic: topic),
-              self.sendWirePayload(topic: topic, payload: payload, secret: secret) else {
+              self.sendWirePayload(topic: topic, payload: payload, secret: secret, physicallySubmitted: { submitted = $0 }) else {
           continuation.resume(returning: .failed)
           return
         }
-        continuation.resume(returning: self.connected ? .published : .queued)
+        continuation.resume(returning: submitted ? .published : .queued)
       }
     }
   }
@@ -364,18 +379,20 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
           return
         }
         var deferred = false
+        var submitted = false
         guard self.sendWirePayload(
                 topic: topic,
                 payload: payload,
                 secret: secret,
                 durableMessageId: messageId,
                 durableBrokerAcknowledged: brokerAcknowledged,
-                admissionDeferred: { deferred = true }
+                admissionDeferred: { deferred = true },
+                physicallySubmitted: { submitted = $0 }
               ) else {
           continuation.resume(returning: deferred ? .deferred : .failed)
           return
         }
-        continuation.resume(returning: self.connected ? .published : .queued)
+        continuation.resume(returning: submitted ? .published : .queued)
       }
     }
   }
@@ -397,18 +414,20 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   ) async -> MqttPublishResult {
     await withCheckedContinuation { continuation in
       queue.async {
+        var submitted = false
         guard !self.intentionallyDisconnected,
               let secret = self.relationshipSecret(forSendingTopic: topic),
               self.sendWirePayload(
                 topic: topic,
                 payload: payload,
                 secret: secret,
-                brokerAcknowledged: brokerAcknowledged
+                brokerAcknowledged: brokerAcknowledged,
+                physicallySubmitted: { submitted = $0 }
               ) else {
           continuation.resume(returning: .failed)
           return
         }
-        continuation.resume(returning: self.connected ? .published : .queued)
+        continuation.resume(returning: submitted ? .published : .queued)
       }
     }
   }
@@ -423,6 +442,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
           continuation.resume(returning: .failed)
           return
         }
+        let attemptID = UUID().uuidString
         self.pendingPacketPublishes.append(
           PendingPublish(
             topic: topic,
@@ -430,14 +450,15 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
             transferId: nil,
             relationshipBound: false,
             brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.defaultTimeoutSeconds,
-            attemptId: UUID().uuidString,
+            attemptId: attemptID,
             logicalMessageId: "",
             durableMessageId: "",
             enqueuedAtMillis: Self.nowMillis()
           )
         )
         self.pumpPendingPublishes()
-        continuation.resume(returning: self.connected ? .published : .queued)
+        let submitted = self.inFlightPublishes.values.contains { $0.attemptId == attemptID }
+        continuation.resume(returning: submitted ? .published : .queued)
       }
     }
   }
@@ -460,19 +481,21 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     let parameters = NWParameters.tls
     let mqttConnection = NWConnection(host: host, port: port, using: parameters)
     connection = mqttConnection
+    connectStartedAt = Self.uptimeMillis()
+    let watchdog = DispatchWorkItem { [weak self, weak mqttConnection] in
+      guard let self, let mqttConnection, self.connection === mqttConnection, !self.connected else { return }
+      self.handleTransportFailure(for: mqttConnection)
+    }
+    connectWatchdog = watchdog
+    queue.asyncAfter(deadline: .now() + .milliseconds(Int(MqttBrokerPathPolicy.handshakeTimeoutMillis)), execute: watchdog)
     mqttConnection.stateUpdateHandler = { [weak self, weak mqttConnection] state in
       guard let self, let mqttConnection, self.connection === mqttConnection else { return }
       switch state {
       case .ready:
-        self.reconnectAttempt = 0
         self.reconnectWorkItem?.cancel()
         self.reconnectWorkItem = nil
         self.sendConnect()
         self.receiveLoop(for: mqttConnection)
-        self.queue.asyncAfter(deadline: .now() + 15) { [weak self, weak mqttConnection] in
-          guard let self, let mqttConnection, self.connection === mqttConnection, !self.connected else { return }
-          self.handleTransportFailure(for: mqttConnection)
-        }
       case .failed, .cancelled:
         self.handleTransportFailure(for: mqttConnection)
       default:
@@ -522,6 +545,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     sendFrame(typeAndFlags: 0x82, payload)
     pendingSubscriptions[packetId] = missing
     subscriptionSentAt[packetId] = Self.uptimeMillis()
+    scheduleSubscriptionWatchdog()
     onPathState?(pathSnapshot)
   }
 
@@ -551,7 +575,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     brokerAcknowledged: (() -> Void)? = nil,
     durableBrokerAcknowledged: ((@escaping () -> Void) -> Void)? = nil,
     pathGate: MqttPathPublication? = nil,
-    admissionDeferred: (() -> Void)? = nil
+    admissionDeferred: (() -> Void)? = nil,
+    physicallySubmitted: ((Bool) -> Void)? = nil
   ) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
     let logicalMessageId = Self.logicalMessageId(payload)
@@ -601,6 +626,10 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
       )
     })
     pumpPendingPublishes()
+    if let physicallySubmitted {
+      let submitted = inFlightPublishes.values.filter { $0.acknowledgementGroup === acknowledgements }.count
+      physicallySubmitted(submitted == sealedPackets.count)
+    }
     if connected {
       scheduleBrokerAckWatchdog()
     }
@@ -608,6 +637,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   }
 
   private func pumpPendingPublishes() {
+    checkTransportOnDemand()
     guard hasLiveTransport() else { return }
     pendingPacketPublishes.removeAll { pending in
       let invalid = pending.pathGate.map { !authorizes($0) } ?? false
@@ -728,6 +758,9 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         return
       }
       reconnectAttempt = 0
+      connectWatchdog?.cancel()
+      connectWatchdog = nil
+      connectStartedAt = nil
       connectionGeneration &+= 1
       liveness.connected(at: Self.uptimeMillis())
       setConnected(true)
@@ -792,6 +825,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
       guard let packetId = packet.payload.readUInt16(at: &index),
             let topics = pendingSubscriptions.removeValue(forKey: packetId) else { break }
       subscriptionSentAt.removeValue(forKey: packetId)
+      scheduleSubscriptionWatchdog()
       let codes = Array(packet.payload.suffix(from: index))
       guard let acknowledged = MqttBrokerPathPolicy.acknowledgedTopics(codes, requested: topics) else {
         if let connection { handleTransportFailure(for: connection) }
@@ -932,6 +966,73 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     return true
   }
 
+  func wakeForTraffic() {
+    queue.async { self.checkTransportOnDemand() }
+  }
+
+  private func monitorNetwork() {
+    guard networkMonitor == nil else { return }
+    let monitor = NWPathMonitor()
+    networkMonitor = monitor
+    monitor.pathUpdateHandler = { [weak self, weak monitor] path in
+      guard let self, let monitor, self.networkMonitor === monitor else { return }
+      let available = path.status == .satisfied
+      let recovered = available && self.networkWasAvailable == false
+      self.networkWasAvailable = available
+      if recovered { self.checkTransportOnDemand(networkRecovered: true) }
+    }
+    monitor.start(queue: queue)
+  }
+
+  private func checkTransportOnDemand(networkRecovered: Bool = false) {
+    guard !intentionallyDisconnected, !transportRecoveryInProgress, networkMonitor != nil else { return }
+    let now = Self.uptimeMillis()
+    if let connection {
+      if connected {
+        guard hasLiveTransport() else { return }
+        if !MqttBrokerPathPolicy.expiredSubscriptionIDs(subscriptionSentAt, now: now).isEmpty ||
+            brokerAckWatchdog.oldestTimedOutPendingAge() != nil {
+          handleTransportFailure(for: connection)
+        } else {
+          switch liveness.check(at: now) {
+          case .reconnect: handleTransportFailure(for: connection)
+          case .ping: sendFrame(typeAndFlags: 0xC0, Data())
+          case .none: break
+          }
+        }
+      } else if MqttBrokerPathPolicy.handshakeExpired(startedAt: connectStartedAt, now: now) {
+        handleTransportFailure(for: connection)
+      } else if networkRecovered, case .waiting = connection.state {
+        handleTransportFailure(for: connection)
+      }
+    }
+    guard connection == nil, networkWasAvailable != false,
+          networkRecovered || lastReconnectWake.map({ now - $0 >= 2_000 }) != false else { return }
+    lastReconnectWake = now
+    reconnectWorkItem?.cancel()
+    reconnectWorkItem = nil
+    start()
+  }
+
+  private func scheduleSubscriptionWatchdog() {
+    subscriptionWatchdog?.cancel()
+    subscriptionWatchdog = nil
+    guard let connection, let oldest = subscriptionSentAt.values.min() else { return }
+    let generation = connectionGeneration
+    let delay = max(0, MqttBrokerPathPolicy.handshakeTimeoutMillis - (Self.uptimeMillis() - oldest))
+    let watchdog = DispatchWorkItem { [weak self, weak connection] in
+      guard let self, let connection, self.connection === connection, self.connected,
+            self.connectionGeneration == generation else { return }
+      if MqttBrokerPathPolicy.expiredSubscriptionIDs(self.subscriptionSentAt, now: Self.uptimeMillis()).isEmpty {
+        self.scheduleSubscriptionWatchdog()
+      } else {
+        self.handleTransportFailure(for: connection)
+      }
+    }
+    subscriptionWatchdog = watchdog
+    queue.asyncAfter(deadline: .now() + .milliseconds(Int(delay)), execute: watchdog)
+  }
+
   private func scheduleConnectionMaintenance() {
     maintenanceWorkItem?.cancel()
     guard connected else { return }
@@ -947,12 +1048,6 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
       case .ping: self.sendFrame(typeAndFlags: 0xC0, Data())
       case .none: break
       }
-      let expired = MqttBrokerPathPolicy.expiredSubscriptionIDs(self.subscriptionSentAt, now: now)
-      for packetID in expired {
-        self.subscriptionSentAt.removeValue(forKey: packetID)
-        self.pendingSubscriptions.removeValue(forKey: packetID)
-      }
-      if !expired.isEmpty { self.subscribeToCurrentTopics() }
       self.scheduleConnectionMaintenance()
     }
     maintenanceWorkItem = item
@@ -1035,6 +1130,11 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     if value {
       scheduleTopicRotationRefresh()
     } else {
+      connectWatchdog?.cancel()
+      connectWatchdog = nil
+      connectStartedAt = nil
+      subscriptionWatchdog?.cancel()
+      subscriptionWatchdog = nil
       readySubscriptionGeneration = -1
       topicRotationWorkItem?.cancel()
       topicRotationWorkItem = nil
