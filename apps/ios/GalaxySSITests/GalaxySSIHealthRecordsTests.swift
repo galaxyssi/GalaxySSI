@@ -6,6 +6,28 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testMetricErasureClearsTombstonesButRetainsTableOriginal() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    XCTAssertEqual(try records.importTable(data, name: "weight.csv", json: false, mapping: mapping,
+                                           expected: [.ready]), 1)
+    var deleted = try XCTUnwrap(records.load().current.first)
+    deleted.deleted = true
+    try records.write(deleted)
+    XCTAssertTrue(try records.load().current.isEmpty)
+    let plan = try records.previewMetricErase(.weight)
+    XCTAssertEqual(plan.counts, [.table: 1])
+    XCTAssertEqual(plan.versions.count, 2)
+    XCTAssertEqual(try records.eraseMetricHistory(plan), 1)
+    let archive = try records.load()
+    XCTAssertTrue(archive.revisions.isEmpty)
+    XCTAssertEqual(archive.tableBatches?.first?.data, data)
+  }
+
+  @MainActor
   func testMetricErasureReviewsEverySourceAndKeepsOtherMetricsAndSync() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
