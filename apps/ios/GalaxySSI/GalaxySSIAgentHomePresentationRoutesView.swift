@@ -20,7 +20,7 @@ struct GalaxySSIAgentHomePresentationRoutes: ViewModifier {
 
   let t: (String, String) -> String
   let onAgentAdded: ([String]) -> Void
-  let onAddAttachment: (URL) -> Void
+  let onAddAttachments: ([URL]) -> Void
   let onAppendAttachment: (GalaxySSIDraftAttachment) -> Void
   let onUpdatePendingAction: (String, String, String, String) -> AgentPendingActionEditResult
   let onMovePendingAction: (String, String, Int) -> AgentPendingActionEditResult
@@ -51,7 +51,7 @@ struct GalaxySSIAgentHomePresentationRoutes: ViewModifier {
       ) { result in
         switch result {
         case .success(let urls):
-          urls.forEach(onAddAttachment)
+          onAddAttachments(urls)
         case .failure(let error):
           attachmentError = error.localizedDescription
         }
@@ -190,7 +190,7 @@ extension View {
     homeTaskPendingDeletion: Binding<AgentTaskRecord?>,
     t: @escaping (String, String) -> String,
     onAgentAdded: @escaping ([String]) -> Void,
-    onAddAttachment: @escaping (URL) -> Void,
+    onAddAttachments: @escaping ([URL]) -> Void,
     onAppendAttachment: @escaping (GalaxySSIDraftAttachment) -> Void,
     onUpdatePendingAction: @escaping (String, String, String, String) -> AgentPendingActionEditResult,
     onMovePendingAction: @escaping (String, String, Int) -> AgentPendingActionEditResult,
@@ -218,7 +218,7 @@ extension View {
         homeTaskPendingDeletion: homeTaskPendingDeletion,
         t: t,
         onAgentAdded: onAgentAdded,
-        onAddAttachment: onAddAttachment,
+        onAddAttachments: onAddAttachments,
         onAppendAttachment: onAppendAttachment,
         onUpdatePendingAction: onUpdatePendingAction,
         onMovePendingAction: onMovePendingAction,
