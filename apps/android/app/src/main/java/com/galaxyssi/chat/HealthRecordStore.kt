@@ -988,6 +988,50 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         } finally { database.endTransaction(); publishCommittedChanges() }
     }
 
+    fun canUndoDelete(id: String, revision: Int): Boolean = revision in 2 until Int.MAX_VALUE &&
+        helper.readableDatabase.rawQuery("SELECT 1 FROM observations WHERE id=? AND revision=? AND deleted=1",
+            arrayOf(id, revision.toString())).use { it.moveToFirst() }
+
+    @Synchronized fun undoDelete(id: String, deletionRevision: Int): Boolean {
+        if (deletionRevision !in 2 until Int.MAX_VALUE) return false
+        val database = helper.writableDatabase
+        database.beginTransaction()
+        return try {
+            val removed = database.rawQuery("SELECT id,revision,payload,metric,measured_at,dedupe FROM observations " +
+                "WHERE id=? AND revision=? AND deleted=1", arrayOf(id, deletionRevision.toString())).use { rows ->
+                if (rows.moveToFirst()) decode(rows) to rows.getString(5) else null
+            } ?: return false
+            val (tombstone, key) = removed
+            val previous = revision(id, deletionRevision - 1) ?: return false
+            if (tombstone.profileId != "self" || previous != tombstone.copy(revision = previous.revision, receivedAt = previous.receivedAt))
+                return false
+            if (database.rawQuery("SELECT 1 FROM observations WHERE dedupe=? AND deleted=0 LIMIT 1",
+                    arrayOf(key)).use { it.moveToFirst() } ||
+                recordForEvidence(tombstone.draft) != null || recordForOcrLink(tombstone.draft) != null) return false
+            val restored = tombstone.copy(revision = deletionRevision + 1, receivedAt = System.currentTimeMillis())
+            val encrypted = encode(restored)
+            try {
+                check(database.update("observations", ContentValues().apply {
+                    put("deleted", 0); put("revision", restored.revision); put("payload", encrypted)
+                }, "id=? AND revision=? AND deleted=1", arrayOf(id, deletionRevision.toString())) == 1)
+                database.insertOrThrow("revisions", null, ContentValues().apply {
+                    put("id", id); put("revision", restored.revision); put("payload", encrypted)
+                    put("changed_at", restored.receivedAt); put("deleted", 0)
+                })
+                // Links are authenticated against their revision and must be re-encrypted for the restored one.
+                for (evidence in backupSourceLinks(previous, android.os.CancellationSignal())) {
+                    val ocr = evidence.kind == "ocr"
+                    if (ocr && (recordForEvidenceKey(evidenceKey(evidence, restored.draft.metric)) != null ||
+                            linkedOcrRecord(evidence) != null)) return false
+                    check(insertSourceLink(restored, evidence, if (ocr) ocrLinkKey(evidence) else ""))
+                }
+                changed(restored.draft.metric)
+                database.setTransactionSuccessful()
+                true
+            } finally { encrypted.fill(0) }
+        } finally { database.endTransaction(); publishCommittedChanges() }
+    }
+
     fun history(id: String, beforeRevision: Int = Int.MAX_VALUE): List<HealthObservation> = helper.readableDatabase.rawQuery(
         "SELECT id,revision,payload FROM revisions WHERE id=? AND revision<? ORDER BY revision DESC LIMIT 50", arrayOf(id, beforeRevision.toString())
     ).use { buildList { while (it.moveToNext()) add(decode(it)) } }
