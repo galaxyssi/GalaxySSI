@@ -38,6 +38,25 @@ class HealthTrendStoreDeviceTest {
         assertEquals(48, rows.size); assertEquals(48, rows.map { it.id }.toSet().size); assertTrue(rows.all { it.draft.unit == "kg" })
         val summary = HealthTrendRepository.load(store, s); assertEquals(48L, summary.eligible); assertEquals(47L, summary.otherUnits)
     }
+    @Test fun pointAuditReproducesAnOriginalMultiDayBucketInsteadOfSplittingItIntoDays() = fixture { store ->
+        val s = spec().let { it.copy(last = it.first.plusDays(244), aggregation = HealthTrendAggregation.MINIMUM) }
+        assertEquals(3, s.bucketDays)
+        store.save(draft(s, 0, "70"))
+        val winner = (store.save(draft(s, 1, "50").copy(measuredAt = s.from + 86_400_001L)) as HealthSaveResult.Saved).record
+        store.save(draft(s, 2, "60").copy(measuredAt = s.from + 172_800_001L))
+        store.save(draft(s, 3, "10").copy(measuredAt = s.from + 259_200_001L))
+        val summary = HealthTrendRepository.load(store, s)
+        val plotted = summary.points.first()
+        val scope = s.copy(first = plotted.first, last = plotted.last)
+        val audit = HealthTrendRepository.point(store, scope, plotted.field, summary.version)
+        assertEquals(plotted, audit)
+        assertEquals(winner.id, audit.recordId)
+        assertEquals(3L, audit.count)
+        store.save(draft(s, 4, "25"))
+        assertThrows(HealthTrendChangedException::class.java) {
+            HealthTrendRepository.point(store, scope, plotted.field, summary.version)
+        }
+    }
     @Test fun nonNumericResultsRemainAvailableInAllRecordsButNotPointContributors() = fixture { store ->
         val s = spec(HealthMetric.CRP)
         for ((index, value) in listOf("1", "<1", "1-2", "negative").withIndex()) store.save(draft(s, index, value))

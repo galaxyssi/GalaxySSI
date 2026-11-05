@@ -52,7 +52,9 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   }
 
   func sameMeasurement(as other: Self) -> Bool {
-    metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
+    if let device = bluetoothReceipt?.device, let otherDevice = other.bluetoothReceipt?.device,
+       device != otherDevice { return false }
+    return metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
       unit == other.unit && value == other.value && reported?.canonical == other.reported?.canonical &&
       diastolic == other.diastolic && pulse == other.pulse
   }
@@ -129,6 +131,7 @@ struct GalaxySSIHealthRecords {
   struct Archive: Codable {
     var reportReview: [GalaxySSIHealthReportReview.Item]?
     var version = 1
+    var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
     var derivesOverview: Bool?
@@ -136,6 +139,7 @@ struct GalaxySSIHealthRecords {
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
+    var healthOnlinePermission: UUID?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -237,6 +241,14 @@ struct GalaxySSIHealthRecords {
 
   func setOverviewPermission(_ enabled: Bool) throws {
     try setPrivacy(.overview, enabled: enabled)
+  }
+
+  func setHealthOnlinePermission(_ enabled: Bool) throws {
+    var archive = try load()
+    guard (archive.healthOnlinePermission != nil) != enabled else { return }
+    archive.healthOnlinePermission = enabled ? UUID() : nil
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
   func setPrivacy(_ scope: PrivacyScope, enabled: Bool) throws {
@@ -344,7 +356,7 @@ struct GalaxySSIHealthRecords {
 
   func importTable(_ data: Data, name: String, json: Bool, mapping: GalaxySSIHealthTableImport.Mapping,
                    expected: [GalaxySSIHealthTableImport.Status],
-                   worksheet: GalaxySSIHealthXLSX.Selection? = nil) throws -> Int {
+                   worksheet: GalaxySSIHealthXLSX.Selection? = nil, retainOriginal: Bool = true) throws -> Int {
     var archive = try load()
     let table: GalaxySSIHealthTableImport.Table
     if let worksheet { table = try GalaxySSIHealthXLSX(data).table(worksheet) }
@@ -363,10 +375,10 @@ struct GalaxySSIHealthRecords {
     guard !readings.isEmpty else { return 0 }
     var batches = archive.tableBatches ?? []
     guard batches.count < 30,
-          batches.reduce(data.count, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
+          batches.reduce(retainOriginal ? data.count : 0, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
     else { throw GalaxySSIHealthTableImport.Failure.limit }
-    batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: data,
-                         inserted: readings.count, undone: nil), at: 0)
+    batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: retainOriginal ? data : Data(),
+                         inserted: readings.count, undone: nil, sourceDigest: hash), at: 0)
     archive.tableBatches = batches
     archive.revisions.append(contentsOf: readings)
     try persist(archive)
@@ -389,6 +401,14 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return tombstones.count
+  }
+
+  func commitRestore(_ archive: Archive, receipt: UUID) throws {
+    var updated = archive
+    var receipts = updated.restoreReceipts ?? []
+    receipts.insert(receipt)
+    updated.restoreReceipts = receipts
+    try persist(updated)
   }
 
   private func persist(_ archive: Archive) throws {

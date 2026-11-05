@@ -8,6 +8,10 @@
     <string name="health_trend_source">Source</string>
     <string name="health_trend_all_sources">All sources</string>
     <string name="health_trend_choose_original">Choose an original source</string>
+    <string name="health_trend_choose_bluetooth">Bluetooth device</string>
+    <string name="health_trend_no_bluetooth">No identified Bluetooth devices in this period</string>
+    <string name="health_trend_bluetooth_label">%1$s · %2$s</string>
+    <string name="health_trend_bluetooth_unidentified">%1$s · Device not identified</string>
     <string name="health_trend_original_source">Original · %1$s</string>
     <string name="health_trend_no_sources">No original sources in this period</string>
     <string name="health_trend_aggregation">Aggregation</string>
@@ -25,6 +29,9 @@
     <string name="health_trend_until">End date</string>
     <string name="health_trend_invalid_dates">The end date must not precede the start date.</string>
     <string name="health_trend_numeric_records">Numeric records contributing to this point · %1$s</string>
+    <string name="health_trend_point_result">%1$s · %2$s: %3$s %4$s</string>
+    <string name="health_trend_point_contributors">Records used for this point: %1$d</string>
+    <string name="health_trend_open_extremum">View the record that set this value</string>
     <string name="health_trend_changed">Records changed during this calculation. Refresh to obtain a consistent result.</string>
     <string name="health_trend_stale">Records have changed since this snapshot. Refresh the trend to update it.</string>
     <string name="health_trend_refresh">Refresh trend</string>

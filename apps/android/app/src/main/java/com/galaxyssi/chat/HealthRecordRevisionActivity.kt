@@ -50,6 +50,9 @@ class HealthRecordRevisionActivity : Activity() {
                     ui.add(content, ui.text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(draft.measuredAt)), 14f, muted = true), 12)
                     ui.add(content, ui.text(getString(R.string.health_revision, record.revision), 13f, muted = true), 6)
                     ui.add(content, ui.text(getString(healthRecordSourceResource(record.source))), 12)
+                    if (record.source == "bluetooth") ui.add(content,
+                        ui.text(healthBluetoothTrendLabel(record.bluetoothGroup, record.platformOrigin), 13f, muted = true)
+                            .apply { tag = "health-revision-device" }, 4)
                     ui.add(content, ui.text(getString(healthContextResource(draft.condition))), 8)
                     if (draft.metric == HealthMetric.BLOOD_PRESSURE) {
                         ui.add(content, ui.text(getString(healthContextResource(draft.side))), 8)
