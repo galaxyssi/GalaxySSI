@@ -129,11 +129,11 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
   }
 
   private func finishEntry() {
-    let title = clean(values["title"] ?? "", limit: 500)
+    let title = Self.plainText(values["title"] ?? "", limit: 500)
     guard !title.isEmpty, let url = publicArticleURL(values["link"] ?? ""),
           seen.insert(url.absoluteString).inserted else { return }
     let summary = ["summary", "description", "content", "encoded"]
-      .compactMap { values[$0] }.lazy.map { self.clean($0, limit: 4_000) }.first { !$0.isEmpty } ?? ""
+      .compactMap { values[$0] }.lazy.map { Self.plainText($0, limit: 4_000) }.first { !$0.isEmpty } ?? ""
     let published = ["published", "pubdate", "date"].compactMap { values[$0] }
       .lazy.compactMap { Self.date($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.first
     entries.append(PublicNewsArticle(
@@ -158,7 +158,7 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
     name.split(separator: ":").last.map { $0.lowercased() } ?? name.lowercased()
   }
 
-  private func clean(_ text: String, limit: Int) -> String {
+  static func plainText(_ text: String, limit: Int) -> String {
     let plain = text.replacingOccurrences(of: "<[^>]*>", with: " ", options: .regularExpression)
       .replacingOccurrences(of: "&nbsp;", with: " ")
       .replacingOccurrences(of: "&amp;", with: "&")

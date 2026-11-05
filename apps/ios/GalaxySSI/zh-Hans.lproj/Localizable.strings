@@ -5232,6 +5232,8 @@
 "agent_global_insights_title" = "GalaxySSI 洞察";
 "public_news_title" = "发现";
 "public_news_refresh" = "刷新新闻";
+"public_news_live" = "实时 Hacker News";
+"public_news_actions" = "新闻操作";
 "public_news_filter" = "筛选新闻";
 "public_news_all" = "全部";
 "public_news_unread" = "未读";
