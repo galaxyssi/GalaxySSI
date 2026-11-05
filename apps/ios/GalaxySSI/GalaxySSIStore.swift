@@ -662,8 +662,9 @@ final class GalaxySSIStore: ObservableObject {
     try chatHistoryDatabase.desktopReplySources(before: cursor)
   }
 
-  func deliveredDesktopReplyTurns(contactId: String, conversationId: String) throws -> Set<String> {
-    try chatHistoryDatabase.deliveredDesktopReplyTurns(contactId: contactId, conversationId: conversationId)
+  func deliveredDesktopReplyTurnPage(contactId: String, conversationId: String, before cursor: GalaxySSIChatHistoryCursor?)
+    throws -> (turns: Set<String>, next: GalaxySSIChatHistoryCursor?) {
+    try chatHistoryDatabase.deliveredDesktopReplyTurnPage(contactId: contactId, conversationId: conversationId, before: cursor)
   }
 
   func commitDesktopReplyDisposition(_ binding: AgentDesktopReplyBinding, remoteMessageId: String) -> Bool {

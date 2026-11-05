@@ -430,6 +430,20 @@ final class GalaxySSIChatHistoryDatabaseTests: XCTestCase {
     XCTAssertEqual(Set(found), Set(outgoing.map(\.id)))
     XCTAssertEqual(try database.deliveredDesktopReplyTurns(contactId: "hermes", conversationId: "conversation"), ["turn-1", "turn-4"])
     XCTAssertTrue(try database.deliveredDesktopReplyTurns(contactId: "other", conversationId: "conversation").isEmpty)
+    var matched: Set<String> = []
+    var replyCursor: GalaxySSIChatHistoryCursor?
+    var visited = 0
+    repeat {
+      let batch = try database.deliveredDesktopReplyTurnPage(contactId: "hermes",
+        conversationId: "conversation", before: replyCursor, pageSize: 1)
+      XCTAssertLessThanOrEqual(batch.turns.count, 1)
+      matched.formUnion(batch.turns)
+      replyCursor = batch.next
+      visited += 1
+      XCTAssertLessThanOrEqual(visited, 3)
+    } while replyCursor != nil && visited < 4
+    XCTAssertEqual(visited, 3)
+    XCTAssertEqual(matched, ["turn-1", "turn-4"])
   }
 
   func testLocalDeletionIsContactScopedAndBlocksReplayAfterReopen() throws {
