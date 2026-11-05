@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_data_local">On this device</string>
+    <string name="health_data_heading">Health data and originals</string>
+    <string name="health_data_note">Find records and originals, or move them to a new device.</string>
+    <string name="health_data_record_count">Confirmed records</string>
+    <string name="health_data_camera_count">Camera originals</string>
+    <string name="health_data_upload_count">Uploaded files</string>
+    <string name="health_data_count_pending">—</string>
+    <string name="health_data_manage">Manage content</string>
+    <string name="health_data_measurements">Health measurements</string>
+    <string name="health_data_measurements_note">Daily measurements, lab results and conditions</string>
+    <string name="health_data_originals">Photos and original files</string>
+    <string name="health_data_originals_note">Photos, PDFs and tables with links to records</string>
+    <string name="health_data_tasks">Import and export tasks</string>
+    <string name="health_data_tasks_note">Import queue, measurement exports and original exports</string>
+    <string name="health_data_backup">Backup and restore</string>
+    <string name="health_data_backup_note">Move records, originals and their links</string>
+    <string name="health_data_recent">Recent files</string>
+    <string name="health_data_view_all">View all</string>
+    <string name="health_data_loading_files">Loading recent files…</string>
+    <string name="health_data_file_meta">%1$s %2$s · %3$s · %4$s</string>
+    <string name="health_data_camera">Camera</string>
+    <string name="health_data_upload">Upload</string>
+    <string name="health_data_crop">Crop</string>
+    <string name="health_data_linked">Linked</string>
+    <string name="health_data_unlinked">Not linked</string>
+    <string name="health_data_missing">File unavailable</string>
+</resources>

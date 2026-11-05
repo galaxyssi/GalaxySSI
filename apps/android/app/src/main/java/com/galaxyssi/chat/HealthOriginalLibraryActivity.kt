@@ -22,6 +22,8 @@ import java.util.concurrent.Executors
 
 class HealthOriginalLibraryActivity : Activity() {
     private val ui by lazy { HealthCenterViews(this) }; private val worker = Executors.newSingleThreadExecutor()
+    private val names by lazy { intent.healthNavigationDatabases() }
+    private fun openOriginals() = HealthExportShare.openOriginals(applicationContext, names.fixture)
     private val thumbnails = Executors.newFixedThreadPool(2); private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout; private var active = false; @Volatile private var generation = 0
     private var filter = HealthLibraryFilter(); private var grid = true; private var selection = ""; private var scrollY = 0
@@ -68,8 +70,8 @@ class HealthOriginalLibraryActivity : Activity() {
         clearImages(); body.removeAllViews(); body.addView(ui.text(getString(R.string.health_loading)))
         val query = filter; val after = cursor; val selected = selection
         worker.execute {
-            val result = runCatching { HealthOriginalStore(applicationContext).use { originals ->
-                val library = HealthOriginalLibraryStore(applicationContext, originals)
+            val result = runCatching { openOriginals().use { originals ->
+                val library = HealthExportShare.originalLibrary(applicationContext, originals, names.fixture)
                 val session = selected.takeIf { it.isNotBlank() }?.let(library::session)?.takeIf { it.state == HealthOriginalExportState.SELECTING }
                     ?: HealthOriginalExportSession(selected.takeIf { it.isNotBlank() && library.session(it) == null } ?: java.util.UUID.randomUUID().toString(), HealthOriginalExportState.SELECTING, System.currentTimeMillis())
                 val page = originals.library(query, after, cancellation)
@@ -105,7 +107,7 @@ class HealthOriginalLibraryActivity : Activity() {
             data.page.next?.let { next -> addView(ui.command(R.string.health_next_page) { previous += cursor; cursor = next; scrollY = 0; load() }, LinearLayout.LayoutParams(0, -2, 1f)) }
         }, 16)
         ui.add(content, ui.row(getString(R.string.health_library_export_history)) {
-            startActivity(Intent(this, HealthOriginalExportHistoryActivity::class.java))
+            startActivity(Intent(this, HealthOriginalExportHistoryActivity::class.java).putExtra("health_original_export_test_id", names.fixture))
         }, 16)
         body.addView(ui.column().apply {
             setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(12))
@@ -126,9 +128,10 @@ class HealthOriginalLibraryActivity : Activity() {
         card.addView(ui.text(original.name, 14f, bold = true).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
         card.addView(ui.text("${date(original.importedAt)} \u00b7 ${android.text.format.Formatter.formatShortFileSize(this, original.size)}", 12f, muted = true))
         if (missing) card.addView(ui.text(getString(R.string.health_original_missing), 12f, muted = true))
-        card.setOnClickListener { startActivity(Intent(this, HealthCaptureActivity::class.java).putExtra("original", original.id)) }; card.isFocusable = true
+        card.setOnClickListener { startActivity(Intent(this, HealthCaptureActivity::class.java).putExtra("original", original.id)
+            .putHealthNavigationFixture(names)) }; card.isFocusable = true
         if (!missing && HealthOriginalKind.of(original) in listOf(HealthOriginalKind.IMAGE, HealthOriginalKind.PDF)) tasks += thumbnails.submit {
-            val bitmap = runCatching { HealthOriginalStore(applicationContext).use { HealthOriginalThumbnail.load(it, original) } }.getOrNull()
+            val bitmap = runCatching { openOriginals().use { HealthOriginalThumbnail.load(it, original) } }.getOrNull()
             main.post { if (!active || generation != token) bitmap?.let(HealthOriginalThumbnail::clear) else if (bitmap != null) { image.setImageBitmap(bitmap); images += image to bitmap } }
         }
         return card
@@ -138,15 +141,16 @@ class HealthOriginalLibraryActivity : Activity() {
     private fun mutate(action: (HealthOriginalLibraryStore, String) -> Any) {
         val id = selection; val token = generation; val y = scroll?.scrollY ?: scrollY
         worker.execute {
-            val result = runCatching { HealthOriginalStore(applicationContext).use { originals ->
-                val library = HealthOriginalLibraryStore(applicationContext, originals); library.ensureSelection(id); action(library, id)
+            val result = runCatching { openOriginals().use { originals ->
+                val library = HealthExportShare.originalLibrary(applicationContext, originals, names.fixture); library.ensureSelection(id); action(library, id)
             } }
             main.post { if (active && token == generation) result.fold({ value ->
                 if (value is HealthOriginalExportSession && value.state == HealthOriginalExportState.REVIEW) openExport(id) else { scrollY = y; load() }
             }, { android.widget.Toast.makeText(this, R.string.health_storage_error, android.widget.Toast.LENGTH_LONG).show(); load() }) }
         }
     }
-    private fun openExport(id: String) { startActivity(Intent(this, HealthOriginalExportActivity::class.java).putExtra("export_id", id)) }
+    private fun openExport(id: String) { startActivity(Intent(this, HealthOriginalExportActivity::class.java).putExtra("export_id", id)
+        .putExtra("health_original_export_test_id", names.fixture)) }
     private fun chooseType() {
         dialog = AlertDialog.Builder(this).setTitle(R.string.health_library_type).setItems((listOf(getString(R.string.health_library_all)) + HealthOriginalKind.entries.map { getString(it.title()) }).toTypedArray()) { _, index ->
             filter = filter.copy(kind = if (index == 0) null else HealthOriginalKind.entries[index - 1]); reset()
