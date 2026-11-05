@@ -216,6 +216,7 @@ private struct GalaxySSIHealthPDFSourceViewport: View {
 struct GalaxySSIHealthPDFTextView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
+  @Environment(\.timeZone) private var timeZone
   let store: GalaxySSIHealthOriginalStore
   var transientReport: GalaxySSIHealthTransientReport?
   @State private var files: [GalaxySSIHealthOriginalStore.Original] = []
@@ -228,6 +229,8 @@ struct GalaxySSIHealthPDFTextView: View {
   @State private var status = Status.idle
   @State private var showLimit = 50
   @State private var selectedRegion: Int?
+  @State private var sourceContext = GalaxySSIHealthOCRSourceContext()
+  @State private var reviewedSources: Set<GalaxySSIHealthReportReview.Source> = []
   @State private var focused = false
   @State private var password: String?
   @State private var unlocking = false
@@ -264,6 +267,9 @@ struct GalaxySSIHealthPDFTextView: View {
             }
           }
           if let result {
+            if reviewRecords != nil {
+              GalaxySSIHealthOCRSourceContextRows(context: sourceContext)
+            }
             Section(t("source", "Original page")) {
               if let image = result.preview {
                 let highlight = result.regions.first(where: { $0.id == selectedRegion })?.highlight
@@ -295,13 +301,15 @@ struct GalaxySSIHealthPDFTextView: View {
               }
               if let reviewRecords, let selected,
                  let region = result.regions.first(where: { $0.id == selectedRegion }) {
+                let source = GalaxySSIHealthReportReview.Source(original: selected.id, sha256: selected.sha256,
+                  page: page, region: region.id, fromOCR: result.method == .ocr)
                 NavigationLink {
-                  GalaxySSIHealthReportItemEditor(records: reviewRecords,
-                    source: .init(original: selected.id, sha256: selected.sha256, page: page,
-                                  region: region.id, fromOCR: result.method == .ocr),
-                    excerpt: String(region.text.prefix(500)))
+                  GalaxySSIHealthReportItemEditor(records: reviewRecords, source: source,
+                    excerpt: String(region.text.prefix(500)), sourceContext: sourceContext)
                 } label: {
-                  Text(GalaxySSIHealthReportReview.text("item", "Review measurement", language: language))
+                  let reviewed = reviewedSources.contains(source)
+                  Text(GalaxySSIHealthReportReview.text(reviewed ? "edit_item" : "item",
+                    reviewed ? "Edit reviewed measurement" : "Review measurement", language: language))
                 }
               }
             }
@@ -339,6 +347,9 @@ struct GalaxySSIHealthPDFTextView: View {
     .onAppear(perform: reload)
     .onDisappear(perform: clearPassword)
     .onDisappear { if status == .working { cancel() } }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
+      if let reviewRecords, notification.object as? String == reviewRecords.owner { reloadReviewedSources() }
+    }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
       else { clearPassword(); cancel(); selected = nil; files = [] }
@@ -376,11 +387,20 @@ struct GalaxySSIHealthPDFTextView: View {
 
   private func reload() {
     guard scene == .active else { return }
+    reloadReviewedSources()
     if transientReport != nil { recognize(); return }
     do {
       files = try store.list().originals.filter { $0.kind == .pdf }
       status = .idle
     } catch { files = []; status = .unavailable }
+  }
+
+  private func reloadReviewedSources() {
+    guard scene == .active, let reviewRecords, let selected else { reviewedSources = []; return }
+    let items = (try? reviewRecords.load())?.reportReview ?? []
+    reviewedSources = Set(items.lazy.map(\.source).filter {
+      $0.original == selected.id && $0.sha256 == selected.sha256
+    })
   }
 
   private func recognize(forceOCR: Bool = false) {
@@ -395,22 +415,26 @@ struct GalaxySSIHealthPDFTextView: View {
     }
     catch { status = .unavailable; return }
     requestedOCR = forceOCR
-    let token = UUID(), index = page, credential = password
+    let token = UUID(), index = page, credential = password, zone = timeZone
     requestID = token
     status = .working
     task = Task {
       let worker = Task.detached(priority: .userInitiated) {
         let pages = try GalaxySSIHealthPDFText.pageCount(data, password: credential)
-        return (pages, try GalaxySSIHealthPDFText.read(data, page: index, forceOCR: forceOCR, password: credential))
+        let pageResult = try GalaxySSIHealthPDFText.read(data, page: index, forceOCR: forceOCR, password: credential)
+        let context = GalaxySSIHealthOCRSourceContext.inspect(pageResult.regions.map(\.text), timeZone: zone)
+        return (pages, pageResult, context)
       }
       do {
-        let (pages, pageResult) = try await withTaskCancellationHandler(operation: {
+        let (pages, pageResult, context) = try await withTaskCancellationHandler(operation: {
           try await worker.value
         }, onCancel: { worker.cancel() })
         guard !Task.isCancelled, requestID == token, scene == .active else { return }
         count = pages
         result = pageResult
+        sourceContext = context
         selectedRegion = pageResult.regions.first?.id
+        reloadReviewedSources()
         status = .idle
       } catch {
         guard !Task.isCancelled, requestID == token, scene == .active else { return }
@@ -430,6 +454,8 @@ struct GalaxySSIHealthPDFTextView: View {
     task = nil
     result = nil
     selectedRegion = nil
+    sourceContext = .init()
+    reviewedSources = []
     focused = false
     status = .idle
   }
