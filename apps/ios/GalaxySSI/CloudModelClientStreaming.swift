@@ -86,7 +86,9 @@ extension CloudModelClient {
       throw GalaxySSIError.missingAPIKey
     }
     let languagePolicy = await store.languagePolicy
-    let systemPrompt = Self.systemPrompt(languagePolicy: languagePolicy) + "\n" + CloudWebGrounding.currentEvidencePrompt()
+    let systemPrompt = Self.conversationSystemPrompt(languagePolicy: languagePolicy, images: images) {
+      CloudWebGrounding.currentEvidencePrompt()
+    }
     return try conversationStreamingRequest(
       model: model,
       apiKey: apiKey,
