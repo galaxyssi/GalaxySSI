@@ -203,6 +203,7 @@ extension AgentHomeView {
           }
         }
       }
+    .environment(\.agentReplySpeechBlankTap, { _ = agentReplySpeechRuntime.stopPlaybackIfActive() })
   }
 
 }

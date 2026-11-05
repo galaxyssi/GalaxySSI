@@ -307,7 +307,9 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
   }
 
   private static func normalizedText(_ value: String, type: AgentRichBlockType) -> String {
-    let limited = String(value.prefix(maximumBlockText))
+    // Keep a bounded fenced envelope intact until the presentation codec separates prose from code.
+    let hasFence = type == .text && value.range(of: #"(?m)^[ \t]*(?:```|~~~)"#, options: .regularExpression) != nil
+    let limited = String(value.prefix(hasFence ? AgentRichContentCodec.maximumSerializedSize : maximumBlockText))
     if [.code, .diff, .json, .html, .mermaid].contains(type) {
       return limited.trimmingCharacters(in: CharacterSet(charactersIn: "\r\n"))
     }
@@ -380,6 +382,13 @@ enum AgentRichContentCodec {
       .first { !$0.isEmpty } ?? ""
   }
 
+  static func presentationBlocks(content: String, richOutputJson: String) -> [AgentRichBlock] {
+    let rich = decode(richOutputJson)
+    if !rich.isEmpty { return rich }
+    let explicit = decode(content)
+    return explicit.isEmpty ? fromText(content) : explicit
+  }
+
   static func decode(_ raw: String) -> [AgentRichBlock] {
     let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty,
@@ -393,11 +402,14 @@ enum AgentRichContentCodec {
     }
     var expanded: [AgentRichBlock] = []
     for block in document.blocks.prefix(maximumBlocks) where expanded.count < maximumBlocks {
+      let separatesParagraphs = block.type == .text &&
+        block.text.range(of: #"\n[ \t]*\n"#, options: .regularExpression) != nil
       if block.type == .text,
-         (block.text.contains("![") || block.text.contains("|") ||
-          block.text.range(of: Self.mermaidFencePattern, options: .regularExpression) != nil) {
+         (separatesParagraphs || block.text.contains("![") || block.text.contains("|") ||
+           block.text.contains("```") || block.text.contains("~~~")) {
         let parsed = fromText(block.text)
-        if parsed.contains(where: { $0.type == .table || $0.type == .mermaid || $0.type == .image }) {
+        if (separatesParagraphs && parsed.count > 1) ||
+          parsed.contains(where: { [.table, .mermaid, .image, .code, .html].contains($0.type) }) {
           expanded.append(contentsOf: parsed.prefix(maximumBlocks - expanded.count).enumerated().map { part, value in
             var value = value
             value.id = part == 0 ? block.id : "\(block.id.prefix(100))-markdown-\(part)"
@@ -451,8 +463,6 @@ enum AgentRichContentCodec {
     }
     return result
   }
-
-  private static let mermaidFencePattern = #"(?im)^\s*```\s*mermaid\s*$"#
 
 }
 

@@ -9,6 +9,7 @@ import QuickLook
 
 struct GalaxySSIRichContentView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.agentReplyParagraphSpeechAction) private var paragraphSpeechAction
   @EnvironmentObject private var coordinator: MessageCoordinator
   @EnvironmentObject private var store: GalaxySSIStore
 
@@ -31,22 +32,14 @@ struct GalaxySSIRichContentView: View {
   var onFormSubmit: (AgentRichBlock, [String: String]) -> Void = { _, _ in }
 
   private var resolvedBlocks: [AgentRichBlock] {
-    let richSource = richOutputJson.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !richSource.isEmpty {
-      let explicit = AgentRichContentCodec.decode(richSource)
-      if !explicit.isEmpty {
-        return explicit.map { coordinator.desktopArtifactStore.resolveBlock($0) }
-      }
-    }
-
-    let explicit = AgentRichContentCodec.decode(content)
-    let blocks = explicit.isEmpty ? AgentRichContentCodec.fromText(content) : explicit
-    return blocks.map { coordinator.desktopArtifactStore.resolveBlock($0) }
+    AgentRichContentCodec.presentationBlocks(content: content, richOutputJson: richOutputJson)
   }
 
   var body: some View {
     let artifactRevision = coordinator.artifactRevision
-    let blocks = resolvedBlocks
+    let source = resolvedBlocks
+    let blocks = source.map { coordinator.desktopArtifactStore.resolveBlock($0) }
+    let speech = paragraphSpeechAction.map { _ in AgentReplySpeechPresentationPolicy.Prose(source) }
     let layout = AgentResponseSectionOrganizer.organize(
       blocks,
       expandStructuredDetails: AgentPreferenceModePolicy
@@ -107,6 +100,7 @@ struct GalaxySSIRichContentView: View {
       }
     }
     .id(artifactRevision)
+    .environment(\.agentReplySpeechProse, speech)
     .environment(\.galaxySSIInterfaceLanguage, interfaceLanguage)
     .textSelection(.enabled)
     .fileExporter(

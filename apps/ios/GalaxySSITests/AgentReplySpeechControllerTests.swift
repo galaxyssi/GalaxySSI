@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import GalaxySSI
 
 final class AgentReplySpeechControllerTests: XCTestCase {
@@ -256,5 +257,82 @@ final class AgentReplySpeechControllerTests: XCTestCase {
       text: text,
       complete: complete
     )
+  }
+}
+
+extension AgentReplySpeechControllerTests {
+  func testNarrationUsesRenderedProseAcrossAnOversizedFencedAnimationAndMedia() throws {
+    let animation = String(repeating: "ANIMATION_PROGRAM ", count: 3_000)
+    let content = """
+      First paragraph.
+
+      ````html
+      \(animation)
+      ```
+      Still code.
+      ````
+
+      ![Visual](https://example.org/render.png)
+
+      Last paragraph.
+      """
+    let plain = ChatMessage(contactId: "hermes", content: content, isMine: false)
+    XCTAssertEqual(AgentReplySpeechPresentationPolicy.speakableText(plain), "First paragraph.\n\nLast paragraph.")
+    let encoded = AgentRichContentCodec.encode([.init(id: "rich", type: .text, text: content)])
+    let rich = ChatMessage(contactId: "hermes", content: "Connector fallback", isMine: false, richOutputJson: encoded)
+    let blocks = AgentRichContentCodec.presentationBlocks(content: rich.content, richOutputJson: rich.richOutputJson)
+    XCTAssertEqual(blocks.map(\.type), [.text, .code, .image, .text])
+    XCTAssertEqual(AgentReplySpeechPresentationPolicy.speakableText(rich), "First paragraph.\n\nLast paragraph.")
+    let last = try XCTUnwrap(blocks.last)
+    let selected = try XCTUnwrap(AgentReplySpeechPresentationPolicy.Prose(blocks).selection(for: last))
+    XCTAssertEqual(String(selected.sourceText.dropFirst(selected.startOffset)), "Last paragraph.")
+  }
+
+  func testProseOffsetsFollowRepeatedParagraphsAndRenderedListRows() throws {
+    let blocks: [AgentRichBlock] = [
+      .init(id: "before", type: .text, text: "Repeated."),
+      .init(id: "media", type: .html, text: "<canvas></canvas>"),
+      .init(id: "after", type: .text, text: "**Repeated.**"),
+      .init(id: "list", type: .list, rows: [["checked", "First item."], ["bullet", "[Second item.](https://example.org)"]]),
+      .init(id: "divider", type: .divider),
+      .init(id: "end", type: .quote, text: "Finish.")
+    ]
+    let prose = AgentReplySpeechPresentationPolicy.Prose(blocks)
+    XCTAssertEqual(prose.text, "Repeated.\n\nRepeated.\n\nFirst item.\nSecond item.\n\nFinish.")
+    let repeated = try XCTUnwrap(prose.selection(for: blocks[2]))
+    XCTAssertEqual(repeated.startOffset, "Repeated.\n\n".count)
+    let row = try XCTUnwrap(prose.selection(for: blocks[3], listRow: 1))
+    XCTAssertEqual(row.paragraph, "Second item.")
+    let target = makeTarget(responseId: "turn", entryId: "reply", text: prose.text, complete: true)
+    XCTAssertEqual(AgentReplySpeechController().readFromParagraph(target, paragraph: row.paragraph,
+      sourceText: row.sourceText, startOffset: row.startOffset).appendedText, "Second item.\n\nFinish.")
+  }
+
+  func testNarrationPreservesPlainActionCardFallbackButDoesNotReadCodeOnlyReplies() {
+    let action = AgentRichContentCodec.encode([.init(id: "card", type: .actions, title: "Review")])
+    let ordinary = ChatMessage(contactId: "hermes", content: "Review the meeting details.", isMine: false, richOutputJson: action)
+    XCTAssertEqual(AgentReplySpeechPresentationPolicy.speakableText(ordinary), "Review the meeting details.")
+    let code = ChatMessage(contactId: "hermes", content: "~~~javascript\nalert(1)\n~~~", isMine: false)
+    XCTAssertNil(AgentReplySpeechPresentationPolicy.target(code))
+  }
+
+  @MainActor
+  func testNativeSpeechHitTestingProtectsLinksAndExcludesWhitespace() throws {
+    let view = AgentReplyParagraphTextView(frame: CGRect(x: 0, y: 0, width: 320, height: 80), textContainer: nil)
+    let text = NSMutableAttributedString(string: "Text Link", attributes: [.font: UIFont.systemFont(ofSize: 17)])
+    text.addAttribute(.link, value: try XCTUnwrap(URL(string: "https://example.org")), range: NSRange(location: 5, length: 4))
+    view.attributedText = text
+    view.layoutIfNeeded()
+    view.layoutManager.ensureLayout(for: view.textContainer)
+    func center(_ character: Int) -> CGPoint {
+      let range = view.layoutManager.glyphRange(forCharacterRange: NSRange(location: character, length: 1),
+                                                actualCharacterRange: nil)
+      let rect = view.layoutManager.boundingRect(forGlyphRange: range, in: view.textContainer)
+      return CGPoint(x: rect.midX, y: rect.midY)
+    }
+    XCTAssertEqual(view.hit(at: center(1)), .text(1))
+    XCTAssertEqual(view.hit(at: center(6)), .link)
+    XCTAssertEqual(view.hit(at: CGPoint(x: 310, y: center(1).y)), .blank)
+    XCTAssertEqual(view.hit(at: CGPoint(x: 10, y: 75)), .blank)
   }
 }

@@ -10,10 +10,37 @@ private struct AgentReplyParagraphSpeechActionKey: EnvironmentKey {
   static let defaultValue: ((AgentReplyParagraphSpeechSelection) -> Void)? = nil
 }
 
+private struct AgentReplySpeechProseKey: EnvironmentKey {
+  static let defaultValue: AgentReplySpeechPresentationPolicy.Prose? = nil
+}
+
+private struct AgentReplySpeechBlankTapKey: EnvironmentKey {
+  static let defaultValue: (() -> Void)? = nil
+}
+
+private struct AgentReplyNativeParagraphsKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
 extension EnvironmentValues {
   var agentReplyParagraphSpeechAction: ((AgentReplyParagraphSpeechSelection) -> Void)? {
     get { self[AgentReplyParagraphSpeechActionKey.self] }
     set { self[AgentReplyParagraphSpeechActionKey.self] = newValue }
+  }
+
+  var agentReplySpeechProse: AgentReplySpeechPresentationPolicy.Prose? {
+    get { self[AgentReplySpeechProseKey.self] }
+    set { self[AgentReplySpeechProseKey.self] = newValue }
+  }
+
+  var agentReplySpeechBlankTap: (() -> Void)? {
+    get { self[AgentReplySpeechBlankTapKey.self] }
+    set { self[AgentReplySpeechBlankTapKey.self] = newValue }
+  }
+
+  var agentReplyNativeParagraphs: Bool {
+    get { self[AgentReplyNativeParagraphsKey.self] }
+    set { self[AgentReplyNativeParagraphsKey.self] = newValue }
   }
 }
 
