@@ -141,25 +141,53 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   }
 
   func deliveredDesktopReplyTurns(contactId: String, conversationId: String) throws -> Set<String> {
+    var turns: Set<String> = []
+    var cursor: GalaxySSIChatHistoryCursor?
+    repeat {
+      let page = try deliveredDesktopReplyTurnPage(contactId: contactId, conversationId: conversationId, before: cursor)
+      turns.formUnion(page.turns)
+      cursor = page.next
+    } while cursor != nil
+    return turns
+  }
+
+  func deliveredDesktopReplyTurnPage(contactId: String, conversationId: String,
+                                     before cursor: GalaxySSIChatHistoryCursor?, pageSize: Int = 16) throws
+    -> (turns: Set<String>, next: GalaxySSIChatHistoryCursor?) {
     try locked {
+      let limit = min(max(1, pageSize), Self.maximumPageSize)
+      let boundary = cursor == nil ? "" : " AND (created_at < ? OR (created_at = ? AND message_id < ?))"
       guard let statement = prepare("""
-        SELECT message_id, encrypted_payload FROM chat_messages
-        WHERE contact_id = ? AND conversation_id = ? AND is_mine = 0 AND is_system = 0
+        SELECT message_id, encrypted_payload, created_at FROM chat_messages
+        WHERE contact_id = ? AND conversation_id = ? AND is_mine = 0 AND is_system = 0\(boundary)
+        ORDER BY created_at DESC, message_id DESC LIMIT ?
         """) else { throw MqttChunkStorageError.databaseFailure }
       defer { sqlite3_finalize(statement) }
       bind(contactId, at: 1, to: statement)
       bind(conversationId, at: 2, to: statement)
+      var parameter: Int32 = 3
+      if let cursor {
+        sqlite3_bind_int64(statement, 3, cursor.createdAtMillis)
+        sqlite3_bind_int64(statement, 4, cursor.createdAtMillis)
+        bind(cursor.messageId, at: 5, to: statement)
+        parameter = 6
+      }
+      sqlite3_bind_int(statement, parameter, Int32(limit + 1))
       var turns: Set<String> = []
-      while true {
+      var last: GalaxySSIChatHistoryCursor?
+      for index in 0...limit {
         let step = sqlite3_step(statement)
-        if step == SQLITE_DONE { break }
-        guard step == SQLITE_ROW, let id = sqlite3_column_text(statement, 0),
+        if step == SQLITE_DONE { return (turns, nil) }
+        guard step == SQLITE_ROW else { throw MqttChunkStorageError.databaseFailure }
+        if index == limit { return (turns, last) }
+        guard let id = sqlite3_column_text(statement, 0),
               let message = decode(statement, id: String(cString: id), payloadColumn: 1),
               message.contactId == contactId, message.conversationId == conversationId,
               !message.isMine, !message.isSystem else { throw MqttChunkStorageError.databaseFailure }
         if [ChatDeliveryStatus.delivered, .read].contains(message.deliveryStatus), !message.turnId.isBlank { turns.insert(message.turnId) }
+        last = GalaxySSIChatHistoryCursor(createdAtMillis: sqlite3_column_int64(statement, 2), messageId: String(cString: id))
       }
-      return turns
+      return (turns, nil)
     }
   }
 

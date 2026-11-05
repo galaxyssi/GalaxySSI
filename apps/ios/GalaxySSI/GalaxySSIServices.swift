@@ -2628,7 +2628,9 @@ final class MessageCoordinator: ObservableObject {
       managedDesktopProbes = 0
     }
     guard UIApplication.shared.applicationState == .active else { return }
-    if discoverLegacyDesktopReplies() { desktopReplyRecoverySweepRequested = true }
+    if await discoverLegacyDesktopReplies() { desktopReplyRecoverySweepRequested = true }
+    guard !Task.isCancelled, desktopReplyRecoveryOwner == store.profile.identityFingerprint,
+          UIApplication.shared.applicationState == .active else { return }
     discoverManagedDesktopReplies(now: AgentControlPlaneClock.nowMillis())
     discoverTeamObserverReplies(now: AgentControlPlaneClock.nowMillis())
     let now = AgentControlPlaneClock.nowMillis()
@@ -2687,13 +2689,15 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func discoverLegacyDesktopReplies() -> Bool {
+  private func discoverLegacyDesktopReplies() async -> Bool {
     let progress = desktopReplyRecovery.discoveryProgress
     guard !progress.completed else { return false }
     do {
       let page = try store.desktopReplySourcePage(before: progress.cursor)
       var replyTurns: [String: [String: Set<String>]] = [:]
       for source in page.messages where source.deliveryStatus != .failed {
+        await Task.yield()
+        try checkDesktopDiscoveryScope()
         let candidates = store.visibleContacts.compactMap { contact -> (GalaxySSIContact, AgentTaskIdentity)? in
           guard contact.type.caseInsensitiveCompare("agent") == .orderedSame, contact.trustState == .verified,
                 contact.deliveryMode.isGalaxySSILinkFamily, !contact.connectorAgentId.isBlank,
@@ -2703,14 +2707,29 @@ final class MessageCoordinator: ObservableObject {
         }
         guard !candidates.isEmpty else { continue }
         let turn = source.turnId.ifBlank(source.id.uuidString)
-        if replyTurns[source.contactId]?[source.conversationId] == nil {
-          replyTurns[source.contactId, default: [:]][source.conversationId] = try store.deliveredDesktopReplyTurns(
-            contactId: source.contactId, conversationId: source.conversationId)
+        func hasActiveTask() -> Bool {
+          [turn, source.id.uuidString].compactMap { store.agentTask(id: $0) }.contains {
+            $0.sessionId == source.conversationId && AgentScreenAnalysisCancellationPolicy.activePhases.contains($0.phase)
+          }
+        }
+        if !hasActiveTask(), replyTurns[source.contactId]?[source.conversationId] == nil {
+          let requested = Set(page.messages.filter {
+            $0.contactId == source.contactId && $0.conversationId == source.conversationId && $0.deliveryStatus != .failed
+          }.map { $0.turnId.ifBlank($0.id.uuidString) })
+          var found: Set<String> = []
+          var cursor: GalaxySSIChatHistoryCursor?
+          repeat {
+            let batch = try store.deliveredDesktopReplyTurnPage(
+              contactId: source.contactId, conversationId: source.conversationId, before: cursor)
+            found.formUnion(batch.turns.intersection(requested))
+            cursor = batch.next
+            await Task.yield()
+            try checkDesktopDiscoveryScope()
+          } while cursor != nil && found != requested
+          replyTurns[source.contactId, default: [:]][source.conversationId] = found
         }
         let replied = replyTurns[source.contactId]?[source.conversationId]?.contains(turn) == true
-        let active = [turn, source.id.uuidString].compactMap { store.agentTask(id: $0) }.contains {
-          $0.sessionId == source.conversationId && AgentScreenAnalysisCancellationPolicy.activePhases.contains($0.phase)
-        }
+        let active = hasActiveTask()
         for (contact, identity) in candidates where AgentDesktopReplyDiscoveryPolicy.eligible(source,
           identity: identity, hasDeliveredReply: replied, hasActiveTask: active) {
           let binding = AgentDesktopReplyBinding(desktopId: contact.desktopId, displayContactId: source.contactId,
@@ -2724,11 +2743,19 @@ final class MessageCoordinator: ObservableObject {
       guard desktopReplyRecovery.advanceDiscovery(expected: progress, nextCursor: page.nextCursor,
         hasMore: page.hasMore) else { return false }
       return page.hasMore
+    } catch is CancellationError {
+      return false
     } catch {
       lastError = localizedReply("galaxyssi.agent.desktop_discovery_failed",
         fallback: "Pending Desktop requests could not be read from message history.")
       return false
     }
+  }
+
+  private func checkDesktopDiscoveryScope() throws {
+    try Task.checkCancellation()
+    guard desktopReplyRecoveryOwner == store.profile.identityFingerprint,
+          UIApplication.shared.applicationState == .active else { throw CancellationError() }
   }
 
   private func sweepDesktopResultReceipts(now: Int64) async {
