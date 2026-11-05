@@ -2,6 +2,46 @@ import XCTest
 @testable import GalaxySSI
 
 final class VoiceReplyPlaybackPolicyTests: XCTestCase {
+  func testVoiceAcknowledgementHasSeparateUtteranceAndHonorsMute() {
+    let language = LanguagePolicySettings(ttsLanguage: "en-US")
+    let request = VoiceReplyPlaybackPolicy.inputAcknowledgementRequest(
+      text: "Processing input", settings: settings(speakReplies: true, ttsProvider: .microsoftEdge),
+      languagePolicy: language, sessionId: "voice-1"
+    )
+    XCTAssertEqual(request?.utteranceId, "galaxyssi_voice_ack_voice-1")
+    XCTAssertEqual(request?.providerId, "microsoft_edge")
+    XCTAssertNil(VoiceReplyPlaybackPolicy.inputAcknowledgementRequest(
+      text: "Processing input", settings: settings(speakReplies: false),
+      languagePolicy: language, sessionId: "voice-1"
+    ))
+  }
+
+  func testPlaybackReferenceRejectsInvertedEchoWithoutSuppressingDoubleTalkOrUnplayedAudio() {
+    let reference = VoicePlaybackEchoReference()
+    let id = UUID()
+    var random: UInt32 = 42
+    let samples = (0..<1_600).map { _ in
+      random = 1_664_525 &* random &+ 1_013_904_223
+      return Float(Int(random >> 16) - 32_768) / 65_536
+    }
+    func microphone(at offset: Int, mixed: Bool = false) -> [Int16] {
+      (0..<80).map { index in
+        let echo = -samples[offset + index] * 0.5
+        let speech = mixed ? samples[1_400 + index] * 0.8 : 0
+        return Int16((echo + speech) * 32_768)
+      }
+    }
+    reference.begin(id: id, samples: samples, at: 0)
+    XCTAssertTrue(reference.matches(microphone(at: 600), rate: 4_000, endingAt: 0.25))
+    XCTAssertFalse(reference.matches(microphone(at: 600, mixed: true), rate: 4_000, endingAt: 0.25))
+    reference.end(id: id, played: 0.25, at: 0.25)
+    XCTAssertTrue(reference.matches(microphone(at: 600), rate: 4_000, endingAt: 0.29))
+    XCTAssertFalse(reference.matches(microphone(at: 1_050), rate: 4_000, endingAt: 0.29))
+    XCTAssertFalse(reference.matches(microphone(at: 600), rate: 4_000, endingAt: 0.7))
+    reference.clear()
+    XCTAssertFalse(reference.matches(microphone(at: 600), rate: 4_000, endingAt: 0.29))
+  }
+
   func testIncomingTargetReplyBuildsSystemTTSRequest() {
     let request = VoiceReplyPlaybackPolicy.request(
       message: message("Hello from Hermes", contactId: "hermes"),

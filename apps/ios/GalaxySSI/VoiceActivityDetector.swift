@@ -44,6 +44,8 @@ final class AdaptiveSpeechVad: VoiceActivityDetector {
     negativeFrames = 0
   }
 
+  func resetAttack() { positiveFrames = 0 }
+
   func accept(_ frame: AudioFrame) -> VadDecision {
     let count = min(max(0, frame.validSamples), frame.samples.count)
     guard count > 0 else {
