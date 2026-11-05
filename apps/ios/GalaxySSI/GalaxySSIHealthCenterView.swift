@@ -290,8 +290,14 @@ struct GalaxySSIHealthCenterView: View {
             ForEach(uses.reversed().prefix(privacyLimit)) { entry in
               VStack(alignment: .leading, spacing: 4) {
                 Text(entry.at, format: .dateTime)
-                Text(GalaxySSIHealthProfile.AnalysisField.allCases.filter(entry.fields.contains)
-                  .map { $0.title(language: language) }.joined(separator: ", ")).foregroundColor(.secondary)
+                if !entry.fields.isEmpty {
+                  Text(GalaxySSIHealthProfile.AnalysisField.allCases.filter(entry.fields.contains)
+                    .map { $0.title(language: language) }.joined(separator: ", ")).foregroundColor(.secondary)
+                }
+                if let count = entry.backgroundCount, count > 0 {
+                  Text(String(format: t("privacy.profile_background_count", "Selected background entries: %lld"),
+                              Int64(count))).foregroundColor(.secondary)
+                }
               }
             }
             if uses.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
