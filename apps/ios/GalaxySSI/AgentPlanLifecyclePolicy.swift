@@ -381,21 +381,6 @@ enum AgentCompletionEvidencePolicy {
     }
     let completedTools = Set(history.filter(hasVerifiedCompletionReceipt).map(toolId))
     var missing: [String] = []
-    if requirements.phoneLinux && !completedTools.contains(runtimeExecute) {
-      missing.append("a successful galaxyssi.runtime.execute receipt from the phone Linux guest")
-    }
-    switch requirements.publication {
-    case .none:
-      break
-    case .commit where !completedTools.contains(repositoryCommit):
-      missing.append("a successful commit of the verified phone project")
-    case .push where !completedTools.contains(repositoryPush):
-      missing.append("a successful push of the verified project branch")
-    case .pullRequest where completedTools.isDisjoint(with: pullRequestTools):
-      missing.append("a successfully created pull request with its URL")
-    default:
-      break
-    }
     for outcome in requirements.outcomes ?? [] {
       if let reason = missingObservedOutcome(outcome, history: history) {
         missing.append("Observed outcome \(outcome.id): \(reason). Inspect the existing receipt or obtain a fresh read-only observation; do not blindly repeat a mutation.")
@@ -416,65 +401,22 @@ enum AgentCompletionEvidencePolicy {
         missing.append("a verified phone timer receipt with the observed operation ID and current state")
       }
     }
+    if requirements.phoneLinux && !completedTools.contains(runtimeExecute) {
+      missing.append("a successful galaxyssi.runtime.execute receipt from the phone Linux guest")
+    }
+    switch requirements.publication {
+    case .none:
+      break
+    case .commit where !completedTools.contains(repositoryCommit):
+      missing.append("a successful commit of the verified phone project")
+    case .push where !completedTools.contains(repositoryPush):
+      missing.append("a successful push of the verified project branch")
+    case .pullRequest where completedTools.isDisjoint(with: pullRequestTools):
+      missing.append("a successfully created pull request with its URL")
+    default:
+      break
+    }
     return missing
-  }
-
-  private static func missingObservedOutcome(_ outcome: AgentObservedCompletion, history: [AgentAction]) -> String? {
-    func receipt(_ action: AgentAction) -> AgentMcpJSONObject? { decodeObject(action.evidence) }
-    func isDifferentSubject(_ output: AgentMcpJSONObject?) -> Bool {
-      outcome.subject.contains { path, expected in
-        guard case let .string(actual) = value(at: path, in: output) else { return false }
-        return actual != expected
-      }
-    }
-    func dispatched(_ action: AgentAction) -> Bool {
-      action.kind == .callNativeTool &&
-        ![.proposed, .pendingConfirmation, .blocked].contains(action.status)
-    }
-    let latestMutation: Int
-    if outcome.afterToolId.isEmpty {
-      latestMutation = -1
-    } else {
-      guard let index = history.lastIndex(where: {
-        dispatched($0) && toolId($0) == outcome.afterToolId &&
-          (outcome.afterToolId != outcome.toolId || !isDifferentSubject(receipt($0)))
-      }) else { return "required action has no receipt" }
-      guard history[index].status != .rolledBack, !hasUnverifiedOutcome(history[index]) else {
-        return "required action is unsettled or rolled back"
-      }
-      latestMutation = index
-    }
-    for index in history.indices.reversed() where index >= latestMutation {
-      let action = history[index]
-      guard dispatched(action), toolId(action) == outcome.toolId else { continue }
-      let output = receipt(action)
-      if isDifferentSubject(output) { continue }
-      guard let output, outcome.subject.allSatisfy({ value(at: $0.key, in: output) == .string($0.value) }) else {
-        return "latest receipt does not identify the requested subject"
-      }
-      let metadata = output["metadata"]?.objectValue
-      guard action.status == .completed, !hasUnverifiedOutcome(action),
-            output["state_verified"] != .bool(false), output["delivery_verified"] != .bool(false),
-            metadata?.string("business_success_verified") != "false",
-            metadata?.string("completion_verified") != "false" else {
-        return "latest matching receipt is not verified"
-      }
-      return outcome.checks.allSatisfy { value(at: $0.key, in: output) == $0.value }
-        ? nil : "latest matching receipt does not satisfy the required state"
-    }
-    return "no observation at or after the required action"
-  }
-
-  private static func value(at pointer: String, in output: AgentMcpJSONObject?) -> AgentMcpJSONValue? {
-    guard let output, pointer.hasPrefix("/") else { return nil }
-    return pointer.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
-      .reduce(Optional(AgentMcpJSONValue.object(output))) { value, segment in
-        let key = segment.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
-        if let array = value?.arrayValue, let index = Int(key), String(index) == key, array.indices.contains(index) {
-          return array[index]
-        }
-        return value?.objectValue?[key]
-      }
   }
 
   private static func hasVerifiedCompletionReceipt(_ action: AgentAction) -> Bool {
@@ -551,4 +493,62 @@ enum AgentCompletionEvidencePolicy {
     repositoryCommit,
     repositoryPush
   ])
+
+  private static func missingObservedOutcome(_ outcome: AgentObservedCompletion, history: [AgentAction]) -> String? {
+    func receipt(_ action: AgentAction) -> AgentMcpJSONObject? { decodeObject(action.evidence) }
+    func isDifferentSubject(_ output: AgentMcpJSONObject?) -> Bool {
+      outcome.subject.contains { path, expected in
+        guard case let .string(actual) = value(at: path, in: output) else { return false }
+        return actual != expected
+      }
+    }
+    func dispatched(_ action: AgentAction) -> Bool {
+      action.kind == .callNativeTool &&
+        ![.proposed, .pendingConfirmation, .blocked].contains(action.status)
+    }
+    let latestMutation: Int
+    if outcome.afterToolId.isEmpty {
+      latestMutation = -1
+    } else {
+      guard let index = history.lastIndex(where: {
+        dispatched($0) && toolId($0) == outcome.afterToolId &&
+          (outcome.afterToolId != outcome.toolId || !isDifferentSubject(receipt($0)))
+      }) else { return "required action has no receipt" }
+      guard history[index].status != .rolledBack, !hasUnverifiedOutcome(history[index]) else {
+        return "required action is unsettled or rolled back"
+      }
+      latestMutation = index
+    }
+    for index in history.indices.reversed() where index >= latestMutation {
+      let action = history[index]
+      guard dispatched(action), toolId(action) == outcome.toolId else { continue }
+      let output = receipt(action)
+      if isDifferentSubject(output) { continue }
+      guard let output, outcome.subject.allSatisfy({ value(at: $0.key, in: output) == .string($0.value) }) else {
+        return "latest receipt does not identify the requested subject"
+      }
+      let metadata = output["metadata"]?.objectValue
+      guard action.status == .completed, !hasUnverifiedOutcome(action),
+            output["state_verified"] != .bool(false), output["delivery_verified"] != .bool(false),
+            metadata?.string("business_success_verified") != "false",
+            metadata?.string("completion_verified") != "false" else {
+        return "latest matching receipt is not verified"
+      }
+      return outcome.checks.allSatisfy { value(at: $0.key, in: output) == $0.value }
+        ? nil : "latest matching receipt does not satisfy the required state"
+    }
+    return "no observation at or after the required action"
+  }
+
+  private static func value(at pointer: String, in output: AgentMcpJSONObject?) -> AgentMcpJSONValue? {
+    guard let output, pointer.hasPrefix("/") else { return nil }
+    return pointer.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+      .reduce(Optional(AgentMcpJSONValue.object(output))) { value, segment in
+        let key = segment.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+        if let array = value?.arrayValue, let index = Int(key), String(index) == key, array.indices.contains(index) {
+          return array[index]
+        }
+        return value?.objectValue?[key]
+      }
+  }
 }

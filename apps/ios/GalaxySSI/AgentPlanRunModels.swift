@@ -566,13 +566,6 @@ struct AgentAuditEntry: Codable, Equatable {
   }
 }
 
-enum AgentPublicationRequirement: String, Codable, CaseIterable {
-  case none
-  case commit
-  case push
-  case pullRequest = "pull_request"
-}
-
 struct AgentObservedCompletion: Codable, Equatable {
   var id: String
   var toolId: String
@@ -587,12 +580,19 @@ struct AgentObservedCompletion: Codable, Equatable {
   }
 }
 
+enum AgentPublicationRequirement: String, Codable, CaseIterable {
+  case none
+  case commit
+  case push
+  case pullRequest = "pull_request"
+}
+
 /// Completion obligations interpreted by the planning model, never inferred from goal keywords.
 struct AgentCompletionRequirements: Codable, Equatable {
+  var outcomes: [AgentObservedCompletion]? = nil
   var publication: AgentPublicationRequirement
   var phoneLinux: Bool
   var reason: String
-  var outcomes: [AgentObservedCompletion]? = nil
 
   init(
     publication: AgentPublicationRequirement,
@@ -617,10 +617,10 @@ struct AgentCompletionRequirements: Codable, Equatable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case outcomes
     case publication
     case phoneLinux = "phone_linux"
     case reason
-    case outcomes
   }
 }
 
