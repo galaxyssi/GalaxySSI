@@ -713,6 +713,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func clearRuntimePlaintextForBackground() {
+    chatHistoryDatabase.setRowCachingEnabled(false)
     guard !runtimePlaintextCleared else { return }
     guard save() else { return }
     runtimePlaintextCleared = true
@@ -721,6 +722,7 @@ final class GalaxySSIStore: ObservableObject {
 
   @discardableResult
   func restoreRuntimePlaintextAfterForeground() -> Bool {
+    chatHistoryDatabase.setRowCachingEnabled(true)
     guard runtimePlaintextCleared else { return false }
     runtimePlaintextCleared = false
     suppressMessageDatabaseSync = true

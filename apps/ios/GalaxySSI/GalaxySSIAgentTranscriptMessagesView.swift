@@ -122,6 +122,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     .onChange(of: message.content) { _ in
       onMessageVisible(message)
     }
+    .onChange(of: message.deliveryStatus) { _ in
+      onMessageVisible(message)
+    }
     .contextMenu {
       Button {
         onCopyMessage(message)

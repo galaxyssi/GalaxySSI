@@ -3470,6 +3470,7 @@
 "agent_latency_context" = "上下文与路由";
 "agent_latency_send_prepare" = "发送准备总耗时";
 "agent_latency_user_first" = "发送至首个可见输出";
+"agent_latency_user_complete" = "发送至完整回复显示";
 "agent_latency_publish_prepare" = "发布准备";
 "agent_latency_roundtrip" = "连接器往返";
 "agent_latency_first_visible" = "发布至首个可见输出";

@@ -3080,6 +3080,10 @@ final class MessageCoordinator: ObservableObject {
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
+    let outgoingMessageId = UUID()
+    if contact.id == "hermes" || contact.type.caseInsensitiveCompare("agent") == .orderedSame {
+      AgentLatencyTelemetry.shared.record(taskId: outgoingMessageId.uuidString, stage: .phoneSendStarted, deferJournal: true)
+    }
     let callableTargets = AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
@@ -3108,7 +3112,6 @@ final class MessageCoordinator: ObservableObject {
         pendingPeerSendContactIds.remove(contact.id)
       }
     }
-    let outgoingMessageId = UUID()
     var sendAttachments = attachments
     if isPhoneContact(contact),
        peerMessageKind.caseInsensitiveCompare("voice") == .orderedSame,
@@ -3774,6 +3777,7 @@ final class MessageCoordinator: ObservableObject {
           throw AgentDataDisclosureBlockedError(destination: agentContact.displayName)
         }
         agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
+        AgentLatencyTelemetry.shared.record(taskId: outgoing.id.uuidString, stage: .phonePublishStarted, deferJournal: true)
         let disclosureStatus = try await publishLinkMessage(
           remoteRequestText,
           contact: agentContact,
@@ -3782,6 +3786,9 @@ final class MessageCoordinator: ObservableObject {
           voiceSessionId: voiceSessionId,
           executionMode: taskExecutionMode
         )
+        if disclosureStatus == .queued || disclosureStatus == .sent {
+          AgentLatencyTelemetry.shared.record(taskId: outgoing.id.uuidString, stage: .phoneRequestQueued, deferJournal: true)
+        }
         if let ticket = disclosureTicket {
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
         }
@@ -11794,6 +11801,14 @@ final class MessageCoordinator: ObservableObject {
       }
     }
     let incoming: ChatMessage
+    if object.string("scheme") == "signal", taskIdentityStore.matchesRegistered(payload: appPayload) {
+      let latency = AgentLatencyTelemetry.shared
+      latency.record(taskId: responseTaskId, stage: .phoneResponseReceived, deferJournal: true)
+      if AgentRemoteTaskStatusPolicy.isTerminal(remoteTaskStatus) {
+        latency.record(taskId: responseTaskId, stage: .phoneFinalReceived,
+          outcome: remoteTaskStatus == "not_found" ? "failed" : remoteTaskStatus, deferJournal: true)
+      }
+    }
     let streamRemoteMessageId = "agent-stream-\(appPayload.string("source_message_id").ifBlank(String(appPayload.int("source_message_id"))))"
     let remoteMessageId = appPayload.string("message_id")
     let liveMessageId = liveConnectorMessageIds[streamKey]
@@ -12154,6 +12169,7 @@ final class MessageCoordinator: ObservableObject {
     if update.sequence > 0 {
       liveConnectorSequenceByKey[update.streamKey] = update.sequence
     }
+    AgentLatencyTelemetry.shared.record(taskId: update.taskId, stage: .phoneResponseReceived, deferJournal: true)
     let resolvedConversationId = store.agentSessionDestination(id: update.conversationId) ?? ""
     let nativeAgentResponse = AgentTaskIdentityPolicy.routesToMainAgent(
       superseded: false,
