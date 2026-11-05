@@ -8,6 +8,7 @@ enum PublicNewsArticleBodyError: Error {
 struct PublicNewsOriginalBody: Codable, Equatable {
   let title: String
   let paragraphs: [String]
+  var presentation: PublicNewsArticlePresentation?
 
   var fingerprint: String {
     var sha = SHA256()
@@ -36,16 +37,18 @@ enum PublicNewsArticleBody {
     guard supports(url) else { throw PublicNewsArticleBodyError.unsupportedSource }
     let data = try await PublicScienceTransport.fetch(url, limit: 3_000_000)
     guard let html = String(data: data, encoding: .utf8) else { throw PublicNewsArticleBodyError.incompleteSource }
-    return try await extract(html)
+    return try await extract(html, articleURL: url)
   }
 
   @MainActor
-  static func extract(_ html: String) async throws -> PublicNewsOriginalBody {
-    let body: PublicNewsOriginalBody = try await PublicScienceDOM().decode(html: html, script: script)
+  static func extract(_ html: String, articleURL: URL? = nil) async throws -> PublicNewsOriginalBody {
+    var body: PublicNewsOriginalBody = try await PublicScienceDOM().decode(html: html, script: script,
+      arguments: ["pageURL": articleURL?.absoluteString ?? "https://invalid.test/"])
     let count = body.paragraphs.reduce(0) { $0 + $1.count }
     guard !body.title.isEmpty, body.paragraphs.count >= 2, (240...80_000).contains(count) else {
       throw PublicNewsArticleBodyError.incompleteSource
     }
+    body.presentation = body.presentation?.validated(for: articleURL, paragraphCount: body.paragraphs.count)
     return body
   }
 
@@ -69,8 +72,26 @@ enum PublicNewsArticleBody {
       region.querySelector("h1")?.textContent || tree.querySelector("main h1")?.textContent ||
       tree.querySelector("title")?.textContent).slice(0, 500);
     const paragraphs = [];
+    const styles = [];
+    const figures = [];
+    const imageURL = raw => {
+      if (!raw) return null;
+      try {
+        const url = new URL(raw, pageURL);
+        return url.protocol === "https:" ? url.href : null;
+      } catch (_) { return null; }
+    };
     let total = 0;
-    for (const item of region.querySelectorAll("p,h2,h3,h4,li,blockquote,tr")) {
+    for (const item of region.querySelectorAll("p,h2,h3,h4,li,blockquote,tr,img")) {
+      if (item.tagName === "IMG") {
+        const url = imageURL(item.getAttribute("data-src") || item.getAttribute("src"));
+        if (url && figures.length < 48) {
+          const caption = clean(item.closest("figure")?.querySelector("figcaption")?.textContent ||
+            item.getAttribute("alt")).slice(0, 1600);
+          figures.push({url, caption, beforeParagraph: paragraphs.length});
+        }
+        continue;
+      }
       if (item.closest("figure,figcaption") || (item.tagName !== "P" && item.querySelector("p"))) continue;
       if (item.tagName !== "TR" && item.closest("table")) continue;
       const value = item.tagName === "TR" ?
@@ -79,7 +100,12 @@ enum PublicNewsArticleBody {
       total += value.length;
       if (total > 80000 || paragraphs.length === 350) return null;
       paragraphs.push(value);
+      const role = /^H[2-4]$/.test(item.tagName) ? "heading" : item.closest("blockquote") ? "quote" : "text";
+      const emphasis = Array.from(item.querySelectorAll("strong,b,em,i")).slice(0, 12)
+        .map(node => clean(node.textContent).slice(0, 200)).filter(Boolean);
+      styles.push({role, emphasis});
     }
-    return JSON.stringify({title, paragraphs});
+    const cover = imageURL(tree.querySelector("meta[property='og:image']")?.getAttribute("content"));
+    return JSON.stringify({title, paragraphs, presentation: {styles, figures, cover}});
     """#
 }

@@ -5,6 +5,7 @@ struct GalaxySSIPublicNewsBodyView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scenePhase
   let article: PublicNewsArticle
+  let rememberCover: (URL) -> Void
 
   @State private var checkpoint: PublicNewsBodyCheckpoint?
   @State private var request: Request?
@@ -40,17 +41,7 @@ struct GalaxySSIPublicNewsBodyView: View {
           Text(failureText(failure)).font(.callout).foregroundColor(.secondary)
         }
         if let checkpoint {
-          let translated = showChinese ? checkpoint.completed : nil
-          if let translated, let translatedTitle = translated.first {
-            Text(translatedTitle).font(.headline).textSelection(.enabled)
-          }
-          let body = translated.map { Array($0.dropFirst()) } ?? checkpoint.source.paragraphs
-          LazyVStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(body.enumerated()), id: \.offset) { _, paragraph in
-              Text(paragraph).textSelection(.enabled)
-            }
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
+          GalaxySSIPublicNewsDocumentView(checkpoint: checkpoint, articleURL: article.url, showChinese: showChinese)
         }
       }
       .task(id: article.id) {
@@ -58,6 +49,7 @@ struct GalaxySSIPublicNewsBodyView: View {
         guard !Task.isCancelled, checkpoint == nil, request == nil else { return }
         checkpoint = saved
         showChinese = saved?.completed != nil
+        if let cover = saved?.source.presentation?.cover { rememberCover(cover) }
       }
       .task(id: request) {
         if let request { await run(request) }
@@ -111,6 +103,7 @@ struct GalaxySSIPublicNewsBodyView: View {
       guard !Task.isCancelled, request == job else { return }
       checkpoint = next
       showChinese = next.completed != nil
+      if let cover = next.source.presentation?.cover { rememberCover(cover) }
     } catch {
       guard !Task.isCancelled, request == job else { return }
       if case PublicNewsArticleBodyError.modelUnavailable = error { failure = .modelUnavailable }

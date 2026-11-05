@@ -138,6 +138,7 @@ struct GalaxySSIPublicNewsSearchView: View {
   private func row(_ hit: PublicNewsSearchHit, terms: [String]) -> some View {
     let current = archive.articles.first { $0.id == hit.id } ?? hit.article
     return HStack(spacing: 8) {
+      GalaxySSIPublicNewsCover(article: current)
       GalaxySSIPublicNewsHeadline(archive: archive, article: current, onOpen: {
         searchFocused = false
         article = current

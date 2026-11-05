@@ -11,6 +11,7 @@ struct PublicNewsArticle: Codable, Equatable, Identifiable {
   var saved = false
   var interests: Set<PublicNewsInterest>?
   var headlineTranslation: PublicNewsHeadlineTranslation?
+  var coverURL: URL?
 
   var id: String { url.absoluteString }
   var sortDate: Date { publishedAt ?? discoveredAt }
@@ -105,7 +106,16 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
       values = [:]
       return
     }
-    guard let entryDepth, depth == entryDepth + 1 else { return }
+    guard let entryDepth else { return }
+    if depth == entryDepth + 1 || (depth == entryDepth + 2 && parent == "group"),
+       (name == "thumbnail" || name == "content" || name == "enclosure"),
+       let image = attributes["url"],
+       name == "thumbnail" || attributes["type"]?.lowercased().hasPrefix("image/") == true ||
+         attributes["medium"]?.lowercased() == "image",
+       values["coverURL"] == nil {
+      values["coverURL"] = image
+    }
+    guard depth == entryDepth + 1 else { return }
     if name == "link", let href = attributes["href"] {
       if (attributes["rel"] ?? "alternate").lowercased() == "alternate",
          publicArticleURL(href) != nil, values["link"] == nil { values["link"] = href }
@@ -169,9 +179,12 @@ final class PublicNewsFeedParser: NSObject, XMLParserDelegate {
       .compactMap { values[$0] }.lazy.map { Self.plainText($0, limit: 4_000) }.first { !$0.isEmpty } ?? ""
     let published = ["published", "pubdate", "date"].compactMap { values[$0] }
       .lazy.compactMap { Self.date($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.first
+    let cover = values["coverURL"].flatMap { URL(string: $0, relativeTo: source.url)?.absoluteURL }
+      .flatMap { PublicNewsImagePolicy.accepts($0, for: url) ? $0 : nil }
     entries.append(PublicNewsArticle(
       url: url, title: title, summary: summary, publisher: source.publisher,
-      publishedAt: published, discoveredAt: now, interests: source.interests.isEmpty ? nil : source.interests
+      publishedAt: published, discoveredAt: now, interests: source.interests.isEmpty ? nil : source.interests,
+      coverURL: cover
     ))
   }
 

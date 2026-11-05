@@ -52,6 +52,7 @@ struct GalaxySSIPublicNewsHighlightsView: View {
           } else {
             ForEach(articles) { article in
               HStack(spacing: 8) {
+                GalaxySSIPublicNewsCover(article: article)
                 GalaxySSIPublicNewsHeadline(archive: archive, article: article, onOpen: {
                   selected = article
                   archive.markRead(article.id)

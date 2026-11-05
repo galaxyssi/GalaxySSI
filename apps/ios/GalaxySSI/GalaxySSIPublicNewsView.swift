@@ -78,6 +78,7 @@ struct GalaxySSIPublicNewsView: View {
           }
           ForEach(visibleArticles) { article in
             HStack(spacing: 8) {
+              GalaxySSIPublicNewsCover(article: article)
               GalaxySSIPublicNewsHeadline(archive: archive, article: article, onOpen: {
                 selected = article
                 archive.markRead(article.id)
@@ -188,7 +189,9 @@ struct GalaxySSIPublicNewsReader: View {
           if !article.summary.isEmpty {
             Text(article.summary).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
           }
-          GalaxySSIPublicNewsBodyView(article: article)
+          GalaxySSIPublicNewsBodyView(article: article) { cover in
+            archive.rememberCover(cover, articleID: article.id)
+          }
           Link(destination: article.url) {
             Label(t("public_news_open_source", "Open publisher"), systemImage: "arrow.up.right")
           }

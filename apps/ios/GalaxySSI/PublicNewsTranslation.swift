@@ -4,7 +4,7 @@ import NaturalLanguage
 
 struct PublicNewsBodyCheckpoint: Codable, Equatable {
   let articleID: String
-  let source: PublicNewsOriginalBody
+  var source: PublicNewsOriginalBody
   let fingerprint: String
   let segments: [String]
   var translated: [String?]
@@ -13,6 +13,21 @@ struct PublicNewsBodyCheckpoint: Codable, Equatable {
     guard translated.count == segments.count, !segments.isEmpty else { return nil }
     let complete = translated.compactMap { $0 }
     return complete.count == segments.count ? complete : nil
+  }
+
+  var translatedDocument: (title: String, paragraphs: [String])? {
+    guard let completed else { return nil }
+    let groups = [source.title] + source.paragraphs
+    var offset = 0
+    var output: [String] = []
+    for group in groups {
+      let count = PublicNewsTranslation.parts(group).count
+      guard offset + count <= completed.count else { return nil }
+      output.append(completed[offset..<(offset + count)].joined(separator: " "))
+      offset += count
+    }
+    guard offset == completed.count, let title = output.first else { return nil }
+    return (title, Array(output.dropFirst()))
   }
 
   init(articleID: String, source: PublicNewsOriginalBody) {
@@ -44,7 +59,13 @@ actor PublicNewsBodyStore {
 
   func install(_ body: PublicNewsOriginalBody, articleID: String) throws -> PublicNewsBodyCheckpoint {
     try Task.checkCancellation()
-    if let current = load(articleID), current.fingerprint == body.fingerprint { return current }
+    if var current = load(articleID), current.fingerprint == body.fingerprint {
+      if let presentation = body.presentation, presentation != current.source.presentation {
+        current.source.presentation = presentation
+        try persist(current)
+      }
+      return current
+    }
     let next = PublicNewsBodyCheckpoint(articleID: articleID, source: body)
     guard !next.segments.isEmpty else { throw PublicNewsArticleBodyError.incompleteSource }
     try persist(next)
@@ -96,19 +117,25 @@ enum PublicNewsTranslation {
     let groups = [body.title] + body.paragraphs
     var result: [String] = []
     for paragraph in groups {
-      var rest = paragraph[...]
-      while rest.count > 800 {
-        let prefix = rest.prefix(800)
-        let preferred = prefix.lastIndex { ".!?\u{3002}\u{FF01}\u{FF1F};".contains($0) || $0.isWhitespace }
-        let cut = preferred.map { prefix.distance(from: prefix.startIndex, to: $0) >= 400
-          ? prefix.index(after: $0) : prefix.endIndex } ?? prefix.endIndex
-        result.append(String(rest[..<cut]).trimmingCharacters(in: .whitespacesAndNewlines))
-        rest = rest[cut...]
-      }
-      let tail = String(rest).trimmingCharacters(in: .whitespacesAndNewlines)
-      if !tail.isEmpty { result.append(tail) }
+      result += parts(paragraph)
       if result.count > 400 { return [] }
     }
+    return result
+  }
+
+  static func parts(_ paragraph: String) -> [String] {
+    var result: [String] = []
+    var rest = paragraph[...]
+    while rest.count > 800 {
+      let prefix = rest.prefix(800)
+      let preferred = prefix.lastIndex { ".!?\u{3002}\u{FF01}\u{FF1F};".contains($0) || $0.isWhitespace }
+      let cut = preferred.map { prefix.distance(from: prefix.startIndex, to: $0) >= 400
+        ? prefix.index(after: $0) : prefix.endIndex } ?? prefix.endIndex
+      result.append(String(rest[..<cut]).trimmingCharacters(in: .whitespacesAndNewlines))
+      rest = rest[cut...]
+    }
+    let tail = String(rest).trimmingCharacters(in: .whitespacesAndNewlines)
+    if !tail.isEmpty { result.append(tail) }
     return result
   }
 
