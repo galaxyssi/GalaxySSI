@@ -9,6 +9,7 @@ struct GalaxySSIPublicNewsView: View {
   @State private var filter = Filter.all
   @State private var refreshRequest = 0
   @State private var showHighlights = false
+  @State private var showScience = false
   @State private var selected: PublicNewsArticle?
   @SceneStorage("publicNews.showSearch") private var showSearch = false
 
@@ -39,6 +40,9 @@ struct GalaxySSIPublicNewsView: View {
               Label(t("public_news_refresh", "Refresh news"), systemImage: "arrow.clockwise")
             }
             .disabled(archive.refreshing)
+            Button { showScience = true } label: {
+              Label(t("science_title", "Life sciences"), systemImage: "books.vertical")
+            }
             Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
           } label: {
             Image(systemName: "ellipsis").frame(width: 40, height: 44)
@@ -112,6 +116,10 @@ struct GalaxySSIPublicNewsView: View {
       if liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
     }
     .sheet(item: $selected) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
+    .sheet(isPresented: $showScience) {
+      NavigationView { GalaxySSIScienceKnowledgeView() }
+        .navigationViewStyle(.stack)
+    }
   }
 
   private func status(_ text: String) -> some View {
