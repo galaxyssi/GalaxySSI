@@ -366,6 +366,11 @@ struct GalaxySSIHealthCenterView: View {
       if scenePhase == .active {
         Section(t("device_sources", "Device sources")) {
           NavigationLink {
+            GalaxySSIHealthKitSyncView(records: records)
+          } label: {
+            Label(t("healthkit_sync.title", "Sync and Data Coverage"), systemImage: "arrow.triangle.2.circlepath")
+          }
+          NavigationLink {
             GalaxySSIHealthKitImportView(records: records)
           } label: {
             VStack(alignment: .leading) {
