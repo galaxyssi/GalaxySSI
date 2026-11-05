@@ -10,9 +10,14 @@ struct PublicNewsArticle: Codable, Equatable, Identifiable {
   var read = false
   var saved = false
   var interests: Set<PublicNewsInterest>?
+  var headlineTranslation: PublicNewsHeadlineTranslation?
 
   var id: String { url.absoluteString }
   var sortDate: Date { publishedAt ?? discoveredAt }
+  var displayTitle: String {
+    guard let headlineTranslation, headlineTranslation.source == title, !headlineTranslation.chinese.isEmpty else { return title }
+    return headlineTranslation.chinese
+  }
 }
 
 struct PublicNewsSource {

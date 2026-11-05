@@ -119,6 +119,18 @@ final class PublicNewsArchive: ObservableObject {
   }
 
   @discardableResult
+  func storeHeadline(_ text: String, for id: String, source: String,
+                     provider: PublicNewsHeadlineTranslation.Provider) -> Bool {
+    guard let index = articles.firstIndex(where: { $0.id == id }),
+          !notRelevantIDs.contains(id), articles[index].title == source,
+          articles[index].headlineTranslation?.source != source,
+          let validated = PublicNewsHeadlineTranslator.validate(text, source: source) else { return false }
+    var next = articles
+    next[index].headlineTranslation = .init(source: source, chinese: validated, provider: provider)
+    return save(next, refreshedAt: refreshedAt)
+  }
+
+  @discardableResult
   func markNotRelevant(_ id: String) -> Bool {
     guard articles.contains(where: { $0.id == id }) else { return false }
     if notRelevantIDs.contains(id) { return true }
@@ -254,6 +266,9 @@ final class PublicNewsArchive: ObservableObject {
         article.saved = previous.saved
         article.discoveredAt = previous.discoveredAt
         article.publishedAt = article.publishedAt ?? previous.publishedAt
+        if previous.title == article.title {
+          article.headlineTranslation = previous.headlineTranslation
+        }
         if let previousInterests = previous.interests {
           article.interests = (article.interests ?? []).union(previousInterests)
         }

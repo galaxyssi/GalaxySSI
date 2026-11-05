@@ -11,6 +11,7 @@ struct GalaxySSIPublicNewsView: View {
   @State private var refreshRequest = 0
   @State private var showHighlights = false
   @State private var showScience = false
+  @State private var showHeadlineTranslation = false
   @State private var selected: PublicNewsArticle?
   @SceneStorage("publicNews.showSearch") private var showSearch = false
 
@@ -43,6 +44,9 @@ struct GalaxySSIPublicNewsView: View {
             .disabled(archive.refreshing)
             Button { showScience = true } label: {
               Label(t("science_title", "Life sciences"), systemImage: "books.vertical")
+            }
+            Button { showHeadlineTranslation = true } label: {
+              Label(t("public_news_headline_translate", "Translate headlines"), systemImage: "character.bubble")
             }
             Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
             Toggle(t("public_news_learn_publishers", "Discover publisher feeds"), isOn: $publisherDiscovery)
@@ -78,7 +82,7 @@ struct GalaxySSIPublicNewsView: View {
                 selected = article
                 archive.markRead(article.id)
               }) {
-                Text(article.title)
+                Text(article.displayTitle)
                   .font(.body.weight(article.read ? .regular : .semibold))
                   .foregroundColor(.galaxySSITextPrimary)
                   .lineLimit(3)
@@ -123,6 +127,10 @@ struct GalaxySSIPublicNewsView: View {
       NavigationView { GalaxySSIScienceKnowledgeView() }
         .navigationViewStyle(.stack)
     }
+    .sheet(isPresented: $showHeadlineTranslation) {
+      NavigationView { GalaxySSINewsHeadlineTranslationView(archive: archive) }
+        .navigationViewStyle(.stack)
+    }
   }
 
   private func status(_ text: String) -> some View {
@@ -163,9 +171,19 @@ struct GalaxySSIPublicNewsReader: View {
           GalaxySSIPublicNewsHeadline(archive: archive, article: article, reader: true, onDismissArticle: {
             dismiss()
           }) {
-            Text(article.title).font(.title2.weight(.semibold))
+            Text(article.displayTitle).font(.title2.weight(.semibold))
           } detail: {
             GalaxySSIPublicNewsByline(article: article)
+          }
+          if article.displayTitle != article.title, let translation = article.headlineTranslation {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(article.title).textSelection(.enabled)
+              Text(translation.provider == .apple
+                ? t("public_news_headline_apple", "Translated with Apple Translation")
+                : t("public_news_headline_local", "Translated by an on-device model"))
+                .font(.caption)
+            }
+            .foregroundColor(.secondary)
           }
           if !article.summary.isEmpty {
             Text(article.summary).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)

@@ -16,7 +16,7 @@ struct GalaxySSIPublicNewsHighlightsView: View {
   }
 
   private var articles: [PublicNewsArticle] {
-    let indexed = Dictionary(archive.articles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let indexed = Dictionary(archive.eligibleArticles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     return articleIDs.compactMap { indexed[$0] }
   }
 
@@ -52,22 +52,18 @@ struct GalaxySSIPublicNewsHighlightsView: View {
           } else {
             ForEach(articles) { article in
               HStack(spacing: 8) {
-                Button {
+                GalaxySSIPublicNewsHeadline(archive: archive, article: article, onOpen: {
                   selected = article
                   archive.markRead(article.id)
-                } label: {
-                  VStack(alignment: .leading, spacing: 6) {
-                    Text(article.title)
-                      .font(.body.weight(article.read ? .regular : .semibold))
-                      .foregroundColor(.galaxySSITextPrimary)
-                      .lineLimit(3)
-                    GalaxySSIPublicNewsByline(article: article)
-                  }
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .padding(.vertical, 12)
-                  .contentShape(Rectangle())
+                }) {
+                  Text(article.displayTitle)
+                    .font(.body.weight(article.read ? .regular : .semibold))
+                    .foregroundColor(.galaxySSITextPrimary)
+                    .lineLimit(3)
+                } detail: {
+                  GalaxySSIPublicNewsByline(article: article)
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 12)
                 GalaxySSIPublicNewsBookmark(archive: archive, article: article)
               }
               .padding(.leading, 12)
@@ -91,7 +87,7 @@ struct GalaxySSIPublicNewsHighlightsView: View {
   private func curate(mask: Int) async {
     archive.load()
     loading = true
-    let archiveSnapshot = archive.articles
+    let archiveSnapshot = archive.eligibleArticles
     let enabled = Set(PublicNewsInterest.allCases.filter { mask & $0.bit != 0 })
     let worker = Task.detached(priority: .userInitiated) {
       let metadata = archiveSnapshot.map(PublicNewsHighlights.metadata)

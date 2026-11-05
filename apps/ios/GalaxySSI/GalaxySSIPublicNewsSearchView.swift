@@ -143,11 +143,14 @@ struct GalaxySSIPublicNewsSearchView: View {
         article = current
         archive.markRead(current.id)
       }) {
-        highlighted(current.title, terms: terms)
+        highlighted(current.displayTitle, terms: terms)
           .font(.body.weight(current.read ? .regular : .semibold))
           .foregroundColor(.galaxySSITextPrimary)
           .lineLimit(3)
       } detail: {
+        if current.displayTitle != current.title, !PublicNewsSearch.ranges(in: current.title, terms: terms).isEmpty {
+          highlighted(current.title, terms: terms).font(.caption).lineLimit(2)
+        }
         if !hit.snippet.isEmpty {
           highlighted(hit.snippet, terms: terms).font(.callout).lineLimit(3)
         }
