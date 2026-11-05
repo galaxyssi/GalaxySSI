@@ -182,6 +182,50 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testSleepEvidencePinsBothCohortsAcrossDSTAndProtectsWeeklyExport() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 10)))
+    for offset in 1...21 {
+      let date = try XCTUnwrap(calendar.date(byAdding: .day, value: -offset, to: day))
+      try records.write(.init(metric: .sleepDuration, measuredAt: date, value: offset <= 7 ? 7 : 8))
+    }
+    try records.write(.init(metric: .weight, measuredAt: day, value: 60))
+    try records.setOverviewPermission(true)
+    try records.setWeeklyReportAllowed(true)
+    let current = try records.load().current
+    let initial = try XCTUnwrap(GalaxySSIHealthSleepReminder.evidence(current, at: day, calendar: calendar, threshold: 45))
+    let baseline = try XCTUnwrap(initial.contributors(current, baseline: true))
+    let recent = try XCTUnwrap(initial.contributors(current, baseline: false))
+    XCTAssertEqual(baseline.count, 14)
+    XCTAssertEqual(recent.count, 7)
+    let report = try XCTUnwrap(GalaxySSIWeeklyHealthReport(current: current, sleepEvidence: initial))
+    XCTAssertEqual(report.metrics, [.sleepDuration])
+    XCTAssertEqual(report.readings, recent)
+    XCTAssertEqual(report.interval.duration, 7 * 86_400 - 3_600)
+    try records.prepareWeeklyExport(report, includeRows: false)
+    XCTAssertEqual(try records.load().weeklyExportRequests?.last?.includeRows, false)
+
+    var edited = try XCTUnwrap(baseline.first)
+    edited.value = 9
+    try records.write(edited)
+    let updated = try records.load().current
+    XCTAssertNil(initial.contributors(updated, baseline: true))
+    XCTAssertNil(initial.contributors(updated, baseline: false))
+    XCTAssertNil(GalaxySSIWeeklyHealthReport(current: updated, sleepEvidence: initial))
+    XCTAssertThrowsError(try records.prepareWeeklyExport(report, includeRows: true))
+    let latest = try XCTUnwrap(GalaxySSIHealthSleepReminder.evidence(updated, at: day, calendar: calendar, threshold: 45))
+    let refreshed = try XCTUnwrap(GalaxySSIWeeklyHealthReport(current: updated, sleepEvidence: latest))
+    XCTAssertEqual(refreshed.readings, recent)
+    try records.setOverviewPermission(false)
+    XCTAssertThrowsError(try records.prepareWeeklyExport(refreshed, includeRows: true))
+    XCTAssertEqual(try records.load().weeklyExportRequests?.count, 1)
+  }
+
+  @MainActor
   func testReportReviewBatchIsAtomicAndVersionPinned() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
