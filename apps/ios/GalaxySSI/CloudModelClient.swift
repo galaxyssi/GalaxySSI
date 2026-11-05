@@ -135,7 +135,7 @@ struct CloudModelClient {
       model: model,
       apiKey: apiKey,
       turns: turns,
-      systemPrompt: systemPrompt,
+      systemPrompt: AgentDirectVisionPolicy.appendingInstruction(to: systemPrompt, mimeTypes: images.map(\.mimeType)),
       contextWindowTokens: contextWindowTokens
     )
     var request = try jsonRequest(url: model.endpoint, apiKey: apiKey)
@@ -194,7 +194,7 @@ struct CloudModelClient {
       model: model,
       apiKey: apiKey,
       turns: turns,
-      systemPrompt: systemPrompt,
+      systemPrompt: AgentDirectVisionPolicy.appendingInstruction(to: systemPrompt, mimeTypes: images.map(\.mimeType)),
       contextWindowTokens: contextWindowTokens
     )
     guard let url = URL(string: model.endpoint) else {
@@ -254,7 +254,7 @@ struct CloudModelClient {
       model: model,
       apiKey: apiKey,
       turns: turns,
-      systemPrompt: systemPrompt,
+      systemPrompt: AgentDirectVisionPolicy.appendingInstruction(to: systemPrompt, mimeTypes: images.map(\.mimeType)),
       contextWindowTokens: contextWindowTokens
     )
     var components = URLComponents(string: model.endpoint)
