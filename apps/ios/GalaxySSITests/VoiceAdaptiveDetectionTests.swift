@@ -2,6 +2,34 @@ import XCTest
 @testable import GalaxySSI
 
 final class VoiceAdaptiveDetectionTests: XCTestCase {
+  func testNeuralVadResamplesAcrossTapsAndAppliesAttackAndReleaseHysteresis() {
+    var scores: [Float] = [0.7, 0.7, 0.4, 0.1, 0.1, 0.1, 0.1]
+    var resets = 0
+    let vad = VoiceNeuralSpeechVad(sourceRateHz: 48_000, probability: { window in
+      XCTAssertEqual(window.count, 512)
+      XCTAssertEqual(window.first, 0.25)
+      return scores.removeFirst()
+    }, resetModel: { resets += 1 })
+    let samples = [Int16](repeating: 8192, count: 768)
+    func read(_ sequence: Int64) -> VadDecision { vad.accept(frame(sequence: sequence, samples: samples)) }
+    XCTAssertFalse(read(0).speechStarted)
+    XCTAssertFalse(read(1).speechStarted)
+    XCTAssertFalse(read(2).speechStarted)
+    XCTAssertTrue(read(3).speechStarted)
+    for sequence in 4..<13 { XCTAssertFalse(read(Int64(sequence)).speechEndedCandidate) }
+    XCTAssertTrue(read(13).speechEndedCandidate)
+    XCTAssertTrue(scores.isEmpty)
+    XCTAssertFalse(read(15).isSpeech)
+    XCTAssertEqual(resets, 1)
+  }
+
+  func testBundledSileroRunsSilenceThroughThePinnedModel() throws {
+    let model = try XCTUnwrap(VoiceSileroProbability())
+    for _ in 0..<8 {
+      XCTAssertLessThan(try model.probability(Array(repeating: 0, count: 512)), 0.35)
+    }
+    model.reset()
+  }
   func testVadAdaptsToSilenceAndDetectsSpeechBoundaries() {
     let vad = AdaptiveSpeechVad()
     for index in 0..<12 {

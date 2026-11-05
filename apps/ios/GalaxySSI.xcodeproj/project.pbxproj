@@ -594,6 +594,8 @@
     A10000000000000000000622 /* VoicePcmCaptureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000622 /* VoicePcmCaptureModels.swift */; };
     A10000000000000000000623 /* VoicePcmRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000623 /* VoicePcmRingBuffer.swift */; };
     A10000000000000000000624 /* VoiceActivityDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000624 /* VoiceActivityDetector.swift */; };
+    E36400000000000000000001 /* VoiceNeuralSpeechVad.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36400000000000000000002 /* VoiceNeuralSpeechVad.swift */; };
+    E36400000000000000000003 /* vad in Resources */ = {isa = PBXBuildFile; fileRef = E36400000000000000000004 /* vad */; };
     A10000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */; };
     A10000000000000000000626 /* VoicePcmWaveFileAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */; };
     A10000000000000000000627 /* VoiceAudioHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000627 /* VoiceAudioHub.swift */; };
@@ -1841,6 +1843,8 @@
     A20000000000000000000622 /* VoicePcmCaptureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmCaptureModels.swift; sourceTree = "<group>"; };
     A20000000000000000000623 /* VoicePcmRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmRingBuffer.swift; sourceTree = "<group>"; };
     A20000000000000000000624 /* VoiceActivityDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceActivityDetector.swift; sourceTree = "<group>"; };
+    E36400000000000000000002 /* VoiceNeuralSpeechVad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceNeuralSpeechVad.swift; sourceTree = "<group>"; };
+    E36400000000000000000004 /* vad */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ../android/app/src/main/assets/voice/vad; sourceTree = SOURCE_ROOT; };
     A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAdaptiveEndpointDetector.swift; sourceTree = "<group>"; };
     A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmWaveFileAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000627 /* VoiceAudioHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAudioHub.swift; sourceTree = "<group>"; };
@@ -2579,6 +2583,8 @@
         A20000000000000000000622 /* VoicePcmCaptureModels.swift */,
         A20000000000000000000623 /* VoicePcmRingBuffer.swift */,
         A20000000000000000000624 /* VoiceActivityDetector.swift */,
+        E36400000000000000000002 /* VoiceNeuralSpeechVad.swift */,
+        E36400000000000000000004 /* vad */,
         A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */,
         A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */,
         A20000000000000000000627 /* VoiceAudioHub.swift */,
@@ -3436,7 +3442,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E36400000000000000000003 /* vad in Resources */, A10000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -3757,6 +3763,7 @@
         A10000000000000000000622 /* VoicePcmCaptureModels.swift in Sources */,
         A10000000000000000000623 /* VoicePcmRingBuffer.swift in Sources */,
         A10000000000000000000624 /* VoiceActivityDetector.swift in Sources */,
+        E36400000000000000000001 /* VoiceNeuralSpeechVad.swift in Sources */,
         A10000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift in Sources */,
         A10000000000000000000626 /* VoicePcmWaveFileAdapter.swift in Sources */,
         A10000000000000000000627 /* VoiceAudioHub.swift in Sources */,
