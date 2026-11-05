@@ -2,6 +2,44 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRichContentMermaidTests: XCTestCase {
+  func testDeclaredHTMLRequiresClosingFenceAndPreservesCompleteProgram() throws {
+    let program = "<!doctype html>\n<html><body><script>\n" +
+      String(repeating: "window.frame = 1;\n", count: 720) + "</script></body></html>"
+    let declared = AgentRichContentCodec.fromText("Intro\n\n```galaxyssi-html\n\(program)\n```\nAfter")
+    XCTAssertEqual(declared.map(\.type), [.text, .html, .text])
+    XCTAssertEqual(try XCTUnwrap(declared.first(where: { $0.type == .html })).text, program)
+    XCTAssertEqual(AgentRichContentCodec.fromText("```html\n\(program)\n```").first?.type, .code)
+    XCTAssertEqual(AgentRichContentCodec.fromText("```galaxyssi-html\n\(program)").first?.type, .code)
+    XCTAssertFalse(AgentVisualOutputPolicy.isCompleteHTML("<html><script>run()</html>"))
+    XCTAssertFalse(AgentVisualOutputPolicy.isCompleteHTML("<html>Unclosed"))
+    XCTAssertTrue(AgentRichBlock(id: "large", type: .html,
+      text: "<html>" + String(repeating: "a", count: 32_000) + "</html>").text.isEmpty)
+  }
+
+  func testPrivateHTMLAttachmentChecksExactBytesAndRejectsForgedReference() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let materializer = AgentRichContentMaterializer(directoryURL: directory)
+    let html = "<html><body><script>window.frame=1;</script></body></html>"
+    let raw = AgentRichBlock(id: "animation", type: .html, title: "Animation", text: html)
+    let stored = try XCTUnwrap(materializer.storeDeclaredHTML(raw))
+    XCTAssertTrue(stored.text.isEmpty)
+    XCTAssertEqual(stored.metadata["storage"], "app_private_file")
+    XCTAssertEqual(stored.metadata["size_bytes"], String(html.utf8.count))
+    XCTAssertEqual(materializer.loadDeclaredHTML(stored), html)
+    XCTAssertEqual(materializer.storeDeclaredHTML(raw), stored)
+    var forged = stored
+    forged.uri = "file:///private/other.html"
+    XCTAssertNil(materializer.loadDeclaredHTML(forged))
+    let digest = try XCTUnwrap(stored.metadata["sha256"])
+    let file = directory.appendingPathComponent("\(digest).html")
+    let tampered = Data(html.replacingOccurrences(of: "frame=1", with: "frame=2").utf8)
+    try GalaxySSILocalAttachmentStore.shared.write(tampered, to: file, purpose: "rich-html:\(digest)")
+    XCTAssertNil(materializer.loadDeclaredHTML(stored))
+    XCTAssertEqual(materializer.storeDeclaredHTML(raw), stored)
+    XCTAssertEqual(materializer.loadDeclaredHTML(stored), html)
+  }
+
   func testInternalArtifactMarkdownReferencesAreHiddenButCodeAndWebLinksRemain() {
     let internalImage = "![Generated image](galaxyssi-artifact://task/outputs/generated-image.png)"
     XCTAssertEqual(AgentRichContentCodec.fromText("Done.\n\n\(internalImage)").map(\.text), ["Done."])

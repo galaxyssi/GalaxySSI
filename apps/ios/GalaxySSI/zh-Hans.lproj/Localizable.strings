@@ -5689,6 +5689,8 @@
 "agent_runtime_artifact_save" = "保存";
 "rich_output_pause" = "暂停";
 "rich_output_play" = "播放";
+"rich_output_stop" = "停止播放";
+"rich_output_html_unavailable" = "已保存的动画不可用。";
 
 "agent_no_reply.network_unavailable.title" = "网络不可用";
 "agent_no_reply.network_unavailable.message" = "手机当前没有可用网络，请恢复网络后重试。";

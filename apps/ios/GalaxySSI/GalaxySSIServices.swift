@@ -103,6 +103,10 @@ final class MessageCoordinator: ObservableObject {
   let connectorResponseBus: AgentConnectorResponseBus
   let attachmentDeliveryFailureStore = AgentAttachmentDeliveryFailureStore()
   private let richContentMaterializer: AgentRichContentMaterializer
+
+  func loadDeclaredRichHTML(_ block: AgentRichBlock) -> String? {
+    richContentMaterializer.loadDeclaredHTML(block)
+  }
   private let remoteWhisperNodeRegistry = VoiceRemoteWhisperNodeRegistry.shared
   private let remoteWhisperNodeClient = VoiceRemoteWhisperNodeClient.shared
   let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
