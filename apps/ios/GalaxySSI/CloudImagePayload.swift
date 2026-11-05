@@ -98,6 +98,7 @@ enum CloudVisionPayloadEncoder {
           "detail": "auto"
         ]
       ])
+      if offset < images.count { content.append(["type": "text", "text": sourceLabel(offset)]) }
     }
     message["content"] = content
     conversation[index] = message
@@ -126,6 +127,7 @@ enum CloudVisionPayloadEncoder {
           "data": image.base64
         ]
       ])
+      if offset < images.count { content.append(["type": "text", "text": sourceLabel(offset)]) }
     }
     message["content"] = content
     conversation[index] = message
@@ -152,9 +154,14 @@ enum CloudVisionPayloadEncoder {
           "data": image.base64
         ]
       ])
+      if offset < images.count { parts.append(["text": sourceLabel(offset)]) }
     }
     message["parts"] = parts
     conversation[index] = message
+  }
+
+  private static func sourceLabel(_ index: Int) -> String {
+    "Source image index: \(index)."
   }
 
   private static func latestUserIndex(in conversation: [[String: Any]]) -> Int? {
@@ -234,7 +241,7 @@ struct CloudImageAnnotationPlan: Equatable {
   static func instruction(imageCount: Int) -> String {
     guard imageCount > 0 else { return "" }
     return """
-    This turn contains \(imageCount) attached images indexed from 0. When the user requests grading or annotations on an image, call image_annotate with normalized answer bounds. The bounds locate answers but are never drawn. Use correct, incorrect, uncertain, or note. Incorrect marks require a short replacement answer in correction; put reasoning in note. Do not add boxes, numbering, legends, extra pages, replacement worksheets, links, or duplicate images. The app appends one annotated copy of each source image.
+    There are \(imageCount) available source images indexed from 0. Historical references are not new uploads. Use the source image index in its label, not its position in the conversation. Derived orientation references have no source index and cannot be annotated. Only annotate when the latest user request asks for grading or annotations; call image_annotate with normalized bounds on the source image. The bounds locate answers but are never drawn. Use correct, incorrect, uncertain, or note. Incorrect marks require a short replacement answer in correction; put reasoning in note. Do not add boxes, numbering, legends, extra pages, replacement worksheets, links, or duplicate images. The app appends one annotated copy of each source image.
     """
   }
 }
