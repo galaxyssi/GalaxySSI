@@ -57,12 +57,16 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
     }
     fun count(): Long = helper.readableDatabase.rawQuery("SELECT COUNT(*) FROM observations WHERE deleted=0", null)
         .use { it.moveToFirst(); it.getLong(0) }
-    fun overviewLatestSelf(metric: HealthMetric?, until: Long): HealthObservation? = latestSelf(metric, until, manual = false)
-    fun latestManualMeasurement(until: Long): Long? = latestSelf(null, until, manual = true)?.draft?.measuredAt
+    fun overviewLatestSelf(metric: HealthMetric?, until: Long): HealthObservation? =
+        recentSelf(until, limit = 1, metric = metric).firstOrNull()
+    fun latestManualMeasurement(until: Long): Long? =
+        recentSelf(until, limit = 1, manual = true).firstOrNull()?.draft?.measuredAt
     fun confirmedImportCount(): Long = helper.readableDatabase.rawQuery(
         "SELECT COUNT(*) FROM observations WHERE original_id IS NOT NULL AND deleted=0", null
     ).use { it.moveToFirst(); it.getLong(0) }
-    private fun latestSelf(metric: HealthMetric?, until: Long, manual: Boolean): HealthObservation? {
+    fun recentSelf(until: Long, limit: Int, metric: HealthMetric? = null, manual: Boolean = false): List<HealthObservation> {
+        require(limit in 1..PAGE_SIZE)
+        val found = ArrayList<HealthObservation>(limit)
         var after: HealthPageCursor? = null
         while (true) {
             val args = arrayListOf(until.toString())
@@ -75,12 +79,15 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 var last: HealthPageCursor? = null
                 while (cursor.moveToNext()) {
                     val row = decode(cursor)
-                    if (row.profileId == "self" && (!manual || row.source == "manual")) return row
+                    if (row.profileId == "self" && (!manual || row.source == "manual")) {
+                        found += row
+                        if (found.size == limit) return found
+                    }
                     last = HealthPageCursor(row.draft.measuredAt, row.id)
                 }
                 last
             }
-            if (result == null) return null
+            if (result == null) return found
             after = result
         }
     }

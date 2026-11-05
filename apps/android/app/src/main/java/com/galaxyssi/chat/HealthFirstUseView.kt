@@ -1,6 +1,5 @@
 package com.galaxyssi.chat
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
@@ -140,17 +139,7 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
         }, 8)
     }
 
-    private fun chooseFirstRecord() {
-        val choices = intArrayOf(R.string.health_take_photo, R.string.health_manual, R.string.health_first_existing)
-        activity.showHealthDialog(AlertDialog.Builder(activity).setTitle(R.string.health_first_add)
-            .setItems(choices.map(::label).toTypedArray()) { _, index ->
-                when (index) {
-                    0 -> capture(HealthCaptureEntry.CAMERA)
-                    1 -> activity.open("manual")
-                    else -> activity.open("import")
-                }
-            }.setNegativeButton(android.R.string.cancel, null).create())
-    }
+    private fun chooseFirstRecord() = activity.open("record_center")
 
     private fun panel() = ui.column().apply {
         setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
