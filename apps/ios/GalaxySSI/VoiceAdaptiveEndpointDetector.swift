@@ -1,6 +1,8 @@
 import Foundation
 
 struct AdaptiveEndpointConfig: Equatable {
+  static let continuous = AdaptiveEndpointConfig(shortUtteranceSilenceMs: 1_000,
+    normalUtteranceSilenceMs: 1_200, longUtteranceSilenceMs: 1_400, maxTrailingSilenceMs: 1_400)
   var noSpeechTimeoutMs: Int64
   var minimumSpeechMs: Int64
   var shortUtteranceSilenceMs: Int64
@@ -107,8 +109,10 @@ final class AdaptiveEndpointDetector {
       lastSpeechSampleExclusive = consumedSamples
     }
     let elapsedMs = samplesToMs(consumedSamples)
-    let speechStartMs = firstSpeechSample.map(samplesToMs)
-    let speechDurationMs = speechStartMs.map { max(0, elapsedMs - $0) } ?? 0
+    let speechDurationMs: Int64
+    if let firstSpeechSample, let lastSpeechSampleExclusive {
+      speechDurationMs = samplesToMs(max(0, lastSpeechSampleExclusive - firstSpeechSample))
+    } else { speechDurationMs = 0 }
     let trailingSilenceMs = lastSpeechSampleExclusive.map {
       samplesToMs(max(0, consumedSamples - $0))
     } ?? elapsedMs
@@ -119,7 +123,7 @@ final class AdaptiveEndpointDetector {
       } else if elapsedMs >= config.maxDurationMs {
         terminalReason = .maxDuration
       } else if firstSpeechSample != nil &&
-          speechDurationMs >= config.minimumSpeechMs &&
+          elapsedMs - samplesToMs(firstSpeechSample ?? consumedSamples) >= config.minimumSpeechMs &&
           trailingSilenceMs >= targetTrailingSilence(speechDurationMs) {
         terminalReason = .trailingSilence
       }
@@ -127,7 +131,7 @@ final class AdaptiveEndpointDetector {
     return EndpointUpdate(
       elapsedMs: elapsedMs,
       speechStarted: vad.speechStarted,
-      speechEndedCandidate: vad.speechEndedCandidate,
+      speechEndedCandidate: autoEndpoint ? terminalReason == .trailingSilence : vad.speechEndedCandidate,
       trailingSilenceMs: trailingSilenceMs,
       endpointReason: terminalReason
     )
