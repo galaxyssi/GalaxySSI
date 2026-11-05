@@ -207,7 +207,7 @@ struct GalaxySSIHealthOriginalsView: View {
             .accessibilityLabel(Text(t("close", "Close")))
         }
         if let pdf = item.pdf {
-          PDFPages(document: pdf, name: item.name)
+          GalaxySSIHealthOriginalPDFPreview(document: pdf, name: item.name)
         } else if let image = item.image {
           Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(item.name))
         }
@@ -270,7 +270,7 @@ struct GalaxySSIHealthOriginalsView: View {
     do {
       let data = try store.read(item)
       if item.kind == .pdf {
-        guard let pdf = PDFDocument(data: data), pdf.pageCount > 0 else { error = true; return }
+        guard let pdf = PDFDocument(data: data), pdf.isLocked || pdf.pageCount > 0 else { error = true; return }
         preview = Preview(original: item, pdf: pdf)
       } else {
         guard let image = Self.thumbnail(data, maximum: 1_200) else { error = true; return }
@@ -419,7 +419,26 @@ struct GalaxySSIHealthOriginalsView: View {
     }
   }
 
-  private struct PDFPages: View {
+@MainActor
+private struct GalaxySSIHealthOriginalPDFPreview: View {
+  let document: PDFDocument
+  let name: String
+  @State private var unlocked = false
+  @State private var failed = false
+
+  var body: some View {
+    if unlocked || !document.isLocked {
+      PDFPages(document: document, name: name)
+    } else {
+      GalaxySSIHealthPDFPasswordForm(failed: failed) { password in
+        unlocked = document.unlock(withPassword: password) && !document.isLocked && document.pageCount > 0
+        failed = !unlocked
+      }
+    }
+  }
+}
+
+private struct PDFPages: View {
     @Environment(\.galaxySSIInterfaceLanguage) private var language
     let document: PDFDocument
     let name: String

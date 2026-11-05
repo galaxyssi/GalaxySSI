@@ -4,10 +4,10 @@ import java.time.ZoneId
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal enum class HealthPrivacyOption { CONFIRMED_METRICS, PROFILE_CONTEXT, ONLINE_ANALYSIS, ORIGINAL_IMAGES }
+internal enum class HealthPrivacyOption { CONFIRMED_METRICS, PROFILE_CONTEXT, ONLINE_ANALYSIS, ORIGINAL_IMAGES, RETAIN_IMPORT_ORIGINALS }
 internal data class HealthPrivacyPolicy(
     val metrics: Boolean = true, val profile: Boolean = true, val online: Boolean = false,
-    val images: Boolean = false, val version: String = ""
+    val images: Boolean = false, val version: String = "", val retainImportOriginals: Boolean = true
 ) {
     init { require(!images || online) }
     fun enabled(option: HealthPrivacyOption) = when (option) {
@@ -15,16 +15,21 @@ internal data class HealthPrivacyPolicy(
         HealthPrivacyOption.PROFILE_CONTEXT -> profile
         HealthPrivacyOption.ONLINE_ANALYSIS -> online
         HealthPrivacyOption.ORIGINAL_IMAGES -> images
+        HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS -> retainImportOriginals
     }
     fun change(option: HealthPrivacyOption, value: Boolean) = when (option) {
         HealthPrivacyOption.CONFIRMED_METRICS -> copy(metrics = value)
         HealthPrivacyOption.PROFILE_CONTEXT -> copy(profile = value)
         HealthPrivacyOption.ONLINE_ANALYSIS -> copy(online = value, images = value && images)
         HealthPrivacyOption.ORIGINAL_IMAGES -> copy(images = value)
+        HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS -> copy(retainImportOriginals = value)
     }
-    fun json() = JSONObject().put("metrics", metrics).put("profile", profile).put("online", online).put("images", images).put("version", version)
+    fun json() = JSONObject().put("metrics", metrics).put("profile", profile).put("online", online).put("images", images)
+        .put("version", version).put("retain_import_originals", retainImportOriginals)
     companion object {
-        fun from(j: JSONObject) = HealthPrivacyPolicy(j.getBoolean("metrics"), j.getBoolean("profile"), j.getBoolean("online"), j.getBoolean("images"), j.getString("version"))
+        fun from(j: JSONObject) = HealthPrivacyPolicy(j.getBoolean("metrics"), j.getBoolean("profile"), j.getBoolean("online"),
+            j.getBoolean("images"), j.getString("version"),
+            if (j.has("retain_import_originals")) j.getBoolean("retain_import_originals") else true)
     }
 }
 
@@ -39,10 +44,11 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     SAVE_WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS_ONLINE(HealthPrivacyOption.ONLINE_ANALYSIS),
-    SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE
+    SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE, DELETE_BLUETOOTH_HISTORY, DELETE_HEALTH_CONNECT_HISTORY,
+    DELETE_MEASUREMENT_HISTORY, DELETE_ORIGINAL_BYTES
 }
 internal enum class HealthAccessOutcome { STARTED, COMPLETE, FAILED, CANCELLED, BLOCKED }
-internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL }
+internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL, BLUETOOTH, HEALTH_CONNECT }
 internal enum class HealthAccessFormat { CSV, JSON, XLSX, ZIP, ORIGINAL, PDF, GHBACKUP }
 internal data class HealthAccessScope(
     val purpose: HealthAccessPurpose, val metrics: Set<HealthMetric> = emptySet(),
@@ -73,6 +79,14 @@ internal data class HealthAccessScope(
             HealthAccessPurpose.SAVE_ORIGINALS -> require(count != null && format in listOf(HealthAccessFormat.ZIP, HealthAccessFormat.ORIGINAL))
             HealthAccessPurpose.GENERATE_BACKUP -> require(count != null && format == HealthAccessFormat.GHBACKUP && fields.isEmpty())
             HealthAccessPurpose.DELETE_PROFILE -> require(count != null && drafts != null && basicCount != null && format == null)
+            HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY -> require(metrics == setOf(HealthMetric.BLOOD_PRESSURE) &&
+                source == HealthAccessSource.BLUETOOTH && count != null && count > 0 && format == null)
+            HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY -> require(metrics.size == 1 && HealthConnectScope.entries.any { it.metric in metrics } &&
+                source == HealthAccessSource.HEALTH_CONNECT && count != null && count > 0 && format == null)
+            HealthAccessPurpose.DELETE_MEASUREMENT_HISTORY -> require(metrics.size == 1 && source == HealthAccessSource.ALL &&
+                count != null && count > 0 && format == null)
+            HealthAccessPurpose.DELETE_ORIGINAL_BYTES -> require(metrics.isEmpty() && source == HealthAccessSource.ORIGINAL &&
+                count == 1L && format == HealthAccessFormat.ORIGINAL)
         }
     }
     fun json() = JSONObject().put("purpose", purpose.name).put("metrics", JSONArray(metrics.map { it.name })).put("from", from)
@@ -92,7 +106,13 @@ internal data class HealthAccessScope(
                 j.optBoolean("reportRecords"), j.takeUnless { it.isNull("baselineFrom") }?.getLong("baselineFrom"), j.optString("destination"))
         }
         fun trend(purpose: HealthAccessPurpose, spec: HealthTrendSpec) = HealthAccessScope(purpose, setOf(spec.metric), spec.from, spec.until, spec.zone.id,
-            source = when { spec.source.manualOnly -> HealthAccessSource.MANUAL; spec.source.originalId.isNotEmpty() -> HealthAccessSource.ORIGINAL; else -> HealthAccessSource.ALL })
+            source = when {
+                spec.source.manualOnly -> HealthAccessSource.MANUAL
+                spec.source.originalId.isNotEmpty() -> HealthAccessSource.ORIGINAL
+                spec.source.bluetoothGroup.isNotEmpty() -> HealthAccessSource.BLUETOOTH
+                spec.source.platformOrigin.isNotEmpty() -> HealthAccessSource.HEALTH_CONNECT
+                else -> HealthAccessSource.ALL
+            })
         fun records(session: HealthRecordExportSession) = with(session.scope) {
             HealthAccessScope(HealthAccessPurpose.SAVE_RECORDS, metrics, from, until, zone, count = session.count,
                 source = if (originalId.isEmpty()) HealthAccessSource.ALL else HealthAccessSource.ORIGINAL,

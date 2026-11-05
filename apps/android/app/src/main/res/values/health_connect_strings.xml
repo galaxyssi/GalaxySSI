@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_connect_history_title">Local Health Connect copies</string>
+    <string name="health_connect_history_delete">Delete local Health Connect copies</string>
+    <string name="health_connect_history_preview">%1$s · %2$d saved measurements\n%3$s to %4$s\n\nOnly this data type’s local copies, revisions and edit drafts will be deleted. This cannot be undone. Source apps, permissions, sync settings, backups and exports are unchanged. Imported records can be saved again later.</string>
+    <string name="health_connect_history_empty">No local Health Connect copies for this data type</string>
+    <string name="health_connect_history_changed">Records changed. Open a new preview before deleting.</string>
+    <string name="health_connect_history_deleted">Local Health Connect copies deleted</string>
     <string name="health_connect_authorize">Authorize Data Source</string>
     <string name="health_connect_privacy">Health Connect Privacy</string>
     <string name="health_connect_intro">Choose which health measurements to read into your local health archive.</string>
