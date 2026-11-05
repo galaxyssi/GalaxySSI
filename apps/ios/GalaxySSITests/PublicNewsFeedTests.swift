@@ -2,6 +2,26 @@ import XCTest
 @testable import GalaxySSI
 
 final class PublicNewsFeedTests: XCTestCase {
+  @MainActor
+  func testNotRelevantPersistsAcrossReopenWithoutDiscardingArchive() throws {
+    struct Fixture: Encodable { let articles: [PublicNewsArticle] }
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let article = PublicNewsArticle(url: URL(string: "https://example.com/a")!, title: "Headline",
+      summary: "Summary", publisher: "Fixture", discoveredAt: Date(), saved: true)
+    try JSONEncoder().encode(Fixture(articles: [article])).write(to: file)
+    let archive = PublicNewsArchive(fileURL: file)
+    archive.load()
+    XCTAssertFalse(archive.markNotRelevant("missing"))
+    XCTAssertTrue(archive.markNotRelevant(article.id))
+    XCTAssertTrue(archive.eligibleArticles.isEmpty)
+    let reopened = PublicNewsArchive(fileURL: file)
+    reopened.load()
+    XCTAssertEqual(reopened.notRelevantIDs, [article.id])
+    XCTAssertEqual(reopened.articles, [article])
+    XCTAssertTrue(reopened.eligibleArticles.isEmpty)
+  }
+
   private let now = Date(timeIntervalSince1970: 1_800_000_000)
   private let source = PublicNewsSource(publisher: "Fixture", url: URL(string: "https://example.com/feed/")!)
 

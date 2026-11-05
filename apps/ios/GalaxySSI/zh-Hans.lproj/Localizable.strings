@@ -5260,6 +5260,8 @@
 "public_news_open_source" = "打开原文";
 "public_news_unsave" = "取消收藏";
 "public_news_save" = "收藏";
+"public_news_mark_read" = "标为已读";
+"public_news_done_selecting" = "完成选择";
 "agent_marketplace_desktop_empty" = "暂无可用的 Desktop 能力";
 "agent_marketplace_desktop_title" = "Desktop 能力市场";
 "agent_marketplace_desktop_waiting" = "等待中";

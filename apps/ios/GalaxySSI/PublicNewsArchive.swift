@@ -7,17 +7,21 @@ final class PublicNewsArchive: ObservableObject {
   @Published private(set) var refreshing = false
   @Published private(set) var refreshIncomplete = false
   @Published private(set) var storageFailed = false
+  @Published private(set) var notRelevantIDs: Set<String> = []
 
   private struct Snapshot: Codable {
     var articles: [PublicNewsArticle]
     var refreshedAt: Date?
     var pushCursor: PublicNewsPushCursor?
+    var notRelevantIDs: Set<String>?
   }
 
   private let fileURL: URL?
   private var refreshedAt: Date?
   private var loaded = false
   private var pushCursor = PublicNewsPushCursor()
+
+  var eligibleArticles: [PublicNewsArticle] { articles.filter { !notRelevantIDs.contains($0.id) } }
 
   init(fileURL: URL? = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
     .first?.appendingPathComponent("public-news.json")) {
@@ -32,6 +36,7 @@ final class PublicNewsArchive: ObservableObject {
       articles = snapshot.articles
       refreshedAt = snapshot.refreshedAt
       pushCursor = snapshot.pushCursor ?? PublicNewsPushCursor()
+      notRelevantIDs = snapshot.notRelevantIDs ?? []
     } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
       // The archive is created after the first successful collection.
     } catch {
@@ -72,6 +77,13 @@ final class PublicNewsArchive: ObservableObject {
 
   func toggleSaved(_ id: String) {
     update(id) { $0.saved.toggle() }
+  }
+
+  @discardableResult
+  func markNotRelevant(_ id: String) -> Bool {
+    guard articles.contains(where: { $0.id == id }) else { return false }
+    if notRelevantIDs.contains(id) { return true }
+    return save(articles, refreshedAt: refreshedAt, feedback: notRelevantIDs.union([id]))
   }
 
   func collectLive() async {
@@ -150,15 +162,20 @@ final class PublicNewsArchive: ObservableObject {
   }
 
   @discardableResult
-  private func save(_ next: [PublicNewsArticle], refreshedAt: Date?, cursor: PublicNewsPushCursor? = nil) -> Bool {
+  private func save(_ next: [PublicNewsArticle], refreshedAt: Date?,
+                    cursor: PublicNewsPushCursor? = nil, feedback: Set<String>? = nil) -> Bool {
     guard loaded, let fileURL else { return false }
     do {
-      let data = try JSONEncoder().encode(Snapshot(articles: next, refreshedAt: refreshedAt, pushCursor: cursor ?? pushCursor))
+      let data = try JSONEncoder().encode(Snapshot(
+        articles: next, refreshedAt: refreshedAt, pushCursor: cursor ?? pushCursor,
+        notRelevantIDs: feedback ?? notRelevantIDs
+      ))
       try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
       try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
       if articles != next { articles = next }
       self.refreshedAt = refreshedAt
       if let cursor { pushCursor = cursor }
+      if let feedback { notRelevantIDs = feedback }
       storageFailed = false
       return true
     } catch {

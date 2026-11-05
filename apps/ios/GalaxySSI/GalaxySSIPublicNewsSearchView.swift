@@ -11,6 +11,7 @@ struct GalaxySSIPublicNewsSearchView: View {
   @SceneStorage("publicNews.searchPublisher") private var publisher = ""
   @FocusState private var searchFocused: Bool
   @State private var result: PublicNewsSearchResult?
+  @State private var resolvedQuery: PublicNewsSearchRequest?
   @State private var hits: [PublicNewsSearchHit] = []
   @State private var searching = false
   @State private var article: PublicNewsArticle?
@@ -28,7 +29,7 @@ struct GalaxySSIPublicNewsSearchView: View {
   }
 
   private var publishers: [String] {
-    let available = Set(archive.articles.map(\.publisher))
+    let available = Set(archive.eligibleArticles.map(\.publisher))
     return (publisher.isEmpty ? available : available.union([publisher])).sorted {
       $0.localizedStandardCompare($1) == .orderedAscending
     }
@@ -93,7 +94,16 @@ struct GalaxySSIPublicNewsSearchView: View {
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
-    .task(id: SearchVersion(query: request, refreshing: archive.refreshing)) { await runSearch(request) }
+    .task(id: SearchVersion(query: request, refreshing: archive.refreshing)) {
+      await runSearch(request)
+    }
+    .onChange(of: archive.notRelevantIDs) { hidden in
+      guard let result else { return }
+      self.result = PublicNewsSearchResult(
+        articles: result.articles.filter { !hidden.contains($0.id) }, terms: result.terms
+      )
+      hits.removeAll { hidden.contains($0.id) }
+    }
     .sheet(item: $article) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
   }
 
@@ -128,26 +138,22 @@ struct GalaxySSIPublicNewsSearchView: View {
   private func row(_ hit: PublicNewsSearchHit, terms: [String]) -> some View {
     let current = archive.articles.first { $0.id == hit.id } ?? hit.article
     return HStack(spacing: 8) {
-      Button {
+      GalaxySSIPublicNewsHeadline(archive: archive, article: current, onOpen: {
         searchFocused = false
         article = current
         archive.markRead(current.id)
-      } label: {
-        VStack(alignment: .leading, spacing: 5) {
-          highlighted(current.title, terms: terms)
-            .font(.body.weight(current.read ? .regular : .semibold))
-            .foregroundColor(.galaxySSITextPrimary)
-            .lineLimit(3)
-          if !hit.snippet.isEmpty {
-            highlighted(hit.snippet, terms: terms).font(.callout).lineLimit(3)
-          }
-          GalaxySSIPublicNewsByline(article: current)
+      }) {
+        highlighted(current.title, terms: terms)
+          .font(.body.weight(current.read ? .regular : .semibold))
+          .foregroundColor(.galaxySSITextPrimary)
+          .lineLimit(3)
+      } detail: {
+        if !hit.snippet.isEmpty {
+          highlighted(hit.snippet, terms: terms).font(.callout).lineLimit(3)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
+        GalaxySSIPublicNewsByline(article: current)
       }
-      .buttonStyle(.plain)
+      .padding(.vertical, 12)
       GalaxySSIPublicNewsBookmark(archive: archive, article: current)
     }
     .padding(.leading, 12)
@@ -169,20 +175,25 @@ struct GalaxySSIPublicNewsSearchView: View {
   }
 
   private func runSearch(_ query: PublicNewsSearchRequest) async {
+    guard resolvedQuery != query || result?.articles.isEmpty != false else { return }
     hits = []
     result = nil
     searching = !PublicNewsSearch.terms(query.text).isEmpty
     guard searching else { return }
     do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
-    let articles = archive.articles
+    let articles = archive.eligibleArticles
     let worker = Task.detached(priority: .userInitiated) {
       try PublicNewsSearch.index(query, articles: articles, now: Date())
     }
     do {
       let next = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
       guard !Task.isCancelled, query == request else { return }
-      result = next
-      hits = next.page(start: 0)
+      let eligible = PublicNewsSearchResult(
+        articles: next.articles.filter { !archive.notRelevantIDs.contains($0.id) }, terms: next.terms
+      )
+      resolvedQuery = query
+      result = eligible
+      hits = eligible.page(start: 0)
       searching = false
     } catch {
       if !Task.isCancelled, query == request { searching = false }
