@@ -139,6 +139,9 @@ class HealthConnectActivity : ComponentActivity() {
         if (notice.isNotBlank()) ui.add(body, ui.text(notice, 14f).apply { tag = "health-connect-notice" }, 4)
         ui.add(body, ui.text(getString(R.string.health_sources_platform_name), 21f, bold = true), 8)
         ui.add(body, ui.text(getString(R.string.health_connect_intro), 14f, muted = true), 6)
+        ui.add(body, ui.profileRow(getString(R.string.health_connect_history_title)) {
+            startActivity(Intent(this, HealthConnectHistoryActivity::class.java))
+        }, 8)
         if (platform != HealthPlatformAvailability.AVAILABLE || granted == null) {
             val status = when (platform) {
                 HealthPlatformAvailability.INSTALL_OR_UPDATE -> R.string.health_sources_platform_install
