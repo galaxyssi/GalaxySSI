@@ -96,6 +96,9 @@
 "galaxyssi.health.review_reminder.snooze_hour" = "推迟一小时";
 "galaxyssi.health.review_reminder.notification_title" = "GalaxySSI 提醒";
 "galaxyssi.health.review_reminder.notification_body" = "打开 GalaxySSI 查看。";
+"galaxyssi.health.review_reminder.system_section" = "系统通知";
+"galaxyssi.health.review_reminder.incident_system" = "同步故障通知";
+"galaxyssi.health.review_reminder.incident_scopes" = "同步故障通知范围";
 "galaxyssi.health.table.save_review_draft" = "保存加密审阅草稿";
 "galaxyssi.health.table.resume_review_draft" = "继续已保存的表格审阅";
 "galaxyssi.health.table.discard_review_draft" = "丢弃已保存的表格审阅";

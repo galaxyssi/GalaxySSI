@@ -30,11 +30,12 @@ enum GalaxySSIHealthReviewReminders {
   }
 
   struct Job: Identifiable, Equatable {
-    enum Kind: String { case report, table }
+    enum Kind: String { case report, table, incident }
     let target: UUID
     let kind: Kind
     let versions: [UUID]
     let at: Date
+    var scope: String?
     var key: String { kind.rawValue + ":" + target.uuidString }
     var id: String { key }
   }
@@ -55,6 +56,14 @@ enum GalaxySSIHealthReviewReminders {
   static func visible(_ jobs: [Job], state: State, now: Date) -> [Job] {
     guard state.enabled else { return [] }
     return jobs.filter { state.actions[$0.key]?.hides(at: now) != true }
+  }
+
+  @MainActor
+  static func deliveryJobs(in archive: GalaxySSIHealthRecords.Archive) -> [Job] {
+    let failures = (archive.healthKitIncidents ?? [:]).values.filter { !$0.acknowledged }.map {
+      Job(target: $0.id, kind: .incident, versions: [$0.version], at: $0.lastFailureAt, scope: $0.scope)
+    }
+    return failures.sorted { ($0.at, $0.key) > ($1.at, $1.key) } + jobs(in: archive)
   }
 }
 
@@ -91,7 +100,6 @@ struct GalaxySSIHealthReviewReminderView: View {
             do { try records.setReviewRemindersEnabled(value); reload() } catch { failed = true }
           }))
         if enabled {
-          GalaxySSIHealthReviewNotificationSettings(records: records)
           if jobs.isEmpty { Text(t("empty", "No pending reviews")).foregroundColor(.secondary) }
           ForEach(jobs.prefix(limit)) { job in
             VStack(alignment: .leading, spacing: 6) {
@@ -109,6 +117,7 @@ struct GalaxySSIHealthReviewReminderView: View {
           }
           if jobs.count > limit { Button(t("more", "Show more reviews")) { limit += 30 } }
         }
+        GalaxySSIHealthReviewNotificationSettings(records: records, reviewEnabled: enabled)
         Section(t("connections", "Data Connections")) {
           if incidents.isEmpty { Text(t("connections_empty", "No unresolved sync failures")).foregroundColor(.secondary) }
           ForEach(incidents) { incident in
@@ -224,6 +233,7 @@ struct GalaxySSIHealthReviewReminderView: View {
     switch job.kind {
     case .report: return originalNames[job.target] ?? t("report", "Report review")
     case .table: return tableName ?? t("table", "Table review")
+    case .incident: return t("connection_failed", "Synchronization failed")
     }
   }
 

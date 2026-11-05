@@ -4,6 +4,35 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testSyncIncidentDeliveryKeepsTokenAndCancelsWhenDeselected() throws {
+    let now = Date()
+    let incident = UUID()
+    let job = GalaxySSIHealthReviewReminders.Job(target: incident, kind: .incident,
+      versions: [UUID()], at: now, scope: "weight")
+    var state = GalaxySSIHealthReviewReminders.State()
+    state.notificationPreferences = .init(quietStart: 0, quietEnd: 0, incidentEnabled: true)
+    let (tickets, desired) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: now,
+      calendar: .current, permitted: true, scheduled: [], delivered: [])
+    let first = try XCTUnwrap(desired.first)
+    XCTAssertFalse(first.identifier.contains(incident.uuidString))
+    state.deliveries = tickets
+    let retry = GalaxySSIHealthReviewReminders.Job(target: incident, kind: .incident,
+      versions: [UUID()], at: now, scope: "weight")
+    let (adopted, next) = GalaxySSIHealthReviewDelivery.plan(jobs: [retry], state: state, now: now,
+      calendar: .current, permitted: true, scheduled: [], delivered: [first.token])
+    XCTAssertEqual(next.first?.token, first.token)
+    XCTAssertEqual(next.first?.submitted, true)
+    state.deliveries = adopted
+    state.notificationPreferences?.incidentScopes = []
+    let (retained, cancelled) = GalaxySSIHealthReviewDelivery.plan(jobs: [retry], state: state, now: now,
+      calendar: .current, permitted: true, scheduled: [], delivered: [first.token])
+    XCTAssertEqual(retained[retry.key]?.token, first.token)
+    XCTAssertTrue(cancelled.isEmpty)
+    let (resolved, _) = GalaxySSIHealthReviewDelivery.plan(jobs: [], state: state, now: now,
+      calendar: .current, permitted: true, scheduled: [], delivered: [first.token])
+    XCTAssertTrue(resolved.isEmpty)
+  }
+
   func testReviewNotificationPlanDefersAndDoesNotReplayDelivery() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

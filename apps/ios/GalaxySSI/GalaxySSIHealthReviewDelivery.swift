@@ -12,6 +12,13 @@ enum GalaxySSIHealthReviewDelivery {
     var pausedUntil: Date?
     var quietStart = 22
     var quietEnd = 8
+    var incidentEnabled: Bool?
+    var incidentScopes: Set<String>?
+
+    func allows(_ job: GalaxySSIHealthReviewReminders.Job, reviewEnabled: Bool) -> Bool {
+      guard job.kind == .incident else { return reviewEnabled && enabled }
+      return incidentEnabled == true && job.scope.map { incidentScopes?.contains($0) ?? true } == true
+    }
 
     func nextAllowed(_ date: Date, calendar: Calendar) -> Date {
       let date = max(date, pausedUntil ?? .distantPast)
@@ -41,13 +48,13 @@ enum GalaxySSIHealthReviewDelivery {
                    now: Date, calendar: Calendar, permitted: Bool, scheduled: Set<UUID>, delivered: Set<UUID>)
     -> ([String: Ticket], [Ticket]) {
     let prefs = state.notificationPreferences ?? .init()
-    let enabled = state.enabled && prefs.enabled && permitted
     let paused = (prefs.pausedUntil ?? .distantPast) > now
     let existing = state.deliveries ?? [:]
     var next: [String: Ticket] = [:]
     var desired: [Ticket] = []
     var pendingCount = 0
     for job in jobs {
+      let enabled = permitted && prefs.allows(job, reviewEnabled: state.enabled)
       let action = state.actions[job.key]
       if action == .handled { continue }
       let snooze: Date?
@@ -81,13 +88,29 @@ enum GalaxySSIHealthReviewDelivery {
 struct GalaxySSIHealthReviewNotificationSettings: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
+  let reviewEnabled: Bool
   @State private var preferences = GalaxySSIHealthReviewDelivery.Preferences()
   @State private var failed = false
 
   var body: some View {
-    Section(t("system", "System review notifications")) {
-      Toggle(t("system", "System review notifications"), isOn: setting(\.enabled))
-      if preferences.enabled {
+    Section(t("system_section", "System notifications")) {
+      if reviewEnabled { Toggle(t("system", "System review notifications"), isOn: setting(\.enabled)) }
+      Toggle(t("incident_system", "Sync failure notifications"), isOn: Binding(
+        get: { preferences.incidentEnabled == true }, set: { value in change { $0.incidentEnabled = value } }))
+      if preferences.incidentEnabled == true {
+        DisclosureGroup(t("incident_scopes", "Sync failure scopes")) {
+          ForEach(syncScopes) { scope in
+            Toggle(scope.metric.title(language: language), isOn: Binding(
+              get: { preferences.incidentScopes?.contains(scope.rawValue) ?? true },
+              set: { enabled in change { prefs in
+                var scopes = prefs.incidentScopes ?? Set(syncScopes.map(\.rawValue))
+                if enabled { scopes.insert(scope.rawValue) } else { scopes.remove(scope.rawValue) }
+                prefs.incidentScopes = scopes
+              } }))
+          }
+        }
+      }
+      if preferences.enabled && reviewEnabled || preferences.incidentEnabled == true {
         Picker(t("quiet_start", "Quiet hours begin"), selection: setting(\.quietStart)) { hours }
         Picker(t("quiet_end", "Quiet hours end"), selection: setting(\.quietEnd)) { hours }
         if (preferences.pausedUntil ?? .distantPast) > Date() {
@@ -103,6 +126,10 @@ struct GalaxySSIHealthReviewNotificationSettings: View {
     .onAppear {
       preferences = (try? records.load().reviewReminderState?.notificationPreferences) ?? .init()
     }
+  }
+
+  private var syncScopes: [GalaxySSIHealthKitImport.Scope] {
+    GalaxySSIHealthKitImport.Scope.allCases.filter { $0 != .steps }
   }
 
   private var hours: some View {
@@ -160,6 +187,8 @@ struct GalaxySSIHealthReviewNotificationLifecycle: ViewModifier {
             if let original = route.original {
               GalaxySSIHealthReportBatchView(records: route.records,
                 store: GalaxySSIHealthOriginalStore(owner: route.records.owner, secrets: route.records.secrets), original: original)
+            } else if route.job.kind == .incident, let scope = route.job.scope.flatMap(GalaxySSIHealthKitImport.Scope.init(rawValue:)) {
+              GalaxySSIHealthKitSyncView(records: route.records, focusedScope: scope)
             } else {
               GalaxySSIHealthTableImportView(records: route.records, resumeReviewID: route.job.target)
             }
@@ -215,10 +244,10 @@ struct GalaxySSIHealthReviewNotificationLifecycle: ViewModifier {
     defaults.removeObject(forKey: key)
     let records = records
     guard let archive = try? records.load(), let state = archive.reviewReminderState,
-          state.enabled, state.notificationPreferences?.enabled == true,
           let entry = state.deliveries?.first(where: { $0.value.token == token }),
-          let job = GalaxySSIHealthReviewReminders.visible(GalaxySSIHealthReviewReminders.jobs(in: archive),
-            state: state, now: Date()).first(where: { $0.key == entry.key }) else { return }
+          let job = GalaxySSIHealthReviewReminders.deliveryJobs(in: archive).first(where: { $0.key == entry.key }),
+          state.notificationPreferences?.allows(job, reviewEnabled: state.enabled) == true,
+          state.actions[job.key]?.hides(at: Date()) != true else { return }
     let original: GalaxySSIHealthOriginalStore.Original?
     if job.kind == .report {
       let originals = GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets)

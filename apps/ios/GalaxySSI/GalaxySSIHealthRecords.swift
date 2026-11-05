@@ -560,7 +560,7 @@ struct GalaxySSIHealthRecords {
     guard var state = archive.reviewReminderState else { return [] }
     let before = state.deliveries ?? [:]
     let (tickets, desired) = GalaxySSIHealthReviewDelivery.plan(
-      jobs: GalaxySSIHealthReviewReminders.jobs(in: archive), state: state, now: now,
+      jobs: GalaxySSIHealthReviewReminders.deliveryJobs(in: archive), state: state, now: now,
       calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered)
     if tickets != before {
       state.deliveries = tickets
@@ -575,8 +575,8 @@ struct GalaxySSIHealthRecords {
     guard var state = archive.reviewReminderState, let key = state.deliveries?.first(where: {
       $0.value.token == ticket.token && $0.value.due == ticket.due
     })?.key,
-    GalaxySSIHealthReviewReminders.jobs(in: archive).contains(where: { $0.key == key }),
-    state.enabled, state.notificationPreferences?.enabled == true,
+    let job = GalaxySSIHealthReviewReminders.deliveryJobs(in: archive).first(where: { $0.key == key }),
+    state.notificationPreferences?.allows(job, reviewEnabled: state.enabled) == true,
     state.actions[key] != .handled else { throw Failure.stale }
     let cycle: Date?
     if case .snoozed(let until) = state.actions[key] { cycle = until } else { cycle = nil }
