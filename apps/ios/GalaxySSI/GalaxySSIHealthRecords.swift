@@ -934,6 +934,11 @@ struct GalaxySSIHealthRecords {
   func setReviewRemindersEnabled(_ enabled: Bool) throws {
     var archive = try load()
     var state = archive.reviewReminderState ?? .init()
+    if state.enabled != enabled {
+      if enabled && state.notificationPreferences?.enabled == true {
+        GalaxySSIHealthReviewDelivery.suppressExisting(GalaxySSIHealthReviewReminders.jobs(in: archive), in: &state, at: Date())
+      } else { state.deliveries = nil }
+    }
     state.enabled = enabled
     archive.reviewReminderState = state
     try persist(archive)
@@ -952,6 +957,57 @@ struct GalaxySSIHealthRecords {
     archive.reviewReminderState = state
     try persist(archive)
     NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+  }
+
+  func setReviewNotificationPreferences(_ preferences: GalaxySSIHealthReviewDelivery.Preferences) throws {
+    guard (0..<24).contains(preferences.quietStart), (0..<24).contains(preferences.quietEnd) else { throw Failure.invalid }
+    var archive = try load()
+    var state = archive.reviewReminderState ?? .init()
+    if (state.notificationPreferences?.enabled == true) != preferences.enabled {
+      if preferences.enabled && state.enabled {
+        GalaxySSIHealthReviewDelivery.suppressExisting(GalaxySSIHealthReviewReminders.jobs(in: archive), in: &state, at: Date())
+      } else { state.deliveries = nil }
+    }
+    state.notificationPreferences = preferences
+    archive.reviewReminderState = state
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+  }
+
+  func reconcileReviewDelivery(now: Date, calendar: Calendar, permitted: Bool, scheduled: Set<UUID>,
+                               delivered: Set<UUID>, availableOriginals: Set<UUID>) throws -> GalaxySSIHealthReviewDelivery.Plan {
+    var archive = try load()
+    guard var state = archive.reviewReminderState else { return .init() }
+    let before = state.deliveries ?? [:]
+    let jobs = GalaxySSIHealthReviewReminders.jobs(in: archive).filter {
+      $0.kind == .table || availableOriginals.contains($0.target)
+    }
+    let plan = GalaxySSIHealthReviewDelivery.plan(
+      jobs: jobs, state: state, now: now,
+      calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered)
+    if plan.tickets != before {
+      state.deliveries = plan.tickets
+      archive.reviewReminderState = state
+      try persist(archive)
+    }
+    return plan
+  }
+
+  func markReviewDeliverySubmitted(_ ticket: GalaxySSIHealthReviewDelivery.Ticket, calendar: Calendar) throws {
+    var archive = try load()
+    guard var state = archive.reviewReminderState, let key = state.deliveries?.first(where: {
+      $0.value.token == ticket.token && $0.value.due == ticket.due && !$0.value.suppressed
+    })?.key,
+    let job = GalaxySSIHealthReviewReminders.jobs(in: archive).first(where: { $0.key == key && $0.versions == ticket.versions }),
+    state.enabled, state.notificationPreferences?.enabled == true,
+    GalaxySSIHealthReviewDelivery.action(for: job, state: state) != .handled,
+    GalaxySSIHealthReviewDelivery.cycle(for: job, state: state) == ticket.cycle,
+    state.notificationPreferences?.nextAllowed(ticket.due, calendar: calendar) == ticket.due
+    else { throw Failure.stale }
+    if state.deliveries?[key]?.submitted == true { return }
+    state.deliveries?[key]?.submitted = true
+    archive.reviewReminderState = state
+    try persist(archive)
   }
 
   private func persist(_ archive: Archive, notify: Bool = true) throws {

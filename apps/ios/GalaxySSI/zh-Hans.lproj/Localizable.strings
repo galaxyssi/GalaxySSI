@@ -124,6 +124,15 @@
 "galaxyssi.health.review_reminder.report" = "报告审阅";
 "galaxyssi.health.review_reminder.table" = "表格审阅";
 "galaxyssi.health.review_reminder.close" = "关闭";
+"galaxyssi.health.review_reminder.system" = "系统审阅通知";
+"galaxyssi.health.review_reminder.quiet_start" = "免打扰开始";
+"galaxyssi.health.review_reminder.quiet_end" = "免打扰结束";
+"galaxyssi.health.review_reminder.pause_notifications" = "暂停通知一小时";
+"galaxyssi.health.review_reminder.resume_notifications" = "恢复通知";
+"galaxyssi.health.review_reminder.snooze_hour" = "推迟一小时";
+"galaxyssi.health.review_reminder.notification_title" = "GalaxySSI 提醒";
+"galaxyssi.health.review_reminder.notification_body" = "打开 GalaxySSI 查看。";
+"galaxyssi.health.review_reminder.notification_permission" = "允许系统通知";
 "galaxyssi.health.table.save_review_draft" = "保存加密审阅草稿";
 "galaxyssi.health.table.resume_review_draft" = "已保存的表格审阅";
 "galaxyssi.health.table.discard_review_draft" = "丢弃已保存的表格审阅";
