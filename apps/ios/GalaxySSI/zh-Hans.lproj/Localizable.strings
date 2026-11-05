@@ -595,6 +595,16 @@
 "galaxyssi.health.backup.save" = "保存加密备份";
 "galaxyssi.health.backup.working" = "正在处理备份";
 "galaxyssi.health.backup.failed" = "无法准备或验证备份，请检查文件大小、密码和内容。";
+"galaxyssi.health.backup.choose_restore" = "选择要恢复的备份";
+"galaxyssi.health.backup.restore_preview" = "解锁恢复预览";
+"galaxyssi.health.backup.restore_failed" = "无法恢复备份。请检查密码、归属和内容；本机数据已变更时请重新打开备份。";
+"galaxyssi.health.backup.restore_owner" = "恢复到当前档案。保留本机冲突记录和已删除记录。";
+"galaxyssi.health.backup.restore_counts" = "%lld 条新增测量 · %lld 条重复 · %lld 条冲突";
+"galaxyssi.health.backup.restore_files" = "%lld 份原始文件 · %lld 个表格 · %lld 个缺失来源";
+"galaxyssi.health.backup.more_conflicts" = "查看更多冲突";
+"galaxyssi.health.backup.restore_consent" = "我已核对这些变更";
+"galaxyssi.health.backup.restore" = "恢复到此设备";
+"galaxyssi.health.backup.restored" = "健康备份已恢复";
 "galaxyssi.health.backup.password" = "备份密码";
 "galaxyssi.health.backup.repeat" = "确认密码";
 "galaxyssi.health.backup.generate" = "生成加密备份";

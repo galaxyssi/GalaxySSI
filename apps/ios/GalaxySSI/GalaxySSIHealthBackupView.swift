@@ -18,10 +18,17 @@ struct GalaxySSIHealthBackupView: View {
   @State private var choosing = false
   @State private var exporting = false
   @State private var error = false
+  @State private var restoring = false
+  @State private var restoreInput: GalaxySSIHealthPortableBackup.RestoreInput?
+  @State private var restorePreview: GalaxySSIHealthPortableBackup.RestorePreview?
+  @State private var acknowledged = false
+  @State private var restored = false
+  @State private var shownConflicts = 30
 
   private enum WorkResult: Sendable {
     case created(Data, GalaxySSIHealthPortableBackup.Summary)
     case verified(GalaxySSIHealthPortableBackup.Summary)
+    case unlocked(GalaxySSIHealthPortableBackup.RestoreInput)
   }
 
   var body: some View {
@@ -31,6 +38,12 @@ struct GalaxySSIHealthBackupView: View {
           Button(t("preview", "Preview new backup"), action: preview).disabled(task != nil)
           Button(t("choose", "Choose backup to verify")) {
             reset()
+            choosing = true
+          }
+          .disabled(task != nil)
+          Button(t("choose_restore", "Choose backup to restore")) {
+            reset()
+            restoring = true
             choosing = true
           }
           .disabled(task != nil)
@@ -49,9 +62,12 @@ struct GalaxySSIHealthBackupView: View {
             }
           }
         }
+        if let restorePreview { restoreSection(restorePreview) }
+        if restored { Text(t("restored", "Health backup restored")) }
         if task != nil { ProgressView(t("working", "Processing backup")) }
         if error {
-          Text(t("failed", "Could not prepare or verify this backup. Check its size, password and contents."))
+          Text(restoring ? t("restore_failed", "Could not restore this backup. Check its password, owner and contents, or reopen it if local data changed.") :
+            t("failed", "Could not prepare or verify this backup. Check its size, password and contents."))
             .foregroundColor(.secondary)
         }
       }
@@ -90,8 +106,31 @@ struct GalaxySSIHealthBackupView: View {
         Button(t("generate", "Generate encrypted backup"), action: generate)
           .disabled(password.count < 8 || password != repeated || task != nil)
       } else {
-        Button(t("verify", "Verify without restoring"), action: verify)
+        Button(restoring ? t("restore_preview", "Unlock restore preview") : t("verify", "Verify without restoring"), action: verify)
           .disabled(password.count < 8 || task != nil)
+      }
+    }
+  }
+
+  private func restoreSection(_ preview: GalaxySSIHealthPortableBackup.RestorePreview) -> some View {
+    Section(t("restore_preview", "Unlock restore preview")) {
+      Text(t("restore_owner", "Restore to my current profile. Local conflicts and deleted records are kept."))
+      Text(String(format: t("restore_counts", "%lld new measurements · %lld duplicates · %lld conflicts"),
+                  Int64(preview.readings), Int64(preview.duplicates), Int64(preview.conflicts.count)))
+      Text(String(format: t("restore_files", "%lld original files · %lld tables · %lld missing sources"),
+                  Int64(preview.originals), Int64(preview.tables), Int64(preview.missing)))
+      ForEach(preview.conflicts.prefix(shownConflicts)) { reading in
+        VStack(alignment: .leading) {
+          Text(reading.metric.title(language: language))
+          Text(reading.measuredAt, style: .date).foregroundColor(.secondary)
+        }
+      }
+      if preview.conflicts.count > shownConflicts {
+        Button(t("more_conflicts", "Show more conflicts")) { shownConflicts += 30 }
+      }
+      if preview.hasChanges {
+        Toggle(t("restore_consent", "I reviewed the changes"), isOn: $acknowledged)
+        Button(t("restore", "Restore to this device"), action: restore).disabled(!acknowledged || task != nil)
       }
     }
   }
@@ -135,8 +174,22 @@ struct GalaxySSIHealthBackupView: View {
 
   private func verify() {
     guard scene == .active, let verificationInput else { return }
-    run { [secret = password] in
-      .verified(try GalaxySSIHealthPortableBackup.verify(verificationInput, password: secret))
+    run { [secret = password, restoring] in
+      if restoring { return .unlocked(try GalaxySSIHealthPortableBackup.unlock(verificationInput, password: secret)) }
+      return .verified(try GalaxySSIHealthPortableBackup.verify(verificationInput, password: secret))
+    }
+  }
+
+  private func restore() {
+    guard scene == .active, acknowledged, let restoreInput, let restorePreview else { return }
+    do {
+      try GalaxySSIHealthPortableBackup.restore(restoreInput, expected: restorePreview, records: records, originals: originals)
+      reset()
+      restored = true
+    } catch {
+      reset()
+      restoring = true
+      error = true
     }
   }
 
@@ -153,6 +206,9 @@ struct GalaxySSIHealthBackupView: View {
         switch result {
         case .created(let data, let summary): generated = BackupFile(data: data); outcome = summary
         case .verified(let summary): outcome = summary
+        case .unlocked(let input):
+          restorePreview = try GalaxySSIHealthPortableBackup.previewRestore(input, records: records, originals: originals)
+          restoreInput = input
         }
         plan = nil
         verificationInput = nil
@@ -168,6 +224,7 @@ struct GalaxySSIHealthBackupView: View {
     task?.cancel(); task = nil; token = nil
     password = ""; repeated = ""
     plan = nil; verificationInput = nil; generated = nil; outcome = nil; error = false
+    restoring = false; restoreInput = nil; restorePreview = nil; acknowledged = false; restored = false; shownConflicts = 30
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

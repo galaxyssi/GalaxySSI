@@ -127,6 +127,7 @@ struct GalaxySSIHealthRecords {
 
   struct Archive: Codable {
     var version = 1
+    var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
     var derivesOverview: Bool?
@@ -347,6 +348,14 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return tombstones.count
+  }
+
+  func commitRestore(_ archive: Archive, receipt: UUID) throws {
+    var updated = archive
+    var receipts = updated.restoreReceipts ?? []
+    receipts.insert(receipt)
+    updated.restoreReceipts = receipts
+    try persist(updated)
   }
 
   private func persist(_ archive: Archive) throws {
