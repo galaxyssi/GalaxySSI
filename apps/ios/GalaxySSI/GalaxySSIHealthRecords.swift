@@ -666,20 +666,20 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
   }
 
-  func commitRestore(_ archive: Archive, receipt: UUID) throws {
+  func commitRestore(_ archive: Archive, receipt: UUID, notify: Bool = true) throws {
     var updated = archive
     var receipts = updated.restoreReceipts ?? []
     receipts.insert(receipt)
     updated.restoreReceipts = receipts
-    try persist(updated)
+    try persist(updated, notify: notify)
   }
 
-  private func persist(_ archive: Archive) throws {
+  private func persist(_ archive: Archive, notify: Bool = true) throws {
     let payload = try JSONEncoder().encode(archive)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true),
                                         authenticating: context).combined else { throw Failure.unavailable }
     try sealed.write(to: file, options: [.atomic, .completeFileProtection])
-    NotificationCenter.default.post(name: Self.recordsChanged, object: owner)
+    if notify { NotificationCenter.default.post(name: Self.recordsChanged, object: owner) }
   }
 
   static let recordsChanged = Notification.Name("galaxyssi.health.records.changed")

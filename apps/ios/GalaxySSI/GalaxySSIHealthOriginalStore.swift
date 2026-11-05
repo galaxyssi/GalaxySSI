@@ -58,7 +58,14 @@ struct GalaxySSIHealthOriginalStore {
     var outcome: Outcome
   }
 
-  enum Failure: Error { case invalid, limit, stale }
+  enum Failure: Error { case invalid, limit, stale, restoreBusy }
+
+  final class RestoreLease {
+    fileprivate let directory: URL
+    fileprivate var held = true
+
+    fileprivate init(directory: URL) { self.directory = directory }
+  }
 
   struct SingleSaveReceipt: Codable {
     let at: Date
@@ -86,9 +93,16 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   func store(_ data: Data, name: String) throws {
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      try store(data, name: name, lease: lease)
+    }
+  }
+
+  private func store(_ data: Data, name: String, lease: RestoreLease) throws {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
     let (kind, fileExtension) = try Self.format(of: data)
-    let listing = try list()
+    let listing = try list(lease: lease)
     let digest = Self.digest(data)
     if listing.originals.contains(where: { $0.sha256 == digest }) { return }
     guard listing.originals.count + listing.unavailable < 500,
@@ -132,7 +146,8 @@ struct GalaxySSIHealthOriginalStore {
     try file.write(to: destination, options: [.atomic, .completeFileProtection])
   }
 
-  func stageRestore(_ files: [(Original, Data)], receipt: UUID) throws {
+  func stageRestore(_ files: [(Original, Data)], receipt: UUID, lease: RestoreLease) throws {
+    try check(lease)
     guard !files.isEmpty else { return }
     let folder = try restoreRoot().appendingPathComponent(receipt.uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
@@ -146,42 +161,91 @@ struct GalaxySSIHealthOriginalStore {
     try directory().appendingPathComponent("restore-staging", isDirectory: true)
   }
 
-  func containsRestoreID(_ id: UUID) throws -> Bool {
-    let ledger = try reconcileRemovals()
+  func withRestoreLease<T>(_ operation: (RestoreLease) throws -> T) throws -> T {
+    let directory = try directory()
+    let lock = directory.appendingPathComponent("restore.lock")
+    let descriptor = try lock.withUnsafeFileSystemRepresentation { path in
+      guard let path else { throw Failure.invalid }
+      let fd = Darwin.open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
+      guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+      return fd
+    }
+    defer { _ = Darwin.close(descriptor) }
+    while Darwin.flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+      let code = errno
+      if code == EINTR { continue }
+      if code == EWOULDBLOCK || code == EAGAIN { throw Failure.restoreBusy }
+      throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+    }
+    let lease = RestoreLease(directory: directory)
+    defer { lease.held = false }
+    return try operation(lease)
+  }
+
+  private func check(_ lease: RestoreLease) throws {
+    guard lease.held, lease.directory == (try directory()) else { throw Failure.stale }
+  }
+
+  func containsRestoreID(_ id: UUID, lease: RestoreLease) throws -> Bool {
+    try check(lease)
+    let ledger = try loadRemovals()
     if ledger.pending.contains(id) { return true }
     return FileManager.default.fileExists(atPath: try url(id).path)
   }
 
-  func reconcileRestores() throws {
-    try reconcileRestores(blocking: reconcileRemovals().pending)
-  }
-
-  private func reconcileRestores(blocking pending: Set<UUID>) throws {
+  func reconcileRestores(lease: RestoreLease) throws {
+    try check(lease)
+    let pending = try reconcileRemovals().pending
     let fm = FileManager.default
     let root = try restoreRoot()
     guard fm.fileExists(atPath: root.path) else { return }
-    let folders = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+    let folders = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
     guard !folders.isEmpty else { return }
     let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: restoreRecordsFile)
     let receipts = try records.load().restoreReceipts ?? []
     for folder in folders {
       guard let receipt = UUID(uuidString: folder.lastPathComponent) else { continue }
+      let attributes = try folder.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+      guard attributes.isDirectory == true, attributes.isSymbolicLink != true else { continue }
       if receipts.contains(receipt) {
-        let entries = try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+        let entries = try fm.contentsOfDirectory(at: folder,
+          includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         if entries.contains(where: { UUID(uuidString: $0.lastPathComponent).map(pending.contains) == true }) { continue }
         for entry in entries {
           guard let id = UUID(uuidString: entry.lastPathComponent) else { continue }
-          let data = try Data(contentsOf: entry)
-          try data.write(to: url(id), options: [.atomic, .completeFileProtection])
+          try promoteRestoreFile(entry, id: id)
         }
       }
       try fm.removeItem(at: folder)
     }
   }
 
+  private func promoteRestoreFile(_ entry: URL, id: UUID) throws {
+    let attributes = try entry.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+    guard attributes.isRegularFile == true, attributes.isSymbolicLink != true else { throw Failure.invalid }
+    let handle = try FileHandle(forReadingFrom: entry)
+    defer { try? handle.close() }
+    let key = try key(create: false)
+    let original = try readHeader(handle, id: id, key: key)
+    _ = try verifiedPayload(handle, original: original, key: key)
+    let length = try handle.offset()
+    try handle.seek(toOffset: 0)
+    guard length <= UInt64(Self.maximumFileBytes + maximumHeaderBytes + 32),
+          let data = try handle.read(upToCount: Int(length)), data.count == Int(length)
+    else { throw Failure.invalid }
+    try data.write(to: url(id), options: [.atomic, .completeFileProtection])
+  }
+
   func list() throws -> Listing {
-    let ledger = try reconcileRemovals()
-    try reconcileRestores(blocking: ledger.pending)
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      return try list(lease: lease)
+    }
+  }
+
+  func list(lease: RestoreLease) throws -> Listing {
+    try check(lease)
+    let ledger = try loadRemovals()
     let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil)
     let ids = Set(files.compactMap { UUID(uuidString: $0.lastPathComponent) }).subtracting(ledger.pending)
     let removed = ledger.metadata.filter { !ids.contains($0.id) }
@@ -197,25 +261,43 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   func read(_ original: Original) throws -> Data {
-    let pending = try reconcileRemovals().pending
-    guard !pending.contains(original.id) else { throw Failure.stale }
-    try reconcileRestores(blocking: pending)
-    let key = try key(create: false)
-    return try withFile(original.id) { file in
-      guard try readHeader(file, id: original.id, key: key) == original,
-            let payload = try file.read(upToCount: original.bytes + 29), payload.count == original.bytes + 28
-      else { throw Failure.stale }
-      let data = try AES.GCM.open(AES.GCM.SealedBox(combined: payload), using: key,
-                                  authenticating: binding(original.id, original.sha256))
-      guard data.count == original.bytes, Self.digest(data) == original.sha256 else { throw Failure.invalid }
-      return data
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      return try read(original, lease: lease)
     }
   }
 
-  func previewRemoval(_ original: Original) throws -> RemovalPreview {
-    let pending = try reconcileRemovals().pending
+  func read(_ original: Original, lease: RestoreLease) throws -> Data {
+    try check(lease)
+    let pending = try loadRemovals().pending
     guard !pending.contains(original.id) else { throw Failure.stale }
-    try reconcileRestores(blocking: pending)
+    let key = try key(create: false)
+    return try withFile(original.id) { file in
+      guard try readHeader(file, id: original.id, key: key) == original else { throw Failure.stale }
+      return try verifiedPayload(file, original: original, key: key)
+    }
+  }
+
+  private func verifiedPayload(_ file: FileHandle, original: Original, key: SymmetricKey) throws -> Data {
+    guard let payload = try file.read(upToCount: original.bytes + 29), payload.count == original.bytes + 28
+    else { throw Failure.invalid }
+    let data = try AES.GCM.open(AES.GCM.SealedBox(combined: payload), using: key,
+                                authenticating: binding(original.id, original.sha256))
+    guard data.count == original.bytes, Self.digest(data) == original.sha256 else { throw Failure.invalid }
+    return data
+  }
+
+  func previewRemoval(_ original: Original) throws -> RemovalPreview {
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      return try previewRemoval(original, lease: lease)
+    }
+  }
+
+  private func previewRemoval(_ original: Original, lease: RestoreLease) throws -> RemovalPreview {
+    try check(lease)
+    let pending = try loadRemovals().pending
+    guard !pending.contains(original.id) else { throw Failure.stale }
     let key = try key(create: false)
     do {
       guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
@@ -232,7 +314,14 @@ struct GalaxySSIHealthOriginalStore {
 
   @discardableResult
   func remove(_ preview: RemovalPreview) throws -> RemovalOutcome {
-    guard try previewRemoval(preview.original) == preview else { throw Failure.stale }
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      return try remove(preview, lease: lease)
+    }
+  }
+
+  private func remove(_ preview: RemovalPreview, lease: RestoreLease) throws -> RemovalOutcome {
+    guard try previewRemoval(preview.original, lease: lease) == preview else { throw Failure.stale }
     var ledger = try loadRemovals()
     guard ledger.pending.insert(preview.id).inserted else { throw Failure.stale }
     ledger.metadata.removeAll { $0.id == preview.id }
