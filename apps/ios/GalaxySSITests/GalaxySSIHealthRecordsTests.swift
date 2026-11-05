@@ -4,6 +4,44 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testHealthKitPreviewBindsSourceMetadataAndRowMultiplicity() {
+    let now = Date()
+    let source = GalaxySSIHealthKitImport.Source(key: "sample", origin: "fixture", name: "Original")
+    let original = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65, healthKitSource: source)
+    let another = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 66, healthKitSource: source)
+    var renamed = original
+    renamed.healthKitSource = .init(key: source.key, origin: source.origin, name: "Updated")
+    var reread = original
+    reread.id = UUID()
+    let stamp = GalaxySSIHealthKitImport.stamp
+    XCTAssertEqual(stamp([original, another]), stamp([another, reread]))
+    XCTAssertNotEqual(stamp([original]), stamp([renamed]))
+    XCTAssertNotEqual(stamp([original]), stamp([original, original]))
+  }
+
+  @MainActor
+  func testHealthKitImportKeepsOriginsEditsAndTombstones() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let first = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture.a", name: "A"))
+    let second = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "b", count: 64), origin: "fixture.b", name: "B"))
+    XCTAssertThrowsError(try records.importHealthKit([first, .init(metric: .weight, value: 60)]))
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertEqual(try records.importHealthKit([first, second]), 2)
+    var edited = try XCTUnwrap(records.load().current.first { $0.id == first.id })
+    edited.value = 67
+    try records.write(edited)
+    var removed = try XCTUnwrap(records.load().current.first { $0.id == second.id })
+    removed.deleted = true
+    try records.write(removed)
+    XCTAssertEqual(try records.importHealthKit([first, second]), 0)
+    XCTAssertEqual(try records.load().current.map(\.value), [67])
+  }
+
   func testSleepReminderCoverageNormalizationAndRevocation() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))

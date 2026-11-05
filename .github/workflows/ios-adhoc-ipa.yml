@@ -323,6 +323,10 @@ jobs:
             )
             echo "IOS_APP_SIGNING_ENABLED=true" >> "$GITHUB_ENV"
             echo "IOS_APP_SIGNING_IDENTITY=${IOS_SIGNING_IDENTITY:-Apple Development}" >> "$GITHUB_ENV"
+            if [[ "$(security cms -D -i "$PROFILE_PATH" | /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.healthkit' /dev/stdin 2>/dev/null)" == "true" ]]; then
+              SIGNING_SETTINGS+=(CODE_SIGN_ENTITLEMENTS=GalaxySSI/GalaxySSIHealthKit.entitlements)
+              SWIFT_COMPILATION_CONDITIONS+=' GALAXYSSI_HEALTHKIT'
+            fi
           else
             echo "IOS_APP_SIGNING_ENABLED=false" >> "$GITHUB_ENV"
           fi
