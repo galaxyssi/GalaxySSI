@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_library_search">Search names, report dates or linked metrics</string>
+    <string name="health_library_searching">Searching local originals…</string>
+    <string name="health_library_loading">Loading originals…</string>
+    <string name="health_library_no_matches">No originals match this search.</string>
+    <string name="health_library_tab_all">All</string>
+    <string name="health_library_tab_photos">Photos</string>
+    <string name="health_library_tab_files">Files</string>
+    <string name="health_library_tab_count">%1$s %2$d</string>
+    <string name="health_library_file_meta">%1$s · %2$s</string>
+    <string name="health_library_date_range">%1$s to %2$s</string>
+    <string name="health_library_filter_value">%1$s: %2$s</string>
+    <string name="health_library_continue_import">Continue import</string>
+    <string name="health_library_export_selected">Export selected (%1$d)</string>
+</resources>

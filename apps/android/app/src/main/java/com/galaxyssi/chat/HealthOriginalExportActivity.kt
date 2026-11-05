@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 
 /** Generation is private/encrypted. A separate explicit SAF operation writes an unencrypted standard ZIP. */
 class HealthOriginalExportActivity : Activity() {
+    private var returningToSelection = false
     private val ui by lazy { HealthCenterViews(this) }; private val worker = Executors.newSingleThreadExecutor(); private val main = Handler(Looper.getMainLooper())
     private val fixture by lazy { intent.getStringExtra("health_original_export_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) } }
     private lateinit var body: LinearLayout; private var id = ""; private var active = false; private var generation = 0
@@ -34,7 +35,7 @@ class HealthOriginalExportActivity : Activity() {
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         val root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
         root.addView(ui.line().apply {
-            addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { finish() })
+            addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back, ::back))
             addView(ui.text(getString(R.string.health_library_export), 19f, bold = true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
             addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) { startActivity(Intent(this@HealthOriginalExportActivity, HealthCenterActivity::class.java).putExtra("health_functions", true)) })
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
@@ -157,7 +158,31 @@ class HealthOriginalExportActivity : Activity() {
         if (previous.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) { cursor = previous.removeAt(previous.lastIndex); load() }, 12)
         if (files.size > 30) ui.add(content, ui.command(R.string.health_next_page) { previous += cursor; cursor = files[29].id; load() }, 12)
     }
-    private fun edit() { mutate({ finish() }) { it.edit(id) } }
+    @Deprecated("Native back returns to the selection when confirming an export")
+    override fun onBackPressed() = back()
+
+    private fun back() {
+        if (intent.getBooleanExtra("health_return_to_selection", false)) edit() else finish()
+    }
+
+    private fun edit() {
+        if (returningToSelection) return
+        returningToSelection = true
+        worker.execute {
+            val result = runCatching { withLibrary { library ->
+                if (library.session(id)?.state in setOf(HealthOriginalExportState.REVIEW, HealthOriginalExportState.FAILED,
+                        HealthOriginalExportState.CANCELLED)) library.edit(id)
+            } }
+            main.post {
+                returningToSelection = false
+                if (!active) return@post
+                result.fold({ finish() }, {
+                    Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_LONG).show()
+                    load()
+                })
+            }
+        }
+    }
     private fun mutate(success: () -> Unit = { load() }, action: (HealthOriginalLibraryStore) -> Any) {
         worker.execute {
             val result = runCatching { withLibrary(action) }

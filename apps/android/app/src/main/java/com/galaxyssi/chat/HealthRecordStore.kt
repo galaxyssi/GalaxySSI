@@ -385,8 +385,9 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
 
     /** The original-scoped view projects the selected evidence without changing the stored record. */
     fun originalPage(originalId: String, after: HealthPageCursor? = null, scope: HealthRecordExportScope? = null,
-                     signal: android.os.CancellationSignal? = null): HealthRecordPage {
+                     signal: android.os.CancellationSignal? = null, pageSize: Int = PAGE_SIZE): HealthRecordPage {
         require(HealthProfilePolicy.uuid(originalId) && (scope == null || scope.originalId == originalId))
+        require(pageSize in 1..PAGE_SIZE)
         val args = arrayListOf<String>()
         fun scoped(time: String = "o.measured_at", id: String = "o.id"): String {
             val conditions = arrayListOf("o.deleted=0")
@@ -403,7 +404,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             return conditions.joinToString(" AND ")
         }
         args += originalId
-        val limit = PAGE_SIZE + 1
+        val limit = pageSize + 1
         val primary = "SELECT o.id,o.measured_at FROM observations o WHERE o.original_id=? AND ${scoped()} " +
             "ORDER BY o.measured_at DESC,o.id DESC LIMIT $limit"
         args += originalId
@@ -420,6 +421,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             "AND l.revision=o.revision AND l.measured_at=o.measured_at ORDER BY l.job_id,l.evidence_key LIMIT 1) " +
             "ORDER BY o.measured_at DESC,o.id DESC", (args + originalId).toTypedArray(), signal).use { cursor -> buildList {
             while (cursor.moveToNext()) {
+                signal?.throwIfCanceled()
                 val record = decode(cursor)
                 val view = if (record.draft.evidence?.originalId == originalId) record else {
                     check(!cursor.isNull(5) && !cursor.isNull(6)) { "Health source link missing" }
@@ -431,8 +433,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 add(view)
             }
         } }
-        val visible = rows.take(PAGE_SIZE)
-        return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
+        val visible = rows.take(pageSize)
+        return HealthRecordPage(visible, if (rows.size > pageSize) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
 
     private fun sourceLinkAad(record: HealthObservation, originalId: String, jobId: String, key: String): ByteArray {
