@@ -144,6 +144,15 @@ enum AgentModelPlanParser {
     )
   }
 
+  static func permitsPhoneExecutionSite(_ raw: String) -> Bool {
+    guard let json = extractJson(raw, exact: true) else { return false }
+    guard let site = json["execution_location"] else { return true }
+    if case let .string(value) = site {
+      return value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "phone"
+    }
+    return false
+  }
+
   static func completionShapeRepair(_ raw: String) -> (diagnostic: String, original: AgentMcpJSONObject)? {
     guard raw.utf8.count <= 32_768, let json = extractJson(raw, exact: true),
           let requirements = json["completion_requirements"]?.objectValue,

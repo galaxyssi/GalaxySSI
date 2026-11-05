@@ -120,10 +120,11 @@ struct GuardedModelAgentPlanner {
         executionMode: fallback.executionMode
       ))
     }
-    if !normalizedSettings.enabled || !safetySettings.connectorCallsAllowed {
+    let onDeviceProvider = provider is LocalModelAgentPlanningProvider
+    if !normalizedSettings.enabled || (!onDeviceProvider && !safetySettings.connectorCallsAllowed) {
       return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-local"))
     }
-    if request.requirements.localOnly {
+    if request.requirements.localOnly && !onDeviceProvider {
       return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-private",
         rationale: "Cloud planning was skipped because the task requires a private route."
@@ -137,8 +138,8 @@ struct GuardedModelAgentPlanner {
         rationale: "A deterministic route avoided an unnecessary planning-model call."
       ))
     }
-    if hasSensitivePlannerContext(request.planRequest.screen) ||
-      hasSensitivePlannerGoal(request.planRequest.goal) {
+    if !onDeviceProvider && (hasSensitivePlannerContext(request.planRequest.screen) ||
+      hasSensitivePlannerGoal(request.planRequest.goal)) {
       return .plan(fallback.copyForGuardedPlanner(
         profile: "rule-based-sensitive-fallback",
         rationale: "Model planning skipped because the current iOS context is sensitive."
@@ -169,6 +170,9 @@ struct GuardedModelAgentPlanner {
       ))
     }
 
+    if safeRequest.phoneOwnsExecution && !AgentModelPlanParser.permitsPhoneExecutionSite(raw) {
+      return .plan(fallback.copyForGuardedPlanner(profile: "rule-based-phone-execution-rejected"))
+    }
     if safeRequest.phoneOwnsExecution, let repair = AgentModelPlanParser.completionShapeRepair(raw) {
       var invocation = AgentModelPlanningInvocation(
         systemPrompt: "Repair JSON structure only. Do not use tools, take actions, or invent observations. Return one JSON object.",

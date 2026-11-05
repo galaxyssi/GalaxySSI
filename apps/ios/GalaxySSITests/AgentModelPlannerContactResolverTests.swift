@@ -130,13 +130,14 @@ final class AgentModelPlannerContactResolverTests: XCTestCase {
     )
     var selected = try XCTUnwrap(store.contact(id: "cloud:anthropic"))
     let resolver = AgentModelPlannerContactResolver(store: store)
-    let settings = AgentModelPlannerSettings(enabled: true, cloudContactId: "cloud:openai")
+    let settings = AgentModelPlannerSettings(enabled: false, cloudContactId: "cloud:openai")
     let snapshot = try XCTUnwrap(resolver.capturePhoneTurnSnapshot(settings: settings, selectedContact: selected))
     let reopened = try JSONDecoder().decode(AgentPlannerModelSnapshot.self, from: JSONEncoder().encode(snapshot))
 
     XCTAssertEqual(reopened, snapshot)
     XCTAssertEqual(reopened.configurationSha256, snapshot.configurationSha256)
     XCTAssertEqual(reopened.selectedForPhoneTurn, true)
+    XCTAssertTrue(reopened.settings.enabled)
     XCTAssertEqual(reopened.route?.contactId, selected.id)
     XCTAssertEqual(try resolver.makePlanner(snapshot: reopened).modelProfile, "selected-model")
 

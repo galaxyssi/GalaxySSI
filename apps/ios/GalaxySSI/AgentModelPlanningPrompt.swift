@@ -105,7 +105,8 @@ enum AgentModelPlanningPrompt {
       append(&prompt, "Use the user's language and omit runtime, workspace, permission, and tool availability.\n\n")
     }
     append(&prompt, "ActionPlan JSON schema:\n")
-    append(&prompt, "{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
+    append(&prompt, request.phoneOwnsExecution ? "{\"execution_location\":\"phone\"," : "{")
+    append(&prompt, "\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
     append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\"},")
     append(&prompt, "\"actions\":[{\"ref\":\"step_name\",\"kind\":\"ACTION_KIND\",\"target\":\"...\",")
     append(&prompt, "\"description\":\"...\",\"depends_on\":[\"earlier_ref\"],")

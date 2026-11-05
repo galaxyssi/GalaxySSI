@@ -3,6 +3,13 @@ import XCTest
 @testable import GalaxySSI
 
 final class GuardedModelAgentPlannerTests: XCTestCase {
+  func testPhoneOwnedPlanCannotClaimAnotherExecutionSite() {
+    XCTAssertTrue(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"execution_location":"phone","actions":[]}"#))
+    XCTAssertTrue(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"disposition":"respond","final_response":"Hello"}"#))
+    XCTAssertFalse(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"execution_location":"desktop","actions":[]}"#))
+    XCTAssertFalse(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"execution_location":null,"actions":[]}"#))
+  }
+
   func testPhoneOwnedPlanningRejectsConnectorAndNeverUsesHostFallback() async {
     let provider = RecordingModelPlanningProvider(
       raw: #"{"actions":[{"kind":"CALL_CONNECTOR","target":"desktop","parameters":{"connector_id":"desktop"}}]}"#
