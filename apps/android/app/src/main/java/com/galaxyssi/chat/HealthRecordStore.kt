@@ -537,6 +537,59 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         }
     }
 
+    fun bluetoothHistoryPreview(group: String): HealthBluetoothHistoryPreview {
+        require(isHealthBluetoothGroup(group))
+        val db = helper.readableDatabase
+        db.beginTransactionNonExclusive()
+        return try {
+            bluetoothHistoryPreview(db, group).also { db.setTransactionSuccessful() }
+        } finally { db.endTransaction() }
+    }
+
+    private fun bluetoothHistoryPreview(db: SQLiteDatabase, group: String): HealthBluetoothHistoryPreview =
+        db.rawQuery("SELECT COUNT(*),MIN(measured_at),MAX(measured_at) FROM observations WHERE $BLUETOOTH_HISTORY_FILTER",
+            arrayOf(HealthMetric.BLOOD_PRESSURE.name, group)).use {
+            check(it.moveToFirst())
+            HealthBluetoothHistoryPreview(group, metricVersion(HealthMetric.BLOOD_PRESSURE), it.getLong(0), it.getLong(1), it.getLong(2))
+        }
+
+    @Synchronized fun eraseBluetoothHistory(preview: HealthBluetoothHistoryPreview, ensureActive: () -> Unit = {}): Long {
+        require(isHealthBluetoothGroup(preview.group) && preview.count > 0)
+        val db = helper.writableDatabase
+        val args = arrayOf(HealthMetric.BLOOD_PRESSURE.name, preview.group)
+        db.beginTransaction()
+        return try {
+            if (bluetoothHistoryPreview(db, preview.group) != preview) throw HealthBluetoothHistoryChanged()
+            var removed = 0L
+            while (removed < preview.count) {
+                ensureActive()
+                val batch = db.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations " +
+                    "WHERE $BLUETOOTH_HISTORY_FILTER LIMIT $PAGE_SIZE", args).use { rows ->
+                    buildList {
+                        while (rows.moveToNext()) {
+                            val value = decode(rows)
+                            check(value.profileId == "self" && value.source == "bluetooth" && value.bluetoothGroup == preview.group)
+                            add(value.id)
+                        }
+                    }
+                }
+                check(batch.isNotEmpty())
+                for (id in batch) {
+                    db.delete("drafts", "draft_key=?", arrayOf("edit:$id"))
+                    db.delete("health_source_links", "record_id=?", arrayOf(id))
+                    db.delete("revisions", "id=?", arrayOf(id))
+                    check(db.delete("observations", "id=?", arrayOf(id)) == 1)
+                }
+                removed += batch.size
+            }
+            ensureActive()
+            check(removed == preview.count)
+            changed(HealthMetric.BLOOD_PRESSURE)
+            db.setTransactionSuccessful()
+            removed
+        } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+
     fun trendPlatformOrigins(spec: HealthTrendSpec, after: String = "", signal: android.os.CancellationSignal? = null): List<String> {
         val scope = spec.copy(source = HealthTrendSource())
         val origins = java.util.TreeSet<String>()
@@ -881,9 +934,15 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         if (!draft.hasInput()) { clearDraft(key); return }
         val bytes = draft.json().toString().toByteArray(Charsets.UTF_8)
         val encrypted = try { AgentStorageCipher.encryptBinary(bytes, aad(key, 1)) } finally { bytes.fill(0) }
-        try { check(helper.writableDatabase.insertWithOnConflict("drafts", null, ContentValues().apply {
-            put("draft_key", key); put("payload", encrypted)
-        }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Health draft was not saved" } }
+        try {
+            val db = helper.writableDatabase
+            if (draft.recordId.isNotBlank()) {
+                db.execSQL("INSERT OR REPLACE INTO drafts(draft_key,payload) SELECT ?,? " +
+                    "WHERE EXISTS(SELECT 1 FROM observations WHERE id=? AND deleted=0)", arrayOf(key, encrypted, draft.recordId))
+            } else check(db.insertWithOnConflict("drafts", null, ContentValues().apply {
+                put("draft_key", key); put("payload", encrypted)
+            }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Health draft was not saved" }
+        }
         finally { encrypted.fill(0) }
     }
     fun draft(key: String): HealthDraft? = helper.readableDatabase.rawQuery("SELECT payload FROM drafts WHERE draft_key=?", arrayOf(key)).use {
@@ -976,6 +1035,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         private fun createClocks(db: SQLiteDatabase) { db.execSQL("CREATE TABLE IF NOT EXISTS health_metric_clocks(metric TEXT PRIMARY KEY,token TEXT NOT NULL)") }
     }
     companion object {
+        private const val BLUETOOTH_HISTORY_FILTER = "metric=? AND bluetooth_group=? AND deleted IN (0,1)"
         const val DEFAULT_DB = "health_records_v1.db"
         const val SCHEMA_VERSION = 13
         const val PAGE_SIZE = 30

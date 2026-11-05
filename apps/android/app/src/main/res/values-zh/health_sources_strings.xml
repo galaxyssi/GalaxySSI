@@ -25,6 +25,10 @@
     <string name="health_sources_no_saved_devices">暂无可识别设备的测量记录</string>
     <string name="health_sources_device_measurement">最近测量：%1$s</string>
     <string name="health_sources_device_receipt">接收于：%1$s</string>
+    <string name="health_sources_delete_history">删除本机设备历史</string>
+    <string name="health_sources_delete_preview">%1$s\n%2$d 条已保存测量 · %3$s 至 %4$s\n\n将删除此设备的测量、修订和编辑草稿。此操作不可撤销，不影响配对、采集、原始文件、备份和导出。设备仍可能再次发送测量。</string>
+    <string name="health_sources_history_changed">设备历史已变化，请重新预览后再删除。</string>
+    <string name="health_sources_history_deleted">已删除本机设备历史</string>
     <string name="health_sources_bluetooth">蓝牙设备</string>
     <string name="health_sources_ble_supported">添加兼容的蓝牙血压计</string>
     <string name="health_sources_ble_unavailable">本机不支持低功耗蓝牙。</string>

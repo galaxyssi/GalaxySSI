@@ -25,6 +25,10 @@
     <string name="health_sources_no_saved_devices">No identifiable devices with saved records</string>
     <string name="health_sources_device_measurement">Latest measurement: %1$s</string>
     <string name="health_sources_device_receipt">Received: %1$s</string>
+    <string name="health_sources_delete_history">Delete local device history</string>
+    <string name="health_sources_delete_preview">%1$s\n%2$d saved measurements · %3$s to %4$s\n\nThis removes the measurements, local revisions and edit drafts for this device. This cannot be undone. Pairing, collection, original files, backups and exports are unchanged. The source may send measurements again.</string>
+    <string name="health_sources_history_changed">Device history changed. Open a new preview before deleting.</string>
+    <string name="health_sources_history_deleted">Local device history deleted</string>
     <string name="health_sources_bluetooth">Bluetooth Devices</string>
     <string name="health_sources_ble_supported">Add a compatible Bluetooth blood pressure monitor</string>
     <string name="health_sources_ble_unavailable">This device does not support Bluetooth LE.</string>
