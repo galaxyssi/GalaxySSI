@@ -274,6 +274,7 @@
     A10000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift */; };
     A10000000000000000001080 /* GalaxySSITextSizeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001080 /* GalaxySSITextSizeSettingsView.swift */; };
     F1CC32690000000000000001 /* GalaxySSIScreenAssistantSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CC32690000000000000002 /* GalaxySSIScreenAssistantSettingsView.swift */; };
+    E36210000000000000000001 /* GalaxySSIScreenAssistantAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36210000000000000000002 /* GalaxySSIScreenAssistantAvailability.swift */; };
     A10000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift */; };
     A10000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift */; };
     A10000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift */; };
@@ -1023,6 +1024,7 @@
     E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000008 /* PublicNewsFeedTests.swift */; };
     E36510000000000000000003 /* PublicNewsPublisherDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36510000000000000000004 /* PublicNewsPublisherDiscoveryTests.swift */; };
     E36190000000000000000007 /* PublicNewsArticleBodyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36190000000000000000008 /* PublicNewsArticleBodyTests.swift */; };
+    E36210000000000000000003 /* GalaxySSIScreenAssistantAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36210000000000000000004 /* GalaxySSIScreenAssistantAvailabilityTests.swift */; };
     E36200000000000000000007 /* PublicNewsBacklogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36200000000000000000008 /* PublicNewsBacklogTests.swift */; };
     E36480000000000000000005 /* PublicNewsSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36480000000000000000006 /* PublicNewsSearchTests.swift */; };
     E36180000000000000000005 /* PublicNewsHeadlineTranslationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36180000000000000000006 /* PublicNewsHeadlineTranslationTests.swift */; };
@@ -1416,6 +1418,7 @@
     A20000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIWebIntelligenceSourcesView.swift; sourceTree = "<group>"; };
     A20000000000000000001080 /* GalaxySSITextSizeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSITextSizeSettingsView.swift; sourceTree = "<group>"; };
     F1CC32690000000000000002 /* GalaxySSIScreenAssistantSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIScreenAssistantSettingsView.swift; sourceTree = "<group>"; };
+    E36210000000000000000002 /* GalaxySSIScreenAssistantAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIScreenAssistantAvailability.swift; sourceTree = "<group>"; };
     A20000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPrivacyControlCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGeneralControlCenterView.swift; sourceTree = "<group>"; };
     A20000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIVoiceControlCenterView.swift; sourceTree = "<group>"; };
@@ -2149,6 +2152,7 @@
     E35390000000000000000008 /* PublicNewsFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeedTests.swift; sourceTree = "<group>"; };
     E36510000000000000000004 /* PublicNewsPublisherDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsPublisherDiscoveryTests.swift; sourceTree = "<group>"; };
     E36190000000000000000008 /* PublicNewsArticleBodyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleBodyTests.swift; sourceTree = "<group>"; };
+    E36210000000000000000004 /* GalaxySSIScreenAssistantAvailabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIScreenAssistantAvailabilityTests.swift; sourceTree = "<group>"; };
     E36200000000000000000008 /* PublicNewsBacklogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBacklogTests.swift; sourceTree = "<group>"; };
     E36480000000000000000006 /* PublicNewsSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSearchTests.swift; sourceTree = "<group>"; };
     E36180000000000000000006 /* PublicNewsHeadlineTranslationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsHeadlineTranslationTests.swift; sourceTree = "<group>"; };
@@ -3130,6 +3134,7 @@
         A20000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift */,
         A20000000000000000001080 /* GalaxySSITextSizeSettingsView.swift */,
         F1CC32690000000000000002 /* GalaxySSIScreenAssistantSettingsView.swift */,
+        E36210000000000000000002 /* GalaxySSIScreenAssistantAvailability.swift */,
         A20000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift */,
         A20000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift */,
         A20000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift */,
@@ -3289,6 +3294,7 @@
         E35390000000000000000008 /* PublicNewsFeedTests.swift */,
         E36510000000000000000004 /* PublicNewsPublisherDiscoveryTests.swift */,
         E36190000000000000000008 /* PublicNewsArticleBodyTests.swift */,
+        E36210000000000000000004 /* GalaxySSIScreenAssistantAvailabilityTests.swift */,
         E36200000000000000000008 /* PublicNewsBacklogTests.swift */,
         E36480000000000000000006 /* PublicNewsSearchTests.swift */,
         E36180000000000000000006 /* PublicNewsHeadlineTranslationTests.swift */,
@@ -4411,6 +4417,7 @@
         A10000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift in Sources */,
         A10000000000000000001080 /* GalaxySSITextSizeSettingsView.swift in Sources */,
         F1CC32690000000000000001 /* GalaxySSIScreenAssistantSettingsView.swift in Sources */,
+        E36210000000000000000001 /* GalaxySSIScreenAssistantAvailability.swift in Sources */,
         A10000000000000000001280 /* GalaxySSIPrivacyControlCenterView.swift in Sources */,
         A10000000000000000001270 /* GalaxySSIGeneralControlCenterView.swift in Sources */,
         A10000000000000000001260 /* GalaxySSIVoiceControlCenterView.swift in Sources */,
@@ -4561,6 +4568,7 @@
         E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */,
         E36510000000000000000003 /* PublicNewsPublisherDiscoveryTests.swift in Sources */,
         E36190000000000000000007 /* PublicNewsArticleBodyTests.swift in Sources */,
+        E36210000000000000000003 /* GalaxySSIScreenAssistantAvailabilityTests.swift in Sources */,
         E36200000000000000000007 /* PublicNewsBacklogTests.swift in Sources */,
         E36480000000000000000005 /* PublicNewsSearchTests.swift in Sources */,
         E36180000000000000000005 /* PublicNewsHeadlineTranslationTests.swift in Sources */,

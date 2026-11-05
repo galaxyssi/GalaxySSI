@@ -5729,6 +5729,16 @@
 "galaxyssi.screen_assistant.enable" = "悬浮屏幕助手";
 "galaxyssi.screen_assistant.enabled_ios" = "已开启，悬浮图标在 GalaxySSI 应用内显示。";
 "galaxyssi.screen_assistant.disabled" = "已关闭";
+"galaxyssi.screen_assistant.preference_enabled" = "已开启";
+"galaxyssi.screen_assistant.status" = "可用状态";
+"galaxyssi.screen_assistant.inactive" = "应用未处于前台";
+"galaxyssi.screen_assistant.waiting_window" = "等待可用窗口";
+"galaxyssi.screen_assistant.capture_paused" = "录屏或镜像期间暂停";
+"galaxyssi.screen_assistant.capture_recovery" = "在控制中心停止录屏或镜像后，悬浮入口会恢复。";
+"galaxyssi.screen_assistant.available_in_app" = "在智能体页面可用";
+"galaxyssi.screen_assistant.observation" = "自动读取屏幕情境";
+"galaxyssi.screen_assistant.observation_allowed" = "已允许";
+"galaxyssi.screen_assistant.observation_blocked" = "未允许";
 "galaxyssi.agent.progress.operation.command" = "执行命令";
 "galaxyssi.agent.progress.operation.file_change" = "更新文件";
 "galaxyssi.agent.progress.operation.web_search" = "搜索网页";
