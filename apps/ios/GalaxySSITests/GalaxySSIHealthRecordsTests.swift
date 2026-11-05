@@ -5,6 +5,41 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testProfileBackgroundSelectionPinsEntriesAndAuditsOnlyCount() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer {
+      try? FileManager.default.removeItem(at: file)
+      try? FileManager.default.removeItem(at: file.appendingPathExtension("profile"))
+    }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let selected = GalaxySSIHealthProfile.Background(kind: .history, title: "private-selected-fixture", notes: "private-note")
+    let other = GalaxySSIHealthProfile.Background(kind: .allergy, title: "unselected-fixture", notes: "")
+    var profile = GalaxySSIHealthProfile()
+    profile.background = [selected, other]
+    try records.writeProfile(profile)
+    try records.setOverviewPermission(true)
+    try records.setProfileAnalysisAllowed(true)
+    profile = try records.loadProfile()
+    let version = try XCTUnwrap(profile.backgroundVersion(profile.background[0]))
+    let selection = [selected.id: version]
+    let snapshot = try XCTUnwrap(records.captureProfileAnalysis([], background: selection))
+    XCTAssertEqual(snapshot.background.map(\.id), [selected.id])
+    XCTAssertEqual(try records.load().profileAnalysisAudit?.last?.backgroundCount, 1)
+    profile.background[1].title = "changed unrelated entry"
+    try records.writeProfile(profile)
+    XCTAssertTrue(try snapshot.isCurrent(profile: records.loadProfile(), permission: records.load().profileAnalysisPermission))
+    profile = try records.loadProfile()
+    profile.background.removeFirst()
+    try records.writeProfile(profile)
+    XCTAssertThrowsError(try records.captureProfileAnalysis([], background: selection))
+    XCTAssertFalse(try snapshot.isCurrent(profile: records.loadProfile(), permission: records.load().profileAnalysisPermission))
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: Date(), duration: 60), metrics: [.weight])
+    let data = try GalaxySSIHealthAnalysis(scope: scope, current: [], calendar: .current).requestJSON()
+    XCTAssertNil(data.range(of: Data(selected.title.utf8)))
+    XCTAssertNil(data.range(of: Data(selected.notes.utf8)))
+  }
+
+  @MainActor
   func testProfileAnalysisBindsOnlySelectedFieldsAndPermission() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer {

@@ -27,6 +27,8 @@ struct GalaxySSIHealthAssistantView: View {
   @State private var profileAllowed = false
   @State private var profileFields: Set<GalaxySSIHealthProfile.AnalysisField> = []
   @State private var profileContext: GalaxySSIHealthProfile.AnalysisContext?
+  @State private var backgroundSelection: [UUID: UUID] = [:]
+  @State private var choosingBackground = false
 
   private struct Consent {
     let contactID: String
@@ -66,11 +68,12 @@ struct GalaxySSIHealthAssistantView: View {
     .onChange(of: to) { _ in clear() }
     .onChange(of: metrics) { _ in clear() }
     .onChange(of: profileFields) { _ in clear() }
+    .onChange(of: backgroundSelection) { _ in clear() }
     .onChange(of: modelContactID) { _ in cancelRequest(); recommendation = nil }
     .onDisappear { clear() }
     .onChange(of: scene) {
       if $0 == .active { refreshPermissions() }
-      else { clear(); enabled = false; online = nil; profileAllowed = false; profileFields = [] }
+      else { clear(); enabled = false; online = nil; profileAllowed = false; profileFields = []; clearBackgroundSelection() }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
       if $0.object as? String == records.owner { refreshPermissions() }
@@ -85,6 +88,11 @@ struct GalaxySSIHealthAssistantView: View {
       if let consent {
         Text(consent.endpoint.absoluteString + "\n" + consent.model.modelId + "\n" +
           t("disclosure", "Only metric aggregates and coverage are sent. No records, dates, notes, profile or chat history."))
+      }
+    }
+    .sheet(isPresented: $choosingBackground) {
+      GalaxySSIHealthBackgroundPicker(records: records, selection: backgroundSelection) { selected in
+        backgroundSelection = selected
       }
     }
     .sheet(item: $evidence) { item in
@@ -161,6 +169,13 @@ struct GalaxySSIHealthAssistantView: View {
             if $0 { profileFields.insert(field) } else { profileFields.remove(field) }
           }))
         }
+        Button { choosingBackground = true } label: {
+          HStack {
+            Text(t("background_title", "Saved health background"))
+            Spacer()
+            Text(String(backgroundSelection.count)).foregroundColor(.secondary)
+          }
+        }
       }
     }
   }
@@ -171,6 +186,13 @@ struct GalaxySSIHealthAssistantView: View {
         VStack(alignment: .leading, spacing: 4) {
           Text(profileField(field))
           Text(profileValue(context.values[field])).foregroundColor(.secondary)
+        }
+      }
+      ForEach(context.background) { entry in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(GalaxySSIHealthBackgroundPicker.title(entry.kind, language: language)).foregroundColor(.secondary)
+          Text(entry.title)
+          if !entry.notes.isEmpty { Text(entry.notes).foregroundColor(.secondary) }
         }
       }
     }
@@ -236,9 +258,10 @@ struct GalaxySSIHealthAssistantView: View {
             let days = local.dateComponents([.day], from: first, to: end).day, (1...90).contains(days)
       else { error = true; return }
       let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: first, end: end), metrics: metrics)
-      profileContext = try records.captureProfileAnalysis(profileFields)
+      profileContext = try records.captureProfileAnalysis(profileFields, background: backgroundSelection)
       analysis = GalaxySSIHealthAnalysis(scope: scope, current: archive.current, calendar: local)
-    } catch { error = true }
+    } catch GalaxySSIHealthRecords.Failure.stale { stale = true }
+    catch { error = true }
   }
 
   private func setOnline(_ allowed: Bool) {
@@ -253,7 +276,7 @@ struct GalaxySSIHealthAssistantView: View {
       let archive = try records.load()
       enabled = archive.derivesOverview == true
       profileAllowed = archive.profileAnalysisPermission != nil && enabled
-      if !profileAllowed { profileFields = [] }
+      if !profileAllowed { profileFields = []; clearBackgroundSelection() }
       if online != archive.healthOnlinePermission { cancelRequest(); recommendation = nil }
       online = archive.healthOnlinePermission
         let profileCurrent = try profileIsCurrent(archive)
@@ -261,7 +284,10 @@ struct GalaxySSIHealthAssistantView: View {
         clear()
         stale = true
       }
-    } catch { clear(); enabled = false; online = nil; profileAllowed = false; profileFields = []; error = true }
+    } catch {
+      clear(); enabled = false; online = nil; profileAllowed = false; profileFields = []
+      clearBackgroundSelection(); error = true
+    }
   }
 
   private func prepareSend() {
@@ -330,6 +356,11 @@ struct GalaxySSIHealthAssistantView: View {
     cancelRequest()
     analysis = nil; evidence = nil; recommendation = nil; stale = false; error = false
     profileContext = nil
+  }
+
+  private func clearBackgroundSelection() {
+    backgroundSelection = [:]
+    choosingBackground = false
   }
 
   private func sourceValue(_ component: String, reading: GalaxySSIHealthReading) -> Decimal? {
