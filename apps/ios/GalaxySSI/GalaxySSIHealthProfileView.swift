@@ -4,15 +4,57 @@ struct GalaxySSIHealthProfile: Codable {
   enum ReferenceSex: String, Codable, CaseIterable { case unspecified, female, male, other }
   enum HeightUnit: String, Codable, CaseIterable { case cm, inches }
   enum BackgroundKind: String, Codable, CaseIterable { case history, medication, allergy }
+  enum AnalysisField: String, Codable, CaseIterable, Identifiable {
+    case birthDate, referenceSex, height, context
+    var id: String { rawValue }
+  }
+
+  enum AnalysisValue: Equatable {
+    case date(Date), sex(ReferenceSex), height(Decimal, HeightUnit), context(String)
+  }
+
+  struct AnalysisContext {
+    let permission: UUID
+    let values: [AnalysisField: AnalysisValue]
+    let fields: Set<AnalysisField>
+    let versions: [AnalysisField: UUID]
+    let background: [Background]
+    let backgroundVersions: [UUID: UUID]
+
+    init(profile: GalaxySSIHealthProfile, permission: UUID, fields: Set<AnalysisField>,
+         backgroundVersions: [UUID: UUID] = [:]) {
+      self.permission = permission
+      self.fields = fields
+      values = Dictionary(uniqueKeysWithValues: fields.compactMap { field in
+        profile.analysisValue(field).map { (field, $0) }
+      })
+      versions = Dictionary(uniqueKeysWithValues: fields.compactMap { field in
+        profile.analysisVersion(field).map { (field, $0) }
+      })
+      self.backgroundVersions = backgroundVersions
+      background = profile.background.filter { backgroundVersions[$0.id] != nil }
+    }
+
+    func isCurrent(profile: GalaxySSIHealthProfile, permission: UUID?) -> Bool {
+      self.permission == permission && fields.allSatisfy { versions[$0] == profile.analysisVersion($0) } &&
+        profile.matchesBackground(backgroundVersions)
+    }
+  }
 
   struct Background: Codable, Identifiable {
     var id = UUID()
     var kind: BackgroundKind
     var title: String
     var notes: String
+    var analysisRevision: UUID?
+
+    func sameContent(as other: Self) -> Bool {
+      id == other.id && kind == other.kind && title == other.title && notes == other.notes
+    }
   }
 
   var revision: UUID?
+  var analysisVersions: [AnalysisField: UUID]?
   var name = ""
   var birthDate: Date?
   var referenceSex = ReferenceSex.unspecified
@@ -20,6 +62,30 @@ struct GalaxySSIHealthProfile: Codable {
   var heightUnit = HeightUnit.cm
   var context = ""
   var background: [Background] = []
+
+  func backgroundVersion(_ entry: Background) -> UUID? { entry.analysisRevision ?? revision }
+
+  func matchesBackground(_ selected: [UUID: UUID]) -> Bool {
+    guard selected.count <= 30 else { return false }
+    let current = Dictionary(background.compactMap { entry in
+      backgroundVersion(entry).map { (entry.id, $0) }
+    }, uniquingKeysWith: { first, _ in first })
+    return selected.allSatisfy { current[$0.key] == $0.value }
+  }
+
+  func analysisValue(_ field: AnalysisField) -> AnalysisValue? {
+    switch field {
+    case .birthDate: return birthDate.map(AnalysisValue.date)
+    case .referenceSex: return referenceSex == .unspecified ? nil : .sex(referenceSex)
+    case .height: return height.map { .height($0, heightUnit) }
+    case .context: return context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : .context(context)
+    }
+  }
+
+  func analysisVersion(_ field: AnalysisField) -> UUID? {
+    if let analysisVersions { return analysisVersions[field] }
+    return analysisValue(field) == nil ? nil : revision
+  }
 
   var isValid: Bool {
     guard name.utf8.count <= 256, context.utf8.count <= 2048,

@@ -113,6 +113,7 @@ struct GalaxySSIHealthOverview {
 @MainActor
 struct GalaxySSIHealthRecords {
   static let trendInputsChanged = Notification.Name("galaxyssi.health.trendInputsChanged")
+  static let profileInputsChanged = Notification.Name("galaxyssi.health.profileInputsChanged")
 
   enum Failure: Error {
     case invalid, stale, duplicate, unavailable, permission
@@ -127,6 +128,12 @@ struct GalaxySSIHealthRecords {
     var at: Date
     var scope: PrivacyScope
     var enabled: Bool
+  }
+
+  struct ProfileAnalysisAudit: Codable {
+    let at: Date
+    let fields: Set<GalaxySSIHealthProfile.AnalysisField>
+    var backgroundCount: Int?
   }
 
   struct Archive: Codable {
@@ -151,6 +158,8 @@ struct GalaxySSIHealthRecords {
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var bluetoothErasureLog: [GalaxySSIHealthBluetoothHistory.Erasure]?
     var healthOnlinePermission: UUID?
+    var profileAnalysisPermission: UUID?
+    var profileAnalysisAudit: [ProfileAnalysisAudit]?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -203,14 +212,55 @@ struct GalaxySSIHealthRecords {
 
   func writeProfile(_ input: GalaxySSIHealthProfile) throws {
     guard input.isValid else { throw Failure.invalid }
-    guard try loadProfile().revision == input.revision else { throw Failure.stale }
+    let previous = try loadProfile()
+    guard previous.revision == input.revision else { throw Failure.stale }
     var updated = input
     updated.revision = UUID()
+    var versions: [GalaxySSIHealthProfile.AnalysisField: UUID] = [:]
+    for field in GalaxySSIHealthProfile.AnalysisField.allCases {
+      versions[field] = previous.analysisValue(field) == updated.analysisValue(field)
+        ? previous.analysisVersion(field) : UUID()
+    }
+    updated.analysisVersions = versions
+    let entries = Dictionary(previous.background.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    updated.background = updated.background.map { value in
+      var entry = value
+      if let before = entries[entry.id], before.sameContent(as: entry) {
+        entry.analysisRevision = previous.backgroundVersion(before) ?? UUID()
+      } else { entry.analysisRevision = UUID() }
+      return entry
+    }
     let payload = try JSONEncoder().encode(updated)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true, account: profileAccount),
                                         authenticating: profileContext).combined else { throw Failure.unavailable }
     try sealed.write(to: storageFile(context: profileContext, fixtureExtension: "profile"),
                      options: [.atomic, .completeFileProtection])
+    NotificationCenter.default.post(name: Self.profileInputsChanged, object: owner)
+  }
+
+  func setProfileAnalysisAllowed(_ allowed: Bool) throws {
+    var archive = try load()
+    guard (archive.profileAnalysisPermission != nil) != allowed else { return }
+    archive.profileAnalysisPermission = allowed ? UUID() : nil
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.profileInputsChanged, object: owner)
+  }
+
+  func captureProfileAnalysis(_ fields: Set<GalaxySSIHealthProfile.AnalysisField>,
+                              background: [UUID: UUID] = [:]) throws
+    -> GalaxySSIHealthProfile.AnalysisContext? {
+    guard !fields.isEmpty || !background.isEmpty else { return nil }
+    var archive = try load()
+    guard let permission = archive.profileAnalysisPermission, archive.derivesOverview == true else { throw Failure.permission }
+    let profile = try loadProfile()
+    guard profile.matchesBackground(background) else { throw Failure.stale }
+    let snapshot = GalaxySSIHealthProfile.AnalysisContext(profile: profile, permission: permission, fields: fields,
+                                                         backgroundVersions: background)
+    var audit = archive.profileAnalysisAudit ?? []
+    audit.append(.init(at: Date(), fields: fields, backgroundCount: background.count))
+    archive.profileAnalysisAudit = Array(audit.suffix(50))
+    try persist(archive)
+    return snapshot
   }
 
   func load() throws -> Archive {

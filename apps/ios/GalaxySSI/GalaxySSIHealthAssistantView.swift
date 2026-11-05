@@ -27,6 +27,11 @@ struct GalaxySSIHealthAssistantView: View {
   @State private var compare = false
   @State private var reportScope: GalaxySSIWeeklyHealthReport.Link?
   @State private var presentedReport: GalaxySSIWeeklyHealthReport.Link?
+  @State private var profileAllowed = false
+  @State private var profileFields: Set<GalaxySSIHealthProfile.AnalysisField> = []
+  @State private var profileContext: GalaxySSIHealthProfile.AnalysisContext?
+  @State private var backgroundSelection: [UUID: UUID] = [:]
+  @State private var choosingBackground = false
 
   private struct Consent {
     let contactID: String
@@ -46,8 +51,10 @@ struct GalaxySSIHealthAssistantView: View {
       if scene == .active {
         if enabled {
           scopeSection
+          profileSelection
           if let analysis {
             analysisSection(analysis)
+            if let profileContext { profileResult(profileContext) }
             providerSection(analysis)
           }
         } else {
@@ -64,12 +71,18 @@ struct GalaxySSIHealthAssistantView: View {
     .onChange(of: to) { _ in clear() }
     .onChange(of: metrics) { _ in clear() }
     .onChange(of: compare) { _ in clear() }
+    .onChange(of: profileFields) { _ in clear() }
+    .onChange(of: backgroundSelection) { _ in clear() }
     .onChange(of: modelContactID) { _ in cancelRequest(); recommendation = nil }
     .onDisappear { clear() }
     .onChange(of: scene) {
-      if $0 == .active { refreshPermissions() } else { clear(); enabled = false; online = nil }
+      if $0 == .active { refreshPermissions() }
+      else { clear(); enabled = false; online = nil; profileAllowed = false; profileFields = []; clearBackgroundSelection() }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
+      if $0.object as? String == records.owner { refreshPermissions() }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) {
       if $0.object as? String == records.owner { refreshPermissions() }
     }
     .confirmationDialog(t("confirm", "Send selected aggregates to this provider?"),
@@ -89,6 +102,11 @@ struct GalaxySSIHealthAssistantView: View {
           } }
       }
       .navigationViewStyle(.stack)
+    }
+    .sheet(isPresented: $choosingBackground) {
+      GalaxySSIHealthBackgroundPicker(records: records, selection: backgroundSelection) { selected in
+        backgroundSelection = selected
+      }
     }
     .sheet(item: $evidence) { item in
       NavigationView {
@@ -155,6 +173,69 @@ struct GalaxySSIHealthAssistantView: View {
     }
   }
 
+  private var profileSelection: some View {
+    Section(t("profile_context", "Local profile context")) {
+      Toggle(t("profile_permission", "Allow selected profile fields in local analysis"), isOn: Binding(
+        get: { profileAllowed }, set: { value in
+          do { try records.setProfileAnalysisAllowed(value); refreshPermissions() }
+          catch { error = true }
+        }))
+      if profileAllowed {
+        ForEach(GalaxySSIHealthProfile.AnalysisField.allCases) { field in
+          Toggle(profileField(field), isOn: Binding(get: { profileFields.contains(field) }, set: {
+            if $0 { profileFields.insert(field) } else { profileFields.remove(field) }
+          }))
+        }
+        Button { choosingBackground = true } label: {
+          HStack {
+            Text(t("background_title", "Saved health background"))
+            Spacer()
+            Text(String(backgroundSelection.count)).foregroundColor(.secondary)
+          }
+        }
+      }
+    }
+  }
+
+  private func profileResult(_ context: GalaxySSIHealthProfile.AnalysisContext) -> some View {
+    Section(t("profile_self_reported", "Self-reported profile context")) {
+      ForEach(GalaxySSIHealthProfile.AnalysisField.allCases.filter { context.fields.contains($0) }) { field in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(profileField(field))
+          Text(profileValue(context.values[field])).foregroundColor(.secondary)
+        }
+      }
+      ForEach(context.background) { entry in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(GalaxySSIHealthBackgroundPicker.title(entry.kind, language: language)).foregroundColor(.secondary)
+          Text(entry.title)
+          if !entry.notes.isEmpty { Text(entry.notes).foregroundColor(.secondary) }
+        }
+      }
+    }
+  }
+
+  private func profileField(_ field: GalaxySSIHealthProfile.AnalysisField) -> String {
+    switch field {
+    case .birthDate: return t("profile_birth", "Date of birth")
+    case .referenceSex: return t("profile_sex", "Reference sex")
+    case .height: return t("profile_height", "Height")
+    case .context: return t("profile_physiological", "Physiological context")
+    }
+  }
+
+  private func profileValue(_ value: GalaxySSIHealthProfile.AnalysisValue?) -> String {
+    switch value {
+    case .date(let date)?: return date.formatted(date: .abbreviated, time: .omitted)
+    case .sex(.female)?: return t("profile_female", "Female")
+    case .sex(.male)?: return t("profile_male", "Male")
+    case .sex(.other)?: return t("profile_other", "Other")
+    case .height(let height, let unit)?: return height.formatted() + (unit == .cm ? " cm" : " in")
+    case .context(let text)?: return text
+    default: return t("profile_missing", "Not recorded")
+    }
+  }
+
   private func providerSection(_ analysis: GalaxySSIHealthAnalysis) -> some View {
     Section(t("online", "Optional online summary")) {
       Toggle(t("online_permission", "Allow requests for online summaries"), isOn: Binding(
@@ -194,10 +275,12 @@ struct GalaxySSIHealthAssistantView: View {
             let days = local.dateComponents([.day], from: first, to: end).day, (1...90).contains(days)
       else { error = true; return }
       let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: first, end: end), metrics: metrics)
+      profileContext = try records.captureProfileAnalysis(profileFields, background: backgroundSelection)
       analysis = GalaxySSIHealthAnalysis(scope: scope, current: archive.current, calendar: local)
       reportScope = .init(interval: scope.interval, metrics: scope.metrics, calendar: local,
                           compare: compare, current: archive.current)
-    } catch { error = true }
+    } catch GalaxySSIHealthRecords.Failure.stale { stale = true }
+    catch { error = true }
   }
 
   private func setOnline(_ allowed: Bool) {
@@ -211,13 +294,19 @@ struct GalaxySSIHealthAssistantView: View {
     do {
       let archive = try records.load()
       enabled = archive.derivesOverview == true
+      profileAllowed = archive.profileAnalysisPermission != nil && enabled
+      if !profileAllowed { profileFields = []; clearBackgroundSelection() }
       if online != archive.healthOnlinePermission { cancelRequest(); recommendation = nil }
       online = archive.healthOnlinePermission
-      if let analysis, !enabled || !analysis.isCurrent(archive.current) {
+        let profileCurrent = try profileIsCurrent(archive)
+        if let analysis, !enabled || !analysis.isCurrent(archive.current) || !profileCurrent {
         clear()
         stale = true
       }
-    } catch { clear(); enabled = false; online = nil; error = true }
+    } catch {
+      clear(); enabled = false; online = nil; profileAllowed = false; profileFields = []
+      clearBackgroundSelection(); error = true
+    }
   }
 
   private func prepareSend() {
@@ -266,10 +355,16 @@ struct GalaxySSIHealthAssistantView: View {
 
   private func authorized(_ consent: Consent, analysis: GalaxySSIHealthAnalysis) throws -> Bool {
     let archive = try records.load()
+    let profileCurrent = try profileIsCurrent(archive)
     return scene == .active && consent.contactID == modelContactID &&
       providers.first(where: { $0.id == consent.contactID })?.selectedCloudModel == consent.model &&
       archive.derivesOverview == true && archive.healthOnlinePermission == consent.permission &&
-      analysis.isCurrent(archive.current)
+      analysis.isCurrent(archive.current) && profileCurrent
+  }
+
+  private func profileIsCurrent(_ archive: GalaxySSIHealthRecords.Archive) throws -> Bool {
+    guard let profileContext else { return true }
+    return profileContext.isCurrent(profile: try records.loadProfile(), permission: archive.profileAnalysisPermission)
   }
 
   private func cancelRequest() {
@@ -280,6 +375,12 @@ struct GalaxySSIHealthAssistantView: View {
     cancelRequest()
     analysis = nil; evidence = nil; recommendation = nil; stale = false; error = false
     reportScope = nil
+    profileContext = nil
+  }
+
+  private func clearBackgroundSelection() {
+    backgroundSelection = [:]
+    choosingBackground = false
   }
 
   private func sourceValue(_ component: String, reading: GalaxySSIHealthReading) -> Decimal? {
