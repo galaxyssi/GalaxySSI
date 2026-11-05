@@ -3,6 +3,27 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentTranscriptEntryStoreTests: XCTestCase {
+  func testEncryptedRowCacheRequiresIdenticalCiphertextAndEvictsWithinBounds() {
+    var cache = GalaxySSIChatHistoryDatabase.RowCache(maximumRows: 2, maximumBytes: 8)
+    let message = ChatMessage(contactId: "fixture", content: "private", isMine: false)
+    var decryptions = 0
+    func decode() -> (message: ChatMessage, plaintextBytes: Int)? {
+      decryptions += 1
+      return (message, 3)
+    }
+    XCTAssertEqual(cache.read(id: "row-a", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(cache.read(id: "row-a", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(decryptions, 1)
+    XCTAssertEqual(cache.read(id: "row-b", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(decryptions, 2)
+    XCTAssertNil(cache.read(id: "row-a", ciphertext: Data([2])) { nil })
+    XCTAssertEqual(cache.read(id: "row-c", ciphertext: Data([3, 4]), decode: decode), message)
+    XCTAssertEqual(cache.read(id: "row-b", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(decryptions, 4)
+    cache.clear()
+    XCTAssertEqual(cache.read(id: "row-b", ciphertext: Data([1]), decode: decode), message)
+    XCTAssertEqual(decryptions, 5)
+  }
   func testRetainsAndPagesEveryEntryWithoutCountLimits() throws {
     let store = makeStore()
     let expectedIds = (0..<2_105).map { "entry-\($0)" }
