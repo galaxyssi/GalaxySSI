@@ -44,7 +44,8 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     SAVE_WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS_ONLINE(HealthPrivacyOption.ONLINE_ANALYSIS),
-    SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE, DELETE_BLUETOOTH_HISTORY, DELETE_HEALTH_CONNECT_HISTORY
+    SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE, DELETE_BLUETOOTH_HISTORY, DELETE_HEALTH_CONNECT_HISTORY,
+    DELETE_MEASUREMENT_HISTORY
 }
 internal enum class HealthAccessOutcome { STARTED, COMPLETE, FAILED, CANCELLED, BLOCKED }
 internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL, BLUETOOTH, HEALTH_CONNECT }
@@ -82,6 +83,8 @@ internal data class HealthAccessScope(
                 source == HealthAccessSource.BLUETOOTH && count != null && count > 0 && format == null)
             HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY -> require(metrics.size == 1 && HealthConnectScope.entries.any { it.metric in metrics } &&
                 source == HealthAccessSource.HEALTH_CONNECT && count != null && count > 0 && format == null)
+            HealthAccessPurpose.DELETE_MEASUREMENT_HISTORY -> require(metrics.size == 1 && source == HealthAccessSource.ALL &&
+                count != null && count > 0 && format == null)
         }
     }
     fun json() = JSONObject().put("purpose", purpose.name).put("metrics", JSONArray(metrics.map { it.name })).put("from", from)

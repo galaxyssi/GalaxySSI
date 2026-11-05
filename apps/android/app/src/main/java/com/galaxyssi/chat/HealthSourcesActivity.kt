@@ -147,7 +147,7 @@ class HealthSourcesActivity : Activity() {
                 openLocal(Intent(this@HealthSourcesActivity, HealthConnectActivity::class.java))
             }.apply { tag = "health-connect-entry" })
             addView(ui.profileRow(getString(R.string.health_connect_history_title)) {
-                startActivity(Intent(this@HealthSourcesActivity, HealthConnectHistoryActivity::class.java).putHealthNavigationFixture(names))
+                startActivity(Intent(this@HealthSourcesActivity, HealthMeasurementHistoryActivity::class.java).putHealthNavigationFixture(names))
             }.apply { tag = "health-connect-history-entry" })
             addView(ui.profileRow(getString(R.string.health_sync_title)) {
                 openSync()

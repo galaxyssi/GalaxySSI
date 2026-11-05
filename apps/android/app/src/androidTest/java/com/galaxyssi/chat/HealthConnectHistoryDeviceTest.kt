@@ -30,12 +30,12 @@ class HealthConnectHistoryDeviceTest {
             store.saveDraft(edited.editable().copy(note = "next edit"))
             val softDeleted = store.page(metric = HealthMetric.BLOOD_PRESSURE).records[1]
             assertTrue(store.delete(softDeleted.id, softDeleted.revision))
-            val stale = store.healthConnectHistoryPreview(pressure)
+            val stale = store.connectPreview(pressure)
             assertEquals(33L, stale.count)
 
             val later = bp("new-reading", now - 50_000, "example.otherapp")
             assertEquals(1, store.importHealthConnect(listOf(later)) {})
-            assertTrue(runCatching { store.eraseHealthConnectHistory(stale) }.exceptionOrNull() is HealthConnectHistoryChanged)
+            assertTrue(runCatching { store.eraseMeasurementHistory(stale) }.exceptionOrNull() is HealthMeasurementHistoryChanged)
             val weight = HealthConnectMeasurement("weight", "example.scale",
                 HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "67"), "kg", now - 40_000))
             assertEquals(1, store.importHealthConnect(listOf(weight)) {})
@@ -51,19 +51,19 @@ class HealthConnectHistoryDeviceTest {
             val checkpoint = HealthSyncCheckpoint(pressure, token = "checkpoint", lastAttempt = now, lastSuccess = now,
                 outcome = HealthSyncOutcome.NO_NEW)
             store.saveHealthSyncCheckpoint(checkpoint)
-            val preview = store.healthConnectHistoryPreview(pressure)
+            val preview = store.connectPreview(pressure)
             assertEquals(34L, preview.count)
             assertEquals(later.draft.measuredAt, preview.last)
             var checks = 0
             assertTrue(runCatching {
-                store.eraseHealthConnectHistory(preview) { if (++checks == 32) throw CancellationException() }
+                store.eraseMeasurementHistory(preview) { if (++checks == 32) throw CancellationException() }
             }.exceptionOrNull() is CancellationException)
-            assertEquals(preview, store.healthConnectHistoryPreview(pressure))
+            assertEquals(preview, store.connectPreview(pressure))
             assertNotNull(store.draft("edit:${edited.id}"))
 
-            assertEquals(34L, store.eraseHealthConnectHistory(preview))
-            assertEquals(0L, store.healthConnectHistoryPreview(pressure).count)
-            assertEquals(1L, store.healthConnectHistoryPreview(HealthConnectScope.WEIGHT).count)
+            assertEquals(34L, store.eraseMeasurementHistory(preview))
+            assertEquals(0L, store.connectPreview(pressure).count)
+            assertEquals(1L, store.connectPreview(HealthConnectScope.WEIGHT).count)
             assertEquals(checkpoint, store.healthSyncCheckpoint(pressure))
             assertEquals(manual, store.record(manual.id))
             assertEquals(bluetooth, store.record(bluetooth.id))
@@ -91,10 +91,10 @@ class HealthConnectHistoryDeviceTest {
                 scenario.onActivity { ready = it.window.decorView.findViewWithTag<View>(entry) != null }
                 ready
             }
-            val monitor = instrumentation.addMonitor(HealthConnectHistoryActivity::class.java.name, null, false)
+            val monitor = instrumentation.addMonitor(HealthMeasurementHistoryActivity::class.java.name, null, false)
             try {
                 scenario.onActivity { assertTrue(it.window.decorView.findViewWithTag<View>(entry).performClick()) }
-                val child = requireNotNull(instrumentation.waitForMonitorWithTimeout(monitor, 12_000) as? HealthConnectHistoryActivity)
+                val child = requireNotNull(instrumentation.waitForMonitorWithTimeout(monitor, 12_000) as? HealthMeasurementHistoryActivity)
                 try {
                     openPreview(child)
                     dialogButton(android.R.id.button2)
@@ -126,13 +126,76 @@ class HealthConnectHistoryDeviceTest {
         }
     }
 
+    @Test fun privacyPagePreviewsSourceCountsAndErasesOnlyTheSelectedMetric() = fixture { names ->
+        assumeFalse("Measurement deletion UI requires an unlocked Android 10+ display",
+            Build.VERSION.SDK_INT < 29 || context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val (job, original) = overviewOcrJob(context, names, now - 60_000)
+        val scope = HealthMeasurementHistoryScope(HealthMetric.BLOOD_PRESSURE, healthConnectOnly = false)
+        val (weight, pressureRecord) = HealthRecordStore(context, names.records).use { store ->
+            val weight = (store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "67"), "kg", now - 40_000)) as HealthSaveResult.Saved).record
+            val manual = (store.save(HealthDraft(values = mapOf("systolic" to "115", "diastolic" to "75"),
+                measuredAt = now - 20_000)) as HealthSaveResult.Saved).record
+            assertEquals(1, store.importHealthConnect(listOf(bp("from-connect", now - 10_000))) {})
+            val evidence = HealthEvidence(original.id, job.id, "bp", original.sha256, 1, "120/80", confirmed = true)
+            assertTrue(store.save(HealthDraft(values = mapOf("systolic" to "120", "diastolic" to "80"),
+                measuredAt = now - 50_000, evidence = evidence)) is HealthSaveResult.Saved)
+            assertEquals(mapOf(HealthMeasurementSource.MANUAL to 1L, HealthMeasurementSource.OCR to 1L,
+                HealthMeasurementSource.CONNECT to 1L), store.measurementHistoryPreview(scope).sources)
+            weight to manual
+        }
+        val launch = Intent(context, HealthPrivacyActivity::class.java).putHealthNavigationFixture(names)
+            .putExtra("health_privacy_test_db", names.privacy)
+        ActivityScenario.launch<HealthPrivacyActivity>(launch).use { scenario ->
+            val tag = "health-privacy-delete-measurements"
+            await("local measurement deletion") {
+                var ready = false
+                scenario.onActivity { ready = it.window.decorView.findViewWithTag<View>(tag) != null }
+                ready
+            }
+            val monitor = instrumentation.addMonitor(HealthMeasurementHistoryActivity::class.java.name, null, false)
+            try {
+                scenario.onActivity { assertTrue(it.window.decorView.findViewWithTag<View>(tag).performClick()) }
+                val child = requireNotNull(instrumentation.waitForMonitorWithTimeout(monitor, 12_000) as? HealthMeasurementHistoryActivity)
+                try {
+                    openType(child, "BLOOD_PRESSURE", "health-measurement-history")
+                    val counts = listOf(HealthMeasurementSource.MANUAL, HealthMeasurementSource.OCR, HealthMeasurementSource.CONNECT).map {
+                        child.getString(R.string.health_measurement_history_source, child.getString(healthRecordSourceResource(it.code)), 1L)
+                    }
+                    await("source breakdown") { onMain {
+                        WindowInspector.getGlobalWindowViews().any { root ->
+                            val message = root.findViewById<TextView>(android.R.id.message)?.text?.toString().orEmpty()
+                            counts.all { it in message }
+                        }
+                    } }
+                    dialogButton(android.R.id.button1)
+                    awaitNotice(child, R.string.health_measurement_history_deleted, "health-measurement-history")
+                } finally { instrumentation.runOnMainSync { child.finish() } }
+            } finally { instrumentation.removeMonitor(monitor) }
+        }
+        HealthRecordStore(context, names.records).use {
+            assertEquals(0L, it.measurementHistoryPreview(scope).count)
+            assertTrue(it.history(pressureRecord.id).isEmpty())
+            assertEquals(weight, it.record(weight.id))
+        }
+        HealthOriginalStore(context, names.originals, names.originalRoot(context)).use {
+            assertTrue(it.present(requireNotNull(it.original(original.id))))
+        }
+        HealthPrivacyStore(context, names.privacy).use {
+            val event = it.page().entries.single { row -> row.scope.purpose == HealthAccessPurpose.DELETE_MEASUREMENT_HISTORY }
+            assertEquals(HealthAccessOutcome.COMPLETE, event.outcome)
+            assertEquals(3L, event.scope.count)
+        }
+    }
+
+    private fun HealthRecordStore.connectPreview(scope: HealthConnectScope) =
+        measurementHistoryPreview(HealthMeasurementHistoryScope(scope.metric, healthConnectOnly = true))
     private fun bp(id: String, time: Long, origin: String = "example.watch") = HealthConnectMeasurement(id, origin,
         HealthDraft(values = mapOf("systolic" to "120", "diastolic" to "80"), measuredAt = time))
-    private fun copies(names: HealthOverviewDatabases) = HealthRecordStore(context, names.records).use { it.healthConnectHistoryPreview(pressure).count }
-    private fun openType(activity: HealthConnectHistoryActivity, type: String) = await("data type $type") { onMain {
-        activity.hasWindowFocus() && activity.window.decorView.findViewWithTag<View>("health-connect-history-$type")?.performClick() == true
+    private fun copies(names: HealthOverviewDatabases) = HealthRecordStore(context, names.records).use { it.connectPreview(pressure).count }
+    private fun openType(activity: HealthMeasurementHistoryActivity, type: String, prefix: String = "health-connect-history") = await("data type $type") { onMain {
+        activity.hasWindowFocus() && activity.window.decorView.findViewWithTag<View>("$prefix-$type")?.performClick() == true
     } }
-    private fun openPreview(activity: HealthConnectHistoryActivity) {
+    private fun openPreview(activity: HealthMeasurementHistoryActivity) {
         openType(activity, "BLOOD_PRESSURE")
         await("history scope preview") { onMain {
             WindowInspector.getGlobalWindowViews().any { it.findViewById<TextView>(android.R.id.message)?.text?.isNotBlank() == true }
@@ -141,8 +204,8 @@ class HealthConnectHistoryDeviceTest {
     private fun dialogButton(id: Int) = await("confirmation button") { onMain {
         WindowInspector.getGlobalWindowViews().mapNotNull { it.findViewById<View>(id) }.lastOrNull()?.performClick() == true
     } }
-    private fun awaitNotice(activity: HealthConnectHistoryActivity, resource: Int) = await("local copies status") { onMain {
-        activity.window.decorView.findViewWithTag<TextView>("health-connect-history-notice")?.text?.toString() == activity.getString(resource)
+    private fun awaitNotice(activity: HealthMeasurementHistoryActivity, resource: Int, prefix: String = "health-connect-history") = await("local copies status") { onMain {
+        activity.window.decorView.findViewWithTag<TextView>("$prefix-notice")?.text?.toString() == activity.getString(resource)
     } }
     private fun onMain(block: () -> Boolean): Boolean {
         var found = false
