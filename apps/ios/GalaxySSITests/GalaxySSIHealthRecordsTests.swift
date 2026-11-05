@@ -5,6 +5,54 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testSourceAttentionOnlyShowsSelectedFailuresAndAcknowledgesExactRevision() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    var ledger = GalaxySSIHealthSourceAttention()
+    ledger.selected = [.weight, .sleep]
+    ledger.readFinished(.heartRate, succeeded: false, now: now)
+    ledger.readFinished(.weight, succeeded: false, now: now)
+    let original = try XCTUnwrap(ledger.active.first)
+    ledger.readFinished(.sleep, succeeded: false, now: now.addingTimeInterval(5))
+    ledger.readFinished(.weight, succeeded: false, now: now.addingTimeInterval(10))
+    ledger.acknowledge(original)
+    XCTAssertEqual(ledger.active.map(\.scope), [.weight, .sleep])
+    ledger.selected.remove(.sleep)
+    XCTAssertEqual(ledger.active.map(\.scope), [.weight])
+    ledger.acknowledge(try XCTUnwrap(ledger.active.first))
+    XCTAssertTrue(ledger.active.isEmpty)
+    ledger.selected.insert(.sleep)
+    ledger.readFinished(.sleep, succeeded: true, now: now)
+    XCTAssertTrue(ledger.active.isEmpty)
+  }
+
+  @MainActor
+  func testCorruptEncryptedSourceAttentionDoesNotHideMeasurementsOrReplaceIncidents() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let sidecar = file.appendingPathExtension("source-attention")
+    defer {
+      try? FileManager.default.removeItem(at: file)
+      try? FileManager.default.removeItem(at: sidecar)
+    }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    try records.write(.init(metric: .weight, measuredAt: now, value: 60))
+    try records.updateSourceAttention {
+      $0.selected = [.weight]
+      $0.readFinished(.weight, succeeded: false, now: now)
+    }
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.loadSourceAttention().active.map(\.scope), [.weight])
+    let foreign = GalaxySSIHealthRecords(owner: "another", secrets: secrets, isolatedFile: file)
+    XCTAssertThrowsError(try foreign.loadSourceAttention())
+    let corrupt = Data("corrupt fixture".utf8)
+    try corrupt.write(to: sidecar)
+    XCTAssertThrowsError(try reopened.loadSourceAttention())
+    XCTAssertThrowsError(try reopened.updateSourceAttention { $0.selected.removeAll() })
+    XCTAssertEqual(try Data(contentsOf: sidecar), corrupt)
+    XCTAssertEqual(try reopened.load().current.count, 1)
+  }
+
   func testRecordCenterSeparatesReviewDraftsAndRequiresExactOriginalIdentity() {
     let id = UUID()
     let original = GalaxySSIHealthOriginalStore.Original(id: id, name: "fixture.pdf", kind: .pdf,
