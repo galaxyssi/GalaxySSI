@@ -60,6 +60,64 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testReviewReminderActionsDoNotConfirmAndTableCommitClearsDraft() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let draft = GalaxySSIHealthReviewReminders.TableDraft(id: UUID(), name: "fixture.csv", at: now,
+      data: data, mapping: mapping, worksheet: nil)
+    try records.saveTableReview(draft, replacing: nil)
+    try records.setReviewRemindersEnabled(true)
+    var archive = try records.load()
+    let job = try XCTUnwrap(GalaxySSIHealthReviewReminders.jobs(in: archive).first)
+    try records.updateReviewReminder(job, action: .snoozed(now.addingTimeInterval(60)))
+    archive = try records.load()
+    let state = try XCTUnwrap(archive.reviewReminderState)
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.visible([job], state: state, now: now).isEmpty)
+    XCTAssertEqual(GalaxySSIHealthReviewReminders.visible([job], state: state, now: now.addingTimeInterval(61)), [job])
+    try records.updateReviewReminder(job, action: .handled)
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertEqual(try records.load().tableReview?.id, draft.id)
+    XCTAssertEqual(try records.importTable(data, name: draft.name, json: false, mapping: mapping,
+                                           expected: [.ready], reviewID: draft.id), 1)
+    XCTAssertTrue(GalaxySSIHealthReviewReminders.jobs(in: try records.load()).isEmpty)
+    XCTAssertThrowsError(try records.updateReviewReminder(job, action: .handled))
+  }
+
+  @MainActor
+  func testReportReviewBatchIsAtomicAndVersionPinned() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "report.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    let date = Date()
+    func item(_ page: Int, value: Decimal) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: page, region: 0, fromOCR: true)
+      return .init(version: UUID(), source: source, excerpt: "Fixture",
+        reading: .init(metric: .weight, measuredAt: date, value: value, reportSource: source))
+    }
+    let first = item(0, value: 61)
+    let second = item(1, value: 62)
+    try records.stageReportItem(first, replacing: nil)
+    try records.stageReportItem(second, replacing: nil)
+    let updated = item(1, value: 63)
+    try records.stageReportItem(updated, replacing: second.version)
+    XCTAssertThrowsError(try records.confirmReportItems([first.version, second.version], original: original))
+    try records.write(.init(metric: .weight, measuredAt: date, value: 63))
+    XCTAssertThrowsError(try records.confirmReportItems([first.version, updated.version], original: original))
+    XCTAssertEqual(try records.load().current.count, 1)
+    XCTAssertEqual(try records.load().reportReview?.count, 2)
+    try records.confirmReportItems([first.version], original: original)
+    XCTAssertEqual(try records.load().current.count, 2)
+    XCTAssertEqual(try records.load().reportReview?.map(\.version), [updated.version])
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

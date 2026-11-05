@@ -222,6 +222,7 @@ struct GalaxySSIHealthPDFTextView: View {
   @State private var showLimit = 50
   @State private var selectedRegion: Int?
   @State private var focused = false
+  var reviewRecords: GalaxySSIHealthRecords?
 
   private enum Status { case idle, working, unavailable, locked }
 
@@ -280,6 +281,24 @@ struct GalaxySSIHealthPDFTextView: View {
               if result.method == .native {
                 Button(t("force_ocr", "Read again with on-device OCR")) { recognize(forceOCR: true) }
               }
+              if let reviewRecords, let selected,
+                 let region = result.regions.first(where: { $0.id == selectedRegion }) {
+                NavigationLink {
+                  GalaxySSIHealthReportItemEditor(records: reviewRecords,
+                    source: .init(original: selected.id, sha256: selected.sha256, page: page,
+                                  region: region.id, fromOCR: result.method == .ocr),
+                    excerpt: String(region.text.prefix(500)))
+                } label: {
+                  Text(GalaxySSIHealthReportReview.text("item", "Review measurement", language: language))
+                }
+              }
+            }
+          }
+          if let reviewRecords, let selected {
+            NavigationLink {
+              GalaxySSIHealthReportBatchView(records: reviewRecords, store: store, original: selected)
+            } label: {
+              Text(GalaxySSIHealthReportReview.text("batch", "Reviewed measurements", language: language))
             }
           }
         } else {
@@ -304,7 +323,7 @@ struct GalaxySSIHealthPDFTextView: View {
     .navigationTitle(t("title", "Report PDF Text"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: reload)
-    .onDisappear { cancel(); selected = nil; files = [] }
+    .onDisappear { if status == .working { cancel() } }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
       else { cancel(); selected = nil; files = [] }

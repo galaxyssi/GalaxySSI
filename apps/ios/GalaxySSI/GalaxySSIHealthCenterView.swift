@@ -46,6 +46,11 @@ struct GalaxySSIHealthCenterView: View {
         } label: {
           Label(t("import.title", "Import Health Data"), systemImage: "square.and.arrow.down")
         }
+        NavigationLink {
+          GalaxySSIHealthReviewReminderView(records: records)
+        } label: {
+          Label(t("review_reminder.title", "Health Review Reminders"), systemImage: "bell")
+        }
       }
       NavigationLink {
         GalaxySSIHealthBodyView { bloodPressureRecords }
@@ -64,7 +69,8 @@ struct GalaxySSIHealthCenterView: View {
           Label(t("originals.title", "Health Originals"), systemImage: "doc.on.doc")
         }
         NavigationLink {
-          GalaxySSIHealthPDFTextView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
+          GalaxySSIHealthPDFTextView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets),
+                                    reviewRecords: records)
         } label: {
           Label(t("pdf_text.title", "Report PDF Text"), systemImage: "doc.text.magnifyingglass")
         }
