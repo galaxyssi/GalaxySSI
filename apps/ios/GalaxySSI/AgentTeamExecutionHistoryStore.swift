@@ -1465,11 +1465,7 @@ final class AgentTeamExecutionHistoryStore {
           let source = request.binding.teamSource else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let binding = request.binding
     let conversation = binding.identity.conversationId
-    var identity = binding.fields.mapValues(AgentMcpJSONValue.string)
-    identity["desktop_id"] = .string(binding.desktopId)
-    identity["execution_generation"] = .int(request.generation)
-    identity["evidence_id"] = .string(descriptor.evidenceId)
-    let id = AgentMcpJSONCodec.sha256(identity)
+    let id = request.archiveId(descriptor)
     let receipt = AgentDesktopToolEvidenceWire.ArchiveReceipt(archiveId: id, desktopId: binding.desktopId,
       evidenceId: descriptor.evidenceId, sha256: descriptor.sha256, generation: request.generation,
       totalBytes: descriptor.totalBytes, pageCount: descriptor.pageCount)
@@ -1489,13 +1485,99 @@ final class AgentTeamExecutionHistoryStore {
       if let prior = try database.researchRecord(AgentDesktopToolEvidenceWire.ArchiveReceipt.self,
         conversationId: conversation, key: key, revision: 0) {
         guard prior == receipt else { throw AgentTeamHistoryDatabase.Failure.stale }
+        try database.removeResearchRecord(conversationId: conversation, key: request.stagedPageKey(descriptor))
         return prior
       }
       for (index, page) in pages.enumerated() {
         try database.insertResearchRecord(page, conversationId: conversation, key: key, revision: Int64(index + 1))
       }
       try database.insertResearchRecord(receipt, conversationId: conversation, key: key, revision: 0)
+      try database.removeResearchRecord(conversationId: conversation, key: request.stagedPageKey(descriptor))
       return receipt
+    }
+  }
+
+  func stageDesktopEvidencePage(_ response: AgentMcpJSONObject, desktopId: String,
+                                request: AgentDesktopToolEvidenceWire.Request,
+                                descriptor: AgentDesktopToolEvidenceWire.Descriptor, index: Int) throws -> Data {
+    guard let page = request.verifyPage(response, authenticatedDesktopId: desktopId,
+      descriptor: descriptor, index: index) else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    return try access { database in
+      let conversation = request.binding.identity.conversationId
+      let key = request.stagedPageKey(descriptor)
+      let revision = Int64(index + 1)
+      if let saved = try database.researchRecord(Data.self, conversationId: conversation, key: key, revision: revision) {
+        guard saved == page else { throw AgentTeamHistoryDatabase.Failure.stale }
+      } else {
+        try database.insertResearchRecord(page, conversationId: conversation, key: key, revision: revision)
+      }
+      return page
+    }
+  }
+
+  func stagedDesktopEvidencePage(request: AgentDesktopToolEvidenceWire.Request,
+                                 descriptor: AgentDesktopToolEvidenceWire.Descriptor, index: Int) throws -> Data? {
+    guard descriptor.canImport, (0..<descriptor.pageCount).contains(index) else {
+      throw AgentTeamHistoryDatabase.Failure.corrupt
+    }
+    return try access { database in
+      try database.researchRecord(Data.self, conversationId: request.binding.identity.conversationId,
+        key: request.stagedPageKey(descriptor), revision: Int64(index + 1))
+    }
+  }
+
+  func desktopEvidenceCursor(_ request: AgentDesktopToolEvidenceWire.Request) throws
+    -> AgentDesktopToolEvidenceWire.ImportCursor {
+    try access { database in
+      try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
+        conversationId: request.binding.identity.conversationId, key: request.cursorKey) ?? .init()
+    }
+  }
+
+  func enqueueDesktopEvidenceJob(_ job: AgentDesktopToolEvidenceWire.ImportJob) throws {
+    try access { database in
+      let conversation = job.binding.identity.conversationId
+      if try database.researchRecord(AgentDesktopToolEvidenceWire.ImportJob.self,
+        conversationId: conversation, key: job.key, revision: 0) != nil { return }
+      try database.insertResearchRecord(job, conversationId: conversation, key: job.key, revision: 0)
+    }
+  }
+
+  func desktopEvidenceJobs(after: String) throws -> [AgentDesktopToolEvidenceWire.ImportJob] {
+    try access { try $0.desktopEvidenceJobs(after: after, limit: 16) }
+  }
+
+  func removeDesktopEvidenceJob(_ job: AgentDesktopToolEvidenceWire.ImportJob) {
+    _ = try? access { try $0.removeDesktopEvidenceJob(job) }
+  }
+
+  func hasArchivedDesktopEvidence(_ descriptor: AgentDesktopToolEvidenceWire.Descriptor,
+                                  request: AgentDesktopToolEvidenceWire.Request) throws -> Bool {
+    try access { database in
+      let id = request.archiveId(descriptor)
+      guard let receipt = try database.researchRecord(AgentDesktopToolEvidenceWire.ArchiveReceipt.self,
+        conversationId: request.binding.identity.conversationId, key: "desktop-evidence:" + id, revision: 0)
+      else { return false }
+      guard receipt.archiveId == id, receipt.evidenceId == descriptor.evidenceId,
+            receipt.desktopId == request.binding.desktopId, receipt.generation == request.generation,
+            receipt.sha256 == descriptor.sha256, receipt.totalBytes == descriptor.totalBytes,
+            receipt.pageCount == descriptor.pageCount else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+      return true
+    }
+  }
+
+  func advanceDesktopEvidenceCursor(_ request: AgentDesktopToolEvidenceWire.Request,
+                                    from previous: Int64, to next: Int64, final: Bool) throws {
+    guard previous >= 0, next >= previous, next <= 9_007_199_254_740_991,
+          next > previous || final else { throw AgentTeamHistoryDatabase.Failure.stale }
+    try access { database in
+      let conversation = request.binding.identity.conversationId
+      let current = try database.researchRecord(AgentDesktopToolEvidenceWire.ImportCursor.self,
+        conversationId: conversation, key: request.cursorKey) ?? .init()
+      guard !current.archiveFinal, current.sequence == previous else { throw AgentTeamHistoryDatabase.Failure.stale }
+      // Reserve the odd revision for marking the same sequence final.
+      try database.insertResearchRecord(AgentDesktopToolEvidenceWire.ImportCursor(sequence: next, archiveFinal: final),
+        conversationId: conversation, key: request.cursorKey, revision: next * 2 + (final ? 1 : 0))
     }
   }
 

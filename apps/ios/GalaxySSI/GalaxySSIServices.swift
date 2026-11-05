@@ -45,6 +45,9 @@ final class MessageCoordinator: ObservableObject {
   private var teamObserverDiscoveryCursor = ""
   private var teamObserverDiscoveryAt: Int64 = 0
   private lazy var desktopResultRecovery = AgentDesktopResultRecovery(ownerId: store.profile.identityFingerprint, secrets: store.secrets)
+  private var desktopEvidenceRequests: [String: (String, AsyncStream<AgentMcpJSONObject>.Continuation)] = [:]
+  private var desktopEvidenceImports: Set<String> = []
+  private var desktopEvidenceJobCursor = ""
   private var desktopCollaborationResponseReplay = AgentDesktopCollaborationResponseReplay()
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
   private var desktopReplyRecoveryTask: Task<Void, Never>?
@@ -443,6 +446,7 @@ final class MessageCoordinator: ObservableObject {
       guard let self else { return }
       self.pendingReplyRecoveryWake.connectionChanged(ready)
       self.transportReceiptReadinessChanged(ready)
+      if ready { self.retryDesktopEvidenceJobs() }
     }
   }
 
@@ -2232,6 +2236,9 @@ final class MessageCoordinator: ObservableObject {
     desktopReplyRecoveryTask?.cancel()
     desktopReplyRecoveryTask = Task { @MainActor [weak self] in
       while !Task.isCancelled {
+        if UIApplication.shared.applicationState == .active {
+          self?.retryDesktopEvidenceJobs()
+        }
         await self?.sweepDesktopReplyRecovery()
         do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { break }
       }
@@ -2465,6 +2472,7 @@ final class MessageCoordinator: ObservableObject {
             teamObserverResultIsCommitted(payload, binding: binding), desktopResultRecovery.receipts.insert(receipt) else { return }
       finalizeSavedCollaborationObserver(source: binding.sourceIdentity, conversation: binding.identity.conversationId,
         turn: binding.identity.turnId, contact: binding.contactId, expectedRunId: binding.teamSource?.supervisorRunId)
+      startDesktopEvidenceImport(binding)
       UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: binding.sourceIdentity)
       if desktopReplyRecovery.retire(binding) { desktopReplyRecoverySweepRequested = true }
     } catch { lastError = localizedReply("galaxyssi.team.reply_commit_failed", fallback: "The Agent team reply could not be saved. It will not be shown as a normal message.") }
@@ -2510,10 +2518,167 @@ final class MessageCoordinator: ObservableObject {
     if let receipt = AgentResultReceipt.fromPayload(payload, desktopId: link.desktopId) {
       guard receipt.agentId == binding.agentId, desktopResultRecovery.receipts.insert(receipt) else { return }
     } else if payload["result_recovery"] != nil || payload["sha256"] != nil { return }
+    startDesktopEvidenceImport(binding)
     for record in desktopReplyRecovery.pending where record.binding.teamSource != nil && record.binding.matches(payload) {
       _ = desktopReplyRecovery.retire(record.binding)
     }
     Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
+  }
+
+  private func startDesktopEvidenceImport(_ binding: AgentDesktopReplyBinding) {
+    guard GalaxySSISignalEngine.isAvailable, binding.agentId == "codex",
+          let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
+          let generation = context.owner.observedGeneration,
+          store.agentSession(id: context.team.conversationId)?.collaborationRoster != nil,
+          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
+            $0.routes.clientRouteId == binding.identity.clientRouteId }),
+          link.connectorCapabilities.contains("desktop_codex_tool_evidence_v1") ||
+            store.contact(id: binding.contactId)?.connectorCapabilities?.contains("desktop_codex_tool_evidence_v1") == true
+    else { return }
+    let job = AgentDesktopToolEvidenceWire.ImportJob(binding: binding, generation: generation,
+      profileIdentity: store.profile.identityFingerprint)
+    do {
+      try AgentTeamExecutionHistoryStore.shared.enqueueDesktopEvidenceJob(job)
+    } catch { return }
+    retryDesktopEvidenceJobs()
+  }
+
+  private func retryDesktopEvidenceJobs() {
+    resumeDesktopEvidenceJobs(wrapAtEnd: true)
+  }
+
+  private func resumeDesktopEvidenceJobs(wrapAtEnd: Bool = false) {
+    guard GalaxySSISignalEngine.isAvailable, mqttClient.relationshipSubscriptionsReady,
+          desktopEvidenceImports.count < 2 else { return }
+    let history = AgentTeamExecutionHistoryStore.shared
+    var mayWrap = wrapAtEnd && !desktopEvidenceJobCursor.isEmpty
+    while desktopEvidenceImports.count < 2 {
+      guard let batch = try? history.desktopEvidenceJobs(after: desktopEvidenceJobCursor) else { return }
+      if batch.isEmpty {
+        guard mayWrap else { return }
+        mayWrap = false
+        desktopEvidenceJobCursor = ""
+        continue
+      }
+      for job in batch {
+        guard desktopEvidenceImports.count < 2 else { return }
+        desktopEvidenceJobCursor = job.key
+        let binding = job.binding
+        guard store.profile.identityFingerprint == job.profileIdentity,
+              let context = currentTeamObserverRecovery(binding), context.member.status == .succeeded,
+              context.owner.observedGeneration == job.generation,
+              let session = store.agentSession(id: context.team.conversationId), session.id == context.team.conversationId,
+              session.collaborationRoster != nil, session.mergedIntoConversationId.isBlank,
+              let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: job.generation,
+                nonce: UUID().uuidString),
+              desktopEvidenceImports.insert(job.key).inserted else { continue }
+        mayWrap = false
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          defer {
+            self.desktopEvidenceImports.remove(job.key)
+            self.resumeDesktopEvidenceJobs()
+          }
+          await self.importDesktopEvidence(binding, generation: job.generation, profile: job.profileIdentity)
+          if (try? history.desktopEvidenceCursor(scope))?.archiveFinal == true {
+            history.removeDesktopEvidenceJob(job)
+          }
+        }
+      }
+    }
+  }
+
+  private func importDesktopEvidence(_ binding: AgentDesktopReplyBinding, generation: Int64, profile: String) async {
+    func isCurrent() -> Bool {
+      !Task.isCancelled && store.profile.identityFingerprint == profile &&
+        currentTeamObserverRecovery(binding)?.owner.observedGeneration == generation &&
+        store.agentSession(id: binding.identity.conversationId).map {
+          $0.id == binding.identity.conversationId && $0.collaborationRoster != nil && $0.mergedIntoConversationId.isBlank
+        } == true
+    }
+    let history = AgentTeamExecutionHistoryStore.shared
+    guard let scope = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
+            nonce: UUID().uuidString),
+          let checkpoint = try? history.desktopEvidenceCursor(scope), !checkpoint.archiveFinal else { return }
+    var cursor = checkpoint.sequence
+    let inlineBytes = AgentDesktopToolEvidenceWire.maximumPageBytes
+    while isCurrent() {
+      guard let request = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
+              nonce: UUID().uuidString),
+            let payload = request.indexRequest(after: cursor, inlineBytes: inlineBytes),
+            let response = await queryDesktopEvidence(request, payload: payload),
+            isCurrent(),
+            let index = request.verifyIndex(response, authenticatedDesktopId: binding.desktopId,
+              after: cursor, inlineBytes: inlineBytes) else { return }
+      for descriptor in index.entries where descriptor.canImport {
+        guard isCurrent() else { return }
+        do {
+          if try history.hasArchivedDesktopEvidence(descriptor, request: request) { continue }
+        } catch { return }
+        var pages: [Data] = []
+        if let inline = index.inlineOriginals[descriptor.evidenceId] {
+          pages = [inline]
+        } else {
+          for number in 0..<descriptor.pageCount {
+            guard isCurrent() else { return }
+            do {
+              if let staged = try history.stagedDesktopEvidencePage(request: request,
+                descriptor: descriptor, index: number) {
+                pages.append(staged)
+                continue
+              }
+            } catch { return }
+            guard let pageRequest = AgentDesktopToolEvidenceWire.Request(binding: binding, generation: generation,
+                    nonce: UUID().uuidString),
+                  let pagePayload = pageRequest.pageRequest(descriptor, index: number),
+                  let response = await queryDesktopEvidence(pageRequest, payload: pagePayload),
+                  isCurrent(),
+                  let page = try? history.stageDesktopEvidencePage(response, desktopId: binding.desktopId,
+                    request: pageRequest, descriptor: descriptor, index: number) else { return }
+            pages.append(page)
+          }
+        }
+        guard isCurrent() else { return }
+        do {
+          _ = try history.archiveDesktopToolEvidence(request: request, descriptor: descriptor, pages: pages)
+        } catch { return }
+      }
+      let final = index.archiveFinal && !index.hasMore
+      if index.nextSequence > cursor || final {
+        guard isCurrent() else { return }
+        do {
+          try history.advanceDesktopEvidenceCursor(request, from: cursor, to: index.nextSequence, final: final)
+        } catch { return }
+      }
+      guard index.hasMore else { return }
+      cursor = index.nextSequence
+    }
+  }
+
+  private func queryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request,
+                                    payload: AgentMcpJSONObject) async -> AgentMcpJSONObject? {
+    let binding = request.binding
+    guard !Task.isCancelled, mqttClient.relationshipSubscriptionsReady,
+          let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
+            $0.routes.clientRouteId == binding.identity.clientRouteId }),
+          let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(payload).utf8)) as? [String: Any],
+          let wire = try? linkWirePayload(object, link: link) else { return nil }
+    var signal: AsyncStream<AgentMcpJSONObject>.Continuation?
+    let responses = AsyncStream<AgentMcpJSONObject>(bufferingPolicy: .bufferingNewest(1)) { signal = $0 }
+    guard let signal else { return nil }
+    desktopEvidenceRequests[request.nonce] = (binding.desktopId, signal)
+    let timeout = Task {
+      do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+      signal.finish()
+    }
+    defer {
+      timeout.cancel()
+      desktopEvidenceRequests.removeValue(forKey: request.nonce)
+      signal.finish()
+    }
+    guard await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData) == .published else { return nil }
+    for await response in responses { return response }
+    return nil
   }
 
   private func discoverManagedDesktopReplies(now: Int64) {
@@ -11428,6 +11593,16 @@ final class MessageCoordinator: ObservableObject {
     }
     if shouldValidateAgentTaskIdentity(appPayload),
        !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
+      return
+    }
+    if appPayload.string("type") == "agent_task_evidence" {
+      if object.string("scheme") == "signal", let link, link.paired,
+         appPayload.string("client_route_id") == link.routes.clientRouteId,
+         let pending = desktopEvidenceRequests[appPayload.string("request_id")], pending.0 == link.desktopId,
+         let bytes = try? JSONSerialization.data(withJSONObject: appPayload),
+         let response = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes) {
+        pending.1.yield(response)
+      }
       return
     }
     if appPayload.string("type") == "agent_task_recovery_result" {
