@@ -5,6 +5,34 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthBackupHistoryKeepsVerifiedSaveAfterInterruptionAndPruning() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let history = GalaxySSIHealthBackupHistory(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let id = try history.begin()
+    let data = Data("synthetic sealed package".utf8)
+    try history.publish(data, id: id)
+    let first = try history.beginSave(id)
+    let destination = root.appendingPathComponent("external")
+    try data.write(to: destination)
+    XCTAssertTrue(try GalaxySSIHealthBackupHistory.verifyDestination(destination, entry: first))
+    try history.finishSave(id, verified: true)
+    let saved = try XCTUnwrap(history.entries().first?.lastVerifiedAt)
+    _ = try history.beginSave(id)
+    let interrupted = try history.begin()
+    try history.recover()
+    let recovered = try history.entries()
+    XCTAssertEqual(recovered.first { $0.id == interrupted }?.generation, .interrupted)
+    XCTAssertEqual(recovered.first { $0.id == id }?.latestSave, .interrupted)
+    for _ in 0..<2 { try history.publish(data, id: history.begin()) }
+    let old = try XCTUnwrap(history.entries().first { $0.id == id })
+    XCTAssertEqual(old.lastVerifiedAt, saved)
+    XCTAssertFalse(history.hasCopy(old))
+    XCTAssertThrowsError(try history.readCopy(old))
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -53,6 +81,58 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let export = try GalaxySSIHealthMeasurementExport.encode(saved, as: .json, includeNotes: false)
     XCTAssertNil(export.range(of: Data(a.device.uuidString.utf8)))
     XCTAssertNil(export.range(of: Data("Monitor".utf8)))
+  }
+
+  @MainActor
+  func testHealthRestoreRetainsTombstonesAndPublishesExactOriginalWithReceipt() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let source = root.appendingPathComponent("source")
+    let target = root.appendingPathComponent("target")
+    for directory in [source, target] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: source.appendingPathComponent("records"))
+    let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: source)
+    let destination = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: target.appendingPathComponent("records"))
+    let files = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: target,
+                                             restoreRecordsFile: destination.isolatedFile)
+    let deleted = GalaxySSIHealthReading(metric: .weight, value: 65)
+    try records.write(deleted)
+    try records.write(.init(metric: .glucose, value: 6))
+    try destination.write(deleted)
+    var tombstone = try XCTUnwrap(destination.load().current.first)
+    tombstone.deleted = true
+    try destination.write(tombstone)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try originals.store(pdf, name: "fixture.pdf")
+    let manifest = try XCTUnwrap(originals.list().originals.first)
+    try files.stageRestore([(manifest, pdf)], receipt: UUID())
+    XCTAssertTrue(try files.list().originals.isEmpty)
+    let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    let (payload, _) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
+    let sealed = try GalaxySSIHealthPortableBackup.seal(payload, password: "fixture-password")
+    let input = try GalaxySSIHealthPortableBackup.unlock(sealed, password: "fixture-password")
+    let preview = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files)
+    XCTAssertEqual(preview.readings, 1)
+    XCTAssertEqual(preview.conflicts.map(\.id), [deleted.id])
+    try destination.write(.init(metric: .steps, value: 12))
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.restore(input, expected: preview, records: destination, originals: files))
+    let fresh = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files)
+    try GalaxySSIHealthPortableBackup.restore(input, expected: fresh, records: destination, originals: files)
+    XCTAssertEqual(try destination.load().restoreReceipts?.count, 1)
+    XCTAssertFalse(try destination.load().current.contains { $0.id == deleted.id })
+    XCTAssertEqual(try files.read(manifest), pdf)
+    XCTAssertFalse(try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files).hasChanges)
+    let foreign = GalaxySSIHealthRecords(owner: "different", secrets: secrets, isolatedFile: destination.isolatedFile)
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.previewRestore(input, records: foreign, originals: files))
+    try files.remove(manifest)
+    let pendingReceipt = UUID()
+    try files.stageRestore([(manifest, pdf)], receipt: pendingReceipt)
+    try destination.commitRestore(destination.load(), receipt: pendingReceipt)
+    XCTAssertEqual(try files.list().originals, [manifest])
+    XCTAssertEqual(try files.read(manifest), pdf)
   }
 
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
@@ -358,6 +438,52 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthPDFText.normalizedTopOrigin(CGRect(x: 400, y: 0, width: 10, height: 10), in: viewport))
   }
 
+  func testTrendAuditPinsContributorsAndExtremumRevision() throws {
+    let now = Date()
+    let readings = (0..<34).map {
+      GalaxySSIHealthReading(revision: $0 + 1, metric: .glucose, measuredAt: now,
+        value: Decimal(40 - $0))
+    }
+    let excluded = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 1, unitOverride: "mg/dL")
+    func point(_ inputs: [GalaxySSIHealthReading]) throws -> GalaxySSIHealthTrend.Point {
+      try XCTUnwrap(GalaxySSIHealthTrend(current: inputs, metric: .glucose, component: .value,
+        now: now, dayCount: 7, calendar: .current, source: .manual).points.last)
+    }
+    let original = try point(readings + [excluded])
+    XCTAssertEqual(original.readings.count, 34)
+    XCTAssertEqual(original.value(.min, component: .value), 7)
+    XCTAssertEqual(original.value(.max, component: .value), 40)
+    XCTAssertEqual(original.extremum(.min, component: .value)?.revision, 34)
+    XCTAssertEqual(original.revisions, try point(Array(readings.reversed())).revisions)
+    var revised = readings
+    revised[33].revision += 1
+    XCTAssertNotEqual(original.revisions, try point(revised).revisions)
+  }
+
+  func testHealthAssistantSendsOnlyAggregatesAndRejectsUnknownEvidence() throws {
+    let now = Date()
+    let reading = GalaxySSIHealthReading(revision: 2, metric: .glucose, measuredAt: now, value: 6)
+    let other = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 100, unitOverride: "mg/dL")
+    let unrelated = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 72)
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: now, duration: 86_400), metrics: [.glucose])
+    let analysis = GalaxySSIHealthAnalysis(scope: scope, current: [reading, other, unrelated], calendar: .current)
+    XCTAssertEqual(analysis.evidence.count, 2)
+    XCTAssertEqual(analysis.evidence.first?.aggregate.mean, "6")
+    XCTAssertEqual(analysis.evidence.first?.readings.map(\.id), [reading.id])
+    XCTAssertTrue(analysis.isCurrent([other, reading]))
+    XCTAssertFalse(analysis.isCurrent([other]))
+    let data = try analysis.requestJSON()
+    let packet = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(Set(packet.keys), ["requestedDays", "aggregates"])
+    let aggregates = try XCTUnwrap(packet["aggregates"] as? [[String: Any]])
+    XCTAssertEqual(Set(try XCTUnwrap(aggregates.first).keys),
+      ["id", "metric", "component", "unit", "count", "observedDays", "minimum", "maximum", "mean"])
+    let output = #"{"evidence":["e1"],"next_step":"review_sources"}"#
+    XCTAssertEqual(try analysis.recommendation(output).evidence, ["e1"])
+    XCTAssertThrowsError(try analysis.recommendation(#"{"evidence":["e99"],"next_step":"review_sources"}"#))
+    XCTAssertThrowsError(try analysis.recommendation(#"{"evidence":["e1"],"next_step":"review_sources","text":"extra"}"#))
+  }
+
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
@@ -377,6 +503,14 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(trend.mean, Decimal(string: "66.5"))
     XCTAssertEqual(trend.minimum, 64)
     XCTAssertEqual(trend.maximum, 69)
+  }
+
+  func testHealthCatalogRefreshAnchorsToSurvivingVisibleRecord() throws {
+    let anchor = try XCTUnwrap(GalaxySSIHealthCatalogAnchor.restoration(
+      visible: [29, 30], updated: [100, 101] + Array(0..<29) + [30, 31], limit: 30))
+    XCTAssertEqual(anchor.id, 30)
+    XCTAssertEqual(anchor.limit, 32)
+    XCTAssertNil(GalaxySSIHealthCatalogAnchor.restoration(visible: [29], updated: [30], limit: 30))
   }
 
   func testHealthCatalogTypedResultsDoNotEnterNumericTrendsOrMixUnits() throws {

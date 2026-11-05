@@ -129,6 +129,7 @@ struct GalaxySSIHealthRecords {
 
   struct Archive: Codable {
     var version = 1
+    var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
     var derivesOverview: Bool?
@@ -136,6 +137,7 @@ struct GalaxySSIHealthRecords {
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
+    var healthOnlinePermission: UUID?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -239,6 +241,14 @@ struct GalaxySSIHealthRecords {
     try setPrivacy(.overview, enabled: enabled)
   }
 
+  func setHealthOnlinePermission(_ enabled: Bool) throws {
+    var archive = try load()
+    guard (archive.healthOnlinePermission != nil) != enabled else { return }
+    archive.healthOnlinePermission = enabled ? UUID() : nil
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
   func setPrivacy(_ scope: PrivacyScope, enabled: Bool) throws {
     var archive = try load()
     let previous: Bool?
@@ -340,6 +350,14 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return tombstones.count
+  }
+
+  func commitRestore(_ archive: Archive, receipt: UUID) throws {
+    var updated = archive
+    var receipts = updated.restoreReceipts ?? []
+    receipts.insert(receipt)
+    updated.restoreReceipts = receipts
+    try persist(updated)
   }
 
   private func persist(_ archive: Archive) throws {

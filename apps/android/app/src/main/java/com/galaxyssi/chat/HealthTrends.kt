@@ -9,10 +9,15 @@ import java.time.temporal.ChronoUnit
 import java.util.BitSet
 
 internal enum class HealthTrendAggregation { MEAN, MINIMUM, MAXIMUM }
-internal data class HealthTrendSource(val originalId: String = "", val manualOnly: Boolean = false) {
-    init { require(originalId.isBlank() || java.util.UUID.fromString(originalId).toString() == originalId); require(!manualOnly || originalId.isBlank()) }
+internal data class HealthTrendSource(val originalId: String = "", val manualOnly: Boolean = false, val bluetoothGroup: String = "") {
+    init {
+        require(originalId.isBlank() || java.util.UUID.fromString(originalId).toString() == originalId)
+        require(bluetoothGroup.isEmpty() || isHealthBluetoothGroup(bluetoothGroup))
+        require(listOf(originalId.isNotBlank(), manualOnly, bluetoothGroup.isNotEmpty()).count { it } <= 1)
+    }
     fun accepts(record: HealthObservation) = (!manualOnly || record.source == "manual") &&
-        (originalId.isBlank() || record.draft.evidence?.originalId == originalId)
+        (originalId.isBlank() || record.draft.evidence?.originalId == originalId) &&
+        (bluetoothGroup.isEmpty() || record.source == "bluetooth" && record.bluetoothGroup == bluetoothGroup)
 }
 internal data class HealthTrendSpec(val metric: HealthMetric, val first: LocalDate, val last: LocalDate,
     val zone: ZoneId, val unit: String, val aggregation: HealthTrendAggregation = HealthTrendAggregation.MEAN,
@@ -39,7 +44,8 @@ internal data class HealthTrendSummary(val spec: HealthTrendSpec, val total: Lon
 }
 
 /** Bounded plot bins and calendar-day coverage; no raw history or fabricated zero observations are retained. */
-internal class HealthTrendBuilder(private val spec: HealthTrendSpec) {
+internal class HealthTrendBuilder(private val spec: HealthTrendSpec, private val bucketDays: Int = spec.bucketDays) {
+    init { require(bucketDays > 0 && bucketDays.toLong() <= spec.days) }
     private data class Ref(val id: String, val time: Long, val revision: Int)
     private class Cell {
         var count = 0L; var sum = BigDecimal.ZERO; var min: BigDecimal? = null; var max: BigDecimal? = null
@@ -66,7 +72,7 @@ internal class HealthTrendBuilder(private val spec: HealthTrendSpec) {
         recorded.set(day)
         val values = spec.exact(record) ?: run { nonNumeric++; return }
         eligible++; numeric.set(day)
-        values.forEach { (field, value) -> bins.getOrPut(day / spec.bucketDays to field) { Cell() }.add(value, record, day) }
+        values.forEach { (field, value) -> bins.getOrPut(day / bucketDays to field) { Cell() }.add(value, record, day) }
     }
     fun finish(): HealthTrendSummary {
         val points = spec.metric.requiredFields.flatMap { field ->
@@ -77,8 +83,8 @@ internal class HealthTrendBuilder(private val spec: HealthTrendSpec) {
                     index != previousIndex + 1 || numeric.nextClearBit(previousCell.lastDay) < cell.firstDay
                 } ?: true
                 previous = index to cell
-                val start = spec.first.plusDays(index.toLong() * spec.bucketDays)
-                val end = minOf(spec.last, start.plusDays(spec.bucketDays.toLong() - 1))
+                val start = spec.first.plusDays(index.toLong() * bucketDays)
+                val end = minOf(spec.last, start.plusDays(bucketDays.toLong() - 1))
                 val value = when (spec.aggregation) {
                     HealthTrendAggregation.MEAN -> cell.sum.divide(BigDecimal.valueOf(cell.count), MathContext.DECIMAL64)
                     HealthTrendAggregation.MINIMUM -> requireNotNull(cell.min)
