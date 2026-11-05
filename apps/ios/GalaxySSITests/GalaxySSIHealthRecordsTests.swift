@@ -2238,6 +2238,89 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try analysis.recommendation(#"{"evidence":["e1"],"next_step":"review_sources","text":"extra"}"#))
   }
 
+  func testHealthFollowUpSendsOnlyScopedFactsAndPreviousVerifiedSelections() throws {
+    let now = Date()
+    let reading = GalaxySSIHealthReading(revision: 2, metric: .weight, measuredAt: now, value: 60, notes: "private notes")
+    let previous = GalaxySSIHealthReading(revision: 3, metric: .weight,
+      measuredAt: now.addingTimeInterval(-86_400), value: 58)
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: now, duration: 86_400), metrics: [.weight])
+    let previousScope = GalaxySSIHealthAnalysis.Scope(
+      interval: DateInterval(start: now.addingTimeInterval(-86_400), end: now), metrics: [.weight])
+    let analysis = GalaxySSIHealthAnalysis(scope: scope, current: [reading, previous], calendar: .current)
+    let baseline = GalaxySSIHealthAnalysis(scope: previousScope, current: [reading, previous], calendar: .current)
+    let first = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: baseline,
+      question: "  First question\r\nsecond line ", previous: nil)
+    let response = #"{"status":"PARTIAL","sections":[{"topic":"CHANGES","fact_ids":["e1"]}],"actions":["WEEKLY_REPORT"]}"#
+    let answer = try first.answer(response)
+    XCTAssertEqual(answer.status, .partial)
+    XCTAssertEqual(first.comparisons["e1"]?.delta, "2")
+    XCTAssertEqual(first.comparisons["e1"]?.evidence.readings.map(\.revision), [3])
+    XCTAssertFalse(baseline.isCurrent([reading]))
+
+    let next = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: baseline, question: "Why?", previous: answer)
+    let data = String(decoding: next.payload, as: UTF8.self)
+    let packet = try XCTUnwrap(JSONSerialization.jsonObject(with: next.payload) as? [String: Any])
+    XCTAssertEqual(Set(packet.keys), ["question", "requestedDays", "facts", "allowed_topics", "allowed_actions", "previous_answer"])
+    XCTAssertEqual(packet["question"] as? String, "Why?")
+    XCTAssertEqual(packet["allowed_topics"] as? [String], ["CHANGES", "COVERAGE", "SOURCES"])
+    for privateValue in ["First question", "private notes", reading.id.uuidString, previous.id.uuidString, "measuredAt"] {
+      XCTAssertFalse(data.contains(privateValue))
+    }
+    let newAnalysis = GalaxySSIHealthAnalysis(scope: scope, current: [reading], calendar: .current)
+    let fresh = try GalaxySSIHealthFollowUp(analysis: newAnalysis, baseline: nil, question: "Why?", previous: answer)
+    XCTAssertFalse(String(decoding: fresh.payload, as: UTF8.self).contains("previous_answer"))
+    XCTAssertThrowsError(try fresh.answer(response))
+    XCTAssertEqual(GalaxySSIHealthFollowUp.question("  First\r\nsecond  "), "First\nsecond")
+    XCTAssertNil(GalaxySSIHealthFollowUp.question(String(repeating: "a", count: 601)))
+    XCTAssertNil(GalaxySSIHealthFollowUp.question("bad\u{0000}"))
+  }
+
+  func testHealthFollowUpRejectsInventedFactsProseAndAmbiguousJSON() throws {
+    let now = Date()
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: now, duration: 86_400), metrics: [.weight])
+    let analysis = GalaxySSIHealthAnalysis(scope: scope,
+      current: [GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 60)], calendar: .current)
+    let packet = try GalaxySSIHealthFollowUp(analysis: analysis, baseline: nil, question: "What do I have?", previous: nil)
+    let valid = #"{"status":"ANSWERED","sections":[{"topic":"COVERAGE","fact_ids":["e1"]}],"actions":[]}"#
+    XCTAssertEqual(try packet.answer(valid).sections.first?.factIDs, ["e1"])
+    XCTAssertEqual(try packet.answer(#"{"status":"OUT_OF_SCOPE","sections":[],"actions":[]}"#).status, .outOfScope)
+    for invalid in [
+      valid.replacingOccurrences(of: "e1", with: "e9"),
+      valid.replacingOccurrences(of: #""e1""#, with: #""e1","e1""#),
+      valid.replacingOccurrences(of: #""topic":"COVERAGE""#, with: #""topic":"SOURCES","topic":"COVERAGE""#),
+      valid.replacingOccurrences(of: #""status":"ANSWERED""#, with: #""status":"ANSWERED","answer":"123""#),
+      valid.replacingOccurrences(of: "ANSWERED", with: "OUT_OF_SCOPE"),
+      valid.replacingOccurrences(of: "COVERAGE", with: "CHANGES"),
+      valid + " additional prose",
+    ] {
+      XCTAssertThrowsError(try packet.answer(invalid), invalid)
+    }
+  }
+
+  func testHealthFollowUpProviderOutputRejectsToolCallsAndUnsafeEndpoints() throws {
+    func output(_ json: String, _ style: GalaxySSICloudAPIStyle) throws -> String {
+      try GalaxySSIHealthFollowUpTransport.output(Data(json.utf8), style: style)
+    }
+    XCTAssertEqual(try output(#"{"choices":[{"finish_reason":"stop","message":{"content":"{}"}}]}"#, .openAICompatible), "{}")
+    XCTAssertEqual(try output(#"{"stop_reason":"end_turn","content":[{"type":"text","text":"{}"}]}"#, .anthropic), "{}")
+    XCTAssertEqual(try output(#"{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"{}"}]}}]}"#, .gemini), "{}")
+    XCTAssertThrowsError(try output(#"{"choices":[{"finish_reason":"stop","message":{"content":"{}","tool_calls":[]}}]}"#, .openAICompatible))
+    XCTAssertThrowsError(try output(#"{"stop_reason":"end_turn","content":[{"type":"tool_use","text":"{}"}]}"#, .anthropic))
+    XCTAssertThrowsError(try output(#"{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"{}","functionCall":{}}]}}]}"#, .gemini))
+    var model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: Date())
+    XCTAssertNotNil(GalaxySSIHealthFollowUpTransport.endpoint(for: model))
+    for endpoint in ["http://example.test", "https://example.test/?secret=x", "https://user@example.test", "https://example.test/#fragment"] {
+      model.endpoint = endpoint
+      XCTAssertNil(GalaxySSIHealthFollowUpTransport.endpoint(for: model))
+    }
+    model.apiStyle = .gemini
+    model.endpoint = "https://example.test/v1/models/fixture"
+    XCTAssertNil(GalaxySSIHealthFollowUpTransport.endpoint(for: model))
+    model.endpoint += ":generateContent"
+    XCTAssertNotNil(GalaxySSIHealthFollowUpTransport.endpoint(for: model))
+  }
+
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))

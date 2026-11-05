@@ -98,6 +98,7 @@ final class MessageCoordinator: ObservableObject {
   private let diagnosticLedger: GalaxySSILinkDiagnosticLedger
   private let cloudStreamEngine: CloudConversationStreaming
   private let disclosureStore: AgentDataDisclosureStore
+  var healthDisclosureStore: AgentDataDisclosureStore { disclosureStore }
   private let taskIdentityStore: AgentTaskIdentityStore
   private let desktopMarketplaceStore: AgentDesktopMarketplaceStore
   let connectorResponseBus: AgentConnectorResponseBus
