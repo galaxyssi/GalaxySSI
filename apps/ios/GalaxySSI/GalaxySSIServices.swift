@@ -258,6 +258,8 @@ final class MessageCoordinator: ObservableObject {
   private var pairingDeliveryTask: Task<Void, Never>?
   private var automationBackgroundTaskRegistered = false
   private var desktopControlPendingRequests: [String: AgentDesktopControlPendingRequest] = [:]
+  private var desktopControlLiveFrames: [String: AgentDesktopControlScreenshot] = [:]
+  let desktopControlFrameUpdates = PassthroughSubject<String, Never>()
   private var pendingArtifactDownloads: Set<String> = []
   private var pendingArtifactFetches: Set<String> = []
   private var attachmentRecoveryInFlight: Set<String> = []
@@ -1606,7 +1608,12 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func desktopControlSnapshot(for link: ServerLink) -> AgentDesktopRemoteControlSnapshot {
-    desktopControlSnapshots[link.desktopId] ?? .initial(for: link)
+    var snapshot = desktopControlSnapshots[link.desktopId] ?? .initial(for: link)
+    if let live = desktopControlLiveFrames[link.desktopId],
+       shouldApplyDesktopScreenshot(current: snapshot.screenshot, candidate: live) {
+      snapshot.screenshot = live
+    }
+    return snapshot
   }
 
   @discardableResult
@@ -1662,7 +1669,9 @@ final class MessageCoordinator: ObservableObject {
     desktopId: String,
     deleteMessages: Bool = true
   ) -> Set<String> {
-    GalaxySSIPairingLifecycle.remove(
+    desktopControlLiveFrames.removeValue(forKey: desktopId)
+    desktopControlFrameUpdates.send(desktopId)
+    return GalaxySSIPairingLifecycle.remove(
       desktopId: desktopId,
       deleteMessages: deleteMessages,
       store: store,
@@ -2128,10 +2137,12 @@ final class MessageCoordinator: ObservableObject {
     snapshot.lastActionAt = request.pendingRequest.expiresAt - AgentDesktopControlRequestFactory.actionTTLMillis
     snapshot.streamActive = request.pendingRequest.streamFrame
     if request.resetsSurfaceState {
+      desktopControlLiveFrames.removeValue(forKey: link.desktopId)
       snapshot.screenshot = nil
       snapshot.perception = nil
     }
     desktopControlSnapshots[link.desktopId] = snapshot
+    if request.resetsSurfaceState { desktopControlFrameUpdates.send(link.desktopId) }
 
     if request.durable {
       deliveryStore.enqueue(
@@ -2145,10 +2156,15 @@ final class MessageCoordinator: ObservableObject {
     if result.accepted {
       return true
     }
-    desktopControlPendingRequests.removeValue(forKey: request.actionId)
-    snapshot.lastActionStatus = "failed"
-    snapshot.lastActionSummary = "publish_failed"
-    desktopControlSnapshots[link.desktopId] = snapshot
+    if desktopControlPendingRequests.removeValue(forKey: request.actionId) != nil {
+      var latest = desktopControlSnapshot(for: link)
+      if latest.lastActionStatus == "pending", latest.lastActionAt == snapshot.lastActionAt {
+        latest.lastActionStatus = "failed"
+        latest.lastActionSummary = "publish_failed"
+        latest.streamActive = false
+        desktopControlSnapshots[link.desktopId] = latest
+      }
+    }
     return false
   }
 
@@ -11889,7 +11905,7 @@ final class MessageCoordinator: ObservableObject {
       handleRemoteProactiveEvent(appPayload, link: link, messageId: messageId)
       return
     }
-    if handleDesktopControlPayload(appPayload, link: link) {
+    if handleDesktopControlPayload(appPayload, envelope: object, link: link) {
       if appPayload.string("type") == "capability_manifest" {
         _ = handleConnectorAgentStatus(appPayload, link: link)
       }
@@ -12773,7 +12789,9 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func handleDesktopControlPayload(_ payload: [String: Any], link incomingLink: ServerLink?) -> Bool {
+  private func handleDesktopControlPayload(
+    _ payload: [String: Any], envelope: [String: Any], link incomingLink: ServerLink?
+  ) -> Bool {
     let type = payload.string("type")
     guard [
       "capability_manifest",
@@ -12859,27 +12877,53 @@ final class MessageCoordinator: ObservableObject {
         ? source.int64("timestamp")
         : Int64(Date().timeIntervalSince1970 * 1000)
     case "desktop_action_receipt":
-      let receipt = AgentDesktopControlReceipt.parse(source)
-      if let receipt {
-        snapshot.recentReceipts.removeAll { $0.receiptId == receipt.receiptId }
-        snapshot.recentReceipts.insert(receipt, at: 0)
-        snapshot.recentReceipts = Array(snapshot.recentReceipts.prefix(20))
+      guard let link, link.paired, link.desktopId == desktopId,
+            incomingLink?.desktopId == desktopId,
+            envelope.string("scheme") == "signal",
+            let receipt = AgentDesktopControlReceipt.parse(source) else { return true }
+      let pending = desktopControlPendingRequests[receipt.actionId]
+      guard pending == nil || pending?.desktopId == desktopId else { return true }
+      let context = AgentDesktopControlReceiptVerificationContext(
+        expectedSignerId: link.signalName, expectedSignatureKeyId: link.desktopFingerprint,
+        expectedControllerFingerprint: signalEngine.identity.fingerprint, pendingRequest: pending
+      )
+      guard AgentDesktopControlReceiptProtocol.verify(payload: source, context: context, verifier: { _, _, bytes, signature in
+        signalEngine.verifyPairedDesktopSignature(bytes, signature: signature, envelope: envelope, link: link)
+      }) else {
+        guard pending != nil else { return true }
         snapshot.lastActionStatus = "unverified"
-        snapshot.lastActionSummary = receipt.summary.ifBlank("desktop_action_receipt_unverified")
-        snapshot.lastActionAt = receipt.completedAt
+        snapshot.lastActionSummary = "desktop_action_receipt_unverified"
+        snapshot.lastActionAt = Int64(Date().timeIntervalSince1970 * 1000)
         snapshot.streamActive = false
-        desktopControlPendingRequests.removeValue(forKey: receipt.actionId)
-        let output = source.object("output") ?? [:]
-        if let screenshot = AgentDesktopControlScreenshot.parse(
-          source.object("post_screenshot") ?? output.object("screenshot"),
-          defaultCapturedAt: receipt.completedAt
-        ), shouldApplyDesktopScreenshot(current: snapshot.screenshot, candidate: screenshot) {
+        desktopControlSnapshots[desktopId] = snapshot
+        return true
+      }
+      desktopControlPendingRequests.removeValue(forKey: receipt.actionId)
+      let output = source.object("output") ?? [:]
+      let streamFrame = pending?.streamFrame == true || output.bool("stream_frame")
+      if receipt.status == "succeeded",
+         let screenshot = AgentDesktopControlScreenshot.parse(
+           source.object("post_screenshot") ?? output.object("screenshot"), defaultCapturedAt: receipt.completedAt
+         ), shouldApplyDesktopScreenshot(current: snapshot.screenshot, candidate: screenshot) {
+        if streamFrame {
+          desktopControlLiveFrames[desktopId] = screenshot
+          desktopControlFrameUpdates.send(desktopId)
+        } else {
+          desktopControlLiveFrames.removeValue(forKey: desktopId)
           snapshot.screenshot = screenshot
         }
-        snapshot.perception = AgentDesktopPerceptionSnapshot.parse(output)
-          ?? snapshot.perception
-        snapshot.surfaceCatalog = AgentDesktopSurfaceCatalog.parseOutput(output)
-          ?? snapshot.surfaceCatalog
+      }
+      if streamFrame && receipt.status == "succeeded" { return true }
+      snapshot.recentReceipts.removeAll { $0.receiptId == receipt.receiptId }
+      snapshot.recentReceipts.insert(receipt, at: 0)
+      snapshot.recentReceipts = Array(snapshot.recentReceipts.prefix(20))
+      snapshot.lastActionStatus = receipt.status
+      snapshot.lastActionSummary = receipt.summary
+      snapshot.lastActionAt = receipt.completedAt
+      snapshot.streamActive = false
+      if receipt.status == "succeeded" {
+        snapshot.perception = AgentDesktopPerceptionSnapshot.parse(output) ?? snapshot.perception
+        snapshot.surfaceCatalog = AgentDesktopSurfaceCatalog.parseOutput(output) ?? snapshot.surfaceCatalog
       }
     default:
       break
@@ -12893,7 +12937,8 @@ final class MessageCoordinator: ObservableObject {
     preserving previous: AgentDesktopRemoteControlSnapshot
   ) -> AgentDesktopRemoteControlSnapshot {
     var merged = parsed
-    merged.screenshot = parsed.screenshot ?? previous.screenshot
+    // Only a verified action receipt can change the displayed pixels.
+    merged.screenshot = previous.screenshot
     merged.perception = parsed.perception ?? previous.perception
     merged.surfaceCatalog = parsed.surfaceCatalog ?? previous.surfaceCatalog
     merged.recentReceipts = parsed.recentReceipts.isEmpty ? previous.recentReceipts : parsed.recentReceipts
