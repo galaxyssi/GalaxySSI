@@ -371,6 +371,15 @@
 "galaxyssi.health.table.row" = "数据行 %lld";
 "galaxyssi.health.table.resolved_time" = "解析后的时间";
 "galaxyssi.health.table.source_time" = "原始时间";
+"galaxyssi.health.table.link_duplicate" = "将此行关联到现有测量";
+"galaxyssi.health.table.linked" = "%lld 条来源关联";
+"galaxyssi.health.table_source.linked_records" = "关联测量";
+"galaxyssi.health.table_source.link_revision" = "修订版本 %lld";
+"galaxyssi.health.table_source.secondary_link" = "补充来源";
+"galaxyssi.health.table_source.primary_link" = "主要来源";
+"galaxyssi.health.table_source.links_more" = "显示更多关联";
+"galaxyssi.health.table_source.export_linked" = "导出关联测量和原件";
+"galaxyssi.health.table_source.unencrypted_linked" = "保存包含测量和原件的未加密 ZIP？";
 "galaxyssi.health.table.more" = "查看更多";
 "galaxyssi.health.table.owned" = "这是我的测量，且我已核对数值、单位和时间";
 "galaxyssi.health.table.save" = "保存有效数据行";

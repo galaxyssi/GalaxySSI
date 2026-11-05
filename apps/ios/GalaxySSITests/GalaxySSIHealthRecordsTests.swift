@@ -5,6 +5,43 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testExactTableDuplicateLinksToReviewedRevisionWithoutRewritingMeasurement() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2025-01-01T12:00:00Z"))
+    try records.write(.init(metric: .weight, measuredAt: date, value: 60))
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n60,2025-01-01T12:00:10Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let table = try GalaxySSIHealthTableImport.parse(data, json: false)
+    let rows = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: records.load().current)
+    XCTAssertEqual(rows.map(\.status), [.duplicate, .duplicate])
+    let target = try XCTUnwrap(rows[0].duplicateTarget)
+    XCTAssertNil(rows[1].duplicateTarget)
+    XCTAssertEqual(try records.importTable(data, name: "fixture.csv", json: false, mapping: mapping,
+      expected: rows.map(\.status), linkDuplicates: [rows[0].id: target]), 0)
+    var archive = try records.load()
+    XCTAssertEqual(archive.revisions.count, 1)
+    let batch = try XCTUnwrap(archive.tableBatches?.first)
+    XCTAssertEqual(batch.linked, 1)
+    var edited = try XCTUnwrap(archive.current.first)
+    edited.notes = "later edit"
+    try records.write(edited)
+    XCTAssertThrowsError(try records.importTable(data, name: "fixture.csv", json: false, mapping: mapping,
+      expected: rows.map(\.status), linkDuplicates: [rows[0].id: target]))
+    archive = try records.load()
+    let linked = GalaxySSIHealthTableImport.linkedReadings(batch: batch, revisions: archive.revisions,
+      current: archive.current, evidence: archive.tableEvidence ?? [])
+    XCTAssertEqual(linked.first?.reading.revision, 1)
+    XCTAssertTrue(linked.first?.secondary == true)
+    let zip = try GalaxySSIHealthTableImport.exportLinkedReadings(linked, batch: batch)
+    XCTAssertNotNil(zip.range(of: data))
+    XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
+    XCTAssertTrue(try records.load().tableEvidence?.isEmpty == true)
+    XCTAssertEqual(try records.load().current.first?.notes, "later edit")
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
