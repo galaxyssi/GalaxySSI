@@ -25,6 +25,16 @@ struct GalaxySSIHealthCenterView: View {
 
   var body: some View {
     List {
+      NavigationLink {
+        GalaxySSIHealthRecordCenterView(records: records, devices: { sourceOverview }, addManual: { metric in
+          reload()
+          if let draft = archive?.draft { editor = draft }
+          else if let metric { editor = GalaxySSIHealthDraft(metric: metric) }
+          else { editor = GalaxySSIHealthDraft() }
+        }, edit: { reading in reload(); edit(reading) })
+      } label: {
+        Label(t("record_center.title", "Health Record Center"), systemImage: "square.and.pencil")
+      }
       Section {
         if scenePhase == .active, let archive {
           if let removed = latestRemoval(in: archive) {
@@ -178,6 +188,9 @@ struct GalaxySSIHealthCenterView: View {
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear { if scenePhase == .active { reload() } }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
+      if notification.object as? String == records.owner, editor == nil, scenePhase == .active { reload() }
+    }
     .onChange(of: scenePhase) { phase in
       if phase == .active {
         reload()
@@ -193,7 +206,7 @@ struct GalaxySSIHealthCenterView: View {
         privacyLimit = 20
       }
     }
-    .sheet(item: $editor) { _ in
+    .sheet(item: $editor, onDismiss: reload) { _ in
       NavigationView { editorForm }
         .navigationViewStyle(.stack)
         .interactiveDismissDisabled()

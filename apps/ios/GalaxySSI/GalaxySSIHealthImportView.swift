@@ -10,6 +10,9 @@ struct GalaxySSIHealthImportView: View {
   @Environment(\.scenePhase) private var scene
   let store: GalaxySSIHealthOriginalStore
   let records: GalaxySSIHealthRecords
+  enum InitialAction { case none, scan }
+  var initialAction: InitialAction = .none
+  @State private var initialActionStarted = false
   @State private var picking = false
   @State private var scanning = false
   @State private var notice: Notice?
@@ -69,6 +72,14 @@ struct GalaxySSIHealthImportView: View {
     }
     .navigationTitle(t("title", "Import Health Data"))
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      guard scene == .active, !initialActionStarted else { return }
+      initialActionStarted = true
+      if initialAction == .scan {
+        if VNDocumentCameraViewController.isSupported { scanning = true }
+        else { notice = .failed }
+      }
+    }
     .onChange(of: scene) {
       if $0 == .background { notice = nil; scanning = false; transientReport = nil; pendingScanReview = nil }
     }

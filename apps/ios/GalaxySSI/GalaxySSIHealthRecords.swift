@@ -583,7 +583,10 @@ struct GalaxySSIHealthRecords {
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true),
                                         authenticating: context).combined else { throw Failure.unavailable }
     try sealed.write(to: file, options: [.atomic, .completeFileProtection])
+    NotificationCenter.default.post(name: Self.recordsChanged, object: owner)
   }
+
+  static let recordsChanged = Notification.Name("galaxyssi.health.records.changed")
 
   private func key(create: Bool, account override: String? = nil) throws -> SymmetricKey {
     let account = override ?? self.account

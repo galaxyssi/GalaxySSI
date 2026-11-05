@@ -5,6 +5,36 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testRecordCenterSeparatesReviewDraftsAndRequiresExactOriginalIdentity() {
+    let id = UUID()
+    let original = GalaxySSIHealthOriginalStore.Original(id: id, name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 123, sha256: String(repeating: "a", count: 64))
+    let confirmed = GalaxySSIHealthReading(metric: .weight, measuredAt: Date(), value: 60)
+    let pending = GalaxySSIHealthReading(metric: .weight, measuredAt: Date(), value: 70)
+    let source = GalaxySSIHealthReportReview.Source(original: id, sha256: original.sha256,
+      page: 2, region: 3, fromOCR: true)
+    var archive = GalaxySSIHealthRecords.Archive()
+    archive.revisions = [confirmed]
+    archive.reportReview = [.init(version: UUID(), source: source, excerpt: "Synthetic report", reading: pending)]
+    archive.draft = GalaxySSIHealthDraft()
+    let snapshot = GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [original])
+    XCTAssertEqual(snapshot.confirmed.map(\.id), [confirmed.id])
+    XCTAssertEqual(snapshot.pending.count, 1)
+    XCTAssertEqual(snapshot.pending.first?.original, original)
+    XCTAssertEqual(snapshot.pending.first?.items.first?.source.page, 2)
+    XCTAssertNotNil(snapshot.draft)
+    let missing = GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [])
+    XCTAssertNil(missing.pending.first?.original)
+    XCTAssertEqual(missing.pending.first?.items.count, 1)
+    let replaced = GalaxySSIHealthOriginalStore.Original(id: id, name: original.name, kind: .pdf,
+      fileExtension: "pdf", importedAt: original.importedAt, bytes: original.bytes, sha256: String(repeating: "b", count: 64))
+    XCTAssertNil(GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [replaced]).pending.first?.original)
+    var removed = confirmed
+    removed.revision += 1
+    removed.deleted = true
+    archive.revisions.append(removed)
+    XCTAssertTrue(GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [original]).confirmed.isEmpty)
+  }
   func testHealthKitPreviewBindsSourceMetadataAndRowMultiplicity() {
     let now = Date()
     let source = GalaxySSIHealthKitImport.Source(key: "sample", origin: "fixture", name: "Original")
