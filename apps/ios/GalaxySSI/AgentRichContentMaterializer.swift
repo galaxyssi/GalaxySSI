@@ -7,7 +7,7 @@ enum AgentVisualOutputPolicy {
   static let localHTMLPrefix = "galaxyssi-artifact://local-html/"
   static let prompt = "For a playable animation, use a galaxyssi-html fence with complete self-contained HTML, CSS, and JS (up to 32000 characters). No external assets, network, forms, or device APIs. Use ordinary html fences for requested source code. Video requires a real exported MP4 and verified playback; HTML and filenames are not video evidence."
 
-  struct Reply {
+  struct Reply: Sendable {
     var content: String
     var richOutput: String
   }
@@ -66,7 +66,7 @@ enum AgentVisualOutputPolicy {
 }
 
 /// Stores inline rich-output payloads in app-private storage before they enter the transcript.
-final class AgentRichContentMaterializer {
+final class AgentRichContentMaterializer: @unchecked Sendable {
   static let defaultDirectoryName = "agent-rich-output-v2"
   static let maximumMaterializedBytes = 4 * 1024 * 1024
 
@@ -123,20 +123,33 @@ final class AgentRichContentMaterializer {
     let declared = envelope?["presentation"]
     let presentation = declared as? String ?? ""
     let rich = envelope?["rich_output"]
+    var requiredVideoPaths: [String] = []
     if let requirements = envelope?["completion_requirements"] {
       guard let scope = requirements as? [String: Any],
             scope["publication"] == nil || (scope["publication"] as? String) == "none",
             scope["phone_linux"] == nil || (scope["phone_linux"] as? Bool) == false else {
         throw AgentVisualOutputPolicy.DeliveryError.invalidPresentation
       }
-      if scope["artifacts"] != nil {
-        throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo
+      if let rawArtifacts = scope["artifacts"] {
+        guard presentation == "video", let artifacts = rawArtifacts as? [[String: Any]],
+              (1...4).contains(artifacts.count) else { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+        requiredVideoPaths = try artifacts.map { item in
+          guard let path = item["path"] as? String,
+                case .success(let segments) = AgentWorkspaceFilePathPolicy.normalizeRelativePath(path, allowRoot: false),
+                segments.last?.lowercased().hasSuffix(".mp4") == true else {
+            throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo
+          }
+          return segments.joined(separator: "/")
+        }
+        guard Set(requiredVideoPaths).count == requiredVideoPaths.count else {
+          throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo
+        }
       }
     }
     guard declared == nil || ["inline_html", "source", "video"].contains(presentation) else {
       throw AgentVisualOutputPolicy.DeliveryError.invalidPresentation
     }
-    if presentation == "video" { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+    if presentation == "video" && requiredVideoPaths.isEmpty { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
     let declaresRichFence = content.range(of: "(?im)^[ \\t]*`{3}galaxyssi-rich[ \\t]*$", options: .regularExpression) != nil
     let declaresHTMLFence = content.range(of: "(?im)^[ \\t]*`{3}galaxyssi-html[ \\t]*$", options: .regularExpression) != nil
     guard envelope != nil || declaresHTMLFence || declaresRichFence else { return nil }
@@ -149,6 +162,19 @@ final class AgentRichContentMaterializer {
     }
     var blocks = textBlocks
     if let rich { blocks.append(contentsOf: try AgentVisualOutputPolicy.declaredBlocks(rich)) }
+    if presentation == "video" {
+      guard !blocks.contains(where: { $0.type == .html }) else { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+      let videoIndices = blocks.indices.filter { blocks[$0].type == .video }
+      guard videoIndices.count == requiredVideoPaths.count else { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+      var remaining = Set(requiredVideoPaths)
+      for index in videoIndices {
+        let path = blocks[index].metadata["relative_path"] ?? blocks[index].title
+        guard remaining.remove(path) != nil, let verified = storeDeclaredVideo(blocks[index], path: path) else {
+          throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo
+        }
+        blocks[index] = verified
+      }
+    }
     if presentation == "inline_html", !blocks.contains(where: { $0.type == .html }) {
       let source = blocks.indices.filter {
         blocks[$0].type == .code && blocks[$0].language == "html" &&
@@ -183,6 +209,36 @@ final class AgentRichContentMaterializer {
     }
     let prose = blocks.filter { [.text, .heading, .quote].contains($0.type) }.map(\.text).joined(separator: "\n\n")
     return AgentVisualOutputPolicy.Reply(content: prose, richOutput: encoded)
+  }
+
+  private func storeDeclaredVideo(_ block: AgentRichBlock, path: String) -> AgentRichBlock? {
+    locked {
+      guard block.mimeType.lowercased() == "video/mp4", block.uri.isEmpty,
+            let data = Data(base64Encoded: block.dataB64), (16...315_000).contains(data.count) else { return nil }
+      let digest = Self.sha256(data)
+      let purpose = "rich-video:\(digest)"
+      let url = directoryURL.appendingPathComponent("\(digest).mp4", isDirectory: false)
+      do {
+        if cipher.plaintextSize(of: url, purpose: purpose) != Int64(data.count) ||
+            (try? cipher.read(from: url, purpose: purpose)) != data {
+          try cipher.write(data, to: url, purpose: purpose)
+        }
+        guard try cipher.read(from: url, purpose: purpose) == data,
+              let evidence = AgentIOSMP4Openability.inspect(url) else {
+          try? fileManager.removeItem(at: url)
+          return nil
+        }
+        return AgentRichBlock(id: block.id, type: .video, title: URL(fileURLWithPath: path).lastPathComponent,
+          uri: url.absoluteString, mimeType: "video/mp4", fallbackText: block.fallbackText,
+          metadata: [
+            "size_bytes": String(data.count), "sha256": digest, "storage": "app_private_file",
+            "relative_path": path, "display_extension": "mp4", "duration_ms": String(evidence.durationMillis),
+            "decoded_frame_width": String(evidence.frameWidth), "decoded_frame_height": String(evidence.frameHeight)
+          ])
+      } catch {
+        return nil
+      }
+    }
   }
 
   func loadDeclaredHTML(_ block: AgentRichBlock) -> String? {

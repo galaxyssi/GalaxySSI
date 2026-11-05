@@ -2,6 +2,59 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRichContentMermaidTests: XCTestCase {
+  static let mp4Fixture = """
+    AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMybW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gA
+    AQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    AAAAAAAAAAAAAgAAAlx0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEA
+    AAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAACAAAAAgAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPo
+    AAAAAAABAAAAAAHUbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUA
+    AAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABf21pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYA
+    AAAAAAAAAQAAAAx1cmwgAAAAAQAAAT9zdGJsAAAAt3N0c2QAAAAAAAAAAQAAAKdhdmMxAAAAAAAAAAEAAAAAAAAAAAAA
+    AAAAAAAAACAAIABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDEgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALWF2Y0MB
+    QsAK/+EAFmdCwAraJbARAAADAAEAAAMACA8SJqABAARozg/IAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAAAFHAA
+    AAAAAAAAGHN0dHMAAAAAAAAAAQAAAAQAABAAAAAAFHN0c3MAAAAAAAAAAQAAAAEAAAAcc3RzYwAAAAAAAAABAAAAAQAA
+    AAQAAAABAAAAJHN0c3oAAAAAAAAAAAAAAAQAAAJwAAAACgAAAAoAAAAKAAAAFHN0Y28AAAAAAAAAAQAAA2IAAABidWR0
+    YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0
+    YQAAAAEAAAAATGF2ZjYyLjEyLjEwMQAAAAhmcmVlAAAClm1kYXQAAAJTBgX//0/cRem95tlIt5Ys2CDZI+7veDI2NCAt
+    IGNvcmUgMTY1IHIzMjIzIDA0ODBjYjAgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDI1
+    IC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MSBkZWJsb2Nr
+    PTA6MDowIGFuYWx5c2U9MDowIG1lPWRpYSBzdWJtZT0wIHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTAg
+    bWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0wIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3Rf
+    cHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PTAgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVh
+    ZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0w
+    IGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTI1MCBrZXlpbnRfbWluPTQgc2NlbmVjdXQ9MCBpbnRyYV9yZWZyZXNo
+    PTAgcmM9Y3JmIG1idHJlZT0wIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9y
+    YXRpbz0xLjQwIGFxPTAAgAAAABVliIQ6EYoAAhjxwABA9jgACHlJ114AAAAGQZogEKLAAAAABkGaQBCiwAAAAAZBmmAQ
+    osA=
+    """.components(separatedBy: .whitespacesAndNewlines).joined()
+
+  func testDeclaredMP4RequiresMatchingPathAndDecodableFrame() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let materializer = AgentRichContentMaterializer(directoryURL: directory)
+    let fixture = Self.mp4Fixture
+    func envelope(_ data: String, path: String = "outputs/clip.mp4") throws -> String {
+      let rich: [String: Any] = ["version": 1, "blocks": [[
+        "type": "video", "title": "clip.mp4", "mime_type": "video/mp4",
+        "data_b64": data, "metadata": ["relative_path": path]
+      ]]]
+      let response: [String: Any] = [
+        "disposition": "respond", "presentation": "video", "final_response": "Rendered video.",
+        "completion_requirements": ["artifacts": [["path": "outputs/clip.mp4"]]], "rich_output": rich
+      ]
+      return String(decoding: try JSONSerialization.data(withJSONObject: response), as: UTF8.self)
+    }
+    let reply = try XCTUnwrap(materializer.prepareVisualReply(envelope(fixture)))
+    let video = try XCTUnwrap(AgentRichContentCodec.decode(reply.richOutput).first(where: { $0.type == .video }))
+    XCTAssertEqual(video.metadata["duration_ms"], "1000")
+    XCTAssertEqual(video.metadata["decoded_frame_width"], "32")
+    XCTAssertEqual(video.metadata["decoded_frame_height"], "32")
+    XCTAssertTrue(video.dataB64.isEmpty)
+    XCTAssertThrowsError(try materializer.prepareVisualReply(envelope(fixture, path: "old/clip.mp4")))
+    let fake = Data("<html><body>This is not video.</body></html>".utf8).base64EncodedString()
+    XCTAssertThrowsError(try materializer.prepareVisualReply(envelope(fake)))
+  }
+
   func testVisualReplyPreservesLongProgramDuringFormatOnlyRepair() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }

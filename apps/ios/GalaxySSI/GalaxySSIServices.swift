@@ -663,7 +663,7 @@ final class MessageCoordinator: ObservableObject {
         store.upsertAgentTask(task)
         switch outcome.result {
         case .directResponse(let response):
-          _ = completeModelDirectResponse(response, outgoing: outgoing, task: &task)
+          _ = await completeModelDirectResponse(response, outgoing: outgoing, task: &task)
         case .plan(let plan):
           if outcome.mode == .planOnly {
             _ = completePlanOnlyTask(plan: plan, outgoing: outgoing, task: &task)
@@ -5224,7 +5224,7 @@ final class MessageCoordinator: ObservableObject {
         switch modelOutcome {
         case let .directResponse(response):
           if recall == nil || !hasTruncatedCollaborationDependencies {
-            _ = completeModelDirectResponse(response, outgoing: outgoing, task: &task)
+            _ = await completeModelDirectResponse(response, outgoing: outgoing, task: &task)
             return
           }
         case let .plan(plan):
@@ -7917,13 +7917,15 @@ final class MessageCoordinator: ObservableObject {
     _ response: String,
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
-  ) -> Bool {
+  ) async -> Bool {
     let normalized = response.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { return false }
     let visual: AgentVisualOutputPolicy.Reply?
     do {
-      visual = try richContentMaterializer.prepareVisualReply(normalized)
+      visual = try await prepareModelVisualReply(normalized)
+      guard !Task.isCancelled, store.agentTask(id: task.taskId)?.phase == task.phase else { return false }
     } catch {
+      guard !Task.isCancelled, store.agentTask(id: task.taskId)?.phase == task.phase else { return false }
       let message = visualDeliveryFailure(error)
       task.pendingPlanning = nil
       task.pendingAction = nil
@@ -9659,13 +9661,16 @@ final class MessageCoordinator: ObservableObject {
         var deliveryText = clean
         if let current = incoming {
           do {
-            if let visual = try richContentMaterializer.prepareVisualReply(clean) {
+            if let visual = try await prepareModelVisualReply(clean) {
+              try Task.checkCancellation()
               guard store.updateMessageContent(current.id, contactId: destinationId, content: visual.content,
                                                richOutputJson: visual.richOutput) != nil else {
                 throw AgentVisualOutputPolicy.DeliveryError.unavailableHTML
               }
               deliveryText = visual.content.ifBlank(localizedReply("rich_output_visual_saved", fallback: "Visual reply saved"))
             }
+          } catch is CancellationError {
+            throw CancellationError()
           } catch {
             let message = visualDeliveryFailure(error)
             _ = store.updateMessageContent(current.id, contactId: destinationId, content: message, status: .failed,
@@ -9718,6 +9723,13 @@ final class MessageCoordinator: ObservableObject {
       return localizedReply("rich_output_video_unverified", fallback: "The requested video was not delivered as a verified MP4 file.")
     }
     return localizedReply("rich_output_visual_invalid", fallback: "The visual reply was incomplete or could not be saved.")
+  }
+
+  private func prepareModelVisualReply(_ raw: String) async throws -> AgentVisualOutputPolicy.Reply? {
+    guard raw.hasPrefix("{") || raw.range(of: "galaxyssi-", options: .caseInsensitive) != nil ||
+          raw.lowercased().hasPrefix("```json") else { return nil }
+    let materializer = richContentMaterializer
+    return try await Task.detached(priority: .userInitiated) { try materializer.prepareVisualReply(raw) }.value
   }
 
   func pair(using qrText: String) async throws {

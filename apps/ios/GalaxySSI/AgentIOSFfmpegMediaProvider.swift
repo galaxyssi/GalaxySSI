@@ -182,34 +182,39 @@ struct AgentIOSSignedFfmpegMediaProvider: AgentIOSMediaNativeToolProviding {
       let artifact = response.artifacts.first {
         $0["relative_path"]?.stringValue == plan.destinationPath
       }
-      let outputSize: Int64
-      if let artifactSize = artifact?["size_bytes"]?.intValue {
-        outputSize = artifactSize
-      } else {
-        outputSize = try fileSize(destinationFile)
-      }
-      let outputSha: String
-      if let artifactSha = artifact?["sha256"]?.stringValue?.nonEmpty {
-        outputSha = artifactSha
-      } else {
-        outputSha = try sha256File(destinationFile)
+      let outputSize = try fileSize(destinationFile)
+      let outputSha = try sha256File(destinationFile)
+      var openability: AgentMcpJSONObject = [:]
+      if requestedTargetFormat == .mp4 {
+        guard artifact?["size_bytes"]?.intValue == outputSize,
+              artifact?["sha256"]?.stringValue?.lowercased() == outputSha,
+              let evidence = AgentIOSMP4Openability.inspect(destinationFile) else {
+          throw AgentIOSFfmpegMediaProviderError.ffmpegOutputUnverified
+        }
+        openability = [
+          "duration_ms": .int(evidence.durationMillis),
+          "decoded_frame_width": .int(Int64(evidence.frameWidth)),
+          "decoded_frame_height": .int(Int64(evidence.frameHeight))
+        ]
       }
       let artifacts = response.artifacts.map { AgentMcpJSONValue.object($0) }
+      var output: AgentMcpJSONObject = [
+        "source_path": .string(plan.sourcePath),
+        "destination_path": .string(plan.destinationPath),
+        "target_format": .string(request.targetFormat),
+        "mime_type": .string(AgentIOSMediaNativeToolCatalog.targetMimeType(request.targetFormat) ?? requestedTargetFormat.mimeType),
+        "size_bytes": .int(outputSize),
+        "sha256": .string(outputSha),
+        "execution_duration_ms": .int(response.durationMillis),
+        "artifacts": .array(artifacts),
+        "execution_receipt": .object(response.executionReceipt),
+        "network_enabled": .bool(false),
+        "completed_at_epoch_ms": .int(max(0, nowMillis()))
+      ]
+      if !openability.isEmpty { output["video_openability"] = .object(openability) }
 
       return AgentNativeToolExecutionResult.success(
-        output: [
-          "source_path": .string(plan.sourcePath),
-          "destination_path": .string(plan.destinationPath),
-          "target_format": .string(request.targetFormat),
-          "mime_type": .string(AgentIOSMediaNativeToolCatalog.targetMimeType(request.targetFormat) ?? requestedTargetFormat.mimeType),
-          "size_bytes": .int(outputSize),
-          "sha256": .string(outputSha),
-          "execution_duration_ms": .int(response.durationMillis),
-          "artifacts": .array(artifacts),
-          "execution_receipt": .object(response.executionReceipt),
-          "network_enabled": .bool(false),
-          "completed_at_epoch_ms": .int(max(0, nowMillis()))
-        ],
+        output: output,
         message: "Media converted in the local iOS FFmpeg runtime",
         metadata: [
           "runtime_implementation": .string(runtime.implementationId),
@@ -454,6 +459,7 @@ enum AgentIOSFfmpegMediaProviderError: LocalizedError, Equatable {
   case ffmpegTranscodeFailed(exitCode: Int, stderr: String, receipt: AgentMcpJSONObject)
   case ffmpegOutputMissing
   case ffmpegOutputTooLarge
+  case ffmpegOutputUnverified
 
   var errorDescription: String? {
     switch self {
@@ -487,6 +493,8 @@ enum AgentIOSFfmpegMediaProviderError: LocalizedError, Equatable {
       return "FFmpeg completed without producing the requested media file"
     case .ffmpegOutputTooLarge:
       return "Converted media exceeds the 256 MB output limit"
+    case .ffmpegOutputUnverified:
+      return "The exported MP4 did not match its receipt or a video frame could not be decoded"
     }
   }
 
@@ -535,6 +543,8 @@ enum AgentIOSFfmpegMediaProviderError: LocalizedError, Equatable {
       return "ffmpeg_output_missing"
     case .ffmpegOutputTooLarge:
       return "ffmpeg_output_too_large"
+    case .ffmpegOutputUnverified:
+      return "ffmpeg_output_unverified"
     }
   }
 
