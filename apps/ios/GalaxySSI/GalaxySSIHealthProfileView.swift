@@ -30,8 +30,11 @@ struct GalaxySSIHealthProfile: Codable {
     let values: [AnalysisField: AnalysisValue]
     let fields: Set<AnalysisField>
     let versions: [AnalysisField: UUID]
+    let background: [Background]
+    let backgroundVersions: [UUID: UUID]
 
-    init(profile: GalaxySSIHealthProfile, permission: UUID, fields: Set<AnalysisField>) {
+    init(profile: GalaxySSIHealthProfile, permission: UUID, fields: Set<AnalysisField>,
+         backgroundVersions: [UUID: UUID] = [:]) {
       self.permission = permission
       self.fields = fields
       values = Dictionary(uniqueKeysWithValues: fields.compactMap { field in
@@ -40,11 +43,18 @@ struct GalaxySSIHealthProfile: Codable {
       versions = Dictionary(uniqueKeysWithValues: fields.compactMap { field in
         profile.analysisVersion(field).map { (field, $0) }
       })
+      self.backgroundVersions = backgroundVersions
+      background = profile.background.filter { backgroundVersions[$0.id] != nil }
     }
 
     func isCurrent(profile: GalaxySSIHealthProfile, permission: UUID?) -> Bool {
-      self.permission == permission && fields.allSatisfy {
+      guard self.permission == permission, fields.allSatisfy({
         versions[$0] == profile.analysisVersion($0) && values[$0] == profile.analysisValue($0)
+      }), profile.matchesBackground(backgroundVersions) else { return false }
+      let selected = Dictionary(profile.background.filter { backgroundVersions[$0.id] != nil }
+        .map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+      return selected.count == background.count && background.allSatisfy { entry in
+        selected[entry.id].map { entry.sameContent(as: $0) } == true
       }
     }
   }
@@ -54,6 +64,11 @@ struct GalaxySSIHealthProfile: Codable {
     var kind: BackgroundKind
     var title: String
     var notes: String
+    var analysisRevision: UUID?
+
+    func sameContent(as other: Self) -> Bool {
+      id == other.id && kind == other.kind && title == other.title && notes == other.notes
+    }
   }
 
   var revision: UUID?
@@ -65,6 +80,16 @@ struct GalaxySSIHealthProfile: Codable {
   var heightUnit = HeightUnit.cm
   var context = ""
   var background: [Background] = []
+
+  func backgroundVersion(_ entry: Background) -> UUID? { entry.analysisRevision ?? revision }
+
+  func matchesBackground(_ selected: [UUID: UUID]) -> Bool {
+    guard selected.count <= 30 else { return false }
+    let current = Dictionary(background.compactMap { entry in
+      backgroundVersion(entry).map { (entry.id, $0) }
+    }, uniquingKeysWith: { first, _ in first })
+    return selected.allSatisfy { current[$0.key] == $0.value }
+  }
 
   func analysisValue(_ field: AnalysisField) -> AnalysisValue? {
     switch field {

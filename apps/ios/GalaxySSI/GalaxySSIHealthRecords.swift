@@ -139,6 +139,7 @@ struct GalaxySSIHealthRecords {
     var id = UUID()
     let at: Date
     let fields: Set<GalaxySSIHealthProfile.AnalysisField>
+    var backgroundCount: Int?
   }
 
   struct Archive: Codable {
@@ -256,6 +257,14 @@ struct GalaxySSIHealthRecords {
         ? previous.analysisVersion(field) : UUID()
     }
     updated.analysisVersions = versions
+    let entries = Dictionary(previous.background.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    updated.background = updated.background.map { value in
+      var entry = value
+      if let before = entries[entry.id], before.sameContent(as: entry) {
+        entry.analysisRevision = previous.backgroundVersion(before) ?? UUID()
+      } else { entry.analysisRevision = UUID() }
+      return entry
+    }
     let payload = try JSONEncoder().encode(updated)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true, account: profileAccount),
                                         authenticating: profileContext).combined else { throw Failure.unavailable }
@@ -268,14 +277,18 @@ struct GalaxySSIHealthRecords {
     try setPrivacy(.profileAnalysis, enabled: allowed)
   }
 
-  func captureProfileAnalysis(_ fields: Set<GalaxySSIHealthProfile.AnalysisField>) throws
+  func captureProfileAnalysis(_ fields: Set<GalaxySSIHealthProfile.AnalysisField>,
+                              background: [UUID: UUID] = [:]) throws
     -> GalaxySSIHealthProfile.AnalysisContext? {
-    guard !fields.isEmpty else { return nil }
+    guard !fields.isEmpty || !background.isEmpty else { return nil }
     var archive = try load()
     guard let permission = archive.profileAnalysisPermission, archive.derivesOverview == true else { throw Failure.permission }
-    let snapshot = GalaxySSIHealthProfile.AnalysisContext(profile: try loadProfile(), permission: permission, fields: fields)
+    let profile = try loadProfile()
+    guard profile.matchesBackground(background) else { throw Failure.stale }
+    let snapshot = GalaxySSIHealthProfile.AnalysisContext(profile: profile, permission: permission, fields: fields,
+                                                         backgroundVersions: background)
     var audit = archive.profileAnalysisAudit ?? []
-    audit.append(.init(at: Date(), fields: fields))
+    audit.append(.init(at: Date(), fields: fields, backgroundCount: background.count))
     archive.profileAnalysisAudit = Array(audit.suffix(50))
     try persist(archive)
     return snapshot
