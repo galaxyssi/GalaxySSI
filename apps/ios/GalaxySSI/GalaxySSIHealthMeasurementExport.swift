@@ -236,7 +236,8 @@ struct GalaxySSIHealthMeasurementExportView: View {
   private func linked(_ readings: [GalaxySSIHealthReading], archive: GalaxySSIHealthRecords.Archive,
                       choices: GalaxySSIHealthLinkedExport.Choices) throws -> GalaxySSIHealthLinkedExport.Package {
     let store = GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets)
-    return try GalaxySSIHealthLinkedExport.prepare(readings, batches: archive.tableBatches ?? [], store: store, choices: choices)
+    return try GalaxySSIHealthLinkedExport.prepare(readings, batches: archive.tableBatches ?? [], store: store,
+      choices: choices, tableEvidence: archive.tableEvidence ?? [], reportEvidence: archive.reportEvidence ?? [])
   }
 
   private func confirmationText(_ snapshot: Snapshot) -> String {

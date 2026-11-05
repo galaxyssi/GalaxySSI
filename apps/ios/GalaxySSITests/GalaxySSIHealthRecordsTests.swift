@@ -729,6 +729,16 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let package = try GalaxySSIHealthLinkedExport.prepare(readings, batches: [], store: store, choices: camera)
     XCTAssertEqual(package.links.map(\.status), [.included, .included])
     XCTAssertEqual(package.files.map(\.data), [pdf])
+    let manual = GalaxySSIHealthReading(revision: 2, metric: .weight, value: 70)
+    let secondarySource = try XCTUnwrap(readings.first?.reportSource)
+    let currentLink = GalaxySSIHealthReportReview.Evidence(
+      target: .init(record: manual.id, revision: 2), source: secondarySource, excerpt: "fixture")
+    let olderLink = GalaxySSIHealthReportReview.Evidence(
+      target: .init(record: manual.id, revision: 1), source: secondarySource, excerpt: "fixture")
+    let secondary = try GalaxySSIHealthLinkedExport.prepare([manual], batches: [], store: store,
+      choices: camera, reportEvidence: [olderLink, currentLink])
+    XCTAssertEqual(secondary.links.map(\.revision), [2])
+    XCTAssertEqual(secondary.files.map(\.data), [pdf])
     let data = try GalaxySSIHealthMeasurementExport.encode(readings, as: .csv, includeNotes: false)
     let zip = try package.zip(measurements: data, format: .csv)
     XCTAssertNotNil(zip.range(of: Data("manifest.json".utf8)))

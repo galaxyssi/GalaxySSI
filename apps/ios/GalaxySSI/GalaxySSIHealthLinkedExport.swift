@@ -49,9 +49,13 @@ enum GalaxySSIHealthLinkedExport {
 
   @MainActor
   static func prepare(_ readings: [GalaxySSIHealthReading], batches: [GalaxySSIHealthTableImport.Batch],
-                      store: GalaxySSIHealthOriginalStore, choices: Choices) throws -> Package {
+                      store: GalaxySSIHealthOriginalStore, choices: Choices,
+                      tableEvidence: [GalaxySSIHealthTableImport.Evidence] = [],
+                      reportEvidence: [GalaxySSIHealthReportReview.Evidence] = []) throws -> Package {
     let originals = Dictionary(uniqueKeysWithValues: try store.list().originals.map { ($0.id, $0) })
     let tables = Dictionary(batches.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let tableLinks = Dictionary(grouping: tableEvidence, by: { $0.target.record })
+    let reportLinks = Dictionary(grouping: reportEvidence, by: { $0.target.record })
     var bytes = 0
     var links: [Link] = []
     var files: [String: Data] = [:]
@@ -80,7 +84,9 @@ enum GalaxySSIHealthLinkedExport {
       return status
     }
     for reading in readings {
-      if let report = reading.reportSource {
+      let reportSources = (reading.reportSource.map { [$0] } ?? []) +
+        (reportLinks[reading.id] ?? []).filter { $0.target.revision == reading.revision }.map(\.source)
+      for report in reportSources {
         guard let original = originals[report.original] else {
           let status: Status = try store.containsOriginalFile(report.original) ? .unreadable : .missing
           append(reading, original: report.original, source: "report", location: report.page,
@@ -100,13 +106,18 @@ enum GalaxySSIHealthLinkedExport {
         else { status = try verified(path, expected: report.sha256) { try store.read(original) } }
         append(reading, original: original.id, source: original.acquisition?.rawValue ?? "unknown",
                location: report.page, expected: report.sha256, path: path, status: status)
-      } else if let table = reading.tableSource {
+      }
+      let tableSources = (reading.tableSource.map { [$0] } ?? []) +
+        (tableLinks[reading.id] ?? []).filter { $0.target.revision == reading.revision }.map(\.source)
+      for table in tableSources {
         let batch = tables[table.batch]
         let ext = batch.map { URL(fileURLWithPath: $0.name).pathExtension.lowercased() } ?? ""
         let path = "tables/" + table.batch.uuidString.lowercased() + "." + (["csv", "json", "xlsx"].contains(ext) ? ext : "data")
         let status: Status
         if !choices.uploaded { status = .unselected }
-        else if let batch, !batch.data.isEmpty { status = try verified(path, expected: table.sha256) { batch.data } }
+        else if let batch, batch.undone == nil, !batch.data.isEmpty {
+          status = try verified(path, expected: table.sha256) { batch.data }
+        }
         else { status = .missing }
         append(reading, original: table.batch, source: "table", location: table.row,
                expected: table.sha256, path: path, status: status)
