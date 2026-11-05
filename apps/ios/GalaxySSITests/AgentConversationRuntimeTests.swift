@@ -266,6 +266,47 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(AgentProcessClockPolicy.remotePauseTimestamp(snapshot), 2_000)
   }
 
+  func testCommittedTurnClockIgnoresStaleReadsAndResumesOnlyAtANewerRevision() throws {
+    func workspace(_ status: AgentWorkspaceStatus, _ revision: Int64, conversation: String = "chat",
+                   id: String = "turn", parent: String = "") -> AgentWorkspace {
+      AgentWorkspace(workspaceId: id, sessionId: conversation, conversationId: conversation, taskId: "turn",
+        parentRunId: parent, status: status, createdAtMillis: 1_000, updatedAtMillis: 3_000, revision: revision)
+    }
+    var progress = AgentCommittedTurnProgress()
+    progress.merge(conversationID: "chat", workspaces: [
+      workspace(.waitingResponse, 6), workspace(.completed, 7),
+      workspace(.running, 10, conversation: "other"),
+      workspace(.completed, 11, id: "desktop-attempt"),
+      workspace(.completed, 12, parent: "parent")
+    ])
+    progress.merge(conversationID: "chat", workspaces: [workspace(.waitingResponse, 6)])
+    var bookkeeping = workspace(.completed, 8)
+    bookkeeping.updatedAtMillis = 5_000
+    progress.merge(conversationID: "chat", workspaces: [bookkeeping])
+    progress.merge(conversationID: "chat", workspaces: [])
+    let completed = try XCTUnwrap(progress.turn("turn", conversationID: "chat"))
+    XCTAssertEqual(completed.status, .completed)
+    XCTAssertEqual(completed.elapsed(at: 8_000, fallbackStart: 10), 2_000)
+    XCTAssertNil(progress.turn("turn", conversationID: "other"))
+    progress.merge(conversationID: "chat", workspaces: [workspace(.waitingResponse, 9)])
+    let recovered = try XCTUnwrap(progress.turn("turn", conversationID: "chat"))
+    XCTAssertTrue(recovered.isRunning)
+    XCTAssertEqual(recovered.elapsed(at: 8_000, fallbackStart: 10), 7_000)
+  }
+
+  func testCommittedRunningTurnKeepsWaitingThroughAnInterimAssistantRow() {
+    let user = ChatMessage(contactId: "hermes", content: "Research", isMine: true,
+                           conversationId: "chat", turnId: "turn")
+    let interim = ChatMessage(contactId: "hermes", content: "First step", isMine: false,
+                              conversationId: "chat", turnId: "turn")
+    XCTAssertEqual(AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
+      messages: [user, interim], pendingTurnIds: ["turn"], committedRunningTurnIds: ["turn"]
+    ), [user.id])
+    XCTAssertTrue(AgentReplyWaitingIndicatorPolicy.waitingMessageIDs(
+      messages: [user, interim], pendingTurnIds: ["turn"], stoppedTurnIds: ["turn"]
+    ).isEmpty)
+  }
+
   func testAgentProcessClockStopsOnceAtMatchingFinalReply() {
     let process = AgentTranscriptEntry(
       id: "process",

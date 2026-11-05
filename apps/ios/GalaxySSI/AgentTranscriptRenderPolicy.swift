@@ -1,6 +1,71 @@
 import CryptoKit
 import Foundation
 
+struct AgentCommittedTurnProgress: Equatable {
+  struct Turn: Equatable {
+    let revision: Int64
+    let status: AgentWorkspaceStatus
+    let startedAt: Int64
+    let updatedAt: Int64
+
+    var isRunning: Bool {
+      [.created, .queued, .running, .waitingResponse].contains(status)
+    }
+
+    func elapsed(at now: Int64, fallbackStart: Int64) -> Int64 {
+      let start = startedAt > 0 ? startedAt : fallbackStart
+      return max(0, (isRunning ? now : updatedAt) - start)
+    }
+  }
+
+  private(set) var conversationID = ""
+  private(set) var turns: [String: Turn] = [:]
+
+  mutating func merge(conversationID: String, workspaces: [AgentWorkspace]) {
+    if self.conversationID != conversationID {
+      self.conversationID = conversationID
+      turns.removeAll()
+    }
+    guard !conversationID.isBlank else { return }
+    for workspace in workspaces where workspace.conversationId == conversationID &&
+      !workspace.workspaceId.isBlank && workspace.workspaceId == workspace.taskId &&
+      workspace.parentRunId.isBlank && workspace.deliveryMode == AgentDeliveryMode.respond.rawValue {
+      let id = workspace.taskId
+      let previous = turns[id]
+      if let previous, previous.revision >= workspace.revision { continue }
+      let statusAt: Int64
+      if let previous, previous.status == workspace.status {
+        statusAt = previous.updatedAt
+      } else {
+        statusAt = Self.statusTimestamp(workspace)
+      }
+      turns[id] = Turn(revision: workspace.revision, status: workspace.status,
+                       startedAt: workspace.createdAtMillis, updatedAt: statusAt)
+    }
+  }
+
+  func turn(_ id: String, conversationID: String) -> Turn? {
+    guard self.conversationID == conversationID else { return nil }
+    return turns[id]
+  }
+
+  private static func statusTimestamp(_ workspace: AgentWorkspace) -> Int64 {
+    let kind: String
+    switch workspace.status {
+    case .completed: kind = AgentTaskEventKinds.completed
+    case .failed: kind = AgentTaskEventKinds.failed
+    case .cancelled: kind = AgentTaskEventKinds.cancelled
+    case .paused: kind = AgentTaskEventKinds.paused
+    case .blocked: kind = AgentTaskEventKinds.blocked
+    case .waitingConfirmation: kind = AgentTaskEventKinds.waitingConfirmation
+    default: return workspace.updatedAtMillis
+    }
+    let afterResume = workspace.eventJournal.reversed().prefix { $0.kind != AgentTaskEventKinds.resumed }
+    return afterResume.last(where: { $0.kind == kind && $0.timestampMillis > 0 })?.timestampMillis ??
+      workspace.updatedAtMillis
+  }
+}
+
 struct AgentTranscriptRenderDiff: Codable, Equatable {
   var reset: Bool
   var replacementIndices: [Int]
