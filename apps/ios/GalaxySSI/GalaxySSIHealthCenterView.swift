@@ -709,6 +709,7 @@ struct GalaxySSIHealthCenterView: View {
       self.editor = nil
       reload()
     } catch GalaxySSIHealthRecords.Failure.invalid { alert = .invalid }
+      catch GalaxySSIHealthRecords.Failure.stale { alert = .stale; reload() }
       catch { alert = .unavailable }
   }
 

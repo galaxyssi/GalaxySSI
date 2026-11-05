@@ -10,7 +10,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }
     let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
-    let now = Date()
+    let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2025-01-01T12:00:00Z"))
     let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
       fileExtension: "pdf", importedAt: now, bytes: 1, sha256: String(repeating: "a", count: 64))
     let reading = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65)
@@ -22,17 +22,27 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let item = GalaxySSIHealthReportReview.Item(version: UUID(), source: source, excerpt: "fixture", reading: extracted)
     try records.stageReportItem(item, replacing: nil)
     try records.linkReportDuplicates([item.version: .init(record: reading.id, revision: 1)], original: original)
+    let csv = Data("value,time\n65,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let row = try XCTUnwrap(GalaxySSIHealthTableImport.preview(
+      GalaxySSIHealthTableImport.parse(csv, json: false), mapping: mapping, current: records.load().current).first)
+    let tableTarget = try XCTUnwrap(row.duplicateTarget)
+    _ = try records.importTable(csv, name: "fixture.csv", json: false, mapping: mapping,
+      expected: [row.status], linkDuplicates: [row.id: tableTarget])
     var removed = try XCTUnwrap(records.load().current.first)
     removed.deleted = true
     try records.write(removed, rememberDeletion: true)
     let token = try XCTUnwrap(records.load().lastMeasurementDeletion)
     var restored = try records.undoMeasurementDeletion(token)
     XCTAssertEqual(try records.load().reportEvidence?.map(\.target.revision), [1, 3])
+    XCTAssertEqual(try records.load().tableEvidence?.map(\.target.revision), [1, 3])
     restored.deleted = true
     try records.write(restored, rememberDeletion: true)
     let permanent = try XCTUnwrap(records.load().lastMeasurementDeletion)
     XCTAssertEqual(try records.eraseMetricHistory(records.previewMetricErase(.weight)), 1)
     XCTAssertNil(try records.load().lastMeasurementDeletion)
+    XCTAssertTrue(try records.load().tableEvidence?.isEmpty == true)
+    XCTAssertEqual(try records.load().tableBatches?.first?.data, csv)
     XCTAssertThrowsError(try records.undoMeasurementDeletion(permanent))
   }
 
@@ -47,6 +57,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.importTable(data, name: "weight.csv", json: false, mapping: mapping,
                                            expected: [.ready]), 1)
     let original = try XCTUnwrap(records.load().current.first)
+    let oldEditor = GalaxySSIHealthDraft(existing: original)
+    try records.storeDraft(oldEditor)
     var tombstone = original
     tombstone.deleted = true
     try records.write(tombstone, rememberDeletion: true)
@@ -54,6 +66,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let deletion = try XCTUnwrap(reopened.load().lastMeasurementDeletion)
     XCTAssertEqual(deletion.revision, 2)
     XCTAssertTrue(try reopened.load().current.isEmpty)
+    XCTAssertNil(try reopened.load().draft)
+    XCTAssertThrowsError(try reopened.storeDraft(oldEditor)) {
+      guard case GalaxySSIHealthRecords.Failure.stale = $0 else { return XCTFail("Expected stale editor") }
+    }
     XCTAssertThrowsError(try reopened.undoMeasurementDeletion(.init(id: UUID(), revision: 2)))
     let conflict = GalaxySSIHealthReading(metric: .weight, measuredAt: original.measuredAt, value: 60)
     try reopened.write(conflict)
@@ -66,6 +82,9 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(restored.id, original.id)
     XCTAssertEqual(restored.revision, 3)
     XCTAssertEqual(restored.tableSource, original.tableSource)
+    XCTAssertThrowsError(try reopened.storeDraft(oldEditor))
+    try reopened.storeDraft(.init(existing: restored))
+    XCTAssertEqual(try reopened.load().draft?.existing?.revision, 3)
     XCTAssertNil(try reopened.load().lastMeasurementDeletion)
     XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
   }

@@ -755,11 +755,16 @@ struct GalaxySSIHealthRecords {
     }
     let reportSources = reports.map(\.source) + (restored.reportSource.map { [$0] } ?? []) +
       (restored.secondarySources?.reports ?? [])
+    let tableSources = tables.map(\.source) + (restored.tableSource.map { [$0] } ?? []) +
+      (restored.secondarySources?.tables ?? [])
     let liveIDs = Set(current.map(\.id))
     guard !current.contains(where: { reading in
-      reportSources.contains { reading.reportSource == $0 || reading.secondarySources?.reports.contains($0) == true }
+      reportSources.contains { reading.reportSource == $0 || reading.secondarySources?.reports.contains($0) == true } ||
+      tableSources.contains { reading.tableSource == $0 || reading.secondarySources?.tables.contains($0) == true }
     }), !(archive.reportEvidence ?? []).contains(where: {
       liveIDs.contains($0.target.record) && reportSources.contains($0.source)
+    }), !(archive.tableEvidence ?? []).contains(where: {
+      liveIDs.contains($0.target.record) && tableSources.contains($0.source)
     }) else { throw Failure.duplicate }
     restored.revision = deletion.revision + 1
     if !reports.isEmpty {
