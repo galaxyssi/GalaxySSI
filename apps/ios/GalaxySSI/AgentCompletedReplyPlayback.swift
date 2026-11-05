@@ -55,6 +55,17 @@ final class AgentCompletedReplyPlayback: ObservableObject {
       .sink { [weak self] _ in self?.stop() }.store(in: &observations)
   }
 
+  func footerUpdates(messageId: UUID) -> AnyPublisher<AgentReplySpeechFooterState, Never> {
+    Publishers.CombineLatest3($selection, $failedMessageID, $lastErrorDescription)
+      .map { selection, failed, error in
+        let selected = selection?.messageID == messageId
+        return AgentReplySpeechFooterState(active: selected || failed == messageId, playing: selected,
+          error: failed == messageId ? error : "")
+      }
+      .removeDuplicates()
+      .eraseToAnyPublisher()
+  }
+
   func play(
     _ selection: AgentCompletedReplyPlaybackSelection,
     database: GalaxySSIChatHistoryDatabase,

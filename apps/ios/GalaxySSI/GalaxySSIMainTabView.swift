@@ -1,9 +1,8 @@
+import Combine
 import SwiftUI
 
 struct GalaxySSIMainTabView: View {
-  @Environment(\.galaxySSIInterfaceLanguage) private var language
   @EnvironmentObject private var store: GalaxySSIStore
-  @ObservedObject private var completedSpeech = AgentCompletedReplyPlayback.shared
   @SceneStorage("galaxyssi.agent.activeConversationID") private var sceneConversationID = ""
   @State private var selectedTab: GalaxySSIMainTab
   @State private var pendingContactId = ""
@@ -15,29 +14,11 @@ struct GalaxySSIMainTabView: View {
   var body: some View {
     selectedContent
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        if let selection = completedSpeech.selection,
-           selectedTab != .agent || store.activeAgentConversationId != selection.conversationID {
-          HStack {
-            Button {
-              if store.switchAgentSession(selection.conversationID) {
-                sceneConversationID = store.activeAgentConversationId
-                selectedTab = .agent
-              }
-            } label: {
-              Label(GalaxySSILocalization.string("galaxyssi.agent.reply_speech.return",
-                fallback: "Return to reply", language: language), systemImage: "waveform")
-                .frame(minHeight: 44)
-            }
-            Spacer()
-            Button { completedSpeech.stop() } label: {
-              Image(systemName: "stop.fill").frame(width: 44, height: 44)
-            }
-            .accessibilityLabel(Text(GalaxySSILocalization.string("galaxyssi.common.stop",
-              fallback: "Stop", language: language)))
+        GalaxySSICompletedReplyReturnBar(visibleConversationId: selectedTab == .agent ? store.activeAgentConversationId : nil) {
+          if store.switchAgentSession($0) {
+            sceneConversationID = store.activeAgentConversationId
+            selectedTab = .agent
           }
-          .font(.subheadline)
-          .padding(.horizontal, 12)
-          .background(Color.galaxySSIBarBackground)
         }
       }
       .onAppear(perform: consumePendingContact)
@@ -105,6 +86,37 @@ struct GalaxySSIMainTabView: View {
     UserDefaults.standard.removeObject(forKey: "galaxyssi.pending_open_contact")
     pendingContactId = contactId
     selectedTab = .sessions
+  }
+}
+
+private struct GalaxySSICompletedReplyReturnBar: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @State private var selection: AgentCompletedReplyPlaybackSelection?
+  var visibleConversationId: String?
+  var open: (String) -> Void
+
+  var body: some View {
+    Group {
+      if let selection, visibleConversationId != selection.conversationID {
+        HStack {
+          Button { open(selection.conversationID) } label: {
+            Label(GalaxySSILocalization.string("galaxyssi.agent.reply_speech.return",
+              fallback: "Return to reply", language: language), systemImage: "waveform")
+              .frame(minHeight: 44)
+          }
+          Spacer()
+          Button { AgentCompletedReplyPlayback.shared.stop() } label: {
+            Image(systemName: "stop.fill").frame(width: 44, height: 44)
+          }
+          .accessibilityLabel(Text(GalaxySSILocalization.string("galaxyssi.common.stop",
+            fallback: "Stop", language: language)))
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 12)
+        .background(Color.galaxySSIBarBackground)
+      }
+    }
+    .onReceive(AgentCompletedReplyPlayback.shared.$selection.removeDuplicates()) { selection = $0 }
   }
 }
 
