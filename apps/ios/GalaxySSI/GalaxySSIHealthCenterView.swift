@@ -53,6 +53,14 @@ struct GalaxySSIHealthCenterView: View {
         }
       }
       NavigationLink {
+        GalaxySSIHealthRecordingReminderView(records: records) { metric in
+          if let draft = archive?.draft { editor = draft }
+          else { editor = GalaxySSIHealthDraft(metric: metric) }
+        }
+      } label: {
+        Label(t("recording_reminder.title", "Health Recording Reminders"), systemImage: "bell")
+      }
+      NavigationLink {
         GalaxySSIHealthBodyView { bloodPressureRecords }
       } label: {
         Label(GalaxySSIHealthBodyText.string("title", language: language), systemImage: "figure.stand")

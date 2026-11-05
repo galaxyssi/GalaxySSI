@@ -136,7 +136,8 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
-    if GalaxySSIHealthReviewDelivery.token(notification.request.identifier) != nil {
+    if GalaxySSIHealthReviewDelivery.token(notification.request.identifier) != nil ||
+       notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) {
       completionHandler([.banner, .list])
       return
     }
@@ -321,6 +322,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .modifier(GalaxySSIHealthSleepReminderLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthReviewNotificationLifecycle(store: runtime.store))
       .galaxySSITextScale(runtime.store.displaySettings)
+      .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
       .onAppear {
         galaxySSIStartupLogger.notice("RootView appeared")
         runtime.agentStartupRecovery.start(
