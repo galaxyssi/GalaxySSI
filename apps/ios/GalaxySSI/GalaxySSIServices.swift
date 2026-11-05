@@ -7583,6 +7583,14 @@ final class MessageCoordinator: ObservableObject {
       hasAttachments: hasAttachments,
       allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly
     )
+    let scopedHistory = planningRequest.executionHistory
+    let answerOnly = AgentCompletionEvidencePolicy.isAnswerOnly(history: scopedHistory) {
+      runtime.registry.lookup($0)?.descriptor
+    }
+    let existingEvidence = AgentCompletionEvidencePolicy.missingEvidence(
+      requirements: completionRequirements, history: scopedHistory, answerOnly: answerOnly)
+    planningRequest.allowsDirectResponse = planningRequest.allowsDirectResponse && answerOnly && existingEvidence.isEmpty &&
+      !AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason)
     let fallbackPlan = AgentPlanFactory.actions(request: planRequest, [])
     for repairAttempt in 0...1 {
       let result = await AgentPlanningTiming.capture(
@@ -7603,12 +7611,23 @@ final class MessageCoordinator: ObservableObject {
          let action = plan.actions.first,
          AgentRollingPlanPolicy.closesFromVerifiedEvidence(action),
          AgentRollingPlanPolicy.isBatchBoundaryReason(replanReason) {
-        let missing = AgentCompletionEvidencePolicy.missingEvidence(
+        guard executionMode != .planOnly else { return nil }
+        let proposedMissing = AgentCompletionEvidencePolicy.missingEvidence(
           requirements: plan.completionRequirements,
-          history: executionHistory
+          history: scopedHistory,
+          answerOnly: answerOnly
         )
+        let priorMissing = completionRequirements == nil ? [] : existingEvidence
+        let unsettled = scopedHistory.contains(where: AgentCompletionEvidencePolicy.hasUnverifiedOutcome)
+          ? ["a settled result for every outstanding operation"] : []
+        let missing = Array(Set(priorMissing + proposedMissing + unsettled)).sorted()
         if missing.isEmpty {
-          return .plan(plan)
+          var completion = plan
+          let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+            turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+          completion.actions = completion.actions.map(scope.bind)
+          completion.executionMode = executionMode
+          return .plan(completion)
         }
         guard repairAttempt == 0 else { return nil }
         planningRequest.planRequest.completionRequirements = plan.completionRequirements

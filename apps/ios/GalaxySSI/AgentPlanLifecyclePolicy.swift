@@ -350,12 +350,34 @@ enum AgentRollingPlanPolicy {
 }
 
 enum AgentCompletionEvidencePolicy {
+  static func isAnswerOnly(
+    history: [AgentAction],
+    descriptorFor: (String) -> AgentNativeToolDescriptor?
+  ) -> Bool {
+    history.allSatisfy { action in
+      if AgentRollingPlanPolicy.closesFromVerifiedEvidence(action) { return action.status == .completed }
+      guard action.kind == .callNativeTool, action.status == .completed,
+            descriptorFor(toolId(action))?.effect == .readOnly else { return false }
+      return !hasUnverifiedOutcome(action)
+    }
+  }
+
+  static func hasUnverifiedOutcome(_ action: AgentAction) -> Bool {
+    if [.proposed, .pendingConfirmation, .running, .waitingResponse].contains(action.status) { return true }
+    return [action.evidence, action.result].contains { value in
+      let decoded = decodeObject(value)
+      return decoded?.string("code").lowercased() == "effect_outcome_unknown" ||
+        ["unknown", "uncertain", "unverified"].contains(decoded?.string("outcome").lowercased() ?? "")
+    }
+  }
+
   static func missingEvidence(
     requirements: AgentCompletionRequirements?,
-    history: [AgentAction]
+    history: [AgentAction],
+    answerOnly: Bool = false
   ) -> [String] {
     guard let requirements else {
-      return ["model-declared completion_requirements (publication and phone_linux)"]
+      return answerOnly ? [] : ["model-declared completion_requirements (publication and phone_linux)"]
     }
     let completedTools = Set(history.filter(hasVerifiedCompletionReceipt).map(toolId))
     var missing: [String] = []
