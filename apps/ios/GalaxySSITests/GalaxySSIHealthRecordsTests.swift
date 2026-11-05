@@ -5,6 +5,56 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testAppleHealthTrendPagesOriginsWithinScopeAndPinsExactContributor() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let now = Date(timeIntervalSince1970: 1_750_000_000)
+    func row(_ id: String, at date: Date? = nil) -> GalaxySSIHealthReading {
+      .init(revision: 2, metric: .weight, measuredAt: date ?? now, value: 60,
+            healthKitSource: .init(key: id, origin: id, name: "Same name"))
+    }
+    let readings = (0..<35).map { row(String(format: "org.example.app%02d", $0)) }
+    let extra = row("org.example.outside", at: now.addingTimeInterval(-86_400))
+    let malformed = row("bad origin")
+    let input = Array(readings.reversed()) + [extra, malformed]
+    let first = GalaxySSIHealthTrend.origins(in: input, metric: .weight, from: now, through: now)
+    XCTAssertEqual(first.options.count, 30)
+    XCTAssertTrue(first.hasMore)
+    let cursor = try XCTUnwrap(first.options.last?.id)
+    let next = GalaxySSIHealthTrend.origins(in: input, metric: .weight, from: now, through: now, after: cursor)
+    XCTAssertEqual(next.options.count, 6)
+    XCTAssertFalse(next.hasMore)
+    XCTAssertEqual(Set((first.options + next.options).map(\.id)).count, 36)
+    XCTAssertEqual(next.options.last?.id, .unidentified)
+    XCTAssertFalse(next.options.contains { $0.id == .application("org.example.outside") })
+
+    let manual = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 70)
+    let trend = GalaxySSIHealthTrend(current: input + [manual], metric: .weight, component: .value,
+      now: now, dayCount: 1, calendar: calendar, source: .healthKit, healthOrigin: .application("org.example.app33"))
+    XCTAssertEqual(trend.points.first?.revisions, [readings[33].id: 2])
+    XCTAssertEqual(trend.points.first?.readings.first?.healthKitSource?.origin, "org.example.app33")
+  }
+
+  func testAppleHealthStepAggregatesAreNotAttributedToAnApplication() throws {
+    let now = Date(timeIntervalSince1970: 1_750_000_000)
+    let aggregate = GalaxySSIHealthReading(metric: .steps, measuredAt: now, value: 2_000,
+      healthKitSource: .init(key: "aggregate", origin: nil, name: nil))
+    var app = aggregate
+    app.id = UUID()
+    app.healthKitSource = .init(key: "app", origin: "org.example.steps", name: "Steps")
+    var malformed = aggregate
+    malformed.id = UUID()
+    malformed.healthKitSource = .init(key: "bad", origin: "org..bad", name: "Steps")
+    let manual = GalaxySSIHealthReading(metric: .steps, measuredAt: now, value: 1_000)
+    let readings = [aggregate, app, malformed, manual]
+    let page = GalaxySSIHealthTrend.origins(in: readings, metric: .steps, from: now, through: now)
+    XCTAssertEqual(page.options.map(\.id), [.dailySteps, .application("org.example.steps"), .unidentified])
+    let trend = GalaxySSIHealthTrend(current: readings, metric: .steps, component: .value,
+      now: now, dayCount: 1, calendar: .current, source: .healthKit, healthOrigin: .dailySteps)
+    XCTAssertEqual(trend.points.first?.readings.map(\.id), [aggregate.id])
+    XCTAssertFalse(GalaxySSIHealthTrend.Source.manual.includes(aggregate))
+  }
+
   func testSourceAttentionOnlyShowsSelectedFailuresAndAcknowledgesExactRevision() throws {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     var ledger = GalaxySSIHealthSourceAttention()
