@@ -4763,6 +4763,8 @@
 "rich_output_download_retry" = "重试";
 "rich_output_download_timeout" = "桌面端暂未响应，可以再次请求。";
 "rich_output_save" = "保存到文件";
+"image_original_saved" = "已保存原图";
+"image_original_failed" = "无法保存图片，请重试。";
 "rich_output_diagram" = "架构图";
 "rich_output_diagram_open" = "全屏查看架构图";
 "rich_output_diagram_save" = "保存架构图";

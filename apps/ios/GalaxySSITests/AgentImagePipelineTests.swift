@@ -3,6 +3,16 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testImageExportKeepsEncodedBytesAndRejectsNonImageData() throws {
+    let png = try XCTUnwrap(testImage().pngData())
+    let jpeg = try XCTUnwrap(testImage().jpegData(compressionQuality: 0.8))
+    XCTAssertEqual(GalaxySSIImageResourceDecoder.originalType(png)?.identifier, "public.png")
+    XCTAssertEqual(GalaxySSIImageResourceDecoder.originalType(jpeg)?.identifier, "public.jpeg")
+    XCTAssertEqual(GalaxySSIOriginalImageDocument(data: png).originalFileWrapper().regularFileContents, png)
+    XCTAssertEqual(GalaxySSIOriginalImageDocument(data: jpeg).originalFileWrapper().regularFileContents, jpeg)
+    XCTAssertNil(GalaxySSIImageResourceDecoder.originalType(Data("not an image".utf8)))
+  }
+
   func testSmallImageKeepsOriginalBytesAndRecordsProbe() throws {
     let data = try XCTUnwrap(testImage().pngData())
     let attachment = GalaxySSIDraftAttachment(
