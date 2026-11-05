@@ -844,6 +844,7 @@ final class AgentTeamExecutionHistoryStore {
       var objectIds = Set<String>()
       let transferBatchUpdates = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
       let revisedInBatch = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
+      var replayBytes = 0
       for draft in drafts {
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
@@ -859,6 +860,7 @@ final class AgentTeamExecutionHistoryStore {
         var carriedPosterior: AgentMcpJSONObject? = nil
         var measuredCases: [AgentCollaborationMeasuredCase]? = nil
         var trialAuthors: [String]? = nil
+        var numericReplay: AgentMcpJSONObject? = nil
         if draft.kind == .acceptanceReview {
           let parents = draft.parents.map { AgentCollaborationDocumentaryAcceptance.Reference(
             objectId: $0.objectId, revision: $0.revision, sha256: $0.sha256) }
@@ -1031,6 +1033,23 @@ final class AgentTeamExecutionHistoryStore {
             return record
           }
           guard valid else { throw AgentTeamHistoryDatabase.Failure.stale }
+        } else if draft.kind == .numericModelTrial {
+          guard draft.objectId?.isBlank != false, draft.baseRevision == 0, references.isEmpty,
+                let trial = draft.body["numeric_model_trial"]?.objectValue,
+                var replay = AgentCollaborationNumericTrial.evaluate(trial)
+          else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+          if let previous = trial["previous_trial"] {
+            guard let ref = Self.forecastReference(previous), draft.parents.contains(ref),
+                  let saved = try database.researchRecord(AgentCollaborationResearchRevision.self,
+                    conversationId: conversationId, key: "object:" + ref.objectId, revision: ref.revision),
+                  saved.reference == ref, saved.draft.kind == .numericModelTrial,
+                  saved.turnId != turnId || (saved.runId == runId && saved.authorId == memberId),
+                  let original = saved.numericReplay,
+                  let comparison = AgentCollaborationNumericTrial.comparison(previous: original, current: replay)
+            else { throw AgentTeamHistoryDatabase.Failure.stale }
+            replay["comparison"] = .object(comparison)
+          }
+          numericReplay = replay
         } else if draft.kind == .predictionOutcome {
           let scope = AgentCollaborationToolEvidenceScope(runId: runId, conversationId: conversationId,
             turnId: turnId, memberId: memberId, sourceId: sourceId)
@@ -1155,8 +1174,17 @@ final class AgentTeamExecutionHistoryStore {
           hypothesisFeedback: hypothesisFeedback,
           carriedHypothesisPosterior: carriedPosterior,
           registeredAtMillis: [.experimentPlan, .actionForecast].contains(draft.kind) ? AgentControlPlaneClock.nowMillis() : nil,
-          measuredCases: measuredCases, trialAuthors: trialAuthors)
-        revision.reference.sha256 = try digest(revision)
+          measuredCases: measuredCases, trialAuthors: trialAuthors, numericReplay: numericReplay)
+        let bytes = try encoder.encode(revision)
+        // Reserve space for the SHA-256 field populated after the digest.
+        guard bytes.count <= revision.storageBytesLimit - 64 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        revision.reference.sha256 = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        if numericReplay != nil {
+          replayBytes += bytes.count + 64
+          guard replayBytes <= AgentCollaborationResearchRevision.numericReplayBatchBytes else {
+            throw AgentTeamHistoryDatabase.Failure.corrupt
+          }
+        }
         revisions.append(revision)
       }
       for revision in revisions {
@@ -1684,7 +1712,7 @@ final class AgentTeamExecutionHistoryStore {
   func advanceGoalCheckpoint(_ checkpoint: AgentCollaborationGoalCheckpoint, expectedRevision: Int64) -> Bool {
     guard expectedRevision >= 0, expectedRevision < Int64.max, checkpoint.revision == expectedRevision + 1,
           !checkpoint.contract.isEmpty, Set(checkpoint.contract.map(\.id)).count == checkpoint.contract.count,
-          checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank }),
+          checkpoint.contract.allSatisfy({ !$0.id.isBlank && !$0.requirement.isBlank && $0.hasValidValidatorBinding }),
           checkpoint.completedWorkIds.allSatisfy({ !$0.isBlank }) else { return false }
     do {
       return try access { database in

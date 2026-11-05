@@ -449,6 +449,49 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(check(), .needsAssessment)
   }
 
+  func testComputationalAcceptanceReplaysPinnedNumericCases() throws {
+    typealias Gate = AgentCollaborationDocumentaryAcceptance
+    typealias Policy = AgentCollaborationGoalAssessmentPolicy
+    let deliveryRef = Gate.Reference(objectId: "delivery", revision: 1, sha256: String(repeating: "a", count: 64))
+    let reviewRef = Gate.Reference(objectId: "review", revision: 1, sha256: String(repeating: "b", count: 64))
+    let requirement = AgentCollaborationNumericTrial.requirement
+    let validator: AgentMcpJSONObject = ["id": .string(AgentCollaborationNumericTrial.validatorId),
+      "variables": .array([.string("x")]), "cases": .array([.object([
+        "id": .string("registered"), "input": .object(["x": .int(4)]),
+        "expected": .int(4), "absolute_tolerance": .int(0)
+      ])])]
+    let original = Policy.Criterion(id: "numeric", requirement: requirement, verification: .computational,
+      status: .open, evidence_kind: nil, evidence: [], validator: validator)
+    var met = original
+    met.status = .met
+    met.evidence_kind = .observed
+    met.evidence = ["delivery"]
+    met.delivery = deliveryRef
+    met.review = reviewRef
+    let review = Gate.Revision(reference: reviewRef, conversationId: "group", runId: "run", turnId: "turn",
+      authorId: "reviewer", kind: "acceptance_review", body: ["acceptance_review": .object([
+        "criterion_id": .string("numeric"), "requirement": .string(requirement),
+        "target": .object(["object_id": .string("delivery"), "revision": .int(1), "sha256": .string(deliveryRef.sha256)]),
+        "verdict": .string("supported"), "rationale": .string("Recomputed the case"), "unresolved": .array([])
+      ])], parents: [deliveryRef], hostObservationIds: [])
+    func assess(_ criterion: Policy.Criterion, model: AgentMcpJSONObject) throws -> Policy.Outcome {
+      let delivery = Gate.Revision(reference: deliveryRef, conversationId: "group", runId: "run", turnId: "turn",
+        authorId: "author", kind: "artifact", body: ["content": .string("Saved calculation"), "computation": .object([
+          "validator_id": .string(AgentCollaborationNumericTrial.validatorId), "model": .object(model)
+        ])], parents: [], hostObservationIds: [])
+      let assessment = Policy.Assessment(format: "galaxyssi.goal-assessment.v1", summary: "Numeric result",
+        decision: .achieved, criteria: [criterion], work: [], blockers: [])
+      let raw = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+      return Gate.evaluate(raw, preserving: [original], conversationId: "group", runId: "run", turnId: "turn",
+        readRevision: { id, _ in id == "delivery" ? delivery : (id == "review" ? review : nil) },
+        observationIsSupporting: { _ in false })
+    }
+    XCTAssertEqual(try assess(met, model: ["variable": .string("x")]), .achieved)
+    XCTAssertEqual(try assess(met, model: ["constant": .int(0)]), .needsAssessment)
+    met.validator = nil
+    XCTAssertEqual(try assess(met, model: ["variable": .string("x")]), .needsAssessment)
+  }
+
   func testRequestedRepeatedAgentCompilesToInstanceScopedTeam() throws {
     let target = teamTarget("codex")
     var registration = teamRegistration(target)

@@ -128,6 +128,7 @@ struct AgentCollaborationResearchDraft: Codable {
     case environmentModel = "task_environment_model"
     case actionForecast = "action_forecast"
     case predictionOutcome = "prediction_outcome"
+    case numericModelTrial = "numeric_model_trial"
     case experimentPlan = "experiment_plan"
     case experimentResult = "experiment_result"
     case capabilityLesson = "capability_lesson"
@@ -877,6 +878,9 @@ struct AgentCollaborationResearchEnvelope: Decodable {
 }
 
 struct AgentCollaborationResearchRevision: Codable {
+  static let standardStorageBytes = 256_000
+  static let numericReplayStorageBytes = 4_194_304
+  static let numericReplayBatchBytes = 8_388_608
   var reference: AgentCollaborationResearchReference
   var previousHash: String?
   var runId: String
@@ -892,6 +896,12 @@ struct AgentCollaborationResearchRevision: Codable {
   var registeredAtMillis: Int64? = nil
   var measuredCases: [AgentCollaborationMeasuredCase]? = nil
   var trialAuthors: [String]? = nil
+  var numericReplay: AgentMcpJSONObject? = nil
+
+  var storageBytesLimit: Int {
+    draft.kind == .numericModelTrial && numericReplay != nil
+      ? Self.numericReplayStorageBytes : Self.standardStorageBytes
+  }
 }
 
 struct AgentCollaborationFrozenCloudRead: Codable {

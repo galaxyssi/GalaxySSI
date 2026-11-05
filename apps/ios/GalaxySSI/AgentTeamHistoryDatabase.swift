@@ -483,7 +483,9 @@ final class AgentTeamHistoryDatabase {
                                            revision: Int64, replaceCoverage: Bool = false) throws {
     let group = Self.digest(conversationId)
     let data = try JSONEncoder().encode(record)
-    guard data.count <= 256_000 else { throw Failure.corrupt }
+    let limit = (record as? AgentCollaborationResearchRevision)?.storageBytesLimit
+      ?? AgentCollaborationResearchRevision.standardStorageBytes
+    guard data.count <= limit else { throw Failure.corrupt }
     let payload = try cipher.encrypt(data, purpose: researchPurpose(group: group, key: key, revision: revision))
     guard !replaceCoverage || (key.hasPrefix("cloud-read-coverage:") && revision == 0) else { throw Failure.corrupt }
     let insert = replaceCoverage ? "INSERT OR REPLACE" : "INSERT"

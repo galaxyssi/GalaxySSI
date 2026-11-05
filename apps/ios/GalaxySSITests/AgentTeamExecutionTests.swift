@@ -719,6 +719,82 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentCollaborationForecastIntake.brierScore(probability: .infinity, occurred: true))
   }
 
+  func testLargeNumericReplayPersistsAllComputedCases() throws {
+    let suite = "numeric-replay-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let file = root.appendingPathComponent("history.sqlite3")
+    let history = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    var team = durableTeamSnapshot("run")
+    team.members[1].status = .succeeded
+    XCTAssertTrue(history.upsert(team))
+    let count = 1_000
+    let cases: [AgentMcpJSONValue] = (1...count).map { index in
+      .object(["id": .string("case-\(index)"), "input": .object(["x": .int(1)]),
+        "expected": .int(1), "absolute_tolerance": .int(0)])
+    }
+    let validator = AgentCollaborationNumericTrial.validatorId
+    let trial: AgentMcpJSONObject = ["purpose": .string("Replay"), "reference_basis": .string("Supplied"),
+      "limitations": .string("Finite cases"),
+      "validator": .object(["id": .string(validator), "variables": .array([.string("x")]), "cases": .array(cases)]),
+      "computation": .object(["validator_id": .string(validator), "model": .object(["constant": .double(1e300)])])]
+    let draft = AgentCollaborationResearchDraft(id: "numeric", objectId: nil, baseRevision: 0,
+      kind: .numericModelTrial, title: "Trial", body: ["numeric_model_trial": .object(trial)], parents: [])
+    let scope = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: team.conversationId,
+      turnId: team.taskId, memberId: "review", sourceId: "source-review")
+    _ = try history.publishResearchObjects([draft], runId: scope.runId, conversationId: scope.conversationId,
+      turnId: scope.turnId, memberId: scope.memberId, sourceId: scope.sourceId)
+    let reopened = AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets,
+      executionStore: SavedTeamRecoveryFixture([]), fileURL: file)
+    let saved = try XCTUnwrap(reopened.committedResearchRevisions(scope: scope)?.first)
+    XCTAssertGreaterThan(try JSONEncoder().encode(saved).count, AgentCollaborationResearchRevision.standardStorageBytes)
+    XCTAssertEqual(saved.numericReplay?["checks"]?.arrayValue?.count, count)
+    XCTAssertEqual(saved.numericReplay?["failed_cases"], .int(Int64(count)))
+  }
+
+  func testNumericTrialUsesExactDecimalToleranceAtFloatBoundary() throws {
+    let raw = """
+    {"purpose":"Replay","reference_basis":"Supplied","limitations":"Finite cases",
+     "validator":{"id":"numeric_model_cases.v1","variables":["x"],"cases":[
+       {"id":"boundary","input":{"x":0.4},"expected":0.1,"absolute_tolerance":0.3},
+       {"id":"strict","input":{"x":0.4},"expected":0.1,"absolute_tolerance":"0.2999999999999999999"},
+       {"id":"opposite","input":{"x":-0.4},"expected":0.1,"absolute_tolerance":"0.5"}]},
+     "computation":{"validator_id":"numeric_model_cases.v1","model":{"variable":"x"}}}
+    """
+    let trial = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let report = try XCTUnwrap(AgentCollaborationNumericTrial.evaluate(trial))
+    let checks = try XCTUnwrap(report["checks"]?.arrayValue).compactMap(\.objectValue)
+    XCTAssertEqual(checks.map { $0["passed"] }, [.bool(true), .bool(false), .bool(true)])
+    XCTAssertEqual(checks.map { $0["absolute_error"] }, [.string("3e-1"), .string("3e-1"), .string("5e-1")])
+  }
+
+  func testNumericTrialPersistsCounterexamplesAndComparesIdenticalCases() throws {
+    let raw = """
+    {"purpose":"Replay","reference_basis":"Supplied","limitations":"Finite cases",
+     "validator":{"id":"numeric_model_cases.v1","variables":["x"],"cases":[
+       {"id":"tiny","input":{"x":0.000000000001},"expected":0.000000000001,"absolute_tolerance":0.000000000000000001},
+       {"id":"domain","input":{"x":-2},"expected":0,"absolute_tolerance":0}]},
+     "computation":{"validator_id":"numeric_model_cases.v1","model":{"op":"log1p","args":[{"variable":"x"}]}}}
+    """
+    var trial = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
+    let first = try XCTUnwrap(AgentCollaborationNumericTrial.evaluate(trial))
+    XCTAssertEqual(first["failed_cases"], .int(1))
+    XCTAssertEqual(first["domain_error_cases"], .int(1))
+    var computation = try XCTUnwrap(trial["computation"]?.objectValue)
+    computation["model"] = .object(["constant": .double(0)])
+    trial["computation"] = .object(computation)
+    let second = try XCTUnwrap(AgentCollaborationNumericTrial.evaluate(trial))
+    let changes = try XCTUnwrap(AgentCollaborationNumericTrial.comparison(previous: first, current: second))
+    XCTAssertEqual(changes["domain_recovered_case_ids"], .array([.string("domain")]))
+    XCTAssertEqual(changes["regressed_case_ids"], .array([.string("tiny")]))
+    computation["model"] = .object(["op": .string("shell"), "args": .array([])])
+    trial["computation"] = .object(computation)
+    XCTAssertNil(AgentCollaborationNumericTrial.evaluate(trial))
+  }
+
   func testWorkflowMethodRejectsCyclesAndExecutionOverrides() throws {
     let raw = """
     {"purpose":"Verify","domain":"Research","bottleneck":"Errors","change_rationale":"Independent review",
