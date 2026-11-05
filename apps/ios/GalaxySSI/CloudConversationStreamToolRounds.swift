@@ -316,7 +316,7 @@ struct CloudModelStreamMutableConversation {
     self.body = try CloudModelStreamJSON.object(from: request.bodyJson)
   }
 
-  mutating func installSupervisedResearch(disableDeepSeekThinking: Bool) throws {
+  mutating func installSupervisedResearch() throws {
     body.removeValue(forKey: "tools")
     body.removeValue(forKey: "tool_choice")
     body.removeValue(forKey: "toolConfig")
@@ -325,10 +325,6 @@ struct CloudModelStreamMutableConversation {
       let function = try CloudModelStreamJSON.object(from: AgentMcpJSONCodec.stringify(definition))
       guard let schema = function["parameters"] as? [String: Any] else { continue }
       appendCollaborationFunction(function.filter { $0.key != "parameters" }, schema: schema)
-    }
-    if disableDeepSeekThinking && request.provider == .openAICompatible {
-      body["thinking"] = ["type": "disabled"]
-      body.removeValue(forKey: "reasoning_effort")
     }
   }
 
@@ -413,6 +409,16 @@ struct CloudModelStreamMutableConversation {
       try appendAnthropicToolResults(results)
     case .gemini:
       try appendGeminiToolResults(results)
+    }
+  }
+
+  mutating func appendSupervisedToolResults(
+    _ results: [(AssembledToolCall, String)], assistantText: String, providerReasoning: String?
+  ) throws {
+    if request.preserveProviderReasoning && request.isDirectDeepSeekChatEndpoint {
+      try appendOpenAIToolResults(results, assistantText: assistantText, providerReasoning: providerReasoning)
+    } else {
+      try appendToolResults(results)
     }
   }
 
@@ -503,7 +509,9 @@ struct CloudModelStreamMutableConversation {
     }
   }
 
-  private mutating func appendOpenAIToolResults(_ results: [(AssembledToolCall, String)]) throws {
+  private mutating func appendOpenAIToolResults(
+    _ results: [(AssembledToolCall, String)], assistantText: String = "", providerReasoning: String? = nil
+  ) throws {
     var messages = conversationArray(key: "messages")
     let calls = results.map { call, _ in
       [
@@ -515,11 +523,13 @@ struct CloudModelStreamMutableConversation {
         ]
       ] as [String: Any]
     }
-    messages.append([
+    var assistant: [String: Any] = [
       "role": "assistant",
-      "content": NSNull(),
+      "content": assistantText.isEmpty ? NSNull() as Any : assistantText as Any,
       "tool_calls": calls
-    ])
+    ]
+    if let providerReasoning { assistant["reasoning_content"] = providerReasoning }
+    messages.append(assistant)
     for (call, result) in results {
       messages.append([
         "role": "tool",

@@ -651,7 +651,8 @@ final class MessageCoordinator: ObservableObject {
           }
           return (result: result, mode: input.executionMode)
         }
-        guard var task = store.agentTask(id: candidate.taskId), task.phase == .planning else { continue }
+        guard var task = store.agentTask(id: candidate.taskId), task.phase == .planning,
+              task.pendingPlanning == reference else { continue }
         task.pendingPlanning = nil
         task.phase = .executing
         task.executionLog.append("Recovered interrupted initial planning from durable input")
@@ -674,7 +675,8 @@ final class MessageCoordinator: ObservableObject {
         }
         recoveredCount += 1
       } catch {
-        guard var task = store.agentTask(id: candidate.taskId), task.phase == .planning else { continue }
+        guard var task = store.agentTask(id: candidate.taskId), task.phase == .planning,
+              task.pendingPlanning == reference else { continue }
         task.phase = .paused
         task.blocked = true
         task.verification = error.localizedDescription
@@ -5209,7 +5211,9 @@ final class MessageCoordinator: ObservableObject {
           plannerSnapshotOverride: plannerSnapshot
         )
       }
-      guard store.agentTask(id: task.taskId)?.phase == .planning else { return }
+      guard let persisted = store.agentTask(id: task.taskId), persisted.phase == .planning,
+            persisted.pendingPlanning == task.pendingPlanning else { return }
+      task = persisted
       task.phase = .executing
       task.pendingPlanning = nil
       task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)

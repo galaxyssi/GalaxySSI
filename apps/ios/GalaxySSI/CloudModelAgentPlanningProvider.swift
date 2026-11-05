@@ -35,10 +35,9 @@ extension CloudModelClient: CloudModelStructuredSending {
     let prepared = try await prepareStructuredStreamRequest(contact: contact, store: store,
       systemPrompt: invocation.systemPrompt, prompt: invocation.prompt + "\n\n" + CloudSupervisedResearch.instruction,
       requestId: id)
-    let isDirectDeepSeek = URL(string: prepared.endpoint)?.host?.lowercased() == "api.deepseek.com"
     do {
       return try await CloudSupervisedResearch.run(
-        request: prepared, disableDeepSeekThinking: isDirectDeepSeek,
+        request: prepared,
         conversationId: request.conversationContext.conversationId, turnId: request.executionTurnId,
         stream: URLSessionCloudModelStreamClient(), executor: CloudWebGroundingToolExecutor()
       )
@@ -88,6 +87,9 @@ struct CloudModelAgentPlanningProvider: AgentModelPlanningProviding {
     do {
       var raw = try await sender.sendSupervisedPlan(contact: contact, store: store, invocation: invocation)
       if CloudSupervisedResearch.hasUnexecutedMarkup(raw) {
+        guard !invocation.nativeTools.isEmpty else {
+          throw AgentModelPlanningProviderError.unavailable("The model returned tool markup in a tool-free planning response.")
+        }
         try Task.checkCancellation()
         let malformed = AgentMcpJSONCodec.stringify(.string(String(raw.prefix(8_000))))
         raw = try await sender.sendStructured(contact: contact, store: store,
@@ -134,6 +136,24 @@ enum CloudSupervisedResearch {
       options: [.caseInsensitive, .regularExpression]) != nil
   }
 
+  static func isTranscriptControlReply(_ message: ChatMessage) -> Bool {
+    !message.isMine && (isControlPayload(message.content) || isControlPayload(message.richOutputJson))
+  }
+
+  static func isControlPayload(_ text: String) -> Bool {
+    guard !text.isEmpty, text.utf8.count <= 128_000 else { return false }
+    if hasUnexecutedMarkup(text) { return true }
+    var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if value.hasPrefix("```"), value.hasSuffix("```"), let end = value.firstIndex(of: "\n") {
+      value = String(value[value.index(after: end)...].dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    guard value.hasPrefix("{"),
+          let object = try? CloudModelStreamJSON.object(from: value) else { return false }
+    return object["execution_location"] != nil || object["tool_calls"] is [Any] ||
+      object["function_call"] is [String: Any] ||
+      (object["actions"] is [Any] && object["completion_requirements"] is [String: Any])
+  }
+
   static func toolDefinitions() -> [AgentMcpJSONObject] {
     var functions = CloudWebGrounding.openAITools().compactMap { $0["function"]?.objectValue }
       .filter { allowedTools.contains($0.string("name")) }
@@ -150,11 +170,13 @@ enum CloudSupervisedResearch {
   }
 
   static func run(
-    request: ModelStreamRequest, disableDeepSeekThinking: Bool, conversationId: String, turnId: String,
+    request: ModelStreamRequest, conversationId: String, turnId: String,
     stream: CloudModelStreamClient, executor: CloudConversationToolExecuting
   ) async throws -> String {
-    var prepared = try CloudModelStreamMutableConversation(request: request)
-    try prepared.installSupervisedResearch(disableDeepSeekThinking: disableDeepSeekThinking)
+    var scoped = request
+    scoped.preserveProviderReasoning = request.isDirectDeepSeekChatEndpoint
+    var prepared = try CloudModelStreamMutableConversation(request: scoped)
+    try prepared.installSupervisedResearch()
     let progress = CloudWebToolLoopProgress()
     let evidence = CloudEvidencePromptLedger(query: "")
     var callCount = 0
@@ -167,6 +189,7 @@ enum CloudSupervisedResearch {
       let assembler = ToolCallDeltaAssembler()
       var raw = ""
       var completed = false
+      var providerReasoning: String?
       var toolIndexes = Set<Int>()
       var toolBytes = 0
       for try await event in stream.stream(roundRequest) {
@@ -187,6 +210,7 @@ enum CloudSupervisedResearch {
             throw Error.incompleteResponse
           }
           completed = true
+          providerReasoning = value.providerReasoning
         case .failed(let value):
           if round == 0, raw.isEmpty, toolIndexes.isEmpty, value.error.code == "STREAM_UNSUPPORTED" {
             throw Error.streamingUnsupported
@@ -233,7 +257,7 @@ enum CloudSupervisedResearch {
         if progress.record(toolName: call.name, arguments: arguments, output: output) { madeProgress = true }
         results.append((call, evidence.project(output)))
       }
-      try prepared.appendToolResults(results)
+      try prepared.appendSupervisedToolResults(results, assistantText: raw, providerReasoning: providerReasoning)
       toolRoundsClosed = !madeProgress || callCount >= 12
     }
     throw Error.incompleteResponse

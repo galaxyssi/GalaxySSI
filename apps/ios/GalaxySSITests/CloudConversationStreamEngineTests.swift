@@ -11,7 +11,8 @@ final class CloudConversationStreamEngineTests: XCTestCase {
         .textDelta(.init(requestId: "0", sequence: 1, text: "intermediate prose", receivedAtElapsedMs: 1)),
         .toolCallDelta(.init(requestId: "0", sequence: 2, payload: .init(
           callId: "image", index: 0, nameDelta: "web_image_search", argumentsDelta: #"{"query":"public diagrams"}"#))),
-        .completed(.init(requestId: "0", finishReason: "tool_calls", completedAtElapsedMs: 2))
+        .completed(.init(requestId: "0", finishReason: "tool_calls", completedAtElapsedMs: 2,
+          providerReasoning: "provider-only fixture"))
       ],
       [
         .textDelta(.init(requestId: "1", sequence: 1, text: final, receivedAtElapsedMs: 3)),
@@ -19,7 +20,7 @@ final class CloudConversationStreamEngineTests: XCTestCase {
       ]
     ])
     let executor = RecordingConversationToolExecutor(result: #"{"status":"completed","results":[]}"#)
-    let result = try await CloudSupervisedResearch.run(request: request, disableDeepSeekThinking: true,
+    let result = try await CloudSupervisedResearch.run(request: request,
       conversationId: "conversation", turnId: "turn", stream: stream, executor: executor)
     XCTAssertEqual(result, final)
     XCTAssertEqual(executor.calls.map(\.call.name), ["web_search"])
@@ -30,7 +31,11 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     let tools = try XCTUnwrap(first["tools"] as? [[String: Any]])
     let names = tools.compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
     XCTAssertEqual(Set(names), CloudSupervisedResearch.allowedTools)
-    XCTAssertEqual((first["thinking"] as? [String: String])?["type"], "disabled")
+    XCTAssertNil(first["thinking"])
+    XCTAssertTrue(stream.requests[0].preserveProviderReasoning)
+    let second = try object(stream.requests[1].bodyJson)
+    let messages = try XCTUnwrap(second["messages"] as? [[String: Any]])
+    XCTAssertEqual(messages.first?["reasoning_content"] as? String, "provider-only fixture")
     XCTAssertTrue(stream.requests[1].bodyJson.contains("GALAXYSSI_UNTRUSTED_EVIDENCE"))
   }
 
@@ -46,7 +51,7 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     ])
     let executor = RecordingConversationToolExecutor(result: "{}")
     do {
-      _ = try await CloudSupervisedResearch.run(request: request, disableDeepSeekThinking: true,
+      _ = try await CloudSupervisedResearch.run(request: request,
         conversationId: "conversation", turnId: "turn", stream: stream, executor: executor)
       XCTFail("Expected the whole batch to be rejected")
     } catch CloudSupervisedResearch.Error.invalidToolBatch {
@@ -58,6 +63,23 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertTrue(CloudSupervisedResearch.hasUnexecutedMarkup("<\u{FF5C}DSML\u{FF5C}function_calls>"))
     XCTAssertNil(AgentModelDirectResponseCodec.answer("<\u{FF5C}DSML\u{FF5C}function_calls>"))
     XCTAssertNotNil(AgentModelDirectResponseCodec.answer("The reply describes function calls without invoking one."))
+    let plan = #"{"execution_location":"phone","actions":[]}"#
+    let user = ChatMessage(contactId: "hermes", content: plan, isMine: true)
+    let leaked = ChatMessage(contactId: "hermes", content: plan, isMine: false)
+    XCTAssertFalse(CloudSupervisedResearch.isTranscriptControlReply(user))
+    XCTAssertTrue(CloudSupervisedResearch.isTranscriptControlReply(leaked))
+    XCTAssertFalse(CloudSupervisedResearch.isControlPayload("The field execution_location is optional in this example."))
+  }
+
+  func testProviderReasoningIsNotSerializedOrEnabledOnProxyEndpoints() throws {
+    let frame = ModelStreamCompleted(requestId: "r", finishReason: "tool_calls",
+      completedAtElapsedMs: 1, providerReasoning: "provider-only fixture")
+    let encoded = try JSONEncoder().encode(frame)
+    XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("provider-only fixture"))
+    XCTAssertNil(try JSONDecoder().decode(ModelStreamCompleted.self, from: encoded).providerReasoning)
+    let proxy = ModelStreamRequest(requestId: "r", provider: .openAICompatible,
+      endpoint: "https://api.deepseek.com.example.test/chat/completions", headers: [:], bodyJson: "{}")
+    XCTAssertFalse(proxy.isDirectDeepSeekChatEndpoint)
   }
 
   func testRuleRecallCountsOnlyNewAuthenticCharacters() throws {

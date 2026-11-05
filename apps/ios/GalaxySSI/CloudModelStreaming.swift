@@ -135,6 +135,17 @@ struct ModelStreamRequest: Codable, Equatable {
   var transport: ModelStreamTransport
   var connectTimeoutMs: Int64
   var readTimeoutMs: Int64
+  var preserveProviderReasoning = false
+
+  var isDirectDeepSeekChatEndpoint: Bool {
+    guard provider == .openAICompatible, let url = URLComponents(string: endpoint) else { return false }
+    return url.scheme?.lowercased() == "https" && url.host?.lowercased() == "api.deepseek.com" &&
+      (url.port == nil || url.port == 443) && url.user == nil && url.password == nil
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case requestId, provider, endpoint, headers, bodyJson, transport, connectTimeoutMs, readTimeoutMs
+  }
 
   init(
     requestId: String,
@@ -277,6 +288,12 @@ struct ModelStreamCompleted: Codable, Equatable {
   var finishReason: String?
   var completedAtElapsedMs: Int64
   var reportedModel: String? = nil
+  // Used only by the in-memory DeepSeek tool continuation, not by transcript or telemetry.
+  var providerReasoning: String? = nil
+
+  enum CodingKeys: String, CodingKey {
+    case requestId, finishReason, completedAtElapsedMs, reportedModel
+  }
 }
 
 struct ModelStreamFailed: Codable, Equatable {
