@@ -78,7 +78,10 @@
 "galaxyssi.health.report_review.metric" = "测量指标";
 "galaxyssi.health.report_review.choose" = "请选择";
 "galaxyssi.health.report_review.unit" = "单位";
-"galaxyssi.health.report_review.value" = "已核对的数值";
+"galaxyssi.health.report_review.unit_required" = "请核实单位后再确认这条测量。";
+"galaxyssi.health.report_review.reference" = "参考区间（可选）";
+"galaxyssi.health.report_review.reference_label" = "参考区间";
+"galaxyssi.health.report_review.value" = "已核对的结果";
 "galaxyssi.health.report_review.diastolic" = "已核对的舒张压";
 "galaxyssi.health.report_review.time" = "测量时间";
 "galaxyssi.health.report_review.time_confirm" = "我已核对测量时间";
