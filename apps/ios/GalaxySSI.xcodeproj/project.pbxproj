@@ -397,6 +397,7 @@
     A1F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift */; };
     A1F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift */; };
     A1F253200000000000000001 /* GalaxySSIComposerActionTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F253200000000000000001 /* GalaxySSIComposerActionTray.swift */; };
+    E36520000000000000000001 /* GalaxySSIImageClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36520000000000000000002 /* GalaxySSIImageClipboard.swift */; };
     A1F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift */; };
     A10000000000000000000483 /* GalaxySSIPairingLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000483 /* GalaxySSIPairingLifecycle.swift */; };
     A1000000000000000000F501 /* AgentAttachmentPublishOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */; };
@@ -1505,6 +1506,7 @@
     A2F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerVoiceTranscription.swift; sourceTree = "<group>"; };
     A2F253100000000000000002 /* GalaxySSIPeerVoiceTranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerVoiceTranscriptionTests.swift; sourceTree = "<group>"; };
     A2F253200000000000000001 /* GalaxySSIComposerActionTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIComposerActionTray.swift; sourceTree = "<group>"; };
+    E36520000000000000000002 /* GalaxySSIImageClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIImageClipboard.swift; sourceTree = "<group>"; };
     A2F253200000000000000002 /* GalaxySSIPeerComposerActionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerComposerActionPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000483 /* GalaxySSIPairingLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPairingLifecycle.swift; sourceTree = "<group>"; };
     A2000000000000000000F501 /* AgentAttachmentPublishOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentPublishOrder.swift; sourceTree = "<group>"; };
@@ -2789,6 +2791,7 @@
         A2F250700000000000000001 /* GalaxySSIPeerVoiceOpusCodec.swift */,
         A2F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift */,
         A2F253200000000000000001 /* GalaxySSIComposerActionTray.swift */,
+        E36520000000000000000002 /* GalaxySSIImageClipboard.swift */,
         A20000000000000000000483 /* GalaxySSIPairingLifecycle.swift */,
         A2000000000000000000F505 /* GalaxySSIPeerDeliveryPresentation.swift */,
         A2000000000000000000F502 /* LocalModelArtifactDownloadSources.swift */,
@@ -4036,6 +4039,7 @@
         A1F250700000000000000001 /* GalaxySSIPeerVoiceOpusCodec.swift in Sources */,
         A1F253100000000000000001 /* GalaxySSIPeerVoiceTranscription.swift in Sources */,
         A1F253200000000000000001 /* GalaxySSIComposerActionTray.swift in Sources */,
+        E36520000000000000000001 /* GalaxySSIImageClipboard.swift in Sources */,
         A10000000000000000000483 /* GalaxySSIPairingLifecycle.swift in Sources */,
         A1000000000000000000F505 /* GalaxySSIPeerDeliveryPresentation.swift in Sources */,
         A1000000000000000000F502 /* LocalModelArtifactDownloadSources.swift in Sources */,

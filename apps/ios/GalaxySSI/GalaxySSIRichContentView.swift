@@ -503,6 +503,7 @@ private struct GalaxySSIRichBlockView: View {
   @State private var formValues: [String: String] = [:]
   @State private var imageViewerItem: GalaxySSIImageViewerItem?
   @State private var inlineImageSize: CGSize?
+  @State private var loadedClipboardImageData: Data?
   @State private var extractedArchiveURLs: [URL] = []
   @State private var extractedArchivePresented = false
   @State private var archiveExtractionError = ""
@@ -813,6 +814,7 @@ private struct GalaxySSIRichBlockView: View {
                 block: block,
                 onLoaded: { loadedData in
                   inlineImageSize = GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
+                  if loadedData.count <= GalaxySSIImageClipboard.maximumBytes { loadedClipboardImageData = loadedData }
                 }
               ) {
                 GalaxySSIRichImageFailureView()
@@ -822,6 +824,7 @@ private struct GalaxySSIRichBlockView: View {
                 url: url,
                 onLoaded: { loadedData in
                   inlineImageSize = GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
+                  if loadedData.count <= GalaxySSIImageClipboard.maximumBytes { loadedClipboardImageData = loadedData }
                 }
               ) {
                 GalaxySSIRichImageFailureView()
@@ -847,6 +850,17 @@ private struct GalaxySSIRichBlockView: View {
             title: block.title
           ) else { return }
           imageViewerItem = item
+        }
+        .contextMenu {
+          if let bytes = data ?? loadedClipboardImageData ?? (usesPeerThumbnailCache ? localImageData : nil) {
+            Button { _ = GalaxySSIImageClipboard.copy(bytes) } label: {
+              Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
+            }
+          }
+        }
+        .onDisappear { loadedClipboardImageData = nil }
+        .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+          loadedClipboardImageData = nil
         }
         .fullScreenCover(item: $imageViewerItem) { item in
           GalaxySSIImageLightboxView(item: item)
@@ -876,6 +890,11 @@ private struct GalaxySSIRichBlockView: View {
             title: block.title,
             onSave: { onArtifactSave(block) }
           )
+        }
+        .contextMenu {
+          Button { _ = GalaxySSIImageClipboard.copy(data) } label: {
+            Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
+          }
         }
         .fullScreenCover(item: $imageViewerItem) { item in
           GalaxySSIImageLightboxView(item: item)
@@ -989,6 +1008,13 @@ private struct GalaxySSIRichBlockView: View {
                 }
               }
               .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+              .contextMenu {
+                if let bytes = item.data {
+                  Button { _ = GalaxySSIImageClipboard.copy(bytes) } label: {
+                    Label(t("clipboard_image_copy", "Copy image"), systemImage: "doc.on.doc")
+                  }
+                }
+              }
             }
           }
           .padding(.vertical, 1)

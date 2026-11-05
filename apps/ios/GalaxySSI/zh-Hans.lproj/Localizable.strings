@@ -5689,3 +5689,11 @@
 "galaxyssi.health.measurement_removed" = "测量已删除";
 "galaxyssi.health.undo_removal" = "撤销删除";
 "galaxyssi.health.undo_conflict" = "另一条测量与此记录冲突，无法撤销删除。";
+"clipboard_image_quality" = "图片质量";
+"clipboard_image_compressed" = "压缩";
+"clipboard_image_original" = "原图";
+"clipboard_image_preview" = "图片预览";
+"clipboard_image_add" = "添加附件";
+"clipboard_image_copy" = "复制图片";
+"clipboard_image_crop" = "裁剪";
+"clipboard_image_reset" = "重置裁剪";
