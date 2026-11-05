@@ -6137,3 +6137,13 @@
 "galaxyssi.health.data_files.export_prepared" = "已准备，未确认保存";
 "galaxyssi.health.data_files.export_verified" = "已保存并验证";
 "galaxyssi.health.data_files.export_unverified" = "未验证保存结果";
+"public_news_speech_title" = "新闻朗读";
+"public_news_speech_pause" = "暂停";
+"public_news_speech_resume" = "继续";
+"public_news_speech_next" = "下一篇";
+"public_news_speech_stop" = "停止朗读";
+"public_news_speech_read" = "朗读";
+"public_news_speech_here" = "从这里朗读";
+"public_news_speech_failed" = "无法朗读这篇已下载的文章。";
+"public_news_speech_read_downloaded" = "朗读已下载文章";
+"public_news_speech_no_downloads" = "没有可朗读的已下载文章。";

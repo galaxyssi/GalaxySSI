@@ -4,9 +4,13 @@ import SwiftUI
 struct GalaxySSIPublicNewsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scenePhase
+  @EnvironmentObject private var store: GalaxySSIStore
   @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
   @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
   @StateObject private var archive = PublicNewsArchive()
+  @ObservedObject private var speech = PublicNewsSpeechPlayback.shared
+  @State private var speechCandidates: [String]?
+  @State private var noDownloadedSpeechItems = false
   @State private var showBacklog = false
   @State private var filter = Filter.all
   @State private var refreshRequest = 0
@@ -33,6 +37,13 @@ struct GalaxySSIPublicNewsView: View {
         leading: { GalaxySSIBackButton() },
         trailing: {
           Menu {
+            Button {
+              noDownloadedSpeechItems = false
+              speechCandidates = visibleArticles.map(\.id)
+            } label: {
+              Label(t("public_news_speech_read_downloaded", "Read downloaded articles"), systemImage: "waveform")
+            }
+            .disabled(visibleArticles.isEmpty || speechCandidates != nil || !store.voiceSettings.textToSpeechEnabled)
             Button { showSearch = true } label: {
               Label(t("public_news_search", "Search news"), systemImage: "magnifyingglass")
             }
@@ -68,6 +79,17 @@ struct GalaxySSIPublicNewsView: View {
       }
       .pickerStyle(.segmented)
       .padding(12)
+
+      if speech.queue.current != nil {
+        GalaxySSIPublicNewsSpeechControls(playback: speech, showTitle: true)
+          .padding(.horizontal, 12)
+        if speech.queue.phase == .failed {
+          status(t("public_news_speech_failed", "Could not read the downloaded article."))
+        }
+      }
+      if noDownloadedSpeechItems {
+        status(t("public_news_speech_no_downloads", "No downloaded articles to read."))
+      }
 
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 0) {
@@ -124,6 +146,17 @@ struct GalaxySSIPublicNewsView: View {
     }
     .navigationBarHidden(true)
     .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0, learnPublishers: publisherDiscovery) }
+    .task(id: speechCandidates) {
+      guard let ids = speechCandidates else { return }
+      let items = await PublicNewsBodyStore.shared.speechItems(articleIDs: ids)
+      guard !Task.isCancelled, speechCandidates == ids else { return }
+      speechCandidates = nil
+      guard scenePhase == .active else { return }
+      noDownloadedSpeechItems = items.isEmpty
+      if !items.isEmpty {
+        speech.play(items, settings: store.voiceSettings, languagePolicy: store.languagePolicy)
+      }
+    }
     .task(id: liveNewsEnabled && scenePhase == .active) {
       if liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
     }

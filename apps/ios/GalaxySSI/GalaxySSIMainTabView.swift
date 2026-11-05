@@ -14,7 +14,10 @@ struct GalaxySSIMainTabView: View {
   var body: some View {
     selectedContent
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        GalaxySSICompletedReplyReturnBar(visibleConversationId: selectedTab == .agent ? store.activeAgentConversationId : nil) {
+        GalaxySSISpokenMediaBar(
+          visibleConversationId: selectedTab == .agent ? store.activeAgentConversationId : nil,
+          showNews: selectedTab != .discover
+        ) {
           if store.switchAgentSession($0) {
             sceneConversationID = store.activeAgentConversationId
             selectedTab = .agent
@@ -89,15 +92,21 @@ struct GalaxySSIMainTabView: View {
   }
 }
 
-private struct GalaxySSICompletedReplyReturnBar: View {
+private struct GalaxySSISpokenMediaBar: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @ObservedObject private var newsSpeech = PublicNewsSpeechPlayback.shared
   @State private var selection: AgentCompletedReplyPlaybackSelection?
   var visibleConversationId: String?
+  var showNews: Bool
   var open: (String) -> Void
 
   var body: some View {
     Group {
-      if let selection, visibleConversationId != selection.conversationID {
+      if showNews, selection == nil, newsSpeech.controlsVisible, newsSpeech.queue.current != nil {
+        GalaxySSIPublicNewsSpeechControls(playback: newsSpeech, showTitle: true)
+          .padding(.horizontal, 12)
+          .background(Color.galaxySSIBarBackground)
+      } else if let selection, visibleConversationId != selection.conversationID {
         HStack {
           Button { open(selection.conversationID) } label: {
             Label(GalaxySSILocalization.string("galaxyssi.agent.reply_speech.return",

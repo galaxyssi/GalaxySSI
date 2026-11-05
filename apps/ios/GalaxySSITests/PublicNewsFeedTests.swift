@@ -47,6 +47,27 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertEqual(original?.key, body.fingerprint)
     XCTAssertNil(translated)
     XCTAssertNil(invalid)
+    let items = await store.speechItems(articleIDs: ["https://github.blog/missing", articleID, articleID])
+    XCTAssertEqual(items, [.init(articleKey: key, edition: .original)])
+  }
+
+  func testNewsSpeechAdvancesBookmarkOnlyWhenTheNextParagraphCanStart() throws {
+    let key = PublicNewsSpeechBookmark.key(for: "article")
+    var queue = PublicNewsSpeechQueue()
+    XCTAssertTrue(queue.replace([.init(articleKey: key, edition: .original)]))
+    let token = try XCTUnwrap(queue.resume())
+    XCTAssertTrue(queue.prepare(documentKey: key, paragraphCount: 2, token: token))
+    XCTAssertFalse(queue.began(paragraph: 1, token: token))
+    XCTAssertTrue(queue.began(paragraph: 0, token: token))
+    XCTAssertTrue(queue.finishedParagraph(0, count: 2, token: token))
+    XCTAssertTrue(queue.began(paragraph: 1, token: token))
+    XCTAssertFalse(queue.finishedParagraph(0, count: 2, token: token))
+    queue.pause()
+    XCTAssertEqual(queue.bookmark.paragraph, 1)
+    XCTAssertFalse(queue.began(paragraph: 1, token: token))
+    XCTAssertFalse(queue.next())
+    XCTAssertEqual(queue.phase, .finished)
+    XCTAssertEqual(queue.bookmark.paragraph, 0)
   }
 
   @MainActor

@@ -60,6 +60,19 @@ actor PublicNewsBodyStore {
     return PublicNewsSpeechDocument(checkpoint: saved, edition: item.edition)
   }
 
+  func speechItems(articleIDs: [String]) -> [PublicNewsSpeechBookmark.Item] {
+    var items: [PublicNewsSpeechBookmark.Item] = []
+    var seen = Set<String>()
+    for id in articleIDs {
+      if Task.isCancelled || items.count >= PublicNewsSpeechBookmark.maximumArticles { break }
+      let key = PublicNewsSpeechBookmark.key(for: id)
+      guard seen.insert(key).inserted else { continue }
+      let item = PublicNewsSpeechBookmark.Item(articleKey: key, edition: .original)
+      if speechDocument(for: item) != nil { items.append(item) }
+    }
+    return items
+  }
+
   private func loadValidated(_ file: URL) -> PublicNewsBodyCheckpoint? {
     guard let data = try? Data(contentsOf: file), data.count <= 1_500_000,
           let saved = try? JSONDecoder().decode(PublicNewsBodyCheckpoint.self, from: data),
