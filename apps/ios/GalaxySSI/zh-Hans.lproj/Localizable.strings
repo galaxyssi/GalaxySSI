@@ -4755,6 +4755,7 @@
 "delivery_trace_cloud_reply_received" = "模型回复入站";
 "delivery_trace_cloud_error" = "模型错误";
 "delivery_status_local_saved" = "本地保存";
+"delivery_trace_local_execution_started" = "本机执行已开始";
 "galaxyssi.peer.send_pending" = "正在发送到设备……";
 "galaxyssi.peer.transport_offline" = "GalaxySSI 链路离线";
 "delivery_status_queued" = "已排队";

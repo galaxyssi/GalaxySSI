@@ -20,13 +20,33 @@ private struct AgentDesktopReplyRecoveryState: Codable {
 }
 
 enum AgentDesktopReplyDiscoveryPolicy {
+  static let localExecutionStarted = "local_execution_started"
+
+  private static let nonDesktopStages: Set<String> = [
+    "cloud_request", "cloud_reply", "cloud_error", "cloud_reply_received",
+    "peer_send_started", "phone_contact_delivered", localExecutionStarted, "local_model_reply", "delivered_local_estimate"
+  ]
+
+  static func mayOwn(_ source: ChatMessage) -> Bool {
+    source.isMine && !source.isSystem && source.deliveryStatus != .failed &&
+      !source.deliveryTrace.contains { nonDesktopStages.contains($0.stage) }
+  }
+
+  static func isDesktopEndpoint(_ contact: GalaxySSIContact) -> Bool {
+    !contact.deleted && contact.type.caseInsensitiveCompare("agent") == .orderedSame &&
+      contact.trustState == .verified && contact.deliveryMode.isGalaxySSILinkFamily &&
+      !contact.desktopId.isBlank && !contact.connectorAgentId.isBlank
+  }
+
+  static func matchesSource(_ source: ChatMessage, identity: AgentTaskIdentity) -> Bool {
+    mayOwn(source) && identity.isComplete && identity.taskId == source.id.uuidString &&
+      identity.conversationId == source.conversationId &&
+      identity.turnId == source.turnId.ifBlank(source.id.uuidString)
+  }
+
   static func eligible(_ source: ChatMessage, identity: AgentTaskIdentity,
                        hasDeliveredReply: Bool, hasActiveTask: Bool) -> Bool {
-    source.isMine && !source.isSystem && source.deliveryStatus != .failed &&
-      identity.isComplete && identity.taskId == source.id.uuidString &&
-      identity.conversationId == source.conversationId &&
-      identity.turnId == source.turnId.ifBlank(source.id.uuidString) &&
-      (!hasDeliveredReply || hasActiveTask)
+    matchesSource(source, identity: identity) && (!hasDeliveredReply || hasActiveTask)
   }
 }
 

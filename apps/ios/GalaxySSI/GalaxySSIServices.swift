@@ -2269,6 +2269,8 @@ final class MessageCoordinator: ObservableObject {
           store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
           !GalaxySSITransportPrivacyPolicy.isLocalOnly(["conversation_id": binding.identity.conversationId]) else { return nil }
+    guard AgentDesktopReplyDiscoveryPolicy.mayOwn(source),
+          AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact) else { return nil }
     return source
   }
 
@@ -2885,12 +2887,11 @@ final class MessageCoordinator: ObservableObject {
     do {
       let page = try store.desktopReplySourcePage(before: progress.cursor)
       var replyTurns: [String: [String: Set<String>]] = [:]
-      for source in page.messages where source.deliveryStatus != .failed {
+      for source in page.messages where AgentDesktopReplyDiscoveryPolicy.mayOwn(source) {
         await Task.yield()
         try checkDesktopDiscoveryScope()
         let candidates = store.visibleContacts.compactMap { contact -> (GalaxySSIContact, AgentTaskIdentity)? in
-          guard contact.type.caseInsensitiveCompare("agent") == .orderedSame, contact.trustState == .verified,
-                contact.deliveryMode.isGalaxySSILinkFamily, !contact.connectorAgentId.isBlank,
+          guard AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact),
                 let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: source.id.uuidString)
           else { return nil }
           return (contact, identity)
@@ -2904,7 +2905,8 @@ final class MessageCoordinator: ObservableObject {
         }
         if !hasActiveTask(), replyTurns[source.contactId]?[source.conversationId] == nil {
           let requested = Set(page.messages.filter {
-            $0.contactId == source.contactId && $0.conversationId == source.conversationId && $0.deliveryStatus != .failed
+            $0.contactId == source.contactId && $0.conversationId == source.conversationId &&
+              AgentDesktopReplyDiscoveryPolicy.mayOwn($0)
           }.map { $0.turnId.ifBlank($0.id.uuidString) })
           var found: Set<String> = []
           var cursor: GalaxySSIChatHistoryCursor?
@@ -5009,6 +5011,8 @@ final class MessageCoordinator: ObservableObject {
     hasTruncatedCollaborationDependencies: Bool = false
   ) async throws {
     try Task.checkCancellation()
+    store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
+      stage: AgentDesktopReplyDiscoveryPolicy.localExecutionStarted)
     let taskId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let createdAt = Int64(Date().timeIntervalSince1970 * 1_000)
     let isNativeRoute = initialPlan != nil
@@ -9555,6 +9559,11 @@ final class MessageCoordinator: ObservableObject {
     }
     let requestId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let destinationId = displayContactId.ifBlank(contact.id)
+    let persistedSource = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId)
+    if persistedSource?.deliveryTrace.contains(where: { $0.stage == "cloud_request" }) != true {
+      store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
+        stage: "cloud_request", detail: modelDetail, status: .sent)
+    }
     var accumulated = ""
     var incoming: ChatMessage?
     var completed = false

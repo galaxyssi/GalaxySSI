@@ -400,6 +400,8 @@ struct GalaxySSIMessageActionsView: View {
     case "cloud_reply": return t("delivery_trace_cloud_reply", "Model replied")
     case "cloud_reply_received": return t("delivery_trace_cloud_reply_received", "Model reply received")
     case "cloud_error": return t("delivery_trace_cloud_error", "Model error")
+    case AgentDesktopReplyDiscoveryPolicy.localExecutionStarted:
+      return t("delivery_trace_local_execution_started", "On-device execution started")
     case "local_saved": return t("delivery_status_local_saved", "Saved locally")
     default: return stage
     }
