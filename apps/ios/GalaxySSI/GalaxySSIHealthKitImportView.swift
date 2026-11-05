@@ -9,6 +9,7 @@ struct GalaxySSIHealthKitImportView: View {
   @Environment(\.dismiss) private var dismiss
   let records: GalaxySSIHealthRecords
   var recoveryScope: GalaxySSIHealthKitImport.Scope? = nil
+  var focusedScope: GalaxySSIHealthKitImport.Scope? = nil
   @State private var scopes: Set<GalaxySSIHealthKitImport.Scope> = []
   @State private var days = 14
   @State private var preview: Preview?
@@ -18,6 +19,7 @@ struct GalaxySSIHealthKitImportView: View {
   @State private var problem: String?
   @State private var sourceLedger: GalaxySSIHealthSourceAttention?
   @State private var sourceStateUnavailable = false
+  @State private var importHistory: [GalaxySSIHealthKitImport.Scope: Date]?
 
   private struct Preview {
     let scopes: Set<GalaxySSIHealthKitImport.Scope>
@@ -30,6 +32,8 @@ struct GalaxySSIHealthKitImportView: View {
     sourceLedger?.active.first { $0.scope == recoveryScope }
   }
 
+  private var requestedScope: GalaxySSIHealthKitImport.Scope? { recoveryScope ?? focusedScope }
+
   var body: some View {
     Form {
       if scene == .active {
@@ -38,6 +42,11 @@ struct GalaxySSIHealthKitImportView: View {
         } label: {
           Label(GalaxySSIHealthMetricDeletion.text("apple_health_title", "Local Apple Health Copies", language: language),
                 systemImage: "tray.full")
+        }
+        if let focusedScope {
+          Section(t("coverage_title", "Apple Health Coverage")) {
+            GalaxySSIHealthKitCoverageRow(scope: focusedScope, ledger: sourceLedger, importHistory: importHistory)
+          }
         }
         if GalaxySSIHealthKitImport.available {
           if let recoveryScope {
@@ -55,7 +64,7 @@ struct GalaxySSIHealthKitImportView: View {
                   .foregroundColor(.secondary)
               }
             }
-          } else {
+          } else if focusedScope == nil {
             Section(t("scopes", "Read scopes")) {
               ForEach(GalaxySSIHealthKitImport.Scope.allCases) { scope in
                 Toggle(scope.metric.title(language: language), isOn: Binding(
@@ -93,7 +102,7 @@ struct GalaxySSIHealthKitImportView: View {
               Button(t("save", "Confirm local import")) { save(preview) }.disabled(task != nil || preview.rows.isEmpty)
             }
           }
-          if recoveryScope == nil {
+          if requestedScope == nil {
             Button(t("disconnect", "Clear import selection")) {
               clear()
               scopes = []
@@ -120,15 +129,19 @@ struct GalaxySSIHealthKitImportView: View {
         }
       }
     }
-    .onAppear { loadSourceState() }
+    .onAppear { loadSourceState(); loadImportHistory() }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.sourceAttentionChanged)) { note in
       if note.object as? String == records.owner { loadSourceState() }
     }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { note in
+      if note.object as? String == records.owner { loadImportHistory() }
+    }
     .onChange(of: scene) { phase in
-      if phase == .active { loadSourceState() }
+      if phase == .active { loadSourceState(); loadImportHistory() }
+      else { importHistory = nil }
       if phase == .background { clear(); scopes = []; sourceLedger = nil; sourceStateUnavailable = false }
     }
-    .onDisappear { clear(); scopes = []; sourceLedger = nil }
+    .onDisappear { clear(); scopes = []; sourceLedger = nil; importHistory = nil }
   }
 
   private func prepare() {
@@ -164,9 +177,9 @@ struct GalaxySSIHealthKitImportView: View {
     }
   }
 
-  private func recordRead(_ scope: GalaxySSIHealthKitImport.Scope, _ succeeded: Bool) {
+  private func recordRead(_ scope: GalaxySSIHealthKitImport.Scope, _ result: GalaxySSIHealthSourceAttention.ReadResult) {
     guard scene == .active, !Task.isCancelled else { return }
-    saveSourceState { $0.readFinished(scope, succeeded: succeeded, now: Date()) }
+    saveSourceState { $0.readFinished(scope, result: result, now: Date()) }
   }
 
   private func loadSourceState() {
@@ -174,13 +187,18 @@ struct GalaxySSIHealthKitImportView: View {
     do {
       let loaded = try records.loadSourceAttention()
       sourceLedger = loaded
-      scopes = recoveryScope.map { Set([$0]) } ?? loaded.selected
+      scopes = requestedScope.map { Set([$0]) } ?? loaded.selected
       sourceStateUnavailable = false
     } catch {
       sourceLedger = nil
-      if let recoveryScope { scopes = [recoveryScope] }
+      scopes = requestedScope.map { Set([$0]) } ?? []
       sourceStateUnavailable = true
     }
+  }
+
+  private func loadImportHistory() {
+    guard scene == .active, focusedScope != nil else { return }
+    importHistory = (try? records.load()).map { $0.healthKitImportedAt ?? [:] }
   }
 
   private func saveSourceState(_ update: (inout GalaxySSIHealthSourceAttention) -> Void) {
@@ -215,6 +233,63 @@ struct GalaxySSIHealthKitImportView: View {
     token = UUID()
     task?.cancel()
     task = nil; preview = nil; imported = nil; problem = nil
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.healthkit." + key, fallback: fallback, language: language)
+  }
+}
+
+@MainActor
+struct GalaxySSIHealthKitCoverageRow: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  let scope: GalaxySSIHealthKitImport.Scope
+  let ledger: GalaxySSIHealthSourceAttention?
+  let importHistory: [GalaxySSIHealthKitImport.Scope: Date]?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(scope.metric.title(language: language)).foregroundColor(.primary)
+      Group {
+        if let ledger {
+          Text(ledger.selected.contains(scope) ? t("coverage_selected", "Selected in GalaxySSI")
+                                              : t("coverage_unselected", "Not selected in GalaxySSI"))
+        } else {
+          Text(t("coverage_selection_unavailable", "App selection unavailable"))
+        }
+        Text(GalaxySSIHealthKitImport.available ? t("coverage_system_unknown", "System read access: not disclosed")
+                                               : t("coverage_system_unavailable", "HealthKit unavailable"))
+        if let read = ledger?.readHistory?[scope] {
+          Text(resultTitle(read.result) + ": " + date(read.at))
+          if let at = read.lastSamplesAt, read.result != .samples {
+            Text(t("coverage_last_samples", "Last read with data") + ": " + date(at))
+          }
+        } else if ledger != nil {
+          Text(t("coverage_no_query", "No query recorded"))
+        }
+        if let importHistory {
+          if let at = importHistory[scope] {
+            Text(t("coverage_last_import", "Last import of new records") + ": " + date(at))
+          } else { Text(t("coverage_no_import", "No import of new records recorded")) }
+        } else {
+          Text(t("coverage_import_unavailable", "Import history unavailable"))
+        }
+      }
+      .font(.caption)
+      .foregroundColor(.secondary)
+    }
+  }
+
+  private func resultTitle(_ result: GalaxySSIHealthSourceAttention.ReadResult) -> String {
+    switch result {
+    case .samples: return t("coverage_last_samples", "Last read with data")
+    case .empty: return t("coverage_query_empty", "Last query returned no data")
+    case .failed: return t("coverage_query_failed", "Last query failed")
+    }
+  }
+
+  private func date(_ value: Date) -> String {
+    value.formatted(date: .abbreviated, time: .shortened)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
