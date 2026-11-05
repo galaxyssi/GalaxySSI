@@ -47,7 +47,7 @@ struct GalaxySSIHealthImportView: View {
           Label(t("library", "Health Originals"), systemImage: "doc.on.doc")
         }
         NavigationLink {
-          GalaxySSIHealthPDFTextView(store: store)
+          GalaxySSIHealthPDFTextView(store: store, reviewRecords: records)
         } label: {
           Label(t("read_pdf", "Report PDF Text"), systemImage: "doc.text.magnifyingglass")
         }

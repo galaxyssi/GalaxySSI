@@ -4,6 +4,32 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  @MainActor
+  func testHealthKitEraseInvalidatesPreviewWhenReportEvidenceChanges() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let date = Date()
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: date, bytes: 1, sha256: String(repeating: "a", count: 64))
+    let imported = GalaxySSIHealthReading(metric: .weight, measuredAt: date, value: 65,
+      healthKitSource: .init(key: String(repeating: "b", count: 64), origin: "fixture", name: nil))
+    _ = try records.importHealthKit([imported])
+    let preview = try records.previewHealthKitErase(.weight)
+    let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+      page: 0, region: 0, fromOCR: true)
+    let item = GalaxySSIHealthReportReview.Item(version: UUID(), source: source, excerpt: "fixture",
+      reading: .init(metric: .weight, measuredAt: date, value: 65, reportSource: source))
+    try records.stageReportItem(item, replacing: nil)
+    let target = try XCTUnwrap(GalaxySSIHealthReportReview.exactTarget(for: item, current: records.load().current))
+    try records.linkReportDuplicates([item.version: target], original: original)
+    XCTAssertThrowsError(try records.eraseHealthKitCopies(preview))
+    let latest = try records.previewHealthKitErase(.weight)
+    XCTAssertEqual(latest.reportLinks.map(\.target), [target])
+    XCTAssertEqual(try records.eraseHealthKitCopies(latest), 1)
+    XCTAssertTrue(try records.load().reportEvidence?.isEmpty == true)
+  }
+
   func testHealthKitPreviewBindsSourceMetadataAndRowMultiplicity() {
     let now = Date()
     let source = GalaxySSIHealthKitImport.Source(key: "sample", origin: "fixture", name: "Original")
@@ -249,6 +275,72 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
     XCTAssertTrue(try records.load().tableEvidence?.isEmpty == true)
     XCTAssertEqual(try records.load().current.first?.notes, "later edit")
+  }
+
+  @MainActor
+  func testReportDuplicateEvidenceUsesExactRevisionAndAtomicConsent() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    let date = Date()
+    try records.write(.init(metric: .weight, measuredAt: date, value: 65))
+    func item(_ page: Int) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: page, region: 0, fromOCR: true)
+      return .init(version: UUID(), source: source, excerpt: "fixture",
+        reading: .init(metric: .weight, measuredAt: date, value: 65, reportSource: source))
+    }
+    let first = item(0), second = item(1)
+    try records.stageReportItem(first, replacing: nil)
+    try records.stageReportItem(second, replacing: nil)
+    let target = try XCTUnwrap(GalaxySSIHealthReportReview.exactTarget(for: first, current: records.load().current))
+    let stale = GalaxySSIHealthReportReview.Target(record: target.record, revision: target.revision + 1)
+    XCTAssertThrowsError(try records.linkReportDuplicates([first.version: target, second.version: stale], original: original))
+    XCTAssertNil(try records.load().reportEvidence)
+    XCTAssertEqual(try records.load().reportReview?.count, 2)
+    try records.linkReportDuplicates([first.version: target], original: original)
+    var edited = try XCTUnwrap(records.load().current.first)
+    edited.notes = "later"
+    try records.write(edited)
+    XCTAssertThrowsError(try records.linkReportDuplicates([second.version: target], original: original))
+    let archive = try records.load()
+    let links = GalaxySSIHealthReportReview.linked(original: original, revisions: archive.revisions,
+      current: archive.current, evidence: archive.reportEvidence ?? [])
+    XCTAssertEqual(links.first?.reading.revision, target.revision)
+    XCTAssertTrue(links.first?.secondary == true)
+    XCTAssertEqual(archive.current.count, 1)
+  }
+
+  @MainActor
+  func testReportReviewBatchIsAtomicAndVersionPinned() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "report.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    let date = Date()
+    func item(_ page: Int, value: Decimal) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: page, region: 0, fromOCR: true)
+      return .init(version: UUID(), source: source, excerpt: "Fixture",
+        reading: .init(metric: .weight, measuredAt: date, value: value, reportSource: source))
+    }
+    let first = item(0, value: 61)
+    let second = item(1, value: 62)
+    try records.stageReportItem(first, replacing: nil)
+    try records.stageReportItem(second, replacing: nil)
+    let updated = item(1, value: 63)
+    try records.stageReportItem(updated, replacing: second.version)
+    XCTAssertThrowsError(try records.confirmReportItems([first.version, second.version], original: original))
+    try records.write(.init(metric: .weight, measuredAt: date, value: 63))
+    XCTAssertThrowsError(try records.confirmReportItems([first.version, updated.version], original: original))
+    XCTAssertEqual(try records.load().current.count, 1)
+    XCTAssertEqual(try records.load().reportReview?.count, 2)
+    try records.confirmReportItems([first.version], original: original)
+    XCTAssertEqual(try records.load().current.count, 2)
+    XCTAssertEqual(try records.load().reportReview?.map(\.version), [updated.version])
   }
 
   @MainActor

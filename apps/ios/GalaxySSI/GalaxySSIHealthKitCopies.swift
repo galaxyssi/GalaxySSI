@@ -16,10 +16,12 @@ enum GalaxySSIHealthKitCopies {
     let versions: [GalaxySSIHealthReading]
     let draft: GalaxySSIHealthDraft?
     let links: [GalaxySSIHealthTableImport.Evidence]
+    let reportLinks: [GalaxySSIHealthReportReview.Evidence]
   }
 
   static func includes(_ reading: GalaxySSIHealthReading, scope: GalaxySSIHealthKitImport.Scope) -> Bool {
     guard reading.metric == scope.metric, reading.bluetoothReceipt == nil, reading.tableSource == nil,
+          reading.reportSource == nil,
           let source = reading.healthKitSource, source.key.utf8.count == 64 else { return false }
     return source.key.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
   }
