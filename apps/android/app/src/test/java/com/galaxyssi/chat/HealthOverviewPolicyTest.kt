@@ -45,4 +45,23 @@ class HealthOverviewPolicyTest {
         assertEquals(listOf(a, b, change), HealthOverviewPolicy.sort(input, HealthOverviewOrder.REVIEW_FIRST))
         assertEquals(listOf(a, b, change), HealthOverviewPolicy.sort(input, HealthOverviewOrder.MOST_RECENT))
     }
+    @Test fun sourceAttentionRequiresASelectedUnresolvedUnacknowledgedIncident() {
+        val first = HealthSyncIncident("11111111-1111-4111-8111-111111111111", HealthConnectScope.STEPS,
+            HealthSyncOutcome.NETWORK, now, now - 1000)
+        val others = listOf(first.copy(acknowledgedAt = now), first.copy(resolvedAt = now),
+            first.copy(scope = HealthConnectScope.SLEEP))
+        assertEquals(listOf(HealthOverviewAttention.Connection(first)),
+            HealthOverviewPolicy.activeConnections(listOf(first) + others, setOf(HealthConnectScope.STEPS)))
+        assertTrue(HealthOverviewPolicy.activeConnections(listOf(first), emptySet()).isEmpty())
+    }
+    @Test fun sourceIssuesUseTheSamePreferenceAndStableTimeOrderingWithoutBecomingHealthChanges() {
+        val change = HealthOverviewAttention.Change(alert())
+        val review = HealthOverviewAttention.Review("review", HealthOverviewReviewKind.OCR, now - 5)
+        val source = HealthOverviewAttention.Connection(HealthSyncIncident("22222222-2222-4222-8222-222222222222",
+            HealthConnectScope.STEPS, HealthSyncOutcome.TIMEOUT, now, 0))
+        val items = listOf(source, review, change)
+        assertEquals(listOf(change, source, review), HealthOverviewPolicy.sort(items, HealthOverviewOrder.CHANGES_FIRST))
+        assertEquals(listOf(review, source, change), HealthOverviewPolicy.sort(items, HealthOverviewOrder.REVIEW_FIRST))
+        assertEquals(listOf(source, review, change), HealthOverviewPolicy.sort(items, HealthOverviewOrder.MOST_RECENT))
+    }
 }
