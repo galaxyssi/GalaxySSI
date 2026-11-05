@@ -5,6 +5,41 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthKitCopyEraseWorksWithoutDerivedPermissionAndKeepsOtherData() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let weight = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture", name: nil))
+    let pulse = GalaxySSIHealthReading(metric: .heartRate, measuredAt: now, value: 72,
+      healthKitSource: .init(key: String(repeating: "b", count: 64), origin: "fixture", name: nil))
+    let manual = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 68)
+    try records.write(manual)
+    _ = try records.importHealthKit([weight, pulse])
+    let checkpoint = try records.beginHealthKitSync(.weight, floor: now.addingTimeInterval(-86_400), reset: false)
+    let old = try records.previewHealthKitErase(.weight)
+    var updated = try XCTUnwrap(records.load().current.first { $0.id == weight.id })
+    updated.notes = "edited after preview"
+    try records.write(updated)
+    XCTAssertThrowsError(try records.eraseHealthKitCopies(old))
+    let latest = try XCTUnwrap(records.load().current.first { $0.id == weight.id })
+    let draft = GalaxySSIHealthDraft(existing: latest)
+    try records.storeDraft(draft)
+    let plan = try records.previewHealthKitErase(.weight)
+    XCTAssertEqual(plan.count, 1)
+    XCTAssertEqual(plan.versions.count, 2)
+    XCTAssertEqual(try records.eraseHealthKitCopies(plan), 1)
+    let archive = try records.load()
+    XCTAssertFalse(archive.derivesOverview == true)
+    XCTAssertEqual(Set(archive.current.map(\.id)), [manual.id, pulse.id])
+    XCTAssertEqual(archive.healthKitSync?["weight"], checkpoint)
+    XCTAssertNil(archive.draft)
+    XCTAssertEqual(archive.healthKitErasureLog?.last?.scope, "weight")
+    XCTAssertThrowsError(try records.storeDraft(draft))
+  }
+
+  @MainActor
   func testHealthKitCoverageKeepsSelectionReadEvidenceAndSyncHistorySeparate() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

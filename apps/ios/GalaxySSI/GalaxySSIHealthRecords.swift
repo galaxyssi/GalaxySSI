@@ -135,6 +135,7 @@ struct GalaxySSIHealthRecords {
     var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
     var healthKitSelection: Set<String>?
     var healthKitReadAt: [String: Date]?
+    var healthKitErasureLog: [GalaxySSIHealthKitCopies.Erasure]?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -230,6 +231,51 @@ struct GalaxySSIHealthRecords {
 
   func previewBluetoothErase(_ device: UUID) throws -> GalaxySSIHealthBluetoothHistory.ErasePlan {
     try makeBluetoothErasePlan(device, archive: load())
+  }
+
+  func healthKitCopyCounts() throws -> [String: Int] {
+    let archive = try load()
+    return Dictionary(uniqueKeysWithValues: GalaxySSIHealthKitImport.Scope.allCases.map { scope in
+      let ids = Set(archive.revisions.filter { GalaxySSIHealthKitCopies.includes($0, scope: scope) }.map(\.id))
+      return (scope.rawValue, ids.count)
+    })
+  }
+
+  func previewHealthKitErase(_ scope: GalaxySSIHealthKitImport.Scope) throws -> GalaxySSIHealthKitCopies.Plan {
+    try makeHealthKitErasePlan(scope, archive: load())
+  }
+
+  func eraseHealthKitCopies(_ expected: GalaxySSIHealthKitCopies.Plan) throws -> Int {
+    var archive = try load()
+    let current = try makeHealthKitErasePlan(expected.scope, archive: archive)
+    guard current == expected else { throw Failure.stale }
+    let ids = Set(current.versions.map(\.id))
+    archive.revisions.removeAll { ids.contains($0.id) }
+    if let existing = archive.draft?.existing, ids.contains(existing.id) { archive.draft = nil }
+    archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    var audit = archive.healthKitErasureLog ?? []
+    audit.append(.init(at: Date(), scope: expected.scope.rawValue, records: current.count))
+    archive.healthKitErasureLog = Array(audit.suffix(50))
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return current.count
+  }
+
+  private func makeHealthKitErasePlan(_ scope: GalaxySSIHealthKitImport.Scope, archive: Archive) throws
+    -> GalaxySSIHealthKitCopies.Plan {
+    let versions = archive.revisions.filter { GalaxySSIHealthKitCopies.includes($0, scope: scope) }
+    let ids = Set(versions.map(\.id))
+    guard !ids.isEmpty,
+          archive.revisions.allSatisfy({ !ids.contains($0.id) || GalaxySSIHealthKitCopies.includes($0, scope: scope) })
+    else { throw Failure.stale }
+    var seen = Set<UUID>()
+    let dates = versions.reversed().filter { seen.insert($0.id).inserted }.map(\.measuredAt)
+    guard let start = dates.min(), let end = dates.max() else { throw Failure.stale }
+    let draft = archive.draft.flatMap { draft in
+      draft.existing.map { ids.contains($0.id) } == true ? draft : nil
+    }
+    return .init(scope: scope, count: ids.count, start: start, end: end, versions: versions, draft: draft,
+                 links: (archive.tableEvidence ?? []).filter { ids.contains($0.target.record) })
   }
 
   @discardableResult

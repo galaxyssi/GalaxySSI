@@ -26,6 +26,9 @@ struct GalaxySSIHealthKitImportView: View {
   var body: some View {
     Form {
       if scene == .active {
+        NavigationLink {
+          GalaxySSIHealthKitCopiesView(records: records)
+        } label: { Text(t("copies", "Manage local copies")) }
         if GalaxySSIHealthKitImport.available {
           Section(t("scopes", "Read scopes")) {
             ForEach(orderedScopes) { scope in

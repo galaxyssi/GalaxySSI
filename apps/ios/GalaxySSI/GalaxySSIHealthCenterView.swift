@@ -212,6 +212,18 @@ struct GalaxySSIHealthCenterView: View {
           }
           if requests.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
         }
+        if let events = archive.healthKitErasureLog, !events.isEmpty {
+          Section(t("privacy.healthkit_erasure", "Apple Health local copy erasures")) {
+            ForEach(events.reversed().prefix(privacyLimit)) { event in
+              VStack(alignment: .leading, spacing: 4) {
+                if let scope = GalaxySSIHealthKitImport.Scope(rawValue: event.scope) { Text(title(scope.metric)) }
+                Text(String(format: t("healthkit_copies.erased", "%lld local copies erased"), Int64(event.records)))
+                Text(event.at, style: .date).foregroundColor(.secondary)
+              }
+            }
+            if events.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+          }
+        }
         if let events = archive.bluetoothErasureLog, !events.isEmpty {
           Section(t("privacy.bluetooth_erasure", "Bluetooth history erasures")) {
             ForEach(events.reversed().prefix(privacyLimit)) { event in
@@ -270,6 +282,11 @@ struct GalaxySSIHealthCenterView: View {
     List {
       if scenePhase == .active {
         Section(t("device_sources", "Device sources")) {
+          NavigationLink {
+            GalaxySSIHealthKitCopiesView(records: records)
+          } label: {
+            Label(t("healthkit_copies.title", "Apple Health Local Copies"), systemImage: "internaldrive")
+          }
           NavigationLink {
             GalaxySSIHealthKitSyncView(records: records)
           } label: {
