@@ -144,6 +144,7 @@ struct GalaxySSIHealthRecords {
     var reviewReminderState: GalaxySSIHealthReviewReminders.State?
     var recognitionJobs: [GalaxySSIHealthRecognitionJobs.Job]?
     var photoDraft: GalaxySSIHealthPhotoDraft?
+    var originalIndex: GalaxySSIHealthOriginalStore.Index?
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
@@ -1074,6 +1075,14 @@ struct GalaxySSIHealthRecords {
     receipts.insert(receipt)
     updated.restoreReceipts = receipts
     try persist(updated)
+  }
+
+  func setOriginalIndex(_ index: GalaxySSIHealthOriginalStore.Index,
+                        expected: GalaxySSIHealthOriginalStore.Index?) throws {
+    var archive = try load()
+    guard archive.originalIndex == expected else { throw Failure.stale }
+    archive.originalIndex = index
+    try persist(archive)
   }
 
   private func persist(_ archive: Archive) throws {
