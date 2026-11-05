@@ -526,6 +526,38 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(String(decoding: try Data(contentsOf: file), as: UTF8.self).range(of: "privacyEvents"))
   }
 
+  @MainActor
+  func testImportOriginalRetentionIsEncryptedAndIndependentOfOnlineConsent() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertTrue(try records.load().keepsNewImportOriginals)
+    try records.setHealthOnlinePermission(true)
+    let onlinePermission = try XCTUnwrap(records.load().healthOnlinePermission)
+    try records.setPrivacy(.importOriginals, enabled: true)
+    XCTAssertNil(try records.load().privacyEvents)
+    try records.setPrivacy(.importOriginals, enabled: false)
+    try records.setPrivacy(.importOriginals, enabled: false)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let archive = try reopened.load()
+    XCTAssertFalse(archive.keepsNewImportOriginals)
+    XCTAssertEqual(archive.healthOnlinePermission, onlinePermission)
+    XCTAssertEqual(archive.privacyEvents?.map(\.scope), [.importOriginals])
+    XCTAssertEqual(archive.privacyEvents?.map(\.enabled), [false])
+    XCTAssertNil(String(decoding: try Data(contentsOf: file), as: UTF8.self).range(of: "retainImportOriginals"))
+  }
+
+  func testImportRetentionChoiceDoesNotFallBackWhenPolicyIsUnavailable() {
+    XCTAssertEqual(GalaxySSIHealthImportRetentionChoice.useDefault.resolve(default: false), false)
+    XCTAssertEqual(GalaxySSIHealthImportRetentionChoice.useDefault.resolve(default: true), true)
+    XCTAssertEqual(GalaxySSIHealthImportRetentionChoice.keep.resolve(default: false), true)
+    XCTAssertEqual(GalaxySSIHealthImportRetentionChoice.reviewOnly.resolve(default: true), false)
+    for choice in [GalaxySSIHealthImportRetentionChoice.useDefault, .keep, .reviewOnly] {
+      XCTAssertNil(choice.resolve(default: nil))
+    }
+  }
+
   func testOverviewUsesConfirmedLatestReadingsAndLocalDayBoundary() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
@@ -926,8 +958,12 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
     let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
     let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    try records.setPrivacy(.importOriginals, enabled: false)
+    let pendingRetention = try XCTUnwrap(GalaxySSIHealthImportRetentionChoice.useDefault.resolve(
+      default: records.load().keepsNewImportOriginals))
+    try records.setPrivacy(.importOriginals, enabled: true)
     XCTAssertEqual(try records.importTable(data, name: "review.csv", json: false, mapping: mapping,
-                                           expected: [.ready], retainOriginal: false), 1)
+                                           expected: [.ready], retainOriginal: pendingRetention), 1)
     let archive = try records.load()
     let batch = try XCTUnwrap(archive.tableBatches?.first)
     let source = try XCTUnwrap(archive.current.first?.tableSource)
