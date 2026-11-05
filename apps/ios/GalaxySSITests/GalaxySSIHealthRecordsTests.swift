@@ -4,6 +4,31 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testSavedBluetoothHistoryKeepsExactDeviceAndBothDates() throws {
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let now = Date()
+    let sameName = (0..<34).map { index -> GalaxySSIHealthReading in
+      let receipt = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now.addingTimeInterval(Double(index)),
+        packet: packet, deviceName: "Same monitor")
+      var reading = receipt.reading(conditions: "")
+      reading.measuredAt = now.addingTimeInterval(Double(-index - 60))
+      return reading
+    }
+    var tombstone = sameName[0]
+    tombstone.id = UUID()
+    tombstone.deleted = true
+    let history = GalaxySSIHealthBluetoothHistory(current: sameName + [tombstone,
+      .init(metric: .bloodPressure, value: 120, diastolic: 80)])
+    XCTAssertEqual(history.devices.count, 34)
+    XCTAssertEqual(history.devices.dropFirst(30).count, 4)
+    let device = try XCTUnwrap(history.devices.first)
+    XCTAssertEqual(device.name, "Same monitor")
+    XCTAssertEqual(device.readings.map(\.id), [sameName[0].id])
+    XCTAssertEqual(device.latest?.measuredAt, now.addingTimeInterval(-60))
+    XCTAssertEqual(device.latest?.bluetoothReceipt?.receivedAt, now)
+    XCTAssertEqual(Set(history.devices.map(\.ordinal)).count, 34)
+  }
+
   @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
