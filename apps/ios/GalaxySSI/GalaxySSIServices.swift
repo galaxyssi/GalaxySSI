@@ -2846,6 +2846,13 @@ final class MessageCoordinator: ObservableObject {
         persistRecoveredDesktopResult(payload, record: record)
         continue
       }
+      if record.isCodexSilent(now: now), let target = store.contact(id: binding.contactId),
+         AgentCodexSilenceRecoveryPolicy.isCodex(adapter: target.connectorAdapterName, agentId: binding.agentId),
+         !source.deliveryTrace.contains(where: { $0.stage == "codex_silence_checking" }) {
+        store.appendDeliveryTrace(source.id, contactId: source.contactId, stage: "codex_silence_checking",
+          detail: localizedReply("galaxyssi.agent.codex_silence_checking",
+            fallback: "Codex has not reported meaningful progress for three minutes. Checking the existing task."))
+      }
       if let reason = record.expiryReason(now: now) {
         let detail = reason == "desktop_result_unavailable"
           ? localizedReply("galaxyssi.agent.desktop_result_unavailable", fallback: "The Desktop task finished, but its result could not be delivered. The task was not run again.")
@@ -3025,6 +3032,7 @@ final class MessageCoordinator: ObservableObject {
       store.upsertAgentTask(task)
     }
     guard desktopResultRecovery.receipts.insert(receipt) else { return }
+    recordConfirmedCodexTimeout(payload, binding: binding)
     if desktopReplyRecovery.retire(binding) {
       agentHomeDisplayContactIdsByTurnId.removeValue(forKey: binding.identity.turnId)
       desktopReplyRecoverySweepRequested = true
@@ -3044,8 +3052,21 @@ final class MessageCoordinator: ObservableObject {
               desktopResultRecovery.receipts.insert(receipt) else { continue }
         Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
       }
+      recordConfirmedCodexTimeout(payload, binding: record.binding)
       _ = desktopReplyRecovery.retire(record.binding)
     }
+  }
+
+  private func recordConfirmedCodexTimeout(_ payload: [String: Any], binding: AgentDesktopReplyBinding) {
+    guard let source = currentDesktopReplySource(binding),
+          let target = store.contact(id: binding.contactId), target.trustState == .verified,
+          AgentCodexSilenceRecoveryPolicy.isCodex(adapter: target.connectorAdapterName, agentId: binding.agentId),
+          AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: payload.string("task_status"),
+            failureCode: payload.string("failure_code"), error: payload.string("error")),
+          !source.deliveryTrace.contains(where: { $0.stage == "codex_silence_confirmed" }) else { return }
+    store.appendDeliveryTrace(source.id, contactId: source.contactId, stage: "codex_silence_confirmed",
+      detail: localizedReply("galaxyssi.agent.codex_silence_confirmed",
+        fallback: "The Desktop confirmed Codex stopped after no progress."))
   }
 
   func handleExhaustedDeliveries(_ failures: [ExhaustedLinkMessage]) {
@@ -11802,6 +11823,12 @@ final class MessageCoordinator: ObservableObject {
           turnId: appPayload.string("turn_id"), updates: updates) == false {
           lastError = localizedReply("galaxyssi.agent.progress.save_failed", fallback: "Agent progress could not be saved.")
           return
+        }
+        if AgentCodexSilenceRecoveryPolicy.isCodex(adapter: contact.connectorAdapterName, agentId: contact.connectorAgentId),
+           let record = desktopReplyRecovery.pending.first(where: {
+             $0.binding.sourceId == sourceId && $0.binding.desktopId == link.desktopId && $0.binding.matches(appPayload)
+           }), currentDesktopReplySource(record.binding) != nil {
+          _ = desktopReplyRecovery.observeCodexProgress(updates, binding: record.binding, now: AgentControlPlaneClock.nowMillis())
         }
       }
     }

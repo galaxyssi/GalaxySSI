@@ -246,6 +246,13 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
   var sequence: Int64 = -1
   var status = ""
   var resultManifest: AgentDesktopResultManifest? = nil
+  var codexProgress: AgentDesktopCodexProgress? = nil
+
+  func isCodexSilent(now: Int64) -> Bool {
+    terminalObservedAt == 0 && AgentCodexSilenceRecoveryPolicy.isSilent(
+      status: status, since: codexProgress?.lastProgressAt ?? createdAt, now: now
+    )
+  }
 
   func expiryReason(now: Int64) -> String? {
     if terminalObservedAt > 0 {
@@ -256,6 +263,29 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
     guard anchor > 0, now >= anchor, now - anchor >= 5 * 60_000, misses >= 3,
           lastProbeAt > 0, now >= lastProbeAt, now - lastProbeAt <= 120_000 else { return nil }
     return "desktop_status_unavailable"
+  }
+}
+
+struct AgentDesktopCodexProgress: Codable, Equatable {
+  var generation: Int64
+  var sequence: Int64
+  var lastProgressAt: Int64
+  var eventIds: [String]
+
+  mutating func observe(_ updates: [AgentConnectorPublicProgress], now: Int64) {
+    for event in updates.sorted(by: { ($0.generation, $0.sequence) < ($1.generation, $1.sequence) })
+      where event.countsForCodexSilence {
+      guard event.generation >= generation else { continue }
+      if event.generation > generation {
+        generation = event.generation
+        sequence = -1
+        eventIds = []
+      }
+      guard event.sequence >= sequence, !eventIds.contains(event.eventId) else { continue }
+      sequence = event.sequence
+      eventIds = Array((eventIds + [event.eventId]).suffix(128))
+      lastProgressAt = max(lastProgressAt, now)
+    }
   }
 }
 
@@ -316,6 +346,24 @@ final class AgentDesktopReplyRecovery {
   }
 
   func record(for binding: AgentDesktopReplyBinding) -> AgentDesktopReplyRecoveryRecord? { records[binding.key] }
+
+  @discardableResult
+  func observeCodexProgress(_ updates: [AgentConnectorPublicProgress], binding: AgentDesktopReplyBinding, now: Int64) -> Bool {
+    guard var record = records[binding.key], record.terminalObservedAt == 0 else { return false }
+    let eligible = updates.filter {
+      $0.countsForCodexSilence && ($0.generation > record.generation ||
+        ($0.generation == record.generation && $0.sequence >= max(0, record.sequence)))
+    }
+    guard !eligible.isEmpty else { return true }
+    var progress = record.codexProgress ?? AgentDesktopCodexProgress(
+      generation: record.generation, sequence: -1, lastProgressAt: record.createdAt, eventIds: [])
+    progress.observe(eligible, now: now)
+    guard progress != record.codexProgress else { return true }
+    record.codexProgress = progress
+    var next = records
+    next[binding.key] = record
+    return save(next)
+  }
 
   @discardableResult
   func attachManifest(_ manifest: AgentDesktopResultManifest, to expected: AgentDesktopReplyRecoveryRecord) -> Bool {
@@ -389,7 +437,14 @@ final class AgentDesktopReplyRecovery {
           let sequence = Self.integer(items[0]["status_sequence"], minimum: 0),
           generation > record.generation || (generation == record.generation && sequence >= record.sequence) else { return nil }
     if generation == record.generation, record.terminalObservedAt > 0, !Self.terminalStatuses.contains(status) { return nil }
-    if generation > record.generation { record.terminalObservedAt = 0; record.resultManifest = nil }
+    if generation > record.generation {
+      record.terminalObservedAt = 0
+      record.resultManifest = nil
+      if record.generation > 0, record.codexProgress != nil {
+        record.codexProgress = AgentDesktopCodexProgress(generation: generation, sequence: -1,
+          lastProgressAt: now, eventIds: [])
+      }
+    }
     record.generation = generation
     record.sequence = sequence
     record.status = status
