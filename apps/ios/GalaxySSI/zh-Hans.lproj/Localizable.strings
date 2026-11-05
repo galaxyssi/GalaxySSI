@@ -5689,6 +5689,16 @@
 "galaxyssi.health.measurement_removed" = "测量已删除";
 "galaxyssi.health.undo_removal" = "撤销删除";
 "galaxyssi.health.undo_conflict" = "另一条测量与此记录冲突，无法撤销删除。";
+"galaxyssi.health.record_center.title" = "健康记录中心";
+"galaxyssi.health.record_center.entry" = "记录健康数据";
+"galaxyssi.health.record_center.camera" = "拍摄报告";
+"galaxyssi.health.record_center.files" = "导入文件";
+"galaxyssi.health.record_center.pending" = "待审核";
+"galaxyssi.health.record_center.no_pending" = "暂无待审核内容";
+"galaxyssi.health.record_center.review_count" = "%lld 项待确认草稿";
+"galaxyssi.health.record_center.source_missing" = "审核来源不可用或已变更";
+"galaxyssi.health.record_center.all_pending" = "查看全部待审核内容";
+"galaxyssi.health.record_center.tables" = "表格审核与导入历史";
 "clipboard_image_quality" = "图片质量";
 "clipboard_image_compressed" = "压缩";
 "clipboard_image_original" = "原图";
