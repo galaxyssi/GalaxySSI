@@ -5,6 +5,34 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthBackupHistoryKeepsVerifiedSaveAfterInterruptionAndPruning() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let history = GalaxySSIHealthBackupHistory(owner: "fixture", secrets: HealthFixtureSecrets(), fixtureDirectory: root)
+    let id = try history.begin()
+    let data = Data("synthetic sealed package".utf8)
+    try history.publish(data, id: id)
+    let first = try history.beginSave(id)
+    let destination = root.appendingPathComponent("external")
+    try data.write(to: destination)
+    XCTAssertTrue(try GalaxySSIHealthBackupHistory.verifyDestination(destination, entry: first))
+    try history.finishSave(id, verified: true)
+    let saved = try XCTUnwrap(history.entries().first?.lastVerifiedAt)
+    _ = try history.beginSave(id)
+    let interrupted = try history.begin()
+    try history.recover()
+    let recovered = try history.entries()
+    XCTAssertEqual(recovered.first { $0.id == interrupted }?.generation, .interrupted)
+    XCTAssertEqual(recovered.first { $0.id == id }?.latestSave, .interrupted)
+    for _ in 0..<2 { try history.publish(data, id: history.begin()) }
+    let old = try XCTUnwrap(history.entries().first { $0.id == id })
+    XCTAssertEqual(old.lastVerifiedAt, saved)
+    XCTAssertFalse(history.hasCopy(old))
+    XCTAssertThrowsError(try history.readCopy(old))
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

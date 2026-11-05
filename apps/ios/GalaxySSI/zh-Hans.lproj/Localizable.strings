@@ -592,6 +592,15 @@
 "galaxyssi.health.backup.scope" = "备份内容";
 "galaxyssi.health.backup.created" = "加密备份已准备好";
 "galaxyssi.health.backup.verified" = "备份已验证";
+"galaxyssi.health.backup.history" = "备份历史";
+"galaxyssi.health.backup.history_ready" = "已生成";
+"galaxyssi.health.backup.history_interrupted" = "生成已中断";
+"galaxyssi.health.backup.copy_available" = "有私有副本";
+"galaxyssi.health.backup.copy_unavailable" = "无私有副本";
+"galaxyssi.health.backup.last_verified" = "上次验证通过的保存";
+"galaxyssi.health.backup.save_unverified" = "未能验证外部文件。";
+"galaxyssi.health.backup.dismiss_save" = "关闭未验证的保存";
+"galaxyssi.health.backup.history_more" = "显示更早的备份";
 "galaxyssi.health.backup.save" = "保存加密备份";
 "galaxyssi.health.backup.working" = "正在处理备份";
 "galaxyssi.health.backup.failed" = "无法准备或验证备份，请检查文件大小、密码和内容。";
