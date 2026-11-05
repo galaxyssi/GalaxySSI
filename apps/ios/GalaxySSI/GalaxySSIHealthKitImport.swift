@@ -4,7 +4,7 @@ import HealthKit
 @MainActor
 struct GalaxySSIHealthKitImport {
   enum Failure: Error { case unavailable, excessive, changed }
-  struct Source: Codable, Equatable {
+  struct Source: Codable, Hashable {
     let key: String
     let origin: String?
     let name: String?
@@ -163,9 +163,20 @@ struct GalaxySSIHealthKitImport {
     SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
   }
 
-  nonisolated static func stamp(_ readings: [GalaxySSIHealthReading]) -> [String] {
-    readings.map {
-      "\($0.healthKitSource?.key ?? ""):\($0.value?.description ?? ""):\($0.diastolic?.description ?? ""):\($0.measuredAt.timeIntervalSinceReferenceDate):\($0.unit)"
-    }.sorted()
+  struct PreviewRow: Hashable {
+    let source: Source?
+    let metric: GalaxySSIHealthMetric
+    let value: Decimal?
+    let diastolic: Decimal?
+    let measuredAt: Date
+    let unit: String
+  }
+
+  nonisolated static func stamp(_ readings: [GalaxySSIHealthReading]) -> [PreviewRow: Int] {
+    readings.reduce(into: [:]) { counts, reading in
+      let row = PreviewRow(source: reading.healthKitSource, metric: reading.metric,
+        value: reading.value, diastolic: reading.diastolic, measuredAt: reading.measuredAt, unit: reading.unit)
+      counts[row, default: 0] += 1
+    }
   }
 }
