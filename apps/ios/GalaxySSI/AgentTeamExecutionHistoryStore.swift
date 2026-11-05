@@ -789,11 +789,12 @@ final class AgentTeamExecutionHistoryStore {
     guard !drafts.isEmpty, drafts.count <= 32, !sourceId.isBlank else { throw AgentTeamHistoryDatabase.Failure.corrupt }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    func digest(_ bytes: Data, maximum: Int) throws -> String {
-      guard bytes.count <= maximum else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    func digest<T: Encodable>(_ value: T) throws -> String {
+      let bytes = try encoder.encode(value)
+      guard bytes.count <= 256_000 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
       return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
-    let requestHash = try digest(encoder.encode(drafts), maximum: AgentCollaborationResearchRevision.standardStorageBytes)
+    let requestHash = try digest(drafts)
     let publicationKey = Self.researchPublicationKey(runId: runId, memberId: memberId, sourceId: sourceId)
     return try access { database in
       guard let snapshot = try database.snapshots(runId: runId).first,
@@ -808,10 +809,10 @@ final class AgentTeamExecutionHistoryStore {
         return prior
       }
       var revisions: [AgentCollaborationResearchRevision] = []
-      var replayBytes = 0
       var objectIds = Set<String>()
       let transferBatchUpdates = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
       let revisedInBatch = Set(drafts.compactMap(\.objectId).filter { !$0.isBlank })
+      var replayBytes = 0
       for draft in drafts {
         guard !draft.id.isBlank, draft.id.utf8.count <= 160, !draft.title.isBlank,
               draft.title.utf8.count <= 960, !draft.body.isEmpty,
@@ -1144,7 +1145,8 @@ final class AgentTeamExecutionHistoryStore {
           measuredCases: measuredCases, trialAuthors: trialAuthors, numericReplay: numericReplay)
         let bytes = try encoder.encode(revision)
         // Reserve space for the SHA-256 field populated after the digest.
-        revision.reference.sha256 = try digest(bytes, maximum: revision.storageBytesLimit - 64)
+        guard bytes.count <= revision.storageBytesLimit - 64 else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+        revision.reference.sha256 = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         if numericReplay != nil {
           replayBytes += bytes.count + 64
           guard replayBytes <= AgentCollaborationResearchRevision.numericReplayBatchBytes else {
