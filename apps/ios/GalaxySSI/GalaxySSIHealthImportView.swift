@@ -19,6 +19,7 @@ struct GalaxySSIHealthImportView: View {
   @State private var scanRetention: Bool?
   @State private var tableRetention = true
   @State private var openingTable = false
+  @State private var openingPhotoDraft = false
   @State private var transientReport: GalaxySSIHealthTransientReport?
   @State private var pendingScanReview: GalaxySSIHealthTransientReport?
 
@@ -36,6 +37,18 @@ struct GalaxySSIHealthImportView: View {
                : t("retention_override", "Override for the next import only"))
             .font(.footnote).foregroundColor(.secondary)
         }
+        Button {
+          guard (retentionOverride ?? defaultRetention) == true, beginImport() == true else { return }
+          openingPhotoDraft = true
+        } label: {
+          Label(t("photo_draft", "Ordered photo draft"), systemImage: "camera")
+        }
+        .disabled((retentionOverride ?? defaultRetention) != true)
+        NavigationLink(destination: GalaxySSIHealthPhotoDraftView(records: records, store: store),
+                       isActive: $openingPhotoDraft) {
+          EmptyView()
+        }
+        .hidden()
         Button {
           guard let choice = beginImport() else { return }
           fileRetention = choice
@@ -74,6 +87,11 @@ struct GalaxySSIHealthImportView: View {
           picking = true
         } label: {
           Label(t("original_only", "Save original only"), systemImage: "doc.badge.plus")
+        }
+        NavigationLink {
+          GalaxySSIHealthRecognitionJobsView(records: records, store: store)
+        } label: {
+          Label(t("recognition", "Local Report Recognition"), systemImage: "text.viewfinder")
         }
         NavigationLink {
           GalaxySSIHealthOriginalsView(store: store)

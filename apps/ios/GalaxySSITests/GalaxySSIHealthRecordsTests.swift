@@ -6,6 +6,73 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testRecognitionCheckpointResumesAndCancellationRejectsLatePages() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    try records.enqueueRecognition(original: original, pageCount: 2)
+    let job = try XCTUnwrap(records.load().recognitionJobs?.first)
+    let run = try records.beginRecognitionJob(id: job.id, expected: nil)
+    let bounds = CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4)
+    let line = GalaxySSIHealthRecognitionJobs.line(.init(id: 1, text: "fixture value", bounds: bounds, highlight: nil))
+    let reordered = GalaxySSIHealthRecognitionJobs.line(.init(id: 8, text: "fixture value", bounds: bounds, highlight: nil))
+    XCTAssertEqual(line.id, reordered.id)
+    let first = GalaxySSIHealthRecognitionJobs.Page(index: 0, fromOCR: true, lines: [line])
+    let second = GalaxySSIHealthRecognitionJobs.Page(index: 1, fromOCR: true, lines: [line])
+    try records.commitRecognitionPage(id: job.id, run: run, page: first)
+    let resumed = try records.beginRecognitionJob(id: job.id, expected: run)
+    XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: run, page: second))
+    try records.finishRecognitionJob(id: job.id, run: resumed, phase: .cancelled)
+    XCTAssertThrowsError(try records.commitRecognitionPage(id: job.id, run: resumed, page: second))
+    XCTAssertThrowsError(try records.beginRecognitionJob(id: job.id, expected: nil))
+    let archive = try records.load()
+    XCTAssertEqual(archive.recognitionJobs?.first?.pages, [first])
+    XCTAssertTrue(archive.current.isEmpty)
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data("fixture value".utf8)))
+  }
+
+  @MainActor
+  func testPhotoDraftPinsOrderAndRejectsMissingPagesWithoutQueuingPartialJobs() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: root.appendingPathComponent("records"))
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
+    func image(_ color: UIColor) -> Data {
+      UIGraphicsImageRenderer(size: CGSize(width: 16, height: 12)).pngData { context in
+        color.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 16, height: 12))
+      }
+    }
+    let first = try store.store(image(.red), name: "first.png")
+    let second = try store.store(image(.blue), name: "second.png")
+    let draft = try records.savePhotoDraft(.init(pages: [.init(original: first), .init(original: second)]))
+    var reversed = draft
+    reversed.pages.reverse()
+    let ordered = try records.savePhotoDraft(reversed)
+    XCTAssertThrowsError(try records.submitPhotoDraft(draft, store: store))
+    var invalid = ordered
+    invalid.pages[1].useCrop = true
+    let missingCrop = try records.savePhotoDraft(invalid)
+    XCTAssertThrowsError(try records.submitPhotoDraft(missingCrop, store: store))
+    XCTAssertNil(try records.load().recognitionJobs)
+    var restored = missingCrop
+    restored.pages[1].useCrop = false
+    restored = try records.savePhotoDraft(restored)
+    try records.submitPhotoDraft(restored, store: store)
+    let archive = try records.load()
+    XCTAssertNil(archive.photoDraft)
+    XCTAssertEqual(archive.recognitionJobs?.map(\.original.id), [second.id, first.id])
+    XCTAssertEqual(archive.recognitionJobs?.compactMap(\.documentOrder), [0, 1])
+    XCTAssertEqual(archive.recognitionJobs?.compactMap(\.photoBatch).count, 2)
+    XCTAssertTrue(archive.current.isEmpty)
+    XCTAssertEqual(try store.list().originals.count, 2)
+  }
+
+  @MainActor
   func testMetricErasureClearsTombstonesButRetainsTableOriginal() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

@@ -98,6 +98,7 @@ struct GalaxySSIHealthReportCropView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   let store: GalaxySSIHealthOriginalStore
+  var focusedOriginal: GalaxySSIHealthOriginalStore.Original?
   @State private var files: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var selected: GalaxySSIHealthOriginalStore.Original?
   @State private var image: CGImage?
@@ -161,7 +162,10 @@ struct GalaxySSIHealthReportCropView: View {
     }
     .navigationTitle(t("title", "Report Crop Preview"))
     .navigationBarTitleDisplayMode(.inline)
-    .onAppear(perform: reload)
+    .onAppear {
+      reload()
+      if let focusedOriginal { open(focusedOriginal) }
+    }
     .onDisappear { clearSelection(); files = [] }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
