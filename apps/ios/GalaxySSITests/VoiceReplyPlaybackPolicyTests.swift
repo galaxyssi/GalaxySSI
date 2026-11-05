@@ -2,6 +2,66 @@ import XCTest
 @testable import GalaxySSI
 
 final class VoiceReplyPlaybackPolicyTests: XCTestCase {
+  func testReminderTaskLimitAppliesAfterFilteringAndKeepsOriginalIDs() {
+    func record(_ id: String, _ phase: AgentPhase, goal: String = "Review") -> AgentTaskRecord {
+      AgentTaskRecord(taskId: id, sessionId: "thread-\(id)", goal: goal, phase: phase,
+                      routeKind: .localSystem, targetTitle: "", risk: .medium, blocked: phase == .blocked)
+    }
+    let rows = VoiceReminderSnapshot.taskRows([
+      record("done", .completed), record("private", .paused, goal: "Sensitive goal withheld"),
+      record("task-42", .waitingConfirmation), record("other", .blocked)
+    ], limit: 1)
+    XCTAssertEqual(rows.map(\.id), ["task-42"])
+    XCTAssertEqual(rows.first?.conversationID, "thread-task-42")
+    XCTAssertEqual(rows.first?.phase, AgentPhase.waitingConfirmation.rawValue)
+  }
+
+  func testReminderToolChecksConsentBeforeReadingAndReturnsOnlyOneNewsSummary() throws {
+    var reads = 0
+    let executable = try VoiceReminderNativeTool.executable { context in
+      reads += 1
+      guard context.conversationId == "active-thread" else { return nil }
+      return VoiceReminderSnapshot(
+        tasks: [], personal: [
+          .init(id: "saved-reminder", conversationID: "thread-42", content: "Follow up", atMillis: 10)
+        ], calendar: nil, unreadNewsCount: 12
+      )
+    }
+    let registry = try AgentNativeToolRegistry().registerExecutable(executable)
+    let denied = registry.invoke(executable.id, input: [:])
+    XCTAssertEqual(denied.error?.code, "missing_consents")
+    XCTAssertEqual(reads, 0)
+    let result = registry.invoke(executable.id, input: [:], context: AgentNativeToolInvocationContext(
+      conversationId: "active-thread", grantedConsents: [VoiceReminderNativeTool.consentID]
+    ))
+    XCTAssertEqual(reads, 1)
+    XCTAssertEqual(result.output["news_bodies_included"], .bool(false))
+    guard case .array(let rows)? = result.output["reminders"],
+          case .object(let personal)? = rows.first, case .object(let news)? = rows.last else {
+      return XCTFail("Expected personal reminder and unread news count")
+    }
+    XCTAssertEqual(rows.count, 2)
+    XCTAssertEqual(personal["conversation_id"], .string("thread-42"))
+    XCTAssertEqual(news["id"], .string("news:unread"))
+    XCTAssertEqual(news["content"], .string("Unread updates: 12"))
+  }
+
+  func testPersonalRemindersSkipReadAndLegacyNewsBeforeTakingTheLimit() {
+    func item(_ id: String, messageID: String, viewed: Int64 = 0) -> GlobalProactiveInboxItem {
+      GlobalProactiveInboxItem(key: id, messageIds: [messageID], title: "Update", content: "Review",
+        topic: "", target: .currentConversation, urgent: false, sourceConversationId: "thread-source",
+        destinationConversationId: "thread-destination", causalEventIds: [], createdAtMillis: 1,
+        deliveredAtMillis: 2, viewedAtMillis: viewed, feedbackKind: nil)
+    }
+    let rows = VoiceReminderSnapshot.personalRows([
+      item("news", messageID: "attention-feed:story"),
+      item("seen", messageID: "seen", viewed: 10),
+      item("personal", messageID: "personal")
+    ], limit: 1)
+    XCTAssertEqual(rows.map(\.id), ["personal"])
+    XCTAssertEqual(rows.first?.conversationID, "thread-destination")
+  }
+
   func testVoiceAcknowledgementHasSeparateUtteranceAndHonorsMute() {
     let language = LanguagePolicySettings(ttsLanguage: "en-US")
     let request = VoiceReplyPlaybackPolicy.inputAcknowledgementRequest(
