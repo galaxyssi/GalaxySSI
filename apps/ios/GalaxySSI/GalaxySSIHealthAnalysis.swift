@@ -44,6 +44,44 @@ struct GalaxySSIHealthAnalysis {
     }
   }
 
+  struct ReportScope: Identifiable, Equatable {
+    let id = UUID()
+    let interval: DateInterval
+    let metrics: Set<GalaxySSIHealthMetric>
+    let calendar: Calendar
+    let comparison: DateInterval?
+    private let revisions: [GalaxySSIHealthMetric: [String]]
+
+    init(scope: Scope, calendar: Calendar, compare: Bool, current: [GalaxySSIHealthReading]) {
+      interval = scope.interval
+      metrics = scope.metrics
+      self.calendar = calendar
+      let days = calendar.dateComponents([.day], from: scope.interval.start, to: scope.interval.end).day ?? 0
+      let start = compare && days > 0 ? calendar.date(byAdding: .day, value: -days, to: scope.interval.start) : nil
+      comparison = start.map { DateInterval(start: $0, end: scope.interval.start) }
+      revisions = Self.stamps(current, interval: scope.interval, comparison: comparison, metrics: scope.metrics)
+    }
+
+    func refreshed(_ current: [GalaxySSIHealthReading]) -> Self {
+      Self(scope: .init(interval: interval, metrics: metrics), calendar: calendar,
+           compare: comparison != nil, current: current)
+    }
+
+    func isCurrent(_ current: [GalaxySSIHealthReading], selected: Set<GalaxySSIHealthMetric>) -> Bool {
+      guard !selected.isEmpty, selected.isSubset(of: metrics) else { return false }
+      let latest = Self.stamps(current, interval: interval, comparison: comparison, metrics: selected)
+      return selected.allSatisfy { (revisions[$0] ?? []) == (latest[$0] ?? []) }
+    }
+
+    private static func stamps(_ current: [GalaxySSIHealthReading], interval: DateInterval,
+                               comparison: DateInterval?, metrics: Set<GalaxySSIHealthMetric>)
+      -> [GalaxySSIHealthMetric: [String]] {
+      let window = DateInterval(start: comparison?.start ?? interval.start, end: interval.end)
+      let groups = Dictionary(grouping: Scope(interval: window, metrics: metrics).readings(in: current), by: \.metric)
+      return groups.mapValues(GalaxySSIHealthAnalysis.stamps)
+    }
+  }
+
   let scope: Scope
   let evidence: [Evidence]
   let versions: [String]
