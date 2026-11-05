@@ -5,6 +5,51 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testHealthBackupV2RemapsSecondaryReportsAndRestoresIdempotently() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let source = root.appendingPathComponent("source")
+    let target = root.appendingPathComponent("target")
+    for directory in [source, target] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: source.appendingPathComponent("records"))
+    let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: source)
+    let destination = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: target.appendingPathComponent("records"))
+    let files = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: target,
+      restoreRecordsFile: destination.isolatedFile)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try originals.store(pdf, name: "source.pdf")
+    try files.store(pdf, name: "target.pdf")
+    let incoming = try XCTUnwrap(originals.list().originals.first)
+    let local = try XCTUnwrap(files.list().originals.first)
+    XCTAssertNotEqual(incoming.id, local.id)
+    var reading = GalaxySSIHealthReading(metric: .weight, value: 65)
+    try destination.write(reading)
+    reading.secondarySources = .init(reports: [
+      .init(original: incoming.id, sha256: incoming.sha256, page: 0, region: 0, fromOCR: true)
+    ])
+    try records.write(reading)
+    let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    let (payload, summary) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
+    XCTAssertEqual(summary.links, 1)
+    let archive = try GalaxySSIHealthPortableBackup.seal(payload, password: "fixture-password")
+    XCTAssertTrue(archive.starts(with: Data("GalaxySSI-Health-Backup-v2\n".utf8)))
+    let input = try GalaxySSIHealthPortableBackup.unlock(archive, password: "fixture-password")
+    let preview = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files)
+    XCTAssertEqual(preview.originals, 0)
+    XCTAssertEqual(preview.newLinks, 1)
+    try GalaxySSIHealthPortableBackup.restore(input, expected: preview, records: destination, originals: files)
+    let restored = try XCTUnwrap(destination.load().current.first)
+    XCTAssertEqual(restored.revision, 2)
+    XCTAssertEqual(restored.secondarySources?.reports.first?.original, local.id)
+    let repeated = try GalaxySSIHealthPortableBackup.previewRestore(input, records: destination, originals: files)
+    XCTAssertFalse(repeated.hasChanges)
+    XCTAssertEqual(repeated.reusedLinks, 1)
+  }
+
+  @MainActor
   func testReportReviewBatchIsAtomicAndVersionPinned() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

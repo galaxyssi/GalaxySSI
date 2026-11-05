@@ -19,6 +19,7 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var unitOverride: String?
   var referenceInterval: String?
   var reportSource: GalaxySSIHealthReportReview.Source?
+  var secondarySources: GalaxySSIHealthPortableBackup.SecondarySources?
 
   var unit: String { unitOverride ?? metric.unit }
   var resultKind: String { reported?.kind.rawValue ?? "number" }
@@ -276,7 +277,7 @@ struct GalaxySSIHealthRecords {
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
       guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
-            latest.reportSource == input.reportSource
+            latest.reportSource == input.reportSource, latest.secondarySources == input.secondarySources
       else { throw Failure.invalid }
     } else if let receipt = input.bluetoothReceipt, archive.revisions.contains(where: {
       $0.bluetoothReceipt.map { receipt.isReplay(of: $0) } == true

@@ -581,6 +581,7 @@
 "galaxyssi.health.backup.restore_consent" = "我已核对这些变更";
 "galaxyssi.health.backup.restore" = "恢复到此设备";
 "galaxyssi.health.backup.restored" = "健康备份已恢复";
+"galaxyssi.health.backup.restore_links" = "%lld 条新增关联 · %lld 条复用 · %lld 条跳过";
 "galaxyssi.health.backup.password" = "备份密码";
 "galaxyssi.health.backup.repeat" = "确认密码";
 "galaxyssi.health.backup.generate" = "生成加密备份";

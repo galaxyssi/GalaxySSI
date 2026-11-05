@@ -5,7 +5,8 @@ import Security
 enum GalaxySSIHealthPortableBackup {
   static let maximumFileBytes = 48 * 1024 * 1024
   private static let maximumSourceBytes = 32 * 1024 * 1024
-  private static let magic = Data("GalaxySSI-Health-Backup-v1\n".utf8)
+  private static let magicV1 = Data("GalaxySSI-Health-Backup-v1\n".utf8)
+  private static let magic = Data("GalaxySSI-Health-Backup-v2\n".utf8)
   private static let saltSize = 16
   private static let iterationsV1 = 600_000
 
@@ -36,10 +37,24 @@ enum GalaxySSIHealthPortableBackup {
 
   private struct Payload: Codable {
     let owner: String?
-    let readings: [GalaxySSIHealthReading]
+    var readings: [GalaxySSIHealthReading]
     let originals: [OriginalFile]
     let tables: [GalaxySSIHealthTableImport.Batch]
     let unreadableOriginals: Int
+    var sourceFrames: [SourceFrame]?
+  }
+
+  struct SecondarySources: Codable, Equatable {
+    var reports: [GalaxySSIHealthReportReview.Source] = []
+    var tables: [GalaxySSIHealthTableImport.Source] = []
+  }
+
+  private struct SourceFrame: Codable {
+    let record: UUID
+    let revision: Int
+    let report: GalaxySSIHealthReportReview.Source?
+    let table: GalaxySSIHealthTableImport.Source?
+    let secondary: SecondarySources?
   }
 
   @MainActor
@@ -62,7 +77,18 @@ enum GalaxySSIHealthPortableBackup {
     let payload = Payload(owner: records.owner, readings: readings, originals: files, tables: tables,
                           unreadableOriginals: listing.unavailable)
     let summary = try validate(payload)
-    let data = try JSONEncoder().encode(payload)
+    var framed = payload
+    framed.sourceFrames = readings.compactMap { reading in
+      guard reading.reportSource != nil || reading.tableSource != nil || reading.secondarySources != nil else { return nil }
+      return .init(record: reading.id, revision: reading.revision, report: reading.reportSource,
+                   table: reading.tableSource, secondary: reading.secondarySources)
+    }
+    framed.readings = readings.map { reading in
+      var item = reading
+      item.reportSource = nil; item.tableSource = nil; item.secondarySources = nil
+      return item
+    }
+    let data = try JSONEncoder().encode(framed)
     guard data.count <= maximumFileBytes - magic.count - saltSize - 28 else { throw Failure.limit }
     return (data, summary)
   }
@@ -89,11 +115,13 @@ enum GalaxySSIHealthPortableBackup {
   struct RestoreInput: Sendable {
     fileprivate let plaintext: Data
     let summary: Summary
+    fileprivate let framed: Bool
   }
 
   static func unlock(_ archive: Data, password: String) throws -> RestoreInput {
     let headerCount = magic.count + saltSize
-    guard archive.count <= maximumFileBytes, archive.count > headerCount + 28, archive.starts(with: magic)
+    let framed = archive.starts(with: magic)
+    guard archive.count <= maximumFileBytes, archive.count > headerCount + 28, framed || archive.starts(with: magicV1)
     else { throw Failure.invalid }
     let header = Data(archive.prefix(headerCount))
     let salt = Data(header.suffix(saltSize))
@@ -102,7 +130,30 @@ enum GalaxySSIHealthPortableBackup {
     let box = try AES.GCM.SealedBox(combined: Data(archive.dropFirst(headerCount)))
     let plaintext = try AES.GCM.open(box, using: key, authenticating: header)
     try Task.checkCancellation()
-    return RestoreInput(plaintext: plaintext, summary: try validate(JSONDecoder().decode(Payload.self, from: plaintext)))
+    return RestoreInput(plaintext: plaintext, summary: try validate(decode(plaintext, framed: framed)), framed: framed)
+  }
+
+  private static func decode(_ data: Data, framed: Bool) throws -> Payload {
+    var payload = try JSONDecoder().decode(Payload.self, from: data)
+    guard framed else {
+      guard payload.sourceFrames == nil else { throw Failure.invalid }
+      return payload
+    }
+    guard let frames = payload.sourceFrames, frames.count <= payload.readings.count, payload.readings.count <= 10_000
+    else { throw Failure.limit }
+    var offsets: [UUID: Int] = [:]
+    for (index, reading) in payload.readings.enumerated() {
+      guard offsets.updateValue(index, forKey: reading.id) == nil, reading.reportSource == nil,
+            reading.tableSource == nil, reading.secondarySources == nil else { throw Failure.invalid }
+    }
+    for frame in frames {
+      guard let index = offsets.removeValue(forKey: frame.record), payload.readings[index].revision == frame.revision,
+            frame.report != nil || frame.table != nil || frame.secondary != nil else { throw Failure.invalid }
+      payload.readings[index].reportSource = frame.report
+      payload.readings[index].tableSource = frame.table
+      payload.readings[index].secondarySources = frame.secondary
+    }
+    return payload
   }
 
   private static func key(_ password: String, salt: Data) throws -> SymmetricKey {
@@ -115,11 +166,14 @@ enum GalaxySSIHealthPortableBackup {
                                tables: [GalaxySSIHealthTableImport.Batch]) -> Plan {
     let hashes = tables.map { ($0.id, digest($0.data)) }
     let present = Dictionary(hashes, uniquingKeysWith: { first, _ in first })
-    let links = readings.compactMap(\.tableSource)
-    let absent = Set(links.filter { present[$0.batch] != $0.sha256 }.map(\.batch)).count
+    let links = readings.flatMap(tableLinks)
+    let reports = readings.flatMap(reportLinks)
+    let originalHashes = Dictionary(uniqueKeysWithValues: listing.originals.map { ($0.id, $0.sha256) })
+    let absent = Set(links.filter { present[$0.batch] != $0.sha256 }.map(\.batch)).count +
+      Set(reports.filter { originalHashes[$0.original] != $0.sha256 }.map(\.original)).count
     let size = listing.originals.reduce(0) { $0 + $1.bytes } + tables.reduce(0) { $0 + $1.data.count }
     let summary = Summary(readings: readings.count, originals: listing.originals.count, tables: tables.count,
-                          links: links.count, missing: listing.unavailable + absent, estimatedBytes: size,
+                          links: links.count + reports.count, missing: listing.unavailable + absent, estimatedBytes: size,
                           start: readings.last?.measuredAt, end: readings.first?.measuredAt)
     return Plan(summary: summary,
       readingVersions: readings.map { "\($0.id):\($0.revision)" },
@@ -154,15 +208,38 @@ enum GalaxySSIHealthPortableBackup {
       size += batch.data.count
     }
     guard size <= maximumSourceBytes else { throw Failure.limit }
-    let links = payload.readings.compactMap(\.tableSource)
+    guard payload.readings.allSatisfy({ tableLinks($0).count + reportLinks($0).count <= 32 })
+    else { throw Failure.limit }
+    let links = payload.readings.flatMap(tableLinks)
+    let reports = payload.readings.flatMap(reportLinks)
+    guard links.count + reports.count <= 20_000,
+          links.allSatisfy({ $0.row >= 0 && validDigest($0.sha256) }),
+          reports.allSatisfy({ $0.page >= 0 && $0.region >= 0 && validDigest($0.sha256) })
+    else { throw Failure.invalid }
     missing += Set(links.filter { tables[$0.batch] != $0.sha256 }.map(\.batch)).count
+    let present: [UUID: String] = Dictionary(uniqueKeysWithValues: payload.originals.compactMap { file in
+      file.bytes == nil ? nil : (file.manifest.id, file.manifest.sha256)
+    })
+    missing += Set(reports.filter { present[$0.original] != $0.sha256 }.map(\.original)).count
     let dates = payload.readings.map(\.measuredAt)
     return Summary(readings: payload.readings.count, originals: payload.originals.count, tables: payload.tables.count,
-                   links: links.count, missing: missing, estimatedBytes: size, start: dates.min(), end: dates.max())
+                   links: links.count + reports.count, missing: missing, estimatedBytes: size, start: dates.min(), end: dates.max())
   }
 
   private static func digest(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+
+  private static func validDigest(_ value: String) -> Bool {
+    value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+  }
+
+  private static func reportLinks(_ reading: GalaxySSIHealthReading) -> [GalaxySSIHealthReportReview.Source] {
+    (reading.reportSource.map { [$0] } ?? []) + (reading.secondarySources?.reports ?? [])
+  }
+
+  private static func tableLinks(_ reading: GalaxySSIHealthReading) -> [GalaxySSIHealthTableImport.Source] {
+    (reading.tableSource.map { [$0] } ?? []) + (reading.secondarySources?.tables ?? [])
   }
 }
 
@@ -174,9 +251,12 @@ extension GalaxySSIHealthPortableBackup {
     let originals: Int
     let tables: Int
     let missing: Int
+    let newLinks: Int
+    let reusedLinks: Int
+    let skippedLinks: Int
     fileprivate let snapshot: [String]
 
-    var hasChanges: Bool { readings + originals + tables > 0 }
+    var hasChanges: Bool { readings + originals + tables + newLinks > 0 }
   }
 
   @MainActor
@@ -214,7 +294,7 @@ extension GalaxySSIHealthPortableBackup {
                                   originals: GalaxySSIHealthOriginalStore,
                                   lease: GalaxySSIHealthOriginalStore.RestoreLease) throws
     -> (RestorePreview, GalaxySSIHealthRecords.Archive, [(GalaxySSIHealthOriginalStore.Original, Data)]) {
-    let payload = try JSONDecoder().decode(Payload.self, from: input.plaintext)
+    let payload = try decode(input.plaintext, framed: input.framed)
     guard payload.owner == records.owner, originals.owner == records.owner,
           originals.restoreRecordsFile == records.isolatedFile else { throw Failure.owner }
     var archive = try records.load()
@@ -230,63 +310,148 @@ extension GalaxySSIHealthPortableBackup {
     snapshot.append("unavailable:\(listing.unavailable)")
     var conflicts: [GalaxySSIHealthReading] = []
     var duplicates = 0
+    var skippedLinks = 0
     var additions: [GalaxySSIHealthReading] = []
+    var matchingIDs: [(GalaxySSIHealthReading, GalaxySSIHealthReading)] = []
     for var reading in payload.readings {
       if let existing = latest[reading.id] {
-        var normalized = reading
-        normalized.revision = existing.revision
-        if existing == normalized {
-          duplicates += 1
-        } else { conflicts.append(reading) }
+        matchingIDs.append((existing, reading))
       } else if local.contains(where: { $0.sameMeasurement(as: reading) }) ||
         archive.revisions.contains(where: { existing in
           guard let receipt = reading.bluetoothReceipt, let previous = existing.bluetoothReceipt else { return false }
           return receipt.isReplay(of: previous)
         }) {
         duplicates += 1
+        skippedLinks += reportLinks(reading).count + tableLinks(reading).count
       } else {
         reading.revision = 1
         additions.append(reading)
       }
     }
-    let newTables = payload.tables.filter { localTableHashes[$0.id] == nil }
+    var tableTargets = Dictionary(tables.map { (digest($0.data), $0.id) }, uniquingKeysWith: { first, _ in first })
+    var tableIDs: [UUID: UUID] = [:]
+    var newTables: [GalaxySSIHealthTableImport.Batch] = []
+    for batch in payload.tables {
+      let hash = digest(batch.data)
+      if let target = tableTargets[hash] { tableIDs[batch.id] = target }
+      else if localTableHashes[batch.id] == nil {
+        tableTargets[hash] = batch.id
+        tableIDs[batch.id] = batch.id
+        newTables.append(batch)
+      }
+    }
     let combinedTables = tables + newTables
     guard combinedTables.count <= 30,
           combinedTables.reduce(0, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
     else { throw Failure.limit }
     let combinedHashes = Dictionary(combinedTables.map { ($0.id, digest($0.data)) },
       uniquingKeysWith: { first, _ in first })
-    let missingTables = Set(additions.compactMap(\.tableSource)
-      .filter { combinedHashes[$0.batch] != $0.sha256 }.map(\.batch)).count
-    var missing = payload.unreadableOriginals + missingTables
+    var missing = payload.unreadableOriginals
     var files: [(GalaxySSIHealthOriginalStore.Original, Data)] = []
-    var usedDigests = Set<String>()
+    var originalTargets: [String: UUID] = [:]
     var newFiles = 0
     for file in payload.originals {
       let candidates = listing.originals.filter { $0.sha256 == file.manifest.sha256 }
-      if candidates.contains(where: { (try? originals.read($0, lease: lease)) != nil }) {
+      if originalTargets[file.manifest.sha256] != nil { continue }
+      if let verified = candidates.first(where: { (try? originals.read($0, lease: lease)) != nil }) {
         snapshot.append("verified:\(file.manifest.sha256)")
+        originalTargets[file.manifest.sha256] = verified.id
         continue
       }
       guard let bytes = file.bytes else { missing += 1; continue }
-      guard usedDigests.insert(file.manifest.sha256).inserted else { continue }
       try GalaxySSIHealthOriginalStore.validateRestoreOriginal(file.manifest, data: bytes)
       if let repair = candidates.first {
         files.append((repair, bytes))
+        originalTargets[file.manifest.sha256] = repair.id
         snapshot.append("repair:\(repair.id)")
       } else {
         guard !(try originals.containsRestoreID(file.manifest.id)) else { missing += 1; continue }
         files.append((file.manifest, bytes))
+        originalTargets[file.manifest.sha256] = file.manifest.id
         newFiles += 1
+      }
+    }
+    let referencedDigests = Set(payload.readings.flatMap(reportLinks).map(\.sha256))
+    for candidate in listing.originals where originalTargets[candidate.sha256] == nil &&
+      referencedDigests.contains(candidate.sha256) {
+      if (try? originals.read(candidate, lease: lease)) != nil {
+        originalTargets[candidate.sha256] = candidate.id
+        snapshot.append("verified:\(candidate.id):\(candidate.sha256)")
       }
     }
     guard listing.originals.count + listing.unavailable + newFiles <= 500,
           listing.originals.reduce(0, { $0 + $1.bytes }) + files.reduce(0, { $0 + $1.1.count }) <= 512 * 1024 * 1024
     else { throw Failure.limit }
+    func mappedReport(_ link: GalaxySSIHealthReportReview.Source) -> GalaxySSIHealthReportReview.Source {
+      guard let target = originalTargets[link.sha256] else { return link }
+      return .init(original: target, sha256: link.sha256, page: link.page, region: link.region, fromOCR: link.fromOCR)
+    }
+    func mappedTable(_ link: GalaxySSIHealthTableImport.Source) -> GalaxySSIHealthTableImport.Source {
+      guard let target = tableIDs[link.batch] ?? tableTargets[link.sha256], combinedHashes[target] == link.sha256
+      else { return link }
+      return .init(batch: target, row: link.row, sha256: link.sha256, sheet: link.sheet,
+                   worksheetPath: link.worksheetPath, columns: link.columns)
+    }
+    func mapped(_ reading: GalaxySSIHealthReading) -> GalaxySSIHealthReading {
+      var item = reading
+      item.reportSource = item.reportSource.map(mappedReport)
+      item.tableSource = item.tableSource.map(mappedTable)
+      item.secondarySources = item.secondarySources.map {
+        SecondarySources(reports: $0.reports.map(mappedReport), tables: $0.tables.map(mappedTable))
+      }
+      return item
+    }
+    func withoutLinks(_ reading: GalaxySSIHealthReading) -> GalaxySSIHealthReading {
+      var value = reading
+      value.reportSource = nil; value.tableSource = nil; value.secondarySources = nil
+      return value
+    }
+    additions = additions.map(mapped)
+    var newLinks = additions.reduce(0) { $0 + reportLinks($1).count + tableLinks($1).count }
+    var reusedLinks = 0
+    var updates: [GalaxySSIHealthReading] = []
+    for (existing, input) in matchingIDs {
+      var incoming = mapped(input)
+      incoming.revision = existing.revision
+      if incoming == existing {
+        duplicates += 1
+        reusedLinks += reportLinks(incoming).count + tableLinks(incoming).count
+      } else if !existing.deleted, existing.revision < Int.max, archive.draft?.existing?.id != existing.id,
+                withoutLinks(existing) == withoutLinks(incoming),
+                (existing.reportSource == nil || incoming.reportSource == nil || existing.reportSource == incoming.reportSource),
+                (existing.tableSource == nil || incoming.tableSource == nil || existing.tableSource == incoming.tableSource) {
+        var merged = existing.secondarySources ?? .init()
+        var reports = reportLinks(existing), tables = tableLinks(existing)
+        var added = 0, reused = 0
+        for link in reportLinks(incoming) {
+          if reports.contains(link) { reused += 1 } else { reports.append(link); merged.reports.append(link); added += 1 }
+        }
+        for link in tableLinks(incoming) {
+          if tables.contains(link) { reused += 1 } else { tables.append(link); merged.tables.append(link); added += 1 }
+        }
+        guard reports.count + tables.count <= 32 else { throw Failure.limit }
+        reusedLinks += reused
+        if added > 0 {
+          var update = existing
+          update.secondarySources = merged
+          update.revision += 1
+          updates.append(update)
+          newLinks += added
+        } else { duplicates += 1 }
+      } else {
+        conflicts.append(input)
+        skippedLinks += reportLinks(input).count + tableLinks(input).count
+      }
+    }
+    let linked = additions + updates
+    missing += Set(linked.flatMap(tableLinks).filter { combinedHashes[$0.batch] != $0.sha256 }.map(\.batch)).count
+    missing += Set(linked.flatMap(reportLinks).filter { originalTargets[$0.sha256] == nil }.map(\.original)).count
     archive.revisions.append(contentsOf: additions)
+    archive.revisions.append(contentsOf: updates)
     archive.tableBatches = combinedTables
     let preview = RestorePreview(readings: additions.count, duplicates: duplicates, conflicts: conflicts,
-      originals: files.count, tables: newTables.count, missing: missing, snapshot: snapshot.sorted())
+      originals: files.count, tables: newTables.count, missing: missing, newLinks: newLinks,
+      reusedLinks: reusedLinks, skippedLinks: skippedLinks, snapshot: snapshot.sorted())
     return (preview, archive, files)
   }
 }

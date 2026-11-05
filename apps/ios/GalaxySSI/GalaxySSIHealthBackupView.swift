@@ -119,6 +119,8 @@ struct GalaxySSIHealthBackupView: View {
                   Int64(preview.readings), Int64(preview.duplicates), Int64(preview.conflicts.count)))
       Text(String(format: t("restore_files", "%lld original files · %lld tables · %lld missing sources"),
                   Int64(preview.originals), Int64(preview.tables), Int64(preview.missing)))
+      Text(String(format: t("restore_links", "%lld new links · %lld reused · %lld skipped"),
+                  Int64(preview.newLinks), Int64(preview.reusedLinks), Int64(preview.skippedLinks)))
       ForEach(preview.conflicts.prefix(shownConflicts)) { reading in
         VStack(alignment: .leading) {
           Text(reading.metric.title(language: language))
