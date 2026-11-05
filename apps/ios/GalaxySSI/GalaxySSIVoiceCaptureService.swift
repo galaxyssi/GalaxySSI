@@ -311,15 +311,18 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let input = audioEngine.inputNode
     let format = input.outputFormat(forBus: 0)
     inputSampleRateHz = max(1, Int(format.sampleRate.rounded()))
+      let neuralVad = coordinatorConfig.map { $0.source != "ios_voice_wake" } == true
+        ? VoiceNeuralSpeechVad(sourceRateHz: inputSampleRateHz) : nil
     let pcmCaptureEnabled = coordinatorConfig != nil &&
-      (VoiceFeatureFlags.isPcmCaptureEnabled() || useLocalWhisper || useOnlineRealtime || useRemoteWhisper)
+        (neuralVad != nil || VoiceFeatureFlags.isPcmCaptureEnabled() || useLocalWhisper || useOnlineRealtime || useRemoteWhisper)
     if pcmCaptureEnabled {
       pcmTapPipeline = VoicePcmTapPipeline(
         config: VoiceAudioSessionConfig(
           capture: PcmCaptureConfig(sampleRateHz: max(1, Int(format.sampleRate.rounded()))),
           endpoint: AdaptiveEndpointConfig(),
           autoEndpoint: coordinatorConfig?.source.localizedCaseInsensitiveContains("wake") == true
-        )
+          ),
+          vad: neuralVad.map { $0 as VoiceActivityDetector } ?? AdaptiveSpeechVad()
       )
     } else {
       pcmTapPipeline = nil
@@ -424,7 +427,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     guard let recognizer = recognizer, let request = request else { return }
     task = recognizer.recognitionTask(with: request) { [weak self] result, error in
       DispatchQueue.main.async {
-        guard let self = self else { return }
+        guard let self = self, self.request === request else { return }
+        if result?.isFinal == true, self.rejectNoiseOnlyCapture() { return }
         if let result = result {
           let text = result.bestTranscription.formattedString
           self.currentIOSSpeechTranscript = text
@@ -546,6 +550,11 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   func stopForHoldToTalk(completion: @escaping (String) -> Void) {
     guard isRecording else {
       completion(currentIOSSpeechTranscript.ifBlank(transcript))
+      return
+    }
+    if pcmTapPipeline?.shouldRejectNoiseOnly == true {
+      holdToTalkCompletion = completion
+      _ = rejectNoiseOnlyCapture()
       return
     }
     if liveWhisperActive || onlineRealtimeActive || onlineRealtimeFinalizing || remoteWhisperActive {
@@ -688,6 +697,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     if !preservingHoldToTalkCompletion {
       holdToTalkCompletion = nil
     }
+    if isRecording, rejectNoiseOnlyCapture() { return }
     if isRecording {
       replaceCompletedPCMSnapshot(with: pcmTapPipeline?.snapshot())
     }
@@ -1097,7 +1107,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   }
 
   private func processPcmTap(_ buffer: AVAudioPCMBuffer) {
-    guard let update = pcmTapPipeline?.accept(buffer: buffer) else { return }
+    guard let pipeline = pcmTapPipeline, let update = pipeline.accept(buffer: buffer) else { return }
     if onlineRealtimeActive, let onlineRealtimeSession {
       let sampleRateHz = inputSampleRateHz
       Task {
@@ -1142,7 +1152,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     pcmTapEndpointRequested = true
     Task { [weak self] in
       await MainActor.run {
-        guard let self = self, self.isRecording else { return }
+        guard let self = self, self.isRecording, self.pcmTapPipeline === pipeline else { return }
         if reason == .noSpeechTimeout {
           _ = self.coordinatorBridge.cancelCurrent(reasonCode: code)
         }
@@ -1155,6 +1165,16 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     audioLevelLock.lock()
     latestAudioLevel = min(max(value, 0), 1)
     audioLevelLock.unlock()
+  }
+
+  @MainActor
+  private func rejectNoiseOnlyCapture() -> Bool {
+    guard pcmTapPipeline?.shouldRejectNoiseOnly == true else { return false }
+    let completion = holdToTalkCompletion
+    _ = coordinatorBridge.cancelCurrent(reasonCode: "no_speech_detected")
+    cancel()
+    completion?("")
+    return true
   }
 
   private func replaceCompletedPCMSnapshot(with snapshot: PcmSnapshot?) {
