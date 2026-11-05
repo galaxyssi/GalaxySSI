@@ -5344,6 +5344,7 @@
 "galaxyssi.agent.empty.subtitle" = "输入目标，或按住说话";
 "agent_info_empty" = "暂无 Agent 运行信息";
 "galaxyssi.agent.latest" = "回到最新消息";
+"chat_load_newer" = "显示较新的消息";
 "galaxyssi.agent.load_older" = "加载更早消息";
 "galaxyssi.agent.retry.title" = "Agent 请求失败";
 "galaxyssi.agent.retry.subtitle" = "可以重试最近一次 Agent 请求。";

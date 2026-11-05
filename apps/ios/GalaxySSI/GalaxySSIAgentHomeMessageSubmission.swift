@@ -34,6 +34,7 @@ extension AgentHomeView {
       screenAssistantOwnedTurns = []
     }
     let submissionID = UUID()
+    let submittingConversation = store.activeAgentConversationId
     let assistantRunID = screenAssistantConversationID == store.activeAgentConversationId
       ? screenAssistantRunID : nil
     let submission = Task { @MainActor in
@@ -51,6 +52,11 @@ extension AgentHomeView {
         requestKind: assistantRunID == nil ? .conversation : .screenAnalysis,
         readOnlyAnalysis: assistantRunID != nil,
         onOutgoing: { outgoing in
+          if outgoing.conversationId == submittingConversation, store.activeAgentConversationId == submittingConversation {
+            olderTranscriptAnchor = nil
+            pendingAgentSwipeDirection = AgentIOSAgentSwipeDirection.down.rawValue
+            agentSwipeRequest &+= 1
+          }
           guard let assistantRunID, screenAssistantRunID == assistantRunID else { return }
           screenAssistantOwnedTurns.append(outgoing)
         }
