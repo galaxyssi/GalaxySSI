@@ -21,6 +21,9 @@ enum GalaxySSIHealthLinkedExport {
     let location: Int
     let region: Int?
     let evidenceKey: String?
+    let documentID: UUID?
+    let documentOrder: Int?
+    let cropRevision: UUID?
     let worksheet: String?
     let worksheetPath: String?
     let columns: [String: Int]?
@@ -81,11 +84,13 @@ enum GalaxySSIHealthLinkedExport {
     var files: [String: Data] = [:]
     var checks: [String: Status] = [:]
     func append(_ reading: GalaxySSIHealthReading, original: UUID, source: String, location: Int,
-                expected: String, path: String?, status: Status, secondary: Bool, region: Int? = nil, evidenceKey: String? = nil,
+                expected: String, path: String?, status: Status, secondary: Bool,
+                report: GalaxySSIHealthReportReview.Source? = nil,
                 table: GalaxySSIHealthTableImport.Source? = nil) throws {
       guard links.count < 20_000 else { throw GalaxySSIHealthOriginalStore.Failure.limit }
       links.append(.init(record: reading.id, revision: reading.revision, original: original, source: source,
-                         location: location, region: region, evidenceKey: evidenceKey,
+                         location: location, region: report?.region, evidenceKey: report?.evidenceKey,
+                         documentID: report?.documentID, documentOrder: report?.documentOrder, cropRevision: report?.cropRevision,
                          worksheet: table?.sheet, worksheetPath: table?.worksheetPath,
                          columns: table?.columns, secondary: secondary, status: status, sha256: expected,
                          path: status == .included ? path : nil))
@@ -114,7 +119,7 @@ enum GalaxySSIHealthLinkedExport {
         let exists = try !removed.contains(report.original) && store.containsOriginalFile(report.original)
         try append(reading, original: report.original, source: "report", location: report.page,
                    expected: report.sha256, path: nil, status: exists ? .unreadable : .missing,
-                   secondary: secondary, region: report.region, evidenceKey: report.evidenceKey)
+                   secondary: secondary, report: report)
         return
       }
       let selected: Bool
@@ -126,11 +131,11 @@ enum GalaxySSIHealthLinkedExport {
       let path = original.entryPath
       let status: Status
       if !selected { status = .unselected }
-      else if original.kind != .pdf || original.sha256 != report.sha256 { status = .mismatched }
+      else if original.sha256 != report.sha256 { status = .mismatched }
       else { status = try verified(path, expected: report.sha256) { try store.read(original, lease: lease) } }
       try append(reading, original: original.id, source: original.acquisition?.rawValue ?? "unknown",
                  location: report.page, expected: report.sha256, path: path, status: status,
-                 secondary: secondary, region: report.region, evidenceKey: report.evidenceKey)
+                 secondary: secondary, report: report)
     }
     func appendTable(_ table: GalaxySSIHealthTableImport.Source, reading: GalaxySSIHealthReading,
                      secondary: Bool) throws {

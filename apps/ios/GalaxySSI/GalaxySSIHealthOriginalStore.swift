@@ -140,25 +140,30 @@ struct GalaxySSIHealthOriginalStore {
     }
   }
 
-  func store(_ data: Data, name: String, acquisition: Acquisition = .uploaded) throws {
+  @discardableResult
+  func store(_ data: Data, name: String, acquisition: Acquisition = .uploaded) throws -> Original {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
-      try store(data, name: name, acquisition: acquisition, lease: lease)
+      return try store(data, name: name, acquisition: acquisition, lease: lease)
     }
   }
 
-  private func store(_ data: Data, name: String, acquisition: Acquisition, lease: RestoreLease) throws {
+  private func store(_ data: Data, name: String, acquisition: Acquisition, lease: RestoreLease) throws -> Original {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
     let (kind, fileExtension) = try Self.format(of: data)
     let listing = try list(lease: lease)
     let digest = Self.digest(data)
-    if listing.originals.contains(where: { $0.sha256 == digest }) { return }
+    if let existing = listing.originals.first(where: { $0.sha256 == digest }) {
+      _ = try read(existing, lease: lease)
+      return existing
+    }
     guard listing.originals.count + listing.unavailable < 500,
           listing.originals.reduce(data.count, { $0 + $1.bytes }) <= 512 * 1024 * 1024
     else { throw Failure.limit }
     let item = Original(id: UUID(), name: String(name.prefix(180)), kind: kind, fileExtension: fileExtension,
                         importedAt: Date(), bytes: data.count, sha256: digest, acquisition: acquisition)
     try writeOriginal(item, data: data, to: url(item.id))
+    return item
   }
 
   private static func format(of data: Data) throws -> (Kind, String) {

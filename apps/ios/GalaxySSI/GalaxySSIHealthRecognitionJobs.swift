@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 enum GalaxySSIHealthRecognitionJobs {
   static let maximumPages = 40
-  static let maximumJobs = 16
+  static let maximumJobs = 40
   static let maximumTextBytes = 2 * 1024 * 1024
 
   enum Phase: String, Codable { case queued, running, interrupted, completed, cancelled, failed }
@@ -32,6 +32,9 @@ enum GalaxySSIHealthRecognitionJobs {
     var phase = Phase.queued
     var run: UUID?
     var pages: [Page] = []
+    var photoBatch: UUID?
+    var documentOrder: Int?
+    var cropRevision: UUID?
   }
 
   static func validDigest(_ hash: String) -> Bool {
@@ -87,7 +90,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
               detail(job.id)
             } label: {
               VStack(alignment: .leading, spacing: 4) {
-                Text(job.original.name)
+                Text(job.documentOrder.map { "\($0 + 1) · " + job.original.name } ?? job.original.name)
                 Text(phase(job)).foregroundColor(.secondary)
               }
             }
@@ -186,7 +189,8 @@ struct GalaxySSIHealthRecognitionJobsView: View {
           NavigationLink {
             GalaxySSIHealthReportItemEditor(records: records, source: .init(original: job.original.id,
               sha256: job.original.sha256, page: page.index, region: line.ordinal, fromOCR: page.fromOCR,
-              evidenceKey: line.id), excerpt: line.text, sourceContext: sourceContext)
+              evidenceKey: line.id, documentOrder: job.documentOrder, cropRevision: job.cropRevision,
+              documentID: job.photoBatch), excerpt: line.text, sourceContext: sourceContext)
           } label: { Text(line.text) }
         }
         NavigationLink {
@@ -215,9 +219,15 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   private func run(_ job: GalaxySSIHealthRecognitionJobs.Job) {
     guard scene == .active, task == nil else { return }
     do {
-      let bytes: Data
-      do { bytes = try store.read(job.original) }
+      let original: Data
+      do { original = try store.read(job.original) }
       catch { missingSource = job.id; throw error }
+      let bytes: Data
+      if let revision = job.cropRevision {
+        guard let crop = try store.readCrop(for: job.original), crop.metadata.revision == revision
+        else { throw GalaxySSIHealthRecords.Failure.stale }
+        bytes = crop.png
+      } else { bytes = original }
       let run = try records.beginRecognitionJob(id: job.id, expected: job.version)
       activeID = job.id; activeRun = run
       reload()
@@ -233,6 +243,10 @@ struct GalaxySSIHealthRecognitionJobsView: View {
             guard scene == .active, activeRun == run else { throw CancellationError() }
             guard try store.list().originals.contains(job.original) else {
               missingSource = job.id
+              throw GalaxySSIHealthRecords.Failure.stale
+            }
+            if let revision = job.cropRevision,
+               try store.readCrop(for: job.original)?.metadata.revision != revision {
               throw GalaxySSIHealthRecords.Failure.stale
             }
             try records.commitRecognitionPage(id: job.id, run: run, page: page)

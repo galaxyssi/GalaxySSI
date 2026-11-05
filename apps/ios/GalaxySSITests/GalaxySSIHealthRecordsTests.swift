@@ -770,6 +770,55 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testPhotoDraftPinsOrderAndRejectsMissingPagesWithoutQueuingPartialJobs() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: root.appendingPathComponent("records"))
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root,
+                                             restoreRecordsFile: records.isolatedFile)
+    func image(_ color: UIColor) -> Data {
+      UIGraphicsImageRenderer(size: CGSize(width: 16, height: 12)).pngData { context in
+        color.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 16, height: 12))
+      }
+    }
+    let firstBytes = image(.red)
+    let first = try store.store(firstBytes, name: "first.png", acquisition: .camera)
+    let second = try store.store(image(.blue), name: "second.png")
+    let draft = try records.savePhotoDraft(.init(pages: [.init(original: first), .init(original: second)]))
+    var reversed = draft
+    reversed.pages.reverse()
+    let ordered = try records.savePhotoDraft(reversed)
+    XCTAssertThrowsError(try records.submitPhotoDraft(draft, store: store))
+    var invalid = ordered
+    invalid.pages[1].useCrop = true
+    let missingCrop = try records.savePhotoDraft(invalid)
+    XCTAssertThrowsError(try records.submitPhotoDraft(missingCrop, store: store))
+    XCTAssertNil(try records.load().recognitionJobs)
+    var restored = missingCrop
+    restored.pages[1].useCrop = false
+    restored = try records.savePhotoDraft(restored)
+    try FileManager.default.removeItem(at: root.appendingPathComponent(first.id.uuidString))
+    XCTAssertThrowsError(try records.submitPhotoDraft(restored, store: store))
+    XCTAssertNil(try records.load().recognitionJobs)
+    XCTAssertEqual(try records.load().photoDraft, restored)
+    try store.repairRecognitionOriginal(first, data: firstBytes)
+    try records.submitPhotoDraft(restored, store: store)
+    let archive = try records.load()
+    XCTAssertNil(archive.photoDraft)
+    XCTAssertEqual(archive.recognitionJobs?.map(\.original.id), [second.id, first.id])
+    XCTAssertEqual(archive.recognitionJobs?.compactMap(\.documentOrder), [0, 1])
+    XCTAssertEqual(archive.recognitionJobs?.compactMap(\.photoBatch).count, 2)
+    XCTAssertTrue(archive.current.isEmpty)
+    XCTAssertEqual(try store.list().originals.count, 2)
+    XCTAssertEqual(try store.read(first), firstBytes)
+    XCTAssertEqual(first.acquisition, .camera)
+    XCTAssertEqual(archive.recognitionJobs?.map(\.pageCount), [1, 1])
+  }
+
+  @MainActor
   func testRecognitionCheckpointResumesAndCancellationRejectsLatePages() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

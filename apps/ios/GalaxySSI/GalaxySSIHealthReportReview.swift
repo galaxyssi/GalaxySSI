@@ -9,12 +9,15 @@ enum GalaxySSIHealthReportReview {
     let region: Int
     let fromOCR: Bool
     var evidenceKey: String?
+    var documentOrder: Int?
+    var cropRevision: UUID?
+    var documentID: UUID?
 
     var regionIdentity: String { evidenceKey ?? "legacy:\(region)" }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
       guard lhs.original == rhs.original, lhs.sha256 == rhs.sha256, lhs.page == rhs.page,
-            lhs.fromOCR == rhs.fromOCR else { return false }
+            lhs.fromOCR == rhs.fromOCR, lhs.cropRevision == rhs.cropRevision else { return false }
       if lhs.evidenceKey != nil || rhs.evidenceKey != nil { return lhs.evidenceKey == rhs.evidenceKey }
       return lhs.region == rhs.region
     }
@@ -24,6 +27,7 @@ enum GalaxySSIHealthReportReview {
       hasher.combine(sha256)
       hasher.combine(page)
       hasher.combine(fromOCR)
+      hasher.combine(cropRevision)
       hasher.combine(regionIdentity)
     }
   }
@@ -69,7 +73,10 @@ enum GalaxySSIHealthReportReview {
     let reading: GalaxySSIHealthReading
     let source: Source
     let secondary: Bool
-    var id: String { "\(reading.id):\(reading.revision):\(source.page):\(source.regionIdentity):\(source.fromOCR):\(secondary)" }
+    var id: String {
+      "\(reading.id):\(reading.revision):\(source.page):\(source.regionIdentity):" +
+        "\(source.fromOCR):\(source.cropRevision?.uuidString ?? ""):\(secondary)"
+    }
   }
 
   static func linked(original: GalaxySSIHealthOriginalStore.Original, revisions: [GalaxySSIHealthReading],
