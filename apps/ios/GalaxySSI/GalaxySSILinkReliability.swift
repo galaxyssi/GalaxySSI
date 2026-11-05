@@ -133,6 +133,7 @@ struct KnownLinkCiphertext: Codable, Equatable {
   var messageId: String
   var receiptRequired: Bool
   var createdAt: Date
+  var contactReminder: Bool? = nil
 }
 
 enum IncomingStageResult: Equatable {
@@ -443,6 +444,23 @@ final class GalaxySSILinkDeliveryStore {
       ],
       now: now
     )
+  }
+
+  @discardableResult
+  func enqueueContactReminder(_ request: LinkDeliveryEnqueueRequest, now: Date = Date()) -> Bool {
+    guard journalHealthy, !request.messageId.isBlank, !request.topic.isBlank,
+          !request.wirePayload.isBlank, request.wirePayload.utf8.count <= 16_384 else { return false }
+    if let existing = state.outbox.first(where: { $0.messageId == request.messageId }) {
+      return existing.contactId == request.contactId && existing.clientSourceMessageId == request.clientSourceMessageId
+    }
+    let previous = state
+    state.outbox.append(PendingLinkMessage(messageId: request.messageId, topic: request.topic,
+      wirePayload: request.wirePayload, status: "queued", attempts: 0, nextAttemptAt: now,
+      createdAt: now, updatedAt: now, clientSourceMessageId: request.clientSourceMessageId,
+      contactId: request.contactId))
+    if save() { return true }
+    state = previous
+    return false
   }
 
   func enqueueBatch(_ requests: [LinkDeliveryEnqueueRequest], now: Date = Date()) {
@@ -952,7 +970,8 @@ final class GalaxySSILinkDeliveryStore {
     save()
   }
 
-  func bindCiphertext(digest: String, messageId: String, receiptRequired: Bool, now: Date = Date()) throws {
+  func bindCiphertext(digest: String, messageId: String, receiptRequired: Bool,
+                      contactReminder: Bool? = nil, now: Date = Date()) throws {
     guard !digest.isEmpty, !messageId.isEmpty else { return }
     if let existing = state.ciphertextBindings[digest],
        existing.messageId != messageId {
@@ -961,7 +980,8 @@ final class GalaxySSILinkDeliveryStore {
     state.ciphertextBindings[digest] = KnownLinkCiphertext(
       messageId: messageId,
       receiptRequired: receiptRequired,
-      createdAt: state.ciphertextBindings[digest]?.createdAt ?? now
+      createdAt: state.ciphertextBindings[digest]?.createdAt ?? now,
+      contactReminder: contactReminder
     )
     trimCiphertextBindings(now: now)
     save()

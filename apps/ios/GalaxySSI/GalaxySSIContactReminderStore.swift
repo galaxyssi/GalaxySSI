@@ -77,6 +77,7 @@ struct GalaxySSIContactReminder: Codable, Equatable, Identifiable {
   let historyID: UUID?
   var status: GalaxySSIContactReminderStatus
   var pendingAction: GalaxySSIContactReminderAction?
+  var historyPublished: Bool? = nil
 
   func envelope(_ action: GalaxySSIContactReminderAction) -> GalaxySSIContactReminderEnvelope {
     GalaxySSIContactReminderEnvelope(id: id, createdAt: createdAt, expiresAt: expiresAt, action: action)
@@ -165,6 +166,24 @@ struct GalaxySSIContactReminderStore {
     record.pendingAction = nil
     rows[id] = record
     try save(rows)
+  }
+
+  func markHistoryPublished(id: String, now: Int64) throws {
+    var rows = try load(now: now)
+    guard var record = rows[id], record.historyPublished != true else { return }
+    record.historyPublished = true
+    rows[id] = record
+    try save(rows)
+  }
+
+  func failRequest(id: String, peerID: String, now: Int64) throws -> GalaxySSIContactReminder? {
+    var rows = try load(now: now)
+    guard var record = rows[id], record.peerID == peerID, record.outgoing, record.status == .queued else { return nil }
+    record.status = .failed
+    record.pendingAction = nil
+    rows[id] = record
+    try save(rows)
+    return record
   }
 
   func records(now: Int64) throws -> [GalaxySSIContactReminder] {

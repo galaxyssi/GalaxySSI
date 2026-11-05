@@ -6128,3 +6128,15 @@
 "galaxyssi.health.data_files.export_prepared" = "已准备，未确认保存";
 "galaxyssi.health.data_files.export_verified" = "已保存并验证";
 "galaxyssi.health.data_files.export_unverified" = "未验证保存结果";
+"galaxyssi.contact_reminder.sent" = "已发送联系人提醒";
+"galaxyssi.contact_reminder.received" = "收到联系人提醒";
+"galaxyssi.contact_reminder.status.queued" = "等待送达";
+"galaxyssi.contact_reminder.status.received" = "已送达";
+"galaxyssi.contact_reminder.status.quiet" = "已静默送达";
+"galaxyssi.contact_reminder.status.muted" = "已静音";
+"galaxyssi.contact_reminder.status.acknowledged" = "对方已确认";
+"galaxyssi.contact_reminder.status.dismissed" = "已忽略";
+"galaxyssi.contact_reminder.status.cancelled" = "已取消";
+"galaxyssi.contact_reminder.status.disabled" = "接收方已关闭提醒";
+"galaxyssi.contact_reminder.status.expired" = "已过期";
+"galaxyssi.contact_reminder.status.failed" = "发送失败";

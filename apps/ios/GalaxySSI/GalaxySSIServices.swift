@@ -13,6 +13,9 @@ final class MessageCoordinator: ObservableObject {
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
   @Published private(set) var pendingPeerSendContactIds: Set<String> = []
+  @Published var contactReminders: [GalaxySSIContactReminder] = []
+  var contactReminderExpiryTask: Task<Void, Never>?
+  var onContactReminderAlert: ((GalaxySSIContactReminder) -> Void)?
   private var pendingCollaborationConversations: Set<String> = []
   @Published private(set) var lastRevokedContactIds: Set<String> = []
   @Published private(set) var pairingRevocationRevision = 0
@@ -449,6 +452,7 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         self.replayApprovedPhoneContactDecisionsOnce()
         self.wakePairingDeliveries()
+        self.restoreContactReminders()
         self.pendingReplyRecoveryWake.connectionChanged(self.mqttClient.isConnected)
         self.pendingReplyRecoveryWake.request(isConnected: self.mqttClient.relationshipSubscriptionsReady)
         Task { await self.refreshBlobArtifactCapabilities() }
@@ -468,6 +472,7 @@ final class MessageCoordinator: ObservableObject {
 
   func start() {
     restorePendingPairingClaim()
+    restoreContactReminders()
     _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
     _ = localNativeToolRuntime
     AgentKnowledgeGapResearchBridge.shared.install { [weak self] in
@@ -3052,6 +3057,7 @@ final class MessageCoordinator: ObservableObject {
     var handled = Set<String>()
     for failure in failures {
       let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
+      if handleContactReminderTransportFailure(source: sourceId, contactID: failure.contactId) { continue }
       let key = "\(failure.contactId)|\(sourceId)"
       guard handled.insert(key).inserted else { continue }
       _ = deliveryStore.discardClientSourceMessage(sourceId)
@@ -3114,6 +3120,7 @@ final class MessageCoordinator: ObservableObject {
     var handled = Set<String>()
     for failure in failures {
       let sourceId = failure.clientSourceMessageId.ifBlank(failure.messageId)
+      if handleContactReminderTransportFailure(source: sourceId, contactID: failure.contactId) { continue }
       guard let sourceUUID = UUID(uuidString: sourceId) else { continue }
       let key = "\(failure.contactId)|\(sourceId)"
       guard handled.insert(key).inserted else { continue }
@@ -10163,7 +10170,7 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func phoneContactWirePayload(
+  func phoneContactWirePayload(
     _ payload: [String: Any],
     contact: GalaxySSIContact
   ) throws -> (
@@ -10222,6 +10229,7 @@ final class MessageCoordinator: ObservableObject {
       return wireText
     }
     peerSessionRecoveryGate.sessionHealthy(contactId: contact.id)
+    restoreContactReminders()
     if recovered > 0 {
       scheduleOutboxFlush(after: 0)
     }
@@ -11037,6 +11045,12 @@ final class MessageCoordinator: ObservableObject {
           isPhoneContact(contact) else {
       return
     }
+    let replayDigest = ciphertextReplayDigest(for: wire)
+    if !replayDigest.isEmpty, let known = deliveryStore.messageForCiphertext(digest: replayDigest),
+       known.contactReminder == true {
+      if known.receiptRequired { publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId) }
+      return
+    }
     guard let envelope = signalEngine.decrypt(wire) else {
       let nowMillis = Int64((Date().timeIntervalSince1970 * 1_000).rounded())
       guard peerSessionRecoveryGate.begin(contactId: contact.id, nowMillis: nowMillis) else {
@@ -11059,6 +11073,12 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     let messageId = payload.string("message_id")
+    if payload.string("type") == GalaxySSIContactReminderEnvelope.type {
+      guard !messageId.isBlank, receiveContactReminder(payload, authenticatedContact: contact) else { return }
+      try? deliveryStore.bindCiphertext(digest: replayDigest, messageId: messageId, receiptRequired: true, contactReminder: true)
+      publishPhoneContactReceipt(contact: contact, receivedMessageId: messageId)
+      return
+    }
     if payload.string("type") == "delivery_ack" {
       handlePhoneContactDeliveryAck(payload, contact: contact)
       return
@@ -11066,12 +11086,8 @@ final class MessageCoordinator: ObservableObject {
     guard !messageId.isEmpty,
           let persistedData = try? GalaxySSILinkProtocol.jsonData(wire) else { return }
     let persistedPayload = String(decoding: persistedData, as: UTF8.self)
-    let replayDigest = ciphertextReplayDigest(for: wire)
-    if !replayDigest.isEmpty,
-       let known = deliveryStore.messageForCiphertext(digest: replayDigest) {
-      if known.receiptRequired {
-        publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId)
-      }
+    if !replayDigest.isEmpty, let known = deliveryStore.messageForCiphertext(digest: replayDigest) {
+      if known.receiptRequired { publishPhoneContactReceipt(contact: contact, receivedMessageId: known.messageId) }
       return
     }
     switch deliveryStore.stageIncoming(messageId: messageId, payload: persistedPayload) {
@@ -11542,6 +11558,13 @@ final class MessageCoordinator: ObservableObject {
     }
     var appPayload: [String: Any]
     if object.string("scheme") == "signal" {
+      if allowStage, let link, link.paired, object.string("from") == link.desktopId,
+         object.string("to") == signalEngine.identity.name,
+         let known = deliveryStore.messageForCiphertext(digest: ciphertextReplayDigest(for: object)),
+         known.contactReminder == true {
+        if known.receiptRequired { publishInboundReceipt(link: link, receivedMessageId: known.messageId) }
+        return
+      }
       guard let unwrapped = signalEngine.decrypt(object) else {
         recordLinkDiagnostic(
           .decryptFailure,
@@ -11567,6 +11590,19 @@ final class MessageCoordinator: ObservableObject {
       appPayload = unwrapped
     } else {
       appPayload = object
+    }
+    if appPayload.string("type") == GalaxySSIContactReminderEnvelope.type {
+      guard object.string("scheme") == "signal", let link, link.paired,
+            object.string("from") == link.desktopId, object.string("to") == signalEngine.identity.name,
+            let contact = store.visibleContacts.first(where: {
+              $0.isDesktopDeviceContact && $0.desktopId == link.desktopId && $0.isCommunicable
+            }) else { return }
+      let id = appPayload.string("message_id")
+      guard !id.isBlank, receiveContactReminder(appPayload, authenticatedContact: contact) else { return }
+      try? deliveryStore.bindCiphertext(digest: ciphertextReplayDigest(for: object), messageId: id,
+        receiptRequired: true, contactReminder: true)
+      publishInboundReceipt(link: link, receivedMessageId: id)
+      return
     }
     if appPayload.string("type") == "pairing_revoked" {
       let desktopId = appPayload.string("desktop_id").ifBlank(link?.desktopId ?? "")

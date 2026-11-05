@@ -3,6 +3,32 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testContactReminderOutboxPersistsCiphertextAndRejectsIdentifierReuse() throws {
+    let fixture = try ChunkFixture()
+    let suite = "contact-reminder-outbox-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let delivery = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let record = GalaxySSIContactReminder(id: UUID().uuidString, peerID: "peer", outgoing: true,
+      createdAt: 1_000, expiresAt: 121_000, historyID: UUID(), status: .queued, pendingAction: .request)
+    let source = GalaxySSIContactReminderOutbox.source(record, action: .request)
+    let now = Date(timeIntervalSince1970: 1)
+    let request = LinkDeliveryEnqueueRequest(messageId: UUID().uuidString, topic: "topic/up",
+      wirePayload: "encrypted-control", requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [],
+      clientSourceMessageId: source, contactId: record.peerID)
+    XCTAssertTrue(delivery.enqueueContactReminder(request, now: now))
+    XCTAssertTrue(delivery.enqueueContactReminder(request, now: now))
+    var other = request
+    other.contactId = "other"
+    XCTAssertFalse(delivery.enqueueContactReminder(other, now: now))
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertEqual(reopened.pending(now: now).map(\.wirePayload), ["encrypted-control"])
+    XCTAssertFalse(GalaxySSIContactReminderOutbox.isExpired(source, now: 120_999))
+    XCTAssertTrue(GalaxySSIContactReminderOutbox.isExpired(source, now: 121_000))
+    XCTAssertFalse(GalaxySSIContactReminderOutbox.isExpired("ordinary-message", now: 121_000))
+  }
+
   func testDeferredAttachmentTaskRequiresEveryReceiptAndPersistsCiphertext() throws {
     let fixture = try ChunkFixture()
     let suite = "deferred-task-\(UUID().uuidString)"
