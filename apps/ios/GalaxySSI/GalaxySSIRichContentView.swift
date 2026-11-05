@@ -1990,6 +1990,9 @@ private struct GalaxySSIRichBlockView: View {
   }
 
   private var mediaURL: URL? {
+    if block.uri.hasPrefix(AgentVisualOutputPolicy.localVideoPrefix) {
+      return coordinator.loadDeclaredRichVideoURL(block)
+    }
     guard let url = localArtifactFile ?? GalaxySSILocalFileResource.url(for: block) ?? URL(string: block.uri),
           ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else {
       return nil

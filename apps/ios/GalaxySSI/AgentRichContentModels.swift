@@ -277,6 +277,9 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
   }
 
   func artifactIdentity() -> String {
+    if type == .video, uri.hasPrefix(AgentVisualOutputPolicy.localVideoPrefix) {
+      return "local-video:\(uri):\(metadata["relative_path"] ?? "")"
+    }
     guard isArtifactBlock else { return "" }
     let artifactName = fallbackText
       .replacingOccurrences(of: "\\", with: "/")

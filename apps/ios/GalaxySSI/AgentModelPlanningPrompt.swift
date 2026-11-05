@@ -99,7 +99,7 @@ enum AgentModelPlanningPrompt {
     }
     append(&prompt, "ActionPlan JSON schema:\n")
     append(&prompt, "{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
-    append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\"},")
+    append(&prompt, "\"completion_requirements\":{\"publication\":\"none|commit|push|pull_request\",\"phone_linux\":false,\"reason\":\"...\",\"artifacts\":[]},")
     append(&prompt, "\"actions\":[{\"ref\":\"step_name\",\"kind\":\"ACTION_KIND\",\"target\":\"...\",")
     append(&prompt, "\"description\":\"...\",\"depends_on\":[\"earlier_ref\"],")
     append(&prompt, "\"use_outputs_from\":[\"earlier_ref\"],\"parameters\":{\"key\":\"value\"}}]}\n\n")
@@ -128,6 +128,8 @@ enum AgentModelPlanningPrompt {
     append(&prompt, "CALL_CONNECTOR/CONTROL_DEVICE require an exact connector_id from inventory. ")
     append(&prompt, "Plan only the next bounded execution batch, never the entire long-running goal. ")
     append(&prompt, "Declare root completion_requirements by interpreting the user's actual requested outcome, including exclusions. There is no default publication requirement. publication is none, commit, push, or pull_request; phone_linux is true only when successful execution in the phone Linux guest is part of the requested outcome. These fields are completion obligations, not permissions. Preserve an existing declaration unless correcting it, and explain every outcome-changing correction in reason. ")
+    let workspace = AgentWorkspaceScope.id(conversationId: request.conversationContext.conversationId)
+    append(&prompt, "Omit artifacts unless a real MP4 is requested. For video, add an artifacts entry with workspace_id \(workspace) and path equal to the exact relative MP4 output path. Require a verified media conversion receipt before TASK_COMPLETE. HTML or a filename alone is not video. ")
     if maxBatchActions >= 3 {
       append(&prompt, "For a multi-step goal, prefer 3 to \(maxBatchActions) actionable steps when their inputs are already known; use 1 or 2 when the goal is that small or the next choice depends on an observation. ")
     }

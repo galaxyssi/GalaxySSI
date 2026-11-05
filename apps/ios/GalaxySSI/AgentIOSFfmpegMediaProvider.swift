@@ -199,6 +199,7 @@ struct AgentIOSSignedFfmpegMediaProvider: AgentIOSMediaNativeToolProviding {
       }
       let artifacts = response.artifacts.map { AgentMcpJSONValue.object($0) }
       var output: AgentMcpJSONObject = [
+        "workspace_id": .string(request.workspaceId),
         "source_path": .string(plan.sourcePath),
         "destination_path": .string(plan.destinationPath),
         "target_format": .string(request.targetFormat),
@@ -429,7 +430,7 @@ struct AgentIOSSignedFfmpegMediaProvider: AgentIOSMediaNativeToolProviding {
     String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxFriendlyDiagnosticCharacters))
   }
 
-  private static func defaultProjectRoot(fileManager: FileManager) -> URL {
+  static func defaultProjectRoot(fileManager: FileManager = .default) -> URL {
     let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
     return base.appendingPathComponent("agent-native-workspaces", isDirectory: true)

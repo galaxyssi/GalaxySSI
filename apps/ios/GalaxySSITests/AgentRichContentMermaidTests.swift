@@ -55,6 +55,45 @@ final class AgentRichContentMermaidTests: XCTestCase {
     XCTAssertThrowsError(try materializer.prepareVisualReply(envelope(fake)))
   }
 
+  func testWorkspaceVideoRequiresMatchingReceiptAndSurvivesWorkspaceCleanup() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let workspace = root.appendingPathComponent("workspaces", isDirectory: true)
+    let file = workspace.appendingPathComponent("scope-a/outputs/clip.mp4")
+    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let data = try XCTUnwrap(Data(base64Encoded: Self.mp4Fixture))
+    try data.write(to: file)
+    let materializer = AgentRichContentMaterializer(directoryURL: root.appendingPathComponent("delivery"))
+    let requirement = try XCTUnwrap(AgentVideoArtifactRequirement(workspaceId: "scope-a", path: "outputs/clip.mp4"))
+    let requirements = AgentCompletionRequirements(publication: .none, phoneLinux: false, artifacts: [requirement])
+    let output: AgentMcpJSONObject = [
+      "workspace_id": .string(requirement.workspaceId), "destination_path": .string(requirement.path),
+      "mime_type": .string("video/mp4"), "size_bytes": .int(Int64(data.count)),
+      "sha256": .string(GalaxySSIAttachmentPayloadBuilder.sha256(data)),
+      "video_openability": .object(["duration_ms": .int(1000), "decoded_frame_width": .int(32), "decoded_frame_height": .int(32)]),
+      "large_unused_diagnostics": .string(String(repeating: "x", count: 2_500))
+    ]
+    let toolId = AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode
+    let compact = try XCTUnwrap(AgentCompletionEvidencePolicy.compactVideoEvidence(toolId: toolId,
+      output: AgentMcpJSONCodec.stringify(output)))
+    XCTAssertLessThan(compact.count, 2_000)
+    var action = AgentAction(id: "tool", kind: .callNativeTool, target: toolId,
+      risk: .medium, status: .completed, description: "MP4 export", requiresConfirmation: false)
+    action.evidence = compact
+    let receipt = try XCTUnwrap(AgentCompletionEvidencePolicy.verifiedVideo(requirement, history: [action]))
+    XCTAssertTrue(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [action]).isEmpty)
+    action.status = .failed
+    XCTAssertFalse(AgentCompletionEvidencePolicy.missingEvidence(requirements: requirements, history: [action]).isEmpty)
+    let video = try XCTUnwrap(materializer.prepareWorkspaceVideos([receipt], root: workspace).first)
+    var tampered = data
+    tampered[tampered.startIndex] ^= 1
+    try tampered.write(to: file, options: .atomic)
+    XCTAssertThrowsError(try materializer.prepareWorkspaceVideos([receipt], root: workspace))
+    try FileManager.default.removeItem(at: file)
+    let saved = try XCTUnwrap(materializer.loadDeclaredVideoURL(video))
+    XCTAssertEqual(try Data(contentsOf: saved), data)
+  }
+
   func testVisualReplyPreservesLongProgramDuringFormatOnlyRepair() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }

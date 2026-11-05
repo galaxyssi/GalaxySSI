@@ -107,6 +107,10 @@ final class MessageCoordinator: ObservableObject {
   func loadDeclaredRichHTML(_ block: AgentRichBlock) -> String? {
     richContentMaterializer.loadDeclaredHTML(block)
   }
+
+  func loadDeclaredRichVideoURL(_ block: AgentRichBlock) -> URL? {
+    richContentMaterializer.loadDeclaredVideoURL(block)
+  }
   private let remoteWhisperNodeRegistry = VoiceRemoteWhisperNodeRegistry.shared
   private let remoteWhisperNodeClient = VoiceRemoteWhisperNodeClient.shared
   let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
@@ -744,7 +748,7 @@ final class MessageCoordinator: ObservableObject {
         task.executionLog.append("Recovered interrupted model replanning from durable input")
         task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
         store.upsertAgentTask(task)
-        _ = acceptRollingPlanningOutcome(
+        _ = await acceptRollingPlanningOutcome(
           outcome,
           previousPlan: basePlan,
           outgoing: outgoing,
@@ -8688,6 +8692,11 @@ final class MessageCoordinator: ObservableObject {
       ?? result.metadata["evidence"]
       ?? result.metadata["receipt"]
       ?? (result.success ? "native_tool_receipt" : "native_tool_failure")
+    if result.success, let compact = AgentCompletionEvidencePolicy.compactVideoEvidence(
+      toolId: result.metadata["native_tool_id"] ?? "", output: completed.evidence
+    ) {
+      completed.evidence = compact
+    }
     plan.actions[index] = completed
     plan.validation = AgentPlanValidator.validate(plan)
     task.activePlan = plan
@@ -8796,7 +8805,7 @@ final class MessageCoordinator: ObservableObject {
     task.phase = .waitingResponse
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
     store.upsertAgentTask(task)
-    _ = acceptRollingPlanningOutcome(
+    _ = await acceptRollingPlanningOutcome(
       outcome,
       previousPlan: previousPlan,
       outgoing: outgoing,
@@ -8810,7 +8819,7 @@ final class MessageCoordinator: ObservableObject {
     previousPlan: AgentPlan,
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
-  ) -> Bool {
+  ) async -> Bool {
     guard let outcome else {
       task.verification = "Rolling plan assessment is pending because the planning model is unavailable"
       task.executionLog.append("Rolling plan: waiting for model assessment for revision \(previousPlan.revision)")
@@ -8828,12 +8837,53 @@ final class MessageCoordinator: ObservableObject {
     if nextPlan.actions.count == 1,
        let finalAction = nextPlan.actions.first,
        AgentRollingPlanPolicy.closesFromVerifiedEvidence(finalAction) {
+      let requirements = Set((previousPlan.completionRequirements?.artifacts ?? []) +
+                             (nextPlan.completionRequirements?.artifacts ?? []))
+      var videos: [AgentRichBlock] = []
+      if !requirements.isEmpty {
+        let scope = AgentPlanContinuationScope(conversationId: outgoing.conversationId,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+        let workspace = AgentWorkspaceScope.id(conversationId: scope.conversationId, sessionId: task.sessionId)
+        let history = previousPlan.historyForReplan().filter { action in
+          action.parameters[AgentPlanContinuationScope.conversationIdKey] == scope.conversationId &&
+            action.parameters[AgentPlanContinuationScope.turnIdKey] == scope.turnId
+        }
+        let receipts = requirements.sorted { ($0.workspaceId, $0.path) < ($1.workspaceId, $1.path) }.compactMap {
+          $0.workspaceId == workspace ? AgentCompletionEvidencePolicy.verifiedVideo($0, history: history) : nil
+        }
+        let materializer = richContentMaterializer
+        let resolved: String?
+        if receipts.count == requirements.count {
+          resolved = try? await Task.detached(priority: .userInitiated) {
+            let blocks = try materializer.prepareWorkspaceVideos(receipts,
+              root: AgentIOSSignedFfmpegMediaProvider.defaultProjectRoot())
+            return AgentRichContentCodec.encode(blocks)
+          }.value
+        } else {
+          resolved = nil
+        }
+        guard !Task.isCancelled, let current = store.agentTask(id: task.taskId),
+              current.phase == .waitingResponse, current.activePlan?.planId == previousPlan.planId,
+              current.activePlan?.revision == previousPlan.revision else { return false }
+        task = current
+        let decoded = AgentRichContentCodec.decode(resolved ?? "")
+        guard decoded.count == requirements.count else {
+          task.verification = localizedReply("rich_output_video_unverified",
+            fallback: "The requested video was not delivered as a verified MP4 file.")
+          task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+          store.upsertAgentTask(task)
+          return false
+        }
+        videos = decoded
+      }
       completeRollingNativePlan(
         finalAction: finalAction,
         finalPlan: nextPlan,
         previousPlan: previousPlan,
         outgoing: outgoing,
-        task: &task
+        task: &task,
+        videos: videos,
+        verifiedArtifacts: requirements.sorted { ($0.workspaceId, $0.path) < ($1.workspaceId, $1.path) }
       )
       return true
     }
@@ -8878,7 +8928,9 @@ final class MessageCoordinator: ObservableObject {
     finalPlan: AgentPlan,
     previousPlan: AgentPlan,
     outgoing: ChatMessage,
-    task: inout AgentTaskRecord
+    task: inout AgentTaskRecord,
+    videos: [AgentRichBlock],
+    verifiedArtifacts: [AgentVideoArtifactRequirement]
   ) {
     let nextRevision = previousPlan.revision + 1
     var completedMarker = finalAction.withPlanRevision(nextRevision)
@@ -8890,6 +8942,9 @@ final class MessageCoordinator: ObservableObject {
     completedPlan.replanCount += 1
     completedPlan.completionRequirements = finalPlan.completionRequirements
       ?? previousPlan.completionRequirements
+    if !verifiedArtifacts.isEmpty {
+      completedPlan.completionRequirements?.artifacts = verifiedArtifacts
+    }
     completedPlan.expectedResult = finalPlan.expectedResult
       .ifBlank(finalAction.result)
       .ifBlank(finalAction.description)
@@ -8924,7 +8979,8 @@ final class MessageCoordinator: ObservableObject {
       traceStage: "local_native_tool_reply_received",
       detail: completedPlan.planId,
       conversationId: outgoing.conversationId,
-      turnId: outgoing.turnId
+      turnId: outgoing.turnId,
+      richOutputJson: videos.isEmpty ? "" : AgentRichContentCodec.encode(AgentRichContentCodec.fromText(task.result) + videos)
     )
   }
 

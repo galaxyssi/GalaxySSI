@@ -5,6 +5,7 @@ enum AgentVisualOutputPolicy {
   static let maximumHTMLCharacters = 32_000
   static let maximumHTMLBytes = 128_000
   static let localHTMLPrefix = "galaxyssi-artifact://local-html/"
+  static let localVideoPrefix = "galaxyssi-artifact://local-video/"
   static let prompt = "For a playable animation, use a galaxyssi-html fence with complete self-contained HTML, CSS, and JS (up to 32000 characters). No external assets, network, forms, or device APIs. Use ordinary html fences for requested source code. Video requires a real exported MP4 and verified playback; HTML and filenames are not video evidence."
 
   struct Reply: Sendable {
@@ -228,13 +229,8 @@ final class AgentRichContentMaterializer: @unchecked Sendable {
           try? fileManager.removeItem(at: url)
           return nil
         }
-        return AgentRichBlock(id: block.id, type: .video, title: URL(fileURLWithPath: path).lastPathComponent,
-          uri: url.absoluteString, mimeType: "video/mp4", fallbackText: block.fallbackText,
-          metadata: [
-            "size_bytes": String(data.count), "sha256": digest, "storage": "app_private_file",
-            "relative_path": path, "display_extension": "mp4", "duration_ms": String(evidence.durationMillis),
-            "decoded_frame_width": String(evidence.frameWidth), "decoded_frame_height": String(evidence.frameHeight)
-          ])
+        return Self.videoBlock(id: block.id, path: path, digest: digest, size: Int64(data.count),
+                               evidence: evidence, fallback: block.fallbackText)
       } catch {
         return nil
       }
@@ -243,6 +239,85 @@ final class AgentRichContentMaterializer: @unchecked Sendable {
 
   func loadDeclaredHTML(_ block: AgentRichBlock) -> String? {
     locked { readDeclaredHTML(block) }
+  }
+
+  func loadDeclaredVideoURL(_ block: AgentRichBlock) -> URL? {
+    guard block.type == .video, let digest = block.metadata["sha256"],
+          digest.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+          block.uri == AgentVisualOutputPolicy.localVideoPrefix + digest,
+          let size = Int64(block.metadata["size_bytes"] ?? "") else { return nil }
+    let file = directoryURL.appendingPathComponent("\(digest).mp4")
+    guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+          values.isRegularFile == true, values.isSymbolicLink != true,
+          let actualSize = values.fileSize, Int64(actualSize) == size else { return nil }
+    return file
+  }
+
+  func prepareWorkspaceVideos(_ receipts: [AgentVerifiedWorkspaceVideo], root: URL) throws -> [AgentRichBlock] {
+    try locked {
+      try receipts.map { receipt in
+        guard let artifact = AgentVideoArtifactRequirement(workspaceId: receipt.workspaceId, path: receipt.path),
+              artifact.path == receipt.path,
+              receipt.sha256.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+              (16...268_435_456).contains(receipt.size) else { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+        let workspace = resolvedRoot.appendingPathComponent(receipt.workspaceId, isDirectory: true)
+        let source = workspace.appendingPathComponent(receipt.path).standardizedFileURL
+        let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard source.resolvingSymlinksInPath().path == source.path, source.path.hasPrefix(workspace.path + "/"),
+              values.isRegularFile == true, values.isSymbolicLink != true,
+              values.fileSize.map(Int64.init) == receipt.size else { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let temporary = directoryURL.appendingPathComponent(".\(UUID().uuidString).mp4")
+        defer { try? fileManager.removeItem(at: temporary) }
+        try fileManager.copyItem(at: source, to: temporary)
+        guard try Self.digestOfVideo(temporary, size: receipt.size) == receipt.sha256,
+              let evidence = AgentIOSMP4Openability.inspect(temporary) else {
+          throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo
+        }
+        let final = directoryURL.appendingPathComponent("\(receipt.sha256).mp4")
+        try (temporary as NSURL).setResourceValue(FileProtectionType.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
+        var protectedURL = temporary
+        var resources = URLResourceValues()
+        resources.isExcludedFromBackup = true
+        try protectedURL.setResourceValues(resources)
+        if fileManager.fileExists(atPath: final.path) {
+          if (try? Self.digestOfVideo(final, size: receipt.size)) != receipt.sha256 {
+            _ = try fileManager.replaceItemAt(final, withItemAt: temporary)
+          }
+        } else {
+          try fileManager.moveItem(at: temporary, to: final)
+        }
+        let pathId = Self.sha256(Data(receipt.path.utf8)).prefix(16)
+        return Self.videoBlock(id: "workspace-video:\(receipt.sha256.prefix(24)):\(pathId)", path: receipt.path,
+          digest: receipt.sha256, size: receipt.size, evidence: evidence)
+      }
+    }
+  }
+
+  private static func digestOfVideo(_ file: URL, size: Int64) throws -> String {
+    let handle = try FileHandle(forReadingFrom: file)
+    defer { try? handle.close() }
+    var digest = SHA256()
+    var total: Int64 = 0
+    while let chunk = try handle.read(upToCount: 256 * 1_024), !chunk.isEmpty {
+      total += Int64(chunk.count)
+      guard total <= size else { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+      digest.update(data: chunk)
+    }
+    guard total == size else { throw AgentVisualOutputPolicy.DeliveryError.unverifiedVideo }
+    return digest.finalize().map { String(format: "%02x", $0) }.joined()
+  }
+
+  private static func videoBlock(id: String, path: String, digest: String, size: Int64,
+                                 evidence: AgentIOSMP4Openability.Evidence, fallback: String = "") -> AgentRichBlock {
+    AgentRichBlock(id: id, type: .video, title: URL(fileURLWithPath: path).lastPathComponent,
+      uri: AgentVisualOutputPolicy.localVideoPrefix + digest, mimeType: "video/mp4", fallbackText: fallback,
+      metadata: [
+        "size_bytes": String(size), "sha256": digest, "storage": "app_private_file",
+        "relative_path": path, "display_extension": "mp4", "duration_ms": String(evidence.durationMillis),
+        "decoded_frame_width": String(evidence.frameWidth), "decoded_frame_height": String(evidence.frameHeight)
+      ])
   }
 
   private func materializeHTMLBlock(_ block: AgentRichBlock) -> AgentRichBlock? {
