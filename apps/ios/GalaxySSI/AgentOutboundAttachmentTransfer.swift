@@ -121,6 +121,7 @@ struct AgentPreparedOutboundAttachment: Equatable {
     nowMillis: Int64 = AgentOutboundAttachmentTransferStore.nowMillis()
   ) -> [String: Any] {
     var payload = commonPayload(type: "input_attachment_manifest", nowMillis: nowMillis)
+    if let historicalSourceTurnId { payload["historical_source_turn_id"] = historicalSourceTurnId }
     payload["resume"] = resume
     payload["eager_chunks"] = eagerChunks
     return payload
