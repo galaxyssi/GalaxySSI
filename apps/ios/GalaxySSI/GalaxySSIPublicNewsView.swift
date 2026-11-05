@@ -2,6 +2,7 @@ import SwiftUI
 
 @MainActor
 struct GalaxySSIPublicNewsView: View {
+  var initialArticleKey: String? = nil
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: GalaxySSIStore
@@ -18,6 +19,7 @@ struct GalaxySSIPublicNewsView: View {
   @State private var showScience = false
   @State private var showHeadlineTranslation = false
   @State private var selected: PublicNewsArticle?
+  @State private var didOpenInitialArticle = false
   @SceneStorage("publicNews.showSearch") private var showSearch = false
 
   private enum Filter: Hashable { case all, unread, saved }
@@ -145,6 +147,12 @@ struct GalaxySSIPublicNewsView: View {
       .hidden()
     }
     .navigationBarHidden(true)
+    .onAppear {
+      guard let initialArticleKey, !didOpenInitialArticle else { return }
+      didOpenInitialArticle = true
+      archive.load()
+      selected = archive.eligibleArticles.first { PublicNewsSpeechBookmark.key(for: $0.id) == initialArticleKey }
+    }
     .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0, learnPublishers: publisherDiscovery) }
     .task(id: speechCandidates) {
       guard let ids = speechCandidates else { return }
@@ -192,6 +200,7 @@ struct GalaxySSIPublicNewsView: View {
 struct GalaxySSIPublicNewsReader: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @ObservedObject var archive: PublicNewsArchive
   let original: PublicNewsArticle
 
@@ -232,6 +241,13 @@ struct GalaxySSIPublicNewsReader: View {
           }
           GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
             archive.rememberCover(cover, articleID: article.id)
+          }
+          Button {
+            coordinator.voiceAppContexts.openVoice(.init(surface: .news,
+              articleID: PublicNewsSpeechBookmark.key(for: article.id)))
+          } label: {
+            Label(t("voice_app_open_controls", "Voice controls"), systemImage: "waveform")
+              .frame(minHeight: 44)
           }
           Link(destination: article.url) {
             Label(t("public_news_open_source", "Open publisher"), systemImage: "arrow.up.right")

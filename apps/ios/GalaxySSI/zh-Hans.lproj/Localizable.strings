@@ -6147,3 +6147,4 @@
 "public_news_speech_failed" = "无法朗读这篇已下载的文章。";
 "public_news_speech_read_downloaded" = "朗读已下载文章";
 "public_news_speech_no_downloads" = "没有可朗读的已下载文章。";
+"voice_app_open_controls" = "语音控制";

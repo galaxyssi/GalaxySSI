@@ -3,6 +3,28 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testConfirmedVoiceTextIsQueuedOnlyAfterAnEncryptedJournalWrite() throws {
+    let fixture = try ChunkFixture()
+    let suite = "voice-peer-outbox-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let journal = GalaxySSIChatHistoryDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    let outbox = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    let request = LinkDeliveryEnqueueRequest(messageId: "voice", topic: "topic/up", wirePayload: "voice-ciphertext",
+      requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [], clientSourceMessageId: "source", contactId: "peer")
+    XCTAssertTrue(outbox.stageAttachmentControl(messageId: "seed", payload: "seed"))
+    try fixture.execute("CREATE TRIGGER reject_voice BEFORE UPDATE ON link_delivery_state BEGIN SELECT RAISE(ABORT,'forced'); END")
+    XCTAssertFalse(outbox.enqueueConfirmedVoiceText(request))
+    XCTAssertNil(outbox.voiceTextQueueStatus(messageId: "voice", sourceId: "source", contactId: "peer"))
+    try fixture.execute("DROP TRIGGER reject_voice")
+    XCTAssertTrue(outbox.enqueueConfirmedVoiceText(request))
+    XCTAssertFalse(outbox.enqueueConfirmedVoiceText(request))
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: fixture.secrets, journal: journal)
+    XCTAssertEqual(reopened.voiceTextQueueStatus(messageId: "voice", sourceId: "source", contactId: "peer"), "queued")
+    XCTAssertNil(reopened.voiceTextQueueStatus(messageId: "voice", sourceId: "source", contactId: "other"))
+    XCTAssertNil(try fixture.blob("SELECT encrypted_payload FROM link_delivery_state").range(of: Data("voice-ciphertext".utf8)))
+  }
+
   func testDeferredAttachmentTaskRequiresEveryReceiptAndPersistsCiphertext() throws {
     let fixture = try ChunkFixture()
     let suite = "deferred-task-\(UUID().uuidString)"

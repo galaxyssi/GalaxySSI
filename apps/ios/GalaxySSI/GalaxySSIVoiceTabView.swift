@@ -16,6 +16,7 @@ private struct GalaxySSIVoiceRiskConfirmation: Identifiable {
 struct GalaxySSIVoiceTabView: View {
   var onNavigateToMainTab: ((GalaxySSIMainTab) -> Void)? = nil
   var onBackToSettings: (() -> Void)? = nil
+  var entryContext: VoiceAppEntryContext? = nil
 
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.scenePhase) private var scenePhase
@@ -54,7 +55,14 @@ struct GalaxySSIVoiceTabView: View {
   @State private var reminderSnapshot: VoiceReminderSnapshot?
   @State private var reminderPrivacyLocked = false
 
-  private var settings: VoiceSettings { store.voiceSettings }
+  private var settings: VoiceSettings {
+    var value = store.voiceSettings
+    if entryContext != nil {
+      value.routingMode = .nativeAgent
+      value.targetContactId = "hermes"
+    }
+    return value
+  }
   private static let acknowledgementLog = Logger(subsystem: "com.galaxyssi.ios", category: "voice-acknowledgement")
 
   private var voiceAuthorizationRequirement: VoiceASRAuthorizationRequirement {
@@ -227,7 +235,7 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private var wakeSurface: some View {
-    VStack(spacing: 18) {
+    VStack(spacing: 10) {
       HStack(spacing: 10) {
         if let onBackToSettings {
           Button(action: onBackToSettings) {
@@ -269,37 +277,27 @@ struct GalaxySSIVoiceTabView: View {
         .accessibilityLabel(Text(t("voice_settings_title", "Voice Wake & ASR/TTS")))
       }
 
-      Button(action: handleWakeOrbTap) {
-        GalaxySSIVoiceWakeOrb(
-          isActive: passiveCapture.isListening || wakeListener.isListening || wakeListener.isPreparing ||
-            wakeListener.isCommandCapturing || holdToTalk.isRecording,
-          isRecording: wakeListener.isCommandCapturing || holdToTalk.isRecording
-        )
-      }
-      .buttonStyle(.plain)
-      .disabled(!(replySpeech.isSpeaking || acknowledgementSpeech.isSpeaking) || wakeListener.isCommandCapturing)
-      .accessibilityLabel(Text(t("galaxyssi.voice.barge_in_action", "Interrupt reply and speak")))
-
-      VStack(spacing: 7) {
-        Text(wakeSurfaceTitle)
-          .font(.system(size: 24, weight: .bold))
-          .foregroundColor(.white)
-          .multilineTextAlignment(.center)
-          .lineLimit(2)
-          .minimumScaleFactor(0.78)
-
-        Text(wakeSurfaceSubtitle)
-          .font(.system(size: 15, weight: .semibold))
-          .foregroundColor(Color.white.opacity(0.82))
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
+      HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(wakeSurfaceTitle).font(.headline).foregroundColor(.white)
+          Text(wakeSurfaceSubtitle).font(.caption).foregroundColor(Color.white.opacity(0.82))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Button(action: handleWakeOrbTap) {
+          Image(systemName: "mic.fill").frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.white)
+        .disabled(!(replySpeech.isSpeaking || acknowledgementSpeech.isSpeaking) || wakeListener.isCommandCapturing)
+        .accessibilityLabel(Text(t("galaxyssi.voice.barge_in_action", "Interrupt reply and speak")))
       }
 
       holdToTalkSurface
       wakeToggleButton
     }
-    .padding(16)
-    .frame(maxWidth: .infinity, minHeight: 430)
+    .padding(12)
+    .frame(maxWidth: .infinity)
     .background(
       LinearGradient(
         colors: [
@@ -968,7 +966,8 @@ struct GalaxySSIVoiceTabView: View {
     guard !cleanText.isEmpty, !voiceAppCaptureInvalidated else { return }
     let contact = voiceTargetContact
     if let anchor = voiceAppAnchor {
-      guard anchor.contactID.ifBlank("hermes") == contact.id else { return }
+      let expectedTarget = entryContext != nil ? "hermes" : anchor.contactID.ifBlank("hermes")
+      guard expectedTarget == contact.id else { return }
     }
     let risk = DefaultVoiceCommandRiskClassifier.classify(cleanText)
     let registeredSessionId = VoiceExecutionLedgerBridge.register(
@@ -1126,8 +1125,9 @@ struct GalaxySSIVoiceTabView: View {
     let target = voiceTargetContact
     voiceAppAnchor = coordinator.voiceAppContexts.capture(
       conversationID: store.activeAgentConversationId,
-      contactID: target.id == "hermes" ? "" : target.id,
-      surface: .voice,
+      contactID: entryContext?.contactID ?? (target.id == "hermes" ? "" : target.id),
+      articleID: entryContext?.articleID ?? "",
+      surface: entryContext?.surface ?? .voice,
       playbackState: PublicNewsSpeechPlayback.shared.appControlState
     )
   }
@@ -1548,33 +1548,6 @@ struct GalaxySSIVoiceTabView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-private struct GalaxySSIVoiceWakeOrb: View {
-  var isActive: Bool
-  var isRecording: Bool
-
-  var body: some View {
-    ZStack {
-      Circle()
-        .stroke(Color.white.opacity(0.08), lineWidth: 18)
-        .frame(width: 214, height: 214)
-      Circle()
-        .stroke(tint.opacity(isActive ? 0.42 : 0.18), lineWidth: 4)
-        .frame(width: 172, height: 172)
-      Circle()
-        .fill(tint.opacity(isActive ? 0.20 : 0.10))
-        .frame(width: 126, height: 126)
-      Image(systemName: isRecording ? "waveform" : "mic.fill")
-        .font(.system(size: isRecording ? 54 : 48, weight: .bold))
-        .foregroundColor(.white)
-    }
-    .frame(maxWidth: .infinity, minHeight: 226)
-  }
-
-  private var tint: Color {
-    isRecording ? .galaxySSIAgentRecordingMid : (isActive ? .galaxySSIAccent : .orange)
   }
 }
 

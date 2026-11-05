@@ -3306,6 +3306,7 @@ final class MessageCoordinator: ObservableObject {
     agentGoalOverride: String = "",
     voiceSessionId: String = "",
     voiceAppAnchor: VoiceAppCaptureAnchor? = nil,
+    requiredAgentConversationID: String? = nil,
     peerMessageKind: String = "",
     peerDurationMillis: Int64 = 0,
     requestKind: AgentRequestKind = .conversation,
@@ -3315,6 +3316,11 @@ final class MessageCoordinator: ObservableObject {
   ) async -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
+    if let requiredAgentConversationID {
+      guard contact.id == "hermes", store.activeConversationId(for: contact.id) == requiredAgentConversationID else {
+        return false
+      }
+    }
     if let voiceAppAnchor {
       guard contact.id == "hermes", voiceAppContexts.isForegroundOwner(voiceAppAnchor),
             store.activeAgentConversationId == voiceAppAnchor.conversationID else { return false }
@@ -3442,6 +3448,9 @@ final class MessageCoordinator: ObservableObject {
       sendAttachments,
       source: isPeerSend ? "peer_message" : "user_attachment"
     )
+    if let requiredAgentConversationID {
+      guard store.activeConversationId(for: contact.id) == requiredAgentConversationID else { return false }
+    }
     if let voiceAppAnchor {
       guard voiceAppContexts.isForegroundOwner(voiceAppAnchor),
             store.activeAgentConversationId == voiceAppAnchor.conversationID else { return false }
@@ -10031,6 +10040,76 @@ final class MessageCoordinator: ObservableObject {
       contact.opaquePhoneRoutes != nil
   }
 
+  func enqueueVoicePeerText(
+    _ text: String, contactID: String, context: AgentNativeToolInvocationContext
+  ) -> AgentNativeToolExecutionResult {
+    guard !text.isBlank, text.count <= 10_000, text.utf8.count <= 40_000,
+          let key = context.idempotencyKey, !key.isBlank,
+          let contact = store.visibleContacts.first(where: { $0.id == contactID }),
+          isPhoneContact(contact), !contact.galaxySSIId.isBlank, [.link, .pcConnector].contains(contact.deliveryMode),
+          let topic = contact.opaquePhoneRoutes?.upTopic, GalaxySSISignalEngine.isAvailable else {
+      return .failure(code: "peer_send_unavailable", message: "An exact verified phone contact and bounded message are required.")
+    }
+    let identity = [context.conversationId, context.turnId, contactID, key].map { "\($0.utf8.count):\($0)" }.joined()
+    let source = AgentTeamDispatchIds.nameBasedUUID("voice-peer-send:\(identity)")
+    let messageID = GalaxySSILinkProtocol.normalizedMessageId(source.uuidString)
+    let previous = store.persistedMessage(id: source, contactId: contactID)
+    if let previous {
+      guard previous.isMine, previous.content == text else {
+        return .failure(code: "peer_send_conflict", message: "The request identity was already used for different text.")
+      }
+      if [.sent, .delivered, .read].contains(previous.deliveryStatus) {
+        return voicePeerTextReceipt(source, status: "published")
+      }
+      if let status = deliveryStore.voiceTextQueueStatus(messageId: messageID, sourceId: source.uuidString,
+        contactId: contactID) {
+        return voicePeerTextReceipt(source, status: status == "published" ? "published" : "queued")
+      }
+    }
+    let wire: (messageId: String, wireText: String, wireData: Data, recoverableEnvelope: String)
+    do {
+      wire = try phoneContactWirePayload(phoneContactTextPayload(text, contact: contact, source: source), contact: contact)
+    } catch {
+      return .failure(code: "peer_encryption_unavailable", message: "The paired contact's encryption session is unavailable.")
+    }
+    if previous == nil {
+      _ = store.appendOutgoing(text, to: contactID, messageId: source)
+    }
+    guard let durable = store.persistedMessage(id: source, contactId: contactID), durable.content == text,
+          deliveryStore.enqueueConfirmedVoiceText(LinkDeliveryEnqueueRequest(
+            messageId: wire.messageId, topic: topic, wirePayload: wire.wireText,
+            requiresValidatedNetwork: false, blockedByAttachmentTransferIds: [],
+            clientSourceMessageId: source.uuidString, contactId: contactID, recoverableEnvelope: wire.recoverableEnvelope
+          )) else {
+      store.appendDeliveryTrace(source, contactId: contactID, stage: "voice_peer_queue_failed",
+        detail: "The encrypted outbox could not be saved.", status: .failed)
+      return .failure(code: "peer_queue_failed", message: "The encrypted outbox could not be saved.")
+    }
+    store.appendDeliveryTrace(source, contactId: contactID, stage: "phone_contact_queued",
+      detail: "Queued in the encrypted outbox.", status: .queued)
+    scheduleOutboxFlush(after: 0)
+    return voicePeerTextReceipt(source, status: "queued")
+  }
+
+  private func voicePeerTextReceipt(_ source: UUID, status: String) -> AgentNativeToolExecutionResult {
+    .success(output: ["message_id": .string(source.uuidString), "status": .string(status)])
+  }
+
+  private func phoneContactTextPayload(_ text: String, contact: GalaxySSIContact, source: UUID) -> [String: Any] {
+    let sourceID = source.uuidString
+    return [
+      "type": "peer_message",
+      "message_id": GalaxySSILinkProtocol.normalizedMessageId(sourceID),
+      "source_message_id": sourceID, "client_message_id": sourceID,
+      "contact_id": signalEngine.identity.name, "sender": signalEngine.identity.name, "content": text,
+      "client_route_id": contact.opaquePhoneRoutes?.clientRouteId ?? "",
+      "conversation_id": phoneContactConversationId(localGalaxySSIId: signalEngine.identity.name,
+        remoteGalaxySSIId: contact.galaxySSIId.trimmingCharacters(in: .whitespacesAndNewlines)),
+      "task_id": "peer:\(sourceID)", "turn_id": "peer-turn:\(sourceID)", "peer_chat": true,
+      "time": Int64(Date().timeIntervalSince1970 * 1_000)
+    ]
+  }
+
   private func publishPhoneContactMessage(
     _ text: String,
     contact: GalaxySSIContact,
@@ -10045,7 +10124,6 @@ final class MessageCoordinator: ObservableObject {
           !remoteName.isEmpty, GalaxySSISignalEngine.isAvailable else {
       throw GalaxySSIError.transportUnavailable
     }
-    let messageId = GalaxySSILinkProtocol.normalizedMessageId(outgoing.id.uuidString)
     let sourceMessageId = outgoing.id.uuidString
     let conversationId = phoneContactConversationId(
       localGalaxySSIId: signalEngine.identity.name,
@@ -10053,21 +10131,7 @@ final class MessageCoordinator: ObservableObject {
     )
     let taskId = "peer:\(sourceMessageId)"
     let turnId = "peer-turn:\(sourceMessageId)"
-    var applicationPayload: [String: Any] = [
-      "type": "peer_message",
-      "message_id": messageId,
-      "source_message_id": sourceMessageId,
-      "client_message_id": sourceMessageId,
-      "contact_id": signalEngine.identity.name,
-      "sender": signalEngine.identity.name,
-      "content": text,
-      "client_route_id": routes.clientRouteId,
-      "conversation_id": conversationId,
-      "task_id": taskId,
-      "turn_id": turnId,
-      "peer_chat": true,
-      "time": Int64(Date().timeIntervalSince1970 * 1_000)
-    ]
+    var applicationPayload = phoneContactTextPayload(text, contact: contact, source: outgoing.id)
     let normalizedKind = String(messageKind.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32))
     if !normalizedKind.isEmpty { applicationPayload["message_kind"] = normalizedKind }
     if durationMillis > 0 {

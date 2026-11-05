@@ -35,6 +35,34 @@ extension GalaxySSIStoreTests {
       grantedConsents: [VoiceAppNativeTools.playbackConsent])
     XCTAssertTrue(registry.authorize(id, input: input, context: confirmed).allowed)
     XCTAssertFalse(registry.authorize(id, input: ["operation": .string("start_microphone")], context: confirmed).allowed)
+    let send = VoiceAppNativeTools.Operation.sendMessage.id
+    XCTAssertFalse(registry.authorize(send, input: ["contact_id": .string("peer"), "text": .string("Exact")],
+      context: confirmed).allowed)
+  }
+
+  @MainActor
+  func testVoiceNavigationAndObservedContactCannotEscapeTheForegroundOwner() throws {
+    let contexts = VoiceAppContextStore()
+    let owner = UUID()
+    var opened: [String] = []
+    contexts.installNavigation(owner: owner) { request in
+      opened.append(request.contactID)
+      return .success(output: [:])
+    }
+    let first = try XCTUnwrap(contexts.capture(conversationID: "first", surface: .contact))
+    contexts.bind(first, conversationID: "first", turnID: "turn")
+    XCTAssertFalse(contexts.hasObservedContact("peer", anchor: first))
+    contexts.recordObservedContacts(["peer"], anchor: first)
+    XCTAssertTrue(contexts.hasObservedContact("peer", anchor: first))
+    _ = contexts.navigate(.init(destination: .contact, conversationID: "first", contactID: "peer", message: ""), anchor: first)
+    XCTAssertEqual(opened, ["peer"])
+    let second = try XCTUnwrap(contexts.capture(conversationID: "second", surface: .agent))
+    XCTAssertFalse(contexts.hasObservedContact("peer", anchor: second))
+    _ = contexts.navigate(.init(destination: .contact, conversationID: "first", contactID: "peer", message: ""), anchor: first)
+    XCTAssertEqual(opened, ["peer"])
+    contexts.removeNavigation(owner: owner)
+    _ = contexts.navigate(.init(destination: .agent, conversationID: "second", contactID: "", message: ""), anchor: second)
+    XCTAssertEqual(opened, ["peer"])
   }
 
   func testPhoneAssistantDialTargetRejectsControlCodesAndNonTelephoneLinks() {

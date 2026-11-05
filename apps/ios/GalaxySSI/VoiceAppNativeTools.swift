@@ -2,14 +2,16 @@ import UIKit
 
 enum VoiceAppNativeTools {
   enum Operation: String, CaseIterable {
-    case context, contacts, news, readArticle = "read_article", playback
+    case context, contacts, news, readArticle = "read_article", playback, navigate, sendMessage = "send_message"
 
     var id: String { "galaxyssi.app.\(rawValue)" }
-    var changesPlayback: Bool { self == .playback }
+    var changesApp: Bool { [.playback, .navigate, .sendMessage].contains(self) }
   }
 
   static let playbackConsent = "voice_app.playback"
   static let contactsConsent = "voice_app.contacts.read"
+  static let navigationConsent = "voice_app.navigate"
+  static let sendConsent = "voice_app.send_message"
 
   static func executables(
     invoke: @escaping (Operation, AgentNativeToolInvocation) -> AgentNativeToolExecutionResult
@@ -19,12 +21,12 @@ enum VoiceAppNativeTools {
         id: operation.id, version: AgentPhoneNativeToolCatalog.version, title: "GalaxySSI \(operation.rawValue)",
         description: description(operation), location: .application, inputSchema: schema(operation),
         outputSchema: AgentNativeToolDescriptor.objectSchema(),
-        risk: operation == .contacts || operation.changesPlayback ? .medium : .low,
+        risk: operation == .sendMessage ? .high : operation == .contacts || operation.changesApp ? .medium : .low,
         capabilities: ["app_control", "voice_interaction"],
         requiredConsents: consents(operation),
         timeoutMillis: 15_000,
-        idempotency: operation.changesPlayback ? .idempotencyKeyRequired : .idempotent,
-        effect: operation.changesPlayback ? .mutation : .readOnly
+        idempotency: operation.changesApp ? .idempotencyKeyRequired : .idempotent,
+        effect: operation.changesApp ? .mutation : .readOnly
       )
       return AgentNativeToolExecutableDefinition(
         definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "ios.voice_app"),
@@ -44,6 +46,12 @@ enum VoiceAppNativeTools {
     case .playback:
       return [AgentNativeConsentRequirement(id: playbackConsent, title: "Control news reading",
         description: "Allows this voice request to change public news playback.")]
+    case .navigate:
+      return [AgentNativeConsentRequirement(id: navigationConsent, title: "Open a GalaxySSI page",
+        description: "Allows this voice request to open the selected page or create a conversation with the supplied message.")]
+    case .sendMessage:
+      return [AgentNativeConsentRequirement(id: sendConsent, title: "Send this exact message",
+        description: "Confirms sending the specified text to the exact verified contact.")]
     default: return []
     }
   }
@@ -55,6 +63,8 @@ enum VoiceAppNativeTools {
     case .news: return "List locally downloaded articles by title, publisher and date. Returns exact article IDs."
     case .readArticle: return "Read the cached original text of a downloaded article using an exact article ID."
     case .playback: return "Play ordered downloaded articles, pause, resume, skip, or stop news reading. Requires the original foreground voice owner."
+    case .navigate: return "Open Agent, an exact observed contact, News, Phone, or a new conversation in the original voice window."
+    case .sendMessage: return "Queue exact text to an observed verified phone contact ID. Returns queued or published, not delivered."
     }
   }
 
@@ -81,6 +91,14 @@ enum VoiceAppNativeTools {
         "article_ids": .object(["type": .string("array"), "items": identifier, "maxItems": .int(20)])
       ]
       required = ["operation"]
+    case .navigate:
+      properties = ["destination": .object(["type": .string("string"), "enum": .array(
+        VoiceAppNavigationRequest.Destination.allCases.map { .string($0.rawValue) }
+      )]), "contact_id": text, "message": .object(["type": .string("string"), "maxLength": .int(10_000)])]
+      required = ["destination"]
+    case .sendMessage:
+      properties = ["contact_id": text, "text": .object(["type": .string("string"), "minLength": .int(1), "maxLength": .int(10_000)])]
+      required = ["contact_id", "text"]
     }
     return ["type": .string("object"), "properties": .object(properties),
       "required": .array(required.map(AgentMcpJSONValue.string)), "additionalProperties": .bool(false)]
@@ -99,6 +117,11 @@ extension MessageCoordinator {
       return .failure(code: "voice_context_unavailable", message: "This invocation has no eligible bound voice context.")
     }
     let input = invocation.input
+    if operation.changesApp {
+      guard voiceAppContexts.isForegroundOwner(anchor), store.activeAgentConversationId == anchor.conversationID else {
+        return .failure(code: "stale_voice_owner", message: "The original voice surface is no longer active.")
+      }
+    }
     let query = (input["query"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     let limit = Int(min(20, max(1, input["limit"]?.intValue ?? 10)))
     switch operation {
@@ -119,6 +142,7 @@ extension MessageCoordinator {
         AgentMcpJSONValue.object(["contact_id": .string(contact.id),
           "display_name": .string(String(contact.displayName.prefix(160))), "type": .string(contact.type)])
       }
+      voiceAppContexts.recordObservedContacts(matches.prefix(limit).map(\.id), anchor: anchor)
       return .success(output: ["contacts": .array(Array(rows)), "matched_count": .int(Int64(matches.count))])
     case .news:
       let since = input["since_epoch_ms"]?.intValue ?? 0
@@ -153,10 +177,27 @@ extension MessageCoordinator {
       return .success(output: ["article_id": .string(id), "title": .string(article.title),
         "paragraphs": .array(paragraphs), "truncated": .bool(truncated)])
     case .playback:
-      guard voiceAppContexts.isForegroundOwner(anchor), store.activeAgentConversationId == anchor.conversationID else {
-        return .failure(code: "stale_voice_owner", message: "The original voice surface is no longer active.")
-      }
       return executeVoiceNewsPlayback(input, store: store)
+    case .navigate:
+      guard let raw = input["destination"]?.stringValue, let destination = VoiceAppNavigationRequest.Destination(rawValue: raw)
+      else { return .failure(code: "invalid_destination", message: "Choose a supported GalaxySSI page.") }
+      let contactID = input["contact_id"]?.stringValue ?? ""
+      let message = input["message"]?.stringValue ?? ""
+      guard (destination == .newConversation || message.isEmpty),
+            (destination == .contact || contactID.isEmpty) else {
+        return .failure(code: "unexpected_navigation_input", message: "This destination does not accept the supplied contact or message.")
+      }
+      if destination == .contact, !voiceAppContexts.hasObservedContact(contactID, anchor: anchor) {
+        return .failure(code: "contact_not_observed", message: "Choose an exact contact ID observed in this turn.")
+      }
+      return voiceAppContexts.navigate(.init(destination: destination, conversationID: anchor.conversationID,
+        contactID: contactID, message: message), anchor: anchor)
+    case .sendMessage:
+      let contactID = input["contact_id"]?.stringValue ?? ""
+      guard voiceAppContexts.hasObservedContact(contactID, anchor: anchor) else {
+        return .failure(code: "contact_not_observed", message: "Choose an exact contact ID observed in this turn.")
+      }
+      return enqueueVoicePeerText(input["text"]?.stringValue ?? "", contactID: contactID, context: context)
     }
   }
 
