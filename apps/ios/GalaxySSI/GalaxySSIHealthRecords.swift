@@ -132,6 +132,7 @@ struct GalaxySSIHealthRecords {
   struct Archive: Codable {
     var reportReview: [GalaxySSIHealthReportReview.Item]?
     var version = 1
+    var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
@@ -423,6 +424,53 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return tombstones.count
+  }
+
+  func loadRecordingReminders(at now: Date, calendar: Calendar) throws -> GalaxySSIHealthRecordingReminders.Ledger {
+    var archive = try load()
+    let previous = archive.recordingReminders ?? .init()
+    var ledger = previous
+    ledger.reconcile(at: now, calendar: calendar)
+    if ledger != previous { archive.recordingReminders = ledger; try persist(archive) }
+    return ledger
+  }
+
+  func saveRecordingReminderSettings(_ settings: GalaxySSIHealthRecordingReminders.Settings, at now: Date) throws {
+    guard settings.isValid else { throw Failure.invalid }
+    var archive = try load()
+    var ledger = archive.recordingReminders ?? .init(settings: settings)
+    guard ledger.settings.version == settings.version else { throw Failure.stale }
+    let before = ledger.settings
+    ledger.settings = settings
+    ledger.settings.version = UUID()
+    if before.effectiveAt == nil || !before.enabled || !settings.enabled || before.hour != settings.hour || before.minute != settings.minute ||
+        before.category != settings.category {
+      ledger.settings.effectiveAt = settings.enabled ? now : nil
+    }
+    if !settings.enabled {
+      for index in ledger.history.indices where ledger.history[index].completedAt == nil && !ledger.history[index].disabled {
+        ledger.history[index].disabled = true
+        ledger.history[index].version = UUID()
+      }
+    }
+    archive.recordingReminders = ledger
+    try persist(archive)
+    NotificationCenter.default.post(name: GalaxySSIHealthRecordingReminders.changed, object: owner)
+  }
+
+  func updateRecordingReminder(_ expected: GalaxySSIHealthRecordingReminders.Occurrence, complete: Bool,
+                               at now: Date, calendar: Calendar = .autoupdatingCurrent) throws {
+    var archive = try load()
+    guard var ledger = archive.recordingReminders, ledger.settings.enabled,
+          expected.day == GalaxySSIHealthRecordingReminders.Ledger.key(now, calendar: calendar),
+          let index = ledger.history.firstIndex(where: { $0.day == expected.day && $0.version == expected.version }),
+          ledger.history[index].completedAt == nil, !ledger.history[index].disabled else { throw Failure.stale }
+    if complete { ledger.history[index].completedAt = now }
+    else { ledger.history[index].snoozedUntil = now.addingTimeInterval(3_600) }
+    ledger.history[index].version = UUID()
+    archive.recordingReminders = ledger
+    try persist(archive)
+    NotificationCenter.default.post(name: GalaxySSIHealthRecordingReminders.changed, object: owner)
   }
 
   @discardableResult
