@@ -3,6 +3,22 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testMixedVisionInputsKeepSourceIndicesWithoutGeneratingReferenceSheet() throws {
+    let bytes = try XCTUnwrap(testImage().jpegData(compressionQuality: 0.8))
+    let old = try CloudImagePayload(displayName: "old.jpg", mimeType: "image/jpeg", data: bytes,
+      historicalSourceTurnId: "prior")
+    let new = try CloudImagePayload(displayName: "new.jpg", mimeType: "image/jpeg", data: bytes)
+    var messages: [[String: Any]] = [["role": "user", "content": "Compare these images"]]
+    CloudVisionPayloadEncoder.attachOpenAI(to: &messages, images: [old, new])
+    XCTAssertEqual(messages.count, 2)
+    let reference = try XCTUnwrap(messages.first?["content"] as? [[String: Any]])
+    let latest = try XCTUnwrap(messages.last?["content"] as? [[String: Any]])
+    XCTAssertTrue((reference.first?["text"] as? String)?.contains("image index: 0") == true)
+    XCTAssertEqual(latest.count, 3)
+    XCTAssertEqual(latest.first?["text"] as? String, "Compare these images")
+    XCTAssertEqual(latest.last?["text"] as? String, "Source image index: 1.")
+  }
+
   func testHistoricalImageStaysSeparateFromLatestUserMessageAcrossProviders() throws {
     let image = try CloudImagePayload(displayName: "old.png", mimeType: "image/png", data: Data([1, 2, 3]),
       historicalSourceTurnId: "earlier-turn")
