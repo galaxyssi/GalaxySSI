@@ -71,6 +71,13 @@
 "galaxyssi.health.report_review.diastolic" = "已核对的舒张压";
 "galaxyssi.health.report_review.time" = "测量时间";
 "galaxyssi.health.report_review.time_confirm" = "我已核对测量时间";
+"galaxyssi.health.report_review.source_context" = "报告标注信息";
+"galaxyssi.health.report_review.source_name" = "报告上的姓名";
+"galaxyssi.health.report_review.source_time" = "报告上的采样或测量时间";
+"galaxyssi.health.report_review.source_time_zone" = "按 %@ 时区解读";
+"galaxyssi.health.report_review.source_use_time" = "使用此时间";
+"galaxyssi.health.report_review.source_time_unavailable" = "没有可直接采用的明确时间，请手动核对。";
+"galaxyssi.health.report_review.edit_item" = "编辑已审核测量";
 "galaxyssi.health.report_review.owner" = "这是我的测量记录";
 "galaxyssi.health.report_review.stage" = "保存已核对项到草稿";
 "galaxyssi.health.report_review.error" = "无法保存。请检查数值或重新打开审阅。";
