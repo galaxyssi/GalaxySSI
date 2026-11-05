@@ -130,7 +130,7 @@ class HealthPrivacyActivity : Activity() {
             HealthAccessPurpose.SAVE_RECORDS, HealthAccessPurpose.GENERATE_BACKUP, HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY,
             HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY, HealthAccessPurpose.DELETE_MEASUREMENT_HISTORY ->
                 getString(R.string.health_privacy_scope_records, count)
-            HealthAccessPurpose.SAVE_ORIGINALS -> getString(R.string.health_privacy_scope_originals, count)
+            HealthAccessPurpose.SAVE_ORIGINALS, HealthAccessPurpose.DELETE_ORIGINAL_BYTES -> getString(R.string.health_privacy_scope_originals, count)
             HealthAccessPurpose.DELETE_PROFILE -> getString(R.string.health_privacy_scope_delete, scope.basicCount, count, scope.drafts)
             else -> getString(R.string.health_privacy_scope_entries, count)
         }) }
@@ -172,6 +172,7 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY -> R.string.health_sources_delete_history
     HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY -> R.string.health_connect_history_delete
     HealthAccessPurpose.DELETE_MEASUREMENT_HISTORY -> R.string.health_measurement_history_delete
+    HealthAccessPurpose.DELETE_ORIGINAL_BYTES -> R.string.health_remove_original
 }
 private fun HealthAccessOutcome.title() = when (this) {
     HealthAccessOutcome.STARTED -> R.string.health_privacy_started

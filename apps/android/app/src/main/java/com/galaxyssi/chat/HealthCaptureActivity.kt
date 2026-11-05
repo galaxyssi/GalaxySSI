@@ -66,6 +66,9 @@ class HealthCaptureActivity : Activity() {
     private var savingReview = false
     private var rawDialog: AlertDialog? = null
     private var actionDialog: AlertDialog? = null
+    private var originalRemovalDialog: AlertDialog? = null
+    private var originalRemovalBusy = false
+    private var originalRemovalRequest = 0
     private val jobPages = arrayListOf<Pair<Long, String>>()
     private val recordPages = arrayListOf<HealthPageCursor>()
     private var renderedKey = ""
@@ -140,6 +143,11 @@ class HealthCaptureActivity : Activity() {
                 "application/json", "text/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
             null -> if (pickOnStart) { pickOnStart = false; choose(false) }
         }
+    }
+    override fun onPause() {
+        originalRemovalRequest++
+        originalRemovalDialog?.dismiss(); originalRemovalDialog = null
+        super.onPause()
     }
     override fun onStop() {
         active = false; generation++; contentResolver.unregisterContentObserver(observer)
@@ -352,16 +360,55 @@ class HealthCaptureActivity : Activity() {
                 importSource(HealthOriginalContentProvider.uri(this, original.id), originalOnly = false)
             })
         }
-        ui.add(content, ui.row(getString(R.string.health_remove_original)) {
-            actionDialog = AlertDialog.Builder(this).setTitle(R.string.health_remove_original).setMessage(R.string.health_remove_original_explanation)
-                .setNegativeButton(R.string.common_cancel, null).setPositiveButton(R.string.common_delete) { _, _ ->
-                    worker.execute {
-                        val removed = if (original.reviewOnly) originals.releaseReviewOriginal(original.id)
-                            else originals.removeOriginalBytes(original)
-                        main.post { if (active) { if (!removed) showFailure("storage") else Toast.makeText(this, R.string.health_original_removed, Toast.LENGTH_SHORT).show(); refresh() } }
-                    }
-                }.show()
-        }, 18)
+        ui.add(content, ui.row(getString(R.string.health_remove_original)) { previewOriginalRemoval(original) }
+            .apply { tag = "health-original-remove" }, 18)
+    }
+    private fun previewOriginalRemoval(original: HealthOriginal) {
+        if (!active || originalRemovalBusy || originalRemovalDialog?.isShowing == true) return
+        val ticket = ++originalRemovalRequest
+        val token = generation
+        originalRemovalBusy = true
+        worker.execute {
+            val result = runCatching {
+                HealthRecordStore(applicationContext, names.records).use { HealthOriginalRemoval.preview(originals, it, original) }
+            }
+            main.post {
+                originalRemovalBusy = false
+                if (!active || !hasWindowFocus() || ticket != originalRemovalRequest || token != generation) return@post
+                result.fold({ scope ->
+                    val size = android.text.format.Formatter.formatShortFileSize(this, scope.original.size)
+                    originalRemovalDialog = AlertDialog.Builder(this).setTitle(R.string.health_remove_original)
+                        .setMessage(getString(R.string.health_remove_original_preview, scope.original.name, size, scope.linkedMeasurements))
+                        .setNegativeButton(R.string.common_cancel, null)
+                        .setPositiveButton(R.string.common_delete) { _, _ -> removeOriginal(scope) }.show()
+                }, ::originalRemovalFailure)
+            }
+        }
+    }
+    private fun removeOriginal(scope: HealthOriginalRemovalPreview) {
+        if (!active || originalRemovalBusy) return
+        originalRemovalBusy = true
+        worker.execute {
+            val result = runCatching {
+                val access = HealthAccessScope(HealthAccessPurpose.DELETE_ORIGINAL_BYTES, count = 1,
+                    source = HealthAccessSource.ORIGINAL, format = HealthAccessFormat.ORIGINAL)
+                HealthPrivacyStore.track(applicationContext, access, names.privacy) {
+                    HealthRecordStore(applicationContext, names.records).use { HealthOriginalRemoval.confirm(originals, it, scope) }
+                }
+            }
+            main.post {
+                originalRemovalBusy = false
+                if (active) result.fold({
+                    Toast.makeText(this, R.string.health_original_removed, Toast.LENGTH_SHORT).show()
+                    refresh()
+                }, ::originalRemovalFailure)
+            }
+        }
+    }
+    private fun originalRemovalFailure(failure: Throwable) {
+        if (failure is HealthOriginalRemovalChanged) Toast.makeText(this, R.string.health_original_removal_changed, Toast.LENGTH_LONG).show()
+        else showFailure("storage")
+        refresh()
     }
     private fun renderReview(content: LinearLayout, data: CaptureSnapshot) {
         val job = data.job; val original = data.original; val scanned = data.page
