@@ -14,15 +14,13 @@ internal object HealthOcrCandidates {
         "systolic" to Regex("(?:\u6536\u7f29\u538b|\u9ad8\u538b|\\bSYS\\b|\\bsystolic\\b)", RegexOption.IGNORE_CASE),
         "diastolic" to Regex("(?:\u8212\u5f20\u538b|\u4f4e\u538b|\\bDIA\\b|\\bdiastolic\\b)", RegexOption.IGNORE_CASE),
         "pulse" to Regex("(?:\u8109\u640f|\u5fc3\u7387|\\bPUL\\b|\\bpulse\\b|\\bheart rate\\b)", RegexOption.IGNORE_CASE),
-        "glucose" to Regex("(?:\u8461\u8404\u7cd6|\u8840\u7cd6|\\bglucose\\b|\\bGLU\\b)", RegexOption.IGNORE_CASE),
-        "weight" to Regex("(?:\u4f53\u91cd|\\bweight\\b)", RegexOption.IGNORE_CASE),
-        "cholesterol" to Regex("(?:\u603b\u80c6\u56fa\u9187|\\bTC\\b|\\btotal cholesterol\\b)", RegexOption.IGNORE_CASE),
-        "hemoglobin" to Regex("(?:(?<!\u5e73\u5747|\u7cd6\u5316)\u8840\u7ea2\u86cb\u767d(?!\u6d53\u5ea6|\u542b\u91cf|A1c)|\\bHGB\\b|\\bhemoglobin\\b(?!\\s*A1c))", RegexOption.IGNORE_CASE)
+        "weight" to Regex("(?:\u4f53\u91cd|\\bweight\\b)", RegexOption.IGNORE_CASE)
     )
     fun suggest(job: HealthImportJob, original: HealthOriginal, input: HealthOcrPage): List<HealthDraft> {
         val page = if (job.mode == "device") input.copy(lines = alignDeviceLines(input.lines)) else input
         val drafts = mutableListOf<HealthDraft>()
-        fun draft(metric: HealthMetric, values: Map<String, String>, unit: String, lines: List<HealthOcrLine>) {
+        fun draft(metric: HealthMetric, values: Map<String, String>, unit: String, lines: List<HealthOcrLine>,
+                  reference: String = "", reportedValues: Map<String, String> = emptyMap()) {
             val identity = (listOf(metric.name, unit) + values.toSortedMap().map { "${it.key}=${it.value}" } +
                 lines.map { it.text.trim().replace(Regex("\\s+"), " ") + "|" + it.box.joinToString(",") }).joinToString("\u0000").toByteArray(Charsets.UTF_8)
             val key = try { java.security.MessageDigest.getInstance("SHA-256").digest(identity).take(20).joinToString("") { "%02x".format(it) } }
@@ -30,7 +28,8 @@ internal object HealthOcrCandidates {
             val evidence = HealthEvidence(original.id, job.id, "${metric.name.lowercase(java.util.Locale.ROOT)}-$key", original.sha256, page.page,
                 lines.joinToString("\n") { it.text }.take(8000), lines.map { it.box }.filter { it.size == 4 },
                 documentPage = job.documentPage, recognition = page.recognition)
-            drafts += HealthDraft(metric, values, unit, measuredAt = 0, evidence = evidence)
+            drafts += HealthDraft(metric, values, unit, measuredAt = 0, evidence = evidence,
+                reference = reference, reportedValues = reportedValues)
         }
         val pressureLines = page.lines.mapIndexedNotNull { index, line ->
             if (!Regex("\u8840\u538b|\\bBP\\b|blood pressure", RegexOption.IGNORE_CASE).containsMatchIn(line.text)) return@mapIndexedNotNull null
@@ -45,22 +44,24 @@ internal object HealthOcrCandidates {
         val components = linkedMapOf<String, MutableList<Pair<Int, String>>>()
         page.lines.forEachIndexed { index, line ->
             if (index in pressureLines) return@forEachIndexed
+            HealthOcrLabRow.parse(line.text)?.let { lab ->
+                val field = lab.metric.fields.single()
+                val value = if (lab.result.kind == HealthResultKind.NUMBER) lab.result.number else lab.result.raw
+                val reported = if (value != lab.result.raw) mapOf(field to lab.result.raw) else emptyMap()
+                draft(lab.metric, mapOf(field to value), lab.unit, listOf(line), lab.reference, reported)
+                return@forEachIndexed
+            }
             for ((field, alias) in aliases) {
                 val label = alias.find(line.text) ?: continue
                 val match = Regex(number).find(line.text, label.range.last + 1) ?: continue
                 val gap = line.text.substring(label.range.last + 1, match.range.first)
                 if (!gap.matches(Regex("[\\s:\uff1a=()\uff08\uff09]*(?:(?:mmHg|kPa|bpm|mmol/L|mg/dL|g/dL|g/L|kg|lb)[\\s:\uff1a=()\uff08\uff09]*)?", RegexOption.IGNORE_CASE))) continue
-                if (field == "hemoglobin" && Regex("\u5e73\u5747|\u7ea2\u7ec6\u80de|\u7cd6\u5316|\\bMCHC?\\b|A1c|glycated|corpuscular|mean", RegexOption.IGNORE_CASE).containsMatchIn(line.text)) continue
                 if (!safeValue(line.text, match.range.first) || !safeSuffix(line.text, match.range.last + 1)) continue
                 val value = HealthObservationPolicy.canonicalNumber(match.groupValues[1]) ?: continue
                 when (field) {
                     "systolic", "diastolic", "pulse" -> components.getOrPut(field) { mutableListOf() }.add(index to value)
-                    "glucose", "cholesterol" -> draft(if (field == "glucose") HealthMetric.GLUCOSE else HealthMetric.CHOLESTEROL, mapOf(field to value),
-                        unit(line.text, HealthMetric.GLUCOSE), listOf(line))
                     "weight" -> draft(HealthMetric.WEIGHT, mapOf(field to value),
                         unit(line.text, HealthMetric.WEIGHT), listOf(line))
-                    "hemoglobin" -> draft(HealthMetric.HEMOGLOBIN, mapOf(field to value),
-                        unit(line.text, HealthMetric.HEMOGLOBIN), listOf(line))
                 }
             }
         }

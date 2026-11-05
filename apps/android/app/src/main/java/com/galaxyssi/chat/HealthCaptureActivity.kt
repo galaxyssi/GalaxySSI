@@ -465,6 +465,8 @@ class HealthCaptureActivity : Activity() {
                 }, 8)
                 ui.add(this, ui.text(if (draft.measuredAt > 0) getString(R.string.health_review_recorded_time, formatTime(draft.measuredAt))
                     else getString(R.string.health_ocr_sample_needs_review), 13f, muted = true), 6)
+                if (draft.reference.isNotBlank()) ui.add(this, ui.text(
+                    "${getString(R.string.health_report_reference)}: ${draft.reference}", 13f, muted = true), 6)
                 ui.add(this, ui.text(evidence.rawText, 14f, muted = true), 8)
                 if (source != null) ui.add(this, ui.row(getString(if (located) R.string.health_review_focus else R.string.health_view_original),
                     if (located) "" else getString(R.string.health_review_location_unknown)) {

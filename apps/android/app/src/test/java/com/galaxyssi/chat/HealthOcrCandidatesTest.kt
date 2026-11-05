@@ -26,14 +26,25 @@ class HealthOcrCandidatesTest {
         val result = suggest("葡萄糖：5,6 mmol/L", "总胆固醇 188 mg/dL", "血红蛋白 14 g/dL", "体重 60 kg")
         assertEquals(listOf("mmol/L", "mg/dL", "g/dL", "kg"), result.map { it.unit })
         assertEquals("5.6", result.first().values["glucose"])
+        assertEquals("5.6", suggest("葡萄糖5.6mmol/L").single().values["glucose"])
     }
     @Test fun missingUnitsStayUnknownRatherThanAssumed() {
         val result = suggest("Glucose 5.6", "Blood pressure 124/82")
         assertEquals(2, result.size); assertTrue(result.all { it.unit.isEmpty() })
     }
     @Test fun comparisonAndRangesAreNotReducedToSingleNumbers() {
-        for (text in listOf("Glucose < 5.6 mmol/L", "Glucose >5.6", "Glucose 4.0-6.0", "Glucose 4.0～6.0",
-            "Glucose 5.6 ± 0.2", "Glucose 5.6/6.0", "Glucose 1e3", "Glucose 4.0 至 6.0", "Glucose 1.2.3")) {
+        for ((raw, kind) in listOf("< 5.6" to HealthResultKind.COMPARISON, ">5.6" to HealthResultKind.COMPARISON,
+            "≤5.6" to HealthResultKind.COMPARISON, "＜5.6" to HealthResultKind.COMPARISON,
+            "4.0-6.0" to HealthResultKind.RANGE, "4.0～6.0" to HealthResultKind.RANGE, "4.0 至 6.0" to HealthResultKind.RANGE)) {
+            val row = suggest("Glucose $raw mmol/L").single()
+            assertEquals(raw, row.values.getValue("glucose"))
+            assertEquals("mmol/L", row.unit)
+            val result = requireNotNull(HealthResult.parse(raw, row.metric.form))
+            assertEquals(kind, result.kind)
+            assertNull(result.exactNumber)
+            assertFalse(row.evidence!!.confirmed)
+        }
+        for (text in listOf("Glucose 5.6 ± 0.2", "Glucose 5.6/6.0", "Glucose 1e3", "Glucose 6.0–4.0", "Glucose 1.2.3")) {
             assertTrue(text, suggest(text).isEmpty())
         }
     }
@@ -72,8 +83,44 @@ class HealthOcrCandidatesTest {
         assertTrue(HealthOcrCandidates.suggest(job.copy(mode = "device"), original, HealthOcrPage(1, 1000, 1000, lines)).isEmpty())
     }
     @Test fun unrelatedHemoglobinTestsAreNeverRelabeledAsHemoglobin() {
-        assertTrue(suggest("Mean corpuscular hemoglobin 30 pg", "Hemoglobin A1c 5.6 %", "糖化血红蛋白 5.6 %",
-            "平均红细胞血红蛋白含量 30 pg", "MCH 30 pg").isEmpty())
+        assertTrue(suggest("Mean corpuscular hemoglobin 30 pg", "平均红细胞血红蛋白含量 30 pg", "MCH 30 pg").isEmpty())
+        assertEquals(listOf(HealthMetric.HBA1C, HealthMetric.HBA1C),
+            suggest("Hemoglobin A1c 5.6 %", "糖化血红蛋白 5.6 %").map { it.metric })
+    }
+    @Test fun supportedLabUnitsAndExplicitReferenceRemainSeparate() {
+        val entries = suggest("ALT: ≤ 40 U/L", "肌酐 (μmol/L): 55–85", "WBC 4.0～10.0 ×10⁹/L",
+            "TSH 2.1 mIU/L", "LDL-C 2.5 mmol/L; Reference range: 0–3.4")
+        assertEquals(listOf(HealthMetric.ALT, HealthMetric.CREATININE, HealthMetric.WHITE_BLOOD_CELLS, HealthMetric.TSH,
+            HealthMetric.LDL), entries.map { it.metric })
+        assertEquals(listOf("U/L", "umol/L", "10^9/L", "mIU/L", "mmol/L"), entries.map { it.unit })
+        assertEquals("0–3.4", entries.last().reference)
+        assertEquals("2.5", entries.last().values.getValue("ldl"))
+        assertEquals("5,60", suggest("Glucose 5,60 mmol/L").single().reportedValues["glucose"])
+    }
+    @Test fun urineProteinOnlyAcceptsRecognizedQualitativeResults() {
+        val rows = suggest("Urine protein: 1+", "尿蛋白：阴性", "Urine protein: trace")
+        assertEquals(listOf("1+", "阴性", "trace"), rows.map { it.values.getValue("urine_protein") })
+        assertTrue(rows.all { it.unit == "" && it.metric == HealthMetric.URINE_PROTEIN })
+        assertTrue(suggest("Urine protein 20 mg/dL", "Urine protein normal note 2026", "PRO 1+", "UA 10 mg/dL").isEmpty())
+    }
+    @Test fun unrelatedTextAndAmbiguousTailNeverSupplyALabResult() {
+        assertTrue(suggest("Patient name: Glucose 5.6 mmol/L", "Glucose 5.6 mmol/L 3.9–6.1",
+            "Glucose 5.6 mmol/L; Note: verify", "ALT 30 mg/dL", "Hemoglobin g/L").isEmpty())
+        val missing = suggest("ALT <40").single()
+        assertEquals("", missing.unit)
+        assertEquals("<40", missing.values.getValue("alt"))
+        assertEquals(HealthValidationIssue.INVALID_UNIT, HealthObservationPolicy.validate(missing.copy(
+            measuredAt = 1_790_000_000_000L, evidence = missing.evidence!!.copy(confirmed = true)))?.issue)
+    }
+    @Test fun rowNumbersAndStandaloneFlagsAreNotReadAsResultValues() {
+        val line = "12. Glucose 5.60 mmol/L H; Reference: 3.9–6.1"
+        val result = suggest(line).single()
+        assertEquals("5.6", result.values.getValue("glucose"))
+        assertEquals("5.60", result.reportedValues.getValue("glucose"))
+        assertEquals(line, result.evidence!!.rawText)
+        assertEquals("3.9–6.1", result.reference)
+        assertEquals("4.8", suggest("Total cholesterol 4.8 mmol/L↓").single().values.getValue("cholesterol"))
+        assertEquals("g/L", suggest("Hemoglobin 142 g / L").single().unit)
     }
     @Test fun repeatedResultLabelsKeepSeparateTraceableCandidates() {
         val result = suggest("Glucose 5.6 mmol/L", "Glucose 6.2 mmol/L")
