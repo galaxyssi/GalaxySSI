@@ -697,6 +697,53 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthPDFText.normalizedTopOrigin(CGRect(x: 400, y: 0, width: 10, height: 10), in: viewport))
   }
 
+  func testTrendHealthOriginsKeepExactApplicationsAndDailyAggregatesSeparate() throws {
+    let now = Date()
+    let applications = (0..<35).map { index in
+      GalaxySSIHealthReading(revision: index + 1, metric: .steps, measuredAt: now, value: Decimal(index + 1),
+        healthKitSource: .init(key: String(index), origin: "fixture.\(index)", name: "Same name"))
+    }
+    let daily = GalaxySSIHealthReading(revision: 1, metric: .steps, measuredAt: now, value: 100,
+      healthKitSource: .init(key: "daily", origin: nil, name: nil))
+    let manual = GalaxySSIHealthReading(metric: .steps, measuredAt: now, value: 200)
+    let current = applications + [daily, manual]
+    let options = GalaxySSIHealthTrend.origins(in: current, metric: .steps)
+    XCTAssertEqual(options.count, 36)
+    XCTAssertEqual(options.last?.id, .dailySteps)
+    func trend(_ origin: GalaxySSIHealthTrend.HealthOrigin) -> GalaxySSIHealthTrend {
+      GalaxySSIHealthTrend(current: current, metric: .steps, component: .value, now: now,
+        dayCount: 7, calendar: .current, source: .healthKit, healthOrigin: origin)
+    }
+    let app = try XCTUnwrap(trend(.application("fixture.34")).points.last)
+    XCTAssertEqual(app.readings.map(\.id), [applications[34].id])
+    XCTAssertEqual(app.revisions[applications[34].id], 35)
+    XCTAssertEqual(trend(.dailySteps).points.last?.readings.map(\.id), [daily.id])
+    XCTAssertEqual(trend(.application("fixture")).validDays, 0)
+    XCTAssertFalse(GalaxySSIHealthTrend.Source.manual.includes(daily))
+  }
+
+  func testTrendAuditPinsContributorsAndExtremumRevision() throws {
+    let now = Date()
+    let readings = (0..<34).map {
+      GalaxySSIHealthReading(revision: $0 + 1, metric: .glucose, measuredAt: now,
+        value: Decimal(40 - $0))
+    }
+    let excluded = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 1, unitOverride: "mg/dL")
+    func point(_ inputs: [GalaxySSIHealthReading]) throws -> GalaxySSIHealthTrend.Point {
+      try XCTUnwrap(GalaxySSIHealthTrend(current: inputs, metric: .glucose, component: .value,
+        now: now, dayCount: 7, calendar: .current, source: .manual).points.last)
+    }
+    let original = try point(readings + [excluded])
+    XCTAssertEqual(original.readings.count, 34)
+    XCTAssertEqual(original.value(.min, component: .value), 7)
+    XCTAssertEqual(original.value(.max, component: .value), 40)
+    XCTAssertEqual(original.extremum(.min, component: .value)?.revision, 34)
+    XCTAssertEqual(original.revisions, try point(Array(readings.reversed())).revisions)
+    var revised = readings
+    revised[33].revision += 1
+    XCTAssertNotEqual(original.revisions, try point(revised).revisions)
+  }
+
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
