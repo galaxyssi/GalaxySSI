@@ -335,6 +335,9 @@
     A10000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */; };
     A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */; };
     A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */; };
+    E35390000000000000000001 /* PublicNewsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000002 /* PublicNewsFeed.swift */; };
+    E35390000000000000000003 /* PublicNewsArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000004 /* PublicNewsArchive.swift */; };
+    E35390000000000000000005 /* GalaxySSIPublicNewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */; };
     A10000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift */; };
     A10000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift */; };
     A10000000000000000001800 /* GalaxySSIAgentHomeEmptyStatePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001800 /* GalaxySSIAgentHomeEmptyStatePanel.swift */; };
@@ -995,6 +998,7 @@
     A10000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift */; };
     A10000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift */; };
     A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */; };
+    E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000008 /* PublicNewsFeedTests.swift */; };
     A10000000000000000000590 /* VoiceLatencyTracerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000590 /* VoiceLatencyTracerTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
     A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000204 /* AgentWorkspacePlanTests.swift */; };
@@ -1444,6 +1448,9 @@
     A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAndroidMenuComponents.swift; sourceTree = "<group>"; };
     A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeSupportViews.swift; sourceTree = "<group>"; };
     A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeInsightBarView.swift; sourceTree = "<group>"; };
+    E35390000000000000000002 /* PublicNewsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeed.swift; sourceTree = "<group>"; };
+    E35390000000000000000004 /* PublicNewsArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArchive.swift; sourceTree = "<group>"; };
+    E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsView.swift; sourceTree = "<group>"; };
     A20000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeHeaderView.swift; sourceTree = "<group>"; };
     A20000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeReadinessView.swift; sourceTree = "<group>"; };
     A20000000000000000001800 /* GalaxySSIAgentHomeEmptyStatePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeEmptyStatePanel.swift; sourceTree = "<group>"; };
@@ -2088,6 +2095,7 @@
     A20000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSpeechCaptureCoordinatorBridgeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriptRoutePolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReplyPlaybackPolicyTests.swift; sourceTree = "<group>"; };
+    E35390000000000000000008 /* PublicNewsFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeedTests.swift; sourceTree = "<group>"; };
     A20000000000000000000590 /* VoiceLatencyTracerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyTracerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyDiagnosticsStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000629 /* VoicePcmRingBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmRingBufferTests.swift; sourceTree = "<group>"; };
@@ -2877,6 +2885,9 @@
         A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */,
         A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */,
         A20000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift */,
+        E35390000000000000000002 /* PublicNewsFeed.swift */,
+        E35390000000000000000004 /* PublicNewsArchive.swift */,
+        E35390000000000000000006 /* GalaxySSIPublicNewsView.swift */,
         A20000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift */,
         D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */,
         A20000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift */,
@@ -3195,6 +3206,7 @@
         A20000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift */,
         A20000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift */,
         A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */,
+        E35390000000000000000008 /* PublicNewsFeedTests.swift */,
         A20000000000000000000762 /* VoiceTTSRequestRegistryTests.swift */,
         A20000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift */,
         A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */,
@@ -4125,6 +4137,9 @@
         A10000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift in Sources */,
         A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */,
         A10000000000000000001701 /* GalaxySSIAgentHomeInsightBarView.swift in Sources */,
+        E35390000000000000000001 /* PublicNewsFeed.swift in Sources */,
+        E35390000000000000000003 /* PublicNewsArchive.swift in Sources */,
+        E35390000000000000000005 /* GalaxySSIPublicNewsView.swift in Sources */,
         A10000000000000000001700 /* GalaxySSIAgentHomeHeaderView.swift in Sources */,
         D12980000000000000000001 /* GalaxySSIConversationSceneController.swift in Sources */,
         A10000000000000000001600 /* GalaxySSIAgentHomeReadinessView.swift in Sources */,
@@ -4434,6 +4449,7 @@
         A10000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift in Sources */,
         A10000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift in Sources */,
         A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */,
+        E35390000000000000000007 /* PublicNewsFeedTests.swift in Sources */,
         A10000000000000000000762 /* VoiceTTSRequestRegistryTests.swift in Sources */,
         A10000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift in Sources */,
         A10000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift in Sources */,
