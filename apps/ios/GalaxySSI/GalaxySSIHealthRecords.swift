@@ -544,6 +544,50 @@ struct GalaxySSIHealthRecords {
     NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
   }
 
+  func setReviewNotificationPreferences(_ preferences: GalaxySSIHealthReviewDelivery.Preferences) throws {
+    guard (0..<24).contains(preferences.quietStart), (0..<24).contains(preferences.quietEnd) else { throw Failure.invalid }
+    var archive = try load()
+    var state = archive.reviewReminderState ?? .init()
+    state.notificationPreferences = preferences
+    archive.reviewReminderState = state
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+  }
+
+  func reconcileReviewDelivery(now: Date, calendar: Calendar, permitted: Bool, scheduled: Set<UUID>,
+                               delivered: Set<UUID>) throws -> [GalaxySSIHealthReviewDelivery.Ticket] {
+    var archive = try load()
+    guard var state = archive.reviewReminderState else { return [] }
+    let before = state.deliveries ?? [:]
+    let (tickets, desired) = GalaxySSIHealthReviewDelivery.plan(
+      jobs: GalaxySSIHealthReviewReminders.jobs(in: archive), state: state, now: now,
+      calendar: calendar, permitted: permitted, scheduled: scheduled, delivered: delivered)
+    if tickets != before {
+      state.deliveries = tickets
+      archive.reviewReminderState = state
+      try persist(archive)
+    }
+    return desired
+  }
+
+  func markReviewDeliverySubmitted(_ ticket: GalaxySSIHealthReviewDelivery.Ticket) throws {
+    var archive = try load()
+    guard var state = archive.reviewReminderState, let key = state.deliveries?.first(where: {
+      $0.value.token == ticket.token && $0.value.due == ticket.due
+    })?.key,
+    GalaxySSIHealthReviewReminders.jobs(in: archive).contains(where: { $0.key == key }),
+    state.enabled, state.notificationPreferences?.enabled == true,
+    state.actions[key] != .handled else { throw Failure.stale }
+    let cycle: Date?
+    if case .snoozed(let until) = state.actions[key] { cycle = until } else { cycle = nil }
+    guard cycle == ticket.cycle,
+          state.notificationPreferences?.nextAllowed(ticket.due, calendar: .autoupdatingCurrent) == ticket.due
+    else { throw Failure.stale }
+    state.deliveries?[key]?.submitted = true
+    archive.reviewReminderState = state
+    try persist(archive)
+  }
+
   private func persist(_ archive: Archive) throws {
     let payload = try JSONEncoder().encode(archive)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true),

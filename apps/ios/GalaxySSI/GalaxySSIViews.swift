@@ -136,6 +136,10 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    if GalaxySSIHealthReviewDelivery.token(notification.request.identifier) != nil {
+      completionHandler([.banner, .list])
+      return
+    }
     guard GalaxySSIContactNotificationPresentationPolicy.shouldPresent(
       userInfo: notification.request.content.userInfo,
       applicationIsActive: UIApplication.shared.applicationState == .active
@@ -151,6 +155,16 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
+    if let token = GalaxySSIHealthReviewDelivery.token(response.notification.request.identifier) {
+      if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+        UserDefaults.standard.set(token.uuidString, forKey: GalaxySSIHealthReviewDelivery.pendingKey)
+        DispatchQueue.main.async {
+          NotificationCenter.default.post(name: GalaxySSIHealthReviewDelivery.openNotification, object: nil)
+        }
+      }
+      completionHandler()
+      return
+    }
     let contactId = (response.notification.request.content.userInfo[
       GalaxySSIContactNotificationPresentationPolicy.contactIdKey
     ] as? String)?
@@ -304,6 +318,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .environmentObject(runtime.coordinator)
       .environmentObject(runtime.agentStartupRecovery)
       .environmentObject(runtime.voiceAgentRunRecovery)
+      .modifier(GalaxySSIHealthReviewNotificationLifecycle(store: runtime.store))
       .galaxySSITextScale(runtime.store.displaySettings)
       .onAppear {
         galaxySSIStartupLogger.notice("RootView appeared")

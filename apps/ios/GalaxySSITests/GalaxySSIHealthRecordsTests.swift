@@ -4,6 +4,36 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  func testReviewNotificationPlanDefersAndDoesNotReplayDelivery() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 5, hour: 23)))
+    let job = GalaxySSIHealthReviewReminders.Job(target: UUID(), kind: .report, versions: [], at: now)
+    var state = GalaxySSIHealthReviewReminders.State()
+    state.enabled = true
+    state.notificationPreferences = .init(enabled: true)
+    let (tickets, desired) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: now,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    var ticket = try XCTUnwrap(desired.first)
+    XCTAssertEqual(calendar.component(.hour, from: ticket.due), 8)
+    XCTAssertFalse(ticket.identifier.contains(job.target.uuidString))
+    ticket.submitted = true
+    state.deliveries = tickets.merging([job.key: ticket]) { _, new in new }
+    let later = ticket.due.addingTimeInterval(5)
+    let (_, afterRestart) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    XCTAssertEqual(afterRestart, [ticket])
+    let snooze = later.addingTimeInterval(3_600)
+    state.actions[job.key] = .snoozed(snooze)
+    let (_, delayed) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: true, scheduled: [], delivered: [])
+    XCTAssertEqual(delayed.first?.due, snooze)
+    XCTAssertNotEqual(delayed.first?.token, ticket.token)
+    let (_, denied) = GalaxySSIHealthReviewDelivery.plan(jobs: [job], state: state, now: later,
+      calendar: calendar, permitted: false, scheduled: [], delivered: [])
+    XCTAssertTrue(denied.isEmpty)
+  }
+
   @MainActor
   func testHealthSyncIncidentKeepsIdentityAndResolvesOnEmptySuccess() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
