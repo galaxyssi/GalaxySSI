@@ -563,6 +563,34 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
   }
 
+  @MainActor
+  func testReviewOnlyTablePreservesSourceReferenceWithoutArchivingBytes() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: root.appendingPathComponent("records"))
+    let originals = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root)
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    XCTAssertEqual(try records.importTable(data, name: "review.csv", json: false, mapping: mapping,
+                                           expected: [.ready], retainOriginal: false), 1)
+    let archive = try records.load()
+    let batch = try XCTUnwrap(archive.tableBatches?.first)
+    let source = try XCTUnwrap(archive.current.first?.tableSource)
+    XCTAssertTrue(batch.data.isEmpty)
+    XCTAssertEqual(source.batch, batch.id)
+    XCTAssertEqual(source.sha256, batch.sourceDigest)
+    XCTAssertNil(GalaxySSIHealthTableImport.Batch.original(for: batch.id, in: [batch]))
+    let independent = GalaxySSIHealthTableImport.Batch(id: UUID(), name: "archived.csv", at: Date(),
+                                                       data: data, inserted: 1, undone: nil)
+    XCTAssertEqual(GalaxySSIHealthTableImport.Batch.original(for: batch.id, in: [batch, independent])?.id, independent.id)
+    let plan = try GalaxySSIHealthPortableBackup.plan(records: records, originals: originals)
+    let (_, summary) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
+    XCTAssertEqual(summary.tables, 0)
+    XCTAssertEqual(summary.links, 1)
+  }
+
   func testStructuredOriginalPreviewBoundsDoNotMutateSourceTable() throws {
     let long = String(repeating: "x", count: 300)
     let columns = (0..<13).map { "column\($0)" }

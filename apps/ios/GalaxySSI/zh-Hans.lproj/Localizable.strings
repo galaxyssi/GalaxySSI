@@ -365,6 +365,8 @@
 "galaxyssi.health.import.library" = "健康原件";
 "galaxyssi.health.import.read_pdf" = "报告 PDF 文本";
 "galaxyssi.health.import.saved" = "原件已存入健康原件库";
+"galaxyssi.health.import.retain" = "保留原始文件";
+"galaxyssi.health.import.close_review" = "关闭本次审阅";
 "galaxyssi.health.import.failed" = "无法导入原件，请检查文件或减少扫描页数。";
 "galaxyssi.health.more" = "查看更多";
 "galaxyssi.health.export.title" = "导出测量记录";

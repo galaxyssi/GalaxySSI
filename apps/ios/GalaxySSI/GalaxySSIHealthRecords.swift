@@ -305,7 +305,7 @@ struct GalaxySSIHealthRecords {
 
   func importTable(_ data: Data, name: String, json: Bool, mapping: GalaxySSIHealthTableImport.Mapping,
                    expected: [GalaxySSIHealthTableImport.Status],
-                   worksheet: GalaxySSIHealthXLSX.Selection? = nil) throws -> Int {
+                   worksheet: GalaxySSIHealthXLSX.Selection? = nil, retainOriginal: Bool = true) throws -> Int {
     var archive = try load()
     let table: GalaxySSIHealthTableImport.Table
     if let worksheet { table = try GalaxySSIHealthXLSX(data).table(worksheet) }
@@ -324,10 +324,10 @@ struct GalaxySSIHealthRecords {
     guard !readings.isEmpty else { return 0 }
     var batches = archive.tableBatches ?? []
     guard batches.count < 30,
-          batches.reduce(data.count, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
+          batches.reduce(retainOriginal ? data.count : 0, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
     else { throw GalaxySSIHealthTableImport.Failure.limit }
-    batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: data,
-                         inserted: readings.count, undone: nil), at: 0)
+    batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: retainOriginal ? data : Data(),
+                         inserted: readings.count, undone: nil, sourceDigest: hash), at: 0)
     archive.tableBatches = batches
     archive.revisions.append(contentsOf: readings)
     try persist(archive)

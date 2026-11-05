@@ -46,7 +46,7 @@ enum GalaxySSIHealthPortableBackup {
   static func plan(records: GalaxySSIHealthRecords, originals: GalaxySSIHealthOriginalStore) throws -> Plan {
     let archive = try records.load()
     let listing = try originals.list()
-    return makePlan(archive.current, listing: listing, tables: archive.tableBatches ?? [])
+    return makePlan(archive.current, listing: listing, tables: archivedTables(archive.tableBatches ?? []))
   }
 
   @MainActor
@@ -55,7 +55,7 @@ enum GalaxySSIHealthPortableBackup {
     let archive = try records.load()
     let readings = archive.current
     let listing = try originals.list()
-    let tables = archive.tableBatches ?? []
+    let tables = archivedTables(archive.tableBatches ?? [])
     guard makePlan(readings, listing: listing, tables: tables) == expected else { throw Failure.stale }
     guard expected.summary.estimatedBytes <= maximumSourceBytes, readings.count <= 10_000 else { throw Failure.limit }
     let files = listing.originals.map { OriginalFile(manifest: $0, bytes: try? originals.read($0)) }
@@ -109,6 +109,10 @@ enum GalaxySSIHealthPortableBackup {
     guard password.count >= 8, password.utf8.count <= 1_024 else { throw Failure.password }
     return SymmetricKey(data: try GalaxySSIBackupManager.pbkdf2SHA256(
       password: password, salt: salt, iterations: iterationsV1, keyByteCount: 32))
+  }
+
+  private static func archivedTables(_ tables: [GalaxySSIHealthTableImport.Batch]) -> [GalaxySSIHealthTableImport.Batch] {
+    tables.filter { !$0.data.isEmpty }
   }
 
   private static func makePlan(_ readings: [GalaxySSIHealthReading], listing: GalaxySSIHealthOriginalStore.Listing,
