@@ -281,6 +281,12 @@ struct GalaxySSIHealthCenterView: View {
           }
           if requests.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
         }
+        NavigationLink {
+          GalaxySSIHealthOriginalRemovalHistoryView(store: GalaxySSIHealthOriginalStore(owner: records.owner,
+                                                                                         secrets: records.secrets))
+        } label: {
+          Label(t("originals.removal_history", "Original removal history"), systemImage: "clock.arrow.circlepath")
+        }
       } else if scenePhase == .active {
         Text(t("unavailable", "Health records could not be accessed."))
         Button(t("retry", "Reload records"), action: reload)

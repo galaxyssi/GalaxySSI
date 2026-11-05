@@ -58,6 +58,17 @@
 "galaxyssi.health.originals.save" = "选择保存位置";
 "galaxyssi.health.originals.selected_count" = "已选择 %lld 份原件";
 "galaxyssi.health.originals.remove_confirm" = "移除此原件？";
+"galaxyssi.health.originals.retained_count" = "将保留 %lld 条关联测量。";
+"galaxyssi.health.originals.remove_boundary" = "测量关联、草稿以及已有导出和备份不受影响。";
+"galaxyssi.health.originals.removed_originals" = "已移除的原件";
+"galaxyssi.health.originals.removal_pending" = "本地文件尚待清理。";
+"galaxyssi.health.originals.removal_done" = "已移除原件，测量记录已保留。";
+"galaxyssi.health.originals.removal_changed" = "文件或关联测量已变化，请重新核对。";
+"galaxyssi.health.originals.removal_history" = "原件移除记录";
+"galaxyssi.health.originals.no_removals" = "没有原件移除记录。";
+"galaxyssi.health.originals.removal_confirmed" = "已确认移除本地原件";
+"galaxyssi.health.originals.removal_audit_count" = "保留的关联测量：%lld 条";
+"galaxyssi.health.originals.removal_history_retry" = "重新加载移除记录";
 "galaxyssi.health.originals.close" = "关闭";
 "galaxyssi.health.pdf_text.title" = "报告 PDF 文本";
 "galaxyssi.health.pdf_text.password" = "PDF 密码";
