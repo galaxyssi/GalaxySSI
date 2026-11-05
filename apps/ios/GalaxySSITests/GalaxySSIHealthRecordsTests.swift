@@ -49,7 +49,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try store.remove(stale))
     let reviewed = try store.previewRemoval(original)
     XCTAssertEqual(reviewed.count, 1)
-    try store.remove(reviewed)
+    XCTAssertEqual(try store.remove(reviewed), .removed)
     let removed = try records.load()
     XCTAssertTrue(removed.originalIndex?.originals.isEmpty == true)
     XCTAssertEqual(removed.originalIndex?.removedOriginals, [original])

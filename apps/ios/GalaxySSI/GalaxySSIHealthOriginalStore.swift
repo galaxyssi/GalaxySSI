@@ -60,6 +60,8 @@ struct GalaxySSIHealthOriginalStore {
     let linkedMeasurements: Int
   }
 
+  enum RemovalOutcome: Equatable { case removed, pendingCleanup }
+
   struct ExportAttempt: Codable, Identifiable, Sendable {
     enum Outcome: String, Codable, Sendable { case prepared, verified, unverified }
     let id: UUID
@@ -342,12 +344,18 @@ struct GalaxySSIHealthOriginalStore {
     }
   }
 
-  func remove(_ expected: Removal) throws {
+  @discardableResult
+  func remove(_ expected: Removal) throws -> RemovalOutcome {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
       try verifyRemovalFile(expected.original)
       try indexRecords.commitOriginalRemoval(expected)
-      try? reconcileRestores(lease: lease)
+      do {
+        try reconcileRestores(lease: lease)
+        return .removed
+      } catch {
+        return .pendingCleanup
+      }
     }
   }
 

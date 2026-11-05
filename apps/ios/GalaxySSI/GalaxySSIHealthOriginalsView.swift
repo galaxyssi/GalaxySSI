@@ -30,7 +30,7 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var pending: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var removal: GalaxySSIHealthOriginalStore.Removal?
   @State private var removalNotice: RemovalNotice?
-  private enum RemovalNotice { case removed, changed }
+  private enum RemovalNotice { case removed, changed, pendingCleanup }
   @State private var error = false
 
   private struct Preview: Identifiable {
@@ -120,10 +120,7 @@ struct GalaxySSIHealthOriginalsView: View {
           }
         }
         if let removalNotice {
-          Text(removalNotice == .removed
-               ? t("remove_success", "Original file removed.")
-               : t("remove_changed", "The file or its linked measurements changed. Review it again."))
-            .foregroundColor(.secondary)
+          Text(removalMessage(removalNotice)).foregroundColor(.secondary)
         }
         if error {
           Text(t("error", "Could not complete the operation. Check the file or select fewer originals."))
@@ -173,9 +170,10 @@ struct GalaxySSIHealthOriginalsView: View {
             primaryButton: .destructive(Text(t("remove", "Remove"))) {
               guard scene == .active else { return }
               do {
-                try store.remove(item)
+                let outcome = try store.remove(item)
                 reload()
-                removalNotice = .removed
+                if outcome == .removed { removalNotice = .removed }
+                else { removalNotice = .pendingCleanup }
               } catch GalaxySSIHealthOriginalStore.Failure.stale {
                 reload()
                 removalNotice = .changed
@@ -270,6 +268,14 @@ struct GalaxySSIHealthOriginalsView: View {
     do { removal = try store.previewRemoval(item) }
     catch GalaxySSIHealthOriginalStore.Failure.stale { reload(); removalNotice = .changed }
     catch { error = true }
+  }
+
+  private func removalMessage(_ notice: RemovalNotice) -> String {
+    switch notice {
+    case .removed: return t("remove_success", "Original file removed.")
+    case .changed: return t("remove_changed", "The file or its linked measurements changed. Review it again.")
+    case .pendingCleanup: return t("remove_pending", "Original access removed. File cleanup is pending.")
+    }
   }
 
   private func open(_ item: GalaxySSIHealthOriginalStore.Original) {
