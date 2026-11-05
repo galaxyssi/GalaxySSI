@@ -9,15 +9,22 @@ import java.time.temporal.ChronoUnit
 import java.util.BitSet
 
 internal enum class HealthTrendAggregation { MEAN, MINIMUM, MAXIMUM }
-internal data class HealthTrendSource(val originalId: String = "", val manualOnly: Boolean = false, val bluetoothGroup: String = "") {
+internal const val HEALTH_CONNECT_AGGREGATE_ORIGIN = "health_connect.aggregate"
+private val healthTrendPlatformOrigin = Regex("[a-zA-Z0-9_.]{1,255}")
+internal fun validHealthTrendPlatformOrigin(origin: String) = healthTrendPlatformOrigin.matches(origin)
+
+internal data class HealthTrendSource(val originalId: String = "", val manualOnly: Boolean = false,
+    val bluetoothGroup: String = "", val platformOrigin: String = "") {
     init {
         require(originalId.isBlank() || java.util.UUID.fromString(originalId).toString() == originalId)
         require(bluetoothGroup.isEmpty() || isHealthBluetoothGroup(bluetoothGroup))
-        require(listOf(originalId.isNotBlank(), manualOnly, bluetoothGroup.isNotEmpty()).count { it } <= 1)
+        require(platformOrigin.isEmpty() || validHealthTrendPlatformOrigin(platformOrigin))
+        require(listOf(originalId.isNotBlank(), manualOnly, bluetoothGroup.isNotEmpty(), platformOrigin.isNotEmpty()).count { it } <= 1)
     }
     fun accepts(record: HealthObservation) = (!manualOnly || record.source == "manual") &&
         (originalId.isBlank() || record.draft.evidence?.originalId == originalId) &&
-        (bluetoothGroup.isEmpty() || record.source == "bluetooth" && record.bluetoothGroup == bluetoothGroup)
+        (bluetoothGroup.isEmpty() || record.source == "bluetooth" && record.bluetoothGroup == bluetoothGroup) &&
+        (platformOrigin.isEmpty() || record.source == "health_connect" && record.platformOrigin == platformOrigin)
 }
 internal data class HealthTrendSpec(val metric: HealthMetric, val first: LocalDate, val last: LocalDate,
     val zone: ZoneId, val unit: String, val aggregation: HealthTrendAggregation = HealthTrendAggregation.MEAN,

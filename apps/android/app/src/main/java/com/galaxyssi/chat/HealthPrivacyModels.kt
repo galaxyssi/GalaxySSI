@@ -42,7 +42,7 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE
 }
 internal enum class HealthAccessOutcome { STARTED, COMPLETE, FAILED, CANCELLED, BLOCKED }
-internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL, BLUETOOTH }
+internal enum class HealthAccessSource { ALL, MANUAL, ORIGINAL, BLUETOOTH, HEALTH_CONNECT }
 internal enum class HealthAccessFormat { CSV, JSON, XLSX, ZIP, ORIGINAL, PDF, GHBACKUP }
 internal data class HealthAccessScope(
     val purpose: HealthAccessPurpose, val metrics: Set<HealthMetric> = emptySet(),
@@ -96,6 +96,7 @@ internal data class HealthAccessScope(
                 spec.source.manualOnly -> HealthAccessSource.MANUAL
                 spec.source.originalId.isNotEmpty() -> HealthAccessSource.ORIGINAL
                 spec.source.bluetoothGroup.isNotEmpty() -> HealthAccessSource.BLUETOOTH
+                spec.source.platformOrigin.isNotEmpty() -> HealthAccessSource.HEALTH_CONNECT
                 else -> HealthAccessSource.ALL
             })
         fun records(session: HealthRecordExportSession) = with(session.scope) {
