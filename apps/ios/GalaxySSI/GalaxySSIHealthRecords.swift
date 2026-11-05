@@ -119,7 +119,7 @@ struct GalaxySSIHealthRecords {
   }
 
   enum PrivacyScope: String, Codable {
-    case overview, weeklyReport
+    case overview, weeklyReport, importOriginals
   }
 
   struct PrivacyEvent: Codable, Identifiable {
@@ -141,6 +141,7 @@ struct GalaxySSIHealthRecords {
     var restoreReceipts: Set<UUID>?
     var revisions: [GalaxySSIHealthReading] = []
     var lastMeasurementDeletion: MeasurementDeletion?
+    var metricDeletionHistory: [GalaxySSIHealthMetricDeletion.Audit]?
     var draft: GalaxySSIHealthDraft?
     var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
     var derivesOverview: Bool?
@@ -150,6 +151,9 @@ struct GalaxySSIHealthRecords {
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var healthOnlinePermission: UUID?
+    var retainImportOriginals: Bool?
+
+    var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -187,6 +191,35 @@ struct GalaxySSIHealthRecords {
 
   private var profileContext: Data { Data("galaxyssi.health.profile.v1:\(owner)".utf8) }
   private var profileAccount: String { "health.profile.v1." + owner }
+  static let sourceAttentionChanged = Notification.Name("galaxyssi.health.sourceAttentionChanged")
+  private var sourceAttentionContext: Data { Data("galaxyssi.health.sourceAttention.v1:\(owner)".utf8) }
+  private var sourceAttentionAccount: String { "health.sourceAttention.v1." + owner }
+
+  func loadSourceAttention() throws -> GalaxySSIHealthSourceAttention {
+    let file = try storageFile(context: sourceAttentionContext, fixtureExtension: "source-attention")
+    let data: Data
+    do { data = try Data(contentsOf: file) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+      return GalaxySSIHealthSourceAttention()
+    }
+    let box = try AES.GCM.SealedBox(combined: data)
+    let payload = try AES.GCM.open(box, using: key(create: false, account: sourceAttentionAccount),
+                                  authenticating: sourceAttentionContext)
+    return try JSONDecoder().decode(GalaxySSIHealthSourceAttention.self, from: payload)
+  }
+
+  func updateSourceAttention(_ update: (inout GalaxySSIHealthSourceAttention) -> Void) throws {
+    let current = try loadSourceAttention()
+    var next = current
+    update(&next)
+    guard current != next else { return }
+    let payload = try JSONEncoder().encode(next)
+    guard let sealed = try AES.GCM.seal(payload, using: key(create: true, account: sourceAttentionAccount),
+                                        authenticating: sourceAttentionContext).combined else { throw Failure.unavailable }
+    try sealed.write(to: storageFile(context: sourceAttentionContext, fixtureExtension: "source-attention"),
+                     options: [.atomic, .completeFileProtection])
+    NotificationCenter.default.post(name: Self.sourceAttentionChanged, object: owner)
+  }
 
   func loadProfile() throws -> GalaxySSIHealthProfile {
     let file = try storageFile(context: profileContext, fixtureExtension: "profile")
@@ -275,9 +308,12 @@ struct GalaxySSIHealthRecords {
     case .weeklyReport:
       previous = archive.weeklyReportAllowed
       archive.weeklyReportAllowed = enabled
+    case .importOriginals:
+      previous = archive.retainImportOriginals
+      archive.retainImportOriginals = enabled
     }
     guard previous != enabled else { return }
-    if (previous ?? false) != enabled {
+    if (previous ?? (scope == .importOriginals)) != enabled {
       var history = archive.privacyEvents ?? []
       history.append(.init(at: Date(), scope: scope, enabled: enabled))
       archive.privacyEvents = Array(history.suffix(100))
@@ -301,7 +337,8 @@ struct GalaxySSIHealthRecords {
     guard (latest?.revision ?? 0) == input.revision, input.revision < Int.max, latest?.deleted != true,
           !input.deleted || latest != nil else { throw Failure.stale }
     if let latest {
-      guard latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
+      guard latest.metric == input.metric,
+            latest.bluetoothReceipt == input.bluetoothReceipt, latest.tableSource == input.tableSource,
             latest.healthKitSource == input.healthKitSource,
             latest.reportSource == input.reportSource
       else { throw Failure.invalid }
@@ -356,6 +393,43 @@ struct GalaxySSIHealthRecords {
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
     return restored
+  }
+
+  func previewMetricDeletion(_ metric: GalaxySSIHealthMetric, filter: GalaxySSIHealthMetricDeletion.Filter? = nil)
+    throws -> GalaxySSIHealthMetricDeletion.Preview {
+    try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter, in: load())
+  }
+
+  func deleteMetricHistory(_ reviewed: GalaxySSIHealthMetricDeletion.Preview) throws {
+    var archive = try load()
+    let metric = reviewed.scope.metric
+    let filter = reviewed.scope.filter
+    let current = try GalaxySSIHealthMetricDeletion.preview(metric, filter: filter, in: archive)
+    guard current == reviewed, !current.scope.isEmpty else { throw Failure.stale }
+    let ids = current.ids
+    archive.revisions.removeAll { ids.contains($0.id) }
+    archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    if filter == nil { archive.reportReview?.removeAll { $0.reading.metric == metric } }
+    if let draft = archive.draft, GalaxySSIHealthMetricDeletion.includes(draft, metric: metric, filter: filter, ids: ids) {
+      archive.draft = nil
+    }
+    if let last = archive.lastMeasurementDeletion, ids.contains(last.id) { archive.lastMeasurementDeletion = nil }
+    if metric == .sleepDuration {
+      if filter == nil { archive.sleepReminders?.episodes = [] }
+      else {
+        archive.sleepReminders?.episodes.removeAll { episode in
+          (episode.first.revisions + episode.latest.revisions).contains { reference in
+            guard let id = UUID(uuidString: String(reference.prefix(while: { $0 != ":" }))) else { return false }
+            return ids.contains(id)
+          }
+        }
+      }
+    }
+    var history = archive.metricDeletionHistory ?? []
+    history.append(.init(at: Date(), scope: current.scope))
+    archive.metricDeletionHistory = Array(history.suffix(100))
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
 
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {

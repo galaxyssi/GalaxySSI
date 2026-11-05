@@ -54,7 +54,7 @@
     <string name="health_choose_unit">Choose a unit</string>
     <string name="health_choose_time">Confirm measurement time</string>
     <string name="health_choose_metric">Select a measurement</string>
-    <string name="health_confirm_source">I verified ownership, original values, units, and measurement time.</string>
+    <string name="health_confirm_source">This is my record. I verified the original values, units, and measurement time.</string>
     <string name="health_confirm_source_required">Verify the original and confirm ownership, units, and time before saving.</string>
     <string name="health_source_ocr">Verified local recognition</string>
     <string name="health_review_not_ready">No recognized page is ready for verification yet.</string>

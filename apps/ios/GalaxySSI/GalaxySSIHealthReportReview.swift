@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum GalaxySSIHealthReportReview {
-  struct Source: Codable, Equatable {
+  struct Source: Codable, Hashable {
     let original: UUID
     let sha256: String
     let page: Int
@@ -31,6 +31,7 @@ struct GalaxySSIHealthReportItemEditor: View {
   let records: GalaxySSIHealthRecords
   let source: GalaxySSIHealthReportReview.Source
   let excerpt: String
+  let sourceContext: GalaxySSIHealthOCRSourceContext
   @State private var existing: GalaxySSIHealthReportReview.Item?
   @State private var metric: GalaxySSIHealthMetric?
   @State private var unit = ""
@@ -45,6 +46,7 @@ struct GalaxySSIHealthReportItemEditor: View {
     Form {
       if scene == .active {
         Text(excerpt)
+        GalaxySSIHealthOCRSourceContextRows(context: sourceContext, apply: applySourceTime)
         Picker(t("metric", "Measurement"), selection: $metric) {
           Text(t("choose", "Choose")).tag(nil as GalaxySSIHealthMetric?)
           ForEach(GalaxySSIHealthMetric.allCases.filter { !$0.units.isEmpty }) { item in
@@ -72,7 +74,14 @@ struct GalaxySSIHealthReportItemEditor: View {
     .navigationTitle(t("item", "Review measurement"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear(perform: load)
+    .onChange(of: date) { _ in dateConfirmed = false }
     .onChange(of: scene) { if $0 == .background { dismiss() } }
+  }
+
+  private func applySourceTime(_ sample: GalaxySSIHealthOCRSourceContext.Sample) {
+    guard scene == .active, sample.date <= Date() else { return }
+    date = sample.date
+    dateConfirmed = false
   }
 
   private func load() {

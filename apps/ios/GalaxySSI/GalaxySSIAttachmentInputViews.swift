@@ -240,11 +240,11 @@ extension AgentHomeView {
           ? screenAssistantBubbleStatusLabel : t("galaxyssi.screen_assistant.ready", "Ready"),
         sourceActionsEnabled: !screenAssistantStopping &&
           (screenAssistantConversationID != store.activeAgentConversationId || !screenAssistantHasActiveWork),
-        onScreenshot: beginScreenAssistantScreenshot,
-        onPage: beginScreenPagePDFImport,
-        onArticle: beginScreenAnalysisLink,
+        onScreenshot: { if screenAssistantLauncherVisible { beginScreenAssistantScreenshot() } },
+        onPage: { if screenAssistantLauncherVisible { beginScreenPagePDFImport() } },
+        onArticle: { if screenAssistantLauncherVisible { beginScreenAnalysisLink() } },
         onAnalyze: {
-          guard !screenAssistantStopping else { return }
+          guard screenAssistantLauncherVisible, !screenAssistantStopping else { return }
           if screenAssistantRunID != nil {
             restoreScreenAssistantPresentation()
           } else {
@@ -317,7 +317,6 @@ struct GalaxySSIScreenAssistantBubble: View {
   @SceneStorage("galaxyssi.screenAssistant.bubble.y") private var positionY = 0.7
   @GestureState private var translation = CGSize.zero
   @State private var menuPresented = false
-  @State private var screenCaptured = UIScreen.main.isCaptured
   var toolsLabel: String
   var analyzeLabel: String
   var screenshotLabel: String
@@ -335,15 +334,7 @@ struct GalaxySSIScreenAssistantBubble: View {
   var onClose: () -> Void
   var onStop: (() -> Void)? = nil
 
-  var body: some View {
-    Group {
-      if !screenCaptured { bubbleLayer }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
-      screenCaptured = UIScreen.main.isCaptured
-      if screenCaptured { menuPresented = false }
-    }
-  }
+  var body: some View { bubbleLayer }
 
   private var bubbleLayer: some View {
     GeometryReader { geometry in

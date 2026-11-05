@@ -10,7 +10,7 @@ struct GalaxySSIHealthKitImport {
     let name: String?
   }
 
-  enum Scope: String, CaseIterable, Identifiable {
+  enum Scope: String, Codable, CaseIterable, Identifiable {
     case sleep, steps, heartRate, restingHeartRate, bloodPressure, weight
     var id: String { rawValue }
     var metric: GalaxySSIHealthMetric {
@@ -59,38 +59,53 @@ struct GalaxySSIHealthKitImport {
     try await store.requestAuthorization(toShare: [], read: Set(scopes.flatMap(\.readTypes)))
   }
 
-  func read(_ scopes: Set<Scope>, interval: DateInterval, calendar: Calendar) async throws -> [GalaxySSIHealthReading] {
+  func read(_ scopes: Set<Scope>, interval: DateInterval, calendar: Calendar,
+            onSourceRead: ((Scope, Bool) -> Void)? = nil) async throws -> [GalaxySSIHealthReading] {
     guard Self.available, !scopes.isEmpty, interval.duration <= 31 * 86_400 else { throw Failure.unavailable }
     var rows: [GalaxySSIHealthReading] = []
     for scope in Scope.allCases where scopes.contains(scope) {
       try Task.checkCancellation()
-      if scope == .steps, let type = scope.quantity {
-        var day = interval.start
-        let today = calendar.startOfDay(for: interval.end)
-        while day < today, let next = calendar.date(byAdding: .day, value: 1, to: day), next <= today {
-          try Task.checkCancellation()
-          if let total = try await steps(type, start: day, end: next), total.isFinite,
-             total >= 0, total.rounded() == total {
-            let key = "steps:\(day.timeIntervalSinceReferenceDate)"
-            rows.append(.init(metric: .steps, measuredAt: day, value: Decimal(total),
-                              healthKitSource: .init(key: Self.digest(key), origin: nil, name: nil)))
-          }
-          day = next
+      do {
+        rows.append(contentsOf: try await readScope(scope, interval: interval, calendar: calendar))
+      } catch {
+        if !Task.isCancelled, (error as NSError).domain == HKErrorDomain {
+          onSourceRead?(scope, false)
         }
-      } else {
-        let type: HKSampleType?
-        switch scope {
-        case .sleep: type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)
-        case .bloodPressure: type = HKObjectType.correlationType(forIdentifier: .bloodPressure)
-        default: type = scope.quantity
-        }
-        guard let type else { throw Failure.unavailable }
-        let samples = try await readSamples(type, interval: interval)
-        rows.append(contentsOf: samples.compactMap { Self.convert($0, scope: scope, interval: interval) })
+        throw error
       }
+      try Task.checkCancellation()
+      onSourceRead?(scope, true)
       guard rows.count <= Self.limit else { throw Failure.excessive }
     }
     return rows.sorted { ($0.healthKitSource?.key ?? "") < ($1.healthKitSource?.key ?? "") }
+  }
+
+  private func readScope(_ scope: Scope, interval: DateInterval, calendar: Calendar) async throws -> [GalaxySSIHealthReading] {
+    if scope == .steps, let type = scope.quantity {
+      var rows: [GalaxySSIHealthReading] = []
+      var day = interval.start
+      let today = calendar.startOfDay(for: interval.end)
+      while day < today, let next = calendar.date(byAdding: .day, value: 1, to: day), next <= today {
+        try Task.checkCancellation()
+        if let total = try await steps(type, start: day, end: next), total.isFinite,
+           total >= 0, total.rounded() == total {
+          let key = "steps:\(day.timeIntervalSinceReferenceDate)"
+          rows.append(.init(metric: .steps, measuredAt: day, value: Decimal(total),
+                            healthKitSource: .init(key: Self.digest(key), origin: nil, name: nil)))
+        }
+        day = next
+      }
+      return rows
+    }
+    let type: HKSampleType?
+    switch scope {
+    case .sleep: type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)
+    case .bloodPressure: type = HKObjectType.correlationType(forIdentifier: .bloodPressure)
+    default: type = scope.quantity
+    }
+    guard let type else { throw Failure.unavailable }
+    let samples = try await readSamples(type, interval: interval)
+    return samples.compactMap { Self.convert($0, scope: scope, interval: interval) }
   }
 
   private func readSamples(_ type: HKSampleType, interval: DateInterval) async throws -> [HKSample] {
@@ -98,7 +113,13 @@ struct GalaxySSIHealthKitImport {
     return try await withCheckedThrowingContinuation { continuation in
       let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: Self.limit + 1, sortDescriptors: nil) {
         _, samples, error in
-        if let error { continuation.resume(throwing: error); return }
+        if let error {
+          let failure = error as NSError
+          if failure.domain == HKErrorDomain && failure.code == HKError.Code.errorNoData.rawValue {
+            continuation.resume(returning: [])
+          } else { continuation.resume(throwing: error) }
+          return
+        }
         let samples = samples ?? []
         if samples.count > Self.limit { continuation.resume(throwing: Failure.excessive) }
         else { continuation.resume(returning: samples) }

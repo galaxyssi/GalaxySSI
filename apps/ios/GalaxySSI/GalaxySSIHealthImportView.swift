@@ -16,7 +16,10 @@ struct GalaxySSIHealthImportView: View {
   @State private var picking = false
   @State private var scanning = false
   @State private var notice: Notice?
-  @State private var retainOriginal = true
+  @State private var retentionDefault: Bool?
+  @State private var retentionChoice = GalaxySSIHealthImportRetentionChoice.useDefault
+  @State private var fileRetention: Bool?
+  @State private var scanRetention: Bool?
   @State private var transientReport: GalaxySSIHealthTransientReport?
   @State private var pendingScanReview: GalaxySSIHealthTransientReport?
 
@@ -25,17 +28,17 @@ struct GalaxySSIHealthImportView: View {
   var body: some View {
     List {
       Section(t("report", "Report originals")) {
-        Toggle(t("retain", "Keep original files"), isOn: $retainOriginal)
+        GalaxySSIHealthImportRetentionPicker(currentDefault: retentionDefault, choice: $retentionChoice)
         Button {
-          notice = nil
+          guard let retain = beginImport() else { return }
+          fileRetention = retain
           picking = true
         } label: {
           Label(t("files", "Choose PDF or image"), systemImage: "folder")
         }
         if VNDocumentCameraViewController.isSupported {
           Button {
-            notice = nil
-            scanning = true
+            startScan()
           } label: {
             Label(t("scan", "Scan paper report"), systemImage: "doc.viewfinder")
           }
@@ -43,7 +46,7 @@ struct GalaxySSIHealthImportView: View {
       }
       Section(t("tables", "Measurement tables")) {
         NavigationLink {
-          GalaxySSIHealthTableImportView(records: records, retainOriginal: retainOriginal)
+          GalaxySSIHealthTableImportView(records: records, sharedRetentionChoice: $retentionChoice)
         } label: {
           Label(t("choose_table", "Choose CSV, JSON or XLSX"), systemImage: "tablecells")
         }
@@ -73,18 +76,21 @@ struct GalaxySSIHealthImportView: View {
     .navigationTitle(t("title", "Import Health Data"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
-      guard scene == .active, !initialActionStarted else { return }
-      initialActionStarted = true
-      if initialAction == .scan {
-        if VNDocumentCameraViewController.isSupported { scanning = true }
-        else { notice = .failed }
-      }
+      activate()
     }
     .onChange(of: scene) {
-      if $0 == .background { notice = nil; scanning = false; transientReport = nil; pendingScanReview = nil }
+      if $0 == .active { activate() }
+      else if $0 == .background {
+        notice = nil; picking = false; scanning = false; fileRetention = nil; scanRetention = nil
+        transientReport = nil; pendingScanReview = nil
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
+      if scene == .active, notification.object as? String == records.owner { reloadRetention() }
     }
     .fileImporter(isPresented: $picking, allowedContentTypes: [.pdf, .image]) { result in
-      guard scene != .background else { return }
+      defer { fileRetention = nil }
+      guard scene != .background, let retainOriginal = fileRetention else { return }
       do {
         let url = try result.get()
         if retainOriginal { try store.importFile(url); notice = .saved }
@@ -102,10 +108,11 @@ struct GalaxySSIHealthImportView: View {
     .sheet(isPresented: $scanning, onDismiss: {
       if scene == .active { transientReport = pendingScanReview }
       pendingScanReview = nil
+      scanRetention = nil
     }) {
       GalaxySSIHealthDocumentScanner { result in
         scanning = false
-        guard scene != .background, let result else { return }
+        guard scene != .background, let retainOriginal = scanRetention, let result else { return }
         do {
           let pdf = try result.get()
           let name = "Health-Report-" + String(UUID().uuidString.prefix(8)) + ".pdf"
@@ -125,6 +132,71 @@ struct GalaxySSIHealthImportView: View {
           } }
       }
       .navigationViewStyle(.stack)
+    }
+  }
+
+  private func activate() {
+    guard scene == .active else { return }
+    reloadRetention()
+    guard !initialActionStarted else { return }
+    initialActionStarted = true
+    if initialAction == .scan { startScan() }
+  }
+
+  private func reloadRetention() {
+    retentionDefault = (try? records.load())?.keepsNewImportOriginals
+  }
+
+  private func beginImport() -> Bool? {
+    guard scene == .active else { return nil }
+    reloadRetention()
+    guard let retain = retentionChoice.resolve(default: retentionDefault) else { return nil }
+    retentionChoice = .useDefault
+    notice = nil
+    return retain
+  }
+
+  private func startScan() {
+    guard VNDocumentCameraViewController.isSupported else { notice = .failed; return }
+    guard let retain = beginImport() else { return }
+    scanRetention = retain
+    scanning = true
+  }
+
+  private func t(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health.import." + key, fallback: fallback, language: language)
+  }
+}
+
+enum GalaxySSIHealthImportRetentionChoice: Hashable {
+  case useDefault, keep, reviewOnly
+
+  func resolve(default currentDefault: Bool?) -> Bool? {
+    guard let currentDefault else { return nil }
+    switch self {
+    case .useDefault: return currentDefault
+    case .keep: return true
+    case .reviewOnly: return false
+    }
+  }
+}
+
+struct GalaxySSIHealthImportRetentionPicker: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  let currentDefault: Bool?
+  @Binding var choice: GalaxySSIHealthImportRetentionChoice
+
+  var body: some View {
+    if let currentDefault {
+      Picker(t("retention_next", "Original for next import"), selection: $choice) {
+        Text(currentDefault ? t("default_keep", "Default: keep original")
+                            : t("default_review", "Default: do not keep original"))
+          .tag(GalaxySSIHealthImportRetentionChoice.useDefault)
+        Text(t("keep_once", "Keep this original")).tag(GalaxySSIHealthImportRetentionChoice.keep)
+        Text(t("review_once", "Do not keep this original")).tag(GalaxySSIHealthImportRetentionChoice.reviewOnly)
+      }
+    } else {
+      Text(t("retention_unavailable", "Could not read the original retention setting.")).foregroundColor(.secondary)
     }
   }
 

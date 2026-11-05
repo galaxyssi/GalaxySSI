@@ -23,6 +23,29 @@ struct GalaxySSIHealthOriginalStore {
   struct Listing {
     let originals: [Original]
     let unavailable: Int
+    var removed: [Original] = []
+    var pendingRemovals: Set<UUID> = []
+  }
+
+  struct RemovalPreview: Identifiable, Equatable {
+    struct Link: Equatable { let record: UUID; let revision: Int }
+    let original: Original
+    let links: [Link]
+    var id: UUID { original.id }
+  }
+
+  struct RemovalAudit: Codable, Identifiable {
+    var id = UUID()
+    let at: Date
+    let linkedMeasurements: Int
+  }
+
+  enum RemovalOutcome { case removed, pendingCleanup }
+
+  private struct RemovalLedger: Codable {
+    var metadata: [Original] = []
+    var pending: Set<UUID> = []
+    var audit: [RemovalAudit] = []
   }
 
   struct ExportAttempt: Codable, Identifiable, Sendable {
@@ -124,10 +147,16 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   func containsRestoreID(_ id: UUID) throws -> Bool {
-    FileManager.default.fileExists(atPath: try url(id).path)
+    let ledger = try reconcileRemovals()
+    if ledger.pending.contains(id) { return true }
+    return FileManager.default.fileExists(atPath: try url(id).path)
   }
 
   func reconcileRestores() throws {
+    try reconcileRestores(blocking: reconcileRemovals().pending)
+  }
+
+  private func reconcileRestores(blocking pending: Set<UUID>) throws {
     let fm = FileManager.default
     let root = try restoreRoot()
     guard fm.fileExists(atPath: root.path) else { return }
@@ -138,7 +167,9 @@ struct GalaxySSIHealthOriginalStore {
     for folder in folders {
       guard let receipt = UUID(uuidString: folder.lastPathComponent) else { continue }
       if receipts.contains(receipt) {
-        for entry in try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
+        let entries = try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+        if entries.contains(where: { UUID(uuidString: $0.lastPathComponent).map(pending.contains) == true }) { continue }
+        for entry in entries {
           guard let id = UUID(uuidString: entry.lastPathComponent) else { continue }
           let data = try Data(contentsOf: entry)
           try data.write(to: url(id), options: [.atomic, .completeFileProtection])
@@ -149,20 +180,26 @@ struct GalaxySSIHealthOriginalStore {
   }
 
   func list() throws -> Listing {
-    try reconcileRestores()
+    let ledger = try reconcileRemovals()
+    try reconcileRestores(blocking: ledger.pending)
     let files = try FileManager.default.contentsOfDirectory(at: directory(), includingPropertiesForKeys: nil)
-    let ids = files.compactMap { UUID(uuidString: $0.lastPathComponent) }
-    guard !ids.isEmpty else { return Listing(originals: [], unavailable: 0) }
+    let ids = Set(files.compactMap { UUID(uuidString: $0.lastPathComponent) }).subtracting(ledger.pending)
+    let removed = ledger.metadata.filter { !ids.contains($0.id) }
+    guard !ids.isEmpty else {
+      return Listing(originals: [], unavailable: 0, removed: removed, pendingRemovals: ledger.pending)
+    }
     let key = try key(create: false)
     let items: [Original] = ids.compactMap { id in
       try? withFile(id) { try readHeader($0, id: id, key: key) }
     }
     return Listing(originals: items.sorted { ($0.importedAt, $0.id.uuidString) > ($1.importedAt, $1.id.uuidString) },
-                   unavailable: ids.count - items.count)
+                   unavailable: ids.count - items.count, removed: removed, pendingRemovals: ledger.pending)
   }
 
   func read(_ original: Original) throws -> Data {
-    try reconcileRestores()
+    let pending = try reconcileRemovals().pending
+    guard !pending.contains(original.id) else { throw Failure.stale }
+    try reconcileRestores(blocking: pending)
     let key = try key(create: false)
     return try withFile(original.id) { file in
       guard try readHeader(file, id: original.id, key: key) == original,
@@ -175,14 +212,83 @@ struct GalaxySSIHealthOriginalStore {
     }
   }
 
-  func remove(_ original: Original) throws {
-    try reconcileRestores()
+  func previewRemoval(_ original: Original) throws -> RemovalPreview {
+    let pending = try reconcileRemovals().pending
+    guard !pending.contains(original.id) else { throw Failure.stale }
+    try reconcileRestores(blocking: pending)
     let key = try key(create: false)
-    guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
-    else { throw Failure.stale }
-    try FileManager.default.removeItem(at: url(original.id))
-    let crop = try cropURL(original.id)
-    if FileManager.default.fileExists(atPath: crop.path) { try FileManager.default.removeItem(at: crop) }
+    do {
+      guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
+      else { throw Failure.stale }
+    } catch let error as CocoaError where Self.missingFile(error) { throw Failure.stale }
+    let records = GalaxySSIHealthRecords(owner: owner, secrets: secrets, isolatedFile: restoreRecordsFile)
+    let links = try records.load().current.compactMap { reading -> RemovalPreview.Link? in
+      guard let source = reading.reportSource, source.original == original.id, source.sha256 == original.sha256
+      else { return nil }
+      return .init(record: reading.id, revision: reading.revision)
+    }.sorted { $0.record.uuidString < $1.record.uuidString }
+    return RemovalPreview(original: original, links: links)
+  }
+
+  @discardableResult
+  func remove(_ preview: RemovalPreview) throws -> RemovalOutcome {
+    guard try previewRemoval(preview.original) == preview else { throw Failure.stale }
+    var ledger = try loadRemovals()
+    guard ledger.pending.insert(preview.id).inserted else { throw Failure.stale }
+    ledger.metadata.removeAll { $0.id == preview.id }
+    ledger.metadata.insert(preview.original, at: 0)
+    ledger.audit.insert(.init(at: Date(), linkedMeasurements: preview.links.count), at: 0)
+    ledger.audit = Array(ledger.audit.prefix(100))
+    // Commit the logical removal and audit before touching original bytes.
+    try persistRemovals(ledger)
+    guard let cleaned = try? reconcileRemovals(), !cleaned.pending.contains(preview.id) else { return .pendingCleanup }
+    return .removed
+  }
+
+  func removalHistory() throws -> [RemovalAudit] { try loadRemovals().audit }
+
+  private static func missingFile(_ error: CocoaError) -> Bool {
+    error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile
+  }
+
+  private var removalBinding: Data { Data("galaxyssi.health.originals.removal.v1:\(owner)".utf8) }
+  private func removalURL() throws -> URL { try directory().appendingPathComponent("removals-v1") }
+
+  private func loadRemovals() throws -> RemovalLedger {
+    let data: Data
+    do { data = try Data(contentsOf: removalURL()) }
+    catch let error as CocoaError where Self.missingFile(error) { return RemovalLedger() }
+    let payload = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key(create: false),
+                                  authenticating: removalBinding)
+    return try JSONDecoder().decode(RemovalLedger.self, from: payload)
+  }
+
+  private func persistRemovals(_ ledger: RemovalLedger) throws {
+    let payload = try JSONEncoder().encode(ledger)
+    guard let sealed = try AES.GCM.seal(payload, using: key(create: false),
+                                        authenticating: removalBinding).combined else { throw Failure.invalid }
+    try sealed.write(to: removalURL(), options: [.atomic, .completeFileProtection])
+  }
+
+  private func reconcileRemovals() throws -> RemovalLedger {
+    var ledger = try loadRemovals()
+    guard !ledger.pending.isEmpty else { return ledger }
+    let previous = ledger.pending
+    let key = try key(create: false)
+    for item in ledger.metadata where previous.contains(item.id) {
+      do {
+        if try withFile(item.id, { try readHeader($0, id: item.id, key: key) }) == item {
+          try FileManager.default.removeItem(at: url(item.id))
+        }
+        ledger.pending.remove(item.id)
+      } catch let error as CocoaError where Self.missingFile(error) {
+        ledger.pending.remove(item.id)
+      } catch {
+        continue
+      }
+    }
+    if previous != ledger.pending { try persistRemovals(ledger) }
+    return ledger
   }
 
   func makeZIP(_ originals: [Original]) throws -> Data {

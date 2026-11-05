@@ -101,6 +101,7 @@ struct AgentHomeView: View {
   @Environment(\.scenePhase) var scenePhase
   @State private var homeVisible = false
   @State private var homeWindowFocused = false
+  @State private var screenAssistantCapture = GalaxySSIScreenAssistantCapture.noWindow
   @State var agentUnreadCount = 0
   @State var replyUnreadRevision = 0
   @EnvironmentObject var store: GalaxySSIStore
@@ -298,6 +299,7 @@ struct AgentHomeView: View {
         Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) {}
       }
       .background(GalaxySSIConversationFocusProbe(focused: $homeWindowFocused))
+      .background(GalaxySSIScreenCaptureProbe(capture: $screenAssistantCapture))
       .background(
         GalaxySSIAgentHomeNavigationRoutesView(
           recentTasksShortcutActive: $recentTasksShortcutActive,
@@ -549,9 +551,15 @@ struct AgentHomeView: View {
   }
 
   var screenAssistantLauncherVisible: Bool {
-    store.displaySettings.screenAssistantEnabled && scenePhase == .active &&
-      !screenshotPickerPresented && !cameraPickerPresented && !photoPickerPresented &&
-      !fileImporterPresented && !scanShortcutActive
+    GalaxySSIScreenAssistantAvailability.resolve(
+      enabled: store.displaySettings.screenAssistantEnabled, foreground: scenePhase == .active,
+      capture: screenAssistantCapture
+    ).showsLauncher(
+      onAgentHome: homeVisible,
+      sourcePickerPresented: screenshotPickerPresented || cameraPickerPresented || photoPickerPresented ||
+        fileImporterPresented || scanShortcutActive || screenPagePickerPresented ||
+        screenLinkPickerPresented || screenCaptureSourcePresented
+    )
   }
 
   func restoreScreenAssistantPresentation() {
