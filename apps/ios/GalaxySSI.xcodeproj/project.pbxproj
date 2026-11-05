@@ -171,6 +171,7 @@
     E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */; };
     A10000000000000000009809 /* GalaxySSIHealthTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009809 /* GalaxySSIHealthTrendView.swift */; };
     A10000000000000000009812 /* GalaxySSIHealthBluetooth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */; };
+    A10000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift */; };
     A10000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift */; };
     A10000000000000000009839 /* GalaxySSIHealthRecordingReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009839 /* GalaxySSIHealthRecordingReminders.swift */; };
     A10000000000000000009840 /* GalaxySSIHealthRecordingReminderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009840 /* GalaxySSIHealthRecordingReminderView.swift */; };
@@ -1318,6 +1319,7 @@
     E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOCRSourceContext.swift; sourceTree = "<group>"; };
     A20000000000000000009809 /* GalaxySSIHealthTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthTrendView.swift; sourceTree = "<group>"; };
     A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBluetooth.swift; sourceTree = "<group>"; };
+    A20000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBluetoothHistory.swift; sourceTree = "<group>"; };
     A20000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIWeeklyHealthReport.swift; sourceTree = "<group>"; };
     A20000000000000000009839 /* GalaxySSIHealthRecordingReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthRecordingReminders.swift; sourceTree = "<group>"; };
     A20000000000000000009840 /* GalaxySSIHealthRecordingReminderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthRecordingReminderView.swift; sourceTree = "<group>"; };
@@ -3034,6 +3036,7 @@
         E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */,
         A20000000000000000009809 /* GalaxySSIHealthTrendView.swift */,
         A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */,
+        A20000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift */,
         A20000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift */,
         A20000000000000000009839 /* GalaxySSIHealthRecordingReminders.swift */,
         A20000000000000000009840 /* GalaxySSIHealthRecordingReminderView.swift */,
@@ -4320,6 +4323,7 @@
         E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */,
         A10000000000000000009809 /* GalaxySSIHealthTrendView.swift in Sources */,
         A10000000000000000009812 /* GalaxySSIHealthBluetooth.swift in Sources */,
+        A10000000000000000009838 /* GalaxySSIHealthBluetoothHistory.swift in Sources */,
         A10000000000000000009804 /* GalaxySSIWeeklyHealthReport.swift in Sources */,
         A10000000000000000009839 /* GalaxySSIHealthRecordingReminders.swift in Sources */,
         A10000000000000000009840 /* GalaxySSIHealthRecordingReminderView.swift in Sources */,
