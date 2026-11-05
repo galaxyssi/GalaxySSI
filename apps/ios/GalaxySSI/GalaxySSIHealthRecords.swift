@@ -144,6 +144,7 @@ struct GalaxySSIHealthRecords {
 
   struct Archive: Codable {
     var originalIndex: GalaxySSIHealthOriginalStore.Index?
+    var measurementExports: [GalaxySSIHealthMeasurementExport.Receipt]?
     var reportReview: [GalaxySSIHealthReportReview.Item]?
     var reportEvidence: [GalaxySSIHealthReportReview.Evidence]?
     var tableReviews: [GalaxySSIHealthReviewReminders.TableDraft]?
@@ -312,6 +313,29 @@ struct GalaxySSIHealthRecords {
       from: AES.GCM.open(box, using: key(create: false), authenticating: context))
     guard archive.version == 1 else { throw Failure.unavailable }
     return archive
+  }
+
+  func dataFilesReader() throws -> GalaxySSIHealthDataFiles.Reader {
+    let url = try file
+    return .init(file: url, context: context, key: try? key(create: false))
+  }
+
+  func beginMeasurementExport(format: GalaxySSIHealthMeasurementExport.Format, rows: Int,
+                              includesOriginals: Bool) throws -> UUID {
+    var archive = try load()
+    let receipt = GalaxySSIHealthMeasurementExport.Receipt(id: UUID(), at: Date(), format: format,
+      rows: rows, includesOriginals: includesOriginals, status: .prepared)
+    archive.measurementExports = Array(((archive.measurementExports ?? []) + [receipt]).suffix(50))
+    try persist(archive, notify: false)
+    return receipt.id
+  }
+
+  func finishMeasurementExport(_ id: UUID, verified: Bool) throws {
+    var archive = try load()
+    guard let index = archive.measurementExports?.firstIndex(where: { $0.id == id }),
+          archive.measurementExports?[index].status == .prepared else { return }
+    archive.measurementExports?[index].status = verified ? .verified : .unverified
+    try persist(archive, notify: false)
   }
 
   func storeDraft(_ draft: GalaxySSIHealthDraft) throws {

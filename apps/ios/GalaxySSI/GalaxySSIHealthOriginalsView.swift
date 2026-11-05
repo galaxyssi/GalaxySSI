@@ -52,6 +52,11 @@ struct GalaxySSIHealthOriginalsView: View {
   @Environment(\.calendar) private var calendar
   @Environment(\.timeZone) private var timeZone
   let store: GalaxySSIHealthOriginalStore
+  var exact: GalaxySSIHealthDataFiles.Reference? = nil
+  var pickOnAppear = false
+  @State private var didAutoPick = false
+  @State private var exactOriginal: GalaxySSIHealthOriginalStore.Original?
+  @State private var exactOpened = false
   @State private var listing: GalaxySSIHealthOriginalStore.Listing?
   @State private var filter = "all"
   @State private var recentDays = 0
@@ -89,7 +94,58 @@ struct GalaxySSIHealthOriginalsView: View {
   }
 
   var body: some View {
-    List {
+    destinationActions(List {
+      if let exact {
+        if scene == .active {
+          if let item = exactOriginal {
+            Button { open(item) } label: {
+              Label(item.name, systemImage: item.kind == .pdf ? "doc.text" : "photo")
+            }
+          }
+          if error {
+            Text(GalaxySSILocalization.string("galaxyssi.health.data_files.unavailable",
+              fallback: "Original unavailable", language: language)).foregroundColor(.secondary)
+            Button(t("retry", "Try again")) { exactOpened = false; loadExact(exact) }
+          }
+        }
+      } else {
+        libraryRows
+      }
+    }
+    .navigationTitle(t("title", "Health Originals"))
+    .navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      reload()
+      if scene == .active, pickOnAppear, !didAutoPick {
+        didAutoPick = true
+        importing = true
+      }
+    }
+    .onChange(of: filter) { _ in shown = 30 }
+    .onChange(of: recentDays) { _ in shown = 30 }
+    .onChange(of: scene) { phase in
+      if phase == .active { reload() }
+      else {
+        exactOriginal = nil
+        listing = nil
+        preview = nil
+        removal = nil
+        removalAfterPreview = nil
+        evidenceAfterPreview = nil
+        reportEvidenceOriginal = nil
+        removalNotice = nil
+        pending = []
+        pendingSingle = nil
+        reviewAfterPreview = false
+        confirming = false
+        singleVerified = false
+        if !exporting { exportDocument = nil }
+      }
+    }
+    )
+  }
+
+  @ViewBuilder private var libraryRows: some View {
       if scene == .active && !exporting {
         Section {
           Button { importing = true } label: { Label(t("import", "Import original"), systemImage: "plus") }
@@ -186,30 +242,10 @@ struct GalaxySSIHealthOriginalsView: View {
       } label: {
         Label(t("file_save_history", "File save history"), systemImage: "clock.arrow.circlepath")
       }
-    }
-    .navigationTitle(t("title", "Health Originals"))
-    .navigationBarTitleDisplayMode(.inline)
-    .onAppear(perform: reload)
-    .onChange(of: filter) { _ in shown = 30 }
-    .onChange(of: recentDays) { _ in shown = 30 }
-    .onChange(of: scene) { phase in
-      if phase == .active { reload() }
-      else {
-        listing = nil
-        preview = nil
-        removal = nil
-        removalAfterPreview = nil
-        evidenceAfterPreview = nil
-        reportEvidenceOriginal = nil
-        removalNotice = nil
-        pending = []
-        pendingSingle = nil
-        reviewAfterPreview = false
-        confirming = false
-        singleVerified = false
-        if !exporting { exportDocument = nil }
-      }
-    }
+  }
+
+  private func destinationActions<Content: View>(_ content: Content) -> some View {
+    content
     .fileImporter(isPresented: $importing, allowedContentTypes: [.image, .pdf]) { result in
       guard scene == .active else { return }
       do { try store.importFile(result.get()); reload() }
@@ -385,12 +421,28 @@ struct GalaxySSIHealthOriginalsView: View {
 
   private func reload() {
     guard scene == .active else { return }
+    if let exact { loadExact(exact); return }
     do {
       let current = try store.list()
       listing = current
       selection.formIntersection(current.originals.map(\.id))
       error = false
     } catch { listing = nil; error = true }
+  }
+
+  private func loadExact(_ reference: GalaxySSIHealthDataFiles.Reference) {
+    do {
+      let item = try store.indexedOriginal(id: reference.id, sha256: reference.sha256)
+      exactOriginal = item
+      error = false
+      if !exactOpened {
+        exactOpened = true
+        open(item)
+      }
+    } catch {
+      exactOriginal = nil
+      error = true
+    }
   }
 
   private func open(_ item: GalaxySSIHealthOriginalStore.Original) {
@@ -601,7 +653,7 @@ private struct PDFPages: View {
 }
 
 @MainActor
-private struct OriginalExportHistory: View {
+struct OriginalExportHistory: View {
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let store: GalaxySSIHealthOriginalStore
