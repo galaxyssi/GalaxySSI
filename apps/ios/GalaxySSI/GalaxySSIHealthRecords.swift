@@ -52,13 +52,15 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   }
 
   func sameMeasurement(as other: Self) -> Bool {
-    metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
+    if let device = bluetoothReceipt?.device, let otherDevice = other.bluetoothReceipt?.device,
+       device != otherDevice { return false }
+    return metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
       unit == other.unit && value == other.value && reported?.canonical == other.reported?.canonical &&
       diastolic == other.diastolic && pulse == other.pulse
   }
 }
 
-struct GalaxySSIHealthDraft: Codable, Identifiable {
+struct GalaxySSIHealthDraft: Codable, Identifiable, Equatable {
   var id = UUID()
   var existing: GalaxySSIHealthReading?
   var metric: GalaxySSIHealthMetric = .bloodPressure
@@ -138,6 +140,8 @@ struct GalaxySSIHealthRecords {
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
+    var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
+    var bluetoothErasureLog: [GalaxySSIHealthBluetoothHistory.Erasure]?
 
     var current: [GalaxySSIHealthReading] {
       var seen = Set<UUID>()
@@ -216,8 +220,52 @@ struct GalaxySSIHealthRecords {
   func storeDraft(_ draft: GalaxySSIHealthDraft) throws {
     guard draft.fitsStorageLimits else { throw Failure.invalid }
     var archive = try load()
+    if let existing = draft.existing {
+      guard let latest = archive.revisions.last(where: { $0.id == existing.id }),
+            !latest.deleted, latest.revision == existing.revision else { throw Failure.stale }
+    }
     archive.draft = draft
     try persist(archive)
+  }
+
+  func previewBluetoothErase(_ device: UUID) throws -> GalaxySSIHealthBluetoothHistory.ErasePlan {
+    try makeBluetoothErasePlan(device, archive: load())
+  }
+
+  @discardableResult
+  func eraseBluetoothHistory(_ expected: GalaxySSIHealthBluetoothHistory.ErasePlan) throws -> Int {
+    var archive = try load()
+    let current = try makeBluetoothErasePlan(expected.device, archive: archive)
+    guard current == expected else { throw Failure.stale }
+    let ids = Set(current.versions.map(\.id))
+    archive.revisions.removeAll { ids.contains($0.id) }
+    if let existing = archive.draft?.existing, ids.contains(existing.id) { archive.draft = nil }
+    archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    var audit = archive.bluetoothErasureLog ?? []
+    audit.append(.init(at: Date(), records: current.count))
+    archive.bluetoothErasureLog = Array(audit.suffix(50))
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+    return current.count
+  }
+
+  private func makeBluetoothErasePlan(_ device: UUID, archive: Archive) throws -> GalaxySSIHealthBluetoothHistory.ErasePlan {
+    guard archive.derivesOverview == true else { throw Failure.permission }
+    let versions = archive.revisions.filter { $0.bluetoothReceipt?.device == device && $0.metric == .bloodPressure }
+    let ids = Set(versions.map(\.id))
+    guard !ids.isEmpty,
+          archive.revisions.allSatisfy({ !ids.contains($0.id) ||
+            ($0.bluetoothReceipt?.device == device && $0.metric == .bloodPressure) })
+    else { throw Failure.stale }
+    var seen = Set<UUID>()
+    let dates = versions.reversed().filter { seen.insert($0.id).inserted }.map(\.measuredAt)
+    guard let start = dates.min(), let end = dates.max() else { throw Failure.stale }
+    let draft = archive.draft.flatMap { draft in
+      draft.existing.map { ids.contains($0.id) } == true ? draft : nil
+    }
+    return .init(device: device, count: ids.count, start: start, end: end, versions: versions,
+      draft: draft, links: (archive.tableEvidence ?? []).filter { ids.contains($0.target.record) },
+      permissionVersion: archive.privacyEvents?.last(where: { $0.scope == .overview })?.id)
   }
 
   func setWeeklyReportAllowed(_ enabled: Bool) throws {
@@ -298,7 +346,8 @@ struct GalaxySSIHealthRecords {
 
   func importTable(_ data: Data, name: String, json: Bool, mapping: GalaxySSIHealthTableImport.Mapping,
                    expected: [GalaxySSIHealthTableImport.Status],
-                   worksheet: GalaxySSIHealthXLSX.Selection? = nil) throws -> Int {
+                   worksheet: GalaxySSIHealthXLSX.Selection? = nil,
+                   linkDuplicates: [Int: GalaxySSIHealthTableImport.EvidenceTarget] = [:]) throws -> Int {
     var archive = try load()
     let table: GalaxySSIHealthTableImport.Table
     if let worksheet { table = try GalaxySSIHealthXLSX(data).table(worksheet) }
@@ -307,21 +356,29 @@ struct GalaxySSIHealthRecords {
     guard preview.map(\.status) == expected else { throw GalaxySSIHealthTableImport.Failure.stale }
     let id = UUID(), hash = GalaxySSIHealthTableImport.digest(data)
     var readings = [GalaxySSIHealthReading]()
+    var links: [GalaxySSIHealthTableImport.Evidence] = []
     for row in preview {
+      if let selected = linkDuplicates[row.id] {
+        guard row.duplicateTarget == selected else { throw Failure.stale }
+        links.append(.init(target: selected, source: .init(batch: id, row: row.id, sha256: hash,
+          sheet: table.sheet, worksheetPath: table.sheetPath, columns: mapping.sourceColumns)))
+      }
       guard row.status == .ready, var reading = row.reading else { continue }
       reading.revision = 1
       reading.tableSource = .init(batch: id, row: row.id, sha256: hash, sheet: table.sheet,
                                   worksheetPath: table.sheetPath, columns: mapping.sourceColumns)
       readings.append(reading)
     }
-    guard !readings.isEmpty else { return 0 }
+    guard links.count == linkDuplicates.count else { throw Failure.stale }
+    guard !readings.isEmpty || !links.isEmpty else { return 0 }
     var batches = archive.tableBatches ?? []
     guard batches.count < 30,
           batches.reduce(data.count, { $0 + $1.data.count }) <= 12 * GalaxySSIHealthTableImport.maximumBytes
     else { throw GalaxySSIHealthTableImport.Failure.limit }
     batches.insert(.init(id: id, name: String(name.prefix(180)), at: Date(), data: data,
-                         inserted: readings.count, undone: nil), at: 0)
+                         inserted: readings.count, undone: nil, linked: links.isEmpty ? nil : links.count), at: 0)
     archive.tableBatches = batches
+    if !links.isEmpty { archive.tableEvidence = (archive.tableEvidence ?? []) + links }
     archive.revisions.append(contentsOf: readings)
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
@@ -438,6 +495,7 @@ struct GalaxySSIHealthRecords {
       return reading
     }
     archive.tableBatches?[index].undone = tombstones.count
+    archive.tableEvidence?.removeAll { $0.source.batch == id }
     archive.revisions.append(contentsOf: tombstones)
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)

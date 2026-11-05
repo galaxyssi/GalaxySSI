@@ -86,6 +86,101 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testBluetoothEraseRejectsStalePreviewAndKeepsSameNameDevice() throws {
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let now = Date()
+    let a = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Same monitor")
+    let b = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Same monitor")
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.write(a.reading(conditions: ""))
+    try records.write(b.reading(conditions: ""))
+    XCTAssertThrowsError(try records.previewBluetoothErase(a.device))
+    try records.setOverviewPermission(true)
+    let old = try records.previewBluetoothErase(a.device)
+    var reading = try XCTUnwrap(records.load().current.first { $0.bluetoothReceipt?.device == a.device })
+    reading.notes = "update after preview"
+    try records.write(reading)
+    XCTAssertThrowsError(try records.eraseBluetoothHistory(old))
+    let latest = try XCTUnwrap(records.load().current.first { $0.id == reading.id })
+    let draft = GalaxySSIHealthDraft(existing: latest)
+    try records.storeDraft(draft)
+    let plan = try records.previewBluetoothErase(a.device)
+    XCTAssertEqual(plan.count, 1)
+    XCTAssertEqual(plan.versions.count, 2)
+    XCTAssertEqual(try records.eraseBluetoothHistory(plan), 1)
+    let archive = try records.load()
+    XCTAssertEqual(archive.revisions.compactMap { $0.bluetoothReceipt?.device }, [b.device])
+    XCTAssertNil(archive.draft)
+    XCTAssertEqual(archive.bluetoothErasureLog?.last?.records, 1)
+    XCTAssertThrowsError(try records.storeDraft(draft))
+    XCTAssertThrowsError(try records.write(latest))
+  }
+
+  func testSavedBluetoothHistoryKeepsExactDeviceAndBothDates() throws {
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(Data([0, 120, 0, 80, 0, 90, 0])))
+    let now = Date()
+    let sameName = (0..<34).map { index -> GalaxySSIHealthReading in
+      let receipt = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now.addingTimeInterval(Double(index)),
+        packet: packet, deviceName: "Same monitor")
+      var reading = receipt.reading(conditions: "")
+      reading.measuredAt = now.addingTimeInterval(Double(-index - 60))
+      return reading
+    }
+    var tombstone = sameName[0]
+    tombstone.id = UUID()
+    tombstone.deleted = true
+    let history = GalaxySSIHealthBluetoothHistory(current: sameName + [tombstone,
+      .init(metric: .bloodPressure, value: 120, diastolic: 80)])
+    XCTAssertEqual(history.devices.count, 34)
+    XCTAssertEqual(history.devices.dropFirst(30).count, 4)
+    let device = try XCTUnwrap(history.devices.first)
+    XCTAssertEqual(device.name, "Same monitor")
+    XCTAssertEqual(device.readings.map(\.id), [sameName[0].id])
+    XCTAssertEqual(device.latest?.measuredAt, now.addingTimeInterval(-60))
+    XCTAssertEqual(device.latest?.bluetoothReceipt?.receivedAt, now)
+    XCTAssertEqual(Set(history.devices.map(\.ordinal)).count, 34)
+  }
+
+  @MainActor
+  func testExactTableDuplicateLinksToReviewedRevisionWithoutRewritingMeasurement() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2025-01-01T12:00:00Z"))
+    try records.write(.init(metric: .weight, measuredAt: date, value: 60))
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n60,2025-01-01T12:00:10Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    let table = try GalaxySSIHealthTableImport.parse(data, json: false)
+    let rows = try GalaxySSIHealthTableImport.preview(table, mapping: mapping, current: records.load().current)
+    XCTAssertEqual(rows.map(\.status), [.duplicate, .duplicate])
+    let target = try XCTUnwrap(rows[0].duplicateTarget)
+    XCTAssertNil(rows[1].duplicateTarget)
+    XCTAssertEqual(try records.importTable(data, name: "fixture.csv", json: false, mapping: mapping,
+      expected: rows.map(\.status), linkDuplicates: [rows[0].id: target]), 0)
+    var archive = try records.load()
+    XCTAssertEqual(archive.revisions.count, 1)
+    let batch = try XCTUnwrap(archive.tableBatches?.first)
+    XCTAssertEqual(batch.linked, 1)
+    var edited = try XCTUnwrap(archive.current.first)
+    edited.notes = "later edit"
+    try records.write(edited)
+    XCTAssertThrowsError(try records.importTable(data, name: "fixture.csv", json: false, mapping: mapping,
+      expected: rows.map(\.status), linkDuplicates: [rows[0].id: target]))
+    archive = try records.load()
+    let linked = GalaxySSIHealthTableImport.linkedReadings(batch: batch, revisions: archive.revisions,
+      current: archive.current, evidence: archive.tableEvidence ?? [])
+    XCTAssertEqual(linked.first?.reading.revision, 1)
+    XCTAssertTrue(linked.first?.secondary == true)
+    let zip = try GalaxySSIHealthTableImport.exportLinkedReadings(linked, batch: batch)
+    XCTAssertNotNil(zip.range(of: data))
+    XCTAssertEqual(try records.undoTableBatch(batch.id), 0)
+    XCTAssertTrue(try records.load().tableEvidence?.isEmpty == true)
+    XCTAssertEqual(try records.load().current.first?.notes, "later edit")
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -109,6 +204,31 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(expected.missing, 0)
     XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.verify(sealed + Data([1]), password: "fixture-password"))
     XCTAssertEqual(try records.load().current.count, 1)
+  }
+
+  @MainActor
+  func testHealthBluetoothSameNameAndEqualValuesStaySeparated() throws {
+    let bytes = Data([30, 120, 0, 80, 0, 90, 0, 234, 7, 11, 5, 12, 30, 0, 64, 0, 2, 1, 0])
+    let packet = try XCTUnwrap(GalaxySSIHealthBluetoothPacket.decode(bytes))
+    let now = Date()
+    let a = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Monitor")
+    let b = GalaxySSIHealthBluetoothReceipt(device: UUID(), receivedAt: now, packet: packet, deviceName: "Monitor")
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    try records.write(a.reading(conditions: ""))
+    try records.write(b.reading(conditions: ""))
+    let saved = try records.load().current
+    XCTAssertEqual(saved.count, 2)
+    XCTAssertEqual(GalaxySSIHealthTrendDevice.options(in: saved, metric: .bloodPressure).count, 2)
+    let selected = GalaxySSIHealthTrendDevice.matching(saved, device: a.device)
+    XCTAssertEqual(selected.map { $0.bluetoothReceipt?.device }, [a.device])
+    let trend = GalaxySSIHealthTrend(current: selected, metric: .bloodPressure, component: .value,
+                                    now: now, dayCount: 7, calendar: .current)
+    XCTAssertEqual(trend.points.last?.readings.count, 1)
+    let export = try GalaxySSIHealthMeasurementExport.encode(saved, as: .json, includeNotes: false)
+    XCTAssertNil(export.range(of: Data(a.device.uuidString.utf8)))
+    XCTAssertNil(export.range(of: Data("Monitor".utf8)))
   }
 
   func testMeasurementExportKeepsComponentsAndProtectsCSVFormulas() throws {
