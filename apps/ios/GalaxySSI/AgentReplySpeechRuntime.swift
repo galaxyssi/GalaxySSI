@@ -1,23 +1,53 @@
 import Combine
 import Foundation
 
+struct AgentReplySpeechFooterState: Equatable {
+  var active = false
+  var playing = false
+  var error = ""
+}
+
+@MainActor
+protocol AgentReplySpeechPlaying {
+  func beginProgressive(_ request: VoiceReplyPlaybackRequest,
+    onPlaybackStarted: @escaping (VoiceReplyPlaybackRequest) -> Void,
+    onDone: @escaping (VoiceReplyPlaybackRequest, Bool, String?) -> Void)
+  func appendProgressive(_ text: String, isFinal: Bool)
+  func finishProgressive()
+  func commitProgressive()
+  @discardableResult func stop() -> Bool
+}
+
+extension VoiceProgressiveReplySpeechService: AgentReplySpeechPlaying {}
+
 @MainActor
 final class AgentReplySpeechRuntime: ObservableObject {
-  @Published private(set) var revision = 0
-  @Published private(set) var lastErrorDescription = ""
+  // StateObject owns the runtime without subscribing the transcript to playback.
+  let objectWillChange = ObservableObjectPublisher()
+  private let footer = CurrentValueSubject<FooterSnapshot, Never>(FooterSnapshot())
+
+  private struct FooterSnapshot: Equatable {
+    var entryId: String?
+    var state = AgentReplySpeechFooterState()
+
+    func row(_ id: String) -> AgentReplySpeechFooterState {
+      entryId == id ? state : AgentReplySpeechFooterState()
+    }
+  }
 
   private let controller: AgentReplySpeechController
-  private let speech: VoiceProgressiveReplySpeechService
+  private let speech: AgentReplySpeechPlaying
   private var commitTask: Task<Void, Never>?
   private var activePlaybackSessionId = ""
   private var cancelledSessionIds: Set<String> = []
   private var activeTarget: AgentReplySpeechTarget?
   private var activeSettings = VoiceSettings.default
   private var activeLanguagePolicy = LanguagePolicySettings.default
+  private var lastErrorDescription = ""
 
   init(
     controller: AgentReplySpeechController = AgentReplySpeechController(),
-    speech: VoiceProgressiveReplySpeechService? = nil
+    speech: AgentReplySpeechPlaying? = nil
   ) {
     self.controller = controller
     self.speech = speech ?? VoiceProgressiveReplySpeechService()
@@ -65,13 +95,12 @@ final class AgentReplySpeechRuntime: ObservableObject {
     )
   }
 
-  func isEnabled(_ target: AgentReplySpeechTarget) -> Bool {
-    _ = revision
-    return controller.isEnabled(target)
+  func footerState(entryId: String) -> AgentReplySpeechFooterState {
+    footer.value.row(entryId)
   }
 
-  func isActive(_ target: AgentReplySpeechTarget) -> Bool {
-    controller.isActive(target)
+  func footerUpdates(entryId: String) -> AnyPublisher<AgentReplySpeechFooterState, Never> {
+    footer.map { $0.row(entryId) }.removeDuplicates().eraseToAnyPublisher()
   }
 
   func stop() {
@@ -91,6 +120,8 @@ final class AgentReplySpeechRuntime: ObservableObject {
 
   private func execute(_ command: AgentReplySpeechCommand, target: AgentReplySpeechTarget?) {
     guard command != AgentReplySpeechCommand() else { return }
+    defer { publishFooter() }
+    if controller.footerEntryId != footer.value.entryId { lastErrorDescription = "" }
     if !command.cancelSessionId.isEmpty {
       commitTask?.cancel()
       commitTask = nil
@@ -107,7 +138,6 @@ final class AgentReplySpeechRuntime: ObservableObject {
           fallback: "Enable text-to-speech in Voice settings to read replies."
         )
         _ = controller.disable(sessionId: command.beginSessionId)
-        revision &+= 1
         return
       }
       lastErrorDescription = ""
@@ -125,17 +155,16 @@ final class AgentReplySpeechRuntime: ObservableObject {
         onDone: { [weak self] request, success, error in
           guard let self else { return }
           if self.cancelledSessionIds.remove(request.sessionId) != nil { return }
-          if self.activePlaybackSessionId == request.sessionId {
-            self.activePlaybackSessionId = ""
-          }
-          _ = self.controller.disable(sessionId: request.sessionId)
+          guard self.activePlaybackSessionId == request.sessionId else { return }
+          self.activePlaybackSessionId = ""
+          guard !self.controller.disable(sessionId: request.sessionId).isEmpty else { return }
           if !success {
             self.lastErrorDescription = error ?? GalaxySSILocalization.string(
               "galaxyssi.agent.reply_speech.failed",
               fallback: "Reply speech failed."
             )
           }
-          self.revision &+= 1
+          self.publishFooter()
         }
       )
       activePlaybackSessionId = command.beginSessionId
@@ -150,9 +179,13 @@ final class AgentReplySpeechRuntime: ObservableObject {
     } else if !command.scheduleCommitSessionId.isEmpty {
       scheduleCommit(sessionId: command.scheduleCommitSessionId)
     }
-    if !command.changedEntryIds.isEmpty {
-      revision &+= 1
-    }
+  }
+
+  private func publishFooter() {
+    let id = controller.footerEntryId
+    let next = FooterSnapshot(entryId: id,
+      state: AgentReplySpeechFooterState(active: id != nil, playing: controller.isPlaying, error: lastErrorDescription))
+    if footer.value != next { footer.send(next) }
   }
 
   private func scheduleCommit(sessionId: String) {

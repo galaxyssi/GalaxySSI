@@ -97,6 +97,32 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     return hadActivePlayback
   }
 
+  @MainActor
+  func pauseCurrentPlayback() {
+    if let edgePlayer {
+      edgePlayer.pause()
+      isSpeaking = false
+    } else if synthesizer.isSpeaking {
+      if synthesizer.pauseSpeaking(at: .immediate) { isSpeaking = false }
+    }
+  }
+
+  @MainActor
+  func resumeCurrentPlayback() {
+    if let edgePlayer, let request = activeRequest {
+      if edgePlayer.play() {
+        isSpeaking = true
+      } else {
+        finishEdgeReference(played: edgePlayer.currentTime)
+        self.edgePlayer = nil
+        completeActiveRequest(request, success: false,
+          error: "Microsoft Edge TTS playback failed", errorCode: "edge_audio_playback_failed")
+      }
+    } else if synthesizer.isPaused, synthesizer.continueSpeaking() {
+      isSpeaking = true
+    }
+  }
+
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
     DispatchQueue.main.async {
       guard self.activeSystemUtterance === utterance,
@@ -393,6 +419,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
   private var inputClosed = false
   private var nextChunkIndex = 0
   private var playingChunk = false
+  private var paused = false
   private var reportedPlaybackStart = false
   private var onPlaybackStarted: ((VoiceReplyPlaybackRequest) -> Void)?
   private var onDone: ((VoiceReplyPlaybackRequest, Bool, String?) -> Void)?
@@ -469,6 +496,21 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     pump()
   }
 
+  func pauseProgressive() -> Bool {
+    guard activeRequest != nil, !paused else { return false }
+    paused = true
+    inner.pauseCurrentPlayback()
+    return true
+  }
+
+  func resumeProgressive() -> Bool {
+    guard activeRequest != nil, paused else { return false }
+    paused = false
+    inner.resumeCurrentPlayback()
+    pump()
+    return true
+  }
+
   @discardableResult
   @MainActor
   func stop() -> Bool {
@@ -482,6 +524,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     clearPrefetch()
     inputClosed = false
     playingChunk = false
+    paused = false
     onPlaybackStarted = nil
     onDone = nil
     let hadInnerPlayback = inner.stop()
@@ -504,6 +547,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
       }
       return
     }
+    guard !paused else { return }
     if baseRequest.providerId == VoiceTTSProvider.microsoftEdge.rawValue {
       if let failure = prefetchFailures.removeValue(forKey: chunk.index) {
         finishProgressive(baseRequest, success: false, error: failure)
@@ -669,6 +713,7 @@ final class VoiceProgressiveReplySpeechService: ObservableObject {
     clearPrefetch()
     inputClosed = false
     playingChunk = false
+    paused = false
     onPlaybackStarted = nil
     onDone = nil
     done?(request, success, error)

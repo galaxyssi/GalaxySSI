@@ -107,6 +107,8 @@ extension AgentHomeView {
               waitingMessageIDs: waitingMessageIDs,
               retryingMessageIDs: retryingAgentMessageIDs,
               replySpeech: agentReplySpeechRuntime,
+              completedSpeech: AgentCompletedReplyPlayback.shared,
+              playCompletedReply: playCompletedAgentReply,
               voiceSettings: store.voiceSettings,
               languagePolicy: store.languagePolicy,
               t: t,
@@ -205,4 +207,22 @@ extension AgentHomeView {
       }
   }
 
+  private func playCompletedAgentReply(_ message: ChatMessage, _ paragraph: AgentReplyParagraphSpeechSelection?) -> Bool {
+    guard let selection = AgentCompletedReplyPlaybackSelection(message: message, paragraph: paragraph),
+          let session = store.agentSession(id: selection.conversationID), session.status == .active,
+          !session.privateMode, !session.trackingPaused, store.voiceSettings.textToSpeechEnabled else { return false }
+    let player = AgentCompletedReplyPlayback.shared
+    if paragraph == nil, player.selection?.messageID == selection.messageID {
+      player.stop()
+      return true
+    }
+    agentReplySpeechRuntime.stop()
+    player.play(selection, database: store.chatHistoryDatabase, settings: store.voiceSettings,
+      languagePolicy: store.languagePolicy, isAllowed: { [weak store] in
+        guard let store, store.voiceSettings.textToSpeechEnabled,
+              let session = store.agentSession(id: selection.conversationID) else { return false }
+        return session.status == .active && !session.privateMode && !session.trackingPaused
+      })
+    return true
+  }
 }
