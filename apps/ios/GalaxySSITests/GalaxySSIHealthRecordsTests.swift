@@ -201,17 +201,35 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let old = try records.previewBluetoothErase(a.device)
     var reading = try XCTUnwrap(records.load().current.first { $0.bluetoothReceipt?.device == a.device })
     reading.notes = "update after preview"
+    reading.measuredAt = now.addingTimeInterval(120)
     try records.write(reading)
     XCTAssertThrowsError(try records.eraseBluetoothHistory(old))
     let latest = try XCTUnwrap(records.load().current.first { $0.id == reading.id })
     let draft = GalaxySSIHealthDraft(existing: latest)
     try records.storeDraft(draft)
+    let beforeLink = try records.previewBluetoothErase(a.device)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: now, bytes: 1, sha256: String(repeating: "a", count: 64))
+    let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+      page: 0, region: 0, fromOCR: true)
+    var reported = latest
+    reported.bluetoothReceipt = nil
+    reported.reportSource = source
+    let item = GalaxySSIHealthReportReview.Item(version: UUID(), source: source, excerpt: "fixture", reading: reported)
+    try records.stageReportItem(item, replacing: nil)
+    let target = GalaxySSIHealthReportReview.Target(record: latest.id, revision: latest.revision)
+    try records.linkReportDuplicates([item.version: target], original: original)
+    XCTAssertThrowsError(try records.eraseBluetoothHistory(beforeLink))
     let plan = try records.previewBluetoothErase(a.device)
     XCTAssertEqual(plan.count, 1)
     XCTAssertEqual(plan.versions.count, 2)
+    XCTAssertEqual(plan.start, now)
+    XCTAssertEqual(plan.end, reading.measuredAt)
+    XCTAssertEqual(plan.reportLinks.map(\.target), [target])
     XCTAssertEqual(try records.eraseBluetoothHistory(plan), 1)
     let archive = try records.load()
     XCTAssertEqual(archive.revisions.compactMap { $0.bluetoothReceipt?.device }, [b.device])
+    XCTAssertTrue(archive.reportEvidence?.isEmpty == true)
     XCTAssertNil(archive.draft)
     XCTAssertEqual(archive.bluetoothErasureLog?.last?.records, 1)
     XCTAssertThrowsError(try records.storeDraft(draft))

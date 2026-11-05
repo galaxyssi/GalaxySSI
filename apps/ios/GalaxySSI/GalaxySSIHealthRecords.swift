@@ -291,6 +291,7 @@ struct GalaxySSIHealthRecords {
     archive.revisions.removeAll { ids.contains($0.id) }
     if let existing = archive.draft?.existing, ids.contains(existing.id) { archive.draft = nil }
     archive.tableEvidence?.removeAll { ids.contains($0.target.record) }
+    archive.reportEvidence?.removeAll { ids.contains($0.target.record) }
     var audit = archive.bluetoothErasureLog ?? []
     audit.append(.init(at: Date(), records: current.count))
     archive.bluetoothErasureLog = Array(audit.suffix(50))
@@ -307,14 +308,14 @@ struct GalaxySSIHealthRecords {
           archive.revisions.allSatisfy({ !ids.contains($0.id) ||
             ($0.bluetoothReceipt?.device == device && $0.metric == .bloodPressure) })
     else { throw Failure.stale }
-    var seen = Set<UUID>()
-    let dates = versions.reversed().filter { seen.insert($0.id).inserted }.map(\.measuredAt)
+    let dates = versions.map(\.measuredAt)
     guard let start = dates.min(), let end = dates.max() else { throw Failure.stale }
     let draft = archive.draft.flatMap { draft in
       draft.existing.map { ids.contains($0.id) } == true ? draft : nil
     }
     return .init(device: device, count: ids.count, start: start, end: end, versions: versions,
       draft: draft, links: (archive.tableEvidence ?? []).filter { ids.contains($0.target.record) },
+      reportLinks: (archive.reportEvidence ?? []).filter { ids.contains($0.target.record) },
       permissionVersion: archive.privacyEvents?.last(where: { $0.scope == .overview })?.id)
   }
 

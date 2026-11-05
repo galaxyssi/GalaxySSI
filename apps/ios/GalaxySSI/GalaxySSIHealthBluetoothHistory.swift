@@ -15,6 +15,7 @@ struct GalaxySSIHealthBluetoothHistory {
     let versions: [GalaxySSIHealthReading]
     let draft: GalaxySSIHealthDraft?
     let links: [GalaxySSIHealthTableImport.Evidence]
+    let reportLinks: [GalaxySSIHealthReportReview.Evidence]
     let permissionVersion: UUID?
   }
   struct Device: Identifiable {
