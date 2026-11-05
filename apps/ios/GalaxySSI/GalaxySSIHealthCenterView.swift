@@ -64,7 +64,8 @@ struct GalaxySSIHealthCenterView: View {
           Label(t("originals.title", "Health Originals"), systemImage: "doc.on.doc")
         }
         NavigationLink {
-          GalaxySSIHealthPDFTextView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
+          GalaxySSIHealthPDFTextView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets),
+                                    reviewRecords: records)
         } label: {
           Label(t("pdf_text.title", "Report PDF Text"), systemImage: "doc.text.magnifyingglass")
         }
@@ -126,9 +127,19 @@ struct GalaxySSIHealthCenterView: View {
         Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar")
       }
       NavigationLink {
+        GalaxySSIHealthSleepReminderView(records: records)
+      } label: {
+        Label(t("sleep_reminder.title", "Sleep Change Reminders"), systemImage: "moon.zzz")
+      }
+      NavigationLink {
         privacyOverview
       } label: {
         Label(t("privacy.title", "Health Privacy"), systemImage: "lock.shield")
+      }
+      NavigationLink {
+        GalaxySSIHealthAssistantView(records: records)
+      } label: {
+        Label(t("assistant.title", "Health Assistant"), systemImage: "chart.bar.xaxis")
       }
       NavigationLink {
         GalaxySSIHealthBackupView(records: records, originals:
