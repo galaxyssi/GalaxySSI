@@ -221,6 +221,70 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testHealthKitSyncIncidentRetriesKeepAcknowledgmentUntilRecovery() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    let floor = now.addingTimeInterval(-86_400)
+    let sample = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "c", count: 64), origin: "fixture", name: nil))
+    let initial = try records.beginHealthKitSync(.weight, floor: floor, reset: false, at: now)
+    _ = try records.commitHealthKitPage(scope: .weight, expected: initial,
+      page: .init(rows: [sample], anchor: Data([1]), providerCount: 1, more: false), at: now)
+    let paused = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: paused.run, status: .interrupted)
+    XCTAssertTrue(try records.load().syncIncidents.isEmpty)
+    let failed = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: failed.run, status: .failed, at: now.addingTimeInterval(1))
+    let first = try XCTUnwrap(records.load().syncIncident(.weight))
+    XCTAssertEqual(first.lastSuccess, now)
+    XCTAssertFalse(first.handled)
+    try records.recordHealthKitAuthorizationFailure([.weight, .steps], status: .permission, at: now.addingTimeInterval(2))
+    let updated = try XCTUnwrap(records.load().syncIncidents.first)
+    XCTAssertEqual(updated.id, first.id)
+    XCTAssertEqual(updated.status, .permission)
+    XCTAssertEqual(try records.load().syncIncidents.count, 1)
+    XCTAssertThrowsError(try records.acknowledgeHealthKitIncident(first))
+    let checkpoint = try records.load().healthKitSync?["weight"]
+    try records.acknowledgeHealthKitIncident(updated, at: now.addingTimeInterval(3))
+    XCTAssertEqual(try records.load().healthKitSync?["weight"], checkpoint)
+    let retry = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: retry.run, status: .failed, at: now.addingTimeInterval(4))
+    XCTAssertTrue(try records.load().syncIncident(.weight)?.handled == true)
+    let recovery = try records.beginHealthKitSync(.weight, floor: floor, reset: true)
+    let recoveredAt = now.addingTimeInterval(5)
+    _ = try records.commitHealthKitPage(scope: .weight, expected: recovery,
+      page: .init(rows: [], anchor: Data([2]), providerCount: 0, more: false), at: recoveredAt)
+    XCTAssertEqual(try records.load().syncIncident(.weight)?.resolvedAt, recoveredAt)
+    let later = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    try records.finishHealthKitSync(.weight, run: later.run, status: .unavailable, at: now.addingTimeInterval(6))
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let fresh = try XCTUnwrap(reopened.load().syncIncident(.weight))
+    XCTAssertNotEqual(fresh.id, first.id)
+    XCTAssertEqual(fresh.lastSuccess, recoveredAt)
+    XCTAssertFalse(fresh.handled)
+    XCTAssertEqual(try reopened.load().current.map(\.id), [sample.id])
+  }
+
+  @MainActor
+  func testHealthKitSyncIncidentLegacyFailureSurvivesBeginningARetry() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let floor = Date().addingTimeInterval(-86_400)
+    var archive = try records.load()
+    archive.healthKitSync = ["weight": .init(floor: floor, status: .failed),
+                             "sleep": .init(floor: floor, status: .interrupted)]
+    try records.commitRestore(archive, receipt: UUID())
+    let original = try XCTUnwrap(records.load().syncIncident(.weight))
+    XCTAssertNil(original.failedAt)
+    _ = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    XCTAssertEqual(try records.load().syncIncidents, [original])
+  }
+
+  @MainActor
   func testHealthKitSyncRecoversExpiredCursorAndRejectsPageAfterLeavingForeground() async throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

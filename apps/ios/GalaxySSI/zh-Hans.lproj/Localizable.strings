@@ -352,6 +352,14 @@
 "galaxyssi.health.recording_reminder.pause" = "暂停 24 小时";
 "galaxyssi.health.recording_reminder.save" = "保存偏好";
 "galaxyssi.health.recording_reminder.history" = "记录提醒";
+"galaxyssi.health.recording_reminder.connections" = "数据连接";
+"galaxyssi.health.recording_reminder.incidents_empty" = "没有同步故障";
+"galaxyssi.health.recording_reminder.incident_confirm" = "确认已知晓此同步故障？";
+"galaxyssi.health.recording_reminder.incident_acknowledge" = "确认已知晓";
+"galaxyssi.health.recording_reminder.incident_failed_at" = "最近失败";
+"galaxyssi.health.recording_reminder.incident_last_success" = "故障前最后一次同步成功";
+"galaxyssi.health.recording_reminder.incident_resolved" = "已恢复";
+"galaxyssi.health.recording_reminder.incident_acknowledged" = "已知晓";
 "galaxyssi.health.recording_reminder.filter" = "筛选";
 "galaxyssi.health.recording_reminder.pending" = "待处理";
 "galaxyssi.health.recording_reminder.handled" = "已处理";
@@ -526,6 +534,7 @@
 "galaxyssi.health.assistant.background_allergy" = "过敏";
 "galaxyssi.health.healthkit_sync.title" = "同步与数据覆盖";
 "galaxyssi.health.healthkit_sync.scopes" = "Apple 健康同步范围";
+"galaxyssi.health.healthkit_sync.recovery" = "同步恢复";
 "galaxyssi.health.healthkit_sync.coverage_floor" = "扫描起点";
 "galaxyssi.health.healthkit_sync.counts" = "%lld 条可读取的变更 · 已新增 %lld 条";
 "galaxyssi.health.healthkit_sync.old_unverified" = "游标重启后无法核实更早的数据覆盖。";

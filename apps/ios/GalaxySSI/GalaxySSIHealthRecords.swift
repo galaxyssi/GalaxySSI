@@ -154,6 +154,7 @@ struct GalaxySSIHealthRecords {
     var draft: GalaxySSIHealthDraft?
     var sleepReminders: GalaxySSIHealthSleepReminder.Ledger?
     var healthKitSync: [String: GalaxySSIHealthKitSync.Checkpoint]?
+    var healthKitIncidents: [String: GalaxySSIHealthKitSync.Incident]?
     var derivesOverview: Bool?
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
@@ -655,20 +656,25 @@ struct GalaxySSIHealthRecords {
     return additions.count
   }
 
-  func beginHealthKitSync(_ scope: GalaxySSIHealthKitImport.Scope, floor: Date, reset: Bool) throws
+  func beginHealthKitSync(_ scope: GalaxySSIHealthKitImport.Scope, floor: Date, reset: Bool, at now: Date = Date()) throws
     -> GalaxySSIHealthKitSync.Checkpoint {
     guard scope != .steps, floor.timeIntervalSinceReferenceDate.isFinite else { throw Failure.invalid }
     var archive = try load()
+    if archive.healthKitIncidents?[scope.rawValue] == nil, let previous = archive.syncIncident(scope) {
+      archive.setSyncIncident(previous)
+    }
     var checkpoints = archive.healthKitSync ?? [:]
     var checkpoint = checkpoints[scope.rawValue] ?? .init(floor: floor)
     if reset {
-      checkpoint = .init(floor: floor, previousCoverageUnverified: checkpoints[scope.rawValue] != nil)
+      checkpoint = .init(floor: floor, previousCoverageUnverified: checkpoints[scope.rawValue] != nil,
+                         finishedAt: checkpoint.finishedAt)
     }
     if checkpoint.status == .success || checkpoint.status == .empty {
       checkpoint.insertedThisRun = 0
       checkpoint.readThisRun = 0
     }
     checkpoint.run = UUID()
+    checkpoint.lastAttemptAt = now
     checkpoint.status = .running
     checkpoints[scope.rawValue] = checkpoint
     archive.healthKitSync = checkpoints
@@ -691,24 +697,58 @@ struct GalaxySSIHealthRecords {
     checkpoint.anchor = page.anchor
     checkpoint.insertedThisRun += count
     checkpoint.readThisRun += page.rows.count
+    var resolvedIncident = false
     if !page.more {
       checkpoint.status = checkpoint.readThisRun == 0 ? .empty : .success
       checkpoint.finishedAt = now
+      if var incident = archive.syncIncident(scope), incident.resolvedAt == nil {
+        incident.resolvedAt = now
+        incident.version = UUID()
+        archive.setSyncIncident(incident)
+        resolvedIncident = true
+      }
     }
     archive.healthKitSync?[scope.rawValue] = checkpoint
     try persist(archive)
+    if resolvedIncident { NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner) }
     if count > 0 { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
     return checkpoint
   }
 
   func finishHealthKitSync(_ scope: GalaxySSIHealthKitImport.Scope, run: UUID,
-                           status: GalaxySSIHealthKitSync.Status) throws {
+                           status: GalaxySSIHealthKitSync.Status, at now: Date = Date()) throws {
     var archive = try load()
     guard archive.healthKitSync?[scope.rawValue]?.run == run,
           archive.healthKitSync?[scope.rawValue]?.status == .running else { return }
+    if status.raisesIncident { archive.recordSyncFailure(scope, status: status, at: now) }
     archive.healthKitSync?[scope.rawValue]?.status = status
     try persist(archive)
+    if status.raisesIncident { NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner) }
   }
+
+  func recordHealthKitAuthorizationFailure(_ scopes: Set<GalaxySSIHealthKitImport.Scope>,
+                                          status: GalaxySSIHealthKitSync.Status, at now: Date = Date()) throws {
+    guard status.raisesIncident, scopes.contains(where: { $0 != .steps }) else { return }
+    var archive = try load()
+    for scope in scopes where scope != .steps {
+      archive.recordSyncFailure(scope, status: status, at: now)
+    }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner)
+  }
+
+  func acknowledgeHealthKitIncident(_ expected: GalaxySSIHealthKitSync.Incident, at now: Date = Date()) throws {
+    var archive = try load()
+    guard var incident = archive.syncIncident(expected.scope), incident == expected, !incident.handled
+    else { throw Failure.stale }
+    incident.acknowledgedAt = now
+    incident.version = UUID()
+    archive.setSyncIncident(incident)
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.syncIncidentsChanged, object: owner)
+  }
+
+  static let syncIncidentsChanged = Notification.Name("galaxyssi.health.syncIncidentsChanged")
 
   func undoTableBatch(_ id: UUID) throws -> Int {
     var archive = try load()
