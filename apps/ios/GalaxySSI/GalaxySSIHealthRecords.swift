@@ -113,13 +113,14 @@ struct GalaxySSIHealthOverview {
 @MainActor
 struct GalaxySSIHealthRecords {
   static let trendInputsChanged = Notification.Name("galaxyssi.health.trendInputsChanged")
+  static let profileInputsChanged = Notification.Name("galaxyssi.health.profileInputsChanged")
 
   enum Failure: Error {
     case invalid, stale, duplicate, unavailable, permission
   }
 
   enum PrivacyScope: String, Codable {
-    case overview, weeklyReport, importOriginals
+    case overview, weeklyReport, importOriginals, profileAnalysis
   }
 
   struct PrivacyEvent: Codable, Identifiable {
@@ -132,6 +133,12 @@ struct GalaxySSIHealthRecords {
   struct MeasurementDeletion: Codable, Equatable {
     let id: UUID
     let revision: Int
+  }
+
+  struct ProfileAnalysisAudit: Codable, Identifiable {
+    var id = UUID()
+    let at: Date
+    let fields: Set<GalaxySSIHealthProfile.AnalysisField>
   }
 
   struct Archive: Codable {
@@ -153,6 +160,8 @@ struct GalaxySSIHealthRecords {
     var healthOnlinePermission: UUID?
     var healthKitImportedAt: [GalaxySSIHealthKitImport.Scope: Date]?
     var retainImportOriginals: Bool?
+    var profileAnalysisPermission: UUID?
+    var profileAnalysisAudit: [ProfileAnalysisAudit]?
 
     var keepsNewImportOriginals: Bool { retainImportOriginals ?? true }
 
@@ -236,14 +245,39 @@ struct GalaxySSIHealthRecords {
 
   func writeProfile(_ input: GalaxySSIHealthProfile) throws {
     guard input.isValid else { throw Failure.invalid }
-    guard try loadProfile().revision == input.revision else { throw Failure.stale }
+    let previous = try loadProfile()
+    guard previous.revision == input.revision else { throw Failure.stale }
     var updated = input
     updated.revision = UUID()
+    var versions: [GalaxySSIHealthProfile.AnalysisField: UUID] = [:]
+    for field in GalaxySSIHealthProfile.AnalysisField.allCases {
+      versions[field] = previous.analysisValue(field) == updated.analysisValue(field)
+        ? previous.analysisVersion(field) : UUID()
+    }
+    updated.analysisVersions = versions
     let payload = try JSONEncoder().encode(updated)
     guard let sealed = try AES.GCM.seal(payload, using: key(create: true, account: profileAccount),
                                         authenticating: profileContext).combined else { throw Failure.unavailable }
     try sealed.write(to: storageFile(context: profileContext, fixtureExtension: "profile"),
                      options: [.atomic, .completeFileProtection])
+    NotificationCenter.default.post(name: Self.profileInputsChanged, object: owner)
+  }
+
+  func setProfileAnalysisAllowed(_ allowed: Bool) throws {
+    try setPrivacy(.profileAnalysis, enabled: allowed)
+  }
+
+  func captureProfileAnalysis(_ fields: Set<GalaxySSIHealthProfile.AnalysisField>) throws
+    -> GalaxySSIHealthProfile.AnalysisContext? {
+    guard !fields.isEmpty else { return nil }
+    var archive = try load()
+    guard let permission = archive.profileAnalysisPermission, archive.derivesOverview == true else { throw Failure.permission }
+    let snapshot = GalaxySSIHealthProfile.AnalysisContext(profile: try loadProfile(), permission: permission, fields: fields)
+    var audit = archive.profileAnalysisAudit ?? []
+    audit.append(.init(at: Date(), fields: fields))
+    archive.profileAnalysisAudit = Array(audit.suffix(50))
+    try persist(archive)
+    return snapshot
   }
 
   func load() throws -> Archive {
@@ -322,6 +356,9 @@ struct GalaxySSIHealthRecords {
     case .importOriginals:
       previous = archive.retainImportOriginals
       archive.retainImportOriginals = enabled
+    case .profileAnalysis:
+      previous = archive.profileAnalysisPermission != nil
+      archive.profileAnalysisPermission = enabled ? UUID() : nil
     }
     guard previous != enabled else { return }
     if (previous ?? (scope == .importOriginals)) != enabled {
@@ -331,6 +368,7 @@ struct GalaxySSIHealthRecords {
     }
     try persist(archive)
     if scope == .overview { NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner) }
+    if scope == .profileAnalysis { NotificationCenter.default.post(name: Self.profileInputsChanged, object: owner) }
   }
 
   func discardDraft(id: UUID) throws {

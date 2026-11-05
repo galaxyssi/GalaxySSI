@@ -247,6 +247,8 @@ struct GalaxySSIHealthCenterView: View {
             get: { self.archive?.derivesOverview == true }, set: { changePrivacy(.overview, enabled: $0) }))
           Toggle(t("weekly.permission", "Allow local weekly reports"), isOn: Binding(
             get: { self.archive?.weeklyReportAllowed == true }, set: { changePrivacy(.weeklyReport, enabled: $0) }))
+          Toggle(t("assistant.profile_permission", "Allow selected profile fields in local analysis"), isOn: Binding(
+            get: { self.archive?.profileAnalysisPermission != nil }, set: { changePrivacy(.profileAnalysis, enabled: $0) }))
         }
         Section(t("privacy.imports", "New imports")) {
           Toggle(t("privacy.import_originals", "Keep originals of new imports"), isOn: Binding(
@@ -283,6 +285,18 @@ struct GalaxySSIHealthCenterView: View {
           }
           if requests.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
         }
+        if let uses = archive.profileAnalysisAudit, !uses.isEmpty {
+          Section(t("privacy.profile_analysis_history", "Local profile use")) {
+            ForEach(uses.reversed().prefix(privacyLimit)) { entry in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(entry.at, format: .dateTime)
+                Text(GalaxySSIHealthProfile.AnalysisField.allCases.filter(entry.fields.contains)
+                  .map { $0.title(language: language) }.joined(separator: ", ")).foregroundColor(.secondary)
+              }
+            }
+            if uses.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+          }
+        }
         NavigationLink {
           GalaxySSIHealthOriginalRemovalHistoryView(store: GalaxySSIHealthOriginalStore(owner: records.owner,
                                                                                          secrets: records.secrets))
@@ -304,6 +318,7 @@ struct GalaxySSIHealthCenterView: View {
     case .overview: return t("overview", "Measurement overview")
     case .weeklyReport: return t("weekly.title", "Weekly Health Report")
     case .importOriginals: return t("privacy.import_originals", "Keep originals of new imports")
+    case .profileAnalysis: return t("assistant.profile_permission", "Allow selected profile fields in local analysis")
     }
   }
 
