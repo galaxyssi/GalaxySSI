@@ -35,6 +35,35 @@ final class MqttBusinessJournalTests: XCTestCase {
     XCTAssertEqual(try inbox.pending().count, 1)
   }
 
+  func testWarmDatabaseOpenKeepsDurabilityAndRepairsInvalidatedSchema() throws {
+    let fixture = try ChunkFixture()
+    let peer = try identity()
+    let original = try accept(inbox(fixture), peer: peer)
+    let warm = try MqttChunkDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    func number(_ database: MqttChunkDatabase, _ sql: String) throws -> Int64? {
+      try database.query(sql, maximumRows: 1) { try $0.number(0) }.first
+    }
+    XCTAssertEqual(try number(warm, "SELECT total_changes()"), 0)
+    XCTAssertEqual(try number(warm, "PRAGMA synchronous"), 2)
+    XCTAssertEqual(try number(warm, "PRAGMA fullfsync"), 1)
+    XCTAssertEqual(try number(warm, "PRAGMA secure_delete"), 1)
+    XCTAssertEqual(try warm.query("PRAGMA journal_mode", maximumRows: 1) { try $0.text(0) }, ["wal"])
+    XCTAssertThrowsError(try MqttChunkDatabase(fileURL: fixture.url, secrets: InMemorySecretStore()))
+
+    try warm.run("DROP INDEX mqtt_business_inbox_pending")
+    let repaired = try MqttChunkDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    XCTAssertEqual(try number(repaired,
+      "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='mqtt_business_inbox_pending'"), 1)
+    XCTAssertEqual(try number(repaired, "SELECT schema_cookie FROM mqtt_schema_initialization WHERE id=1"),
+                   try number(repaired, "PRAGMA schema_version"))
+    XCTAssertEqual(try inbox(fixture).pending().first?.key, original.key)
+
+    try repaired.run("UPDATE mqtt_schema_initialization SET contract=0 WHERE id=1")
+    let renewed = try MqttChunkDatabase(fileURL: fixture.url, secrets: fixture.secrets)
+    XCTAssertEqual(try number(renewed, "SELECT contract FROM mqtt_schema_initialization WHERE id=1"), 1)
+    XCTAssertEqual(try inbox(fixture).pending().first?.key, original.key)
+  }
+
   func testCiphertextAliasCannotMoveToAnotherMessageOrHash() throws {
     let fixture = try ChunkFixture()
     let inbox = try inbox(fixture)
