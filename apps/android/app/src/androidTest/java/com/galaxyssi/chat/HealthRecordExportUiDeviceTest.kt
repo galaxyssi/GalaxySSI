@@ -122,13 +122,6 @@ class HealthRecordExportUiDeviceTest {
             scenario.onActivity { activity -> assertNotNull(views(activity.window.decorView).singleOrNull { it.tag == "health-export-preview" }) }
         }
     }
-    @Test fun dataHubSeparatesMeasurementOriginalAndHistoryRoutes() {
-        unlocked(); ActivityScenario.launch(HealthDataFilesActivity::class.java).use { scenario -> scenario.onActivity { activity ->
-            val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>().map { it.text.toString() }
-            for (resource in listOf(R.string.health_first_import_title, R.string.health_export_import_originals, R.string.health_export_records, R.string.health_original_library, R.string.health_export_history))
-                assertTrue(labels.contains(activity.getString(resource)))
-        } }
-    }
     @Test fun confirmationBackReturnsToConfigurationInsteadOfUnrelatedHistory() {
         unlocked(); ActivityScenario.launch(HealthRecordExportActivity::class.java).use { scenario -> scenario.onActivity { activity ->
             HealthRecordExportActivity::class.java.getDeclaredField("mode").apply { isAccessible = true }.set(activity, "session")

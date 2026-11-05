@@ -5,6 +5,81 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  @MainActor
+  func testDataFilesOrdersAndPagesMetadataWithoutReadingPayloads() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let date = Date(timeIntervalSince1970: 100)
+    func original(_ value: Int, _ acquisition: GalaxySSIHealthOriginalStore.Acquisition?)
+      -> GalaxySSIHealthOriginalStore.Original {
+      let id = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, UInt8(value)))
+      return .init(id: id, name: "File \(value)", kind: .pdf, fileExtension: "pdf",
+                   importedAt: date, bytes: 200, sha256: "digest-\(value)", acquisition: acquisition)
+    }
+    var archive = GalaxySSIHealthRecords.Archive()
+    var index = GalaxySSIHealthOriginalStore.Index()
+    for number in 1...33 { try index.include(original(number, .camera)) }
+    let linked = original(34, .uploaded)
+    let wrongDigest = original(35, .uploaded)
+    let unknown = original(36, nil)
+    let removed = original(37, .camera)
+    for item in [linked, wrongDigest, unknown, removed] { try index.include(item) }
+    index.removals.pending.insert(removed.id)
+    archive.originalIndex = index
+    func measurement(source: GalaxySSIHealthOriginalStore.Original, sha256: String) -> GalaxySSIHealthReading {
+      .init(revision: 1, metric: .weight, value: 60,
+            reportSource: .init(original: source.id, sha256: sha256, page: 0, region: 0, fromOCR: false))
+    }
+    let reading = measurement(source: linked, sha256: linked.sha256)
+    var deleted = measurement(source: unknown, sha256: unknown.sha256)
+    archive.revisions = [reading, measurement(source: wrongDigest, sha256: linked.sha256), deleted]
+    deleted.revision += 1
+    deleted.deleted = true
+    archive.revisions.append(deleted)
+    for item in [linked, wrongDigest, unknown] {
+      try Data().write(to: directory.appendingPathComponent(item.id.uuidString))
+    }
+    let snapshot = try GalaxySSIHealthDataFiles.project(JSONEncoder().encode(archive))
+    let first = snapshot.page(after: nil)
+    XCTAssertEqual(first.count, 30)
+    XCTAssertEqual(snapshot.page(after: first.last).count, 6)
+    let recent = try snapshot.recent(in: directory)
+    XCTAssertEqual(recent.map(\.id), [unknown.id, wrongDigest.id, linked.id, original(33, .camera).id])
+    XCTAssertEqual(recent.map(\.status), [.unlinked, .unlinked, .linked, .unavailable])
+    let counts = try await snapshot.counts()
+    XCTAssertEqual(counts, .init(measurements: 2, camera: 33, uploaded: 2))
+
+    let cancelled = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return try await snapshot.counts()
+    }
+    do { _ = try await cancelled.value; XCTFail("Expected cancellation") }
+    catch is CancellationError {}
+  }
+
+  @MainActor
+  func testDataFilesAuthenticatesArchiveAndPersistsMeasurementExportStatus() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets()
+    let file = root.appendingPathComponent("records")
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try records.dataFilesReader().read().measurements, 0)
+    let verified = try records.beginMeasurementExport(format: .csv, rows: 2, includesOriginals: false)
+    let unfinished = try records.beginMeasurementExport(format: .xlsx, rows: 3, includesOriginals: true)
+    try records.finishMeasurementExport(verified, verified: true)
+    try records.finishMeasurementExport(verified, verified: false)
+    let archive = try records.load()
+    XCTAssertEqual(archive.measurementExports?.map(\.id), [verified, unfinished])
+    XCTAssertEqual(archive.measurementExports?.map(\.status), [.verified, .prepared])
+    XCTAssertEqual(try records.dataFilesReader().read().measurements, 0)
+    let reader = try records.dataFilesReader()
+    try Data("corrupted".utf8).write(to: file)
+    XCTAssertThrowsError(try reader.read())
+  }
+
   func testAppleHealthTrendPagesOriginsWithinScopeAndPinsExactContributor() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
@@ -1514,7 +1589,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let pendingReceipt = UUID()
     try files.withRestoreLease { lease in
       try files.stageRestore([(manifest, pdf)], receipt: pendingReceipt, lease: lease)
-      try destination.commitRestore(destination.load(), receipt: pendingReceipt, notify: false)
+      try destination.commitRestore(destination.load(), receipt: pendingReceipt, originals: [manifest], notify: false)
     }
     XCTAssertEqual(try files.list().originals, [manifest])
     XCTAssertEqual(try files.read(manifest), pdf)
@@ -1537,7 +1612,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let receipt = UUID()
     try store.withRestoreLease { lease in
       try store.stageRestore([(original, pdf)], receipt: receipt, lease: lease)
-      try records.commitRestore(records.load(), receipt: receipt, notify: false)
+      try records.commitRestore(records.load(), receipt: receipt, originals: [original], notify: false)
     }
     let folder = root.appendingPathComponent("restore-staging").appendingPathComponent(receipt.uuidString)
     let staged = folder.appendingPathComponent(original.id.uuidString)
@@ -1555,6 +1630,66 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(try store.read(original), pdf)
     XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
     XCTAssertEqual(try store.list().originals, [original])
+  }
+
+  @MainActor
+  func testHealthOriginalIndexMigratesLegacyCommittedBytesWithoutRewritingThem() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records")
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "legacy.pdf", kind: .pdf, fileExtension: "pdf",
+      importedAt: Date(), bytes: pdf.count, sha256: GalaxySSIHealthLinkedExport.digest(pdf))
+    let receipt = UUID()
+    let staged = root.appendingPathComponent("restore-staging").appendingPathComponent(receipt.uuidString)
+      .appendingPathComponent(original.id.uuidString)
+    var legacyBytes = Data()
+    try store.withRestoreLease { lease in
+      try store.stageRestore([(original, pdf)], receipt: receipt, lease: lease)
+      legacyBytes = try Data(contentsOf: staged)
+      try records.commitRestore(records.load(), receipt: receipt, notify: false)
+    }
+    XCTAssertNil(try records.load().originalIndex)
+    XCTAssertEqual(try store.list().originals, [original])
+    XCTAssertEqual(try records.load().originalIndex?.originals[original.id], original)
+    let path = root.appendingPathComponent(original.id.uuidString)
+    XCTAssertEqual(try Data(contentsOf: path), legacyBytes)
+    try FileManager.default.removeItem(at: path)
+    XCTAssertEqual(try store.list().unavailableOriginals, [original])
+    try store.store(pdf, name: "reimport.pdf")
+    XCTAssertEqual(try store.list().originals, [original])
+    XCTAssertEqual(try store.read(original), pdf)
+  }
+
+  @MainActor
+  func testHealthOriginalIndexRejectsConflictingMetadataWithoutPublishingMeasurements() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records")
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "fixture.pdf")
+    let original = try XCTUnwrap(store.list().originals.first)
+    let conflicting = GalaxySSIHealthOriginalStore.Original(id: original.id, name: "conflicting.pdf", kind: original.kind,
+      fileExtension: original.fileExtension, importedAt: original.importedAt, bytes: original.bytes, sha256: original.sha256)
+    let receipt = UUID()
+    try store.withRestoreLease { lease in
+      try store.stageRestore([(conflicting, pdf)], receipt: receipt, lease: lease)
+      var proposed = try records.load()
+      proposed.revisions.append(.init(revision: 1, metric: .weight, value: 65))
+      XCTAssertThrowsError(try records.commitRestore(proposed, receipt: receipt, originals: [conflicting], notify: false))
+    }
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertFalse(try records.load().restoreReceipts?.contains(receipt) == true)
+    XCTAssertEqual(try store.list().originals, [original])
+    XCTAssertEqual(try store.read(original), pdf)
   }
 
   @MainActor

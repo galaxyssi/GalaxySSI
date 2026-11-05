@@ -52,6 +52,7 @@ extension AgentHomeView {
   }
 
   func clearAgentRuntimePlaintextPresentation() {
+    committedTurnProgress = AgentCommittedTurnProgress()
     cancelScreenPagePDFImport()
     draft.removeAll(keepingCapacity: false)
     attachments.wipeSensitive()

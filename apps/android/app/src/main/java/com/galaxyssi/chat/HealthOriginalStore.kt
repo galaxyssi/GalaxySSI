@@ -147,11 +147,18 @@ internal class HealthOriginalStore(
         helper.readableDatabase.rawQuery("SELECT id,payload FROM originals WHERE id>? ORDER BY id LIMIT 30", arrayOf(after), signal)
             .use { rows -> buildList { while (rows.moveToNext()) add(decodeOriginal(rows.getString(0), rows.getBlob(1))) } }
 
-    fun originals(before: Pair<Long, String>? = null): List<HealthOriginal> {
-        val where = if (before == null) "" else " AND (imported_at<? OR (imported_at=? AND id<?))"
+    fun originals(before: Pair<Long, String>? = null, limit: Int = 30,
+                  signal: android.os.CancellationSignal? = null): List<HealthOriginal> {
+        require(limit in 1..30)
+        val where = if (before == null) "" else " AND imported_at<=? AND (imported_at<? OR id<?)"
         val args = before?.let { arrayOf(it.first.toString(), it.first.toString(), it.second) }
-        return helper.readableDatabase.rawQuery("SELECT id,payload FROM originals WHERE $ARCHIVED$where ORDER BY imported_at DESC,id DESC LIMIT 30", args)
-            .use { buildList { while (it.moveToNext()) add(decodeOriginal(it.getString(0), it.getBlob(1))) } }
+        return helper.readableDatabase.rawQuery("SELECT id,payload,imported_at FROM originals WHERE $ARCHIVED$where ORDER BY imported_at DESC,id DESC LIMIT $limit", args, signal)
+            .use { rows -> buildList {
+                while (rows.moveToNext()) {
+                    signal?.throwIfCanceled()
+                    add(decodeOriginal(rows.getString(0), rows.getBlob(1)).also { check(it.importedAt == rows.getLong(2)) })
+                }
+            } }
     }
     fun library(filter: HealthLibraryFilter, before: Pair<Long, String>? = null, signal: android.os.CancellationSignal? = null): HealthLibraryPage {
         val terms = arrayListOf(ARCHIVED, "imported_at>=?", "imported_at<?")

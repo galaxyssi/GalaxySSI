@@ -177,6 +177,7 @@ extension AgentHomeView {
       dismissedSurface = "scan_sheet"
     } else if cameraPickerPresented {
       cameraPickerPresented = false
+      cameraAttachmentOwner = nil
       dismissedSurface = "camera_sheet"
     } else if photoPickerPresented {
       photoPickerPresented = false

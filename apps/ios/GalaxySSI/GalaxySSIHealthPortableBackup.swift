@@ -224,7 +224,7 @@ extension GalaxySSIHealthPortableBackup {
       let receipt = UUID()
       do {
         try originals.stageRestore(files, receipt: receipt, lease: lease)
-        try records.commitRestore(archive, receipt: receipt, notify: false)
+        try records.commitRestore(archive, receipt: receipt, originals: files.map { $0.0 }, notify: false)
       } catch {
         try? originals.reconcileRestores(lease: lease)
         throw error
@@ -244,16 +244,17 @@ extension GalaxySSIHealthPortableBackup {
     let payload = try JSONDecoder().decode(Payload.self, from: input.plaintext)
     guard payload.owner == records.owner, originals.owner == records.owner,
           originals.restoreRecordsFile == records.isolatedFile else { throw Failure.owner }
+    let listing = try originals.list(lease: lease)
     var archive = try records.load()
     let local = archive.current
     var latest: [UUID: GalaxySSIHealthReading] = [:]
     for reading in archive.revisions { latest[reading.id] = reading }
-    let listing = try originals.list(lease: lease)
     let tables = archive.tableBatches ?? []
     let localTableHashes = Dictionary(tables.map { ($0.id, digest($0.data)) }, uniquingKeysWith: { first, _ in first })
     var snapshot = latest.values.map { "r:\($0.id):\($0.revision):\($0.deleted)" }
     snapshot += localTableHashes.map { "t:\($0.key):\($0.value)" }
     snapshot += listing.originals.map { "o:\($0.id):\($0.sha256)" }
+    snapshot += listing.unavailableOriginals.map { "missing-original:\($0.id):\($0.sha256)" }
     snapshot.append("unavailable:\(listing.unavailable)")
     var pendingConflicts: [(GalaxySSIHealthReading, GalaxySSIHealthReading)] = []
     var duplicates = 0
@@ -289,8 +290,10 @@ extension GalaxySSIHealthPortableBackup {
     var files: [(GalaxySSIHealthOriginalStore.Original, Data)] = []
     var usedDigests = Set<String>()
     var newFiles = 0
+    var newBytes = 0
+    let indexed = listing.originals + listing.unavailableOriginals
     for file in payload.originals {
-      let candidates = listing.originals.filter { $0.sha256 == file.manifest.sha256 }
+      let candidates = indexed.filter { $0.sha256 == file.manifest.sha256 }
       if candidates.contains(where: { (try? originals.read($0, lease: lease)) != nil }) {
         snapshot.append("verified:\(file.manifest.sha256)")
         continue
@@ -305,10 +308,11 @@ extension GalaxySSIHealthPortableBackup {
         guard !(try originals.containsRestoreID(file.manifest.id, lease: lease)) else { missing += 1; continue }
         files.append((file.manifest, bytes))
         newFiles += 1
+        newBytes += bytes.count
       }
     }
     guard listing.originals.count + listing.unavailable + newFiles <= 500,
-          listing.originals.reduce(0, { $0 + $1.bytes }) + files.reduce(0, { $0 + $1.1.count }) <= 512 * 1024 * 1024
+          indexed.reduce(newBytes, { $0 + $1.bytes }) <= 512 * 1024 * 1024
     else { throw Failure.limit }
     let staged = Dictionary(uniqueKeysWithValues: files.filter { $0.0.kind == .pdf }.map { ($0.0.id, $0.0.sha256) })
     let originalsByID = Dictionary(uniqueKeysWithValues: listing.originals.map { ($0.id, $0) })

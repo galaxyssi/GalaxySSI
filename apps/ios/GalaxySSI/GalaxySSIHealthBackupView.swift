@@ -7,6 +7,8 @@ struct GalaxySSIHealthBackupView: View {
   @Environment(\.scenePhase) private var scene
   let records: GalaxySSIHealthRecords
   let originals: GalaxySSIHealthOriginalStore
+  enum Entry { case all, create, history, verify, restore }
+  var entry: Entry = .all
   @State private var plan: GalaxySSIHealthPortableBackup.Plan?
   @State private var verificationInput: Data?
   @State private var password = ""
@@ -47,19 +49,27 @@ struct GalaxySSIHealthBackupView: View {
   var body: some View {
     Form {
       if scene == .active && !exporting {
-        Section {
-          Button(t("preview", "Preview new backup"), action: preview).disabled(task != nil)
-          Button(t("choose", "Choose backup to verify")) {
-            reset()
-            choosing = true
+        if entry != .history {
+          Section {
+            if entry == .all || entry == .create {
+              Button(t("preview", "Preview new backup"), action: preview).disabled(task != nil)
+            }
+            if entry == .all || entry == .verify {
+              Button(t("choose", "Choose backup to verify")) {
+                reset()
+                choosing = true
+              }
+              .disabled(task != nil)
+            }
+            if entry == .all || entry == .restore {
+              Button(t("choose_restore", "Choose backup to restore")) {
+                reset()
+                restoring = true
+                choosing = true
+              }
+              .disabled(task != nil)
+            }
           }
-          .disabled(task != nil)
-          Button(t("choose_restore", "Choose backup to restore")) {
-            reset()
-            restoring = true
-            choosing = true
-          }
-          .disabled(task != nil)
         }
         if let plan {
           Section(t("scope", "Backup contents")) { stats(plan.summary) }
@@ -68,7 +78,7 @@ struct GalaxySSIHealthBackupView: View {
           passwordForm
         }
         Group {
-          historySection
+          if entry == .all || entry == .history { historySection }
           if saveUnverified { Text(t("save_unverified", "The external file could not be verified.")) }
           if verifyingSave { ProgressView(t("working", "Processing backup")) }
           if saveAttempt != nil && !verifyingSave {
