@@ -25,19 +25,18 @@ class HealthCenterActivity : Activity() {
     private lateinit var root: LinearLayout
     private val worker = Executors.newSingleThreadExecutor()
     internal val main = Handler(Looper.getMainLooper())
-    private val overviewNames by lazy {
-        val fixture = intent.getStringExtra("health_overview_test_id").orEmpty().takeIf { BuildConfig.DEBUG && HealthProfilePolicy.uuid(it) }
-        HealthOverviewDatabases(fixture)
-    }
+    private val overviewNames by lazy { intent.healthNavigationDatabases() }
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
     private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
+    private val recordCenter by lazy { HealthRecordCenterView(this, overviewNames) }
     private var overviewHasRecords = false
     private var overviewScroll = 0
-    private val reloadOverview = Runnable { if (active && route == "overview") render() }
+    private var recordCenterScroll = 0
+    private val reloadOverview = Runnable { if (active && (route == "overview" || route == "record_center")) render() }
     private val overviewChanges = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
-            if (active && route == "overview") {
+            if (active && (route == "overview" || route == "record_center")) {
                 main.removeCallbacks(reloadOverview)
                 main.postDelayed(reloadOverview, 120)
             }
@@ -45,7 +44,7 @@ class HealthCenterActivity : Activity() {
     }
     private val overviewPrivacy = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
-            if (active && route == "overview") {
+            if (active && route in listOf("overview", "import")) {
                 sensitiveDialogs.toList().forEach { it.dismiss() }
                 main.removeCallbacks(reloadOverview)
                 render()
@@ -57,11 +56,17 @@ class HealthCenterActivity : Activity() {
     private var route = "overview"
     private var selected = HealthMetric.BLOOD_PRESSURE
     private var recordId = ""
+    private var undoDeletionRevision = 0
     private var reviewKey = ""
     private val backStack = ArrayDeque<Triple<String, HealthMetric, String>>()
     internal var editor: HealthManualEditor? = null
     internal var saving = false
-    internal var keepImportedOriginal = true
+    internal var keepImportedOriginal: Boolean? = null
+    internal fun clearImportRetentionChoice() {
+        if (keepImportedOriginal == null) return
+        keepImportedOriginal = null
+        if (active && route == "import") render()
+    }
     internal val stagingOcrReview get() = route == "review" && intent.getBooleanExtra("health_stage_ocr_review", false)
     private val sensitiveDialogs = mutableSetOf<android.app.Dialog>()
     private var nextPage: HealthPageCursor? = null
@@ -92,11 +97,13 @@ class HealthCenterActivity : Activity() {
             route = if (intent.getBooleanExtra("health_history", false)) "history" else "detail"
         }
         savedInstanceState?.let { state ->
-            keepImportedOriginal = state.getBoolean(HEALTH_KEEP_ORIGINAL, true)
+            keepImportedOriginal = state.getBoolean(HEALTH_KEEP_ORIGINAL).takeIf { state.containsKey(HEALTH_KEEP_ORIGINAL) }
             route = state.getString("route", "overview").orEmpty().ifBlank { "overview" }
             selected = HealthMetric.entries.getOrElse(state.getInt("metric")) { HealthMetric.BLOOD_PRESSURE }
             recordId = state.getString("record", "").orEmpty()
+            undoDeletionRevision = state.getInt("undoDeletionRevision").takeIf { route == "detail" } ?: 0
             overviewScroll = state.getInt("overviewScroll")
+            recordCenterScroll = state.getInt("recordCenterScroll")
             state.getStringArrayList("stack")?.forEach { encoded ->
                 val parts = encoded.split('|')
                 if (parts.size == 3) backStack.addLast(Triple(parts[0], HealthMetric.valueOf(parts[1]), parts[2]))
@@ -120,7 +127,10 @@ class HealthCenterActivity : Activity() {
     override fun onStart() {
         super.onStart(); active = true
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, overviewNames.records), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthRecordStore.syncIncidentChanges(this, overviewNames.records), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthConnectSettings.changes(this), false, overviewChanges)
         contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this).buildUpon().appendPath("jobs").build(), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthTableScheduler.changes(this), false, overviewChanges)
         contentResolver.registerContentObserver(HealthReminderStore.changes(this, overviewNames.reminders), false, overviewChanges)
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, overviewNames.privacy), false, overviewPrivacy)
         render()
@@ -142,9 +152,11 @@ class HealthCenterActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         saveDraft()
         out.putString("route", route); out.putInt("metric", selected.ordinal); out.putString("record", recordId)
-        out.putBoolean(HEALTH_KEEP_ORIGINAL, keepImportedOriginal)
+        if (route == "detail" && undoDeletionRevision > 0) out.putInt("undoDeletionRevision", undoDeletionRevision)
+        keepImportedOriginal?.let { out.putBoolean(HEALTH_KEEP_ORIGINAL, it) }
         out.putString("review", reviewKey)
         retainOverviewScroll(); out.putInt("overviewScroll", overviewScroll)
+        out.putInt("recordCenterScroll", recordCenterScroll)
         out.putStringArrayList("stack", ArrayList(backStack.map { "${it.first}|${it.second.name}|${it.third}" }))
         super.onSaveInstanceState(out)
     }
@@ -152,6 +164,7 @@ class HealthCenterActivity : Activity() {
 
     private fun back() {
         if (saving) return
+        undoDeletionRevision = 0
         saveDraft()
         if (backStack.isEmpty()) { finish(); return }
         val previous = backStack.removeLast()
@@ -160,6 +173,7 @@ class HealthCenterActivity : Activity() {
     }
     internal fun open(destination: String, metric: HealthMetric = selected, id: String = "") {
         if (saving) return
+        if (destination != "detail" || id != recordId) undoDeletionRevision = 0
         saveDraft()
         if (destination in listOf("records", "metric_records") && (route != destination || selected != metric)) {
             pageAfter = null; nextPage = null; pageHistory.clear()
@@ -216,6 +230,7 @@ class HealthCenterActivity : Activity() {
             "manual" -> R.string.health_manual
             "review" -> R.string.health_review_title
             "records" -> R.string.health_records
+            "record_center" -> R.string.health_record_center
             "metric_records" -> selected.titleResource()
             "detail" -> selected.titleResource()
             "history" -> R.string.health_revision_history
@@ -226,10 +241,27 @@ class HealthCenterActivity : Activity() {
         when (route) {
             "manual", "review" -> renderManual()
             "records", "metric_records" -> renderRecords()
+            "record_center" -> {
+                val content = scrolling()
+                val scroll = (content.parent as ScrollView).apply { tag = "health-record-center-scroll" }
+                recordCenter.show(content) {
+                    val position = recordCenterScroll
+                    if (position > 0) scroll.post { if (active && scroll.parent === body) scroll.scrollTo(0, position) }
+                }
+            }
             "detail" -> renderDetail()
             "history" -> renderHistory()
             "functions" -> renderFunctions()
-            "import" -> firstUse.showImport(scrolling())
+            "import" -> {
+                val content = scrolling()
+                content.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
+                query({
+                    HealthPrivacyStore(applicationContext, overviewNames.privacy).use { it.policy().retainImportOriginals }
+                }) { retain ->
+                    content.removeAllViews()
+                    firstUse.showImport(content, retain)
+                }
+            }
             else -> renderOverview()
         }
     }
@@ -240,7 +272,12 @@ class HealthCenterActivity : Activity() {
     }
     internal fun date(time: Long): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))
     private fun retainOverviewScroll() {
-        (body.getChildAt(0) as? ScrollView)?.takeIf { it.tag == "health-overview-scroll" }?.let { overviewScroll = it.scrollY }
+        (body.getChildAt(0) as? ScrollView)?.let {
+            when (it.tag) {
+                "health-overview-scroll" -> overviewScroll = it.scrollY
+                "health-record-center-scroll" -> recordCenterScroll = it.scrollY
+            }
+        }
     }
     private fun renderOverview() {
         val content = scrolling()
@@ -268,7 +305,9 @@ class HealthCenterActivity : Activity() {
             addView(ui.text(getString(R.string.health_management), 20f, bold = true))
             ui.add(this, ui.card().apply {
                 addView(ui.row(getString(R.string.health_title)) { open("overview") })
-                addView(ui.row(getString(R.string.health_photo_record), getString(R.string.health_photo_description)) { openCapture() })
+                addView(ui.row(getString(R.string.health_record_center), getString(R.string.health_record_center_note)) {
+                    open("record_center")
+                }.apply { tag = "health-functions-record-center" })
                 addView(ui.row(getString(R.string.health_original_library)) {
                     startActivity(android.content.Intent(this@HealthCenterActivity, HealthOriginalLibraryActivity::class.java))
                 })
@@ -327,8 +366,21 @@ class HealthCenterActivity : Activity() {
     private fun renderDetail() {
         val content = scrolling()
         val id = recordId
-        query({ it.record(id) }) { record ->
-            if (record == null) { content.addView(ui.text(getString(R.string.health_record_missing))); return@query }
+        val deletionRevision = undoDeletionRevision
+        query({ it.record(id) to it.canUndoDelete(id, deletionRevision) }) { (record, undoable) ->
+            if (record == null) {
+                if (undoable) {
+                    content.addView(ui.text(getString(R.string.health_record_deleted)))
+                    ui.add(content, ui.command(R.string.health_undo_record_delete) {
+                        changeRecordDeletion(0) { it.undoDelete(id, deletionRevision) }
+                    }.apply { tag = "health-undo-record-delete" }, 16)
+                } else {
+                    undoDeletionRevision = 0
+                    content.addView(ui.text(getString(R.string.health_record_missing)).apply { tag = "health-record-missing" })
+                }
+                return@query
+            }
+            undoDeletionRevision = 0
             title.text = getString(record.draft.metric.titleResource())
             content.addView(recordRow(record))
             ui.add(content, ui.card().apply {
@@ -336,8 +388,7 @@ class HealthCenterActivity : Activity() {
                 ui.add(this, ui.text(source(record), 14f, muted = true), 14)
                 if (record.platformOrigin.isNotBlank()) ui.add(this, ui.text(
                     if (record.source == "bluetooth") getString(R.string.health_ble_device_name, record.platformOrigin)
-                    else if (record.platformOrigin == "health_connect.aggregate") getString(R.string.health_connect_platform_aggregate)
-                    else getString(R.string.health_connect_platform_origin, record.platformOrigin), 13f, muted = true), 4)
+                    else healthConnectTrendLabel(record.platformOrigin, record.draft.metric), 13f, muted = true), 4)
                 record.deviceReceivedAt?.let {
                     ui.add(this, ui.text(getString(R.string.health_ble_received_time, date(it)), 13f, muted = true), 4)
                     ui.add(this, ui.text(if (record.deviceClock.isBlank()) getString(R.string.health_ble_no_clock)
@@ -364,16 +415,36 @@ class HealthCenterActivity : Activity() {
                 }
                 ui.add(this, ui.text(getString(R.string.health_revision, record.revision), 12f, muted = true), 12)
             }, 16)
-            ui.add(content, ui.row(getString(R.string.common_edit)) { open("manual", record.draft.metric, record.id) }, 14)
+            ui.add(content, ui.row(getString(R.string.common_edit)) { open("manual", record.draft.metric, record.id) }
+                .apply { tag = "health-edit-record" }, 14)
             ui.add(content, ui.row(getString(R.string.health_revision_history)) { open("history", record.draft.metric, record.id) })
             ui.add(content, ui.row(getString(R.string.common_delete)) {
-                AlertDialog.Builder(this).setTitle(R.string.health_delete_title).setMessage(R.string.health_delete_description)
+                if (saving) return@row
+                showHealthDialog(AlertDialog.Builder(this).setTitle(R.string.health_delete_title).setMessage(R.string.health_delete_description)
                     .setNegativeButton(R.string.common_cancel, null).setPositiveButton(R.string.common_delete) { _, _ ->
-                        query({ it.delete(record.id, record.revision) }) { removed ->
-                            if (removed) back() else Toast.makeText(this, R.string.health_conflict, Toast.LENGTH_LONG).show()
-                        }
-                    }.show()
-            })
+                        selected = record.draft.metric
+                        changeRecordDeletion(record.revision + 1) { it.delete(record.id, record.revision) }
+                    }.create())
+            }.apply { tag = "health-delete-record" })
+        }
+    }
+    private fun changeRecordDeletion(deletionRevision: Int, work: (HealthRecordStore) -> Boolean) {
+        if (!active || saving) return
+        saving = true
+        worker.execute {
+            val result = runCatching { work(records) }
+            main.post {
+                saving = false
+                if (isDestroyed) return@post
+                if (result.getOrNull() == true) undoDeletionRevision = deletionRevision
+                if (!active) return@post
+                if (result.getOrNull() != true) {
+                    val message = if (result.isFailure) R.string.health_storage_error
+                    else if (deletionRevision == 0) R.string.health_undo_record_unavailable else R.string.health_conflict
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                }
+                if (route == "detail") render()
+            }
         }
     }
     private fun renderHistory(beforeRevision: Int = Int.MAX_VALUE) {
@@ -396,11 +467,24 @@ class HealthCenterActivity : Activity() {
         val metric = selected
         val key = if (route == "review") reviewKey else if (id.isBlank()) "new:${metric.name}" else "edit:$id"
         val reviewing = route == "review"
-        query({ store -> if (reviewing) store.draft(key) else if (id.isBlank()) store.draft(key) ?: HealthDraft(metric)
-            else store.record(id)?.let { store.draft(key) ?: it.editable() } }) { draft ->
+        query({ store ->
+            val draft = if (reviewing) store.draft(key) else if (id.isBlank()) store.draft(key) ?: HealthDraft(metric)
+                else store.record(id)?.let { store.draft(key) ?: it.editable() }
+            val sourceContext = if (reviewing) draft?.evidence?.takeIf { it.kind == "ocr" }?.let { evidence ->
+                runCatching {
+                    HealthOriginalStore(applicationContext, overviewNames.originals, overviewNames.originalRoot(applicationContext)).use { originals ->
+                        val original = originals.originalForJob(evidence.jobId)
+                        if (original == null || original.id != evidence.originalId || original.sha256 != evidence.sha256) null
+                        else originals.page(evidence.jobId, evidence.page)?.takeIf { it.recognition == evidence.recognition }
+                            ?.let { HealthOcrSourceContext.inspect(it, java.time.ZoneId.systemDefault()) }
+                    }
+                }.getOrNull() ?: HealthOcrSourceContext()
+            } else null
+            draft to sourceContext
+        }) { (draft, sourceContext) ->
             if (draft == null) { body.addView(ui.text(getString(R.string.health_record_missing))); return@query }
             selected = draft.metric
-            editor = HealthManualEditor(this, draft).also { it.render() }
+            editor = HealthManualEditor(this, draft, sourceContext).also { it.render() }
         }
     }
     internal fun saveMeasurement(draft: HealthDraft) {
@@ -415,7 +499,7 @@ class HealthCenterActivity : Activity() {
                 main.post {
                     saving = false
                     if (isDestroyed) return@post
-                    if (result.isSuccess) { editor = null; finish() }
+                    if (result.isSuccess) { editor = null; setResult(RESULT_OK); finish() }
                     else if (active) {
                         editor?.setSaving(false)
                         Toast.makeText(this, R.string.health_draft_error, Toast.LENGTH_LONG).show()
@@ -463,7 +547,6 @@ class HealthCenterActivity : Activity() {
             }
         }
     }
-    private fun openCapture() { startActivity(android.content.Intent(this, HealthCaptureActivity::class.java)) }
-    private fun openCatalog() { startActivity(android.content.Intent(this, HealthCatalogActivity::class.java)) }
+    private fun openCatalog() { startActivity(android.content.Intent(this, HealthCatalogActivity::class.java).putHealthNavigationFixture(overviewNames)) }
     private fun source(record: HealthObservation) = getString(healthRecordSourceResource(record.source))
 }

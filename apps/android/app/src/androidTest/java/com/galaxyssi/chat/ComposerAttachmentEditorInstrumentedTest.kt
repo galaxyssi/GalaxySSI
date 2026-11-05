@@ -91,6 +91,31 @@ class ComposerAttachmentEditorInstrumentedTest {
         assertEquals(0, onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).rotatedDegrees })
     }
 
+    @Test fun healthSuggestionUsesUprightCropCoordinatesAndAllowsManualAdjustment() = withEditor { editor, _ ->
+        click(editor, R.string.composer_crop)
+        await { onMain { editor.findViewById<CropImageView>(R.id.composerCropImage).cropRect != null } }
+        onMain {
+            val image = editor.findViewById<CropImageView>(R.id.composerCropImage)
+            val bounds = requireNotNull(image.wholeImageRect)
+            val suggestion = HealthReportCrop(100, 180, 730, 840)
+            fun verify(expected: Rect) {
+                val result = requireNotNull(image.cropRect)
+                assertTrue("Expected $expected, got $result", listOf(
+                    result.left - expected.left, result.top - expected.top,
+                    result.right - expected.right, result.bottom - expected.bottom).all { kotlin.math.abs(it) <= 5 })
+            }
+            image.applyHealthReportCrop(suggestion)
+            val normal = suggestion.pixels(bounds.width(), bounds.height())
+            verify(Rect(normal[0], normal[1], normal[2], normal[3]))
+            image.rotateImage(90)
+            image.applyHealthReportCrop(suggestion)
+            val rotated = suggestion.pixels(bounds.height(), bounds.width())
+            verify(Rect(rotated[1], bounds.height() - rotated[2], rotated[3], bounds.height() - rotated[0]))
+            image.resetCropRect()
+            assertNotEquals(Rect(normal[0], normal[1], normal[2], normal[3]), image.cropRect)
+        }
+    }
+
     @Test fun documentPreviewDoesNotOfferImageCrop() {
         val file = File(context.filesDir, "composer-attachments-v1/test-${UUID.randomUUID()}.pdf").apply {
             parentFile!!.mkdirs(); writeText("%PDF-1.4\n% test fixture\n")

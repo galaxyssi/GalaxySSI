@@ -184,8 +184,7 @@ private final class GalaxySSIInMemoryAudioReader {
   }
 }
 
-private enum GalaxySSIAppleInMemoryAudioDecoder {
-  private static let targetSampleRateHz = 16_000
+enum GalaxySSIAppleInMemoryAudioDecoder {
   private static let readCallback: AudioFile_ReadProc = {
     clientData,
     position,
@@ -218,7 +217,9 @@ private enum GalaxySSIAppleInMemoryAudioDecoder {
     return Int64(reader.data.count)
   }
 
-  static func decode(_ source: Data, fileExtension: String) throws -> VoiceWhisperAudio {
+  static func decode(
+    _ source: Data, fileExtension: String, targetSampleRateHz: Int = 16_000, maximumFrames: Int = Int.max
+  ) throws -> VoiceWhisperAudio {
     let reader = GalaxySSIInMemoryAudioReader(data: source)
     let context = Unmanaged.passUnretained(reader).toOpaque()
     var audioFile: AudioFileID?
@@ -284,8 +285,8 @@ private enum GalaxySSIAppleInMemoryAudioDecoder {
       for index in chunk.indices { chunk[index] = 0 }
       chunk.removeAll(keepingCapacity: false)
     }
-    while true {
-      var frameCount = UInt32(chunk.count)
+    while pcm16.count < maximumFrames {
+      var frameCount = UInt32(min(chunk.count, maximumFrames - pcm16.count))
       let readStatus = chunk.withUnsafeMutableBytes { bytes -> OSStatus in
         var bufferList = AudioBufferList(
           mNumberBuffers: 1,

@@ -105,6 +105,7 @@ enum AgentLatencyContract {
     ("phone_context_route_ms", .phoneSendStarted, .phonePublishStarted),
     ("phone_send_prepare_ms", .phoneSendStarted, .phoneRequestQueued),
     ("phone_send_first_visible_ms", .phoneSendStarted, .phoneFirstOutputVisible),
+    ("phone_send_complete_visible_ms", .phoneSendStarted, .phoneFinalOutputVisible),
     ("phone_publish_prepare_ms", .phonePublishStarted, .phoneRequestQueued),
     ("phone_response_roundtrip_ms", .phoneRequestQueued, .phoneResponseReceived),
     ("phone_connector_first_visible_ms", .phonePublishStarted, .phoneFirstOutputVisible),
@@ -479,6 +480,7 @@ final class AgentLatencyJournal {
 }
 
 final class AgentLatencyTracer {
+  private let journalQueue = DispatchQueue(label: "com.galaxyssi.agent-latency.journal", qos: .utility)
   private let journal: AgentLatencyJournal
   private let monotonicNs: () -> Int64
   private let wallClockMs: () -> Int64
@@ -499,9 +501,11 @@ final class AgentLatencyTracer {
     self.clockId = clockId
   }
 
-  func record(taskId: String, stage: AgentLatencyStage, outcome: String = "") {
+  func record(taskId: String, stage: AgentLatencyStage, outcome: String = "", deferJournal: Bool = false) {
     let cleanTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTaskId.isEmpty else { return }
+    let observedMonotonicNs = max(0, monotonicNs())
+    let observedWallClockMs = max(0, wallClockMs())
     let traceId = AgentLatencyContract.opaqueId(cleanTaskId)
     let key = "\(traceId):\(stage.rawValue)"
     lock.lock()
@@ -518,14 +522,19 @@ final class AgentLatencyTracer {
       outcomes = outcomes.filter { $0.key == traceId }
     }
     lock.unlock()
-    journal.append(AgentLatencyPoint(
+    let point = AgentLatencyPoint(
       traceId: traceId,
       clockId: clockId,
       stage: stage,
-      monotonicNs: max(0, monotonicNs()),
-      wallClockMs: max(0, wallClockMs()),
+      monotonicNs: observedMonotonicNs,
+      wallClockMs: observedWallClockMs,
       outcome: stage == .phoneFinalReceived ? normalizedOutcome(outcome) : normalizedOutcome(outcome, emptyAllowed: true)
-    ))
+    )
+    if deferJournal {
+      journalQueue.async { [journal] in journal.append(point) }
+    } else {
+      journal.append(point)
+    }
   }
 
   func recordOpaque(

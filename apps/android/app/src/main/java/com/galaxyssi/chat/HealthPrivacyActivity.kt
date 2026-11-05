@@ -71,9 +71,16 @@ class HealthPrivacyActivity : Activity() {
         setting(content, policy, HealthPrivacyOption.ONLINE_ANALYSIS, R.string.health_privacy_online, R.string.health_privacy_online_detail)
         setting(content, policy, HealthPrivacyOption.ORIGINAL_IMAGES, R.string.health_privacy_images, R.string.health_privacy_images_detail, policy.online)
         ui.add(content, ui.text(getString(R.string.health_privacy_storage), 17f, bold = true), 24)
+        setting(content, policy, HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS, R.string.health_privacy_retain_originals,
+            R.string.health_privacy_retain_originals_detail)
         ui.add(content, ui.profileRow(getString(R.string.health_privacy_export)) { startActivity(Intent(this, HealthRecordExportActivity::class.java)) })
         ui.add(content, ui.profileRow(getString(R.string.health_original_library)) { startActivity(Intent(this, HealthOriginalLibraryActivity::class.java)) })
         ui.add(content, ui.profileRow(getString(R.string.health_privacy_history)) { history = true; load() }.apply { tag = "health-privacy-history" })
+        ui.add(content, ui.profileRow(getString(R.string.health_measurement_history_delete)) {
+            startActivity(Intent(this, HealthMeasurementHistoryActivity::class.java)
+                .putExtra("health_erase_measurements", true).putExtra("health_privacy_test_db", name)
+                .putHealthNavigationFixture(intent.healthNavigationDatabases()))
+        }.apply { tag = "health-privacy-delete-measurements" })
         ui.add(content, ui.profileRow(getString(R.string.health_profile_title), getString(R.string.health_privacy_manage_profile)) {
             startActivity(Intent(this, HealthProfileActivity::class.java).putExtra("health_privacy_test_db", name))
         })
@@ -120,12 +127,20 @@ class HealthPrivacyActivity : Activity() {
         }
         if (scope.fields.isNotEmpty()) add(scope.fields.joinToString(", ") { getString(it.titleResource()) })
         scope.count?.let { count -> add(when (scope.purpose) {
-            HealthAccessPurpose.SAVE_RECORDS, HealthAccessPurpose.GENERATE_BACKUP -> getString(R.string.health_privacy_scope_records, count)
-            HealthAccessPurpose.SAVE_ORIGINALS -> getString(R.string.health_privacy_scope_originals, count)
+            HealthAccessPurpose.SAVE_RECORDS, HealthAccessPurpose.GENERATE_BACKUP, HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY,
+            HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY, HealthAccessPurpose.DELETE_MEASUREMENT_HISTORY ->
+                getString(R.string.health_privacy_scope_records, count)
+            HealthAccessPurpose.SAVE_ORIGINALS, HealthAccessPurpose.DELETE_ORIGINAL_BYTES -> getString(R.string.health_privacy_scope_originals, count)
             HealthAccessPurpose.DELETE_PROFILE -> getString(R.string.health_privacy_scope_delete, scope.basicCount, count, scope.drafts)
             else -> getString(R.string.health_privacy_scope_entries, count)
         }) }
-        if (scope.source != HealthAccessSource.ALL) add(getString(if (scope.source == HealthAccessSource.MANUAL) R.string.health_privacy_scope_manual else R.string.health_privacy_scope_original))
+        when (scope.source) {
+            HealthAccessSource.MANUAL -> add(getString(R.string.health_privacy_scope_manual))
+            HealthAccessSource.ORIGINAL -> add(getString(R.string.health_privacy_scope_original))
+            HealthAccessSource.BLUETOOTH -> add(getString(R.string.health_trend_choose_bluetooth))
+            HealthAccessSource.HEALTH_CONNECT -> add(getString(R.string.health_trend_choose_platform))
+            HealthAccessSource.ALL -> Unit
+        }
         scope.format?.takeUnless { it == HealthAccessFormat.ORIGINAL }?.let { add(it.name) }
         if (scope.annotations) add(getString(R.string.health_privacy_scope_notes))
         if (scope.reportRecords) add(getString(R.string.health_weekly_raw))
@@ -154,6 +169,10 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.SAVE_ORIGINALS -> R.string.health_privacy_save_originals
     HealthAccessPurpose.GENERATE_BACKUP -> R.string.health_backup_create
     HealthAccessPurpose.DELETE_PROFILE -> R.string.health_privacy_delete_profile
+    HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY -> R.string.health_sources_delete_history
+    HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY -> R.string.health_connect_history_delete
+    HealthAccessPurpose.DELETE_MEASUREMENT_HISTORY -> R.string.health_measurement_history_delete
+    HealthAccessPurpose.DELETE_ORIGINAL_BYTES -> R.string.health_remove_original
 }
 private fun HealthAccessOutcome.title() = when (this) {
     HealthAccessOutcome.STARTED -> R.string.health_privacy_started

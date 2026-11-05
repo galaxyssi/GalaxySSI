@@ -15,7 +15,7 @@
     <string name="health_sync_pending">%1$d measurements saved before interruption</string>
     <string name="health_sync_source_deleted">Health Connect reported a deletion. Existing local copies were kept.</string>
     <string name="health_sync_gap">Some older dates are outside the default recovery window. Older coverage could not be verified.</string>
-    <string name="health_sync_ble_disconnected">Bluetooth device disconnected</string>
+    <string name="health_sync_ble_disconnected">Live Bluetooth connection not checked</string>
     <string name="health_sync_ble_receipt">Last saved Bluetooth receipt: %1$s</string>
     <string name="health_sync_ble_no_receipt">No Bluetooth receipt recorded by this version yet.</string>
     <string name="health_sync_retry">Sync Now</string>

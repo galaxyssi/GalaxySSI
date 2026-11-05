@@ -155,11 +155,21 @@ private struct GalaxySSIComposerTextHeightKey: PreferenceKey {
 }
 
 struct GalaxySSIGrowingComposerEditor: View {
+  @Environment(\.scenePhase) private var scenePhase
   @Binding var text: String
   var placeholder: String
   var focus: FocusState<Bool>.Binding
   var accessibilityIdentifier: String
   var onTap: () -> Void
+  var attachmentScope = ""
+  var onImageAttachment: ((GalaxySSIDraftAttachment) -> Void)? = nil
+  @State private var clipboardImage: ClipboardImage?
+
+  private struct ClipboardImage: Identifiable {
+    let id = UUID()
+    let scope: String
+    let data: Data
+  }
 
   @State private var editorHeight: CGFloat = 54
 
@@ -198,13 +208,27 @@ struct GalaxySSIGrowingComposerEditor: View {
         text: $text,
         focus: focus,
         accessibilityIdentifier: accessibilityIdentifier,
-        onBeginEditing: onTap
+        onBeginEditing: onTap,
+        onImagePaste: onImageAttachment == nil ? nil : {
+          guard scenePhase == .active, !attachmentScope.isEmpty, let data = GalaxySSIImageClipboard.read() else { return }
+          clipboardImage = ClipboardImage(scope: attachmentScope, data: data)
+        }
       )
     }
     .frame(maxWidth: .infinity, minHeight: minimumHeight, maxHeight: editorHeight)
     .onPreferenceChange(GalaxySSIComposerTextHeightKey.self) { measuredHeight in
       editorHeight = min(max(measuredHeight, minimumHeight), maximumHeight)
     }
+    .sheet(item: $clipboardImage) { pending in
+      GalaxySSIClipboardImageReview(data: pending.data) { attachment in
+        guard scenePhase == .active, pending.scope == attachmentScope, clipboardImage?.id == pending.id else { return }
+        onImageAttachment?(attachment)
+      }
+    }
+    .onChange(of: attachmentScope) { _ in clipboardImage = nil }
+    .onChange(of: scenePhase) { if $0 != .active { clipboardImage = nil } }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in clipboardImage = nil }
+    .onDisappear { clipboardImage = nil }
   }
 }
 
@@ -244,13 +268,15 @@ private struct GalaxySSIParagraphSelectingTextView: UIViewRepresentable {
   var focus: FocusState<Bool>.Binding
   var accessibilityIdentifier: String
   var onBeginEditing: () -> Void
+  var onImagePaste: (() -> Void)?
 
   func makeCoordinator() -> Coordinator {
     Coordinator(parent: self)
   }
 
   func makeUIView(context: Context) -> UITextView {
-    let textView = UITextView()
+    let textView = GalaxySSIImagePastingTextView()
+    textView.onImagePaste = onImagePaste
     textView.delegate = context.coordinator
     textView.backgroundColor = .clear
     textView.font = .systemFont(ofSize: 15)
@@ -278,6 +304,7 @@ private struct GalaxySSIParagraphSelectingTextView: UIViewRepresentable {
 
   func updateUIView(_ textView: UITextView, context: Context) {
     context.coordinator.parent = self
+    (textView as? GalaxySSIImagePastingTextView)?.onImagePaste = onImagePaste
     if textView.text != text {
       let selection = textView.selectedRange
       textView.text = text

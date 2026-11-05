@@ -50,6 +50,8 @@ final class MqttChunkDatabase {
   private var transactionActive = false
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
   private static let canary = Data("GalaxySSI/MqttChunkStore/v1".utf8)
+  // Bump when the DDL or required durability/storage contract changes.
+  private static let schemaContract: Int64 = 1
 
   init(fileURL: URL, secrets: GalaxySSISecretStore) throws {
     cipher = GalaxySSIAttachmentAtRestCipher(secrets: secrets, keyAccount: "mqtt.chunks.aes256.v1")
@@ -62,67 +64,111 @@ final class MqttChunkDatabase {
     }
     do {
       guard sqlite3_busy_timeout(handle, 5_000) == SQLITE_OK else { throw MqttChunkStorageError.databaseFailure }
-      try execute("PRAGMA journal_mode = WAL")
+      if try query("PRAGMA journal_mode", maximumRows: 1, read: { try $0.text(0) }).first != "wal" {
+        guard try query("PRAGMA journal_mode = WAL", maximumRows: 1, read: { try $0.text(0) }).first == "wal"
+        else { throw MqttChunkStorageError.databaseFailure }
+      }
       try execute("PRAGMA synchronous = FULL")
       try execute("PRAGMA fullfsync = ON")
       try execute("PRAGMA secure_delete = ON")
-      try execute("CREATE TABLE IF NOT EXISTS mqtt_chunk_key (id INTEGER PRIMARY KEY CHECK(id=1), payload BLOB NOT NULL)")
-      try execute("""
-        CREATE TABLE IF NOT EXISTS mqtt_wire_transfers (
-          scope_digest TEXT NOT NULL, transfer_id TEXT NOT NULL, total_bytes INTEGER NOT NULL,
-          expires_at INTEGER NOT NULL, completed INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL,
-          PRIMARY KEY(scope_digest, transfer_id))
-        """)
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_chunk_expiry ON mqtt_wire_transfers(expires_at)")
-      try execute("""
-        CREATE TABLE IF NOT EXISTS mqtt_wire_parts (
-          scope_digest TEXT NOT NULL, transfer_id TEXT NOT NULL, chunk_index INTEGER NOT NULL,
-          chunk_hash TEXT NOT NULL, encrypted_data BLOB NOT NULL,
-          PRIMARY KEY(scope_digest, transfer_id, chunk_index))
-        """)
-      try execute("""
-        CREATE TABLE IF NOT EXISTS mqtt_outgoing_chunks (
-          scope_digest TEXT NOT NULL, transfer_id TEXT NOT NULL, expires_at INTEGER NOT NULL,
-          encrypted_metadata BLOB NOT NULL, PRIMARY KEY(scope_digest, transfer_id))
-        """)
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_outgoing_chunk_expiry ON mqtt_outgoing_chunks(expires_at)")
-      try execute("""
-        CREATE TABLE IF NOT EXISTS mqtt_business_inbox (
-          record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL,
-          completed INTEGER NOT NULL, retain_until INTEGER NOT NULL, payload_bytes INTEGER NOT NULL,
-          encrypted_metadata BLOB NOT NULL)
-        """)
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_pending ON mqtt_business_inbox(completed,record_key)")
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_scope ON mqtt_business_inbox(binding_digest)")
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_pending_scope ON mqtt_business_inbox(binding_digest,payload_bytes) WHERE completed=0")
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_expiry ON mqtt_business_inbox(retain_until) WHERE completed=1")
-      try execute("""
-        CREATE TABLE IF NOT EXISTS mqtt_business_ciphertexts (
-          binding_digest TEXT NOT NULL, ciphertext_digest TEXT NOT NULL, record_key TEXT NOT NULL,
-          PRIMARY KEY(binding_digest,ciphertext_digest))
-        """)
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_cipher_record ON mqtt_business_ciphertexts(record_key)")
-      try execute("""
-        CREATE TABLE IF NOT EXISTS mqtt_business_outbox (
-          record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL, next_attempt_at INTEGER NOT NULL,
-          payload_bytes INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL)
-        """)
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_business_outbox_schedule ON mqtt_business_outbox(binding_digest,next_attempt_at)")
-      try execute("CREATE TABLE IF NOT EXISTS mqtt_signal_state (id INTEGER PRIMARY KEY CHECK(id=1), encrypted_state BLOB NOT NULL)")
-      try execute("""
-        CREATE TABLE IF NOT EXISTS mqtt_delivery_completions (
-          record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL, consumed INTEGER NOT NULL,
-          retain_until INTEGER NOT NULL, payload_bytes INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL)
-        """)
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_completion_pending ON mqtt_delivery_completions(consumed,record_key)")
-      try execute("CREATE INDEX IF NOT EXISTS mqtt_completion_scope ON mqtt_delivery_completions(binding_digest)")
       try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: fileURL.path)
-      try transaction { () }
+      try initializeSchema()
     } catch {
       if let handle { sqlite3_close_v2(handle) }
       handle = nil
       throw error
     }
+  }
+
+  private func initializeSchema() throws {
+    // Serialize the cookie check, DDL, and canary validation across independent handles.
+    try execute("BEGIN IMMEDIATE")
+    do {
+      let cookie = try schemaCookie()
+      let markerExists = try !query(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='mqtt_schema_initialization'",
+        maximumRows: 1, read: { try $0.number(0) }
+      ).isEmpty
+      let warm = markerExists ? try !query(
+        "SELECT id FROM mqtt_schema_initialization WHERE id=1 AND contract=? AND schema_cookie=?",
+        [.number(Self.schemaContract), .number(cookie)], maximumRows: 1, read: { try $0.number(0) }
+      ).isEmpty : false
+      if !warm { try installSchema() }
+      try verifyKey()
+      if !warm {
+        try run("""
+          INSERT INTO mqtt_schema_initialization(id, contract, schema_cookie) VALUES(1, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET contract=excluded.contract, schema_cookie=excluded.schema_cookie
+          """, [.number(Self.schemaContract), .number(try schemaCookie())])
+      }
+      try execute("COMMIT")
+    } catch {
+      try? execute("ROLLBACK")
+      throw error
+    }
+  }
+
+  private func schemaCookie() throws -> Int64 {
+    guard let cookie = try query("PRAGMA schema_version", maximumRows: 1, read: { try $0.number(0) }).first
+    else { throw MqttChunkStorageError.databaseFailure }
+    return cookie
+  }
+
+  private func installSchema() throws {
+    try execute("""
+      CREATE TABLE IF NOT EXISTS mqtt_schema_initialization (
+        id INTEGER PRIMARY KEY CHECK(id=1), contract INTEGER NOT NULL, schema_cookie INTEGER NOT NULL)
+      """)
+    try execute("CREATE TABLE IF NOT EXISTS mqtt_chunk_key (id INTEGER PRIMARY KEY CHECK(id=1), payload BLOB NOT NULL)")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS mqtt_wire_transfers (
+        scope_digest TEXT NOT NULL, transfer_id TEXT NOT NULL, total_bytes INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL, completed INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL,
+        PRIMARY KEY(scope_digest, transfer_id))
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_chunk_expiry ON mqtt_wire_transfers(expires_at)")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS mqtt_wire_parts (
+        scope_digest TEXT NOT NULL, transfer_id TEXT NOT NULL, chunk_index INTEGER NOT NULL,
+        chunk_hash TEXT NOT NULL, encrypted_data BLOB NOT NULL,
+        PRIMARY KEY(scope_digest, transfer_id, chunk_index))
+      """)
+    try execute("""
+      CREATE TABLE IF NOT EXISTS mqtt_outgoing_chunks (
+        scope_digest TEXT NOT NULL, transfer_id TEXT NOT NULL, expires_at INTEGER NOT NULL,
+        encrypted_metadata BLOB NOT NULL, PRIMARY KEY(scope_digest, transfer_id))
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_outgoing_chunk_expiry ON mqtt_outgoing_chunks(expires_at)")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS mqtt_business_inbox (
+        record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL,
+        completed INTEGER NOT NULL, retain_until INTEGER NOT NULL, payload_bytes INTEGER NOT NULL,
+        encrypted_metadata BLOB NOT NULL)
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_pending ON mqtt_business_inbox(completed,record_key)")
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_scope ON mqtt_business_inbox(binding_digest)")
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_pending_scope ON mqtt_business_inbox(binding_digest,payload_bytes) WHERE completed=0")
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_business_inbox_expiry ON mqtt_business_inbox(retain_until) WHERE completed=1")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS mqtt_business_ciphertexts (
+        binding_digest TEXT NOT NULL, ciphertext_digest TEXT NOT NULL, record_key TEXT NOT NULL,
+        PRIMARY KEY(binding_digest,ciphertext_digest))
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_business_cipher_record ON mqtt_business_ciphertexts(record_key)")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS mqtt_business_outbox (
+        record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL, next_attempt_at INTEGER NOT NULL,
+        payload_bytes INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL)
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_business_outbox_schedule ON mqtt_business_outbox(binding_digest,next_attempt_at)")
+    try execute("CREATE TABLE IF NOT EXISTS mqtt_signal_state (id INTEGER PRIMARY KEY CHECK(id=1), encrypted_state BLOB NOT NULL)")
+    try execute("""
+      CREATE TABLE IF NOT EXISTS mqtt_delivery_completions (
+        record_key TEXT PRIMARY KEY NOT NULL, binding_digest TEXT NOT NULL, consumed INTEGER NOT NULL,
+        retain_until INTEGER NOT NULL, payload_bytes INTEGER NOT NULL, encrypted_metadata BLOB NOT NULL)
+      """)
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_completion_pending ON mqtt_delivery_completions(consumed,record_key)")
+    try execute("CREATE INDEX IF NOT EXISTS mqtt_completion_scope ON mqtt_delivery_completions(binding_digest)")
   }
 
   deinit { if let handle { sqlite3_close_v2(handle) } }

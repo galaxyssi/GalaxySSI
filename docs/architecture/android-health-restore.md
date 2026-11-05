@@ -18,15 +18,19 @@ discards uncommitted staging; startup cleanup removes abandoned batch
 directories only when their live database receipt does not exist.
 
 The preview distinguishes new records, equivalent existing records, and
-conflicts. Conflicts have a paged detail view with the backup and local
-values, including differing notes. Existing and deleted record IDs are
-preserved. Missing originals are explicit and require confirmation. A known
+conflicts. Conflicts have a paged detail view with backup and local values,
+including differing notes and measurement time. Every conflict keeps the
+local version by default. Users can select the backup version for a live
+record with the same ID, metric and source when the incoming evidence is
+unambiguous and there is no unfinished local edit. The final confirmation
+states the number selected. Missing originals are explicit and require confirmation. A known
 missing original may be repaired from verified bytes without changing its
 local ID; identical intact originals are reused. Incoming references are
 remapped by verified digest when needed. Additional source links are counted
-separately as new, already present, or skipped. A link can be attached to a
-new or exactly equivalent measurement; a conflicting or deleted target is
-never changed. Link conflicts are reported as a partial restore.
+separately as new, already present, or skipped. The encrypted stage keeps
+candidate links for a selected replacement, and only verified, nonconflicting
+links become associated with its new revision. Link conflicts are reported
+as a partial restore.
 
 ## Commit
 
@@ -39,7 +43,8 @@ failure leaves no partial live observations, originals, or receipt. The
 receipt records the package ID, date range, result counts and time; reopening
 the same package does not duplicate restored records or source links.
 
-The restore operation does not overwrite conflicted measurements or
-resurrect records deleted on this device. Import into a separate profile,
-explicitly applying a conflicting replacement, historical revision export,
-and live-provider identity reconciliation are not covered by this increment.
+An explicitly selected replacement appends a local revision instead of
+erasing history. Unselected, deleted, different-source, or ambiguous
+records are not replaced. The receipt records the replacements separately.
+Import into a separate profile, historical revision export, and live-provider
+identity reconciliation are not covered by this increment.

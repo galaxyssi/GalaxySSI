@@ -32,9 +32,12 @@ class HealthAssistantActivity : Activity() {
     private var end = LocalDate.now(zone).minusDays(1)
     private var metrics = setOf(HealthMetric.SLEEP_DURATION, HealthMetric.STEPS)
     private var focus = HealthAnalysisFocus.CHANGES
+    private var profileFields = emptySet<HealthProfileField>()
+    private var background = emptyMap<String, HealthAnalysisBackgroundChoice>()
     private var active = false
     private var generation = 0
     private var job: Job? = null
+    private var profileCheck: Job? = null
     private var signal: CancellationSignal? = null
     private var dialog: AlertDialog? = null
     private var preview: HealthAnalysisPreview? = null
@@ -42,7 +45,34 @@ class HealthAssistantActivity : Activity() {
     private var notice: Int? = null
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
-            if (active && (preview != null || job?.isActive == true)) reset(R.string.health_assistant_changed)
+            if (active && (preview != null || job?.isActive == true || dialog?.isShowing == true))
+                reset(R.string.health_assistant_changed)
+        }
+    }
+    private val privacyObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            val scoped = profileFields.isNotEmpty() || background.isNotEmpty()
+            profileFields = emptySet()
+            background = emptyMap()
+            if (active && scoped) reset(R.string.health_assistant_changed)
+            else observer.onChange(selfChange)
+        }
+    }
+    private val profileObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            if (!active || (profileFields.isEmpty() && background.isEmpty())) return
+            val result = preview
+            if (result == null) {
+                if (job?.isActive == true) reset(R.string.health_assistant_profile_changed)
+                return
+            }
+            profileCheck?.cancel()
+            profileCheck = tasks.launch {
+                val current = withContext(Dispatchers.IO) {
+                    runCatching { HealthAnalysis.profileIsCurrent(applicationContext, names, result) }.getOrDefault(false)
+                }
+                if (active && preview === result && !current) reset(R.string.health_assistant_profile_changed)
+            }
         }
     }
 
@@ -59,13 +89,18 @@ class HealthAssistantActivity : Activity() {
         super.onResume()
         active = true
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, names.records), false, observer)
-        contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, names.privacy), false, observer)
+        contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, names.privacy), false, privacyObserver)
+        contentResolver.registerContentObserver(HealthProfileStore.changes(this, names.profile), false, profileObserver)
         render()
     }
 
     override fun onPause() {
         active = false
         contentResolver.unregisterContentObserver(observer)
+        contentResolver.unregisterContentObserver(privacyObserver)
+        contentResolver.unregisterContentObserver(profileObserver)
+        profileFields = emptySet()
+        background = emptyMap()
         reset()
         body.removeAllViews()
         super.onPause()
@@ -79,6 +114,8 @@ class HealthAssistantActivity : Activity() {
         signal = null
         job?.cancel()
         job = null
+        profileCheck?.cancel()
+        profileCheck = null
         dialog?.dismiss()
         dialog = null
         preview = null
@@ -93,12 +130,20 @@ class HealthAssistantActivity : Activity() {
         val content = healthProfileContent(body)
         val scope = selection()
         content.addView(ui.text(getString(R.string.health_assistant_scope), 19f, bold = true))
-        ui.add(content, ui.profileRow(text.range(scope)) { chooseDate() }, 8)
+        ui.add(content, ui.profileRow(text.range(scope)) { chooseDate() }.apply { tag = "health-assistant-date" }, 8)
         if (scope.hasBaseline) ui.add(content, ui.text(getString(R.string.health_assistant_baseline,
             scope.baselineFirst, scope.baselineLast), 13f, muted = true), 4)
         ui.add(content, ui.profileRow(getString(R.string.health_weekly_metrics),
             healthWeeklyMetrics.filter { it in metrics }.joinToString(", ") { text.title(it) }) { chooseMetrics() }, 8)
         ui.add(content, ui.profileRow(getString(R.string.health_assistant_question), getString(focusLabel(focus))) { chooseFocus() }, 6)
+        ui.add(content, ui.profileRow(getString(R.string.health_assistant_profile),
+            if (profileFields.isEmpty()) getString(R.string.health_assistant_profile_none)
+            else healthAnalysisProfileFields.filter { it in profileFields }.joinToString(", ") { getString(it.titleResource()) }
+        ) { chooseProfile() }.apply { tag = "health-assistant-profile" }, 6)
+        ui.add(content, ui.profileRow(getString(R.string.health_assistant_background),
+            if (background.isEmpty()) getString(R.string.health_assistant_profile_none)
+            else getString(R.string.health_assistant_background_count, background.size, healthAnalysisBackgroundLimit)
+        ) { chooseBackground() }.apply { tag = "health-assistant-background" }, 6)
         ui.add(content, ui.text(getString(R.string.health_assistant_local_scope), 13f, muted = true), 8)
         if (preview == null) ui.add(content, ui.command(R.string.health_assistant_calculate) { calculate() }.apply {
             tag = "health-assistant-calculate"
@@ -106,7 +151,8 @@ class HealthAssistantActivity : Activity() {
         }, 12)
         notice?.let { message ->
             ui.add(content, ui.text(getString(message), 14f, muted = true).apply { tag = "health-assistant-status" }, 12)
-            if (message == R.string.health_assistant_blocked || message == R.string.health_assistant_online_blocked) {
+            if (message == R.string.health_assistant_blocked || message == R.string.health_assistant_online_blocked ||
+                message == R.string.health_assistant_profile_blocked) {
                 ui.add(content, ui.profileRow(getString(R.string.health_privacy_title)) {
                     startActivity(healthPrivacyIntent().putExtra("health_privacy_test_db", names.privacy))
                 }, 6)
@@ -134,6 +180,28 @@ class HealthAssistantActivity : Activity() {
             }
         }
         if (result.weekly.scope.hasBaseline) text.comparison(result.weekly).forEach { ui.add(content, ui.text(it), 10) }
+        result.profile?.let { profile ->
+            ui.add(content, ui.text(getString(R.string.health_assistant_profile_self_reported), 16f, bold = true), 16)
+            profile.fields.forEach { (field, value) ->
+                ui.add(content, ui.text(getString(R.string.health_assistant_profile_value,
+                    getString(field.titleResource()), healthProfileDisplay(field, value)), 14f).apply {
+                    tag = "health-assistant-profile-${field.name}"
+                }, 6)
+            }
+            profile.entries.groupBy { it.kind }.toSortedMap().forEach { (kind, entries) ->
+                ui.add(content, ui.text(getString(kind.titleResource()), 14f, bold = true), 10)
+                entries.forEach { entry ->
+                    ui.add(content, ui.text(entry.name, 14f, bold = true).apply {
+                        tag = "health-assistant-background-result-${entry.id}"
+                    }, 6)
+                    if (entry.detail.isNotBlank()) ui.add(content, ui.text(entry.detail, 14f), 4)
+                    if (entry.dose.isNotBlank()) ui.add(content, ui.text(getString(R.string.health_assistant_profile_value,
+                        getString(R.string.health_profile_dose), entry.dose), 14f), 4)
+                    if (entry.timing.isNotBlank()) ui.add(content, ui.text(getString(R.string.health_assistant_profile_value,
+                        getString(R.string.health_profile_timing), entry.timing), 14f), 4)
+                }
+            }
+        }
         ui.add(content, ui.text(getString(R.string.health_not_diagnosis), 13f, muted = true), 12)
         val actions = plan?.actions ?: when (focus) {
             HealthAnalysisFocus.CHANGES -> listOf(HealthAnalysisAction.WEEKLY_REPORT, HealthAnalysisAction.ADD_RECORD)
@@ -145,8 +213,11 @@ class HealthAssistantActivity : Activity() {
                     Intent(this, HealthCenterActivity::class.java).putExtra("health_manual", true)
                 HealthAnalysisAction.RECORD_REMINDER -> R.string.health_reminder_title to Intent(this, HealthReminderActivity::class.java)
                 HealthAnalysisAction.WEEKLY_REPORT -> R.string.health_weekly_title to Intent(this, HealthWeeklyActivity::class.java)
+                    .putHealthWeeklyHandoff(result.weekly.stamp).putHealthNavigationFixture(names)
             }
-            ui.add(content, ui.profileRow(getString(label)) { if (names.fixture == null) startActivity(intent) }, 6)
+            ui.add(content, ui.profileRow(getString(label)) {
+                if (names.fixture == null || action == HealthAnalysisAction.WEEKLY_REPORT) startActivity(intent)
+            }.apply { tag = "health-assistant-action-${action.name}" }, 6)
         }
         if (result.hasData && names.fixture == null) ui.add(content, ui.command(R.string.health_assistant_online) {
             chooseProvider(result)
@@ -156,9 +227,11 @@ class HealthAssistantActivity : Activity() {
     private fun calculate() {
         val scope = selection()
         val question = focus
+        val fields = profileFields
+        val entries = background.mapValues { it.value.token }
         reset(R.string.health_loading)
         val cancel = CancellationSignal().also { signal = it }
-        work({ HealthAnalysis.prepare(applicationContext, names, scope, question, cancel) }) {
+        work({ HealthAnalysis.prepare(applicationContext, names, scope, question, cancel, fields, entries) }) {
             preview = it
             notice = if (it.hasData) null else R.string.health_assistant_no_data
             render()
@@ -214,6 +287,8 @@ class HealthAssistantActivity : Activity() {
                 if (failure is CancellationException) throw failure
                 if (!active || generation != request) return@launch
                 when (failure) {
+                    is HealthAnalysisProfileChanged -> reset(R.string.health_assistant_profile_changed)
+                    is HealthAnalysisProfileBlocked -> reset(R.string.health_assistant_profile_blocked)
                     is HealthWeeklyChanged -> reset(R.string.health_assistant_changed)
                     is HealthAccessBlocked -> reset(if (online) R.string.health_assistant_online_blocked else R.string.health_assistant_blocked)
                     else -> {
@@ -260,6 +335,33 @@ class HealthAssistantActivity : Activity() {
                 focus = choices[index]
                 reset()
             }.setNegativeButton(android.R.string.cancel, null).show()
+    }
+
+    private fun chooseProfile() {
+        val selected = profileFields.toMutableSet()
+        dialog = AlertDialog.Builder(this).setTitle(R.string.health_assistant_profile)
+            .setMultiChoiceItems(healthAnalysisProfileFields.map { getString(it.titleResource()) }.toTypedArray(),
+                healthAnalysisProfileFields.map { it in selected }.toBooleanArray()) { _, index, checked ->
+                val field = healthAnalysisProfileFields[index]
+                if (checked) selected += field else selected -= field
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                if (profileFields != selected) {
+                    profileFields = selected.toSet()
+                    reset()
+                }
+            }.show()
+    }
+
+    private fun chooseBackground() {
+        dialog = chooseHealthAnalysisBackground(tasks, names, background,
+            blocked = { reset(R.string.health_assistant_profile_blocked) }) { selected ->
+            if (selected != background) {
+                background = selected
+                reset()
+            }
+        }
     }
 
     private fun focusLabel(value: HealthAnalysisFocus) = when (value) {

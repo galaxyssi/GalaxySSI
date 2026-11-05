@@ -14,6 +14,9 @@
     <string name="health_photo_dark">Low light. Check readability or enable fill light.</string>
     <string name="health_photo_small">Small image. A higher-resolution original may help.</string>
     <string name="health_photo_check_original">Original saved. Check orientation, edges and text.</string>
+    <string name="health_photo_edges_found">Paper edges detected</string>
+    <string name="health_photo_edges_unclear">No clear paper border</string>
+    <string name="health_photo_suggested_crop">Adjust suggested crop</string>
     <string name="health_photo_failed">This page did not finish saving or decoding. Retake or remove it.</string>
     <string name="health_photo_before_recognition">Arrange, crop and retake pages before starting recognition. Originals remain private.</string>
     <string name="health_photo_submitted">Pages submitted. Open the recognition results to verify values.</string>

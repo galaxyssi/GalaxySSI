@@ -1,8 +1,119 @@
+import ImageIO
 import UIKit
 import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testSourceImageIndicesMatchOriginalOrderInEveryCloudFormat() throws {
+    let images = try [1, 2].map { value in
+      try CloudImagePayload(displayName: "fixture.png", mimeType: "image/png", data: Data([UInt8(value)]))
+    }
+    var openAI: [[String: Any]] = [["role": "user", "content": "Mark the second image"]]
+    var anthropic = openAI
+    var gemini: [[String: Any]] = [["role": "user", "parts": [["text": "Mark the second image"]]]]
+    CloudVisionPayloadEncoder.attachOpenAI(to: &openAI, images: images)
+    CloudVisionPayloadEncoder.attachAnthropic(to: &anthropic, images: images)
+    CloudVisionPayloadEncoder.attachGemini(to: &gemini, images: images)
+    for (messages, key) in [(openAI, "content"), (anthropic, "content"), (gemini, "parts")] {
+      let parts = try XCTUnwrap(messages.first?[key] as? [[String: Any]])
+      XCTAssertEqual(parts.count, 5)
+      XCTAssertEqual(parts[2]["text"] as? String, "Source image index: 0.")
+      XCTAssertEqual(parts[4]["text"] as? String, "Source image index: 1.")
+    }
+    XCTAssertTrue(CloudImageAnnotationPlan.instruction(imageCount: 2).contains("cannot be annotated"))
+    XCTAssertTrue(CloudImageAnnotationPlan.instruction(imageCount: 0).isEmpty)
+  }
+
+  func testOrientationSheetRotatesAsymmetricPixelsInClockwiseOrder() throws {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    let fixture = UIGraphicsImageRenderer(size: CGSize(width: 96, height: 96), format: format).pngData { context in
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 96, height: 48))
+      UIColor.blue.setFill()
+      context.fill(CGRect(x: 0, y: 48, width: 96, height: 48))
+    }
+    let source = try CloudImagePayload(displayName: "split.png", mimeType: "image/png", data: fixture)
+    let sheet = try XCTUnwrap(CloudVisionOrientationSheet.make(for: [source]))
+    let image = try XCTUnwrap(UIImage(data: sheet.data)?.cgImage)
+    let cell = image.width / 2
+    func redDominates(cellX: Int, cellY: Int, x: Int, y: Int) throws -> Bool {
+      let point = CGRect(x: cellX * cell + x, y: cellY * cell + y, width: 1, height: 1)
+      let pixel = try XCTUnwrap(image.cropping(to: point))
+      var rgba = [UInt8](repeating: 0, count: 4)
+      return try rgba.withUnsafeMutableBytes { buffer in
+        let context = try XCTUnwrap(CGContext(data: buffer.baseAddress, width: 1, height: 1,
+          bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return buffer[0] > buffer[2]
+      }
+    }
+    let quarter = cell / 4, middle = cell / 2, far = cell * 3 / 4
+    XCTAssertTrue(try redDominates(cellX: 0, cellY: 0, x: middle, y: quarter))
+    XCTAssertTrue(try redDominates(cellX: 1, cellY: 0, x: far, y: middle))
+    XCTAssertTrue(try redDominates(cellX: 0, cellY: 1, x: middle, y: far))
+    XCTAssertTrue(try redDominates(cellX: 1, cellY: 1, x: quarter, y: middle))
+    XCTAssertFalse(try redDominates(cellX: 1, cellY: 0, x: quarter, y: middle))
+  }
+
+  func testOrientationReferencePreservesOriginalInAllCloudFormats() throws {
+    let source = try XCTUnwrap(testImage().jpegData(compressionQuality: 0.8))
+    let image = try CloudImagePayload(displayName: "fixture.jpg", mimeType: "image/jpeg", data: source)
+    let sheet = try XCTUnwrap(CloudVisionOrientationSheet.make(for: [image]))
+    XCTAssertLessThanOrEqual(sheet.data.count, CloudImagePayload.maximumBytes)
+    XCTAssertNotEqual(sheet.data, source)
+    let decoded = try XCTUnwrap(UIImage(data: sheet.data))
+    XCTAssertEqual(decoded.size.width, decoded.size.height)
+    XCTAssertNil(CloudVisionOrientationSheet.make(for: []))
+    XCTAssertNil(CloudVisionOrientationSheet.make(for: [image, image]))
+    let invalid = try CloudImagePayload(displayName: "invalid.jpg", mimeType: "image/jpeg", data: Data([1]))
+    XCTAssertNil(CloudVisionOrientationSheet.make(for: [invalid]))
+
+    var openAI: [[String: Any]] = [["role": "user", "content": "Read"]]
+    var anthropic = openAI
+    var gemini: [[String: Any]] = [["role": "user", "parts": [["text": "Read"]]]]
+    CloudVisionPayloadEncoder.attachOpenAI(to: &openAI, images: [image])
+    CloudVisionPayloadEncoder.attachAnthropic(to: &anthropic, images: [image])
+    CloudVisionPayloadEncoder.attachGemini(to: &gemini, images: [image])
+    let openAIParts = try XCTUnwrap(openAI.first?["content"] as? [[String: Any]])
+    let anthropicParts = try XCTUnwrap(anthropic.first?["content"] as? [[String: Any]])
+    let geminiParts = try XCTUnwrap(gemini.first?["parts"] as? [[String: Any]])
+    for parts in [openAIParts, anthropicParts, geminiParts] {
+      XCTAssertEqual(parts.count, 4)
+      XCTAssertEqual(parts[2]["text"] as? String, CloudVisionOrientationSheet.guidance)
+    }
+    XCTAssertEqual((openAIParts[1]["image_url"] as? [String: String])?["url"], "data:image/jpeg;base64," + image.base64)
+    XCTAssertEqual((anthropicParts[1]["source"] as? [String: String])?["data"], image.base64)
+    XCTAssertEqual((geminiParts[1]["inline_data"] as? [String: String])?["data"], image.base64)
+  }
+
+  func testOversizedAnimationCanUsePosterWithoutChangingExportBytes() throws {
+    let data = NSMutableData()
+    let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, "com.compuserve.gif" as CFString, 2, nil))
+    let frame = try XCTUnwrap(testImage().cgImage)
+    CGImageDestinationAddImage(destination, frame, nil)
+    CGImageDestinationAddImage(destination, frame, nil)
+    XCTAssertTrue(CGImageDestinationFinalize(destination))
+    let original = data as Data
+    XCTAssertNotNil(GalaxySSIImageResourceDecoder.frames(from: original))
+    XCTAssertNil(GalaxySSIImageResourceDecoder.frames(from: original, frameLimit: 1))
+    XCTAssertNil(GalaxySSIImageResourceDecoder.frames(from: original, decodedByteLimit: 1))
+    XCTAssertNotNil(GalaxySSIImageResourceDecoder.staticImage(from: original))
+    XCTAssertEqual(GalaxySSIOriginalImageDocument(data: original).originalFileWrapper().regularFileContents, original)
+  }
+
+  func testImageExportKeepsEncodedBytesAndRejectsNonImageData() throws {
+    let png = try XCTUnwrap(testImage().pngData())
+    let jpeg = try XCTUnwrap(testImage().jpegData(compressionQuality: 0.8))
+    XCTAssertEqual(GalaxySSIImageResourceDecoder.originalType(png)?.identifier, "public.png")
+    XCTAssertEqual(GalaxySSIImageResourceDecoder.originalType(jpeg)?.identifier, "public.jpeg")
+    XCTAssertEqual(GalaxySSIOriginalImageDocument(data: png).originalFileWrapper().regularFileContents, png)
+    XCTAssertEqual(GalaxySSIOriginalImageDocument(data: jpeg).originalFileWrapper().regularFileContents, jpeg)
+    XCTAssertNil(GalaxySSIImageResourceDecoder.originalType(Data("not an image".utf8)))
+  }
+
   func testSmallImageKeepsOriginalBytesAndRecordsProbe() throws {
     let data = try XCTUnwrap(testImage().pngData())
     let attachment = GalaxySSIDraftAttachment(

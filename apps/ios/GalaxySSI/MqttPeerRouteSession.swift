@@ -34,10 +34,9 @@ final class MqttPeerRouteSession {
   private var remote: MqttRouteAdvertisement?
   private var remoteLeaseUntil: Int64 = 0
   private var localGenerations: [String: Int64] = [:]
-  private var confirmedEpoch: Int64 = 0
+  private var confirmedPaths: Set<String> = []
   private var nextSend: Int64 = 0
-  private var readyLeaseUntil: Int64 = 0
-  private var readyGenerations: [String: Int64] = [:]
+  private var pathLeases: [String: (generation: Int64, wallUntil: Int64, uptimeUntil: Int64)] = [:]
   private var responses: [String: (key: String, at: Int64)] = [:]
   private var lastVerifiedAt: Int64?
   private var blockedSince: Int64?
@@ -59,7 +58,12 @@ final class MqttPeerRouteSession {
     lock.lock()
     defer { lock.unlock() }
     binding.enabled = enabled
-    if !enabled { blockedSince = nil }
+    if !enabled {
+      blockedSince = nil
+      pathLeases.removeAll()
+      confirmedPaths.removeAll()
+      nextSend = 0
+    }
   }
 
   func retire() throws {
@@ -69,7 +73,8 @@ final class MqttPeerRouteSession {
     local = nil
     remote = nil
     localGenerations.removeAll()
-    confirmedEpoch = 0
+    confirmedPaths.removeAll()
+    pathLeases.removeAll()
     try persistence.forget(peer: binding.scope)
   }
 
@@ -78,7 +83,8 @@ final class MqttPeerRouteSession {
     defer { lock.unlock() }
     local = nil
     localGenerations.removeAll()
-    confirmedEpoch = 0
+    confirmedPaths.removeAll()
+    pathLeases.removeAll()
     nextSend = 0
   }
 
@@ -88,9 +94,11 @@ final class MqttPeerRouteSession {
     guard active else { return [] }
     let previous = local
     guard let advertisement = try prepareLocal(readyGenerations) else { return [] }
-    if previous == advertisement && (confirmedEpoch == advertisement.epoch || monotonic() < nextSend) { return [] }
+    if previous == advertisement && monotonic() < nextSend { return [] }
+    let unconfirmed = readyGenerations.keys.filter { !confirmedPaths.contains($0) }
+    guard !unconfirmed.isEmpty else { return [] }
     nextSend = monotonic() + 5_000
-    return readyGenerations.keys.sorted().map {
+    return unconfirmed.sorted().map {
       MqttPeerRouteControl(brokerID: $0, generation: readyGenerations[$0]!, payload: advertisement.wire())
     }
   }
@@ -127,23 +135,24 @@ final class MqttPeerRouteSession {
     }
     let committed = try persistence.record(peer: binding.scope, advertisement: advertisement, now: at)
     guard committed == .new || committed == .duplicate else { return MqttPeerRouteReception(handled: true) }
+    let wasReady = !verifiedGenerations(readyGenerations).isEmpty
     lastVerifiedAt = monotonic()
     if remote == nil || advertisement.epoch > remote!.epoch {
       remoteLeaseUntil = monotonic() + min(MqttRouteProtocol.resumeTTL, advertisement.expiresAt - at)
       remote = advertisement
     }
-    if local == nil || confirmedEpoch != local?.epoch { nextSend = 0 }
+    if local == nil { nextSend = 0 }
     var result = MqttPeerRouteReception(handled: true)
     if type == "link_resume_ack", let local {
-      let priorPathSurvives = localGenerations.contains { readyGenerations[$0.key] == $0.value && self.readyGenerations[$0.key] == $0.value }
-      result.becameReady = binding.enabled && confirmedEpoch != local.epoch &&
-        (readyLeaseUntil <= at || !priorPathSurvives) &&
-        !advertisement.receiveBrokers.intersection(readyGenerations.keys).isEmpty
-      confirmedEpoch = local.epoch
-      self.readyGenerations = localGenerations
-      readyLeaseUntil = min(local.expiresAt, advertisement.expiresAt)
+      if binding.enabled, confirmedPaths.insert(brokerID).inserted {
+        if advertisement.receiveBrokers.contains(brokerID) {
+          let expires = min(local.expiresAt, advertisement.expiresAt)
+          pathLeases[brokerID] = (generation, expires, min(remoteLeaseUntil, monotonic() + max(0, expires - at)))
+        }
+      }
+      result.becameReady = !wasReady && !verifiedGenerations(readyGenerations).isEmpty
     } else if let ours = try prepareLocal(readyGenerations) {
-      let key = "\(advertisement.epoch):\(advertisement.resumeId)"
+      let key = "\(generation):\(advertisement.epoch):\(advertisement.resumeId)"
       let previous = responses[brokerID]
       if previous?.key != key || monotonic() - (previous?.at ?? 0) >= 1_000 {
         responses[brokerID] = (key, monotonic())
@@ -158,16 +167,20 @@ final class MqttPeerRouteSession {
   }
 
   func ready(readyGenerations: [String: Int64]) -> Bool {
+    !verifiedGenerations(readyGenerations).isEmpty
+  }
+
+  func verifiedGenerations(_ generations: [String: Int64]) -> [String: Int64] {
     lock.lock()
     defer { lock.unlock() }
-    guard active, binding.enabled, let local, let remote,
-          local.expiresAt > wall(), remote.expiresAt > wall(), confirmedEpoch == local.epoch,
-          remoteLeaseUntil > monotonic(),
-          !readyGenerations.isEmpty,
-          readyGenerations.allSatisfy({ localGenerations[$0.key] == $0.value }),
-          !remote.receiveBrokers.intersection(readyGenerations.keys).isEmpty else { return false }
-    blockedSince = nil
-    return true
+    let at = wall(), uptime = monotonic()
+    guard active, binding.enabled, let remote, remote.expiresAt > at, remoteLeaseUntil > uptime else { return [:] }
+    let verified = generations.filter { broker, generation in
+      guard let lease = pathLeases[broker], remote.receiveBrokers.contains(broker) else { return false }
+      return lease.generation == generation && lease.wallUntil > at && lease.uptimeUntil > uptime
+    }
+    if !verified.isEmpty { blockedSince = nil }
+    return verified
   }
 
   // Keep the monotonic remote deadline stable across duplicate advertisements.
@@ -199,9 +212,8 @@ final class MqttPeerRouteSession {
     remote = nil
     remoteLeaseUntil = 0
     localGenerations.removeAll()
-    confirmedEpoch = 0
-    readyLeaseUntil = 0
-    self.readyGenerations.removeAll()
+    confirmedPaths.removeAll()
+    pathLeases.removeAll()
     responses.removeAll()
     nextSend = 0
     blockedSince = at
@@ -216,7 +228,7 @@ final class MqttPeerRouteSession {
     if readyGenerations.isEmpty { return "no_local_subscription" }
     guard let local else { return "no_local_advertisement" }
     if local.expiresAt <= wall() { return "expired_local_advertisement" }
-    if confirmedEpoch != local.epoch { return "unconfirmed_local_epoch" }
+    if confirmedPaths.isEmpty { return "unconfirmed_local_epoch" }
     if readyGenerations.contains(where: { localGenerations[$0.key] != $0.value }) { return "changed_broker_generation" }
     return "no_verified_common_route"
   }
@@ -230,7 +242,7 @@ final class MqttPeerRouteSession {
                                        brokers: Set(generations.keys), now: at)
       local = next
       localGenerations = generations
-      confirmedEpoch = 0
+      confirmedPaths.removeAll()
     }
     return local
   }

@@ -40,9 +40,15 @@ struct AgentConnectorPublicProgress: Equatable {
       let kind = event.string("kind").lowercased()
       let code = event.string("code").ifBlank(event.dictionary("metadata")?.string("code") ?? "").lowercased()
       let detail = event.string("detail").trimmingCharacters(in: .whitespacesAndNewlines)
+      let status = event.string("status").lowercased()
       guard kind != "research_checkpoint", code != "heartbeat",
             !AgentPublicProgressPolicy.isInternal(detail), !AgentPublicProgressPolicy.isInternal(event.string("title")),
-            !(code == "dynamic_tool" && detail == "research_checkpoint") else { return nil }
+            !(code == "dynamic_tool" && detail == "research_checkpoint" && status != "failed") else { return nil }
+      if status != "failed", ["web_search", "web_image_search"].contains(code) { return nil }
+      if status != "failed", (kind == "plan" || code == "plan"),
+         detail.ifBlank(event.string("title")).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "planning" {
+        return nil
+      }
       let text: String
       if ["narration", "reasoning", "plan"].contains(kind) || ["commentary", "reasoning_summary", "plan"].contains(code) {
         text = String(detail.ifBlank(event.string("title")).prefix(2_000))
@@ -53,7 +59,7 @@ struct AgentConnectorPublicProgress: Equatable {
           "agent_collaboration": "Coordinating Agents", "context_compaction": "Compacting context"]
         guard let operation = operations[code] else { return nil }
         let label = localize("galaxyssi.agent.progress.operation.\(code)", operation)
-        switch event.string("status").lowercased() {
+        switch status {
         case "running", "started": text = label
         case "failed": text = String(format: localize("galaxyssi.agent.progress.failed", "Failed: %@"), label)
         default: text = String(format: localize("galaxyssi.agent.progress.completed", "Completed: %@"), label)

@@ -4,6 +4,30 @@ import UIKit
 
 final class GalaxySSIAttachmentTests: XCTestCase {
   @MainActor
+  func testImageClipboardPreservesEncodedBytesAndDoesNotCopyAPath() throws {
+    let clipboard = UIPasteboard.general.items
+    defer { UIPasteboard.general.items = clipboard }
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 40))
+    let image = renderer.image { context in
+      UIColor.green.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 80, height: 40))
+    }
+    let png = try XCTUnwrap(image.pngData())
+    XCTAssertTrue(GalaxySSIImageClipboard.copy(png))
+    XCTAssertNil(UIPasteboard.general.string)
+    XCTAssertEqual(GalaxySSIImageClipboard.read(), png)
+    XCTAssertEqual(GalaxySSIImageClipboard.prepared(png, original: true, crop: nil), png)
+    let compressed = try XCTUnwrap(GalaxySSIImageClipboard.prepared(png, original: false, crop: nil))
+    XCTAssertEqual(GalaxySSIImageClipboard.validated(compressed)?.preferredMIMEType, "image/jpeg")
+    let cropped = try XCTUnwrap(GalaxySSIImageClipboard.prepared(png, original: true,
+      crop: CGRect(x: 0, y: 0, width: 0.5, height: 1)))
+    let cropImage = try XCTUnwrap(UIImage(data: cropped))
+    XCTAssertEqual(cropImage.size.width * cropImage.scale, image.size.width * image.scale / 2)
+    XCTAssertFalse(GalaxySSIImageClipboard.copy(Data("https://example.com/image.png".utf8)))
+    UIPasteboard.general.string = "https://example.com/image.png"
+    XCTAssertNil(GalaxySSIImageClipboard.read())
+  }
+  @MainActor
   func testScreenPageDownloadPreservesOriginalAndUsesStableCaptureFilename() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
