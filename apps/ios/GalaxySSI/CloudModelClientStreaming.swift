@@ -134,7 +134,7 @@ extension CloudModelClient {
       model: model,
       apiKey: apiKey,
       turns: turns,
-      systemPrompt: AgentDirectVisionPolicy.appendingInstruction(to: systemPrompt, mimeTypes: images.map(\.mimeType))
+      systemPrompt: AgentDirectVisionPolicy.appendingCloudInstruction(to: systemPrompt, images: images)
     )
     switch model.apiStyle {
     case .anthropic:

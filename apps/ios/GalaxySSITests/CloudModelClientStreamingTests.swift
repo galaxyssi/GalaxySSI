@@ -49,6 +49,41 @@ final class CloudModelClientStreamingTests: XCTestCase {
     XCTAssertEqual(text, CloudModelClient.systemPrompt(languagePolicy: language) + "\nText-only grounding")
   }
 
+  }
+
+  func testHistoricalImageSurvivesToolContinuationAndNonStreamingFallback() throws {
+    let bytes = Data([1, 2, 3, 4])
+    let image = try CloudImagePayload(displayName: "history.png", mimeType: "image/png", data: bytes,
+      historicalSourceTurnId: "original-turn")
+    let styles: [GalaxySSICloudAPIStyle] = [.openAICompatible, .anthropic, .gemini]
+    for style in styles {
+      let initial = try CloudModelClient().conversationStreamingRequest(
+        model: model(apiStyle: style), apiKey: "fixture",
+        turns: [ChatMessage(contactId: "contact", content: "Latest question", isMine: true)],
+        systemPrompt: "system", requestId: "initial", images: [image])
+      var conversation = try CloudModelStreamMutableConversation(request: initial)
+      let call = AssembledToolCall(callId: "call-1", index: 0, name: "web_search", argumentsJson: "{}")
+      try conversation.appendToolResults([(call, "fixture result")])
+      let next = try conversation.requestForRound(roundId: "continuation")
+      let encoded = try CloudConversationNonStreamingToolEngine.compatibilityBody(next.bodyJson, provider: next.provider)
+      let before = try object(initial.bodyJson)
+      let after = try object(encoded)
+      let key = style == .gemini ? "contents" : "messages"
+      let originalMessages = try XCTUnwrap(before[key] as? [[String: Any]])
+      let finalMessages = try XCTUnwrap(after[key] as? [[String: Any]])
+      XCTAssertGreaterThan(finalMessages.count, originalMessages.count)
+      for (original, final) in zip(originalMessages, finalMessages) {
+        XCTAssertEqual(original as NSDictionary, final as NSDictionary)
+      }
+      XCTAssertTrue(encoded.contains("original-turn"))
+      XCTAssertTrue(encoded.contains("earlier-turn references"))
+      XCTAssertFalse(encoded.contains("inspect the image twice"))
+      XCTAssertTrue(encoded.contains(bytes.base64EncodedString()))
+      if style == .gemini { XCTAssertNil(after["stream"]) }
+      else { XCTAssertEqual(after["stream"] as? Bool, false) }
+    }
+  }
+
   func testOpenAICompatibleStreamingRequestUsesBearerHeadersAndStreamBody() throws {
     let request = try CloudModelClient().conversationStreamingRequest(
       model: model(apiStyle: .openAICompatible),
