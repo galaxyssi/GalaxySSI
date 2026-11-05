@@ -59,7 +59,7 @@ internal object HealthRecordExportFormats {
         }
         override fun append(item: HealthRecordExportItem) {
             if (count > 0) writer.write(",")
-            val value = item.record.json().put("source_status_at_preview", item.sourceStatus.name)
+            val value = item.record.json(includeDeviceGroup = false).put("source_status_at_preview", item.sourceStatus.name)
             writer.write(value.toString()); count++
         }
         override fun close() {

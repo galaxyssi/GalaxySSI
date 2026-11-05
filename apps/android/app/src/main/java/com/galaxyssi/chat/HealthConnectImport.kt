@@ -44,7 +44,7 @@ internal data class HealthConnectWindow(val hours: Int, val end: Instant, val zo
 internal data class HealthConnectMeasurement(val id: String, val origin: String, val draft: HealthDraft) {
     init {
         require(id.length in 1..512 && id.none(Char::isISOControl))
-        require(origin.matches(Regex("[a-zA-Z0-9_.]{1,255}")))
+        require(validHealthTrendPlatformOrigin(origin))
         require(draft.recordId.isBlank() && draft.revision == 0 && draft.evidence == null)
         require(HealthConnectScope.entries.any { it.metric == draft.metric })
     }
@@ -160,7 +160,7 @@ internal class AndroidHealthConnectReader(context: Context) : HealthConnectReade
         if (end <= start) return null
         val result = client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), TimeRangeFilter.between(start, end)))
         return result[StepsRecord.COUNT_TOTAL]?.let { count ->
-            measurement(HealthConnectScope.STEPS, day.toString(), "health_connect.aggregate", end.minusMillis(1), listOf(count.toString()))
+            measurement(HealthConnectScope.STEPS, day.toString(), HEALTH_CONNECT_AGGREGATE_ORIGIN, end.minusMillis(1), listOf(count.toString()))
         }
     }
 

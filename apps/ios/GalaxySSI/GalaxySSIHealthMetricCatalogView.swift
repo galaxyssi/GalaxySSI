@@ -1,5 +1,22 @@
 import SwiftUI
 
+enum GalaxySSIHealthCatalogAnchor {
+  static func restoration<ID: Equatable>(visible: [ID], updated: [ID], limit: Int) -> (id: ID, limit: Int)? {
+    for id in visible {
+      if let index = updated.firstIndex(of: id) { return (id, max(limit, index + 1)) }
+    }
+    return nil
+  }
+}
+
+private struct GalaxySSIHealthRowPositions: PreferenceKey {
+  static var defaultValue: [UUID: CGRect] { [:] }
+
+  static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+    value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+  }
+}
+
 @MainActor
 struct GalaxySSIHealthMetricCatalogView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
@@ -49,7 +66,9 @@ struct GalaxySSIHealthMetricCatalogView: View {
     .searchable(text: $query, prompt: t("search", "Search measurements"))
     .navigationTitle(t("title", "Measurement Catalog"))
     .navigationBarTitleDisplayMode(.inline)
-    .onChange(of: scene) { if $0 != .active { query = "" } }
+    .onChange(of: scene) {
+      if $0 == .background { query = ""; mode = .daily }
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -68,31 +87,60 @@ struct GalaxySSIHealthMetricCatalogView: View {
     @State private var current: [GalaxySSIHealthReading]?
     @State private var hasDraft = false
     @State private var limit = 30
+    @State private var visible: [UUID] = []
+    @State private var restoreID: UUID?
+    @State private var refresh = 0
 
     var body: some View {
-      List {
-        if scene == .active, let current {
-          Button { add(metric) } label: {
-            Label(hasDraft ? t("resume", "Resume draft") : t("record", "Record measurement"),
-                  systemImage: hasDraft ? "doc.text" : "plus.circle")
-          }
-          if current.isEmpty { Text(t("empty", "No confirmed readings")).foregroundColor(.secondary) }
-          ForEach(current.prefix(limit)) { reading in
-            Button { edit(reading) } label: {
-              VStack(alignment: .leading, spacing: 4) {
-                Text(summary(reading)).foregroundColor(.primary)
-                if let reference = reading.referenceInterval, !reference.isEmpty {
-                  Text(reference).font(.footnote).foregroundColor(.secondary)
-                }
-                Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened))
-                  .foregroundColor(.secondary)
+      GeometryReader { geometry in
+        ScrollViewReader { proxy in
+          List {
+            if scene == .active, let current {
+              NavigationLink {
+                GalaxySSIHealthTrendView(records: records, fixedMetric: metric)
+              } label: {
+                Label(t("trend", "Measurement trends"), systemImage: "chart.xyaxis.line")
               }
+              Button { add(metric) } label: {
+                Label(hasDraft ? t("resume", "Resume draft") : t("record", "Record measurement"),
+                      systemImage: hasDraft ? "doc.text" : "plus.circle")
+              }
+              if current.isEmpty { Text(t("empty", "No confirmed readings")).foregroundColor(.secondary) }
+              ForEach(current.prefix(limit)) { reading in
+                Button { edit(reading) } label: {
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text(summary(reading)).foregroundColor(.primary)
+                    if let reference = reading.referenceInterval, !reference.isEmpty {
+                      Text(reference).font(.footnote).foregroundColor(.secondary)
+                    }
+                    Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened))
+                      .foregroundColor(.secondary)
+                  }
+                }
+                .disabled(hasDraft)
+                .id(reading.id)
+                .background(GeometryReader { row in
+                  Color.clear.preference(key: GalaxySSIHealthRowPositions.self,
+                    value: [reading.id: row.frame(in: .named("health-catalog-records"))])
+                })
+              }
+              if current.count > limit { Button(t("more", "Show more")) { limit += 30 } }
+            } else if scene == .active {
+              Button(t("reload", "Reload measurements"), action: reload)
             }
-            .disabled(hasDraft)
           }
-          if current.count > limit { Button(t("more", "Show more")) { limit += 30 } }
-        } else if scene == .active {
-          Button(t("reload", "Reload measurements"), action: reload)
+          .coordinateSpace(name: "health-catalog-records")
+          .onPreferenceChange(GalaxySSIHealthRowPositions.self) { frames in
+            guard scene == .active, !frames.isEmpty else { return }
+            visible = frames.filter { $0.value.maxY > 0 && $0.value.minY < geometry.size.height }
+              .sorted { $0.value.minY < $1.value.minY }.map(\.key)
+          }
+          .onChange(of: refresh) { _ in
+            if let restoreID {
+              proxy.scrollTo(restoreID, anchor: .top)
+              self.restoreID = nil
+            }
+          }
         }
       }
       .navigationTitle(metric.title(language: language))
@@ -102,7 +150,10 @@ struct GalaxySSIHealthMetricCatalogView: View {
         if $0.object as? String == records.owner { reload() }
       }
       .onChange(of: scene) {
-        if $0 == .active { reload() } else { current = nil; hasDraft = false; limit = 30 }
+        if $0 == .active { reload() }
+        else if $0 == .background {
+          current = nil; hasDraft = false; limit = 30; visible = []; restoreID = nil
+        }
       }
     }
 
@@ -110,7 +161,14 @@ struct GalaxySSIHealthMetricCatalogView: View {
       guard scene == .active else { return }
       do {
         let archive = try records.load()
-        current = archive.current.filter { $0.metric == metric }
+        let next = archive.current.filter { $0.metric == metric }
+        if let current, current.prefix(limit).map(\.id) != next.prefix(limit).map(\.id),
+           let anchor = GalaxySSIHealthCatalogAnchor.restoration(visible: visible, updated: next.map(\.id), limit: limit) {
+          limit = anchor.limit
+          restoreID = anchor.id
+          refresh += 1
+        }
+        current = next
         hasDraft = archive.draft != nil
       } catch { current = nil; hasDraft = false }
     }
