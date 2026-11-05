@@ -316,6 +316,29 @@ struct CloudModelStreamMutableConversation {
     self.body = try CloudModelStreamJSON.object(from: request.bodyJson)
   }
 
+  mutating func installSupervisedResearch(disableDeepSeekThinking: Bool) throws {
+    body.removeValue(forKey: "tools")
+    body.removeValue(forKey: "tool_choice")
+    body.removeValue(forKey: "toolConfig")
+    let definitions = CloudSupervisedResearch.toolDefinitions()
+    for definition in definitions {
+      let function = try CloudModelStreamJSON.object(from: AgentMcpJSONCodec.stringify(definition))
+      guard let schema = function["parameters"] as? [String: Any] else { continue }
+      appendCollaborationFunction(function.filter { $0.key != "parameters" }, schema: schema)
+    }
+    if disableDeepSeekThinking && request.provider == .openAICompatible {
+      body["thinking"] = ["type": "disabled"]
+      body.removeValue(forKey: "reasoning_effort")
+    }
+  }
+
+  mutating func supervisedFinalRound() {
+    body.removeValue(forKey: "tools")
+    body.removeValue(forKey: "tool_choice")
+    body.removeValue(forKey: "toolConfig")
+    appendPlainConversationTurn(role: "user", text: "Return the final planning response now using the original schema. Do not call more tools.")
+  }
+
   mutating func installCollaborationRecall(originalsOnly: Bool = false) {
     let modes = originalsOnly ? ["goal", "dependency"] :
       ["workspace", "evidence", "goal", "dependency", "problems", "capabilities", "evolution_rules"]

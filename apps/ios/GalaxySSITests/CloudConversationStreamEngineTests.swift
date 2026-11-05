@@ -2,6 +2,64 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  func testSupervisedResearchReturnsOnlyFinalRawControlResponse() async throws {
+    let request = ModelStreamRequest(requestId: "plan", provider: .openAICompatible,
+      endpoint: "https://api.deepseek.com/chat/completions", headers: [:], bodyJson: #"{"messages":[]}"#)
+    let final = #"{"disposition":"respond","final_response":"Verified public source"}"#
+    let stream = RecordingModelStreamClient(eventBatches: [
+      [
+        .textDelta(.init(requestId: "0", sequence: 1, text: "intermediate prose", receivedAtElapsedMs: 1)),
+        .toolCallDelta(.init(requestId: "0", sequence: 2, payload: .init(
+          callId: "image", index: 0, nameDelta: "web_image_search", argumentsDelta: #"{"query":"public diagrams"}"#))),
+        .completed(.init(requestId: "0", finishReason: "tool_calls", completedAtElapsedMs: 2))
+      ],
+      [
+        .textDelta(.init(requestId: "1", sequence: 1, text: final, receivedAtElapsedMs: 3)),
+        .completed(.init(requestId: "1", finishReason: "stop", completedAtElapsedMs: 4))
+      ]
+    ])
+    let executor = RecordingConversationToolExecutor(result: #"{"status":"completed","results":[]}"#)
+    let result = try await CloudSupervisedResearch.run(request: request, disableDeepSeekThinking: true,
+      conversationId: "conversation", turnId: "turn", stream: stream, executor: executor)
+    XCTAssertEqual(result, final)
+    XCTAssertEqual(executor.calls.map(\.call.name), ["web_search"])
+    XCTAssertTrue(executor.calls.first?.call.argumentsJson.contains(#""verticals":["image"]"#) == true)
+    XCTAssertEqual(executor.calls.first?.context.conversationId, "conversation")
+    XCTAssertTrue(executor.calls.first?.context.readOnlyAnalysis == true)
+    let first = try object(stream.requests[0].bodyJson)
+    let tools = try XCTUnwrap(first["tools"] as? [[String: Any]])
+    let names = tools.compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
+    XCTAssertEqual(Set(names), CloudSupervisedResearch.allowedTools)
+    XCTAssertEqual((first["thinking"] as? [String: String])?["type"], "disabled")
+    XCTAssertTrue(stream.requests[1].bodyJson.contains("GALAXYSSI_UNTRUSTED_EVIDENCE"))
+  }
+
+  func testSupervisedResearchRejectsWholeBatchBeforeAnyDispatch() async throws {
+    let request = ModelStreamRequest(requestId: "plan", provider: .openAICompatible,
+      endpoint: "https://api.deepseek.com/chat/completions", headers: [:], bodyJson: #"{"messages":[]}"#)
+    let calls = ["web_search", "web_watch"].enumerated().map { index, name in
+      ModelStreamEvent.toolCallDelta(.init(requestId: "0", sequence: Int64(index + 1),
+        payload: .init(callId: "call-\(index)", index: index, nameDelta: name, argumentsDelta: "{}")))
+    }
+    let stream = RecordingModelStreamClient(events: calls + [
+      .completed(.init(requestId: "0", finishReason: "tool_calls", completedAtElapsedMs: 1))
+    ])
+    let executor = RecordingConversationToolExecutor(result: "{}")
+    do {
+      _ = try await CloudSupervisedResearch.run(request: request, disableDeepSeekThinking: true,
+        conversationId: "conversation", turnId: "turn", stream: stream, executor: executor)
+      XCTFail("Expected the whole batch to be rejected")
+    } catch CloudSupervisedResearch.Error.invalidToolBatch {
+      XCTAssertTrue(executor.calls.isEmpty)
+    }
+  }
+
+  func testSupervisedControlDoesNotPresentUnexecutedDSMLAsAReply() {
+    XCTAssertTrue(CloudSupervisedResearch.hasUnexecutedMarkup("<\u{FF5C}DSML\u{FF5C}function_calls>"))
+    XCTAssertNil(AgentModelDirectResponseCodec.answer("<\u{FF5C}DSML\u{FF5C}function_calls>"))
+    XCTAssertNotNil(AgentModelDirectResponseCodec.answer("The reply describes function calls without invoking one."))
+  }
+
   func testRuleRecallCountsOnlyNewAuthenticCharacters() throws {
     let tool = CloudModelStreamMutableConversation.collaborationRecallName
     let progress = CloudWebToolLoopProgress()
