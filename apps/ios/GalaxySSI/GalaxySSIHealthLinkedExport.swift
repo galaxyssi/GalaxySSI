@@ -52,7 +52,9 @@ enum GalaxySSIHealthLinkedExport {
                       store: GalaxySSIHealthOriginalStore, choices: Choices,
                       tableEvidence: [GalaxySSIHealthTableImport.Evidence] = [],
                       reportEvidence: [GalaxySSIHealthReportReview.Evidence] = []) throws -> Package {
-    let originals = Dictionary(uniqueKeysWithValues: try store.list().originals.map { ($0.id, $0) })
+    let listing = try store.list()
+    let originals = Dictionary(uniqueKeysWithValues: listing.originals.map { ($0.id, $0) })
+    let removed = Set(listing.removed.map(\.id))
     let tables = Dictionary(batches.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let tableLinks = Dictionary(grouping: tableEvidence, by: { $0.target.record })
     let reportLinks = Dictionary(grouping: reportEvidence, by: { $0.target.record })
@@ -88,7 +90,9 @@ enum GalaxySSIHealthLinkedExport {
         (reportLinks[reading.id] ?? []).filter { $0.target.revision == reading.revision }.map(\.source)
       for report in reportSources {
         guard let original = originals[report.original] else {
-          let status: Status = try store.containsOriginalFile(report.original) ? .unreadable : .missing
+          let status: Status
+          if removed.contains(report.original) { status = .missing }
+          else { status = try store.containsOriginalFile(report.original) ? .unreadable : .missing }
           append(reading, original: report.original, source: "report", location: report.page,
                  expected: report.sha256, path: nil, status: status)
           continue

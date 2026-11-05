@@ -61,6 +61,10 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let export = try GalaxySSIHealthReportReview.export(links, pdf: nil)
     XCTAssertNotNil(export.range(of: Data("measurements.csv".utf8)))
     XCTAssertNil(export.range(of: Data("original.pdf".utf8)))
+    let combinedExport = try GalaxySSIHealthLinkedExport.prepare(removed.current, batches: [], store: store,
+      choices: .init(uploaded: true))
+    XCTAssertEqual(combinedExport.links.map(\.status), [.missing])
+    XCTAssertTrue(combinedExport.files.isEmpty)
     XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
     XCTAssertEqual(removed.current.count, 2)
     let interrupted = try store.store(pdf, name: "second.pdf")
