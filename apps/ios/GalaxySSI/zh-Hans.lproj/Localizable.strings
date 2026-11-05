@@ -5908,6 +5908,8 @@
 "galaxyssi.agent.reply_speech.tts_disabled" = "请先在语音设置中开启文本转语音。";
 "galaxyssi.agent.reply_speech.idle_label" = "朗读";
 "galaxyssi.agent.reply_speech.playing_label" = "朗读中";
+"galaxyssi.agent.reply_speech.now_playing" = "Agent 回复朗读";
+"galaxyssi.agent.reply_speech.return" = "返回回复";
 "voice_microsoft_voice_choices" = "微软晓晓音色";
 "voice_microsoft_xiaoxiao" = "晓晓自然音";
 "voice_microsoft_xiaoxiao_dragon_hd_flash" = "晓晓 Dragon HD Flash";

@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 struct AgentReplyParagraphSpeechSelection: Equatable {
@@ -75,6 +76,7 @@ struct GalaxySSIAgentReplySpeechFooter: View {
   let runtime: AgentReplySpeechRuntime
   let entryId: String
   let isLatest: Bool
+  var additionalUpdates: AnyPublisher<AgentReplySpeechFooterState, Never>? = nil
   let action: () -> Void
   @State private var state = AgentReplySpeechFooterState()
 
@@ -96,6 +98,15 @@ struct GalaxySSIAgentReplySpeechFooter: View {
       }
     }
     .frame(height: GalaxySSIAgentReplySpeechButton.height)
-    .onReceive(runtime.footerUpdates(entryId: entryId)) { state = $0 }
+    .onReceive(updates) { state = $0 }
+  }
+
+  private var updates: AnyPublisher<AgentReplySpeechFooterState, Never> {
+    let foreground = runtime.footerUpdates(entryId: entryId)
+    guard let additionalUpdates else { return foreground }
+    return foreground.combineLatest(additionalUpdates) { foreground, background in
+      AgentReplySpeechFooterState(active: foreground.active || background.active,
+        playing: foreground.playing || background.playing, error: background.error.ifBlank(foreground.error))
+    }.removeDuplicates().eraseToAnyPublisher()
   }
 }

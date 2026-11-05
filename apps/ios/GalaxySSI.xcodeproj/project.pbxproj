@@ -77,6 +77,7 @@
     F13228000000000000000002 /* GalaxySSIConversationFocusProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */; };
     F13228000000000000000003 /* AgentReplyUnreadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23228000000000000000003 /* AgentReplyUnreadTests.swift */; };
     F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000002 /* AgentReplySpeechRuntime.swift */; };
+    A100000000000000000009F3 /* AgentCompletedReplyPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F3 /* AgentCompletedReplyPlayback.swift */; };
     F12678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */; };
     F12678000000000000000004 /* AgentReplySpeechControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */; };
     D36650000000000000000001 /* AgentReplySpeechFooterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D36650000000000000000002 /* AgentReplySpeechFooterTests.swift */; };
@@ -1227,6 +1228,7 @@
     F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationFocusProbe.swift; sourceTree = "<group>"; };
     F23228000000000000000003 /* AgentReplyUnreadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplyUnreadTests.swift; sourceTree = "<group>"; };
     F22678000000000000000002 /* AgentReplySpeechRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechRuntime.swift; sourceTree = "<group>"; };
+    A200000000000000000009F3 /* AgentCompletedReplyPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCompletedReplyPlayback.swift; sourceTree = "<group>"; };
     F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentReplySpeechView.swift; sourceTree = "<group>"; };
     F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechControllerTests.swift; sourceTree = "<group>"; };
     D36650000000000000000002 /* AgentReplySpeechFooterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechFooterTests.swift; sourceTree = "<group>"; };
@@ -2385,6 +2387,7 @@
         F23228000000000000000001 /* AgentReplyUnreadStore.swift */,
         F23228000000000000000002 /* GalaxySSIConversationFocusProbe.swift */,
         F22678000000000000000002 /* AgentReplySpeechRuntime.swift */,
+        A200000000000000000009F3 /* AgentCompletedReplyPlayback.swift */,
         F22678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift */,
         F22679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift */,
         A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */,
@@ -3928,6 +3931,7 @@
         F13228000000000000000001 /* AgentReplyUnreadStore.swift in Sources */,
         F13228000000000000000002 /* GalaxySSIConversationFocusProbe.swift in Sources */,
         F12678000000000000000002 /* AgentReplySpeechRuntime.swift in Sources */,
+        A100000000000000000009F3 /* AgentCompletedReplyPlayback.swift in Sources */,
         F12678000000000000000003 /* GalaxySSIAgentReplySpeechView.swift in Sources */,
         F12679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift in Sources */,
         A10000000000000000000761 /* VoiceTTSRequestRegistry.swift in Sources */,
@@ -5003,7 +5007,7 @@
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
         INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh";
-        INFOPLIST_KEY_UIBackgroundModes = fetch;
+        INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant GalaxySSI calendar access.";
@@ -5068,7 +5072,7 @@
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
         INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh";
-        INFOPLIST_KEY_UIBackgroundModes = fetch;
+        INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
         INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant GalaxySSI calendar access.";

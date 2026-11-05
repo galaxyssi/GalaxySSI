@@ -6,6 +6,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   var waitingMessageIDs: Set<UUID>
   var retryingMessageIDs: Set<UUID>
   var replySpeech: AgentReplySpeechRuntime
+  var completedSpeech: AgentCompletedReplyPlayback
+  var playCompletedReply: (ChatMessage, AgentReplyParagraphSpeechSelection?) -> Bool
   var voiceSettings: VoiceSettings
   var languagePolicy: LanguagePolicySettings
   var t: (String, String) -> String
@@ -48,6 +50,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       replySpeech.stopPlaybackIfActive()
     }
     .onDisappear {
+      replySpeech.stop()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
       replySpeech.stop()
     }
   }
@@ -102,7 +107,10 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       }
       if let target = AgentReplySpeechPresentationPolicy.target(message) {
         GalaxySSIAgentReplySpeechFooter(runtime: replySpeech, entryId: target.entryId,
-          isLatest: latestSpeechEntryId == target.entryId) {
+          isLatest: latestSpeechEntryId == target.entryId,
+          additionalUpdates: completedSpeech.footerUpdates(messageId: message.id)) {
+          if playCompletedReply(message, nil) { return }
+          completedSpeech.stop()
           replySpeech.toggle(target, settings: voiceSettings, languagePolicy: languagePolicy)
         }
       }
@@ -229,6 +237,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   ) -> ((AgentReplyParagraphSpeechSelection) -> Void)? {
     guard let target = AgentReplySpeechPresentationPolicy.target(message) else { return nil }
     return { selection in
+      if playCompletedReply(message, selection) { return }
+      completedSpeech.stop()
       replySpeech.readFromParagraph(
         selection,
         target: target,
