@@ -20,6 +20,7 @@
     <string name="health_overview_no_data_warning">缺少数据或提醒不代表结果正常。</string>
     <string name="health_overview_ocr_review">识别结果待核对</string>
     <string name="health_overview_table_review">表格导入待核对</string>
+    <string name="health_overview_connection_title">数据来源待恢复 · %1$s</string>
     <string name="health_overview_sleep_mean">%1$s 分钟</string>
     <string name="health_overview_sleep_days">近 7 天均值 · %1$d 天可用</string>
     <string name="health_overview_source">%1$s · %2$s</string>

@@ -57,4 +57,50 @@ final class PublicNewsFeedTests: XCTestCase {
     XCTAssertTrue(article.read)
     XCTAssertTrue(article.saved)
   }
+
+  func testFirebaseCursorPersistsPendingAndDeduplicatesReconnectAndReappearingStories() throws {
+    var cursor = PublicNewsPushCursor()
+    func data(_ text: String) -> Data { Data(text.utf8) }
+    try cursor.accept(type: "put", data: data(#"{"path":"/","data":[101,100]}"#), now: now)
+    XCTAssertTrue(cursor.pending.isEmpty)
+    try cursor.accept(type: "patch", data: data(#"{"path":"/","data":{"0":102,"1":101,"2":100}}"#), now: now)
+    XCTAssertEqual(cursor.next(at: now), 102)
+    cursor = try JSONDecoder().decode(PublicNewsPushCursor.self, from: JSONEncoder().encode(cursor))
+    cursor.deferItem(102, now: now)
+    XCTAssertNil(cursor.next(at: now))
+    XCTAssertEqual(cursor.next(at: now.addingTimeInterval(11)), 102)
+    cursor.complete(102)
+    try cursor.accept(type: "put", data: data(#"{"path":"/0","data":null}"#), now: now)
+    try cursor.accept(type: "put", data: data(#"{"path":"/","data":[103,102,101,100]}"#), now: now)
+    XCTAssertEqual(Set(cursor.pending.keys), [103])
+    XCTAssertNil(cursor.next(at: now.addingTimeInterval(PublicNewsPushCursor.retention + 1)))
+  }
+
+  func testInvalidFirebasePatchDoesNotMutateCursor() throws {
+    var cursor = PublicNewsPushCursor()
+    try cursor.accept(type: "put", data: Data(#"{"path":"/","data":[101]}"#.utf8), now: now)
+    let prior = cursor
+    XCTAssertThrowsError(try cursor.accept(type: "patch",
+      data: Data(#"{"path":"/","data":{"0":102,"1":true}}"#.utf8), now: now))
+    XCTAssertEqual(cursor, prior)
+  }
+
+  func testSSEDecoderHandlesCommentsMultilineAndCRLF() throws {
+    var decoder = PublicNewsSSEDecoder()
+    let body = ": ready\r\n\r\nevent: patch\r\ndata: {\"path\":\"/\",\r\ndata: \"data\":{\"1\":102}}\r\n\r\n"
+    var events: [PublicNewsSSEDecoder.Event] = []
+    for byte in body.utf8 {
+      if let event = try decoder.append(byte) { events.append(event) }
+    }
+    XCTAssertEqual(events, [.init(type: "patch", data: Data("{\"path\":\"/\",\n\"data\":{\"1\":102}}".utf8))])
+  }
+
+  func testHackerNewsSubmissionIsNotPresentedAsPublisherDate() throws {
+    let payload = Data(#"{"id":102,"type":"story","time":1800000000,"url":"https://example.com/a#ref","title":"<b>News</b>"}"#.utf8)
+    let article = try XCTUnwrap(PublicNewsPushClient.article(payload, id: 102, now: now))
+    XCTAssertEqual(article.title, "News")
+    XCTAssertEqual(article.url.absoluteString, "https://example.com/a")
+    XCTAssertNil(article.publishedAt)
+    XCTAssertThrowsError(try PublicNewsPushClient.article(payload, id: 103, now: now))
+  }
 }

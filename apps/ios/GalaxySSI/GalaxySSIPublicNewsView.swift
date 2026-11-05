@@ -3,6 +3,8 @@ import SwiftUI
 @MainActor
 struct GalaxySSIPublicNewsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.scenePhase) private var scenePhase
+  @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
   @StateObject private var archive = PublicNewsArchive()
   @State private var filter = Filter.all
   @State private var refreshRequest = 0
@@ -33,6 +35,7 @@ struct GalaxySSIPublicNewsView: View {
               Label(t("public_news_refresh", "Refresh news"), systemImage: "arrow.clockwise")
             }
             .disabled(archive.refreshing)
+            Toggle(t("public_news_live", "Live Hacker News"), isOn: $liveNewsEnabled)
           } label: {
             Image(systemName: "ellipsis").frame(width: 40, height: 44)
           }
@@ -99,6 +102,9 @@ struct GalaxySSIPublicNewsView: View {
     }
     .navigationBarHidden(true)
     .task(id: refreshRequest) { await archive.refresh(force: refreshRequest != 0) }
+    .task(id: liveNewsEnabled && scenePhase == .active) {
+      if liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
+    }
     .sheet(item: $selected) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
   }
 

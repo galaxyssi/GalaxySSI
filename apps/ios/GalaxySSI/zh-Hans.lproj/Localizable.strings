@@ -5247,6 +5247,7 @@
 "public_news_newest" = "最新";
 "public_news_matches" = "%d 条结果";
 "public_news_more" = "加载更多";
+"public_news_live" = "实时 Hacker News";
 "public_news_filter" = "筛选新闻";
 "public_news_all" = "全部";
 "public_news_unread" = "未读";

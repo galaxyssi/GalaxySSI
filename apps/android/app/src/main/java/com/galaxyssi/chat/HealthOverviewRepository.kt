@@ -27,7 +27,8 @@ internal data class HealthOverviewMetric(val metric: HealthMetric, val record: H
 internal data class HealthOverviewDerived(val sleep: HealthWeeklyStat? = null, val alert: HealthSleepAlert? = null,
     val permitted: Boolean = true, val unavailable: Boolean = false)
 internal data class HealthOverviewSnapshot(val time: Long, val zone: ZoneId, val hasRecords: Boolean, val metrics: List<HealthOverviewMetric>,
-    val derived: HealthOverviewDerived, val attention: List<HealthOverviewAttention>, val reviewUnavailable: Boolean)
+    val derived: HealthOverviewDerived, val attention: List<HealthOverviewAttention>, val reviewUnavailable: Boolean,
+    val connectionsUnavailable: Boolean = false)
 
 internal object HealthOverviewRepository {
     fun load(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, now: Long, zone: ZoneId): HealthOverviewSnapshot {
@@ -39,13 +40,18 @@ internal object HealthOverviewRepository {
         }
         val hasRecords = metrics.any { it.record != null } || records.overviewLatestSelf(null, now) != null
         val reviews = runCatching { pendingReviews(context, records, names, limit = 2, onePerKind = true) }
+        val connections = runCatching {
+            val scopes = if (names.fixture == null) HealthConnectSettings.selection(context) else HealthConnectScope.entries.toSet()
+            HealthOverviewPolicy.activeConnections(scopes.mapNotNull(records::healthSyncIncident), scopes)
+        }
         val derived = runCatching { derive(context, records, names, now, zone, versions.getValue(HealthMetric.SLEEP_DURATION),
             metrics.any { it.metric == HealthMetric.SLEEP_DURATION && it.record != null }) }.getOrElse {
             if (it is HealthAccessBlocked) HealthOverviewDerived(permitted = false) else HealthOverviewDerived(unavailable = true)
         }
         if (records.metricVersions(selected) != versions) throw HealthWeeklyChanged()
         return HealthOverviewSnapshot(now, zone, hasRecords, metrics, derived,
-            listOfNotNull(derived.alert?.let { HealthOverviewAttention.Change(it) }) + reviews.getOrDefault(emptyList()), reviews.isFailure)
+            listOfNotNull(derived.alert?.let { HealthOverviewAttention.Change(it) }) + reviews.getOrDefault(emptyList()) +
+                connections.getOrDefault(emptyList()), reviews.isFailure, connections.isFailure)
     }
 
     fun pendingReviews(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, limit: Int,

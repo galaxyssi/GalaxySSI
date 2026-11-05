@@ -11,11 +11,13 @@ final class PublicNewsArchive: ObservableObject {
   private struct Snapshot: Codable {
     var articles: [PublicNewsArticle]
     var refreshedAt: Date?
+    var pushCursor: PublicNewsPushCursor?
   }
 
   private let fileURL: URL?
   private var refreshedAt: Date?
   private var loaded = false
+  private var pushCursor = PublicNewsPushCursor()
 
   init(fileURL: URL? = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
     .first?.appendingPathComponent("public-news.json")) {
@@ -29,6 +31,7 @@ final class PublicNewsArchive: ObservableObject {
       let snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: fileURL))
       articles = snapshot.articles
       refreshedAt = snapshot.refreshedAt
+      pushCursor = snapshot.pushCursor ?? PublicNewsPushCursor()
     } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
       // The archive is created after the first successful collection.
     } catch {
@@ -71,6 +74,73 @@ final class PublicNewsArchive: ObservableObject {
     update(id) { $0.saved.toggle() }
   }
 
+  func collectLive() async {
+    load()
+    guard loaded, !Task.isCancelled else { return }
+    await withTaskGroup(of: Void.self) { group in
+      group.addTask { await self.receiveLiveEvents() }
+      group.addTask { await self.drainLiveStories() }
+      await group.waitForAll()
+    }
+  }
+
+  private func receiveLiveEvents() async {
+    var retry: TimeInterval = 2.5
+    while !Task.isCancelled {
+      let started = ProcessInfo.processInfo.systemUptime
+      do {
+        try await PublicNewsPushClient.stream { event in
+          try await self.acceptLiveEvent(event)
+        }
+      } catch {
+        if Task.isCancelled { return }
+      }
+      if ProcessInfo.processInfo.systemUptime - started >= 30 { retry = 2.5 }
+      do { try await Task.sleep(nanoseconds: UInt64((retry + Double.random(in: 0...1)) * 1_000_000_000)) }
+      catch { return }
+      retry = min(retry * 2, 300)
+    }
+  }
+
+  private func acceptLiveEvent(_ event: PublicNewsSSEDecoder.Event) throws {
+    try Task.checkCancellation()
+    var next = pushCursor
+    try next.accept(type: event.type, data: event.data, now: Date())
+    if next != pushCursor, !save(articles, refreshedAt: refreshedAt, cursor: next) {
+      throw PublicNewsPushError.unavailable
+    }
+  }
+
+  private func drainLiveStories() async {
+    while !Task.isCancelled {
+      let now = Date()
+      if let id = pushCursor.next(at: now) {
+        do {
+          let article = try await PublicNewsPushClient.fetchStory(id, now: now)
+          try Task.checkCancellation()
+          guard pushCursor.pending[id] != nil else { continue }
+          var nextArticles = articles
+          if let article, !articles.contains(where: { $0.id == article.id }) {
+            nextArticles = Self.merge(existing: articles, incoming: [article])
+          }
+          var next = pushCursor
+          next.complete(id)
+          if save(nextArticles, refreshedAt: refreshedAt, cursor: next) {
+            try await Task.sleep(nanoseconds: 250_000_000)
+            continue
+          }
+        } catch {
+          if Task.isCancelled { return }
+          var next = pushCursor
+          next.deferItem(id, now: Date())
+          _ = save(articles, refreshedAt: refreshedAt, cursor: next)
+        }
+      }
+      do { try await Task.sleep(nanoseconds: 3_000_000_000) }
+      catch { return }
+    }
+  }
+
   private func update(_ id: String, change: (inout PublicNewsArticle) -> Void) {
     guard let index = articles.firstIndex(where: { $0.id == id }) else { return }
     var next = articles
@@ -79,17 +149,21 @@ final class PublicNewsArchive: ObservableObject {
     save(next, refreshedAt: refreshedAt)
   }
 
-  private func save(_ next: [PublicNewsArticle], refreshedAt: Date?) {
-    guard loaded, let fileURL else { return }
+  @discardableResult
+  private func save(_ next: [PublicNewsArticle], refreshedAt: Date?, cursor: PublicNewsPushCursor? = nil) -> Bool {
+    guard loaded, let fileURL else { return false }
     do {
-      let data = try JSONEncoder().encode(Snapshot(articles: next, refreshedAt: refreshedAt))
+      let data = try JSONEncoder().encode(Snapshot(articles: next, refreshedAt: refreshedAt, pushCursor: cursor ?? pushCursor))
       try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
       try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-      articles = next
+      if articles != next { articles = next }
       self.refreshedAt = refreshedAt
+      if let cursor { pushCursor = cursor }
       storageFailed = false
+      return true
     } catch {
       storageFailed = true
+      return false
     }
   }
 
