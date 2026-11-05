@@ -296,6 +296,11 @@ struct GalaxySSIHealthPDFTextView: View {
           }
           if let reviewRecords, let selected {
             NavigationLink {
+              GalaxySSIHealthReportEvidenceView(records: reviewRecords, store: store, original: selected)
+            } label: {
+              Text(GalaxySSIHealthReportReview.text("evidence", "Linked report evidence", language: language))
+            }
+            NavigationLink {
               GalaxySSIHealthReportBatchView(records: reviewRecords, store: store, original: selected)
             } label: {
               Text(GalaxySSIHealthReportReview.text("batch", "Reviewed measurements", language: language))

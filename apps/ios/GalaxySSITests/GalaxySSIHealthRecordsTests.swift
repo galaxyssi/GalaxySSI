@@ -5,6 +5,42 @@ import XCTest
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
   @MainActor
+  func testReportDuplicateEvidenceUsesExactRevisionAndAtomicConsent() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "fixture.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: 1, sha256: String(repeating: "a", count: 64))
+    let date = Date()
+    try records.write(.init(metric: .weight, measuredAt: date, value: 65))
+    func item(_ page: Int) -> GalaxySSIHealthReportReview.Item {
+      let source = GalaxySSIHealthReportReview.Source(original: original.id, sha256: original.sha256,
+        page: page, region: 0, fromOCR: true)
+      return .init(version: UUID(), source: source, excerpt: "fixture",
+        reading: .init(metric: .weight, measuredAt: date, value: 65, reportSource: source))
+    }
+    let first = item(0), second = item(1)
+    try records.stageReportItem(first, replacing: nil)
+    try records.stageReportItem(second, replacing: nil)
+    let target = try XCTUnwrap(GalaxySSIHealthReportReview.exactTarget(for: first, current: records.load().current))
+    let stale = GalaxySSIHealthReportReview.Target(record: target.record, revision: target.revision + 1)
+    XCTAssertThrowsError(try records.linkReportDuplicates([first.version: target, second.version: stale], original: original))
+    XCTAssertNil(try records.load().reportEvidence)
+    XCTAssertEqual(try records.load().reportReview?.count, 2)
+    try records.linkReportDuplicates([first.version: target], original: original)
+    var edited = try XCTUnwrap(records.load().current.first)
+    edited.notes = "later"
+    try records.write(edited)
+    XCTAssertThrowsError(try records.linkReportDuplicates([second.version: target], original: original))
+    let archive = try records.load()
+    let links = GalaxySSIHealthReportReview.linked(original: original, revisions: archive.revisions,
+      current: archive.current, evidence: archive.reportEvidence ?? [])
+    XCTAssertEqual(links.first?.reading.revision, target.revision)
+    XCTAssertTrue(links.first?.secondary == true)
+    XCTAssertEqual(archive.current.count, 1)
+  }
+
+  @MainActor
   func testReportReviewBatchIsAtomicAndVersionPinned() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

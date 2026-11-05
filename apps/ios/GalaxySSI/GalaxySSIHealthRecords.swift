@@ -128,6 +128,7 @@ struct GalaxySSIHealthRecords {
 
   struct Archive: Codable {
     var reportReview: [GalaxySSIHealthReportReview.Item]?
+    var reportEvidence: [GalaxySSIHealthReportReview.Evidence]?
     var version = 1
     var revisions: [GalaxySSIHealthReading] = []
     var draft: GalaxySSIHealthDraft?
@@ -338,6 +339,35 @@ struct GalaxySSIHealthRecords {
     }
     archive.revisions.append(contentsOf: appended)
     archive.reportReview = pending.filter { !versions.contains($0.version) }
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
+
+  func linkReportDuplicates(_ selected: [UUID: GalaxySSIHealthReportReview.Target],
+                            original: GalaxySSIHealthOriginalStore.Original) throws {
+    var archive = try load()
+    let pending = archive.reportReview ?? []
+    let current = archive.current
+    let chosen = pending.filter { selected[$0.version] != nil }
+    guard !chosen.isEmpty, chosen.count == selected.count else { throw Failure.stale }
+    var evidence = archive.reportEvidence ?? []
+    for item in chosen {
+      guard item.source.original == original.id, item.source.sha256 == original.sha256,
+            let target = selected[item.version],
+            GalaxySSIHealthReportReview.exactTarget(for: item, current: current) == target else {
+        throw Failure.stale
+      }
+      if let linked = evidence.first(where: { $0.source == item.source }) {
+        guard linked.target == target else { throw Failure.duplicate }
+      } else {
+        guard evidence.count < 5_000,
+              !archive.revisions.contains(where: { $0.reportSource == item.source && $0.id != target.record })
+        else { throw Failure.duplicate }
+        evidence.append(.init(target: target, source: item.source, excerpt: item.excerpt))
+      }
+    }
+    archive.reportEvidence = evidence
+    archive.reportReview = pending.filter { selected[$0.version] == nil }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
