@@ -11,6 +11,7 @@ struct GalaxySSIHealthCenterView: View {
   let records: GalaxySSIHealthRecords
   @State private var archive: GalaxySSIHealthRecords.Archive?
   @State private var editor: GalaxySSIHealthDraft?
+  @State private var resumeDeletionOnForeground = false
   @State private var alert: Notice?
   @State private var limit = 30
   @State private var overviewPermissionFailed = false
@@ -18,7 +19,7 @@ struct GalaxySSIHealthCenterView: View {
   @State private var privacyLimit = 20
 
   private enum Notice: String, Identifiable {
-    case unavailable, invalid, stale, duplicate, delete, discardDraft
+    case unavailable, invalid, stale, duplicate, delete, discardDraft, undoConflict
     var id: String { rawValue }
   }
 
@@ -26,6 +27,11 @@ struct GalaxySSIHealthCenterView: View {
     List {
       Section {
         if scenePhase == .active, let archive {
+          if let removed = latestRemoval(in: archive) {
+            Button { openDeletion(removed) } label: {
+              Label(t("resume_removal", "Review last removed measurement"), systemImage: "arrow.uturn.backward")
+            }
+          }
           if archive.current.isEmpty {
             Label(t("first_use.title", "No confirmed measurements yet"), systemImage: "heart.text.square")
               .font(.headline)
@@ -173,7 +179,12 @@ struct GalaxySSIHealthCenterView: View {
     .navigationBarTitleDisplayMode(.inline)
     .onAppear { if scenePhase == .active { reload() } }
     .onChange(of: scenePhase) { phase in
-      if phase == .active { reload() } else {
+      if phase == .active {
+        reload()
+        if resumeDeletionOnForeground, let archive, let removed = latestRemoval(in: archive) {
+          openDeletion(removed)
+        }
+      } else {
         editor = nil
         alert = nil
         archive = nil
@@ -411,12 +422,21 @@ struct GalaxySSIHealthCenterView: View {
         return Alert(title: Text(t("stale", "This measurement changed. Reopen it before editing.")))
       case .unavailable:
         return Alert(title: Text(t("unavailable", "Health records could not be accessed.")))
+      case .undoConflict:
+        return Alert(title: Text(t("undo_conflict", "Another measurement conflicts with this removal.")))
       }
   }
 
   private var editorForm: some View {
     Form {
-      if let draft = editor, scenePhase == .active {
+      if scenePhase == .active, let removed = editor?.existing, removed.deleted {
+        Section(title(removed.metric)) {
+          Text(summary(removed))
+          Text(removed.measuredAt, style: .date)
+          Text(t("measurement_removed", "Measurement removed")).foregroundColor(.secondary)
+          Button(t("undo_removal", "Undo deletion"), action: undoRemoval)
+        }
+      } else if let draft = editor, scenePhase == .active {
         Picker(t("metric", "Measurement"), selection: Binding(
           get: { editor?.metric ?? .bloodPressure }, set: { editor?.metric = $0; editor?.unitOverride = nil })) {
           ForEach(GalaxySSIHealthMetric.allCases) { metric in Text(title(metric)).tag(metric) }
@@ -467,10 +487,10 @@ struct GalaxySSIHealthCenterView: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .cancellationAction) {
-        Button(t("cancel", "Cancel")) { editor = nil }
+        Button(t("cancel", "Cancel")) { resumeDeletionOnForeground = false; editor = nil }
       }
       ToolbarItem(placement: .confirmationAction) {
-        Button(t("save", "Save")) { save() }
+        if editor?.existing?.deleted != true { Button(t("save", "Save")) { save() } }
       }
     }
   }
@@ -487,12 +507,43 @@ struct GalaxySSIHealthCenterView: View {
                     referenceInterval: reading.referenceInterval)
   }
 
+  private func latestRemoval(in archive: GalaxySSIHealthRecords.Archive) -> GalaxySSIHealthReading? {
+    guard let token = archive.lastMeasurementDeletion,
+          let reading = archive.revisions.last(where: { $0.id == token.id }),
+          reading.deleted, reading.revision == token.revision else { return nil }
+    return reading
+  }
+
+  private func openDeletion(_ removed: GalaxySSIHealthReading) {
+    resumeDeletionOnForeground = true
+    edit(removed)
+  }
+
+  private func undoRemoval() {
+    guard scenePhase == .active, let removed = editor?.existing, removed.deleted else { return }
+    do {
+      let restored = try records.undoMeasurementDeletion(.init(id: removed.id, revision: removed.revision))
+      resumeDeletionOnForeground = false
+      let editorID = editor?.id
+      edit(restored)
+      if let editorID { editor?.id = editorID }
+      reload()
+    } catch GalaxySSIHealthRecords.Failure.duplicate { alert = .undoConflict }
+      catch GalaxySSIHealthRecords.Failure.stale { alert = .stale; reload() }
+      catch { alert = .unavailable }
+  }
+
   private func save(allowDuplicate: Bool = false, deleted: Bool = false) {
     guard scenePhase == .active, let draft = editor else { return }
     do {
       if deleted, var existing = draft.existing {
         existing.deleted = true
-        try records.write(existing, draftId: draft.id)
+        try records.write(existing, draftId: draft.id, rememberDeletion: true)
+        existing.revision += 1
+        editor?.existing = existing
+        resumeDeletionOnForeground = true
+        reload()
+        return
       } else {
         let reported = GalaxySSIHealthReportedResult.parse(draft.value, metric: draft.metric)
         let value = reported == nil ? GalaxySSIHealthReportedResult.number(draft.value) : nil
@@ -531,6 +582,7 @@ struct GalaxySSIHealthCenterView: View {
       self.editor = nil
       reload()
     } catch GalaxySSIHealthRecords.Failure.invalid { alert = .invalid }
+      catch GalaxySSIHealthRecords.Failure.stale { alert = .stale; reload() }
       catch { alert = .unavailable }
   }
 

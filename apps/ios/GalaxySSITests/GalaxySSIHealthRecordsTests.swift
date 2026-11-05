@@ -224,6 +224,49 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testUndoMeasurementRestoresExactSourceAndRejectsConflictsAndStaleVersions() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let data = Data("value,time\n60,2025-01-01T12:00:00Z\n".utf8)
+    let mapping = GalaxySSIHealthTableImport.Mapping(metric: .weight, value: 0, date: 1, confirmedUnit: true)
+    XCTAssertEqual(try records.importTable(data, name: "weight.csv", json: false, mapping: mapping,
+                                           expected: [.ready]), 1)
+    let original = try XCTUnwrap(records.load().current.first)
+    let oldEditor = GalaxySSIHealthDraft(existing: original)
+    try records.storeDraft(oldEditor)
+    var tombstone = original
+    tombstone.deleted = true
+    try records.write(tombstone, rememberDeletion: true)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let deletion = try XCTUnwrap(reopened.load().lastMeasurementDeletion)
+    XCTAssertEqual(deletion.revision, 2)
+    XCTAssertTrue(try reopened.load().current.isEmpty)
+    XCTAssertNil(try reopened.load().draft)
+    XCTAssertThrowsError(try reopened.storeDraft(oldEditor)) {
+      guard case GalaxySSIHealthRecords.Failure.stale = $0 else { return XCTFail("Expected stale editor") }
+    }
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(.init(id: UUID(), revision: 2)))
+    let conflict = GalaxySSIHealthReading(metric: .weight, measuredAt: original.measuredAt, value: 60)
+    try reopened.write(conflict)
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
+    XCTAssertEqual(try reopened.load().lastMeasurementDeletion, deletion)
+    var removeConflict = try XCTUnwrap(reopened.load().current.first)
+    removeConflict.deleted = true
+    try reopened.write(removeConflict)
+    let restored = try reopened.undoMeasurementDeletion(deletion)
+    XCTAssertEqual(restored.id, original.id)
+    XCTAssertEqual(restored.revision, 3)
+    XCTAssertEqual(restored.tableSource, original.tableSource)
+    XCTAssertThrowsError(try reopened.storeDraft(oldEditor))
+    try reopened.storeDraft(.init(existing: restored))
+    XCTAssertEqual(try reopened.load().draft?.existing?.revision, 3)
+    XCTAssertNil(try reopened.load().lastMeasurementDeletion)
+    XCTAssertThrowsError(try reopened.undoMeasurementDeletion(deletion))
+  }
+
+  @MainActor
   func testHealthBackupAuthenticatesOriginalsAndLeavesLocalRecordsUntouched() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
