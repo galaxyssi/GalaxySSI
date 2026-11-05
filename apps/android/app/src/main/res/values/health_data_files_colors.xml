@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="health_data_summary_fill">#E8F7EE</color>
+    <color name="health_data_summary_stroke">#CBE4D5</color>
+    <color name="health_data_link_text">#1E6444</color>
+    <color name="health_data_warning_text">#934D1A</color>
+    <color name="health_data_meta_text">#626A65</color>
+</resources>

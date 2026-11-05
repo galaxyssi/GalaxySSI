@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_data_local">本机健康档案</string>
+    <string name="health_data_heading">数据与原件，都在这里</string>
+    <string name="health_data_note">查看记录、找回原图，或迁移到新设备。</string>
+    <string name="health_data_record_count">已确认记录</string>
+    <string name="health_data_camera_count">拍照原图</string>
+    <string name="health_data_upload_count">上传文件</string>
+    <string name="health_data_count_pending">—</string>
+    <string name="health_data_manage">管理内容</string>
+    <string name="health_data_measurements">健康指标数据</string>
+    <string name="health_data_measurements_note">日常指标、检验记录、测量条件</string>
+    <string name="health_data_originals">照片与上传原件</string>
+    <string name="health_data_originals_note">照片、PDF、表格，保留记录关联</string>
+    <string name="health_data_tasks">导入与导出任务</string>
+    <string name="health_data_tasks_note">导入队列、测量导出、原件导出</string>
+    <string name="health_data_backup">备份与恢复</string>
+    <string name="health_data_backup_note">完整迁移记录、原件和关联信息</string>
+    <string name="health_data_recent">最近文件</string>
+    <string name="health_data_view_all">查看全部</string>
+    <string name="health_data_loading_files">正在加载最近文件…</string>
+    <string name="health_data_file_meta">%1$s %2$s · %3$s · %4$s</string>
+    <string name="health_data_camera">拍照</string>
+    <string name="health_data_upload">上传</string>
+    <string name="health_data_crop">裁剪</string>
+    <string name="health_data_linked">已关联</string>
+    <string name="health_data_unlinked">未关联</string>
+    <string name="health_data_missing">原件不可用</string>
+</resources>
