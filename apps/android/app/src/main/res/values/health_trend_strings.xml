@@ -25,6 +25,9 @@
     <string name="health_trend_until">End date</string>
     <string name="health_trend_invalid_dates">The end date must not precede the start date.</string>
     <string name="health_trend_numeric_records">Numeric records contributing to this point · %1$s</string>
+    <string name="health_trend_point_result">%1$s · %2$s: %3$s %4$s</string>
+    <string name="health_trend_point_contributors">Records used for this point: %1$d</string>
+    <string name="health_trend_open_extremum">View the record that set this value</string>
     <string name="health_trend_changed">Records changed during this calculation. Refresh to obtain a consistent result.</string>
     <string name="health_trend_stale">Records have changed since this snapshot. Refresh the trend to update it.</string>
     <string name="health_trend_refresh">Refresh trend</string>

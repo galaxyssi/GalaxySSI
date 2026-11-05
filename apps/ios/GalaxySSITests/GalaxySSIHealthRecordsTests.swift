@@ -355,6 +355,30 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertNotEqual(original.revisions, try point(revised).revisions)
   }
 
+  func testHealthAssistantSendsOnlyAggregatesAndRejectsUnknownEvidence() throws {
+    let now = Date()
+    let reading = GalaxySSIHealthReading(revision: 2, metric: .glucose, measuredAt: now, value: 6)
+    let other = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 100, unitOverride: "mg/dL")
+    let unrelated = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 72)
+    let scope = GalaxySSIHealthAnalysis.Scope(interval: DateInterval(start: now, duration: 86_400), metrics: [.glucose])
+    let analysis = GalaxySSIHealthAnalysis(scope: scope, current: [reading, other, unrelated], calendar: .current)
+    XCTAssertEqual(analysis.evidence.count, 2)
+    XCTAssertEqual(analysis.evidence.first?.aggregate.mean, "6")
+    XCTAssertEqual(analysis.evidence.first?.readings.map(\.id), [reading.id])
+    XCTAssertTrue(analysis.isCurrent([other, reading]))
+    XCTAssertFalse(analysis.isCurrent([other]))
+    let data = try analysis.requestJSON()
+    let packet = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(Set(packet.keys), ["requestedDays", "aggregates"])
+    let aggregates = try XCTUnwrap(packet["aggregates"] as? [[String: Any]])
+    XCTAssertEqual(Set(try XCTUnwrap(aggregates.first).keys),
+      ["id", "metric", "component", "unit", "count", "observedDays", "minimum", "maximum", "mean"])
+    let output = #"{"evidence":["e1"],"next_step":"review_sources"}"#
+    XCTAssertEqual(try analysis.recommendation(output).evidence, ["e1"])
+    XCTAssertThrowsError(try analysis.recommendation(#"{"evidence":["e99"],"next_step":"review_sources"}"#))
+    XCTAssertThrowsError(try analysis.recommendation(#"{"evidence":["e1"],"next_step":"review_sources","text":"extra"}"#))
+  }
+
   func testTrendKeepsCalendarGapsAndExactComponentCohorts() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))

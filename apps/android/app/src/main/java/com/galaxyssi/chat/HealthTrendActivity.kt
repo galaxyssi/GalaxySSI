@@ -23,6 +23,7 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 
 class HealthTrendActivity : Activity() {
+    private data class PointSelection(val spec: HealthTrendSpec, val version: String, val bucket: Int, val field: String)
     private val names by lazy { intent.healthNavigationDatabases() }
     private val ui by lazy { HealthCenterViews(this) }
     private val worker = Executors.newSingleThreadExecutor()
@@ -36,6 +37,7 @@ class HealthTrendActivity : Activity() {
     private var signal: CancellationSignal? = null; private var dialog: AlertDialog? = null
     private var chart: HealthTrendChart? = null; private var progress: TextView? = null; private var scroll: ScrollView? = null; private var scrollY = 0
     private var notice: TextView? = null; private var retry: TextView? = null; private var version: String? = null
+    private var pointSelection: PointSelection? = null
     private var observing = false; private var probing = false; private var probeAgain = false; private var probeSerial = 0
     private val observer = object : android.database.ContentObserver(main) { override fun onChange(selfChange: Boolean) = probeVersion() }
     private val privacyDatabase by lazy { if (names.fixture == null) healthPrivacyDatabaseName() else names.privacy }
@@ -155,14 +157,20 @@ class HealthTrendActivity : Activity() {
             source.manualOnly -> getString(R.string.health_source_manual)
             source.originalId.isBlank() -> getString(R.string.health_trend_all_sources)
             else -> sourceName.ifBlank { getString(R.string.health_trend_original_source, source.originalId.take(8)) }
-        }) { chooseSources() }, 8)
+        }) { chooseSources() }.apply { tag = "health-trend-source" }, 8)
         ui.add(content, ui.row(getString(R.string.health_unit), unit.ifBlank { getString(R.string.health_unit_not_applicable) }) {
             choose(R.string.health_unit, metric.selectableUnits.map { it.ifBlank { getString(R.string.health_unit_not_applicable) } }) { index -> unit = metric.selectableUnits[index]; explicitUnit = true; load() }
         })
         ui.add(content, ui.row(getString(R.string.health_trend_aggregation), getString(aggregation.titleResource())) {
             choose(R.string.health_trend_aggregation, HealthTrendAggregation.entries.map { getString(it.titleResource()) }) { aggregation = HealthTrendAggregation.entries[it]; load() }
-        })
-        chart = HealthTrendChart(this, ::openPoint).apply { tag = "health-trend-chart"; bind(summary) }
+        }.apply { tag = "health-trend-aggregation" })
+        val focused = if (summary == null) null else pointSelection?.let { selection ->
+            if (selection.spec == summary.spec && selection.version == summary.version)
+                summary.points.singleOrNull { it.bucket == selection.bucket && it.field == selection.field }
+            else null
+        }
+        if (summary != null && focused == null) pointSelection = null
+        chart = HealthTrendChart(this, ::openPoint).apply { tag = "health-trend-chart"; bind(summary, focused) }
         ui.add(content, requireNotNull(chart), 12); chart!!.layoutParams.height = ui.dp(240)
         val legend = ui.line()
         metric.requiredFields.forEachIndexed { index, field -> legend.addView(ui.text(getString(healthFieldResource(field)), 12f).apply {
@@ -176,7 +184,7 @@ class HealthTrendActivity : Activity() {
             ui.add(content, ui.text(getString(R.string.health_trend_calculated, time), 12f, muted = true), 6)
             ui.add(content, ui.text(getString(R.string.health_trend_excluded, it.nonNumeric, it.otherUnits), 12f, muted = true), 6)
             ui.add(content, ui.text(getString(R.string.health_trend_bucket, it.spec.bucketDays), 12f, muted = true), 6)
-            ui.add(content, ui.row(getString(R.string.health_all_records), getString(R.string.health_record_count, it.total)) { openRecords(it.spec, false) }, 16)
+            ui.add(content, ui.row(getString(R.string.health_all_records), getString(R.string.health_record_count, it.total)) { openRecords(it.spec) }, 16)
         }
         notice = ui.text("", 13f, muted = true).apply { visibility = View.GONE }.also { ui.add(content, it, 8) }
         retry = ui.command(R.string.health_trend_refresh) { load() }.apply { visibility = View.GONE }.also { ui.add(content, it, 8) }
@@ -210,11 +218,19 @@ class HealthTrendActivity : Activity() {
             .putExtra("health_revision", revision).putHealthNavigationFixture(names))
     }
     private fun openPoint(point: HealthTrendPoint) {
-        if (point.recordId.isNotBlank()) openRecord(point.recordId, point.recordRevision) else openRecords(spec().copy(first = point.first, last = point.last), true)
+        val snapshot = version ?: return
+        val selected = spec()
+        pointSelection = PointSelection(selected, snapshot, point.bucket, point.field)
+        if (point.count == 1L && point.recordId.isNotBlank()) openRecord(point.recordId, point.recordRevision)
+        else openRecords(selected.copy(first = point.first, last = point.last), point.field)
     }
-    private fun openRecords(spec: HealthTrendSpec, numeric: Boolean) { startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(spec).putExtra("health_numeric", numeric).putExtra("health_privacy_test_db", privacyDatabase).apply {
+    private fun openRecords(spec: HealthTrendSpec, field: String? = null) { startActivity(Intent(this, HealthTrendRecordsActivity::class.java).putHealthTrend(spec).putExtra("health_privacy_test_db", privacyDatabase).apply {
         putHealthNavigationFixture(names)
-        if (numeric) putExtra("health_version", version)
+        if (field != null) {
+            putExtra("health_numeric", true)
+            putExtra("health_point_field", field)
+            putExtra("health_version", version)
+        }
     }) }
     private fun choose(title: Int, values: List<String>, selected: (Int) -> Unit) {
         dialog?.dismiss(); dialog = AlertDialog.Builder(this).setTitle(title).setItems(values.toTypedArray()) { _, index -> selected(index) }
