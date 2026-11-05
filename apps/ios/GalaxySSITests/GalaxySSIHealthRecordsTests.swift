@@ -186,6 +186,83 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testHealthKitSyncCommitsPageAndCursorTogetherAndResumesWithoutDeleting() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let floor = now.addingTimeInterval(-86_400)
+    let first = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    let item = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "a", count: 64), origin: "fixture", name: nil))
+    let broken = GalaxySSIHealthKitSync.Page(rows: [item, .init(metric: .weight, value: 66)], anchor: Data([1]),
+      providerCount: 2, more: true)
+    XCTAssertThrowsError(try records.commitHealthKitPage(scope: .weight, expected: first, page: broken, at: now))
+    XCTAssertTrue(try records.load().current.isEmpty)
+    XCTAssertNil(try records.load().healthKitSync?["weight"]?.anchor)
+    let page = GalaxySSIHealthKitSync.Page(rows: [item], anchor: Data([2]), providerCount: 1, more: true)
+    let saved = try records.commitHealthKitPage(scope: .weight, expected: first, page: page, at: now)
+    XCTAssertEqual(saved.anchor, Data([2]))
+    XCTAssertEqual(try records.load().current.map(\.id), [item.id])
+    XCTAssertThrowsError(try records.commitHealthKitPage(scope: .weight, expected: first, page: page, at: now))
+    try records.finishHealthKitSync(.weight, run: saved.run, status: .interrupted)
+    let resumed = try records.beginHealthKitSync(.weight, floor: now, reset: false)
+    XCTAssertEqual(resumed.floor, floor)
+    XCTAssertEqual(resumed.anchor, saved.anchor)
+    let deletionOnly = GalaxySSIHealthKitSync.Page(rows: [], anchor: Data([3]), providerCount: 1, more: false)
+    XCTAssertEqual(try records.commitHealthKitPage(scope: .weight, expected: resumed, page: deletionOnly, at: now).status, .success)
+    let next = try records.beginHealthKitSync(.weight, floor: floor, reset: false)
+    let empty = try records.commitHealthKitPage(scope: .weight, expected: next, page: deletionOnly, at: now)
+    XCTAssertEqual(empty.status, .empty)
+    XCTAssertEqual(try records.load().current.map(\.id), [item.id])
+    let reset = try records.beginHealthKitSync(.weight, floor: now, reset: true)
+    XCTAssertTrue(reset.previousCoverageUnverified)
+    XCTAssertNil(reset.anchor)
+  }
+
+  @MainActor
+  func testHealthKitSyncRecoversExpiredCursorAndRejectsPageAfterLeavingForeground() async throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    let oldFloor = now.addingTimeInterval(-90 * 86_400)
+    let floor = now.addingTimeInterval(-30 * 86_400)
+    let reading = GalaxySSIHealthReading(metric: .weight, measuredAt: now, value: 65,
+      healthKitSource: .init(key: String(repeating: "c", count: 64), origin: "fixture", name: nil))
+    let old = try records.beginHealthKitSync(.weight, floor: oldFloor, reset: false)
+    _ = try records.commitHealthKitPage(scope: .weight, expected: old,
+      page: .init(rows: [reading], anchor: Data("stale-anchor-fixture".utf8), providerCount: 1, more: false), at: now)
+    XCTAssertNil(try Data(contentsOf: file).range(of: Data("stale-anchor-fixture".utf8)))
+    var published: [GalaxySSIHealthKitSync.Checkpoint] = []
+    let result = try await GalaxySSIHealthKitSync.run(scope: .weight, records: records, floor: floor,
+      reset: false, isActive: { true }, read: { checkpoint in
+        if checkpoint.anchor != nil { throw GalaxySSIHealthKitSync.Failure.invalidAnchor }
+        XCTAssertEqual(checkpoint.floor, floor)
+        return .init(rows: [reading], anchor: Data([1]), providerCount: 1, more: false)
+      }, onCheckpoint: { published.append($0) })
+    XCTAssertEqual(published.count, 3)
+    XCTAssertTrue(result.previousCoverageUnverified)
+    XCTAssertEqual(result.status, .success)
+    XCTAssertEqual(result.insertedThisRun, 0)
+    XCTAssertEqual(try records.load().current.map(\.id), [reading.id])
+    var active = true
+    do {
+      _ = try await GalaxySSIHealthKitSync.run(scope: .weight, records: records, floor: floor,
+        reset: false, isActive: { active }, read: { _ in
+          active = false
+          return .init(rows: [], anchor: Data([2]), providerCount: 0, more: false)
+        }, onCheckpoint: { _ in })
+      XCTFail("A page must not commit after the scene is no longer active.")
+    } catch is CancellationError {}
+    let saved = try XCTUnwrap(records.load().healthKitSync?["weight"])
+    XCTAssertEqual(saved.status, .interrupted)
+    XCTAssertEqual(saved.anchor, Data([1]))
+    XCTAssertThrowsError(try records.beginHealthKitSync(.steps, floor: floor, reset: false))
+  }
+
+  @MainActor
   func testHealthKitImportKeepsOriginsEditsAndTombstones() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

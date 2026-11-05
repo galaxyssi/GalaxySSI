@@ -149,7 +149,7 @@ struct GalaxySSIHealthKitImport {
     }
   }
 
-  private static func convert(_ sample: HKSample, scope: Scope, interval: DateInterval) -> GalaxySSIHealthReading? {
+  static func convert(_ sample: HKSample, scope: Scope, interval: DateInterval) -> GalaxySSIHealthReading? {
     guard sample.startDate >= interval.start, sample.startDate < interval.end else { return nil }
     let origin = sample.sourceRevision.source
     let source = Source(key: digest(scope.rawValue + ":" + origin.bundleIdentifier + ":" + sample.uuid.uuidString),
