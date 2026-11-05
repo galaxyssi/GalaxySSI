@@ -32,5 +32,7 @@
     <string name="health_weekly_changed">预览后记录已变化，请重新确认周报再保存。</string>
     <string name="health_weekly_assistant_scope">范围来自本次健康助手分析</string>
     <string name="health_weekly_assistant_changed">分析所用的记录已变化。请查看更新后的周报，或返回健康助手。</string>
+    <string name="health_weekly_reminder_scope">范围来自睡眠提醒依据</string>
+    <string name="health_weekly_reminder_changed">提醒所用的记录已变化。请查看更新后的周报，或返回提醒详情。</string>
     <string name="health_weekly_review_again">查看更新后的周报</string>
 </resources>

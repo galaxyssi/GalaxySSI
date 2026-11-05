@@ -38,6 +38,7 @@ class HealthWeeklyActivity : Activity() {
     private var summaryMetrics = healthWeeklyMetrics.toSet()
     private var summaryComparison = true
     private var linked: HealthWeeklyStamp? = null
+    private val fromSleepReminder by lazy { intent.getBooleanExtra("health_weekly_from_sleep_reminder", false) }
     private var includeRecords = false
     private var comparison = true
     private var active = false
@@ -183,7 +184,7 @@ class HealthWeeklyActivity : Activity() {
         content.addView(ui.text(text.range(snapshot.scope), 19f, bold = true).apply { tag = "health-weekly-range" })
         ui.add(content, ui.text(text.version(snapshot), 12f, muted = true), 6)
         if (linked != null && !review) ui.add(content,
-            ui.text(getString(R.string.health_weekly_assistant_scope), 13f, muted = true)
+            ui.text(getString(if (fromSleepReminder) R.string.health_weekly_reminder_scope else R.string.health_weekly_assistant_scope), 13f, muted = true)
                 .apply { tag = "health-weekly-linked" }, 4)
         if (!review) ui.add(content, ui.line().apply {
             val previous = action(R.string.health_weekly_previous, "health-weekly-previous", true) { linked = null; end = end.minusDays(7); load() }
@@ -339,7 +340,11 @@ class HealthWeeklyActivity : Activity() {
     }
     private fun renderError(failure: Throwable) {
         val staleLink = failure is HealthWeeklyChanged && linked != null && screen == Screen.SUMMARY
-        val content = status(if (staleLink) R.string.health_weekly_assistant_changed else errorResource(failure))
+        val content = status(when {
+            staleLink && fromSleepReminder -> R.string.health_weekly_reminder_changed
+            staleLink -> R.string.health_weekly_assistant_changed
+            else -> errorResource(failure)
+        })
         if (failure is HealthAccessBlocked) ui.add(content, action(R.string.health_privacy_title, "health-weekly-blocked") { startActivity(healthPrivacyIntent()) }, 16)
         if (failure is HealthWeeklyChanged && screen == Screen.REVIEW) {
             ui.add(content, action(R.string.health_weekly_review_again, "health-weekly-review-again") {
@@ -357,8 +362,9 @@ class HealthWeeklyActivity : Activity() {
 
 private const val HEALTH_WEEKLY_HANDOFF = "health_weekly_handoff"
 
-internal fun Intent.putHealthWeeklyHandoff(stamp: HealthWeeklyStamp): Intent {
+internal fun Intent.putHealthWeeklyHandoff(stamp: HealthWeeklyStamp, fromSleepReminder: Boolean = false): Intent {
     require(!stamp.scope.records)
+    if (fromSleepReminder) putExtra("health_weekly_from_sleep_reminder", true)
     return putExtra(HEALTH_WEEKLY_HANDOFF, stamp.bundle())
 }
 
