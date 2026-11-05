@@ -412,6 +412,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         : useRemoteWhisper ? .remoteWhisperASR : .androidSystemASR
     VoiceRuntimeHealthRegistry.begin(currentRuntimeChannel)
     do {
+      NotificationCenter.default.post(name: .galaxySSIVoiceRecordingWillStart, object: nil)
       let audioSession = AVAudioSession.sharedInstance()
       if communicationCapture {
         try audioSession.setCategory(

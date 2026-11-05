@@ -5,7 +5,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   var messages: [ChatMessage]
   var waitingMessageIDs: Set<UUID>
   var retryingMessageIDs: Set<UUID>
-  @ObservedObject var replySpeech: AgentReplySpeechRuntime
+  var replySpeech: AgentReplySpeechRuntime
+  var completedSpeech: AgentCompletedReplyPlayback
+  var playCompletedReply: (ChatMessage, AgentReplyParagraphSpeechSelection?) -> Bool
   var voiceSettings: VoiceSettings
   var languagePolicy: LanguagePolicySettings
   var t: (String, String) -> String
@@ -36,20 +38,24 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   var onMessageVisible: (ChatMessage) -> Void
 
   var body: some View {
+    let latest = latestSpeechTarget
     ForEach(messages) { message in
-      messageRow(message)
+      messageRow(message, latestSpeechEntryId: latest?.entryId)
     }
-    .onAppear(perform: observeLatestReply)
-    .onChange(of: latestSpeechTarget) { _ in
-      observeLatestReply()
+    .onAppear { observeLatestReply(latest) }
+    .onChange(of: latest) { target in
+      observeLatestReply(target)
     }
     .onDisappear {
+      replySpeech.stop()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
       replySpeech.stop()
     }
   }
 
   @ViewBuilder
-  private func messageRow(_ message: ChatMessage) -> some View {
+  private func messageRow(_ message: ChatMessage, latestSpeechEntryId: String?) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       if let mergedSource = mergedSourceLabel(message) {
         Text(mergedSource)
@@ -96,24 +102,13 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
           .padding(.vertical, 8)
         }
       }
-      if let target = AgentReplySpeechPresentationPolicy.target(message),
-         latestSpeechTarget?.responseId == target.responseId || replySpeech.isActive(target) {
-        HStack {
-          Spacer()
-          GalaxySSIAgentReplySpeechButton(enabled: replySpeech.isEnabled(target)) {
-            replySpeech.toggle(
-              target,
-              settings: voiceSettings,
-              languagePolicy: languagePolicy
-            )
-          }
-        }
-        if latestSpeechTarget?.responseId == target.responseId,
-           !replySpeech.lastErrorDescription.isEmpty {
-          Text(replySpeech.lastErrorDescription)
-            .font(.caption2)
-            .foregroundColor(.red)
-            .frame(maxWidth: .infinity, alignment: .trailing)
+      if let target = AgentReplySpeechPresentationPolicy.target(message) {
+        GalaxySSIAgentReplySpeechFooter(runtime: replySpeech, entryId: target.entryId,
+          isLatest: latestSpeechEntryId == target.entryId,
+          additionalUpdates: completedSpeech.footerUpdates(messageId: message.id)) {
+          if playCompletedReply(message, nil) { return }
+          completedSpeech.stop()
+          replySpeech.toggle(target, settings: voiceSettings, languagePolicy: languagePolicy)
         }
       }
     }
@@ -227,9 +222,9 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     AgentReplySpeechPresentationPolicy.latestTarget(messages)
   }
 
-  private func observeLatestReply() {
+  private func observeLatestReply(_ target: AgentReplySpeechTarget?) {
     replySpeech.observe(
-      latestSpeechTarget,
+      target,
       settings: voiceSettings,
       languagePolicy: languagePolicy
     )
@@ -240,6 +235,8 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   ) -> ((AgentReplyParagraphSpeechSelection) -> Void)? {
     guard let target = AgentReplySpeechPresentationPolicy.target(message) else { return nil }
     return { selection in
+      if playCompletedReply(message, selection) { return }
+      completedSpeech.stop()
       replySpeech.readFromParagraph(
         selection,
         target: target,

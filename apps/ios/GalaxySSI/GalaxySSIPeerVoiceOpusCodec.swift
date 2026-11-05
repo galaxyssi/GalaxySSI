@@ -45,6 +45,7 @@ final class GalaxySSIPeerVoicePCMRecorder {
 
   func start() throws {
     guard !isRunning else { return }
+    NotificationCenter.default.post(name: .galaxySSIVoiceRecordingWillStart, object: nil)
     let session = AVAudioSession.sharedInstance()
     try session.setCategory(
       .playAndRecord,

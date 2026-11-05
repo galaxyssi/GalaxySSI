@@ -650,12 +650,23 @@ extension GalaxySSIStore {
 
   @discardableResult
   func setAgentSessionPrivateMode(id conversationId: String, privateMode: Bool) -> Bool {
-    mutateAgentConversation(id: conversationId) { $0.privateMode = privateMode }
+    let changed = mutateAgentConversation(id: conversationId) { $0.privateMode = privateMode }
+    if changed && privateMode { stopCompletedReplyPlayback(in: conversationId) }
+    return changed
   }
 
   @discardableResult
   func setAgentSessionTrackingPaused(id conversationId: String, paused: Bool) -> Bool {
-    mutateAgentConversation(id: conversationId) { $0.trackingPaused = paused }
+    let changed = mutateAgentConversation(id: conversationId) { $0.trackingPaused = paused }
+    if changed && paused { stopCompletedReplyPlayback(in: conversationId) }
+    return changed
+  }
+
+  private func stopCompletedReplyPlayback(in conversationId: String) {
+    let player = AgentCompletedReplyPlayback.shared
+    if player.selection?.conversationID == conversationId.trimmingCharacters(in: .whitespacesAndNewlines) {
+      player.stop()
+    }
   }
 
   @discardableResult
@@ -819,6 +830,7 @@ extension GalaxySSIStore {
     let changed = mutateAgentConversation(id: clean) { conversation in
       conversation.status = .archived
     }
+    if changed { stopCompletedReplyPlayback(in: clean) }
     if changed && shouldClearActive {
       ensureActiveAgentSession()
     }
@@ -850,6 +862,10 @@ extension GalaxySSIStore {
       AgentTeamExecutionHistoryStore.shared.removeResearchObjects(conversationId: session.id)
     }
     let removedChatMessages = chatHistoryDatabase.deleteConversations(ids)
+    if let active = AgentCompletedReplyPlayback.shared.selection?.conversationID, ids.contains(active),
+       agentConversationDatabase.read(active) == nil {
+      stopCompletedReplyPlayback(in: active)
+    }
     let removedTranscripts = UserDefaultsAgentTranscriptEntryStore(defaults: defaults, secrets: secrets)
       .deleteConversations(ids)
     agentConversations.removeAll { ids.contains($0.id) }

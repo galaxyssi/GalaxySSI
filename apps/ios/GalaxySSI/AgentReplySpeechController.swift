@@ -8,6 +8,44 @@ struct AgentReplySpeechTarget: Equatable {
   var complete: Bool
 }
 
+struct AgentCompletedReplyPlaybackSelection: Equatable, Sendable {
+  let conversationID: String
+  let messageID: UUID
+  let startOffset: Int
+
+  init?(message: ChatMessage, paragraph: AgentReplyParagraphSpeechSelection? = nil) {
+    guard !message.conversationId.isBlank,
+          message.contactId == "hermes",
+          let target = AgentReplySpeechPresentationPolicy.target(message), target.complete else { return nil }
+    let offset: Int
+    if let paragraph {
+      if paragraph.startOffset >= 0, paragraph.startOffset < paragraph.sourceText.count,
+         let source = target.text.range(of: paragraph.sourceText) {
+        offset = target.text.distance(from: target.text.startIndex, to: source.lowerBound) + paragraph.startOffset
+      } else if !paragraph.paragraph.isEmpty, let range = target.text.range(of: paragraph.paragraph) {
+        offset = target.text.distance(from: target.text.startIndex, to: range.lowerBound)
+      } else {
+        return nil
+      }
+    } else {
+      offset = 0
+    }
+    guard offset < target.text.count else { return nil }
+    conversationID = message.conversationId
+    messageID = message.id
+    startOffset = offset
+  }
+
+  func resolve(_ persisted: ChatMessage?) -> String? {
+    guard let persisted, persisted.id == messageID, persisted.conversationId == conversationID,
+          persisted.contactId == "hermes", [.local, .delivered, .read].contains(persisted.deliveryStatus),
+          let target = AgentReplySpeechPresentationPolicy.target(persisted), target.complete,
+          startOffset < target.text.count else { return nil }
+    let suffix = String(target.text.dropFirst(startOffset)).trimmingCharacters(in: .whitespacesAndNewlines)
+    return suffix.isEmpty ? nil : suffix
+  }
+}
+
 struct AgentReplySpeechCommand: Equatable {
   var cancelSessionId = ""
   var beginSessionId = ""
@@ -228,6 +266,8 @@ final class AgentReplySpeechController {
     active?.enabled == true
   }
 
+  var footerEntryId: String? { active?.target.entryId }
+
   func disable(sessionId: String) -> Set<String> {
     guard var session = active, session.playbackSessionId == sessionId else { return [] }
     session.enabled = false
@@ -240,12 +280,8 @@ final class AgentReplySpeechController {
     active?.target.responseId == target.responseId && active?.enabled == true
   }
 
-  func isActive(_ target: AgentReplySpeechTarget) -> Bool {
-    active?.target.responseId == target.responseId
-  }
-
   private func session(for target: AgentReplySpeechTarget) -> Session {
-    if var current = active, current.target.responseId == target.responseId {
+    if var current = active, current.target.responseId == target.responseId, current.target.entryId == target.entryId {
       current.target = target
       current.observedText = target.text
       return current
@@ -262,7 +298,7 @@ final class AgentReplySpeechController {
     complete: Bool
   ) -> AgentReplySpeechCommand {
     var session = initialSession
-    let previousPlaybackSessionId = session.enabled ? session.playbackSessionId : ""
+    let previousPlaybackSessionId = active.flatMap { $0.enabled ? $0.playbackSessionId : nil } ?? ""
     playbackSequence &+= 1
     session.playbackSessionId = playbackSessionId(
       session.target.responseId,

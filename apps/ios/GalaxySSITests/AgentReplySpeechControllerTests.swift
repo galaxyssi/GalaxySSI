@@ -3,6 +3,42 @@ import UIKit
 @testable import GalaxySSI
 
 final class AgentReplySpeechControllerTests: XCTestCase {
+  func testCompletedReplySelectionUsesStoredTextAndChecksBothOwnershipIDs() throws {
+    let message = ChatMessage(contactId: "hermes", content: "Repeat. Repeat. Final.", isMine: false,
+                              conversationId: "thread", remoteMessageId: "assistant-final:turn")
+    let paragraph = AgentReplyParagraphSpeechSelection(paragraph: "Repeat.", sourceText: message.content,
+                                                      startOffset: "Repeat. ".count)
+    let selection = try XCTUnwrap(AgentCompletedReplyPlaybackSelection(message: message, paragraph: paragraph))
+    XCTAssertEqual(selection.resolve(message), "Repeat. Final.")
+    var other = message
+    other.conversationId = "other-thread"
+    XCTAssertNil(selection.resolve(other))
+    other = message
+    other.id = UUID()
+    XCTAssertNil(selection.resolve(other))
+    other = message
+    other.remoteMessageId = "agent-stream-1"
+    XCTAssertNil(selection.resolve(other))
+    XCTAssertNil(AgentCompletedReplyPlaybackSelection(message: other))
+    let foreignText = AgentReplyParagraphSpeechSelection(paragraph: "Untrusted", sourceText: "Untrusted", startOffset: 0)
+    XCTAssertNil(AgentCompletedReplyPlaybackSelection(message: message, paragraph: foreignText))
+  }
+
+  @MainActor
+  func testProgressivePauseAndResumeAreScopedToAnOpenPlaybackSession() {
+    let service = VoiceProgressiveReplySpeechService()
+    XCTAssertFalse(service.pauseProgressive())
+    let request = VoiceReplyPlaybackRequest(sessionId: "reply", utteranceId: "utterance", text: "",
+      language: "en-US", providerId: VoiceTTSProvider.system.rawValue, runtimeChannel: .androidSystemTTS)
+    service.beginProgressive(request, onPlaybackStarted: { _ in }, onDone: { _, _, _ in })
+    XCTAssertTrue(service.pauseProgressive())
+    XCTAssertFalse(service.pauseProgressive())
+    XCTAssertTrue(service.resumeProgressive())
+    XCTAssertFalse(service.resumeProgressive())
+    XCTAssertTrue(service.stop())
+    XCTAssertFalse(service.resumeProgressive())
+  }
+
   func testReplyStartsMutedAndEnablingReadsAvailableText() {
     let controller = AgentReplySpeechController()
     let target = makeTarget(responseId: "turn-1", entryId: "stream-1", text: "First segment.")

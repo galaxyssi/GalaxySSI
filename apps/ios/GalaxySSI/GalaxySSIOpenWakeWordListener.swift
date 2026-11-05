@@ -54,6 +54,7 @@ actor GalaxySSIOpenWakeWordListener {
 
     let audioSession = AVAudioSession.sharedInstance()
     do {
+      NotificationCenter.default.post(name: .galaxySSIVoiceRecordingWillStart, object: nil)
       try audioSession.setCategory(
         .playAndRecord,
         mode: .measurement,
