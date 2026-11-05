@@ -34,10 +34,15 @@ enum PublicNewsArticleBody {
 
   @MainActor
   static func load(_ url: URL) async throws -> PublicNewsOriginalBody {
+    let html = try await fetchHTML(url)
+    return try await extract(html, articleURL: url)
+  }
+
+  static func fetchHTML(_ url: URL) async throws -> String {
     guard supports(url) else { throw PublicNewsArticleBodyError.unsupportedSource }
     let data = try await PublicScienceTransport.fetch(url, limit: 3_000_000)
     guard let html = String(data: data, encoding: .utf8) else { throw PublicNewsArticleBodyError.incompleteSource }
-    return try await extract(html, articleURL: url)
+    return html
   }
 
   @MainActor
@@ -61,7 +66,7 @@ enum PublicNewsArticleBody {
       return null;
     }
     const selector = "[itemprop='articleBody'],#article-body,#article_content,article .article-body,article .entry-content," +
-      "#artibody,.article-text,.article-content,.article__content,.article-text-content";
+      "#artibody,.article-text,.article-content,.article__body,.article__content,.article-text-content,.post__content,.story-body";
     const region = tree.querySelector(selector) ||
       (tree.querySelectorAll("main article").length === 1 ? tree.querySelector("main article") : null) ||
       (tree.querySelectorAll("article").length === 1 ? tree.querySelector("article") : null);

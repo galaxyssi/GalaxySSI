@@ -5,6 +5,7 @@ struct GalaxySSIPublicNewsBodyView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scenePhase
   let article: PublicNewsArticle
+  let retainedArticleIDs: Set<String>
   let rememberCover: (URL) -> Void
 
   @State private var checkpoint: PublicNewsBodyCheckpoint?
@@ -92,7 +93,7 @@ struct GalaxySSIPublicNewsBodyView: View {
       switch job.operation {
       case .fetch:
         let original = try await PublicNewsArticleBody.load(article.url)
-        next = try await PublicNewsBodyStore.shared.install(original, articleID: article.id)
+        next = try await PublicNewsBodyStore.shared.install(original, articleID: article.id, retaining: retainedArticleIDs)
       case .translate:
         guard let checkpoint else { throw PublicNewsArticleBodyError.incompleteSource }
         next = try await PublicNewsTranslation.run(checkpoint) { update in

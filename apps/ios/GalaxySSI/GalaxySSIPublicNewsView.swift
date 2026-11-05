@@ -7,6 +7,7 @@ struct GalaxySSIPublicNewsView: View {
   @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
   @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
   @StateObject private var archive = PublicNewsArchive()
+  @State private var showBacklog = false
   @State private var filter = Filter.all
   @State private var refreshRequest = 0
   @State private var showHighlights = false
@@ -37,6 +38,9 @@ struct GalaxySSIPublicNewsView: View {
             }
             Button { showHighlights = true } label: {
               Label(t("public_news_highlights", "Highlights"), systemImage: "sparkles")
+            }
+            Button { showBacklog = true } label: {
+              Label(t("public_news_backlog_title", "Article processing"), systemImage: "list.bullet.rectangle")
             }
             Button { refreshRequest += 1 } label: {
               Label(t("public_news_refresh", "Refresh news"), systemImage: "arrow.clockwise")
@@ -124,6 +128,10 @@ struct GalaxySSIPublicNewsView: View {
       if liveNewsEnabled && scenePhase == .active { await archive.collectLive() }
     }
     .sheet(item: $selected) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
+    .sheet(isPresented: $showBacklog) {
+      NavigationView { GalaxySSIPublicNewsBacklogView(archive: archive) }
+        .navigationViewStyle(.stack)
+    }
     .sheet(isPresented: $showScience) {
       NavigationView { GalaxySSIScienceKnowledgeView() }
         .navigationViewStyle(.stack)
@@ -189,7 +197,7 @@ struct GalaxySSIPublicNewsReader: View {
           if !article.summary.isEmpty {
             Text(article.summary).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
           }
-          GalaxySSIPublicNewsBodyView(article: article) { cover in
+          GalaxySSIPublicNewsBodyView(article: article, retainedArticleIDs: Set(archive.articles.map(\.id))) { cover in
             archive.rememberCover(cover, articleID: article.id)
           }
           Link(destination: article.url) {
