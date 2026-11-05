@@ -15,6 +15,11 @@ import org.junit.Assert.*
 import org.junit.Assume.assumeFalse
 import org.junit.Test
 
+internal fun healthTrendPressure(device: String, time: Long, label: String = "Same monitor",
+                                 capture: String = UUID.randomUUID().toString()) =
+    HealthBluetoothReceipt(requireNotNull(HealthBloodPressurePacket.decode(byteArrayOf(0, 124, 0, 82, 0, 96, 0))),
+        label, device, capture, true, time, ZoneId.systemDefault())
+
 class HealthBluetoothDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val now = Instant.parse("2026-10-04T10:01:00Z").toEpochMilli()
@@ -42,10 +47,40 @@ class HealthBluetoothDeviceTest {
         assertEquals(saved.source, edited.source)
         assertEquals(saved.deviceReceivedAt, edited.deviceReceivedAt)
         assertEquals(saved.deviceClock, edited.deviceClock)
+        assertTrue(isHealthBluetoothGroup(saved.bluetoothGroup))
+        assertEquals(saved.bluetoothGroup, edited.bluetoothGroup)
         assertTrue(store.saveBluetooth(fixture.copy(capture = "another-link"), "unspecified") {} is HealthSaveResult.Duplicate)
         assertTrue(store.delete(saved.id, edited.revision))
         assertTrue(store.saveBluetooth(fixture, "unspecified") {} is HealthSaveResult.Duplicate)
         assertEquals(0L, store.count())
+    }
+
+    @Test fun sameNamesAndReadingsStaySeparateAndLegacyRecordsAreNotGuessed() = database { store ->
+        fun save(device: String, time: Long, label: String = "Same monitor") =
+            (store.saveBluetooth(healthTrendPressure(device, time, label), "resting") {} as HealthSaveResult.Saved).record
+        val first = save("device-a", now)
+        val sameName = save("device-b", now)
+        val renamed = save("device-a", now + 60_000, "Renamed monitor")
+        assertNotEquals(first.bluetoothGroup, sameName.bluetoothGroup)
+        assertEquals(first.bluetoothGroup, renamed.bluetoothGroup)
+        assertFalse(first.json(includeDeviceGroup = false).has("bluetooth_group"))
+        assertEquals(first, HealthObservation.from(first.json()))
+        val legacy = first.copy(id = UUID.randomUUID().toString(), bluetoothGroup = "")
+        store.tableDatabase.beginTransaction()
+        try {
+            store.insertRestored(legacy)
+            store.tableDatabase.setTransactionSuccessful()
+        } finally { store.tableDatabase.endTransaction() }
+        val day = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate()
+        val scope = HealthTrendSpec(HealthMetric.BLOOD_PRESSURE, day, day, ZoneId.systemDefault(), "mmHg")
+        assertEquals(setOf(first.bluetoothGroup, sameName.bluetoothGroup), store.trendBluetoothGroups(scope).toSet())
+        assertEquals("Renamed monitor", store.trendBluetoothLabel(scope, first.bluetoothGroup))
+        val selected = scope.copy(source = HealthTrendSource(bluetoothGroup = first.bluetoothGroup))
+        assertEquals(selected, Intent().putHealthTrend(selected).healthTrendSpec())
+        assertEquals(setOf(first.id, renamed.id), store.trendRecords(selected, numericOnly = true).records.map { it.id }.toSet())
+        assertEquals(2L, HealthTrendRepository.load(store, selected).eligible)
+        assertEquals(4L, HealthTrendRepository.load(store, scope).eligible)
+        assertEquals(HealthAccessSource.BLUETOOTH, HealthAccessScope.trend(HealthAccessPurpose.TREND, selected).source)
     }
 
     @Test fun aCancelledWriteLeavesNoMeasurementOrDeduplicationMarker() = database { store ->

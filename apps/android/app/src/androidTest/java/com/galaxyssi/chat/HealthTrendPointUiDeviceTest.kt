@@ -110,6 +110,65 @@ class HealthTrendPointUiDeviceTest {
         }
     }
 
+    @Test fun sameNameBluetoothDevicesCanBeSelectedIndependentlyAndOnlyTheirRowsAreAudited() = fixture { names ->
+        val date = day
+        val (first, second, other) = HealthRecordStore(context, names.records).use { store ->
+            fun save(device: String, timestamp: Long) =
+                (store.saveBluetooth(healthTrendPressure(device, timestamp), "resting") {} as HealthSaveResult.Saved).record
+            Triple(save("device-a", time + 60_000), save("device-a", time + 120_000), save("device-b", time + 60_000))
+        }
+        val intent = Intent(context, HealthTrendActivity::class.java).putExtra("health_metric", HealthMetric.BLOOD_PRESSURE.name)
+            .putHealthNavigationFixture(names)
+        ActivityScenario.launch<HealthTrendActivity>(intent).use { scenario ->
+            lateinit var trend: HealthTrendActivity
+            scenario.onActivity { trend = it }
+            await(trend) { has(it, "health-trend-latest-record") }
+            choose(trend, "health-trend-source", 3)
+            val expected = trend.healthBluetoothTrendLabel(first.bluetoothGroup, first.platformOrigin)
+            val excluded = trend.healthBluetoothTrendLabel(other.bluetoothGroup, other.platformOrigin)
+            val end = SystemClock.elapsedRealtime() + 12_000
+            var selected = false
+            do {
+                instrumentation.runOnMainSync {
+                    val list = WindowInspector.getGlobalWindowViews().flatMap(::descendants).filterIsInstance<ListView>().lastOrNull()
+                    if (list != null) {
+                        val choices = (0 until list.count).map { list.adapter.getItem(it).toString() }
+                        if (expected in choices && excluded in choices) {
+                            val index = choices.indexOf(expected)
+                            selected = list.performItemClick(list.getChildAt(index), index, list.adapter.getItemId(index))
+                        }
+                    }
+                }
+                if (!selected) SystemClock.sleep(50)
+            } while (!selected && SystemClock.elapsedRealtime() < end)
+            assertTrue("Both same-name Bluetooth sources should be selectable", selected)
+            await(trend) { has(it, "health-trend-latest-record") && it.window.decorView.findViewWithTag<View>("health-trend-chart").width > 0 &&
+                descendants(it.window.decorView.findViewWithTag<View>("health-trend-source")).filterIsInstance<TextView>().any { label ->
+                    label.text.toString() == expected
+                } }
+            val cohort = open(HealthTrendRecordsActivity::class.java) { tapPoint(trend, date) }
+            try {
+                await(cohort) { has(it, "health-trend-audit-result") }
+                assertEquals(2, contributorCount(cohort))
+                instrumentation.runOnMainSync {
+                    assertEquals(expected, text(cohort, "health-trend-audit-source"))
+                    assertTrue(has(cohort, rowTag(first)))
+                    assertTrue(has(cohort, rowTag(second)))
+                    assertFalse(has(cohort, rowTag(other)))
+                }
+                val revision = open(HealthRecordRevisionActivity::class.java) { tap(cohort, rowTag(first)) }
+                try {
+                    await(revision) { has(it, "health-revision-device") }
+                    instrumentation.runOnMainSync { assertEquals(expected, text(revision, "health-revision-device")) }
+                    back(revision)
+                } finally { finish(revision) }
+                await(cohort) { has(it, rowTag(first)) }
+                back(cohort)
+                await(trend) { has(it, "health-trend-latest-record") }
+            } finally { finish(cohort) }
+        }
+    }
+
     private fun id() = UUID.randomUUID().toString()
     private fun save(store: HealthRecordStore, n: Int, value: String, unit: String = "kg", evidence: HealthEvidence? = null) =
         (store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to value), unit, time + 1000L + n * 60_000L,

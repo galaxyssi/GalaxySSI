@@ -9,10 +9,15 @@ import java.time.temporal.ChronoUnit
 import java.util.BitSet
 
 internal enum class HealthTrendAggregation { MEAN, MINIMUM, MAXIMUM }
-internal data class HealthTrendSource(val originalId: String = "", val manualOnly: Boolean = false) {
-    init { require(originalId.isBlank() || java.util.UUID.fromString(originalId).toString() == originalId); require(!manualOnly || originalId.isBlank()) }
+internal data class HealthTrendSource(val originalId: String = "", val manualOnly: Boolean = false, val bluetoothGroup: String = "") {
+    init {
+        require(originalId.isBlank() || java.util.UUID.fromString(originalId).toString() == originalId)
+        require(bluetoothGroup.isEmpty() || isHealthBluetoothGroup(bluetoothGroup))
+        require(listOf(originalId.isNotBlank(), manualOnly, bluetoothGroup.isNotEmpty()).count { it } <= 1)
+    }
     fun accepts(record: HealthObservation) = (!manualOnly || record.source == "manual") &&
-        (originalId.isBlank() || record.draft.evidence?.originalId == originalId)
+        (originalId.isBlank() || record.draft.evidence?.originalId == originalId) &&
+        (bluetoothGroup.isEmpty() || record.source == "bluetooth" && record.bluetoothGroup == bluetoothGroup)
 }
 internal data class HealthTrendSpec(val metric: HealthMetric, val first: LocalDate, val last: LocalDate,
     val zone: ZoneId, val unit: String, val aggregation: HealthTrendAggregation = HealthTrendAggregation.MEAN,

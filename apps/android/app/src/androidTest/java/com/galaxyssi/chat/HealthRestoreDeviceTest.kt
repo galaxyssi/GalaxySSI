@@ -92,6 +92,27 @@ class HealthRestoreDeviceTest {
     @Test fun processDeathInsideCommitRollsBackRecordsFilesAndReceipt() = processDeath("BEFORE_COMMIT", false)
     @Test fun processDeathAfterCommitKeepsOriginalsAndReceiptWithoutDuplicatingOnRetry() = processDeath("AFTER_COMMIT", true)
 
+    @Test fun bluetoothDeviceGroupsSurviveEncryptedBackupAndKeepIdenticalReadingsSeparate() = fixture { source, target ->
+        val time = 1_700_000_000_000L
+        val rows = HealthRecordStore(context, source.records).use { store ->
+            listOf("device-a", "device-b").map { device ->
+                (store.saveBluetooth(healthTrendPressure(device, time), "resting") {} as HealthSaveResult.Saved).record
+            }
+        }
+        val file = packageFile(source)
+        val repo = restore(target)
+        prepare(repo, file).use { assertEquals(2L, it.commit(CancellationSignal()).counts.added) }
+        HealthRecordStore(context, target.records).use { store ->
+            val day = java.time.Instant.ofEpochMilli(time).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+            val scope = HealthTrendSpec(HealthMetric.BLOOD_PRESSURE, day, day, java.time.ZoneId.systemDefault(), "mmHg")
+            for (row in rows) {
+                val selected = scope.copy(source = HealthTrendSource(bluetoothGroup = row.bluetoothGroup))
+                assertEquals(listOf(row), store.trendRecords(selected, numericOnly = true).records)
+            }
+        }
+        prepare(repo, file).use { assertEquals(2L, it.counts.duplicates) }
+    }
+
     private fun processDeath(phase: String, committed: Boolean) = fixture { source, target ->
         val bytes = "Encrypted restore process fixture".toByteArray()
         val photo = original(source, bytes)
