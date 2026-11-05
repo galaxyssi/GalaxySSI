@@ -4,7 +4,11 @@
     <string name="health_sources_quick">Devices</string>
     <string name="health_sources_checking">Checking data sources…</string>
     <string name="health_sources_summary">Source Overview</string>
-    <string name="health_sources_summary_detail">No external sources connected</string>
+    <string name="health_sources_summary_detail">No active Health Connect read scopes</string>
+    <string name="health_sources_read_types">Health Connect read access by data type</string>
+    <string name="health_sources_access_not_selected">Not selected in GalaxySSI</string>
+    <string name="health_sources_access_granted">Read permission granted</string>
+    <string name="health_sources_access_missing">Selected · System read permission required</string>
     <string name="health_sources_platforms">Health Platforms</string>
     <string name="health_sources_platform_name">Health Connect</string>
     <string name="health_sources_platform_available">Available on this device</string>

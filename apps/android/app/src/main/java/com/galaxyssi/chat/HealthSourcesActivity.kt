@@ -95,9 +95,11 @@ class HealthSourcesActivity : Activity() {
         body.addView(ui.card().apply {
             tag = "health-sources-ready"
             background = ui.background(color = getColor(R.color.page_bg), stroke = getColor(R.color.separator), radius = 8)
+            val enabled = snapshot.scopes.count { it.access == HealthSourceAccess.GRANTED }
             val summary = when {
-                snapshot.platformScopes != null && snapshot.platformScopes > 0 -> getString(R.string.health_connect_scope_count, snapshot.platformScopes)
-                snapshot.platform == HealthPlatformAvailability.AVAILABLE && snapshot.platformScopes == null ->
+                enabled > 0 -> getString(R.string.health_connect_scope_count, enabled)
+                snapshot.platform == HealthPlatformAvailability.CHECK_FAILED -> getString(R.string.health_sources_platform_error)
+                snapshot.platform == HealthPlatformAvailability.AVAILABLE && !snapshot.grantVerified ->
                     getString(R.string.health_connect_grant_status_unavailable)
                 else -> getString(R.string.health_sources_summary_detail)
             }
@@ -114,14 +116,14 @@ class HealthSourcesActivity : Activity() {
             addView(sourceRow(R.drawable.ic_health_heart, getString(R.string.health_sources_platform_name), getString(status))
                 .apply { tag = "health-platform-${snapshot.platform.name}" })
             val last = snapshot.lastConfirmedImport.takeIf { it > 0 }?.let {
-                getString(R.string.health_connect_last_import, DateFormat.getDateTimeInstance().format(Date(it)))
+                getString(R.string.health_connect_last_import, date(it))
             } ?: getString(R.string.health_connect_no_import)
             ui.add(this, ui.text(last, 13f, muted = true), 6)
             addView(ui.profileRow(getString(R.string.health_connect_authorize)) {
                 openLocal(Intent(this@HealthSourcesActivity, HealthConnectActivity::class.java))
             }.apply { tag = "health-connect-entry" })
             addView(ui.profileRow(getString(R.string.health_sync_title)) {
-                openLocal(Intent(this@HealthSourcesActivity, HealthSyncActivity::class.java))
+                openSync()
             }.apply { tag = "health-sync-entry" })
             when (snapshot.platform) {
                 HealthPlatformAvailability.AVAILABLE -> addView(ui.profileRow(getString(R.string.health_sources_system_settings)) {
@@ -135,6 +137,34 @@ class HealthSourcesActivity : Activity() {
                 else -> Unit
             }
         }, 8)
+        ui.add(body, ui.card().apply {
+            addView(ui.text(getString(R.string.health_sources_read_types), 16f, bold = true))
+            snapshot.scopes.forEach { entry ->
+                val saved = snapshot.syncHistory?.checkpoints?.get(entry.scope)
+                val access = getString(when (entry.access) {
+                    HealthSourceAccess.NOT_SELECTED -> R.string.health_sources_access_not_selected
+                    HealthSourceAccess.GRANTED -> R.string.health_sources_access_granted
+                    HealthSourceAccess.MISSING_GRANT -> R.string.health_sources_access_missing
+                    HealthSourceAccess.UNVERIFIED -> R.string.health_connect_grant_status_unavailable
+                    HealthSourceAccess.PLATFORM_UNAVAILABLE -> R.string.health_sync_unavailable
+                })
+                val history = when {
+                    snapshot.syncHistory == null -> getString(R.string.health_sources_local_error)
+                    saved != null && saved.lastSuccess > 0 -> getString(R.string.health_sync_success_time, date(saved.lastSuccess))
+                    else -> getString(R.string.health_sync_no_success)
+                }
+                val metric = getString(entry.scope.metric.titleResource())
+                val subtitle = "$access\n$history"
+                val row = if (entry.access != HealthSourceAccess.NOT_SELECTED || saved?.lastAttempt?.let { it > 0 } == true ||
+                    saved?.lastSuccess?.let { it > 0 } == true) ui.profileRow(metric, subtitle) { openSync(entry.scope) }
+                else ui.column().apply {
+                    setPadding(0, ui.dp(6), 0, ui.dp(6))
+                    addView(ui.text(metric, 15f, bold = true))
+                    addView(ui.text(subtitle, 13f, muted = true))
+                }
+                ui.add(this, row.apply { tag = "health-sources-scope-${entry.scope.name}" }, 6)
+            }
+        }, 8)
         ui.add(body, ui.text(getString(R.string.health_sources_devices), 18f, bold = true), 20)
         ui.add(body, ui.card().apply {
             val caption = getString(if (snapshot.bluetoothLe) R.string.health_sources_ble_supported else R.string.health_sources_ble_unavailable)
@@ -143,6 +173,14 @@ class HealthSourcesActivity : Activity() {
             }) else null
             addView(sourceRow(R.drawable.ic_settings_devices, getString(R.string.health_sources_bluetooth), caption, connect)
                 .apply { tag = "health-ble-entry" })
+            if (snapshot.bluetoothLe) ui.add(this, ui.text(getString(R.string.health_sync_ble_disconnected), 14f), 6)
+            val receipt = snapshot.syncHistory?.bluetoothReceipt
+            val lastReceipt = when {
+                receipt == null -> getString(R.string.health_sources_local_error)
+                receipt > 0 -> getString(R.string.health_sync_ble_receipt, date(receipt))
+                else -> getString(R.string.health_sync_ble_no_receipt)
+            }
+            ui.add(this, ui.text(lastReceipt, 13f, muted = true).apply { tag = "health-sources-ble-receipt" }, 4)
         }, 8)
         ui.add(body, ui.text(getString(R.string.health_sources_local), 18f, bold = true), 20)
         val local = snapshot.local
@@ -189,6 +227,14 @@ class HealthSourcesActivity : Activity() {
     private fun openLocal(intent: Intent) {
         if (names.fixture == null) startActivity(intent)
     }
+
+    private fun openSync(scope: HealthConnectScope? = null) {
+        val intent = Intent(this, HealthSyncActivity::class.java).putExtra("health_sync_scope", scope?.name)
+        if (names.fixture != null) intent.putExtra("health_sync_test_id", names.fixture)
+        startActivity(intent)
+    }
+
+    private fun date(time: Long) = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))
 
     private fun openExternal(primary: Intent, fallback: Intent? = null) {
         if (names.fixture != null) return
