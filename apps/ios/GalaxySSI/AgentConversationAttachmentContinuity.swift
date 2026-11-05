@@ -31,7 +31,11 @@ enum AgentConversationAttachmentContinuity {
       blocks: prior.blocks
     )
     return AgentAttachmentContinuityReuse(
-      attachments: restored.map(\.attachment),
+      attachments: restored.map {
+        var attachment = $0.attachment
+        if attachment.isImage { attachment.historicalSourceTurnId = prior.turnId }
+        return attachment
+      },
       stagedAttachments: restored.map(\.staged)
     )
   }

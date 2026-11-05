@@ -10,19 +10,22 @@ struct GalaxySSIDraftAttachment: Identifiable, Equatable {
   var mimeType: String
   var data: Data
   var sourceDescription: String
+  var historicalSourceTurnId: String?
 
   init(
     id: String = UUID().uuidString,
     displayName: String,
     mimeType: String,
     data: Data,
-    sourceDescription: String = ""
+    sourceDescription: String = "",
+    historicalSourceTurnId: String? = nil
   ) {
     self.id = id
     self.displayName = displayName.ifBlank("attachment")
     self.mimeType = mimeType.ifBlank("application/octet-stream")
     self.data = data
     self.sourceDescription = sourceDescription
+    self.historicalSourceTurnId = historicalSourceTurnId
   }
 
   var sizeBytes: Int {
@@ -556,6 +559,7 @@ enum GalaxySSIAttachmentPayloadBuilder {
         "size": attachment.sizeBytes,
         "sha256": sha256(attachment.data)
       ]
+      if let turn = attachment.historicalSourceTurnId { item["historical_source_turn_id"] = turn }
       if let mediaProfile {
         item["transport_profile"] = mediaProfile.id
       }

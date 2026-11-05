@@ -13083,7 +13083,9 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func cloudPrompt(text: String, attachments: [GalaxySSIDraftAttachment]) -> String {
-    let suffix = GalaxySSIAttachmentPayloadBuilder.promptSuffix(for: attachments)
+    let suffix = GalaxySSIAttachmentPayloadBuilder.promptSuffix(for: attachments.filter {
+      $0.historicalSourceTurnId == nil
+    })
     guard !suffix.isEmpty else { return text }
     return text + "\n\n" + suffix
   }

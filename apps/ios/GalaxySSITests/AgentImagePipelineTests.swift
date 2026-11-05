@@ -3,6 +3,28 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentImagePipelineTests: XCTestCase {
+  func testHistoricalImageStaysSeparateFromLatestUserMessageAcrossProviders() throws {
+    let image = try CloudImagePayload(displayName: "old.png", mimeType: "image/png", data: Data([1, 2, 3]),
+      historicalSourceTurnId: "earlier-turn")
+    var openAI: [[String: Any]] = [["role": "user", "content": "Translate this word"]]
+    var anthropic = openAI
+    var gemini: [[String: Any]] = [["role": "user", "parts": [["text": "Translate this word"]]]]
+    CloudVisionPayloadEncoder.attachOpenAI(to: &openAI, images: [image])
+    CloudVisionPayloadEncoder.attachAnthropic(to: &anthropic, images: [image])
+    CloudVisionPayloadEncoder.attachGemini(to: &gemini, images: [image])
+    for (messages, key) in [(openAI, "content"), (anthropic, "content"), (gemini, "parts")] {
+      XCTAssertEqual(messages.count, 2)
+      let parts = try XCTUnwrap(messages.first?[key] as? [[String: Any]])
+      let label = try XCTUnwrap(parts.first?["text"] as? String)
+      XCTAssertTrue(label.contains("source turn: earlier-turn"))
+      XCTAssertTrue(label.contains("not a new upload"))
+      XCTAssertEqual(parts.count, 2)
+    }
+    XCTAssertEqual(openAI.last?["content"] as? String, "Translate this word")
+    XCTAssertEqual(anthropic.last?["content"] as? String, "Translate this word")
+    XCTAssertEqual((gemini.last?["parts"] as? [[String: String]])?.first?["text"], "Translate this word")
+  }
+
   func testSmallImageKeepsOriginalBytesAndRecordsProbe() throws {
     let data = try XCTUnwrap(testImage().pngData())
     let attachment = GalaxySSIDraftAttachment(
