@@ -332,6 +332,7 @@ struct GalaxySSIHealthOriginalStore {
       try reconcileRestores(lease: lease)
       let index = try ensureIndex()
       guard index.originals.contains(original) else { throw Failure.stale }
+      try verifyRemovalFile(original)
       return try indexRecords.previewOriginalRemoval(original)
     }
   }
@@ -339,13 +340,16 @@ struct GalaxySSIHealthOriginalStore {
   func remove(_ expected: Removal) throws {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
-      let original = expected.original
-      let key = try key(create: false)
-      guard try withFile(original.id, { try readHeader($0, id: original.id, key: key) }) == original
-      else { throw Failure.stale }
+      try verifyRemovalFile(expected.original)
       try indexRecords.commitOriginalRemoval(expected)
       try? reconcileRestores(lease: lease)
     }
+  }
+
+  private func verifyRemovalFile(_ original: Original) throws {
+    let key = try key(create: false)
+    guard (try? withFile(original.id, { try readHeader($0, id: original.id, key: key) })) == original
+    else { throw Failure.stale }
   }
 
   func makeZIP(_ originals: [Original]) throws -> Data {

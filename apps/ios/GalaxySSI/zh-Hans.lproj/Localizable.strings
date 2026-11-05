@@ -654,6 +654,8 @@
 "galaxyssi.health.privacy.retain_imports" = "保留新导入的原件";
 "galaxyssi.health.originals.removal_history" = "原件文件删除记录";
 "galaxyssi.health.originals.remove_links" = "保留 %lld 条关联测量";
+"galaxyssi.health.originals.remove_success" = "已删除原件文件。";
+"galaxyssi.health.originals.remove_changed" = "文件或关联测量已变更，请重新审阅。";
 "galaxyssi.health.metric_erase.title" = "删除测量历史";
 "galaxyssi.health.metric_erase.history" = "测量历史删除记录";
 "galaxyssi.health.metric_erase.metric" = "测量类型";

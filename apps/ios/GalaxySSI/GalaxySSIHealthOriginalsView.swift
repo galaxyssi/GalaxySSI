@@ -28,6 +28,8 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var preparedForShare = false
   @State private var pending: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var removal: GalaxySSIHealthOriginalStore.Removal?
+  @State private var removalNotice: RemovalNotice?
+  private enum RemovalNotice { case removed, changed }
   @State private var error = false
 
   private struct Preview: Identifiable {
@@ -104,6 +106,12 @@ struct GalaxySSIHealthOriginalsView: View {
           }
           if rows.count > shown { Button(t("more", "Show more")) { shown += 30 } }
         }
+        if let removalNotice {
+          Text(removalNotice == .removed
+               ? t("remove_success", "Original file removed.")
+               : t("remove_changed", "The file or its linked measurements changed. Review it again."))
+            .foregroundColor(.secondary)
+        }
         if error {
           Text(t("error", "Could not complete the operation. Check the file or select fewer originals."))
             .foregroundColor(.secondary)
@@ -127,6 +135,7 @@ struct GalaxySSIHealthOriginalsView: View {
         listing = nil
         preview = nil
         removal = nil
+        removalNotice = nil
         pending = []
         confirming = false
         if !exporting { zip = nil }
@@ -150,7 +159,14 @@ struct GalaxySSIHealthOriginalsView: View {
                 "%lld linked measurements will be kept"), Int64(item.count))),
             primaryButton: .destructive(Text(t("remove", "Remove"))) {
               guard scene == .active else { return }
-              do { try store.remove(item); reload() } catch { error = true }
+              do {
+                try store.remove(item)
+                reload()
+                removalNotice = .removed
+              } catch GalaxySSIHealthOriginalStore.Failure.stale {
+                reload()
+                removalNotice = .changed
+              } catch { error = true }
             }, secondaryButton: .cancel())
     }
     .fileExporter(isPresented: $exporting, document: zip, contentType: .zip,
@@ -220,7 +236,10 @@ struct GalaxySSIHealthOriginalsView: View {
     }
     .contextMenu {
       Button(role: .destructive) {
-        do { removal = try store.previewRemoval(item) } catch { error = true }
+        removalNotice = nil
+        do { removal = try store.previewRemoval(item) }
+        catch GalaxySSIHealthOriginalStore.Failure.stale { reload(); removalNotice = .changed }
+        catch { error = true }
       } label: { Label(t("remove", "Remove"), systemImage: "trash") }
     }
   }
